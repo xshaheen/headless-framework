@@ -390,7 +390,7 @@ describe('jobs runs list', () => {
         extra: (request) => {
           if (request.path === 'jobs/runs') {
             return request.query?.after
-              ? { items: [], count: 312, countCapped: false, nextCursor: null }
+              ? { items: [], nextCursor: null }
               : { items: failed, count: 312, countCapped: false, nextCursor: 'next' }
           }
 
@@ -686,6 +686,16 @@ describe('jobs runs list', () => {
     list({ runs: [run('Failed')] }, '?status=Failed&open=00000000-0000-0000-0000-00000000dead')
 
     expect((await screen.findByRole('alert')).textContent).toBe('This run no longer exists.')
+  })
+
+  it('shows Stale at once on a list opened after the module went stale', async () => {
+    const view = open({ runs: [run('Failed')] }, { path: '' })
+    await screen.findByRole('region', { name: 'Processing now' })
+
+    view.stream.push('module.stale', { module: 'jobs', stale: true })
+    await act(() => view.navigate('runs'))
+
+    expect(await screen.findByText('Stale. Live updates stopped, so these runs may be out of date.')).toBeTruthy()
   })
 })
 

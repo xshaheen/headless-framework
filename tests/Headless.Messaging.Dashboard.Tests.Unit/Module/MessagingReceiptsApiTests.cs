@@ -101,6 +101,24 @@ public sealed class MessagingReceiptsApiTests : TestBase
         cursor.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         kind.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         type.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await MessagingCommandHost.ReadAsync(cursor, AbortToken))
+            .GetProperty("rules")
+            .GetProperty("after")
+            .GetString()
+            .Should()
+            .Be("invalid");
+        (await MessagingCommandHost.ReadAsync(kind, AbortToken))
+            .GetProperty("errors")
+            .GetProperty("targetKind")[0]
+            .GetString()
+            .Should()
+            .Be("'queue' is not an operation target kind.");
+        (await MessagingCommandHost.ReadAsync(type, AbortToken))
+            .GetProperty("rules")
+            .GetProperty("operationType")
+            .GetString()
+            .Should()
+            .Be("invalid");
     }
 
     [Fact]

@@ -40,8 +40,8 @@ import {
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
-import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
-import { useState, type ReactNode } from 'react'
+import { useModuleStale, useStreamStatus } from '@headless/dashboard-sdk/stream'
+import type { ReactNode } from 'react'
 import { fetchFunctions } from './cron.ts'
 import { RunProgress } from './progress.tsx'
 import {
@@ -148,15 +148,9 @@ export function StaleNotice({ what, onRefresh }: { what: string; onRefresh: () =
 export function useStale() {
   const module = useModule()
   const { status } = useStreamStatus()
-  const [moduleStale, setModuleStale] = useState(false)
+  const { isStale } = useModuleStale(module.id)
 
-  useStreamEvent('module.stale', (event) => {
-    if (event.module === module.id) {
-      setModuleStale(event.stale)
-    }
-  })
-
-  return status === 'stale' || moduleStale
+  return status === 'stale' || isStale
 }
 
 /**

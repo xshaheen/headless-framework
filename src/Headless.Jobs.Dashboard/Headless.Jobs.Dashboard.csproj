@@ -12,6 +12,9 @@
     <InternalsVisibleTo Include="Headless.Jobs.Composition.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />

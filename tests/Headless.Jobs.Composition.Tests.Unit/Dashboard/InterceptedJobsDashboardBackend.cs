@@ -3,6 +3,8 @@
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using Headless.Jobs;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Tests.Dashboard;
 
@@ -15,24 +17,48 @@ namespace Tests.Dashboard;
 internal class InterceptedJobsDashboardBackend : DispatchProxy
 #pragma warning restore CA1852
 {
-    private IJobsDashboardBackend _inner = null!;
+    private object _inner = null!;
     private Func<string, object?[], Func<object?>, object?> _intercept = null!;
 
     /// <summary>
     /// Wraps <paramref name="inner"/>. <paramref name="intercept"/> receives each call's method name, its arguments,
     /// and a function that makes the call on the real backend.
     /// </summary>
-    public static IJobsDashboardBackend Wrap(
-        IJobsDashboardBackend inner,
+    public static IJobsDashboardReaderWriter Wrap(
+        object inner,
         Func<string, object?[], Func<object?>, object?> intercept
     )
     {
-        var proxy = Create<IJobsDashboardBackend, InterceptedJobsDashboardBackend>();
+        var proxy = Create<IJobsDashboardReaderWriter, InterceptedJobsDashboardBackend>();
         var typed = (InterceptedJobsDashboardBackend)(object)proxy;
         typed._inner = inner;
         typed._intercept = intercept;
 
         return proxy;
+    }
+
+    /// <summary>
+    /// Serves the host's reader and writer from one proxy over its backend, so one interceptor sees reads and writes in
+    /// the order the module makes them.
+    /// </summary>
+    public static void Replace(
+        IServiceCollection services,
+        Func<JobsDashboardBackend<TimeJobEntity, CronJobEntity>, IJobsDashboardReaderWriter> wrap
+    )
+    {
+        services.AddSingleton(provider =>
+            wrap(provider.GetRequiredService<JobsDashboardBackend<TimeJobEntity, CronJobEntity>>())
+        );
+        services.Replace(
+            ServiceDescriptor.Singleton<IJobsDashboardReader>(provider =>
+                provider.GetRequiredService<IJobsDashboardReaderWriter>()
+            )
+        );
+        services.Replace(
+            ServiceDescriptor.Singleton<IJobsDashboardWriter>(provider =>
+                provider.GetRequiredService<IJobsDashboardReaderWriter>()
+            )
+        );
     }
 
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
@@ -59,3 +85,6 @@ internal class InterceptedJobsDashboardBackend : DispatchProxy
         );
     }
 }
+
+/// <summary>Both halves of the dashboard backend, so one proxy can stand in for each.</summary>
+internal interface IJobsDashboardReaderWriter : IJobsDashboardReader, IJobsDashboardWriter;

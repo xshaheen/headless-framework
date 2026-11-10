@@ -109,17 +109,26 @@ internal static class JobsDashboardHttpHost
         return cookie[..cookie.IndexOf(';', StringComparison.Ordinal)];
     }
 
-    public static async Task<HttpResponseMessage> PostAsync(
+    public static Task<HttpResponseMessage> PostAsync(
         HttpClient client,
         string path,
         object body,
+        string cookie,
+        CancellationToken cancellationToken
+    ) => PostAsync(client, path, JsonContent.Create(body), cookie, cancellationToken);
+
+    /// <summary>Posts <paramref name="content"/> as it is, such as a body that is not JSON.</summary>
+    public static async Task<HttpResponseMessage> PostAsync(
+        HttpClient client,
+        string path,
+        HttpContent content,
         string cookie,
         CancellationToken cancellationToken
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
         {
-            Content = JsonContent.Create(body),
+            Content = content,
         };
         request.Headers.TryAddWithoutValidation("Cookie", cookie);
         request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
@@ -147,6 +156,28 @@ internal static class JobsDashboardHttpHost
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
 
         return document.RootElement.Clone();
+    }
+
+    /// <summary>
+    /// Reads a <c>400</c> validation problem as each refused field with the rule it broke, from its <c>rules</c>
+    /// extension, after checking every field in it also carries its messages in <c>errors</c>.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, string>> RulesAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken
+    )
+    {
+        var body = await ReadAsync(response, cancellationToken);
+        var rules = body.GetProperty("rules")
+            .EnumerateObject()
+            .ToDictionary(static rule => rule.Name, static rule => rule.Value.GetString()!, StringComparer.Ordinal);
+        body.GetProperty("errors")
+            .EnumerateObject()
+            .Select(static error => error.Name)
+            .Should()
+            .BeEquivalentTo(rules.Keys);
+
+        return rules;
     }
 
     /// <summary>Signs in <c>Authorization: Bearer &lt;role&gt;</c> as a user named for, and in, that role.</summary>

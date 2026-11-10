@@ -27,7 +27,12 @@ export interface StreamClientOptions {
    * share a stream: the base path plus the app name.
    */
   scope: string
-  /** Called in every tab once any tab signs out; the shell routes to its sign-in page. */
+  /**
+   * Names the channel sign-out travels on. It is wider than `scope`: a tab of the same browser session opened under
+   * other permissions or another display name holds its own stream, and still must hear the sign-out and close it.
+   */
+  sessionChannel: string
+  /** Called in every tab of the session once any tab signs out; the shell routes to its sign-in page. */
   onSignedOut?: () => void
   locks?: StreamLockManager
   createChannel?: (name: string) => StreamChannel
@@ -42,7 +47,7 @@ export interface StreamClientOptions {
 export interface StreamClient extends DashboardStream {
   /** Whether this tab holds the browser's one connection. */
   isLeader(): boolean
-  /** Signs every tab of this browser out of the stream: each closes it and calls `onSignedOut`. */
+  /** Signs every tab of this browser session out of the stream: each closes it and calls `onSignedOut`. */
   signOut(): void
   /** Leaves the stream for good, handing the connection to another tab when this one held it. */
   close(): void
@@ -60,7 +65,6 @@ type RelayMessage =
   | { type: 'bye'; tab: string }
   | { type: 'leader'; tab: string }
   | { type: 'event'; name: WireEventName; data: unknown; id: string }
-  | { type: 'signed-out' }
   | { type: 'reconnect' }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,7 +88,6 @@ function isRelayMessage(value: unknown): value is RelayMessage {
       return typeof value.tab === 'string'
     case 'event':
       return (eventNames as readonly unknown[]).includes(value.name) && typeof value.id === 'string'
-    case 'signed-out':
     case 'reconnect':
       return true
     default:
@@ -134,7 +137,9 @@ export function createStreamClient(options: StreamClientOptions): StreamClient {
   const debounceMs = options.debounceMs ?? 250
   const staleAfterMs = options.staleAfterMs ?? 5_000
   const locks = options.locks ?? defaultLocks()
-  const channel = (options.createChannel ?? ((name) => new BroadcastChannel(name)))(`${options.scope}:stream`)
+  const createChannel = options.createChannel ?? ((name) => new BroadcastChannel(name))
+  const channel = createChannel(`${options.scope}:stream`)
+  const session = createChannel(options.sessionChannel)
   const createSource =
     options.createSource ?? ((url) => new EventSource(url, { withCredentials: true }) as unknown as StreamSource)
 
@@ -351,6 +356,7 @@ export function createStreamClient(options: StreamClientOptions): StreamClient {
     abort.abort()
     releaseLock?.()
     channel.close()
+    session.close()
   }
 
   function signedOut() {
@@ -394,12 +400,15 @@ export function createStreamClient(options: StreamClientOptions): StreamClient {
           receive(message.name, message.data, message.id)
         }
         return
-      case 'signed-out':
-        signedOut()
-        return
       case 'reconnect':
         reopen(true)
         return
+    }
+  })
+
+  session.addEventListener('message', (event) => {
+    if (isRecord(event.data) && event.data.type === 'signed-out') {
+      signedOut()
     }
   })
 
@@ -502,7 +511,10 @@ export function createStreamClient(options: StreamClientOptions): StreamClient {
     isLeader: () => leader,
 
     signOut() {
-      post({ type: 'signed-out' })
+      if (!closed) {
+        session.postMessage({ type: 'signed-out' })
+      }
+
       signedOut()
     },
 

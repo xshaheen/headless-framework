@@ -9,7 +9,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Jobs;
 
 /// <summary>The dashboard seam over the host's Jobs services, closed over its entity types.</summary>
-internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider services) : IJobsDashboardBackend
+internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider services)
+    : IJobsDashboardReader,
+        IJobsDashboardWriter
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {

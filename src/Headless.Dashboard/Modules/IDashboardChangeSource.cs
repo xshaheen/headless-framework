@@ -34,7 +34,9 @@ namespace Headless.Dashboard;
 ///   </description></item>
 ///   <item><description>
 ///   <b>A bounded read.</b> Return at most a page of changes, in marker order, and a cursor that resumes after the
-///   page, so a burst of writes is read over several intervals instead of in one large query.
+///   page, so a burst of writes is read in several queries instead of one large one. Set
+///   <see cref="DashboardChangeBatch.HasMore"/> when the page came back full, so the reader reads the next page in the
+///   same interval.
 ///   </description></item>
 /// </list>
 /// <para>
@@ -80,6 +82,14 @@ public sealed record DashboardChangeBatch
     /// the names with <c>module.stale</c> while the module stays live. Empty when every source answered.
     /// </summary>
     public IReadOnlyList<string> UnavailableSources { get; init; } = [];
+
+    /// <summary>
+    /// Gets a value indicating whether more changes may be waiting after <see cref="Cursor"/>, because the read
+    /// returned a full page. The reader then reads again in the same interval, up to a fixed number of reads, so a
+    /// burst of writes does not leave the module further behind on every interval. A false positive costs one read
+    /// that returns nothing. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool HasMore { get; init; }
 }
 
 /// <summary>One changed row, as live views patch it.</summary>

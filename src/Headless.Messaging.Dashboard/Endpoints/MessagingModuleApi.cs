@@ -3,6 +3,7 @@
 using System.Buffers;
 using System.Security.Claims;
 using Headless.Checks;
+using Headless.Dashboard;
 using Headless.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -61,81 +62,51 @@ internal sealed class MessagingModuleApi(
         routes.MapGet("/metrics/realtime", _Realtime);
     }
 
-    private Task<Results<JsonHttpResult<MessagingRowList>, BadRequest<string>, NotFound>> _ListPublishedAsync(
-        string? store,
-        string? status,
-        bool? terminal,
-        bool? retrying,
-        string? name,
-        string? fingerprint,
-        int? limit,
-        string? after,
+    private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ListPublishedAsync(
+        [AsParameters] MessagingListRequest request,
         CancellationToken cancellationToken
     )
     {
+        // Published rows have no consumer and are never held, so those filters do not apply here.
         return _ListAsync(
             MessageType.Publish,
-            store,
-            new ListFilter(status, terminal, retrying, Consumer: null, name, fingerprint, Held: null),
-            limit,
-            after,
+            request.Store,
+            request with
+            {
+                Consumer = null,
+                Held = null,
+            },
             cancellationToken
         );
     }
 
-    private Task<Results<JsonHttpResult<MessagingRowList>, BadRequest<string>, NotFound>> _ListReceivedAsync(
-        string? status,
-        bool? terminal,
-        bool? retrying,
-        string? consumer,
-        string? name,
-        string? fingerprint,
-        bool? held,
-        int? limit,
-        string? after,
+    private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ListReceivedAsync(
+        [AsParameters] MessagingListRequest request,
         CancellationToken cancellationToken
     )
     {
         // Received rows live in the main store alone.
-        return _ListAsync(
-            MessageType.Subscribe,
-            _stores.Primary.Name,
-            new ListFilter(status, terminal, retrying, consumer, name, fingerprint, held),
-            limit,
-            after,
-            cancellationToken
-        );
+        return _ListAsync(MessageType.Subscribe, _stores.Primary.Name, request, cancellationToken);
     }
 
-    private async Task<Results<JsonHttpResult<MessagingRowList>, BadRequest<string>, NotFound>> _ListAsync(
+    private async Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ListAsync(
         MessageType type,
         string? storeName,
-        ListFilter filter,
-        int? limit,
-        string? after,
+        MessagingListRequest filter,
         CancellationToken cancellationToken
     )
     {
-        StatusName? status = null;
+        var validation = await MessagingListRequestValidator
+            .Instance.ValidateAsync(filter, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!validation.IsValid)
+        {
+            return DashboardValidation.Problem(validation);
+        }
+
+        var status = DashboardValidation.ParseEnum<StatusName>(filter.Status);
         var retrying = filter.Retrying == true;
-
-        if (retrying && (filter.Terminal == true || !string.IsNullOrEmpty(filter.Status)))
-        {
-            return TypedResults.BadRequest(
-                "retrying selects failed rows with a retry pending; it takes no status or terminal."
-            );
-        }
-
-        if (!string.IsNullOrEmpty(filter.Status))
-        {
-            if (!Enum.TryParse<StatusName>(filter.Status, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
-            {
-                return TypedResults.BadRequest($"'{filter.Status}' is not a message status.");
-            }
-
-            status = parsed;
-        }
-
         IReadOnlyList<MessagingStore> targets;
 
         if (string.IsNullOrEmpty(storeName))
@@ -151,10 +122,8 @@ internal sealed class MessagingModuleApi(
             return TypedResults.NotFound();
         }
 
-        if (!MergedListCursor.TryParse(after, out var cursor))
-        {
-            return TypedResults.BadRequest("after is not a cursor this list returned.");
-        }
+        // The validator accepted the cursor, so it parses.
+        _ = MergedListCursor.TryParse(filter.After, out var cursor);
 
         // A store's list cannot select a failure that has a retry pending, so a retrying list reads every failure and
         // keeps those with one; its count is the store's failures less its terminal ones, as the sidebar counts it.
@@ -169,7 +138,7 @@ internal sealed class MessagingModuleApi(
             IsHeld = filter.Held,
         };
 
-        var take = Math.Clamp(limit ?? _DefaultListLimit, 1, MaxListLimit);
+        var take = Math.Clamp(filter.Limit ?? _DefaultListLimit, 1, MaxListLimit);
         var answers = await _stores
             .ReadEachAsync(
                 targets,
@@ -273,7 +242,7 @@ internal sealed class MessagingModuleApi(
         );
     }
 
-    private async Task<Results<JsonHttpResult<MessagingGenerationList>, BadRequest<string>>> _ListGenerationsAsync(
+    private async Task<Results<JsonHttpResult<MessagingGenerationList>, ValidationProblem>> _ListGenerationsAsync(
         string? messageId,
         string? consumer,
         CancellationToken cancellationToken
@@ -281,7 +250,7 @@ internal sealed class MessagingModuleApi(
     {
         if (string.IsNullOrEmpty(messageId))
         {
-            return TypedResults.BadRequest("messageId is required.");
+            return DashboardValidation.Problem("messageId", DashboardValidation.RequiredRule, "messageId is required.");
         }
 
         var store = _stores.Primary;
@@ -381,52 +350,24 @@ internal sealed class MessagingModuleApi(
     }
 
     private async Task<
-        Results<JsonHttpResult<MessagingReceiptList>, BadRequest<string>, ProblemHttpResult>
+        Results<JsonHttpResult<MessagingReceiptList>, ValidationProblem, ProblemHttpResult>
     > _ListReceiptsAsync(
         HttpContext context,
-        string? actor,
-        string? targetKind,
-        string? operationType,
-        DateTimeOffset? from,
-        DateTimeOffset? before,
-        string? after,
-        int? limit,
+        [AsParameters] MessagingReceiptListRequest request,
         CancellationToken cancellationToken
     )
     {
-        MessagingOperationTargetKind? kind = null;
-        MessagingOperationType? type = null;
+        var validation = await MessagingReceiptListRequestValidator
+            .Instance.ValidateAsync(request, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (!string.IsNullOrEmpty(targetKind))
+        if (!validation.IsValid)
         {
-            if (
-                !Enum.TryParse<MessagingOperationTargetKind>(targetKind, ignoreCase: true, out var parsed)
-                || !Enum.IsDefined(parsed)
-            )
-            {
-                return TypedResults.BadRequest($"'{targetKind}' is not an operation target kind.");
-            }
-
-            kind = parsed;
+            return DashboardValidation.Problem(validation);
         }
 
-        if (!string.IsNullOrEmpty(operationType))
-        {
-            if (
-                !Enum.TryParse<MessagingOperationType>(operationType, ignoreCase: true, out var parsed)
-                || !Enum.IsDefined(parsed)
-            )
-            {
-                return TypedResults.BadRequest($"'{operationType}' is not an operation type.");
-            }
-
-            type = parsed;
-        }
-
-        if (!ReceiptListCursor.TryParse(after, out var position))
-        {
-            return TypedResults.BadRequest("after is not a cursor this list returned.");
-        }
+        // The validator accepted the cursor, so it parses.
+        _ = ReceiptListCursor.TryParse(request.After, out var position);
 
         // The ledger lives in the main store alone: an additional outbox's receipts name it in OutboxName.
         try
@@ -436,13 +377,17 @@ internal sealed class MessagingModuleApi(
                 .QueryReceiptsAsync(
                     new MessagingOperationReceiptQuery
                     {
-                        Actor = string.IsNullOrEmpty(actor) ? null : actor,
-                        TargetKind = kind,
-                        OperationType = type,
-                        From = from,
-                        Before = before,
+                        Actor = string.IsNullOrEmpty(request.Actor) ? null : request.Actor,
+                        TargetKind = DashboardValidation.ParseEnum<MessagingOperationTargetKind>(request.TargetKind),
+                        OperationType = DashboardValidation.ParseEnum<MessagingOperationType>(request.OperationType),
+                        From = request.From,
+                        Before = request.Before,
                         After = position,
-                        Limit = Math.Clamp(limit ?? _DefaultListLimit, 1, MessagingOperationReceiptQuery.MaxLimit),
+                        Limit = Math.Clamp(
+                            request.Limit ?? _DefaultListLimit,
+                            1,
+                            MessagingOperationReceiptQuery.MaxLimit
+                        ),
                     },
                     new OperatorAuthorizationContext(Reader(context.User)),
                     cancellationToken
@@ -600,14 +545,4 @@ internal sealed class MessagingModuleApi(
 
         return TypedResults.Bytes(output.WrittenMemory.ToArray(), "application/json");
     }
-
-    private sealed record ListFilter(
-        string? Status,
-        bool? Terminal,
-        bool? Retrying,
-        string? Consumer,
-        string? Name,
-        string? Fingerprint,
-        bool? Held
-    );
 }

@@ -1,7 +1,7 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
-import type { CappedCount, DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
+import type { DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
 import type { ListPageRequest, ListRange } from '@headless/dashboard-sdk/table'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
@@ -310,8 +310,9 @@ export function readRunProjection(projection: unknown): RunProjectionFacts | und
 
 interface RunListAnswer {
   items: Run[]
-  count: number
-  countCapped: boolean
+  /** Sent with the first page only, the one read without a cursor. */
+  count?: number
+  countCapped?: boolean
   nextCursor?: string | null
 }
 
@@ -320,13 +321,14 @@ const runsPageSize = 100
 /**
  * One page of runs, newest first unless `request` names a sort: the first page, or the page after the run `cursor`
  * names. The server refuses a cursor read under another sort, search, or range, so the keyset list never sends one.
+ * Only the first page carries the count; the keyset list reads it from there.
  */
 export async function fetchRuns(
   api: DashboardApi,
   filter: Partial<RunFilter>,
   cursor?: string,
   request: Partial<Pick<ListPageRequest, 'sort' | 'search' | 'range'>> = {},
-): Promise<DashboardListPage<Run> & { count: CappedCount }> {
+): Promise<DashboardListPage<Run>> {
   const query: Record<string, string> = { limit: String(runsPageSize) }
 
   // `range` lives only in the URL; the server filters on the `from` it fixed.
@@ -361,7 +363,7 @@ export async function fetchRuns(
 
   return {
     items: answer.items,
-    count: { value: answer.count, capped: answer.countCapped },
+    ...(answer.count === undefined ? {} : { count: { value: answer.count, capped: answer.countCapped ?? false } }),
     nextCursor: answer.nextCursor ?? null,
   }
 }

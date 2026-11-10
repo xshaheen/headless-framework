@@ -210,17 +210,13 @@ public sealed class JobsModuleCommandsTests : TestBase
                     inner,
                     (method, _, proceed) =>
                     {
-                        if (string.Equals(method, nameof(IJobsDashboardBackend.RequeueAsync), StringComparison.Ordinal))
+                        if (string.Equals(method, nameof(IJobsDashboardWriter.RequeueAsync), StringComparison.Ordinal))
                         {
                             requeued = true;
                         }
                         else if (
                             requeued
-                            && string.Equals(
-                                method,
-                                nameof(IJobsDashboardBackend.GetRunAsync),
-                                StringComparison.Ordinal
-                            )
+                            && string.Equals(method, nameof(IJobsDashboardReader.GetRunAsync), StringComparison.Ordinal)
                         )
                         {
                             return Task.FromException<JobRunSummary?>(
@@ -259,7 +255,7 @@ public sealed class JobsModuleCommandsTests : TestBase
                         if (
                             string.Equals(
                                 method,
-                                nameof(IJobsDashboardBackend.PauseCronJobAsync),
+                                nameof(IJobsDashboardWriter.PauseCronJobAsync),
                                 StringComparison.Ordinal
                             )
                         )
@@ -270,7 +266,7 @@ public sealed class JobsModuleCommandsTests : TestBase
                             paused
                             && string.Equals(
                                 method,
-                                nameof(IJobsDashboardBackend.GetCronJobAsync),
+                                nameof(IJobsDashboardReader.GetCronJobAsync),
                                 StringComparison.Ordinal
                             )
                         )
@@ -336,8 +332,8 @@ public sealed class JobsModuleCommandsTests : TestBase
     }
 
     [Theory]
-    [InlineData("jobs.pause", false, nameof(IJobsDashboardBackend.PauseCronJobAsync), "Already paused")]
-    [InlineData("jobs.resume", true, nameof(IJobsDashboardBackend.ResumeCronJobAsync), "Not paused")]
+    [InlineData("jobs.pause", false, nameof(IJobsDashboardWriter.PauseCronJobAsync), "Already paused")]
+    [InlineData("jobs.resume", true, nameof(IJobsDashboardWriter.ResumeCronJobAsync), "Not paused")]
     public async Task should_refuse_a_pause_or_resume_that_lost_the_race_to_another_writer(
         string command,
         bool paused,
@@ -442,7 +438,7 @@ public sealed class JobsModuleCommandsTests : TestBase
                 InterceptedJobsDashboardBackend.Wrap(
                     inner,
                     (method, _, proceed) =>
-                        string.Equals(method, nameof(IJobsDashboardBackend.RequeueAsync), StringComparison.Ordinal)
+                        string.Equals(method, nameof(IJobsDashboardWriter.RequeueAsync), StringComparison.Ordinal)
                             ? Task.FromResult(outcome)
                             : proceed()
                 )
@@ -470,7 +466,7 @@ public sealed class JobsModuleCommandsTests : TestBase
                 InterceptedJobsDashboardBackend.Wrap(
                     inner,
                     (method, _, proceed) =>
-                        string.Equals(method, nameof(IJobsDashboardBackend.DeleteAsync), StringComparison.Ordinal)
+                        string.Equals(method, nameof(IJobsDashboardWriter.DeleteAsync), StringComparison.Ordinal)
                             ? Task.FromResult(false)
                             : proceed()
                 )

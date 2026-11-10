@@ -19,6 +19,9 @@ internal sealed class ChangeReader : IDisposable
     /// <summary>The most intervals a failing reader waits between tries.</summary>
     internal const int MaxSkippedIntervals = 15;
 
+    /// <summary>The most reads one interval makes while the source reports more changes waiting.</summary>
+    internal const int MaxReadsPerTick = 10;
+
     private readonly string _moduleId;
     private readonly IDashboardChangeSource _source;
     private readonly DashboardEventPublisher _publisher;
@@ -100,18 +103,31 @@ internal sealed class ChangeReader : IDisposable
                     }
                     else
                     {
-                        var batch = await _source.ReadChangesAsync(cursor, cancellationToken).ConfigureAwait(false);
-
-                        foreach (var change in batch.Changes)
+                        // One page per interval falls further behind on every interval once writes outpace a
+                        // page, so a full page is followed by the next one at once; the cap keeps a write storm from
+                        // turning the reader into a busy loop.
+                        for (var read = 1; ; read++)
                         {
-                            _publisher.Accept(change);
+                            var batch = await _source.ReadChangesAsync(cursor, cancellationToken).ConfigureAwait(false);
+
+                            foreach (var change in batch.Changes)
+                            {
+                                _publisher.Accept(change);
+                            }
+
+                            // Each published page moves the cursor, so a later read of the interval that fails
+                            // retries only what it missed.
+                            cursor = batch.Cursor;
+
+                            // A read that reached only some sources is still a success: the module stays live, and
+                            // its views name the sources it missed.
+                            _publisher.ReportUnavailable(_moduleId, batch.UnavailableSources ?? []);
+
+                            if (!batch.HasMore || read >= MaxReadsPerTick)
+                            {
+                                break;
+                            }
                         }
-
-                        cursor = batch.Cursor;
-
-                        // A read that reached only some sources is still a success: the module stays live, and its
-                        // views name the sources it missed.
-                        _publisher.ReportUnavailable(_moduleId, batch.UnavailableSources ?? []);
                     }
 
                     // A reader that stopped mid-failure may have left the module marked stale after the stop forgot it,

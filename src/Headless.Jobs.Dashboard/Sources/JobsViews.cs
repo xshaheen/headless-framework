@@ -75,7 +75,7 @@ internal static class JobsViews
     /// Reads a changed row back for its projection, or returns <see langword="null"/> when the row is gone.
     /// </summary>
     public static async Task<DashboardChange?> ReadBackAsync(
-        IJobsDashboardBackend backend,
+        IJobsDashboardReader reader,
         TimeProvider timeProvider,
         string moduleId,
         JobChangeKind kind,
@@ -86,14 +86,14 @@ internal static class JobsViews
     {
         if (kind == JobChangeKind.CronJob)
         {
-            var cronJob = await backend.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false);
+            var cronJob = await reader.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false);
 
             if (cronJob is null)
             {
                 return null;
             }
 
-            var preview = backend.Preview(
+            var preview = reader.Preview(
                 cronJob.Expression,
                 cronJob.TimeZoneId,
                 timeProvider.GetUtcNow().UtcDateTime,
@@ -103,7 +103,7 @@ internal static class JobsViews
             return Change(moduleId, cronJob, preview);
         }
 
-        var run = await backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false);
+        var run = await reader.GetRunAsync(id, cancellationToken).ConfigureAwait(false);
 
         return run is null ? null : Change(moduleId, run, affectsAttention);
     }
@@ -274,8 +274,11 @@ internal sealed record JobsRunView(
 /// <summary>A run with its chain children, as the run page shows it.</summary>
 internal sealed record JobsRunDetail(JobsRunView Run, IReadOnlyList<Guid> Children);
 
-/// <summary>One page of runs, a count capped at <see cref="JobRunCount.DefaultCap"/>, and the next page's cursor.</summary>
-internal sealed record JobsRunList(IReadOnlyList<JobsRunView> Items, int Count, bool CountCapped, string? NextCursor);
+/// <summary>
+/// One page of runs and the next page's cursor; the first page also carries the count, capped at
+/// <see cref="JobRunCount.DefaultCap"/>, and a later page leaves it out.
+/// </summary>
+internal sealed record JobsRunList(IReadOnlyList<JobsRunView> Items, int? Count, bool? CountCapped, string? NextCursor);
 
 /// <summary>One attempt of a run: the node that ran it, when, and how it ended.</summary>
 internal sealed record JobsAttemptView(
@@ -431,90 +434,6 @@ internal sealed record JobsDailyBucket(
 
 /// <summary>The id a create call returns.</summary>
 internal sealed record JobsCreated(Guid Id);
-
-/// <summary>The body of <c>POST time-jobs</c>: a time job, or a chain when it has children.</summary>
-internal sealed record JobsTimeJobBody
-{
-    public string? Function { get; init; }
-
-    /// <summary>The due time. Without an offset it is a wall-clock time in <see cref="TimeZoneId"/>, else UTC.</summary>
-    public DateTime? ExecutionTime { get; init; }
-
-    public string? TimeZoneId { get; init; }
-
-    public JsonElement? Request { get; init; }
-
-    public string? Description { get; init; }
-
-    public int Retries { get; init; }
-
-    public int[]? RetryIntervals { get; init; }
-
-    public RunCondition? RunCondition { get; init; }
-
-    public IReadOnlyList<JobsTimeJobBody>? Children { get; init; }
-}
-
-/// <summary>The body of <c>POST cron-jobs</c>.</summary>
-internal sealed record JobsCronJobBody
-{
-    public string? Function { get; init; }
-
-    public string? Expression { get; init; }
-
-    public string? TimeZoneId { get; init; }
-
-    public JsonElement? Request { get; init; }
-
-    public string? Description { get; init; }
-
-    public int Retries { get; init; }
-
-    public int[]? RetryIntervals { get; init; }
-}
-
-/// <summary>
-/// The filter an Operation is scoped by, in the shape the Runs list sends it and a Needs-you group hands it over.
-/// </summary>
-internal sealed record JobsRunScope
-{
-    public JobRunKind? Kind { get; init; }
-
-    public IReadOnlyList<string>? Functions { get; init; }
-
-    public IReadOnlyList<JobStatus>? Statuses { get; init; }
-
-    public Guid? CronJobId { get; init; }
-
-    public string? CorrelationId { get; init; }
-
-    public string? Fingerprint { get; init; }
-
-    public DateTime? From { get; init; }
-
-    public DateTime? Before { get; init; }
-
-    /// <summary>Whether only actionable failures are in scope, as a Needs-you group's filter asks.</summary>
-    public bool ActionableOnly { get; init; }
-
-    /// <summary>The Runs list's search text, so an Operation covers the rows the operator sees and no more.</summary>
-    public string? Search { get; init; }
-
-    public JobRunQuery ToQuery() =>
-        new()
-        {
-            Kind = Kind,
-            Functions = Functions is { Count: > 0 } functions ? [.. functions] : null,
-            Statuses = Statuses is { Count: > 0 } statuses ? [.. statuses] : null,
-            CronJobId = CronJobId,
-            CorrelationId = string.IsNullOrEmpty(CorrelationId) ? null : CorrelationId,
-            FailureFingerprint = string.IsNullOrEmpty(Fingerprint) ? null : Fingerprint,
-            ExecutionFrom = From is { } from ? DateTime.SpecifyKind(from, DateTimeKind.Utc) : null,
-            ExecutionBefore = Before is { } before ? DateTime.SpecifyKind(before, DateTimeKind.Utc) : null,
-            ActionableFailuresOnly = ActionableOnly,
-            Text = string.IsNullOrEmpty(Search) ? null : Search,
-        };
-}
 
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.Web,

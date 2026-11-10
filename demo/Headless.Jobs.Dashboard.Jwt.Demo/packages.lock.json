@@ -200,6 +200,7 @@
       "headless.dashboard": {
         "type": "Project",
         "dependencies": {
+          "FluentValidation": "[12.2.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
@@ -273,6 +274,7 @@
       "headless.jobs.dashboard": {
         "type": "Project",
         "dependencies": {
+          "FluentValidation": "[12.2.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.Dashboard": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
