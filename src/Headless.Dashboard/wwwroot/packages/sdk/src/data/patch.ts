@@ -61,18 +61,25 @@ function rowsOf(value: unknown): ListItem[] {
   return isListPage(value) ? value.items : isKeysetPages(value) ? value.pages.flatMap((page) => page.items) : []
 }
 
-/** Applies `patch` to the rows of a cached list that hold `id`, keeping the list's shape. */
-function patchRows(value: unknown, id: string, patch: Record<string, unknown>): unknown {
-  const patchPage = (page: DashboardListPage) =>
-    page.items.some((item) => item.id === id)
-      ? { ...page, items: page.items.map((item) => (item.id === id ? { ...item, ...patch } : item)) }
-      : page
+/** Replaces each row of a cached list that `replace` changes, keeping the list's shape and unchanged pages. */
+function mapRows(value: unknown, replace: (item: ListItem) => ListItem): unknown {
+  const mapPage = (page: DashboardListPage) => {
+    const items = page.items.map(replace)
 
-  if (isListPage(value)) {
-    return patchPage(value)
+    return items.every((item, index) => item === page.items[index]) ? page : { ...page, items }
   }
 
-  return isKeysetPages(value) && rowsOf(value).some((item) => item.id === id) ? { ...value, pages: value.pages.map(patchPage) } : value
+  if (isListPage(value)) {
+    return mapPage(value)
+  }
+
+  if (!isKeysetPages(value)) {
+    return value
+  }
+
+  const pages = value.pages.map(mapPage)
+
+  return pages.every((page, index) => page === value.pages[index]) ? value : { ...value, pages }
 }
 
 function versionOf(value: unknown): string | undefined {
@@ -124,7 +131,8 @@ export async function showNewRows(client: QueryClient, topic: string) {
 
 /**
  * Applies one stream change to the cache: patches the cached object and each list row that holds it, without
- * refetching the list, and drops a change older than the version the cache holds.
+ * refetching the list. Each holder decides alone: one already at or past the change's version keeps what it has,
+ * while the others still take the change, because the server never sends that version again.
  */
 export function applyChange(client: QueryClient, change: StreamChange): ChangeOutcome {
   const key = objectKey(change.topic, change.id)
@@ -148,17 +156,21 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
     return 'new'
   }
 
-  const fresh = isNewer(change, versionOf(cached)) && rows.every((row) => isNewer(change, row.version))
+  const objectIsOlder = cached !== undefined && isNewer(change, versionOf(cached))
+  const isOlderRow = (item: ListItem) => item.id === change.id && isNewer(change, item.version)
 
-  if (!fresh) {
+  if (!objectIsOlder && !rows.some(isOlderRow)) {
     return 'ignored'
   }
 
   if (!change.projection) {
-    void client.invalidateQueries({ queryKey: key })
+    if (objectIsOlder) {
+      void client.invalidateQueries({ queryKey: key })
+    }
+
     void client.invalidateQueries({
       queryKey: listKey(change.topic),
-      predicate: (query) => rowsOf(query.state.data).some((item) => item.id === change.id),
+      predicate: (query) => rowsOf(query.state.data).some(isOlderRow),
     })
 
     return 'refetch'
@@ -166,11 +178,18 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
 
   const patch = { ...change.projection, version: change.version }
 
-  if (cached !== undefined) {
+  if (objectIsOlder) {
     client.setQueryData(key, typeof cached === 'object' && cached !== null ? { ...cached, ...patch } : patch)
   }
 
-  client.setQueriesData({ queryKey: listKey(change.topic) }, (data: unknown) => patchRows(data, change.id, patch))
+  for (const [listQueryKey, data] of lists) {
+    if (rowsOf(data).some(isOlderRow)) {
+      client.setQueryData(
+        listQueryKey,
+        mapRows(data, (item) => (isOlderRow(item) ? { ...item, ...patch } : item)),
+      )
+    }
+  }
 
   return 'patched'
 }

@@ -67,6 +67,31 @@ describe('data patching', () => {
     expect(client.getQueryData(objectKey('diag.run', 'r1'))).toEqual({ id: 'r1', version: '10', status: 'Failed' })
   })
 
+  it('patches every holder older than the change when another list already holds its version', () => {
+    client.setQueryData(listKey('diag.run', { status: 'failed' }), { items: [{ id: 'r1', version: '2', status: 'Failed' }] })
+    client.setQueryData(listKey('diag.run', { status: 'all' }), { items: [{ id: 'r1', version: '1', status: 'Queued' }] })
+    client.setQueryData(objectKey('diag.run', 'r1'), { id: 'r1', version: '1', status: 'Queued' })
+
+    expect(applyChange(client, change('r1', '2', { status: 'Failed' }))).toBe('patched')
+
+    expect(client.getQueryData(listKey('diag.run', { status: 'all' }))).toEqual({
+      items: [{ id: 'r1', version: '2', status: 'Failed' }],
+    })
+    expect(client.getQueryData(objectKey('diag.run', 'r1'))).toEqual({ id: 'r1', version: '2', status: 'Failed' })
+  })
+
+  it('refetches only the holders older than a change without a projection', async () => {
+    const fresh = vi.fn(async (): Promise<DashboardListPage<Run>> => ({ items: [{ id: 'r1', version: '2', status: 'Failed' }] }))
+    const older = vi.fn(async (): Promise<DashboardListPage<Run>> => ({ items: [{ id: 'r1', version: '1', status: 'Queued' }] }))
+    await watch(listKey('diag.run', { status: 'failed' }), fresh)
+    await watch(listKey('diag.run', { status: 'all' }), older)
+
+    expect(applyChange(client, change('r1', '2', null))).toBe('refetch')
+
+    await vi.waitFor(() => expect(older).toHaveBeenCalledTimes(2))
+    expect(fresh).toHaveBeenCalledTimes(1)
+  })
+
   it('orders numeric versions of any length as numbers', () => {
     expect(compareVersions('10', '9')).toBe(1)
     expect(compareVersions('18446744073709551617', '18446744073709551616')).toBe(1)
