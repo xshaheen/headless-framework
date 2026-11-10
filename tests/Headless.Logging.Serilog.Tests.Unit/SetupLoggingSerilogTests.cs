@@ -55,15 +55,15 @@ public sealed partial class SetupLoggingSerilogTests : TestBase
     }
 
     [Fact]
-    public void should_keep_each_hosts_events_in_its_own_sinks_when_preserving_the_static_logger()
+    public void should_keep_each_hosts_events_in_its_own_sinks_by_default()
     {
         // given: two hosts side by side in one process, as test hosts are
         var firstSink = new CollectingSink();
         var secondSink = new CollectingSink();
         using var firstConfiguration = new ConfigurationManager();
         using var secondConfiguration = new ConfigurationManager();
-        var first = _BuildPreservingHost(firstConfiguration, firstSink);
-        using var second = _BuildPreservingHost(secondConfiguration, secondSink);
+        var first = _BuildHost(firstConfiguration, firstSink);
+        using var second = _BuildHost(secondConfiguration, secondSink);
         var firstFactory = first.GetRequiredService<ILoggerFactory>();
         var secondFactory = second.GetRequiredService<ILoggerFactory>();
 
@@ -79,7 +79,7 @@ public sealed partial class SetupLoggingSerilogTests : TestBase
     }
 
     [Fact]
-    public void should_make_the_host_logger_the_static_logger_by_default()
+    public void should_make_the_host_logger_the_static_logger_when_not_preserving_it()
     {
         // given
         var sink = new CollectingSink();
@@ -87,7 +87,8 @@ public sealed partial class SetupLoggingSerilogTests : TestBase
         var builder = _CreateBuilder(configuration);
         builder.AddHeadlessSerilog(
             new SerilogOptions { WriteToFiles = false },
-            (_, loggerConfiguration) => loggerConfiguration.WriteTo.Sink(sink)
+            (_, loggerConfiguration) => loggerConfiguration.WriteTo.Sink(sink),
+            preserveStaticLogger: false
         );
 
         try
@@ -136,13 +137,12 @@ public sealed partial class SetupLoggingSerilogTests : TestBase
         return builder;
     }
 
-    private static ServiceProvider _BuildPreservingHost(IConfigurationManager configuration, CollectingSink sink)
+    private static ServiceProvider _BuildHost(IConfigurationManager configuration, CollectingSink sink)
     {
         var builder = _CreateBuilder(configuration);
         builder.AddHeadlessSerilog(
             new SerilogOptions { WriteToFiles = false },
-            (_, loggerConfiguration) => loggerConfiguration.WriteTo.Sink(sink),
-            preserveStaticLogger: true
+            (_, loggerConfiguration) => loggerConfiguration.WriteTo.Sink(sink)
         );
 
         return builder.Services.BuildServiceProvider();
