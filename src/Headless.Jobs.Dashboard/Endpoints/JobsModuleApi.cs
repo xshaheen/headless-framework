@@ -97,10 +97,18 @@ internal sealed class JobsModuleApi(
 
         var take = Math.Clamp(request.Limit ?? _DefaultListLimit, 1, MaxListLimit);
         var page = await _reader.ListRunsAsync(query, cursor, take, cancellationToken).ConfigureAwait(false);
-        var count = await _reader.CountRunsAsync(query, cancellationToken).ConfigureAwait(false);
+        // The list keeps the count its first page read, so a later page skips the count's second store read.
+        JobRunCount? count = cursor is null
+            ? await _reader.CountRunsAsync(query, cancellationToken).ConfigureAwait(false)
+            : null;
 
         return TypedResults.Json(
-            new JobsRunList([.. page.Runs.Select(JobsRunView.From)], count.Count, count.Capped, page.Next?.ToString()),
+            new JobsRunList(
+                [.. page.Runs.Select(JobsRunView.From)],
+                count?.Count,
+                count?.Capped,
+                page.Next?.ToString()
+            ),
             JobsDashboardJsonContext.Default.JobsRunList
         );
     }

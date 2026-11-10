@@ -274,8 +274,11 @@ internal sealed record JobsRunView(
 /// <summary>A run with its chain children, as the run page shows it.</summary>
 internal sealed record JobsRunDetail(JobsRunView Run, IReadOnlyList<Guid> Children);
 
-/// <summary>One page of runs, a count capped at <see cref="JobRunCount.DefaultCap"/>, and the next page's cursor.</summary>
-internal sealed record JobsRunList(IReadOnlyList<JobsRunView> Items, int Count, bool CountCapped, string? NextCursor);
+/// <summary>
+/// One page of runs and the next page's cursor; the first page also carries the count, capped at
+/// <see cref="JobRunCount.DefaultCap"/>, and a later page leaves it out.
+/// </summary>
+internal sealed record JobsRunList(IReadOnlyList<JobsRunView> Items, int? Count, bool? CountCapped, string? NextCursor);
 
 /// <summary>One attempt of a run: the node that ran it, when, and how it ended.</summary>
 internal sealed record JobsAttemptView(

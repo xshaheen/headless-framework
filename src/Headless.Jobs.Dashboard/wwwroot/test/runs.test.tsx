@@ -390,7 +390,7 @@ describe('jobs runs list', () => {
         extra: (request) => {
           if (request.path === 'jobs/runs') {
             return request.query?.after
-              ? { items: [], count: 312, countCapped: false, nextCursor: null }
+              ? { items: [], nextCursor: null }
               : { items: failed, count: 312, countCapped: false, nextCursor: 'next' }
           }
 

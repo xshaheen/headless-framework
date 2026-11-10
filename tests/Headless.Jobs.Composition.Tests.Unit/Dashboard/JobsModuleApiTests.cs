@@ -83,6 +83,43 @@ public sealed class JobsModuleApiTests : TestBase
             .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { [field] = rule });
     }
 
+    [Fact]
+    public async Task should_count_the_runs_on_the_first_page_only()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var jobs = Enumerable.Range(0, 3).Select(_ => JobsModuleNode.IdleJob(_time.GetUtcNow())).ToArray();
+        await _Store(app).AddTimeJobsAsync(jobs, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+        using var first = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/runs?limit=2",
+            cookie,
+            AbortToken
+        );
+        var firstPage = await JobsDashboardHttpHost.ReadAsync(first, AbortToken);
+
+        // when
+        using var second = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api
+                + "/runs?limit=2&after="
+                + Uri.EscapeDataString(firstPage.GetProperty("nextCursor").GetString()!),
+            cookie,
+            AbortToken
+        );
+
+        // then: the list keeps the first page's count, so a later page skips the count read
+        firstPage.GetProperty("count").GetInt32().Should().Be(3);
+        firstPage.GetProperty("countCapped").GetBoolean().Should().BeFalse();
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondPage = await JobsDashboardHttpHost.ReadAsync(second, AbortToken);
+        secondPage.GetProperty("items").GetArrayLength().Should().Be(1);
+        secondPage.TryGetProperty("count", out _).Should().BeFalse();
+        secondPage.TryGetProperty("countCapped", out _).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(0, 1)]
     [InlineData(1_000, 200)]
