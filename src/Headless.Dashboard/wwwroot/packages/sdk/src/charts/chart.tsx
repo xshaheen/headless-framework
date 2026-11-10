@@ -291,7 +291,9 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
       <div ref={ref} className="h-(--chart-height) min-w-0">
         {box ? chart : null}
       </div>
-      <span className="relative col-start-2 flex justify-between" aria-hidden="true">
+      {/* No wrapping: the present's mark is positioned near an edge, so its available width is a sliver, and a
+          break-anywhere rule inherited from the host card would stack it one letter per line. */}
+      <span className="relative col-start-2 flex justify-between whitespace-nowrap wrap-normal" aria-hidden="true">
         <span>{presentAt !== undefined && presentAt < presentEdgeShare ? null : rows[0]?.label}</span>
         {/* The present's mark sits under its bucket's centre, where the drawing's dashed line stands. It is pulled back by
             the same share of its own width, so it reaches the figure's edge at the first or last bucket and never past it. */}
