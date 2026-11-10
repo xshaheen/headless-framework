@@ -416,7 +416,7 @@ public sealed class JobsTraceLinkTests : TestBase
         public async Task<CronJobOccurrenceEntity<CronJobEntity>[]> OccurrencesAsync() =>
             await _Store.GetAllCronJobOccurrencesAsync(predicate: null, AbortToken);
 
-        public IJobsDashboardBackend DashboardBackend(List<JobExecutionState> dispatched)
+        public JobsDashboardBackend<TimeJobEntity, CronJobEntity> DashboardBackend(List<JobExecutionState> dispatched)
         {
             var dispatcher = Substitute.For<IJobsDispatcher>();
             dispatcher

@@ -2,7 +2,7 @@
 // near their size budget.
 'use no memo'
 
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Button } from '../components/button.tsx'
 import { Text } from '../components/display/text.tsx'
 import { useSelectionCommand, useViewKeys } from '../components/keymap.tsx'
@@ -39,6 +39,8 @@ export interface CommandActionProps {
   variant?: 'primary' | 'secondary' | 'danger'
   /** This is the selection's recommended recovery command: `R` runs it, or announces why the server refuses it. */
   recovery?: boolean
+  /** What the command reaches beyond the rows, stated in its confirmation: `12 stored occurrences go with it`. */
+  reach?: ReactNode
   onDone?: (rows: RowResult[]) => void
 }
 
@@ -117,6 +119,7 @@ export function CommandAction({
   commands,
   variant,
   recovery,
+  reach,
   onDone,
 }: CommandActionProps) {
   const { api, toasts } = useDashboard()
@@ -271,6 +274,7 @@ export function CommandAction({
       <ActionConfirm
         isOpen={pressed !== null}
         title={effect}
+        reach={reach}
         confirmLabel={effect}
         confirmation={confirmation}
         count={at.ids.length}

@@ -52,12 +52,16 @@ public sealed class JobsModuleApiTests : TestBase
     }
 
     [Theory]
-    [InlineData("kind=Recurring")]
-    [InlineData("status=Exploded")]
-    [InlineData("after=not-a-cursor")]
-    [InlineData("sort=payload")]
-    [InlineData("direction=sideways")]
-    public async Task should_answer_400_for_a_runs_query_it_cannot_read(string query)
+    [InlineData("kind=Recurring", "kind", "enum")]
+    [InlineData("status=Exploded", "status", "enum")]
+    [InlineData("after=not-a-cursor", "after", "format")]
+    [InlineData("sort=payload", "sort", "enum")]
+    [InlineData("direction=sideways", "direction", "enum")]
+    public async Task should_answer_400_naming_the_field_and_rule_for_a_runs_query_it_cannot_read(
+        string query,
+        string field,
+        string rule
+    )
     {
         // given
         await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
@@ -74,6 +78,46 @@ public sealed class JobsModuleApiTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(response, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { [field] = rule });
+    }
+
+    [Fact]
+    public async Task should_count_the_runs_on_the_first_page_only()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var jobs = Enumerable.Range(0, 3).Select(_ => JobsModuleNode.IdleJob(_time.GetUtcNow())).ToArray();
+        await _Store(app).AddTimeJobsAsync(jobs, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+        using var first = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/runs?limit=2",
+            cookie,
+            AbortToken
+        );
+        var firstPage = await JobsDashboardHttpHost.ReadAsync(first, AbortToken);
+
+        // when
+        using var second = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api
+                + "/runs?limit=2&after="
+                + Uri.EscapeDataString(firstPage.GetProperty("nextCursor").GetString()!),
+            cookie,
+            AbortToken
+        );
+
+        // then: the list keeps the first page's count, so a later page skips the count read
+        firstPage.GetProperty("count").GetInt32().Should().Be(3);
+        firstPage.GetProperty("countCapped").GetBoolean().Should().BeFalse();
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondPage = await JobsDashboardHttpHost.ReadAsync(second, AbortToken);
+        secondPage.GetProperty("items").GetArrayLength().Should().Be(1);
+        secondPage.TryGetProperty("count", out _).Should().BeFalse();
+        secondPage.TryGetProperty("countCapped", out _).Should().BeFalse();
     }
 
     [Theory]
@@ -172,6 +216,9 @@ public sealed class JobsModuleApiTests : TestBase
         // then
         sameSort.StatusCode.Should().Be(HttpStatusCode.OK);
         otherSort.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(otherSort, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["after"] = "invalid" });
     }
 
     [Fact]
@@ -385,6 +432,9 @@ public sealed class JobsModuleApiTests : TestBase
 
         // then
         missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(missing, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["expression"] = "required" });
         clamped.StatusCode.Should().Be(HttpStatusCode.OK);
         (await JobsDashboardHttpHost.ReadAsync(clamped, AbortToken))
             .GetProperty("nextFires")
@@ -580,24 +630,21 @@ public sealed class JobsModuleApiTests : TestBase
             _log,
             AbortToken,
             configure: services =>
-            {
-                var factory = services.Last(x => x.ServiceType == typeof(IJobsDashboardBackend)).ImplementationFactory!;
-                services.Replace(
-                    ServiceDescriptor.Singleton(provider =>
+                InterceptedJobsDashboardBackend.Replace(
+                    services,
+                    inner =>
                         InterceptedJobsDashboardBackend.Wrap(
-                            (IJobsDashboardBackend)factory(provider),
+                            inner,
                             (method, _, proceed) =>
                                 string.Equals(
                                     method,
-                                    nameof(IJobsDashboardBackend.CountRunsByBucketAsync),
+                                    nameof(IJobsDashboardReader.CountRunsByBucketAsync),
                                     StringComparison.Ordinal
                                 )
                                     ? _WithFirstBucketUnread((Task<IReadOnlyList<JobRunBucket>>)proceed()!)
                                     : proceed()
                         )
-                    )
-                );
-            }
+                )
         );
         using var client = JobsDashboardHttpHost.Client(app);
         var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
@@ -614,14 +661,18 @@ public sealed class JobsModuleApiTests : TestBase
     }
 
     [Theory]
-    [InlineData("from=2026-11-01")]
-    [InlineData("from=2026-11-02&to=2026-11-01")]
-    [InlineData("from=2026-01-01&to=2026-12-31")]
-    [InlineData("from=2026-11-01&to=2026-11-02&zone=Mars/Olympus")]
-    [InlineData("from=2026-11-01&to=2026-11-02&kind=Recurring")]
-    [InlineData("from=9999-12-01&to=9999-12-31")]
-    [InlineData("from=0001-01-01&to=0001-01-02&zone=Pacific/Kiritimati")]
-    public async Task should_answer_400_for_a_series_query_it_cannot_read(string query)
+    [InlineData("from=2026-11-01", "to", "required")]
+    [InlineData("from=2026-11-02&to=2026-11-01", "to", "minimum")]
+    [InlineData("from=2026-01-01&to=2026-12-31", "to", "maximum")]
+    [InlineData("from=2026-11-01&to=2026-11-02&zone=Mars/Olympus", "zone", "enum")]
+    [InlineData("from=2026-11-01&to=2026-11-02&kind=Recurring", "kind", "enum")]
+    [InlineData("from=9999-12-01&to=9999-12-31", "to", "maximum")]
+    [InlineData("from=0001-01-01&to=0001-01-02&zone=Pacific/Kiritimati", "from", "minimum")]
+    public async Task should_answer_400_naming_the_field_and_rule_for_a_series_query_it_cannot_read(
+        string query,
+        string field,
+        string rule
+    )
     {
         // given
         await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
@@ -638,6 +689,9 @@ public sealed class JobsModuleApiTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(response, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { [field] = rule });
     }
 
     [Fact]

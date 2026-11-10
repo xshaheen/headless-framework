@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Time.Testing;
@@ -71,6 +72,56 @@ public sealed class ChangeReaderTests : TestBase
 
         first.Json.GetProperty("id").GetString().Should().Be("r-1");
         second.Json.GetProperty("id").GetString().Should().Be("r-2");
+    }
+
+    [Fact]
+    public async Task should_deliver_every_full_page_waiting_in_one_interval_when_the_source_reports_more()
+    {
+        _store.Script("diag", hasMore: true, FakeChangeStore.Change("diag", "run", "r-1", "1"));
+        _store.Script("diag", hasMore: true, FakeChangeStore.Change("diag", "run", "r-2", "1"));
+        _store.Script("diag", hasMore: false, FakeChangeStore.Change("diag", "run", "r-3", "1"));
+
+        await using var app = await StreamTestHost.StartDiagAsync(_time, _store, AbortToken);
+        using var client = app.GetTestClient();
+        await using var stream = await SseStream.OpenAsync(client, StreamTestHost.StreamPath("diag.run"), AbortToken);
+        await stream.NextAsync(AbortToken);
+
+        var ids = new List<string?>();
+
+        for (var i = 0; i < 3; i++)
+        {
+            var change = await FakeClock.AdvanceUntilAsync(
+                _time,
+                stream.NextExceptHeartbeatAsync(AbortToken),
+                AbortToken
+            );
+            ids.Add(change.Json.GetProperty("id").GetString());
+        }
+
+        ids.Should().Equal("r-1", "r-2", "r-3");
+
+        // The three pages were read at one clock time: no change-poll interval passed between them.
+        _store.ReadTimes.Take(3).Distinct().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_stop_reading_at_the_per_interval_cap_while_the_source_still_reports_more()
+    {
+        for (var i = 0; i <= ChangeReader.MaxReadsPerTick; i++)
+        {
+            _store.Script("diag", hasMore: true);
+        }
+
+        await using var app = await StreamTestHost.StartDiagAsync(_time, _store, AbortToken);
+        using var client = app.GetTestClient();
+        await using var stream = await SseStream.OpenAsync(client, StreamTestHost.StreamPath("diag.run"), AbortToken);
+        await stream.NextAsync(AbortToken);
+
+        await FakeClock.AdvanceUntilAsync(_time, () => _store.ReadCount > ChangeReader.MaxReadsPerTick, AbortToken);
+
+        var times = _store.ReadTimes;
+        times.Take(ChangeReader.MaxReadsPerTick).Distinct().Should().ContainSingle();
+        times[ChangeReader.MaxReadsPerTick].Should().BeAfter(times[0]);
     }
 
     [Fact]

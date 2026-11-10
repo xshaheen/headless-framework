@@ -1,8 +1,8 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTopics } from '../stream/hooks.ts'
 import { listKey } from './client.tsx'
-import type { DashboardListPage, ListItem } from './patch.ts'
+import { mergeFetchedPage, type DashboardListPage, type ListItem } from './patch.ts'
 
 /** The server order of a list: a column's sort key, read up or down. */
 export interface ListSort {
@@ -56,6 +56,7 @@ export interface DashboardKeysetListOptions<T extends ListItem> {
 export function useDashboardKeysetList<T extends ListItem>(options: DashboardKeysetListOptions<T>) {
   useTopics([options.topic])
 
+  const client = useQueryClient()
   const { sort, range } = options
   const search = options.search || undefined
   const scoped = sort !== undefined || search !== undefined || range !== undefined
@@ -65,7 +66,8 @@ export function useDashboardKeysetList<T extends ListItem>(options: DashboardKey
 
   const query = useInfiniteQuery({
     queryKey,
-    queryFn: ({ pageParam, signal }) => options.fetchPage(pageParam, { sort, search, range, signal }),
+    queryFn: async ({ pageParam, signal }) =>
+      mergeFetchedPage(client, options.topic, await options.fetchPage(pageParam, { sort, search, range, signal })),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     // A new order or search of the same filter keeps the old rows until the first page of the new one arrives; a new

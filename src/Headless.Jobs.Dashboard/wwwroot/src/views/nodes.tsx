@@ -1,6 +1,8 @@
 import { useDashboard } from '@headless/dashboard-sdk'
 import {
+  Banner,
   DetailPanel,
+  ExceptionBlock,
   FieldGrid,
   GridField,
   Mono,
@@ -16,7 +18,7 @@ import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { fetchNodes, nodeStatusMark, type JobNode } from '../cron.ts'
-import { CellText, JobsStats, QueryState, StaleNotice } from '../parts.tsx'
+import { CellText, firstLine, JobsStats, QueryState, StaleNotice, Time } from '../parts.tsx'
 
 export default function NodesView() {
   const { api } = useDashboard()
@@ -26,6 +28,7 @@ export default function NodesView() {
   const frame = usePageFrame({ viewId: 'jobs.nodes', rows })
   const open = rows.find((row) => row.id === frame.openId)
   const alive = rows.filter((row) => row.state === 'Alive').length
+  const serving = rows.find((row) => row.isLocal && row.lastHostException)
 
   return (
     <PageFrame
@@ -43,6 +46,7 @@ export default function NodesView() {
       panel={open ? <NodePanel node={open} /> : undefined}
     >
       <StaleNotice what="these servers" onRefresh={() => void nodes.refetch()} />
+      {serving ? <HostExceptionAlert node={serving} /> : null}
       <QueryState query={nodes} label="Loading servers" rows={3}>
         {() => (
           <DataTable
@@ -58,6 +62,7 @@ export default function NodesView() {
                 cell: (row) => (
                   <CellText title={row.identity}>
                     <Mono>{row.identity}</Mono>
+                    {row.isLocal ? <Tag>This node</Tag> : null}
                   </CellText>
                 ),
                 isRowHeader: true,
@@ -81,8 +86,42 @@ export default function NodesView() {
                 width: 120,
               },
               {
+                id: 'maxConcurrency',
+                header: 'Max concurrency',
+                cell: (row) => (
+                  <CellText>
+                    {row.maxConcurrency == null ? (
+                      <Text tone="faint">Not published</Text>
+                    ) : (
+                      format.number(row.maxConcurrency)
+                    )}
+                  </CellText>
+                ),
+                priority: 2,
+                width: 130,
+              },
+              {
+                id: 'running',
+                header: 'Running',
+                cell: (row) => <CellText>{format.count({ value: row.running, capped: row.runningCapped })}</CellText>,
+                width: 90,
+              },
+              {
+                id: 'lastBeat',
+                header: 'Last beat',
+                cell: (row) => (
+                  <CellText>
+                    <Time value={row.lastHeartbeatAt ?? undefined} short missing="Not tracked" />
+                  </CellText>
+                ),
+                priority: 2,
+                width: 110,
+              },
+              {
                 id: 'claims',
                 header: 'Claimed functions',
+                // The list keeps the server and its state at narrow widths; the panel shows what it claims.
+                priority: 2,
                 cell: (row) => (
                   <CellText title={row.claimedFunctions?.join(', ')}>
                     <Claims node={row} />
@@ -119,7 +158,41 @@ function Claims({ node, links }: { node: JobNode; links?: boolean }) {
   )
 }
 
+/** The serving node's last scheduler exception, the only one this page can know: a peer keeps its own. */
+function HostExceptionAlert({ node }: { node: JobNode }) {
+  return (
+    <Banner>
+      <Text role="alert" tone="error">
+        {`This node's scheduler last failed: ${firstLine(node.lastHostException ?? undefined) ?? ''}`}
+      </Text>
+      <Time value={node.lastHostExceptionAt ?? undefined} />
+    </Banner>
+  )
+}
+
+/** A peer's host exception lives in its own process, so only the serving node's can show here. */
+function HostException({ node }: { node: JobNode }) {
+  if (!node.isLocal) {
+    return <Text tone="faint">Known only on that node</Text>
+  }
+
+  if (!node.lastHostException) {
+    return <>None</>
+  }
+
+  const [message = '', ...stack] = node.lastHostException.split('\n')
+
+  return (
+    <>
+      <Time value={node.lastHostExceptionAt ?? undefined} />
+      <ExceptionBlock message={message} stack={stack.length > 0 ? stack.join('\n') : undefined} />
+    </>
+  )
+}
+
 function NodePanel({ node }: { node: JobNode }) {
+  const format = useFormat()
+
   return (
     <DetailPanel
       label={`Server ${node.identity}`}
@@ -135,6 +208,19 @@ function NodePanel({ node }: { node: JobNode }) {
                 <FieldGrid columns={2}>
                   <GridField label="State">{node.state}</GridField>
                   <GridField label="Role">{node.role ?? 'None'}</GridField>
+                  <GridField label="Serves this page">{node.isLocal ? 'This node' : 'No'}</GridField>
+                  <GridField label="Max concurrency">
+                    {node.maxConcurrency == null ? 'Not published' : format.number(node.maxConcurrency)}
+                  </GridField>
+                  <GridField label="Running">
+                    {format.count({ value: node.running, capped: node.runningCapped })}
+                  </GridField>
+                  <GridField label="Last beat">
+                    <Time value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
+                  </GridField>
+                  <GridField label="Last host exception" span={2}>
+                    <HostException node={node} />
+                  </GridField>
                 </FieldGrid>
               </div>
               <section aria-label="Functions this server runs">

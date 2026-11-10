@@ -14,16 +14,26 @@ import {
 } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQueryClient } from '@headless/dashboard-sdk/query'
+import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef } from 'react'
+import { StatusDistribution, useRunsPerDay } from '../insight.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import { JobsStats, RunProgress, StaleNotice, Time, useJobsAttention, type AttentionItem } from '../parts.tsx'
+import {
+  JobsStats,
+  RunProgress,
+  StaleNotice,
+  Time,
+  useJobsAttention,
+  useJobsCounts,
+  type AttentionItem,
+} from '../parts.tsx'
 import {
   fetchRuns,
   markDone,
   readFilter,
+  readRunProjection,
   runsTopic,
   useJobsCommands,
   usePending,
@@ -50,7 +60,7 @@ export default function JobsDashboard() {
   const navigate = useNavigate()
   const client = useQueryClient()
   const cronJobs = useNextRecurringRuns()
-  const next = cronJobs.next[0]
+  const next = useNextExecution(cronJobs.next[0])
   const frame = usePageFrame({ viewId: 'jobs.dashboard', rows: [] })
 
   return (
@@ -63,7 +73,7 @@ export default function JobsDashboard() {
           description={
             next ? (
               <>
-                Next execution <Time value={next.nextDueUtc} /> · <Mono>{next.function}</Mono>
+                Next execution <Time value={next.at} /> · <Mono>{next.function}</Mono>
               </>
             ) : undefined
           }
@@ -87,6 +97,8 @@ export default function JobsDashboard() {
         <ProcessingNow />
         <NextRecurringRuns {...cronJobs} />
         <JobsAttention />
+        <RunsByStatus />
+        <RunsPerDay />
       </Cards>
     </PageFrame>
   )
@@ -190,6 +202,106 @@ function ProcessingNow() {
             ))}
         </CardRow>
       ))}
+    </Card>
+  )
+}
+
+/**
+ * The time job due soonest: the list read ascending from now, one row, among the runs still waiting to start. The
+ * list endpoint reads its newest first unless told otherwise.
+ */
+function useNextTimeJob() {
+  const { api } = useDashboard()
+  const client = useQueryClient()
+  const next = useQuery({
+    queryKey: ['jobs', 'next-time-job'],
+    queryFn: async () => {
+      const answer = await api.request<{ items: Run[] }>({
+        method: 'GET',
+        path: 'jobs/runs',
+        query: {
+          kind: 'TimeJob',
+          status: ['Idle', 'Queued'],
+          from: new Date().toISOString(),
+          sort: 'executionTime',
+          direction: 'ascending',
+          limit: '1',
+        },
+      })
+
+      return answer.items[0] ?? null
+    },
+  })
+
+  // Read again when the shown job moves on, or a waiting time job is due sooner; a progress tick of another run is not.
+  // A change with no projection says neither, so it is read again in case it is a time job due sooner.
+  useStreamEvent('change', (change) => {
+    const shown = next.data
+    const run = readRunProjection(change.projection)
+    const sooner =
+      !run ||
+      (run.kind === 'TimeJob' &&
+        (run.status === 'Idle' || run.status === 'Queued') &&
+        run.executionTime !== undefined &&
+        (!shown?.executionTime || Date.parse(run.executionTime) < Date.parse(shown.executionTime)))
+
+    if (change.topic === runsTopic && (change.id === shown?.id || sooner)) {
+      void client.invalidateQueries({ queryKey: ['jobs', 'next-time-job'] })
+    }
+  })
+
+  return next
+}
+
+/** The next execution of either kind: the next cron fire or the next scheduled time job, whichever is sooner. */
+function useNextExecution(cronJob: CronJob | undefined) {
+  const timeJob = useNextTimeJob().data
+  const fire = cronJob ? { at: cronJob.nextDueUtc, function: cronJob.function } : undefined
+  const scheduled = timeJob?.executionTime ? { at: timeJob.executionTime, function: timeJob.function } : undefined
+
+  if (!fire || !scheduled) {
+    return fire ?? scheduled
+  }
+
+  return Date.parse(scheduled.at) < Date.parse(fire.at) ? scheduled : fire
+}
+
+/** The stored runs by status, from the counts the strip and the sidebar share. */
+function RunsByStatus() {
+  const counts = useJobsCounts()
+
+  return (
+    <Card
+      title="Runs by status"
+      empty={
+        counts.isError ? (
+          <LoadError message={counts.error.message} onRetry={() => void counts.refetch()} />
+        ) : (
+          <Skeleton label="Loading the runs by status" rows={2} />
+        )
+      }
+    >
+      {counts.data ? (
+        <CardRow name="All stored runs">
+          <StatusDistribution
+            counts={counts.data.counts}
+            stale={counts.data.stale.length > 0}
+            fetchedAt={counts.dataUpdatedAt}
+          />
+        </CardRow>
+      ) : null}
+    </Card>
+  )
+}
+
+/** Runs per day by status, the range control in the card's heading. */
+function RunsPerDay() {
+  const format = useFormat()
+  const { control, body } = useRunsPerDay({ unit: 'runs', unitOne: 'run' })
+
+  return (
+    <Card title="Runs per day" action={control}>
+      <CardRow name={`By execution day, ${format.timeZone}`}>{body}</CardRow>
     </Card>
   )
 }

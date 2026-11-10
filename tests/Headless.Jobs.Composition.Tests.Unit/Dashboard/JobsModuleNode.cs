@@ -37,7 +37,7 @@ internal sealed class JobsModuleNode : IAsyncDisposable
         FakeTimeProvider time,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? sharedStore = null,
         string nodeId = "node-a",
-        Func<IJobsDashboardBackend, IJobsDashboardBackend>? backend = null
+        Func<JobsDashboardBackend<TimeJobEntity, CronJobEntity>, IJobsDashboardReaderWriter>? backend = null
     )
     {
         var publisher = new RecordingEventPublisher();
@@ -60,10 +60,7 @@ internal sealed class JobsModuleNode : IAsyncDisposable
 
         if (backend is not null)
         {
-            var factory = services.Single(x => x.ServiceType == typeof(IJobsDashboardBackend)).ImplementationFactory!;
-            services.Replace(
-                ServiceDescriptor.Singleton(provider => backend((IJobsDashboardBackend)factory(provider)))
-            );
+            InterceptedJobsDashboardBackend.Replace(services, backend);
         }
 
         return new JobsModuleNode(services.BuildServiceProvider(), publisher);

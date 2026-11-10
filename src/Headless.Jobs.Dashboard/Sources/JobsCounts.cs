@@ -9,11 +9,11 @@ namespace Headless.Jobs;
 /// The Jobs sidebar's counts: one capped count of runs per <see cref="JobStatus"/>, keyed by the status name, the same
 /// count the runs list shows when filtered to that status.
 /// </summary>
-internal sealed class JobsCounts(IJobsDashboardBackend backend)
+internal sealed class JobsCounts(IJobsDashboardReader reader)
 {
     private static readonly JobStatus[] _Statuses = Enum.GetValues<JobStatus>();
 
-    private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
+    private readonly IJobsDashboardReader _reader = Argument.IsNotNull(reader);
 
     public async Task<IReadOnlyDictionary<string, DashboardCount>> GetCountsAsync(CancellationToken cancellationToken)
     {
@@ -23,7 +23,7 @@ internal sealed class JobsCounts(IJobsDashboardBackend backend)
         foreach (var status in _Statuses)
         {
             var query = new JobsRunScope { Statuses = [status] }.ToQuery();
-            var count = await _backend.CountRunsAsync(query, cancellationToken).ConfigureAwait(false);
+            var count = await _reader.CountRunsAsync(query, cancellationToken).ConfigureAwait(false);
             counts[status.ToString()] = new DashboardCount { Count = count.Count, Capped = count.Capped };
         }
 

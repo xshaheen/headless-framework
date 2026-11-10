@@ -18,6 +18,8 @@ interface ChartBase {
   label: string
   /** What one value counts, plural: `runs`, `messages/s`. */
   unit: string
+  /** The unit for a value of exactly one, `run`; without it a value of one reads with the plural. */
+  unitOne?: string
   /** When the server read the data. */
   asOf: TimeInput
   /** The IANA zone the server cut the buckets in, so `09:00` means the server's 09:00. */
@@ -32,6 +34,11 @@ export interface TimeSeriesChartProps extends ChartBase {
   start: TimeInput
   /** How long one bucket is, in seconds. */
   intervalSeconds: number
+  /**
+   * The bucket that holds the present, for a chart that also counts what is scheduled: the axis marks it with `label`
+   * (`Today`), and every later bucket counts work not yet run, so its bars draw outlined and its list row says so.
+   */
+  present?: { index: number; label: string }
 }
 
 export interface DonutPart {
@@ -41,17 +48,19 @@ export interface DonutPart {
   count: CappedCount
 }
 
-export interface DonutChartProps extends ChartBase {
+export interface DonutChartProps extends Omit<ChartBase, 'asOf'> {
   kind: 'donut'
+  /** When the server read the counts; for counts with no range of their own, when they were fetched. */
+  asOf?: TimeInput
   parts: readonly DonutPart[]
   /**
    * Whether the server counted every item in the range. A share is shown only when this holds and no count is capped;
    * otherwise the chart becomes the list of counts, because a share of a partial count is a wrong number.
    */
   complete: boolean
-  /** The range the parts cover. */
-  start: TimeInput
-  end: TimeInput
+  /** The range the parts cover; without one, the parts count every item the server holds. */
+  start?: TimeInput
+  end?: TimeInput
   /** What the chart says when every part counts zero; `No {unit} in this range` by default. */
   empty?: string
 }
@@ -118,13 +127,27 @@ function intervalPhrase(locale: string, seconds: number) {
 export interface BucketRow {
   /** The bucket's start, as the list and the tooltip name it. */
   label: string
+  /** The present's label on its bucket, or `scheduled` on a later one, which the list and the tooltip add to `label`. */
+  mark?: string
+  /** Whether the bucket lies after the present, so it counts scheduled work. */
+  future: boolean
   /** One text per series, in the series' order: the exact value with its unit, or that it was not measured. */
   values: string[]
 }
 
+/** A bucket's name with its mark, as the list and the tooltip show it: `Nov 12 · scheduled`. */
+export function bucketName(row: Pick<BucketRow, 'label' | 'mark'>) {
+  return row.mark ? `${row.label} · ${row.mark}` : row.label
+}
+
 /** The text of one served value, shared by the tooltip and the list so the two can never disagree. */
-export function valueText(format: Formatters, value: number | null, unit: string) {
-  return value === null ? 'not measured' : `${format.number(value)} ${unit}`
+export function valueText(format: Formatters, value: number | null, unit: Pick<ChartBase, 'unit' | 'unitOne'>) {
+  return value === null ? 'not measured' : `${format.number(value)} ${unitFor(value, unit)}`
+}
+
+/** The unit word for `value`: the singular for exactly one when the chart names one, else the plural. */
+export function unitFor(value: number, unit: Pick<ChartBase, 'unit' | 'unitOne'>) {
+  return value === 1 && unit.unitOne ? unit.unitOne : unit.unit
 }
 
 /** One row per bucket, which both the tooltip and the list render. */
@@ -133,9 +156,13 @@ export function bucketRows(props: TimeSeriesChartProps, format: Formatters): Buc
   const start = toEpoch(props.start)
   const label = bucketFormat(format.locale, props.zone, props.intervalSeconds, count * props.intervalSeconds)
 
+  const present = props.present
+
   return Array.from({ length: count }, (_, index) => ({
     label: label(start + index * props.intervalSeconds * 1_000),
-    values: props.series.map((item) => valueText(format, item.points[index] ?? null, props.unit)),
+    mark: present?.index === index ? present.label : present && index > present.index ? 'scheduled' : undefined,
+    future: present !== undefined && index > present.index,
+    values: props.series.map((item) => valueText(format, item.points[index] ?? null, props)),
   }))
 }
 
@@ -151,8 +178,11 @@ export function timeSeriesSentence(props: TimeSeriesChartProps, rows: readonly B
   const gaps = props.series.some((item) => item.points.some((point) => point === null))
     ? '; unmeasured buckets are gaps'
     : ''
+  const present = props.present && rows[props.present.index]
+  const later = props.present && props.present.index < rows.length - 1 ? ', later buckets are scheduled and drawn outlined' : ''
+  const scheduled = present ? `; ${props.present!.label} is ${present.label}${later}` : ''
 
-  return `${props.label}: ${names(format.locale, props.series)} in ${props.unit}, every ${intervalPhrase(format.locale, props.intervalSeconds)}, ${range}${gaps}; as of ${format.zonedTime(props.asOf, props.zone)}.`
+  return `${props.label}: ${names(format.locale, props.series)} in ${props.unit}, every ${intervalPhrase(format.locale, props.intervalSeconds)}, ${range}${gaps}${scheduled}; as of ${format.zonedTime(props.asOf, props.zone)}.`
 }
 
 export interface PartRow {
@@ -169,12 +199,17 @@ export function partRows(props: DonutChartProps, format: Formatters): PartRow[] 
 
   return props.parts.map((part) => ({
     name: part.name,
-    count: `${format.count(part.count)} ${props.unit}`,
+    count: `${format.count(part.count)} ${part.count.capped ? props.unit : unitFor(part.count.value, props)}`,
     share: shares ? format.number(part.count.value / total, { style: 'percent', maximumFractionDigits: 1 }) : null,
   }))
 }
 
+/** The range the parts cover, or `all {unit}` when they have none. */
 export function donutRange(props: DonutChartProps, format: Formatters) {
+  if (props.start === undefined || props.end === undefined) {
+    return `all ${props.unit}`
+  }
+
   const start = toEpoch(props.start)
   const end = toEpoch(props.end)
   const label = bucketFormat(format.locale, props.zone, 60, (end - start) / 1_000)
@@ -185,5 +220,7 @@ export function donutRange(props: DonutChartProps, format: Formatters) {
 export function donutSentence(props: DonutChartProps, rows: readonly PartRow[], format: Formatters) {
   const parts = rows.map((row) => `${row.name} ${row.count}${row.share ? `, ${row.share}` : ''}`).join('; ')
 
-  return `${props.label}: ${parts}, ${donutRange(props, format)}; as of ${format.zonedTime(props.asOf, props.zone)}.`
+  const asOf = props.asOf === undefined ? '' : `; as of ${format.zonedTime(props.asOf, props.zone)}`
+
+  return `${props.label}: ${parts}, ${donutRange(props, format)}${asOf}.`
 }

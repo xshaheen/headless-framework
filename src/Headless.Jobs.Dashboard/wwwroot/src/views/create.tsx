@@ -16,11 +16,14 @@ import { useState } from 'react'
 import { fetchPreview } from '../cron.ts'
 import { useFunctions, useStale } from '../parts.tsx'
 
-/** The run conditions a chain step offers, in the framework's words, and the `RunCondition` each sends. */
+/** Every run condition a chain step can take, in the framework's words, and the `RunCondition` each sends. */
 const runConditions = [
   { value: 'OnSuccess', label: 'On success' },
   { value: 'OnFailure', label: 'On failure' },
+  { value: 'OnCancelled', label: 'On cancel' },
+  { value: 'OnFailureOrCancelled', label: 'On failure or cancel' },
   { value: 'OnAnyCompletedStatus', label: 'Always' },
+  { value: 'InProgress', label: 'Alongside it, once it starts' },
 ] as const
 
 const kinds = [
@@ -63,6 +66,24 @@ function parseRequest(text: string): { value?: unknown; error?: string } {
   }
 }
 
+/**
+ * Reads the retry intervals field: seconds before each retry, separated by commas or spaces; empty sends none, so the
+ * function's retry policy paces them.
+ */
+function parseIntervals(text: string): { value?: number[]; error?: string } {
+  const parts = text.split(/[\s,]+/).filter(Boolean)
+
+  if (parts.length === 0) {
+    return {}
+  }
+
+  const value = parts.map(Number)
+
+  return value.every((seconds) => Number.isInteger(seconds) && seconds >= 0)
+    ? { value }
+    : { error: 'Retry intervals must be whole seconds, such as 30, 60, 300.' }
+}
+
 function submitError(caught: unknown) {
   return caught instanceof DashboardApiError ? caught.message : 'Could not create it. Try again.'
 }
@@ -99,6 +120,8 @@ export function TimeJobForm({
   const [timeZoneId, setTimeZoneId] = useState('')
   const [description, setDescription] = useState('')
   const [retries, setRetries] = useState('0')
+  const [retryIntervals, setRetryIntervals] = useState('')
+  const [intervalsError, setIntervalsError] = useState<string>()
   const [errors, setErrors] = useState<Readonly<Record<number, string>>>({})
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -146,10 +169,12 @@ export function TimeJobForm({
     }
 
     const tree = body(root, true)
+    const intervals = parseIntervals(retryIntervals)
     setErrors(found)
+    setIntervalsError(intervals.error)
     setError(undefined)
 
-    if (Object.keys(found).length > 0) {
+    if (Object.keys(found).length > 0 || intervals.error) {
       return
     }
 
@@ -165,6 +190,7 @@ export function TimeJobForm({
           ...(timeZoneId ? { timeZoneId } : {}),
           ...(description ? { description } : {}),
           retries: Number(retries) || 0,
+          ...(intervals.value ? { retryIntervals: intervals.value } : {}),
         },
       })
       onCreated(created.id)
@@ -245,6 +271,13 @@ export function TimeJobForm({
           onChange={setTimeZoneId}
         />
         <TextInputField label="Retries" inputMode="numeric" value={retries} onChange={setRetries} />
+        <TextInputField
+          label="Retry intervals (seconds)"
+          description="The wait before each retry, such as 30, 60, 300; the last repeats. Blank uses the function's retry policy."
+          value={retryIntervals}
+          onChange={setRetryIntervals}
+          error={intervalsError}
+        />
         {error ? (
           <Text as="p" tone="error" role="alert">
             {error}
@@ -309,6 +342,9 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
   const [timeZoneId, setTimeZoneId] = useState('')
   const [request, setRequest] = useState('')
   const [description, setDescription] = useState('')
+  const [retries, setRetries] = useState('0')
+  const [retryIntervals, setRetryIntervals] = useState('')
+  const [intervalsError, setIntervalsError] = useState<string>()
   const [fieldErrors, setFieldErrors] = useState<{ function?: string; request?: string }>({})
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -324,11 +360,13 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
     }
 
     const parsed = parseRequest(request)
+    const intervals = parseIntervals(retryIntervals)
     const found = { function: fn ? undefined : chooseFunction, request: parsed.error }
     setFieldErrors(found)
+    setIntervalsError(intervals.error)
     setError(undefined)
 
-    if (found.function || found.request) {
+    if (found.function || found.request || intervals.error) {
       return
     }
 
@@ -344,6 +382,8 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
           ...(timeZoneId ? { timeZoneId } : {}),
           ...(parsed.value !== undefined ? { request: parsed.value } : {}),
           ...(description ? { description } : {}),
+          retries: Number(retries) || 0,
+          ...(intervals.value ? { retryIntervals: intervals.value } : {}),
         },
       })
       onCreated(created.id)
@@ -412,6 +452,14 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
           value={request}
           onChange={setRequest}
           error={fieldErrors.request}
+        />
+        <TextInputField label="Retries" inputMode="numeric" value={retries} onChange={setRetries} />
+        <TextInputField
+          label="Retry intervals (seconds)"
+          description="The wait before each retry, such as 30, 60, 300; the last repeats. Blank uses the function's retry policy."
+          value={retryIntervals}
+          onChange={setRetryIntervals}
+          error={intervalsError}
         />
         {error ? (
           <Text as="p" tone="error" role="alert">

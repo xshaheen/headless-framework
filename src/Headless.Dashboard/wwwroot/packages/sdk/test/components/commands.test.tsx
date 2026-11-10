@@ -122,6 +122,19 @@ describe('commands', () => {
     expect(screen.getByRole('alert').contains(list)).toBe(true)
   })
 
+  it('states the command’s reach in its confirmation', async () => {
+    const user = userEvent.setup()
+    const remove = command({ id: 'delete', label: 'Delete', supportsFilter: false })
+    renderWithDashboard(
+      <CommandAction module="diag" command={remove} ids={['c1']} noun="cron job" reach="12 stored occurrences go with it" />,
+      () => ({ rows: [{ id: 'c1', outcome: 'done' }] }),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    expect(within(await screen.findByRole('dialog')).getByText('12 stored occurrences go with it')).toBeTruthy()
+  })
+
   it('keeps Confirm disabled until the typed count matches', async () => {
     const user = userEvent.setup()
     const onConfirm = vi.fn()

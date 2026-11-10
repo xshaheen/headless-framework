@@ -12,6 +12,7 @@ import {
   LineChart,
   Pie,
   PieChart,
+  ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
@@ -24,6 +25,7 @@ import type { Formatters } from '../locale/formatters.ts'
 import { useFormat } from '../locale/locale.tsx'
 import { ChartIcon, ListIcon } from '../icons/index.ts'
 import {
+  bucketName,
   bucketRows,
   donutSentence,
   partRows,
@@ -74,11 +76,14 @@ function DonutChart(props: DonutChartProps) {
 
   // Without exact, complete counts a slice's size would claim a share nobody measured, so the counts stand alone.
   if (rows.some((row) => row.share === null)) {
+    // Counts with no range say what they cover, since nothing else on the figure does.
+    const covers = props.start === undefined || props.end === undefined ? `Counts of all ${props.unit}. ` : ''
+
     return (
       <figure className="flex min-w-0 flex-col gap-2" style={seriesVariables(tones) as CSSProperties}>
         <PartList label={props.label} rows={rows} />
         <figcaption className="type-small">
-          <Text tone="faint">These counts are partial, so no shares are shown.</Text>
+          <Text tone="faint">{`${covers}These counts are partial, so no shares are shown.`}</Text>
         </figcaption>
       </figure>
     )
@@ -183,10 +188,16 @@ function useBox() {
   return [ref, box] as const
 }
 
+// The end date labels are not measured, so the present's mark claims the outer fifth of the axis at either end: a date
+// label there would run into it, and the range's ends are already in the image's sentence.
+const presentEdgeShare = 0.2
+
 function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProps; rows: readonly BucketRow[]; format: Formatters }) {
   const [ref, box] = useBox()
-  const { series, kind } = props
+  const { series, kind, present } = props
   const length = rows.length
+  // The present's centre as a share of the axis; a range that ends today puts it on the last bucket.
+  const presentAt = present && length > 0 ? (present.index + 0.5) / length : undefined
   const data = useMemo(
     () =>
       Array.from({ length }, (_, index) =>
@@ -226,7 +237,7 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
         content={({ active, label }) => {
           const row = active && typeof label === 'number' ? rows[label] : undefined
 
-          return row ? <TooltipBody title={row.label} entries={props.series.map((item, at) => [item.name, row.values[at]!])} /> : null
+          return row ? <TooltipBody title={bucketName(row)} entries={props.series.map((item, at) => [item.name, row.values[at]!])} /> : null
         }}
       />
     </>
@@ -250,8 +261,22 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
     ) : (
       <BarChart {...shared} barCategoryGap="20%">
         {axes}
+        {present ? <ReferenceLine x={present.index} stroke="var(--edge)" strokeDasharray="3 3" /> : null}
         {props.series.map((item, at) => (
-          <Bar key={item.name} dataKey={`s${at}`} name={item.name} stackId="stack" fill={seriesColour(at)} isAnimationActive={false} />
+          <Bar key={item.name} dataKey={`s${at}`} name={item.name} stackId="stack" fill={seriesColour(at)} isAnimationActive={false}>
+            {/* A bucket after the present counts work not yet run, so it is drawn outlined, as the schedule strip draws a future fire hollow. */}
+            {present
+              ? rows.map((row, index) => (
+                  <Cell
+                    key={index}
+                    fill={seriesColour(at)}
+                    fillOpacity={row.future ? 0 : 1}
+                    stroke={row.future ? seriesColour(at) : 'none'}
+                    strokeWidth={row.future ? 1 : 0}
+                  />
+                ))
+              : null}
+          </Bar>
         ))}
       </BarChart>
     )
@@ -266,9 +291,21 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
       <div ref={ref} className="h-(--chart-height) min-w-0">
         {box ? chart : null}
       </div>
-      <span className="col-start-2 flex justify-between" aria-hidden="true">
-        <span>{rows[0]?.label}</span>
-        <span>{rows.at(-1)?.label}</span>
+      {/* No wrapping: the present's mark is positioned near an edge, so its available width is a sliver, and a
+          break-anywhere rule inherited from the host card would stack it one letter per line. */}
+      <span className="relative col-start-2 flex justify-between whitespace-nowrap wrap-normal" aria-hidden="true">
+        <span>{presentAt !== undefined && presentAt < presentEdgeShare ? null : rows[0]?.label}</span>
+        {/* The present's mark sits under its bucket's centre, where the drawing's dashed line stands. It is pulled back by
+            the same share of its own width, so it reaches the figure's edge at the first or last bucket and never past it. */}
+        {presentAt !== undefined ? (
+          <span
+            className="absolute top-0 font-medium text-muted-foreground"
+            style={{ left: `${presentAt * 100}%`, transform: `translateX(${-presentAt * 100}%)` }}
+          >
+            {present?.label}
+          </span>
+        ) : null}
+        <span>{presentAt !== undefined && presentAt > 1 - presentEdgeShare ? null : rows.at(-1)?.label}</span>
       </span>
     </div>
   )
@@ -345,7 +382,7 @@ function BucketList({ label, series, rows }: { label: string; series: readonly s
         <tbody>
           {rows.map((row, index) => (
             <tr key={index}>
-              <td>{row.label}</td>
+              <td>{bucketName(row)}</td>
               {row.values.map((value, at) => (
                 <td key={at} className="text-end">{value}</td>
               ))}

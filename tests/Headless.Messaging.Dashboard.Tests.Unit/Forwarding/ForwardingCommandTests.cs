@@ -321,6 +321,56 @@ public sealed class ForwardingCommandTests : TestBase
         _logA.Entries.Should().ContainSingle().Which.Actor.Should().Be("ops");
     }
 
+    [Theory]
+    [InlineData("GET", "/peer/changes", null, "cursor", "required")]
+    [InlineData("GET", "/peer/payload?kind=received", null, "id", "required")]
+    [InlineData("GET", "/peer/allowed?id=node-b~primary~x", null, "kind", "required")]
+    [InlineData("POST", "/peer/operations/messaging.re-execute/scope", "not json", "body", "json")]
+    [InlineData(
+        "POST",
+        "/peer/operations/messaging.re-execute/chunk",
+        """{"filter":{},"highWaterMark":"not-a-mark","chunkSize":1}""",
+        "highWaterMark",
+        "invalid"
+    )]
+    public async Task should_answer_a_validation_problem_naming_the_field_when_a_peer_call_lacks_valid_input(
+        string method,
+        string path,
+        string? body,
+        string field,
+        string rule
+    )
+    {
+        // given
+        await using var nodeB = await _StartBAsync(_Operate);
+        using var clientB = MessagingCommandHost.Client(nodeB);
+        using var request = new HttpRequestMessage(
+            new HttpMethod(method),
+            new Uri("/headless/api/messaging" + path, UriKind.Relative)
+        );
+        request.Headers.TryAddWithoutValidation(ForwardingProtocol.HopHeader, "node-a");
+        request.Headers.TryAddWithoutValidation(ForwardingProtocol.ActorHeader, "ops");
+        request.Headers.TryAddWithoutValidation(ForwardingProtocol.AccessHeader, ForwardingProtocol.AccessOperate);
+        request.Headers.TryAddWithoutValidation(ForwardingProtocol.KeyHeader, ForwardingHost.Key);
+        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+
+        if (body is not null)
+        {
+            request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        }
+
+        // when
+        using var response = await clientB.SendAsync(request, AbortToken);
+
+        // then: the calling node shows the detail, so it stays the refusal's message
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await MessagingCommandHost.ReadAsync(response, AbortToken);
+        problem.GetProperty("errors").GetProperty(field).GetArrayLength().Should().BePositive();
+        problem.GetProperty("rules").GetProperty(field).GetString().Should().Be(rule);
+        problem.GetProperty("detail").GetString().Should().NotBeNullOrWhiteSpace();
+        _logB.Entries.Should().BeEmpty();
+    }
+
     private static void _Operate(MessagingDashboardOptions options) =>
         options.ForwardedAccess = MessagingForwardedAccess.Operate;
 

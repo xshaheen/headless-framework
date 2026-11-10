@@ -25,8 +25,8 @@ import { DashboardApiError, refetchTopics, type CappedCount } from '@headless/da
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
-import { useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useModuleStale, useNodeStale, useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
+import { useEffect, type ReactNode } from 'react'
 import {
   fetchGenerations,
   fetchMessage,
@@ -121,32 +121,10 @@ export function useStale() {
   const module = useModule()
   const { node } = useNode()
   const { status } = useStreamStatus()
-  const [moduleStale, setModuleStale] = useState(false)
-  const [staleNodes, setStaleNodes] = useState<ReadonlySet<string>>(new Set())
+  const { isStale } = useModuleStale(module.id)
+  const isNodeStale = useNodeStale(module.id, node)
 
-  useStreamEvent('module.stale', (event) => {
-    if (event.module === module.id) {
-      setModuleStale(event.stale)
-    }
-  })
-
-  useStreamEvent('node.stale', (event) => {
-    if (event.module === module.id) {
-      setStaleNodes((current) => {
-        const next = new Set(current)
-
-        if (event.stale) {
-          next.add(event.node)
-        } else {
-          next.delete(event.node)
-        }
-
-        return next
-      })
-    }
-  })
-
-  return status === 'stale' || moduleStale || (node !== '' && staleNodes.has(node))
+  return status === 'stale' || isStale || (node !== '' && isNodeStale)
 }
 
 export interface MessagingNode {

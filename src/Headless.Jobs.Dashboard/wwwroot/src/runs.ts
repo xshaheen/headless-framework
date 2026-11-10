@@ -1,12 +1,15 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
-import type { CappedCount, DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
+import type { DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
+import type { ListPageRequest, ListRange } from '@headless/dashboard-sdk/table'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import { useState } from 'react'
 
-export type RunKind = 'TimeJob' | 'CronJobOccurrence'
+export const runKinds = ['TimeJob', 'CronJobOccurrence'] as const
+
+export type RunKind = (typeof runKinds)[number]
 
 export const runStatuses = [
   'Idle',
@@ -44,6 +47,12 @@ export interface Run {
   skippedReason?: string
   progressPercent?: number
   progressMessage?: string
+  /** When the handler last reported progress, so a value the stream stopped refreshing reads its age. */
+  progressUpdatedAt?: string
+  /** The retries the run may take after its first attempt. */
+  retries: number
+  /** The wait, in seconds, before each retry; the last one repeats for any retry past the list. */
+  retryIntervals?: number[] | null
   correlationId?: string
   causationId?: string
   traceId?: string
@@ -132,11 +141,22 @@ export function isFiltered(filter: RunFilter) {
   return filterNames.some((name) => filter[name] !== '')
 }
 
+/**
+ * What narrows the list besides its URL filter: the search text and a custom day range, which the operator types and
+ * the server matches, so the list, its live matching, and an Operation over it read the same rows.
+ */
+export interface RunScope {
+  search?: string
+  range?: ListRange
+}
+
 export const rangeSpans: Readonly<Record<string, number>> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 }
 
 /** Whether `run` matches `filter` as the server reads it, so a live change can tell a row it left the filter. */
-export function runMatches(run: Run, filter: RunFilter) {
+export function runMatches(run: Run, filter: RunFilter, scope: RunScope = {}) {
   return (
+    searchMatches(run, scope.search) &&
+    (!scope.range || (run.executionTime !== undefined && inRange(Date.parse(run.executionTime), scope.range))) &&
     (!filter.kind || run.kind === filter.kind) &&
     (!filter.function || run.function === filter.function) &&
     (!filter.status || run.status === filter.status) &&
@@ -147,8 +167,27 @@ export function runMatches(run: Run, filter: RunFilter) {
   )
 }
 
+function inRange(at: number, range: ListRange) {
+  return at >= Date.parse(range.start) && at < Date.parse(range.end)
+}
+
+/**
+ * Whether the search text is in the run's function, id, business key, or description, ignoring case, as the server
+ * reads it; an occurrence's description is its cron job's, which the server does not search.
+ */
+function searchMatches(run: Run, search: string | undefined) {
+  if (!search) {
+    return true
+  }
+
+  const text = search.toLowerCase()
+  const fields = [run.function, run.id, run.businessKey, run.kind === 'TimeJob' ? run.description : undefined]
+
+  return fields.some((field) => field?.toLowerCase().includes(text) === true)
+}
+
 /** The filter as an Operation's scope: the server freezes exactly the rows it matches at confirm. */
-export function operationScope(filter: RunFilter) {
+export function operationScope(filter: RunFilter, scope: RunScope = {}) {
   return {
     ...(filter.kind ? { kind: filter.kind } : {}),
     ...(filter.function ? { functions: [filter.function] } : {}),
@@ -156,7 +195,9 @@ export function operationScope(filter: RunFilter) {
     ...(filter.cronJobId ? { cronJobId: filter.cronJobId } : {}),
     ...(filter.correlationId ? { correlationId: filter.correlationId } : {}),
     ...(filter.fingerprint ? { fingerprint: filter.fingerprint } : {}),
-    ...(filter.from ? { from: filter.from } : {}),
+    ...(filter.from && !scope.range ? { from: filter.from } : {}),
+    ...(scope.range ? { from: scope.range.start, before: scope.range.end } : {}),
+    ...(scope.search ? { search: scope.search } : {}),
   }
 }
 
@@ -232,21 +273,62 @@ export const attemptTones: Readonly<Record<AttemptOutcome, DashboardStateRole>> 
 
 export const runsTopic = 'jobs.run'
 
+/** The fields of a live change's projection that decide which reads the change makes stale. */
+export interface RunProjectionFacts {
+  cronJobId?: string
+  kind?: RunKind
+  status?: RunStatus
+  executionTime?: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function oneOf<T extends string>(values: readonly T[], value: unknown): T | undefined {
+  return values.find((candidate) => candidate === value)
+}
+
+/**
+ * The deciding fields of a change's projection, each kept only when it holds its served type; `undefined` when the
+ * change carries no projection, which the stream sends when the row must be read again or was removed.
+ */
+export function readRunProjection(projection: unknown): RunProjectionFacts | undefined {
+  if (!isRecord(projection)) {
+    return undefined
+  }
+
+  const { cronJobId, kind, status, executionTime } = projection
+
+  return {
+    cronJobId: typeof cronJobId === 'string' ? cronJobId : undefined,
+    kind: oneOf(runKinds, kind),
+    status: oneOf(runStatuses, status),
+    executionTime: typeof executionTime === 'string' ? executionTime : undefined,
+  }
+}
+
 interface RunListAnswer {
   items: Run[]
-  count: number
-  countCapped: boolean
+  /** Sent with the first page only, the one read without a cursor. */
+  count?: number
+  countCapped?: boolean
   nextCursor?: string | null
 }
 
 const runsPageSize = 100
 
-/** One page of runs, newest first: the first page, or the page after the run `cursor` names. */
+/**
+ * One page of runs, newest first unless `request` names a sort: the first page, or the page after the run `cursor`
+ * names. The server refuses a cursor read under another sort, search, or range, so the keyset list never sends one.
+ * Only the first page carries the count; the keyset list reads it from there.
+ */
 export async function fetchRuns(
   api: DashboardApi,
   filter: Partial<RunFilter>,
   cursor?: string,
-): Promise<DashboardListPage<Run> & { count: CappedCount }> {
+  request: Partial<Pick<ListPageRequest, 'sort' | 'search' | 'range'>> = {},
+): Promise<DashboardListPage<Run>> {
   const query: Record<string, string> = { limit: String(runsPageSize) }
 
   // `range` lives only in the URL; the server filters on the `from` it fixed.
@@ -258,6 +340,21 @@ export async function fetchRuns(
     }
   }
 
+  if (request.sort) {
+    query.sort = request.sort.key
+    query.direction = request.sort.direction
+  }
+
+  if (request.search) {
+    query.search = request.search
+  }
+
+  // A custom range replaces the preset's start, so the list never reads two starts at once.
+  if (request.range) {
+    query.from = request.range.start
+    query.before = request.range.end
+  }
+
   if (cursor) {
     query.after = cursor
   }
@@ -266,7 +363,7 @@ export async function fetchRuns(
 
   return {
     items: answer.items,
-    count: { value: answer.count, capped: answer.countCapped },
+    ...(answer.count === undefined ? {} : { count: { value: answer.count, capped: answer.countCapped ?? false } }),
     nextCursor: answer.nextCursor ?? null,
   }
 }
@@ -319,6 +416,9 @@ export function useJobsCommands() {
     pause: find('pause'),
     resume: find('resume'),
     editCron: find('edit-cron'),
+    edit: find('edit'),
+    duplicate: find('duplicate'),
+    forceDelete: find('force-delete'),
   }
 }
 
@@ -327,6 +427,7 @@ export const pendingLabels: Readonly<Record<string, string>> = {
   requeue: 'Requeuing…',
   cancel: 'Cancelling…',
   delete: 'Deleting…',
+  'force-delete': 'Deleting…',
 }
 
 /**
@@ -365,7 +466,7 @@ export type Pending = ReturnType<typeof usePending>
 export function markDone(
   pending: Pending,
   versions: ReadonlyMap<string, string>,
-  name: 'requeue' | 'cancel' | 'delete',
+  name: 'requeue' | 'cancel' | 'delete' | 'force-delete',
 ) {
   return (rows: readonly RowResult[]) =>
     pending.mark(

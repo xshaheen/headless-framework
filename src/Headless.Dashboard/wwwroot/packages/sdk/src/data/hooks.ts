@@ -3,7 +3,15 @@ import { useSyncExternalStore } from 'react'
 import { useDashboard } from '../context.tsx'
 import { useTopics } from '../stream/hooks.ts'
 import { listKey, objectKey } from './client.tsx'
-import { getNewRows, onNewRowsChange, showNewRows, type DashboardListPage, type ListItem } from './patch.ts'
+import {
+  getNewRows,
+  mergeFetchedObject,
+  mergeFetchedPage,
+  onNewRowsChange,
+  showNewRows,
+  type DashboardListPage,
+  type ListItem,
+} from './patch.ts'
 
 export interface DashboardListOptions<T extends ListItem> {
   /** `{module}.{kind}`: the stream topic whose changes patch this list. */
@@ -14,13 +22,18 @@ export interface DashboardListOptions<T extends ListItem> {
 }
 
 /**
- * A live list: fetched once, then patched row by row from the stream while mounted. A change for a row no loaded
+ * A live list: fetched once, then patched row by row from the stream while mounted. A fetch that lands after a newer
+ * stream change keeps the newer row. A change for a row no loaded
  * list holds shows as a new row notice instead of a reload.
  */
 export function useDashboardList<T extends ListItem>(options: DashboardListOptions<T>) {
   useTopics([options.topic])
+  const client = useQueryClient()
 
-  return useQuery({ queryKey: listKey(options.topic, options.params), queryFn: options.fetch })
+  return useQuery({
+    queryKey: listKey(options.topic, options.params),
+    queryFn: async () => mergeFetchedPage(client, options.topic, await options.fetch()),
+  })
 }
 
 export interface DashboardObjectOptions<T> {
@@ -32,8 +45,12 @@ export interface DashboardObjectOptions<T> {
 /** A live object: fetched once, then patched from the stream while mounted. */
 export function useDashboardObject<T>(options: DashboardObjectOptions<T>) {
   useTopics([options.topic])
+  const client = useQueryClient()
 
-  return useQuery({ queryKey: objectKey(options.topic, options.id), queryFn: options.fetch })
+  return useQuery({
+    queryKey: objectKey(options.topic, options.id),
+    queryFn: async () => mergeFetchedObject(client, options.topic, options.id, await options.fetch()),
+  })
 }
 
 /**

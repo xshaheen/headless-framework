@@ -53,6 +53,18 @@ export interface JobNode {
   state: string
   role?: string
   claimedFunctions?: string[] | null
+  /** Whether this node serves the dashboard's requests. */
+  isLocal: boolean
+  /** The host's max concurrency; `null` when the node published none. */
+  maxConcurrency: number | null
+  /** The runs the node holds in progress, at most the count cap. */
+  running: number
+  runningCapped: boolean
+  /** Its latest heartbeat, by the store's clock; `null` without membership. */
+  lastHeartbeatAt: string | null
+  /** The serving node's last scheduler exception; always `null` on a peer, which keeps its own. */
+  lastHostException: string | null
+  lastHostExceptionAt: string | null
 }
 
 export const cronJobsTopic = 'jobs.cron-job'

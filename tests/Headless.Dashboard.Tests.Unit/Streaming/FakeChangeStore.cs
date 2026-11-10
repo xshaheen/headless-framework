@@ -13,10 +13,15 @@ internal sealed class FakeChangeStore(TimeProvider time)
 {
     private readonly Lock _lock = new();
     private readonly List<(long Marker, DashboardChange Change)> _log = [];
-    private readonly Dictionary<string, Queue<DashboardChange[]>> _scripted = new(StringComparer.Ordinal);
+
+    private readonly Dictionary<string, Queue<(DashboardChange[] Changes, bool HasMore)>> _scripted = new(
+        StringComparer.Ordinal
+    );
+
     private readonly List<TaskCompletionSource> _starts = [];
     private readonly List<TaskCompletionSource> _stops = [];
     private readonly List<DateTimeOffset> _failures = [];
+    private readonly List<DateTimeOffset> _reads = [];
     private long _marker;
     private int _startCount;
     private int _readCount;
@@ -51,6 +56,18 @@ internal sealed class FakeChangeStore(TimeProvider time)
         }
     }
 
+    /// <summary>Gets the clock times of every read, failed or not.</summary>
+    public IReadOnlyList<DateTimeOffset> ReadTimes
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _reads];
+            }
+        }
+    }
+
     /// <summary>Changes one row: the change's version is the next store sequence.</summary>
     public DashboardChange Write(
         string module,
@@ -74,17 +91,20 @@ internal sealed class FakeChangeStore(TimeProvider time)
     }
 
     /// <summary>Queues a batch that the module's next read returns as it is.</summary>
-    public void Script(string module, params DashboardChange[] batch)
+    public void Script(string module, params DashboardChange[] batch) => Script(module, hasMore: false, batch);
+
+    /// <summary>Queues a batch that the module's next read returns as it is, saying whether more are waiting.</summary>
+    public void Script(string module, bool hasMore, params DashboardChange[] batch)
     {
         lock (_lock)
         {
             if (!_scripted.TryGetValue(module, out var queue))
             {
-                queue = new Queue<DashboardChange[]>();
+                queue = new Queue<(DashboardChange[], bool)>();
                 _scripted[module] = queue;
             }
 
-            queue.Enqueue(batch);
+            queue.Enqueue((batch, hasMore));
         }
     }
 
@@ -118,6 +138,7 @@ internal sealed class FakeChangeStore(TimeProvider time)
         lock (_lock)
         {
             _readCount++;
+            _reads.Add(time.GetUtcNow());
 
             if (_failing)
             {
@@ -132,9 +153,10 @@ internal sealed class FakeChangeStore(TimeProvider time)
                 return Task.FromResult(
                     new DashboardChangeBatch
                     {
-                        Changes = batch,
+                        Changes = batch.Changes,
                         Cursor = next,
                         UnavailableSources = UnavailableSources,
+                        HasMore = batch.HasMore,
                     }
                 );
             }

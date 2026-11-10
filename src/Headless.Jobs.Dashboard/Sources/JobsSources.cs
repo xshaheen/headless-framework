@@ -9,7 +9,7 @@ namespace Headless.Jobs;
 /// <summary>
 /// The Jobs module's read capabilities: Needs you, Overview, id lookups, related runs, and payloads.
 /// </summary>
-internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend, TimeProvider timeProvider)
+internal sealed class JobsSources(string moduleId, IJobsDashboardReader reader, TimeProvider timeProvider)
 {
     /// <summary>The most runs a related group lists.</summary>
     internal const int RelatedPageSize = 20;
@@ -24,7 +24,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
     private static readonly TimeSpan _StripReach = TimeSpan.FromHours(1);
 
     private readonly string _moduleId = Argument.IsNotNullOrWhiteSpace(moduleId);
-    private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
+    private readonly IJobsDashboardReader _reader = Argument.IsNotNull(reader);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
 
     /// <summary>Gets the related group that lists the other runs carrying a run's correlation id.</summary>
@@ -46,7 +46,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
     )
     {
         var hourAgo = _timeProvider.GetUtcNow().AddHours(-1);
-        var groups = await _backend.GetFailureGroupsAsync(hourAgo, cancellationToken).ConfigureAwait(false);
+        var groups = await _reader.GetFailureGroupsAsync(hourAgo, cancellationToken).ConfigureAwait(false);
         var items = new List<DashboardAttentionItem>(groups.Count);
 
         foreach (var group in groups)
@@ -87,10 +87,10 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
             );
         }
 
-        var nodes = await _backend.GetNodesAsync(cancellationToken).ConfigureAwait(false);
+        var nodes = await _reader.GetNodesAsync(cancellationToken).ConfigureAwait(false);
         var claimed = nodes.SelectMany(static node => node.ClaimedFunctions ?? []).ToHashSet(StringComparer.Ordinal);
 
-        foreach (var function in _backend.Functions)
+        foreach (var function in _reader.Functions)
         {
             if (!claimed.Contains(function.Name))
             {
@@ -119,7 +119,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
     /// </summary>
     public async Task<IReadOnlyList<DashboardFigure>> GetOverviewAsync(CancellationToken cancellationToken)
     {
-        var figures = await _backend
+        var figures = await _reader
             .GetOverviewFiguresAsync(_timeProvider.GetUtcNow().UtcDateTime, cancellationToken)
             .ConfigureAwait(false);
         var (current, previous) = (figures.Current, figures.Previous);
@@ -176,7 +176,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
     public async Task<IReadOnlyList<DashboardScheduleTrack>> GetScheduleAsync(CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        var cronJobs = await _backend.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
+        var cronJobs = await _reader.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
         var tracks = new List<DashboardScheduleTrack>();
 
         foreach (
@@ -185,7 +185,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
                 .OrderBy(static g => g.Key, StringComparer.Ordinal)
         )
         {
-            var page = await _backend
+            var page = await _reader
                 .ListRunsAsync(
                     new JobRunQuery
                     {
@@ -217,7 +217,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
 
             foreach (var cronJob in function.Where(static c => !c.IsPaused))
             {
-                var preview = _backend.Preview(cronJob.Expression, cronJob.TimeZoneId, now, StripFiresPerCronJob);
+                var preview = _reader.Preview(cronJob.Expression, cronJob.TimeZoneId, now, StripFiresPerCronJob);
 
                 foreach (var fire in preview.NextFiresUtc.Where(fire => fire <= now + _StripReach))
                 {
@@ -251,12 +251,12 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
     {
         if (Guid.TryParse(query, out var id))
         {
-            if (await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is { } run)
+            if (await _reader.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is { } run)
             {
                 return [JobsViews.ToObject(_moduleId, run)];
             }
 
-            if (await _backend.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false) is { } cronJob)
+            if (await _reader.GetCronJobAsync(id, cancellationToken).ConfigureAwait(false) is { } cronJob)
             {
                 return [JobsViews.ToObject(_moduleId, cronJob)];
             }
@@ -264,7 +264,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
             return [];
         }
 
-        return _backend.Functions.Any(function => string.Equals(function.Name, query, StringComparison.Ordinal))
+        return _reader.Functions.Any(function => string.Equals(function.Name, query, StringComparison.Ordinal))
             ? [new DashboardObject { Target = JobsViews.Ref(_moduleId, JobsViews.FunctionKind, query), Title = query }]
             : [];
     }
@@ -282,7 +282,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
             !string.Equals(target.Module, _moduleId, StringComparison.Ordinal)
             || !string.Equals(target.Kind, JobsViews.RunKind, StringComparison.Ordinal)
             || !Guid.TryParse(target.Id, out var id)
-            || await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
+            || await _reader.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
         )
         {
             return [];
@@ -292,7 +292,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
 
         if (run.CorrelationId is { Length: > 0 } correlationId)
         {
-            var page = await _backend
+            var page = await _reader
                 .ListRunsAsync(
                     new JobRunQuery { CorrelationId = correlationId, SortDirection = ListSortDirection.Descending },
                     after: null,
@@ -320,7 +320,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
 
         if (
             run.ParentId is { } parentId
-            && await _backend.GetRunAsync(parentId, cancellationToken).ConfigureAwait(false) is { } parent
+            && await _reader.GetRunAsync(parentId, cancellationToken).ConfigureAwait(false) is { } parent
         )
         {
             chain.Add(JobsViews.ToObject(_moduleId, parent));
@@ -328,9 +328,9 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
 
         if (run.Kind == JobRunKind.TimeJob)
         {
-            foreach (var childId in await _backend.GetChildIdsAsync(run.Id, cancellationToken).ConfigureAwait(false))
+            foreach (var childId in await _reader.GetChildIdsAsync(run.Id, cancellationToken).ConfigureAwait(false))
             {
-                if (await _backend.GetRunAsync(childId, cancellationToken).ConfigureAwait(false) is { } child)
+                if (await _reader.GetRunAsync(childId, cancellationToken).ConfigureAwait(false) is { } child)
                 {
                     chain.Add(JobsViews.ToObject(_moduleId, child));
                 }
@@ -351,7 +351,7 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
 
         if (
             run.CronJobId is { } cronJobId
-            && await _backend.GetCronJobAsync(cronJobId, cancellationToken).ConfigureAwait(false) is { } cronJob
+            && await _reader.GetCronJobAsync(cronJobId, cancellationToken).ConfigureAwait(false) is { } cronJob
         )
         {
             groups.Add(
@@ -374,8 +374,8 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardBackend backend
             !string.Equals(target.Module, _moduleId, StringComparison.Ordinal)
             || !string.Equals(target.Kind, JobsViews.RunKind, StringComparison.Ordinal)
             || !Guid.TryParse(target.Id, out var id)
-            || await _backend.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
-            || await _backend.GetRequestAsync(run.Kind, run.Id, cancellationToken).ConfigureAwait(false)
+            || await _reader.GetRunAsync(id, cancellationToken).ConfigureAwait(false) is not { } run
+            || await _reader.GetRequestAsync(run.Kind, run.Id, cancellationToken).ConfigureAwait(false)
                 is not { } request
         )
         {

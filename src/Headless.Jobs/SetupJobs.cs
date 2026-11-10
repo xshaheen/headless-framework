@@ -221,10 +221,15 @@ public static class SetupJobs
         >();
         // TryAdd, so a dashboard registered before AddHeadlessJobs keeps its own sender.
         services.TryAddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
-        // The dashboard module takes no entity type arguments; this seam carries the host's types to it.
-        services.TryAddSingleton<IJobsDashboardBackend>(provider => new JobsDashboardBackend<TTimeJob, TCronJob>(
-            provider
-        ));
+        // The dashboard module takes no entity type arguments; this seam carries the host's types to it. One instance
+        // serves as both the reader and the writer.
+        services.TryAddSingleton(provider => new JobsDashboardBackend<TTimeJob, TCronJob>(provider));
+        services.TryAddSingleton<IJobsDashboardReader>(provider =>
+            provider.GetRequiredService<JobsDashboardBackend<TTimeJob, TCronJob>>()
+        );
+        services.TryAddSingleton<IJobsDashboardWriter>(provider =>
+            provider.GetRequiredService<JobsDashboardBackend<TTimeJob, TCronJob>>()
+        );
         services.TryAddSingleton(TimeProvider.System);
 
         // Per-host tenancy DI (see _AddTenancyServices).

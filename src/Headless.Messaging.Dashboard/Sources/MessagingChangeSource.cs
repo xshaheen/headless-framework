@@ -75,6 +75,7 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
 
         var next = new Dictionary<string, MessageChangeCursor?>(StringComparer.OrdinalIgnoreCase);
         var changes = new List<DashboardChange>();
+        var hasMore = false;
 
         foreach (var store in _stores.All)
         {
@@ -82,10 +83,11 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
             next[store.Name] = parsed.GetValueOrDefault(store.Name);
         }
 
-        foreach (var (store, (storeChanges, storeCursor)) in answers.Answered)
+        foreach (var (store, (storeChanges, storeCursor, storeHasMore)) in answers.Answered)
         {
             changes.AddRange(storeChanges);
             next[store.Name] = storeCursor;
+            hasMore |= storeHasMore;
         }
 
         return new DashboardChangeBatch
@@ -93,19 +95,24 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
             Changes = changes,
             Cursor = _Format(next),
             UnavailableSources = answers.Unavailable,
+            HasMore = hasMore,
         };
     }
 
-    private async Task<(IReadOnlyList<DashboardChange> Changes, MessageChangeCursor Cursor)> _ReadStoreAsync(
-        MessagingStore store,
-        MessageChangeCursor? cursor,
-        CancellationToken cancellationToken
-    )
+    private async Task<(
+        IReadOnlyList<DashboardChange> Changes,
+        MessageChangeCursor Cursor,
+        bool HasMore
+    )> _ReadStoreAsync(MessagingStore store, MessageChangeCursor? cursor, CancellationToken cancellationToken)
     {
         if (cursor is null)
         {
             // A store that has no position yet starts now: what changed while it was unreachable shows on its lists.
-            return ([], await store.Storage.GetMessageChangeStartCursorAsync(cancellationToken).ConfigureAwait(false));
+            return (
+                [],
+                await store.Storage.GetMessageChangeStartCursorAsync(cancellationToken).ConfigureAwait(false),
+                false
+            );
         }
 
         var page = await store
@@ -114,7 +121,7 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
 
         if (page.Changes.Count == 0)
         {
-            return ([], page.Cursor);
+            return ([], page.Cursor, false);
         }
 
         var published = await _ReadBackAsync(store, MessageChangeKind.Published, page.Changes, cancellationToken)
@@ -161,7 +168,8 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
             );
         }
 
-        return (changes, page.Cursor);
+        // A full page may have stopped short of the store's latest change.
+        return (changes, page.Cursor, page.Changes.Count >= pageSize);
     }
 
     private static async Task<Dictionary<Guid, MediumMessage>> _ReadBackAsync(

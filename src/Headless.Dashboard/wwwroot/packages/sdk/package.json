@@ -27,6 +27,9 @@
     "react-router": "8.5.0",
     "recharts": "3.10.1",
     "sugar-high": "2.6.4",
+    "zustand": "5.0.16"
+  },
+  "devDependencies": {
     "tailwindcss": "4.3.4"
   },
   "peerDependencies": {
