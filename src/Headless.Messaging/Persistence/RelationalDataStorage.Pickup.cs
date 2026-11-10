@@ -455,10 +455,20 @@ internal sealed partial class RelationalDataStorage
                 revoked = await _RunAsync(
                         operation,
                         transaction: null,
-                        (connection, tx, ct) =>
-                            FencedRows
-                                .RevokeHeldByAsync(leaseTable, connection, tx, chunk, _LeaseReleaseBatchSize, write, ct)
-                                .AsTask(),
+                        async (connection, tx, ct) =>
+                            (
+                                await FencedRows
+                                    .RevokeHeldByAsync(
+                                        leaseTable,
+                                        connection,
+                                        tx,
+                                        chunk,
+                                        _LeaseReleaseBatchSize,
+                                        write,
+                                        ct
+                                    )
+                                    .ConfigureAwait(false)
+                            ).Count,
                         cancellationToken
                     )
                     .ConfigureAwait(false);

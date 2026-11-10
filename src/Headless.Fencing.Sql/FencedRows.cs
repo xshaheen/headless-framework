@@ -142,22 +142,7 @@ public static class FencedRows
                     );
                     _BindConsumer(command, claim.Bind, nameof(claim));
 
-                    await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
-                    var generationOrdinal = table.Key.Parts.Count;
-                    var claimed = new List<FencedRow<TKey>>();
-
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        claimed.Add(
-                            new FencedRow<TKey>(
-                                table.Name,
-                                table.Key.Read(reader, 0),
-                                reader.GetInt64(generationOrdinal)
-                            )
-                        );
-                    }
-
-                    return (IReadOnlyList<FencedRow<TKey>>)claimed;
+                    return await _ReadRowsAsync(table, command, ct).ConfigureAwait(false);
                 },
                 cancellationToken
             )
@@ -1141,7 +1126,9 @@ public static class FencedRows
     /// <remarks>
     /// Opt in only for a table whose claims ask for <see cref="LeaseTakeover.AfterSweep" />, or whose consumer reads the
     /// abandoned state. Run it in a loop until it returns fewer than <paramref name="batchSize" />, each call a short
-    /// transaction.
+    /// transaction. To hand each abandoned row to work of your own, pass your <paramref name="transaction" />: the
+    /// rows it returns stay locked and abandoned only if that transaction commits, so a handoff that fails leaves
+    /// them expired for the next sweep.
     /// </remarks>
     /// <param name="table">The rows' table.</param>
     /// <param name="connection">The caller's connection.</param>
@@ -1154,8 +1141,11 @@ public static class FencedRows
     /// <see cref="FencedRowWrite.Returning" /> does not apply.
     /// </param>
     /// <param name="cancellationToken">Token used to cancel the sweep.</param>
-    /// <returns>The number of rows abandoned.</returns>
-    public static async ValueTask<int> AbandonExpiredAsync<TKey>(
+    /// <returns>
+    /// A token for each abandoned row, carrying the generation the sweep ended, in no particular order; empty when
+    /// nothing had expired.
+    /// </returns>
+    public static async ValueTask<IReadOnlyList<FencedRow<TKey>>> AbandonExpiredAsync<TKey>(
         FencedRowTable<TKey> table,
         DbConnection connection,
         DbTransaction? transaction,
@@ -1178,7 +1168,7 @@ public static class FencedRows
 
             if (write.Returning is not null)
             {
-                throw new ArgumentException("A sweep reports how many rows it abandoned, not columns.", nameof(write));
+                throw new ArgumentException("A sweep reports the rows it abandoned, not columns.", nameof(write));
             }
 
             sql = table.RenderAbandon(write.Condition, write.Set);
@@ -1198,15 +1188,7 @@ public static class FencedRows
                         SqlColumnType.Int32,
                         batchSize
                     );
-                    await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
-                    var abandoned = 0;
-
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        abandoned++;
-                    }
-
-                    return abandoned;
+                    return await _ReadRowsAsync(table, command, ct).ConfigureAwait(false);
                 },
                 cancellationToken
             )
@@ -1234,9 +1216,12 @@ public static class FencedRows
     /// the same statement on each row it revokes. <see cref="FencedRowWrite.Returning" /> does not apply.
     /// </param>
     /// <param name="cancellationToken">Token used to cancel the operation.</param>
-    /// <returns>The number of rows revoked; 0 without a round trip when <paramref name="holders" /> is empty.</returns>
+    /// <returns>
+    /// A token for each revoked row, carrying the generation the revocation ended, in no particular order; empty
+    /// without a round trip when <paramref name="holders" /> is empty.
+    /// </returns>
     /// <exception cref="ArgumentException">A holder is blank or longer than its limit, or the write is invalid.</exception>
-    public static async ValueTask<int> RevokeHeldByAsync<TKey>(
+    public static async ValueTask<IReadOnlyList<FencedRow<TKey>>> RevokeHeldByAsync<TKey>(
         FencedRowTable<TKey> table,
         DbConnection connection,
         DbTransaction? transaction,
@@ -1269,16 +1254,13 @@ public static class FencedRows
 
             if (write.Returning is not null)
             {
-                throw new ArgumentException(
-                    "A revocation reports how many rows it revoked, not columns.",
-                    nameof(write)
-                );
+                throw new ArgumentException("A revocation reports the rows it revoked, not columns.", nameof(write));
             }
         }
 
         if (holders.Count == 0)
         {
-            return 0;
+            return [];
         }
 
         var sql = table.RenderRevokeHeldBy(holders.Count, write?.Condition, write?.Set);
@@ -1309,15 +1291,7 @@ public static class FencedRows
                         batchSize
                     );
                     _BindConsumer(command, write?.Bind, nameof(write));
-                    await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
-                    var revoked = 0;
-
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        revoked++;
-                    }
-
-                    return revoked;
+                    return await _ReadRowsAsync(table, command, ct).ConfigureAwait(false);
                 },
                 cancellationToken
             )
@@ -1327,6 +1301,26 @@ public static class FencedRows
     #endregion
 
     #region Plumbing
+
+    /// <summary>Reads the tokens of a statement that returns each row's key columns, then its generation.</summary>
+    private static async Task<IReadOnlyList<FencedRow<TKey>>> _ReadRowsAsync<TKey>(
+        FencedRowTable<TKey> table,
+        DbCommand command,
+        CancellationToken cancellationToken
+    )
+        where TKey : notnull
+    {
+        await using var reader = await _ReaderAsync(command, cancellationToken).ConfigureAwait(false);
+        var generationOrdinal = table.Key.Parts.Count;
+        var rows = new List<FencedRow<TKey>>();
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rows.Add(new FencedRow<TKey>(table.Name, table.Key.Read(reader, 0), reader.GetInt64(generationOrdinal)));
+        }
+
+        return rows;
+    }
 
     private static async Task<T> _RunAsync<TKey, T>(
         FencedRowTable<TKey> table,

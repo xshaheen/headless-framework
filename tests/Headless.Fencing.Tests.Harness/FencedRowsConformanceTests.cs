@@ -1032,18 +1032,17 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
 
         // Earlier tests leave expired rows behind, so the sweep runs until a batch comes back short.
         const int batch = 50;
-        int swept;
+        var swept = new List<FencedRow<Guid>>();
+        IReadOnlyList<FencedRow<Guid>> page;
 
         do
         {
-            swept = await FencedRows.AbandonExpiredAsync(
-                _table,
-                connection,
-                null,
-                batch,
-                cancellationToken: AbortToken
-            );
-        } while (swept == batch);
+            page = await FencedRows.AbandonExpiredAsync(_table, connection, null, batch, cancellationToken: AbortToken);
+            swept.AddRange(page);
+        } while (page.Count == batch);
+
+        swept.Should().Contain(row, "the sweep names the attempt it ended, generation included");
+        swept.Select(x => x.Key).Should().NotContain([live, settled]);
 
         var abandoned = await ReadAsync(expired);
         abandoned.Lease.State.Should().Be(RowLeaseState.Abandoned);
@@ -1066,6 +1065,43 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         next!.Status.Should().Be(LeaseGrantStatus.Granted, "a grant waiting for the sweep proceeds once it ran");
         next.Row!.Generation.Should().Be(2);
         next.TakeoverCount.Should().Be(1, "the sweep's takeover still counts until the next attempt settles");
+    }
+
+    public virtual async Task should_hand_the_abandoned_row_to_the_callers_transaction_and_restore_it_on_rollback()
+    {
+        var tag = Tag();
+        var id = await InsertAsync(tag);
+        await using var connection = Fixture.CreateConnection();
+        await connection.OpenAsync(AbortToken);
+        var row = (await FencedRows.GrantAsync(_table, connection, null, id, LongDuration, new(), AbortToken))!.Row!;
+        await ExpireAsync(id);
+        var sweep = new FencedRowWrite(
+            Condition: "status = @Tag",
+            Bind: command => Dialect.AddParameter(command, "Tag", _Status, tag)
+        );
+
+        await using (var transaction = await connection.BeginTransactionAsync(AbortToken))
+        {
+            (await FencedRows.AbandonExpiredAsync(_table, connection, transaction, 1, sweep, AbortToken))
+                .Should()
+                .Equal(row);
+            await transaction.RollbackAsync(AbortToken);
+        }
+
+        (await ReadAsync(id))
+            .Lease.State.Should()
+            .Be(RowLeaseState.Active, "a handoff that rolls back leaves the row expired for the next sweep");
+
+        await using (var transaction = await connection.BeginTransactionAsync(AbortToken))
+        {
+            (await FencedRows.AbandonExpiredAsync(_table, connection, transaction, 1, sweep, AbortToken))
+                .Should()
+                .Equal(row);
+            await transaction.CommitAsync(AbortToken);
+        }
+
+        (await ReadAsync(id)).Lease.State.Should().Be(RowLeaseState.Abandoned);
+        (await FencedRows.AbandonExpiredAsync(_table, connection, null, 1, sweep, AbortToken)).Should().BeEmpty();
     }
 
     public virtual async Task should_land_the_consumers_write_only_on_rows_a_revocation_or_a_sweep_ends()
@@ -1122,7 +1158,9 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
                 Dialect.AddParameter(command, "Tag", _Status, tag);
             }
         );
-        (await FencedRows.AbandonExpiredAsync(_table, connection, null, 50, sweep, AbortToken)).Should().Be(1);
+        (await FencedRows.AbandonExpiredAsync(_table, connection, null, 50, sweep, AbortToken))
+            .Should()
+            .Equal(expiredRow);
 
         foreach (var id in new[] { revoked, first, second })
         {
@@ -1181,10 +1219,10 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
             }
         );
 
-        (await FencedRows.RevokeHeldByAsync(_table, connection, null, [], 10, write, AbortToken)).Should().Be(0);
+        (await FencedRows.RevokeHeldByAsync(_table, connection, null, [], 10, write, AbortToken)).Should().BeEmpty();
 
         // A batch of two over three matching rows leaves one for the next call, and the call after that finds none.
-        var batches = new List<int>();
+        var batches = new List<IReadOnlyList<FencedRow<Guid>>>();
 
         for (var i = 0; i < 3; i++)
         {
@@ -1193,7 +1231,9 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
             );
         }
 
-        batches.Should().Equal(2, 1, 0);
+        batches.Select(x => x.Count).Should().Equal(2, 1, 0);
+        batches.SelectMany(x => x).Select(x => x.Key).Should().BeEquivalentTo([live, expired, third]);
+        batches.SelectMany(x => x).Should().Contain(liveRow, "each token carries the generation the revocation ended");
 
         foreach (var id in new[] { live, expired, third })
         {
