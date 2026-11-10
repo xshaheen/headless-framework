@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
 using System.Globalization;
 using Headless.Checks;
 using Headless.Dashboard;
@@ -29,6 +28,7 @@ internal sealed class JobsModuleApi(
     /// <summary>The most days one series covers.</summary>
     internal const int MaxSeriesDays = 92;
 
+    private static readonly JobsRunListQueryValidator _RunListValidator = new();
     private static readonly DateOnly _FirstSeriesDay = DateOnly.MinValue.AddDays(1);
     private static readonly DateOnly _LastSeriesDay = DateOnly.MaxValue.AddDays(-1);
 
@@ -54,107 +54,48 @@ internal sealed class JobsModuleApi(
         routes.MapGet("/series/daily", _DailySeriesAsync);
     }
 
-    private async Task<Results<JsonHttpResult<JobsRunList>, BadRequest<string>>> _ListRunsAsync(
-        string? kind,
-        string[]? function,
-        string[]? status,
-        Guid? cronJobId,
-        string? correlationId,
-        string? fingerprint,
-        DateTime? from,
-        DateTime? before,
-        bool? actionable,
-        string? search,
-        string? sort,
-        string? direction,
-        int? limit,
-        string? after,
+    private async Task<Results<JsonHttpResult<JobsRunList>, ValidationProblem>> _ListRunsAsync(
+        [AsParameters] JobsRunListQuery request,
         CancellationToken cancellationToken
     )
     {
-        JobRunKind? runKind = null;
-
-        if (!string.IsNullOrEmpty(kind))
+        if (
+            await _RunListValidator.ValidateAsync(request, cancellationToken).ConfigureAwait(false) is
+            { IsValid: false } invalid
+        )
         {
-            if (!Enum.TryParse<JobRunKind>(kind, ignoreCase: true, out var parsedKind) || !Enum.IsDefined(parsedKind))
-            {
-                return TypedResults.BadRequest("kind must be TimeJob or CronJobOccurrence.");
-            }
-
-            runKind = parsedKind;
-        }
-
-        var statuses = new List<JobStatus>();
-
-        foreach (var value in status ?? [])
-        {
-            if (!Enum.TryParse<JobStatus>(value, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
-            {
-                return TypedResults.BadRequest($"'{value}' is not a run status.");
-            }
-
-            statuses.Add(parsed);
-        }
-
-        var sortBy = JobRunSortKey.ExecutionTime;
-
-        if (!string.IsNullOrEmpty(sort))
-        {
-            if (!Enum.TryParse(sort, ignoreCase: true, out sortBy) || !Enum.IsDefined(sortBy))
-            {
-                return TypedResults.BadRequest("sort must be executionTime, function, or status.");
-            }
-        }
-
-        // The list opens on the latest runs, so the execution time reads descending unless asked otherwise; a text
-        // sort key reads A to Z.
-        var sortDirection =
-            sortBy == JobRunSortKey.ExecutionTime ? ListSortDirection.Descending : ListSortDirection.Ascending;
-
-        if (!string.IsNullOrEmpty(direction))
-        {
-            if (!Enum.TryParse(direction, ignoreCase: true, out sortDirection) || !Enum.IsDefined(sortDirection))
-            {
-                return TypedResults.BadRequest("direction must be ascending or descending.");
-            }
-        }
-
-        JobRunCursor? cursor = null;
-
-        if (!string.IsNullOrEmpty(after))
-        {
-            if (!JobRunCursor.TryParse(after, out cursor))
-            {
-                return TypedResults.BadRequest("after is not a cursor this list returned.");
-            }
+            return DashboardValidation.Problem(invalid);
         }
 
         var query = new JobsRunScope
         {
-            Kind = runKind,
-            Functions = function,
-            Statuses = statuses,
-            CronJobId = cronJobId,
-            CorrelationId = correlationId,
-            Fingerprint = fingerprint,
-            From = from,
-            Before = before,
-            ActionableOnly = actionable == true,
-            Search = search,
+            Kind = request.ReadKind(),
+            Functions = request.Function,
+            Statuses = request.ReadStatuses(),
+            CronJobId = request.CronJobId,
+            CorrelationId = request.CorrelationId,
+            Fingerprint = request.Fingerprint,
+            From = request.From,
+            Before = request.Before,
+            ActionableOnly = request.Actionable == true,
+            Search = request.Search,
         }.ToQuery() with
         {
-            SortBy = sortBy,
-            SortDirection = sortDirection,
+            SortBy = request.ReadSort(),
+            SortDirection = request.ReadDirection(),
         };
+        var cursor = request.ReadCursor();
 
         if (cursor?.Fits(query) == false)
         {
-            return TypedResults.BadRequest(
+            return DashboardValidation.Problem(
+                "after",
+                DashboardValidation.InvalidRule,
                 "after was read with another sort, direction, filter, or search; read the first page again."
             );
         }
 
-        var take = Math.Clamp(limit ?? _DefaultListLimit, 1, MaxListLimit);
+        var take = Math.Clamp(request.Limit ?? _DefaultListLimit, 1, MaxListLimit);
         var page = await _reader.ListRunsAsync(query, cursor, take, cancellationToken).ConfigureAwait(false);
         var count = await _reader.CountRunsAsync(query, cancellationToken).ConfigureAwait(false);
 
@@ -271,7 +212,7 @@ internal sealed class JobsModuleApi(
         );
     }
 
-    private Results<JsonHttpResult<JobsSchedulePreview>, BadRequest<string>> _Preview(
+    private Results<JsonHttpResult<JobsSchedulePreview>, ValidationProblem> _Preview(
         string? expression,
         string? timeZoneId,
         int? count
@@ -279,7 +220,11 @@ internal sealed class JobsModuleApi(
     {
         if (string.IsNullOrWhiteSpace(expression))
         {
-            return TypedResults.BadRequest("expression is required.");
+            return DashboardValidation.Problem(
+                "expression",
+                DashboardValidation.RequiredRule,
+                "expression is required."
+            );
         }
 
         var zone = string.IsNullOrWhiteSpace(timeZoneId) ? null : timeZoneId;
@@ -378,7 +323,7 @@ internal sealed class JobsModuleApi(
 
     private DateTime _Now() => _timeProvider.GetUtcNow().UtcDateTime;
 
-    private async Task<Results<JsonHttpResult<JobsDailySeries>, BadRequest<string>>> _DailySeriesAsync(
+    private async Task<Results<JsonHttpResult<JobsDailySeries>, ValidationProblem>> _DailySeriesAsync(
         string? kind,
         Guid? cronJobId,
         DateOnly? from,
@@ -387,33 +332,36 @@ internal sealed class JobsModuleApi(
         CancellationToken cancellationToken
     )
     {
-        JobRunKind? runKind = null;
-
-        if (!string.IsNullOrEmpty(kind))
+        if (!JobsRequestRules.IsEnumOrEmpty<JobRunKind>(kind))
         {
-            if (!Enum.TryParse<JobRunKind>(kind, ignoreCase: true, out var parsedKind) || !Enum.IsDefined(parsedKind))
-            {
-                return TypedResults.BadRequest("kind must be TimeJob or CronJobOccurrence.");
-            }
-
-            runKind = parsedKind;
+            return DashboardValidation.Problem(
+                "kind",
+                JobsRequestRules.EnumRule,
+                "kind must be TimeJob or CronJobOccurrence."
+            );
         }
 
         if (from is not { } first || to is not { } last)
         {
-            return TypedResults.BadRequest("from and to are required local dates (yyyy-MM-dd).");
+            return DashboardValidation.Problem(
+                from is null ? "from" : "to",
+                DashboardValidation.RequiredRule,
+                "from and to are required local dates (yyyy-MM-dd)."
+            );
         }
 
         if (last < first)
         {
-            return TypedResults.BadRequest("to must not be before from.");
+            return DashboardValidation.Problem("to", JobsRequestRules.MinimumRule, "to must not be before from.");
         }
 
         // The edges run from the first day's midnight to the day after the last, converted to UTC, so a day at either
         // end of the calendar has no edge to stand on.
         if (first < _FirstSeriesDay || last > _LastSeriesDay)
         {
-            return TypedResults.BadRequest(
+            return DashboardValidation.Problem(
+                first < _FirstSeriesDay ? "from" : "to",
+                first < _FirstSeriesDay ? JobsRequestRules.MinimumRule : JobsRequestRules.MaximumRule,
                 string.Create(
                     CultureInfo.InvariantCulture,
                     $"from and to must be between {_FirstSeriesDay:yyyy-MM-dd} and {_LastSeriesDay:yyyy-MM-dd}."
@@ -423,14 +371,18 @@ internal sealed class JobsModuleApi(
 
         if (last.DayNumber - first.DayNumber + 1 > MaxSeriesDays)
         {
-            return TypedResults.BadRequest($"A series covers at most {MaxSeriesDays} days.");
+            return DashboardValidation.Problem(
+                "to",
+                JobsRequestRules.MaximumRule,
+                $"A series covers at most {MaxSeriesDays} days."
+            );
         }
 
         var timeZone = _reader.SchedulerTimeZone;
 
         if (!string.IsNullOrWhiteSpace(zone) && !TimeZoneInfo.TryFindSystemTimeZoneById(zone, out timeZone))
         {
-            return TypedResults.BadRequest($"Unknown time zone '{zone}'.");
+            return DashboardValidation.Problem("zone", JobsRequestRules.EnumRule, $"Unknown time zone '{zone}'.");
         }
 
         var days = Enumerable.Range(0, last.DayNumber - first.DayNumber + 1).Select(first.AddDays).ToArray();
@@ -441,7 +393,11 @@ internal sealed class JobsModuleApi(
         ];
         var asOf = _timeProvider.GetUtcNow();
         var buckets = await _reader
-            .CountRunsByBucketAsync(new JobRunQuery { Kind = runKind, CronJobId = cronJobId }, edges, cancellationToken)
+            .CountRunsByBucketAsync(
+                new JobRunQuery { Kind = JobsRequestRules.EnumOf<JobRunKind>(kind), CronJobId = cronJobId },
+                edges,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         var statuses = Enum.GetValues<JobStatus>();
 

@@ -149,6 +149,28 @@ internal static class JobsDashboardHttpHost
         return document.RootElement.Clone();
     }
 
+    /// <summary>
+    /// Reads a <c>400</c> validation problem as each refused field with the rule it broke, from its <c>rules</c>
+    /// extension, after checking every field in it also carries its messages in <c>errors</c>.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, string>> RulesAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken
+    )
+    {
+        var body = await ReadAsync(response, cancellationToken);
+        var rules = body.GetProperty("rules")
+            .EnumerateObject()
+            .ToDictionary(static rule => rule.Name, static rule => rule.Value.GetString()!, StringComparer.Ordinal);
+        body.GetProperty("errors")
+            .EnumerateObject()
+            .Select(static error => error.Name)
+            .Should()
+            .BeEquivalentTo(rules.Keys);
+
+        return rules;
+    }
+
     /// <summary>Signs in <c>Authorization: Bearer &lt;role&gt;</c> as a user named for, and in, that role.</summary>
     private sealed class RoleBearerHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,

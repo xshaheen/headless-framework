@@ -201,6 +201,127 @@ public sealed class JobsModuleHostTests : TestBase
             .GetString()
             .Should()
             .Be("No function named 'no.such' is registered.");
+        (await JobsDashboardHttpHost.RulesAsync(refused, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["function"] = "enum" });
+    }
+
+    [Fact]
+    public async Task should_refuse_a_time_job_body_naming_each_field_with_the_rule_it_broke()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var refused = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/time-jobs",
+            new
+            {
+                function = "",
+                retries = 101,
+                retryIntervals = new[] { 30, -1 },
+            },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(refused, AbortToken))
+            .Should()
+            .Equal(
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["function"] = "required",
+                    ["retries"] = "maximum",
+                    ["retryIntervals[1]"] = "minimum",
+                }
+            );
+    }
+
+    [Fact]
+    public async Task should_name_a_chain_step_without_a_function_by_its_path()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var refused = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/time-jobs",
+            new { function = JobsModuleNode.Charge, children = new[] { new { description = "no function" } } },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(refused, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["children[0].function"] = "required" });
+    }
+
+    [Fact]
+    public async Task should_name_an_unknown_function_in_a_chain_step_by_its_path()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var refused = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/time-jobs",
+            new { function = JobsModuleNode.Charge, children = new[] { new { function = "no.such" } } },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(refused, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["children[0].function"] = "enum" });
+    }
+
+    [Theory]
+    [InlineData("""{ "function": "report.build" }""", "expression", "required")]
+    [InlineData("""{ "function": "report.build", "expression": "not cron" }""", "expression", "format")]
+    [InlineData(
+        """{ "function": "report.build", "expression": "0 0 * * * *", "timeZoneId": "Mars/Olympus" }""",
+        "timeZoneId",
+        "enum"
+    )]
+    [InlineData("""{ "expression": "0 0 * * * *", "retries": -1 }""", "function", "required")]
+    public async Task should_refuse_a_cron_job_body_naming_the_field_and_rule(string json, string field, string rule)
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var refused = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/cron-jobs",
+            JsonDocument.Parse(json).RootElement,
+            cookie,
+            AbortToken
+        );
+
+        // then
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(refused, AbortToken))
+            .Should()
+            .ContainKey(field)
+            .WhoseValue.Should()
+            .Be(rule);
     }
 
     [Fact]
