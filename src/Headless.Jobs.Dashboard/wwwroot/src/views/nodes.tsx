@@ -111,7 +111,7 @@ export default function NodesView() {
                 header: 'Last beat',
                 cell: (row) => (
                   <CellText>
-                    <Time value={row.lastHeartbeatAt ?? undefined} short missing="No heartbeat" />
+                    <Time value={row.lastHeartbeatAt ?? undefined} short missing="Not tracked" />
                   </CellText>
                 ),
                 priority: 2,
@@ -120,6 +120,8 @@ export default function NodesView() {
               {
                 id: 'claims',
                 header: 'Claimed functions',
+                // The list keeps the server and its state at narrow widths; the panel shows what it claims.
+                priority: 2,
                 cell: (row) => (
                   <CellText title={row.claimedFunctions?.join(', ')}>
                     <Claims node={row} />
@@ -214,7 +216,7 @@ function NodePanel({ node }: { node: JobNode }) {
                     {format.count({ value: node.running, capped: node.runningCapped })}
                   </GridField>
                   <GridField label="Last beat">
-                    <Time value={node.lastHeartbeatAt ?? undefined} missing="No heartbeat" />
+                    <Time value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </GridField>
                   <GridField label="Last host exception" span={2}>
                     <HostException node={node} />

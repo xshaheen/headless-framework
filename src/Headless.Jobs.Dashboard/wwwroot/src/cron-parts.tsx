@@ -339,7 +339,7 @@ function occurrenceNote(run: Run) {
 
 /** The cron job's occurrences per day by status over a chosen range, as the server counts them. */
 function CronRunsPerDay({ cronJob }: { cronJob: CronJob }) {
-  const { control, body } = useRunsPerDay({ cronJobId: cronJob.id, unit: 'occurrences' })
+  const { control, body } = useRunsPerDay({ cronJobId: cronJob.id, unit: 'occurrences', unitOne: 'occurrence' })
 
   return (
     <Fields label="Occurrences per day">
@@ -388,7 +388,16 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
               time: <Time value={run.executionTime ?? run.createdAt} short />,
               tone: runStatusMark(run).tone,
               state: statusLabel(run.status),
-              note: run.progressPercent !== undefined ? <RunProgress run={run} /> : occurrenceNote(run),
+              // Progress joins the note rather than replacing it, so the node, a skip reason, or a failure's first
+              // line stays readable on an occurrence that also reported progress.
+              note:
+                run.progressPercent !== undefined ? (
+                  <>
+                    {occurrenceNote(run)} <RunProgress run={run} compact />
+                  </>
+                ) : (
+                  occurrenceNote(run)
+                ),
               actions: <Link to={`/jobs/runs/${encodeURIComponent(run.id)}`}>Open run</Link>,
             }))}
           />

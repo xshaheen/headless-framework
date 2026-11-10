@@ -59,7 +59,7 @@ describe('jobs servers', () => {
       'Suspected',
       'Not published',
       '500+',
-      'No heartbeat',
+      'Not tracked',
       'No run filter published',
     ])
   })

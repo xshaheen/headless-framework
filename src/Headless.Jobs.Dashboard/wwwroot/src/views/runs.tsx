@@ -72,7 +72,7 @@ import {
   type RunScope,
   type RunStatus,
 } from '../runs.ts'
-import { RunProgress } from '../progress.tsx'
+import { progressText, RunProgress } from '../progress.tsx'
 import { TimeJobForm } from './create.tsx'
 
 const kindOptions = [
@@ -380,7 +380,7 @@ export default function RunsView() {
           <SearchField
             key={`search-${scopeReset}`}
             label="Search runs"
-            placeholder="Function, id, business key, or description"
+            placeholder="Function, id, key, description"
             defaultValue={search}
             onSearch={setSearch}
           />
@@ -543,7 +543,16 @@ function RunsTable({
         {
           id: 'progress',
           header: 'Progress',
-          cell: (run) => (run.progressPercent !== undefined ? <RunProgress run={run} /> : ''),
+          cell: (run) =>
+            run.progressPercent !== undefined ? (
+              <CellText
+                title={progressText(run, `${format.number(run.progressPercent, { maximumFractionDigits: 1 })} %`)}
+              >
+                <RunProgress run={run} compact />
+              </CellText>
+            ) : (
+              ''
+            ),
           priority: 2,
           width: 160,
         },

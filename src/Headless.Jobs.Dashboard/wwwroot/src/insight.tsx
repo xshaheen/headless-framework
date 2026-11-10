@@ -125,7 +125,7 @@ function presentDay(days: readonly DailyBucket[], today: string) {
  * last 7 days and the next 7, where future days count the runs scheduled for them. A day the server could not read is
  * a gap, never zero. `control` goes where the caller shows a heading's control; `body` holds the chart.
  */
-export function useRunsPerDay({ cronJobId, unit }: { cronJobId?: string; unit: string }): {
+export function useRunsPerDay({ cronJobId, unit, unitOne }: { cronJobId?: string; unit: string; unitOne: string }): {
   control: ReactNode
   body: ReactNode
 } {
@@ -182,6 +182,7 @@ export function useRunsPerDay({ cronJobId, unit }: { cronJobId?: string; unit: s
       kind="stacked-bar"
       label={cronJobId ? 'Occurrences per day by status' : 'Runs per day by status'}
       unit={unit}
+      unitOne={unitOne}
       asOf={data.asOf}
       zone={data.zone}
       // Each bar is labelled from the first day's start plus whole days; starting at noon keeps every label on its own
@@ -248,6 +249,7 @@ export function StatusDistribution({
       kind="donut"
       label="Runs by status"
       unit="runs"
+      unitOne="run"
       // The counts cover every stored run, not a window, so they carry no range, only when they were fetched.
       asOf={fetchedAt}
       zone={format.timeZone}

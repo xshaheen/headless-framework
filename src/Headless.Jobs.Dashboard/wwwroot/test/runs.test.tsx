@@ -853,7 +853,8 @@ describe('jobs runs list reads', () => {
     act(() => view.stream.setStatus('stale'))
     await act(() => vi.advanceTimersByTimeAsync(5_000))
 
-    expect(within(row()).getByText('62.5 % · step 25 of 40')).toBeTruthy()
+    // The cell keeps one line: the bar, the percentage, and the age; the handler's message stays in the bar's value text.
+    expect(within(row()).getByRole('progressbar').getAttribute('aria-valuetext')).toBe('62.5 % · step 25 of 40')
     expect(within(row()).getByText('updated 5 sec. ago')).toBeTruthy()
     expect(screen.getByText('Stale. Live updates stopped, so these runs may be out of date.')).toBeTruthy()
 

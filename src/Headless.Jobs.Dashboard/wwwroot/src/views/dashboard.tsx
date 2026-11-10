@@ -294,7 +294,7 @@ function RunsByStatus() {
 /** Runs per day by status, the range control in the card's heading. */
 function RunsPerDay() {
   const format = useFormat()
-  const { control, body } = useRunsPerDay({ unit: 'runs' })
+  const { control, body } = useRunsPerDay({ unit: 'runs', unitOne: 'run' })
 
   return (
     <Card title="Runs per day" action={control}>
