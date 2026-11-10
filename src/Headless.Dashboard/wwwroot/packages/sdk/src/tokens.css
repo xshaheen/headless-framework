@@ -119,11 +119,11 @@
   --row-height: 34px;
   --row-height-compact: 28px;
   --card-row-height: 40px;
-  --chip-height: 22px;
-  --fchip-height: 26px;
-  --seg-form-height: 24px;
+  /* A segment inside the 28 px control track, which the track's 2 px padding fills out to --control-height. */
+  --seg-height: 24px;
   --tag-height: 18px;
   --tag-pill-height: 20px;
+  --mark-size: 22px;
   --icon: 15px;
   --icon-sm: 13px;
   --grip-width: 36px;

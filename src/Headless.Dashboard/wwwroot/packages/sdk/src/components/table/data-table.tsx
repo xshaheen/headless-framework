@@ -18,6 +18,7 @@ import type { ListSort } from '../../data/keyset.ts'
 import { below, useBelow } from '../breakpoints.ts'
 import { Button } from '../button.tsx'
 import { Banner } from '../display/banner.tsx'
+import { EmptyState } from '../display/empty-state.tsx'
 import { Tag } from '../display/tag.tsx'
 import { Text } from '../display/text.tsx'
 import type { PageFrameState } from '../frame/page-frame.tsx'
@@ -385,16 +386,20 @@ export function DataTable<T extends { id: string }>({
       onKeyDownCapture={(event: KeyboardEvent) => (moving.current = !event.shiftKey && moveKeys.has(event.key))}
       onKeyDown={() => (moving.current = false)}
     >
-      {/* The table insets its own first column, so its toolbar takes the same gutter rather than meeting the page edge. */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-2 [&>[role=group]]:ms-auto">
-        {arrived > 0 ? (
-          <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
-            {`${arrived} new`}
-          </Button>
-        ) : null}
-        <Announcer message={arrived > 0 ? `${arrived} new ${arrived === 1 ? 'row' : 'rows'}` : ''} />
-        <DensityToggle value={density} onChange={setDensity} />
-      </div>
+      {/* The table insets its own first column, so its toolbar takes the same gutter rather than meeting the page edge.
+          A table with no view id remembers no density, so it offers no toggle, and a toolbar with nothing in it is
+          left out rather than spacing the table down. */}
+      {viewId || arrived > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-2 [&>[role=group]]:ms-auto">
+          {arrived > 0 ? (
+            <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
+              {`${arrived} new`}
+            </Button>
+          ) : null}
+          {viewId ? <DensityToggle value={density} onChange={setDensity} /> : null}
+        </div>
+      ) : null}
+      <Announcer message={arrived > 0 ? `${arrived} new ${arrived === 1 ? 'row' : 'rows'}` : ''} />
       {selectionMode === 'multiple' && allLoaded && (checks || more) ? (
         <Banner>
           <span>{checks ? `All ${listed.length} loaded rows are checked.` : `All ${listed.length} rows on this page are selected.`}</span>
@@ -408,7 +413,10 @@ export function DataTable<T extends { id: string }>({
       {/* The empty state sits outside the grid: inside it the virtualizer gives it no height, so its next step
           (`Clear filters`) could not be seen or clicked. */}
       {listed.length === 0 && !hasMore ? (
-        <div className="mx-auto max-w-[46ch] py-5 text-center text-muted-foreground">{emptyState}</div>
+        // On the table's own gutter, start-aligned as a list's empty state is; only an empty page centres one.
+        <div className="px-1.5">
+          <EmptyState>{emptyState}</EmptyState>
+        </div>
       ) : (
         <Virtualizer layout={layout} layoutOptions={{ rowHeight, headingHeight, loaderHeight: rowHeight }}>
           <Table
@@ -521,9 +529,7 @@ export function DataTable<T extends { id: string }>({
                         {stale && column.id === rowHeaderId ? (
                           <>
                             {' '}
-                            <span className="inline-flex h-(--chip-height) flex-none items-center rounded-md bg-muted px-1.5 type-label text-muted-foreground">
-                              No longer matches
-                            </span>
+                            <Tag variant="filled">No longer matches</Tag>
                           </>
                         ) : null}
                         {refusal !== undefined && column.id === rowHeaderId ? (

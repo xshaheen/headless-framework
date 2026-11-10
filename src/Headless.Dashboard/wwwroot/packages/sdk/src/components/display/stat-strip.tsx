@@ -54,9 +54,11 @@ export function StatCard({ label, value, tone, caption, to, icon: Icon }: StatCa
 /** The row of stat cards above a page, named for what it summarizes: `Runs by state`. Up to six cards. */
 export function StatStrip({ label, children }: { label: string; children: ReactNode }) {
   return (
+    // Six cells share the width only where each keeps about 200 px; below 1280 px they wrap three to a row, and on a
+    // phone two, so a label never breaks into a third line and the strip reads as one block.
     <section
       aria-label={label}
-      className="grid auto-cols-[minmax(0,1fr)] grid-flow-col border-b border-border bg-card max-md:grid-flow-row max-md:grid-cols-2"
+      className="grid auto-cols-[minmax(0,1fr)] grid-flow-col border-b border-border bg-card max-xl:grid-flow-row max-xl:grid-cols-3 max-md:grid-cols-2 max-xl:[&>*:nth-child(-n+3)]:border-b max-md:[&>*:nth-child(3)]:border-b-0 max-md:[&>*:nth-child(-n+2)]:border-b"
     >
       {children}
     </section>

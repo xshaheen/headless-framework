@@ -28,6 +28,11 @@ export interface DateRangeFieldProps {
    * in the display time zone and the end the midnight after the last day, so the last day is included whole.
    */
   onChange: (range: ListRange | undefined) => void
+  /**
+   * A filter in a page header: one control high, its label shown faint inside the field in place of a label above
+   * it, so the row stays one line and the field still says what the days filter.
+   */
+  compact?: boolean
 }
 
 const groupClass =
@@ -43,7 +48,7 @@ const cellClass =
  * A list's day range, typed or picked on a calendar, read in the dashboard's display time zone. A list passes the
  * range to its keyset hook as `range`, which reads the first page again for it.
  */
-export function DateRangeField({ label, onChange }: DateRangeFieldProps) {
+export function DateRangeField({ label, onChange, compact }: DateRangeFieldProps) {
   const { timeZone } = useLocale()
 
   function change(value: DateRange | null) {
@@ -62,9 +67,14 @@ export function DateRangeField({ label, onChange }: DateRangeFieldProps) {
   }
 
   return (
-    <DateRangePicker className="flex min-w-0 flex-col gap-1" granularity="day" onChange={change}>
-      <Label className="hd-label">{label}</Label>
-      <Group className={groupClass}>
+    <DateRangePicker className={compact ? 'inline-flex min-w-0' : 'flex min-w-0 flex-col gap-1'} granularity="day" onChange={change}>
+      <Label className={compact ? 'sr-only' : 'hd-label'}>{label}</Label>
+      <Group className={compact ? `${groupClass} h-(--control-height) type-small` : groupClass}>
+        {compact ? (
+          <span aria-hidden="true" className="me-1 text-faint">
+            {label}
+          </span>
+        ) : null}
         <DateInput slot="start" className="flex">
           {(segment) => <DateSegment segment={segment} className={segmentClass} />}
         </DateInput>

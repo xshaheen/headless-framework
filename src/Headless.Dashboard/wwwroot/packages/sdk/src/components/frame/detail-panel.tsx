@@ -99,14 +99,16 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
     <div
       ref={ref}
       // `hd-panel` names the panel for the shell's canvas, which drops its padding around one.
-      className="hd-panel flex min-w-0 flex-1 flex-col bg-card text-card-foreground focus:outline-none"
+      className="hd-panel relative flex min-w-0 flex-1 flex-col bg-card text-card-foreground focus:outline-none"
       aria-label={label}
       role={modal ? 'dialog' : 'region'}
       aria-modal={modal || undefined}
       tabIndex={modal ? -1 : undefined}
       onKeyDown={onKeyDown}
     >
-      <div className="flex flex-wrap items-center gap-2.5 ps-4 pe-3 pt-2">
+      {/* On a phone the title, tabs, and actions wrap into rows, so the window controls leave the flow and keep the
+          top end corner, where a sheet's close sits; the title row pads past them so the name never runs under. */}
+      <div className="flex flex-wrap items-center gap-2.5 ps-4 pe-3 pt-2 max-md:pe-20">
         {status ? (
           <span className={`hd-tone-${status.tone} inline-flex items-center`}>
             <span className="hd-mark" aria-hidden="true" />
@@ -149,6 +151,7 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
           </div>
         ) : null}
         <span className="ms-auto flex flex-wrap gap-2">{actions}</span>
+        <span className="flex max-md:absolute max-md:top-2 max-md:end-3">
         {detachTo !== undefined ? (
           <Link to={detachTo} className="hd-btn hd-btn-ghost hd-icon" aria-label="Open in its own page" title="Open in its own page">
             <Glyph d="M9 3h4v4M13 3L7.5 8.5M12 9.5V13H3V4h3.5" />
@@ -169,10 +172,12 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
             <Glyph d="M3.5 3.5l9 9M12.5 3.5l-9 9" />
           </Button>
         ) : null}
+        </span>
       </div>
       {stale ? <p className="mx-4 mt-2 type-small text-muted-foreground">No longer matches the filter</p> : null}
       <div
-        className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] border-t border-border *:flex *:flex-col *:gap-3.5 *:overflow-auto *:px-4 *:py-3.5 *:only:col-span-full [&>:first-child:not(:only-child)]:border-e max-md:grid-cols-1 max-md:overflow-auto max-md:*:overflow-visible max-md:[&>:first-child:not(:only-child)]:border-e-0 max-md:[&>:first-child:not(:only-child)]:border-b"
+        // A form's fields stop at a readable measure instead of stretching across a wide panel.
+        className={`mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] border-t border-border *:flex *:flex-col *:gap-3.5 *:overflow-auto *:px-4 *:py-3.5 *:only:col-span-full [&>:first-child:not(:only-child)]:border-e max-md:grid-cols-1 max-md:overflow-auto max-md:*:overflow-visible max-md:[&>:first-child:not(:only-child)]:border-e-0 max-md:[&>:first-child:not(:only-child)]:border-b${form ? ' [&_form]:max-w-[64ch] [&_.hd-field]:max-w-[64ch]' : ''}`}
         id={tab ? `${base}p` : undefined}
         role={tab ? 'tabpanel' : undefined}
         aria-labelledby={tab ? `${base}${index}` : undefined}

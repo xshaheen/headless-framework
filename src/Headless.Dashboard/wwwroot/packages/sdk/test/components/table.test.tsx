@@ -147,10 +147,8 @@ describe('data table', () => {
     const user = userEvent.setup()
     render(withDashboard(<ListView selectionMode="multiple" />))
 
-    // The filter, then the density toggle's two buttons, then the grid's one tab stop.
+    // The filter, then the grid's one tab stop: a list with no view id offers no density toggle between them.
     await user.click(screen.getByRole('textbox', { name: 'Filter' }))
-    await user.tab()
-    await user.tab()
     await user.tab()
     expect(document.activeElement).toBe(row(/#1/))
     expect(inspector()).toBe('Nothing selected')

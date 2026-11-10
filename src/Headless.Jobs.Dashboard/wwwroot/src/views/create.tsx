@@ -230,7 +230,6 @@ export function TimeJobForm({
         <>
           <SegmentedControl
             label="Kind"
-            size="form"
             options={kinds}
             value={chain ? 'chain' : 'single'}
             onChange={(value) => onChainChange(value === 'chain')}

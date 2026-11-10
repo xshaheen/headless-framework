@@ -50,7 +50,7 @@ describe('icon slots', () => {
     const card = screen.getByRole('region', { name: 'Recent runs' })
     const heading = within(card).getByRole('heading', { name: 'Recent runs' })
     expect(heading.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
-    expect(within(card).getByText('No run yet.').parentElement?.querySelector('svg')).not.toBeNull()
+    expect(within(card).getByText('No run yet.').closest('div')?.parentElement?.querySelector('svg')).not.toBeNull()
   })
 
   it('shows an empty state without an icon as its text alone', () => {

@@ -73,8 +73,8 @@
 .hd-logo-mark {
   display: inline-grid;
   place-items: center;
-  inline-size: var(--chip-height);
-  block-size: var(--chip-height);
+  inline-size: var(--mark-size);
+  block-size: var(--mark-size);
   border-radius: var(--radius-panel);
   background: var(--text);
   color: var(--deep);
@@ -100,6 +100,7 @@
 
 .hd-tab {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: var(--sp-3);
   block-size: var(--field-height);

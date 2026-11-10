@@ -64,6 +64,11 @@ export interface CardRowProps {
    * `meta`, `value`, and `actions`) the row is only its second line, such as a chart that fills the card.
    */
   name?: ReactNode
+  /**
+   * The name is a sentence rather than an identifier, such as an attention item the server could not be split into
+   * a name and a count: it reads in the sans face; an identifier inside it still sets its own with `Mono`.
+   */
+  prose?: boolean
   /** Faint facts after the name: `node-a · 24 s`, a cron expression. */
   meta?: ReactNode
   /** The row's value at the inline end: `in 6 s`. */
@@ -77,11 +82,15 @@ export interface CardRowProps {
   children?: ReactNode
 }
 
+// A prose name sets its own face and weight, since the line's mono shorthand would otherwise cover it.
+const monoName = 'min-w-0 overflow-hidden font-medium text-ellipsis'
+const proseName = 'min-w-0 overflow-hidden text-ellipsis type-small-medium text-foreground'
+
 /**
  * One row of a `Card`: dot, name, faint meta, value, and actions on one line, where only the name gives way, with an
  * optional second line.
  */
-export function CardRow({ tone, name, meta, value, actions, children }: CardRowProps) {
+export function CardRow({ tone, name, prose = false, meta, value, actions, children }: CardRowProps) {
   const first = tone != null || name != null || meta != null || value != null || actions != null
 
   return (
@@ -91,7 +100,7 @@ export function CardRow({ tone, name, meta, value, actions, children }: CardRowP
       {first ? (
         <div className="flex min-w-0 basis-full items-center gap-2.5 type-mono whitespace-nowrap [&>b+*]:ms-auto">
           {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
-          <b className="min-w-0 overflow-hidden font-medium text-ellipsis">{name}</b>
+          <b className={prose ? proseName : monoName}>{name}</b>
           {meta != null ? <span className="hd-faint">{meta}</span> : null}
           {value}
           {actions}

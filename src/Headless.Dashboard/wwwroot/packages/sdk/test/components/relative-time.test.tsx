@@ -1,9 +1,9 @@
 import { act, render, screen } from '@testing-library/react'
-import { LocaleProvider } from '@headless/dashboard-sdk/locale'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Time } from '../src/parts.tsx'
+import { RelativeTime } from '../../src/components/display/relative-time.tsx'
+import { LocaleProvider } from '../../src/locale/locale.tsx'
 
-describe('Time', () => {
+describe('RelativeTime', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-11-10T12:00:00Z'))
@@ -16,7 +16,7 @@ describe('Time', () => {
   it('turns a next fire into due once its time passes, with no new data', () => {
     render(
       <LocaleProvider>
-        <Time value="2026-11-10T12:00:03Z" scheduled />
+        <RelativeTime value="2026-11-10T12:00:03Z" scheduled />
       </LocaleProvider>,
     )
 
@@ -32,7 +32,7 @@ describe('Time', () => {
   it('counts a past time up without saying due when it is not scheduled', () => {
     render(
       <LocaleProvider>
-        <Time value="2026-11-10T11:59:58Z" />
+        <RelativeTime value="2026-11-10T11:59:58Z" />
       </LocaleProvider>,
     )
 

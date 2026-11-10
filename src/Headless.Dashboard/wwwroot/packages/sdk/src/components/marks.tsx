@@ -21,7 +21,7 @@ export function StatusMark({ tone, label }: { tone: DashboardStateRole; label: s
 /** A small fact on an object, such as its tenant or node. Identifiers inside render mono and LTR. */
 export function Chip({ label, value, mono }: { label?: string; value: ReactNode; mono?: boolean }) {
   return (
-    <span className="inline-flex h-(--chip-height) items-center gap-1 rounded-md bg-muted px-1.5 type-label whitespace-nowrap text-muted-foreground">
+    <span className="inline-flex h-(--tag-pill-height) items-center gap-1 rounded-sm bg-muted px-1.5 type-label whitespace-nowrap text-muted-foreground">
       {label ? <span>{label}</span> : null}
       <b className={mono ? 'hd-mono font-medium text-foreground' : 'font-medium text-foreground'}>{value}</b>
     </span>
