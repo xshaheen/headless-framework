@@ -12,7 +12,13 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-const fires = ['2026-11-06T01:00:00Z', '2026-11-07T01:00:00Z', '2026-11-08T01:00:00Z', '2026-11-09T01:00:00Z', '2026-11-10T01:00:00Z']
+const fires = [
+  '2026-11-06T01:00:00Z',
+  '2026-11-07T01:00:00Z',
+  '2026-11-08T01:00:00Z',
+  '2026-11-09T01:00:00Z',
+  '2026-11-10T01:00:00Z',
+]
 
 function described(button: HTMLElement) {
   return document.getElementById(button.getAttribute('aria-describedby')!)?.textContent
@@ -24,7 +30,11 @@ describe('jobs cron job page', () => {
     open({ cronJobs: [job] }, { path: `cron-jobs/${job.id}` })
 
     const list = await screen.findByRole('list', { name: 'Next fires, Europe/Berlin' })
-    expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
       'Nov 6, 2026, 02:00:00 GMT+01:00 Europe/Berlin',
       'Nov 7, 2026, 02:00:00 GMT+01:00 Europe/Berlin',
       'Nov 8, 2026, 02:00:00 GMT+01:00 Europe/Berlin',
@@ -59,7 +69,11 @@ describe('jobs cron job page', () => {
         cronJobs: [job],
         extra: (request) =>
           request.path === 'jobs/cron-preview' && request.query?.expression === '*/5 * * * *'
-            ? { timeZoneId: 'Europe/Berlin', reading: 'Every 5 minutes', nextFires: ['2026-11-05T10:05:00Z', '2026-11-05T10:10:00Z'] }
+            ? {
+                timeZoneId: 'Europe/Berlin',
+                reading: 'Every 5 minutes',
+                nextFires: ['2026-11-05T10:05:00Z', '2026-11-05T10:10:00Z'],
+              }
             : undefined,
       },
       { path: `cron-jobs/${job.id}` },
@@ -106,7 +120,9 @@ describe('jobs cron job page', () => {
       {
         cronJobs: [job],
         extra: (request) =>
-          request.method === 'POST' && request.path === 'jobs/commands/jobs.edit-cron' ? { rows: [{ id: job.id, outcome: 'done' }] } : undefined,
+          request.method === 'POST' && request.path === 'jobs/commands/jobs.edit-cron'
+            ? { rows: [{ id: job.id, outcome: 'done' }] }
+            : undefined,
       },
       { path: `cron-jobs/${job.id}` },
     )
@@ -137,11 +153,18 @@ describe('jobs recurring jobs list', () => {
   it('says how recurring jobs get there when there are none', async () => {
     open({}, { path: 'cron-jobs' })
 
-    expect(await screen.findByText('No recurring jobs. Declare one with a [Job] cron attribute, or add one here.')).toBeTruthy()
+    expect(
+      await screen.findByText('No recurring jobs. Declare one with a [Job] cron attribute, or add one here.'),
+    ).toBeTruthy()
   })
 
   it('lists each job’s function, schedule with its reading, and next run, and tags a paused one', async () => {
-    const paused = cronJob({ id: 'c0000000-0000-0000-0000-000000000002', function: 'export.ledger', description: 'Nightly ledger export', isPaused: true })
+    const paused = cronJob({
+      id: 'c0000000-0000-0000-0000-000000000002',
+      function: 'export.ledger',
+      description: 'Nightly ledger export',
+      isPaused: true,
+    })
     open({ cronJobs: [cronJob(), paused] }, { path: 'cron-jobs' })
 
     const active = await screen.findByRole('row', { name: /reports\.nightly/ })
@@ -182,10 +205,11 @@ describe('jobs recurring jobs list', () => {
     const chart = await within(panel).findByRole('img', { name: /^Occurrence outcomes per hour/ })
     expect(chart.getAttribute('aria-label')).toContain('the tallest bar is 1 occurrences')
     const list = within(panel).getByRole('region', { name: 'Occurrences' })
-    expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      expect.stringContaining('Succeeded'),
-      expect.stringContaining('Failed'),
-    ])
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([expect.stringContaining('Succeeded'), expect.stringContaining('Failed')])
     const read = view.requests.find((request) => request.path === 'jobs/runs')
     expect(read?.query).toMatchObject({ cronJobId: job.id, from: expect.stringMatching(/^2026-11-04T11:00:/) })
   })
@@ -233,7 +257,11 @@ describe('jobs recurring jobs list', () => {
   it('does not carry an expression typed for one job into the next one opened', async () => {
     const actor = user()
     const first = cronJob({ description: 'Nightly report' })
-    const second = cronJob({ id: 'c0000000-0000-0000-0000-000000000002', function: 'reports.cleanup', description: 'Nightly cleanup' })
+    const second = cronJob({
+      id: 'c0000000-0000-0000-0000-000000000002',
+      function: 'reports.cleanup',
+      description: 'Nightly cleanup',
+    })
     const view = open(
       {
         cronJobs: [first, second],

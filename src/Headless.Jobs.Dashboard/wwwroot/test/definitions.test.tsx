@@ -12,11 +12,31 @@ afterEach(() => {
   localStorage.clear()
 })
 
-const unclaimed = { ...functions[0]!, name: 'mail.send', claimedBy: [], cronExpression: '0 6 * * *', requestType: undefined }
+const unclaimed = {
+  ...functions[0]!,
+  name: 'mail.send',
+  claimedBy: [],
+  cronExpression: '0 6 * * *',
+  requestType: undefined,
+}
 
 describe('jobs functions list', () => {
   it('lists each function’s kind, request type, limit, and nodes, and tags one no node runs', async () => {
-    open({ functions: [{ ...functions[0]!, requestType: 'Billing.ChargeArgs', maxConcurrency: 8, running: 2, claimedBy: ['node-a', 'node-c'] }, unclaimed] }, { path: 'functions' })
+    open(
+      {
+        functions: [
+          {
+            ...functions[0]!,
+            requestType: 'Billing.ChargeArgs',
+            maxConcurrency: 8,
+            running: 2,
+            claimedBy: ['node-a', 'node-c'],
+          },
+          unclaimed,
+        ],
+      },
+      { path: 'functions' },
+    )
     await screen.findByRole('row', { name: /billing\.charge/ })
 
     const charge = screen.getByRole('row', { name: /billing\.charge/ })
@@ -40,7 +60,11 @@ describe('jobs functions list', () => {
     const panel = await screen.findByRole('region', { name: 'Function mail.send' })
     expect(view.location().search).toBe('?open=mail.send')
     expect(within(panel).getByText('Contract version', { selector: 'dt' }).nextElementSibling?.textContent).toBe('1')
-    expect(within(within(panel).getByRole('region', { name: 'Where it runs' })).getByText(/No live node's run filter claims it/)).toBeTruthy()
+    expect(
+      within(within(panel).getByRole('region', { name: 'Where it runs' })).getByText(
+        /No live node's run filter claims it/,
+      ),
+    ).toBeTruthy()
   })
 
   it('shows the function panel as its own page, with nothing to close or detach', async () => {
@@ -62,7 +86,12 @@ describe('jobs servers', () => {
     open({ nodes }, { path: 'nodes' })
 
     const row = await screen.findByRole('row', { name: /node-a/ })
-    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Server', 'Role', 'State', 'Claimed functions'])
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Server',
+      'Role',
+      'State',
+      'Claimed functions',
+    ])
     expect(row.textContent).toContain('api')
     expect(row.textContent).toContain('Alive')
     expect(row.textContent).toContain('billing.chargebilling.refund')
@@ -77,7 +106,9 @@ describe('jobs servers', () => {
     await actor.click(await screen.findByRole('row', { name: /node-a/ }))
 
     const panel = await screen.findByRole('region', { name: 'Server node-a' })
-    expect(within(panel).getByRole('link', { name: 'billing.charge' }).getAttribute('href')).toBe('/jobs/functions/billing.charge')
+    expect(within(panel).getByRole('link', { name: 'billing.charge' }).getAttribute('href')).toBe(
+      '/jobs/functions/billing.charge',
+    )
     expect(within(panel).queryByRole('button', { name: /scheduler/i })).toBeNull()
   })
 })

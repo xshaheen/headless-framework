@@ -145,10 +145,19 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
     event.preventDefault()
 
     const credential =
-      mode === 'basic' ? (userName && password ? `Basic ${utf8Base64(`${userName}:${password}`)}` : undefined) : apiKey ? `Bearer ${apiKey}` : undefined
+      mode === 'basic'
+        ? userName && password
+          ? `Basic ${utf8Base64(`${userName}:${password}`)}`
+          : undefined
+        : apiKey
+          ? `Bearer ${apiKey}`
+          : undefined
 
     if (!credential) {
-      setPhase({ kind: 'refused', message: mode === 'basic' ? 'Enter your user name and password.' : 'Enter the API key.' })
+      setPhase({
+        kind: 'refused',
+        message: mode === 'basic' ? 'Enter your user name and password.' : 'Enter the API key.',
+      })
       return
     }
 
@@ -169,7 +178,8 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
             ? mode === 'basic'
               ? 'The user name or password is wrong. Check them and try again.'
               : 'The API key is wrong. Check it and try again.'
-            : ((await readProblem(response)) ?? `Sign-in failed: the dashboard answered ${response.status}. Try again.`),
+            : ((await readProblem(response)) ??
+              `Sign-in failed: the dashboard answered ${response.status}. Try again.`),
       })
     } catch {
       setPhase({ kind: 'refused', message: 'The dashboard could not be reached. Check your connection and try again.' })
@@ -177,7 +187,8 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
   }
 
   const hostSignIn = `${state.basePath}/auth/sign-in?returnUrl=${encodeURIComponent(returnUrl)}`
-  const forbidden = phase.kind === 'forbidden' ? phase.message : notice === 'forbidden' ? stateText.forbidden : undefined
+  const forbidden =
+    phase.kind === 'forbidden' ? phase.message : notice === 'forbidden' ? stateText.forbidden : undefined
   const host = typeof location === 'undefined' ? 'the application' : location.host
 
   return (
@@ -232,11 +243,31 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
             ) : null}
             {mode === 'basic' ? (
               <>
-                <SignInField label="User name" icon={userIcon} value={userName} onChange={setUserName} autoComplete="username" />
-                <SignInField label="Password" icon={keyIcon} value={password} onChange={setPassword} secret autoComplete="current-password" />
+                <SignInField
+                  label="User name"
+                  icon={userIcon}
+                  value={userName}
+                  onChange={setUserName}
+                  autoComplete="username"
+                />
+                <SignInField
+                  label="Password"
+                  icon={keyIcon}
+                  value={password}
+                  onChange={setPassword}
+                  secret
+                  autoComplete="current-password"
+                />
               </>
             ) : (
-              <SignInField label="API key" icon={keyIcon} value={apiKey} onChange={setApiKey} secret autoComplete="off" />
+              <SignInField
+                label="API key"
+                icon={keyIcon}
+                value={apiKey}
+                onChange={setApiKey}
+                secret
+                autoComplete="off"
+              />
             )}
             <Button type="submit" variant="primary" className="hd-sign-in-go" isPending={phase.kind === 'busy'}>
               Sign in
@@ -299,7 +330,12 @@ function SignInField({ label, icon, value, onChange, autoComplete, secret }: Sig
           onKeyDown={(event) => setCaps(event.getModifierState('CapsLock'))}
         />
         {secret ? (
-          <Button variant="ghost" aria-label={shown ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`} aria-pressed={shown} onPress={() => setShown(!shown)}>
+          <Button
+            variant="ghost"
+            aria-label={shown ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+            aria-pressed={shown}
+            onPress={() => setShown(!shown)}
+          >
             <Icon d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8zM8 6.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3z" />
           </Button>
         ) : null}

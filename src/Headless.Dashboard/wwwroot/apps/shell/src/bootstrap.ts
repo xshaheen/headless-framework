@@ -131,11 +131,15 @@ function isProduct(value: unknown): value is BootstrapProduct {
 }
 
 function isCommand(value: unknown): value is BootstrapCommand {
-  return isRecord(value) && typeof value.id === 'string' && typeof value.label === 'string' && isPermission(value.requires)
+  return (
+    isRecord(value) && typeof value.id === 'string' && typeof value.label === 'string' && isPermission(value.requires)
+  )
 }
 
 function isRoute(value: unknown): value is BootstrapRoute {
-  return isRecord(value) && typeof value.path === 'string' && (value.chunk === undefined || typeof value.chunk === 'string')
+  return (
+    isRecord(value) && typeof value.path === 'string' && (value.chunk === undefined || typeof value.chunk === 'string')
+  )
 }
 
 function isRefusal(value: unknown): value is BootstrapRefusal {
@@ -441,8 +445,7 @@ export function safeReturnUrl(basePath: string, returnUrl: string | null | undef
     return home
   }
 
-  const underBase =
-    path === basePath || path.startsWith(home) || (basePath === '' && path.startsWith('/'))
+  const underBase = path === basePath || path.startsWith(home) || (basePath === '' && path.startsWith('/'))
 
   return underBase && !path.startsWith(`${basePath}/sign-in`) ? returnUrl : home
 }

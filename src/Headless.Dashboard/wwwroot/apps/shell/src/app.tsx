@@ -38,7 +38,9 @@ export function withSessionEnd(api: DashboardApi, onSessionEnded: () => void): D
 
 /** The permissions the inlined state grants: every listed module may be viewed, and some operated. */
 function permissionsOf(state: BootstrapState): DashboardEnvironment['permissions'] {
-  return Object.fromEntries(state.modules.map((module) => [module.id, { canView: true, canOperate: module.canOperate }]))
+  return Object.fromEntries(
+    state.modules.map((module) => [module.id, { canView: true, canOperate: module.canOperate }]),
+  )
 }
 
 interface ShellAppProps {

@@ -24,8 +24,18 @@ const figures = [
     unit: '%',
     comparison: { label: 'previous 24 h', value: 99.3, higherIsBetter: true },
   },
-  { id: 'jobs.overview.failed', label: 'Failed runs, last 24 h', value: 23, comparison: { label: 'previous 24 h', value: 20 } },
-  { id: 'jobs.overview.late', label: 'Runs that started late, last 24 h', value: 0, comparison: { label: 'previous 24 h', value: 0 } },
+  {
+    id: 'jobs.overview.failed',
+    label: 'Failed runs, last 24 h',
+    value: 23,
+    comparison: { label: 'previous 24 h', value: 20 },
+  },
+  {
+    id: 'jobs.overview.late',
+    label: 'Runs that started late, last 24 h',
+    value: 0,
+    comparison: { label: 'previous 24 h', value: 0 },
+  },
 ]
 
 describe('jobs dashboard', () => {
@@ -70,7 +80,10 @@ describe('jobs dashboard', () => {
 
     // And the strip reads the entry the sidebar wrote when it fetched first.
     act(() => {
-      view.client.setQueryData(['shell', 'counts', 'jobs'], { counts: { Queued: { value: 5, capped: false } }, stale: [] })
+      view.client.setQueryData(['shell', 'counts', 'jobs'], {
+        counts: { Queued: { value: 5, capped: false } },
+        stale: [],
+      })
     })
 
     expect(await within(strip).findByRole('link', { name: 'Queued 5' })).toBeTruthy()
@@ -78,7 +91,12 @@ describe('jobs dashboard', () => {
 
   it('shows a run that moves to In progress through the stream in Processing now, without a reload', async () => {
     const queued = run('Queued', { function: 'export.ledger', node: 'node-c' })
-    const running = run('InProgress', { function: 'sandbox.progress', node: 'node-a', progressPercent: 48, progressMessage: 'import: step 58 of 120' })
+    const running = run('InProgress', {
+      function: 'sandbox.progress',
+      node: 'node-a',
+      progressPercent: 48,
+      progressMessage: 'import: step 58 of 120',
+    })
     const runs = [queued, running]
     const view = open({ runs })
 
@@ -144,7 +162,9 @@ describe('jobs dashboard', () => {
     const view = open({
       runs: [first, second],
       extra: (request) =>
-        request.method === 'POST' && request.path === 'jobs/commands/jobs.cancel' ? { rows: [{ id: second.id, outcome: 'done' }] } : undefined,
+        request.method === 'POST' && request.path === 'jobs/commands/jobs.cancel'
+          ? { rows: [{ id: second.id, outcome: 'done' }] }
+          : undefined,
     })
 
     const card = await screen.findByRole('region', { name: 'Processing now' })
@@ -156,7 +176,11 @@ describe('jobs dashboard', () => {
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'stuck on a lock')
     await actor.click(within(dialog).getByRole('button', { name: 'Cancel run' }))
 
-    await waitFor(() => expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.cancel')?.body).toMatchObject({ ids: [second.id] }))
+    await waitFor(() =>
+      expect(view.requests.find((request) => request.path === 'jobs/commands/jobs.cancel')?.body).toMatchObject({
+        ids: [second.id],
+      }),
+    )
   })
 
   it('disables a Processing now Cancel the server refuses, with its reason', async () => {
@@ -165,7 +189,15 @@ describe('jobs dashboard', () => {
       runs: [stuck],
       extra: (request) =>
         request.path === 'jobs/commands/allowed'
-          ? { objects: [{ kind: 'run', id: stuck.id, commands: [{ id: 'jobs.cancel', allowed: false, disabledReason: 'Already stopping' }] }] }
+          ? {
+              objects: [
+                {
+                  kind: 'run',
+                  id: stuck.id,
+                  commands: [{ id: 'jobs.cancel', allowed: false, disabledReason: 'Already stopping' }],
+                },
+              ],
+            }
           : undefined,
     })
 
@@ -193,15 +225,28 @@ describe('jobs dashboard', () => {
     open({
       cronJobs: [
         cronJob({ id: 'c1', function: 'reports.daily', expression: '0 6 * * *', nextDueUtc: '2026-11-06T06:00:00Z' }),
-        cronJob({ id: 'c2', function: 'sandbox.progress', expression: '*/30 * * * * *', nextDueUtc: '2026-11-05T10:00:06Z' }),
+        cronJob({
+          id: 'c2',
+          function: 'sandbox.progress',
+          expression: '*/30 * * * * *',
+          nextDueUtc: '2026-11-05T10:00:06Z',
+        }),
         cronJob({ id: 'c3', function: 'cleanup.sessions', isPaused: true, nextDueUtc: '2026-11-05T10:00:01Z' }),
       ],
     })
 
     const card = await screen.findByRole('region', { name: 'Next recurring runs' })
-    await waitFor(() => expect(within(card).getAllByRole('listitem').map((item) => item.querySelector('a')?.textContent)).toEqual(['sandbox.progress', 'reports.daily']))
+    await waitFor(() =>
+      expect(
+        within(card)
+          .getAllByRole('listitem')
+          .map((item) => item.querySelector('a')?.textContent),
+      ).toEqual(['sandbox.progress', 'reports.daily']),
+    )
     expect(within(card).getByRole('link', { name: 'All 3' }).getAttribute('href')).toBe('/jobs/cron-jobs')
-    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' }).closest('header')?.textContent).toContain('Next execution in 6 seconds · sandbox.progress')
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' }).closest('header')?.textContent).toContain(
+      'Next execution in 6 seconds · sandbox.progress',
+    )
   })
 
   it('says there are no recurring jobs yet and offers Add recurring job', async () => {
@@ -212,7 +257,9 @@ describe('jobs dashboard', () => {
     await within(card).findByText(/No recurring jobs yet/)
     await actor.click(within(card).getByRole('button', { name: 'Add recurring job' }))
 
-    await waitFor(() => expect(`${view.location().pathname}${view.location().search}`).toBe('/jobs/cron-jobs?create=cron-job'))
+    await waitFor(() =>
+      expect(`${view.location().pathname}${view.location().search}`).toBe('/jobs/cron-jobs?create=cron-job'),
+    )
   })
 
   it('lists the Jobs attention items, a failure group leading to its failed runs', async () => {
@@ -225,7 +272,10 @@ describe('jobs dashboard', () => {
           severity: 'critical',
           count: 3,
           capped: false,
-          recommended: { command: {}, filter: { functions: ['billing.charge'], fingerprint: 'v1:card', actionableOnly: true } },
+          recommended: {
+            command: {},
+            filter: { functions: ['billing.charge'], fingerprint: 'v1:card', actionableOnly: true },
+          },
         },
         {
           id: 'unclaimed:mail.send',
@@ -240,10 +290,12 @@ describe('jobs dashboard', () => {
     })
 
     const card = await screen.findByRole('region', { name: 'Needs attention' })
-    expect((await within(card).findByRole('link', { name: '3 failed runs of billing.charge' })).getAttribute('href')).toBe(
-      '/jobs/runs?status=Failed&function=billing.charge&fingerprint=v1%3Acard',
+    expect(
+      (await within(card).findByRole('link', { name: '3 failed runs of billing.charge' })).getAttribute('href'),
+    ).toBe('/jobs/runs?status=Failed&function=billing.charge&fingerprint=v1%3Acard')
+    expect(within(card).getByRole('link', { name: 'No live node runs mail.send' }).getAttribute('href')).toBe(
+      '/jobs/functions/mail.send',
     )
-    expect(within(card).getByRole('link', { name: 'No live node runs mail.send' }).getAttribute('href')).toBe('/jobs/functions/mail.send')
   })
 
   it('opens the add form on the runs list from Add time job', async () => {

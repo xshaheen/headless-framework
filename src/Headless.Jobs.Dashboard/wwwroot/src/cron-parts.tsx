@@ -22,7 +22,16 @@ import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useState } from 'react'
 import { cronJobsTopic, cronStatusMark, fetchCronJob, fetchPreview, type CronJob } from './cron.ts'
 import { firstLine, Time } from './parts.tsx'
-import { fetchRuns, runStatusMark, runsTopic, statusLabel, useJobsCommands, viewOnlyReason, type Run, type RunStatus } from './runs.ts'
+import {
+  fetchRuns,
+  runStatusMark,
+  runsTopic,
+  statusLabel,
+  useJobsCommands,
+  viewOnlyReason,
+  type Run,
+  type RunStatus,
+} from './runs.ts'
 
 const hour = 3_600_000
 
@@ -69,7 +78,15 @@ function useSettled(value: string, delayMs = 250) {
 }
 
 /** The next fires the server computed, in the zone the cron job fires in; `fires` is unset while they load. */
-export function NextFires({ fires, zone, paused }: { fires: readonly string[] | undefined; zone: string | undefined; paused: boolean }) {
+export function NextFires({
+  fires,
+  zone,
+  paused,
+}: {
+  fires: readonly string[] | undefined
+  zone: string | undefined
+  paused: boolean
+}) {
   const format = useFormat()
   const label = `Next fires, ${zone ?? 'scheduler zone'}`
 
@@ -79,7 +96,9 @@ export function NextFires({ fires, zone, paused }: { fires: readonly string[] | 
 
   return (
     <Fields label="Next fires">
-      <Text as="h3" tone="label">{label}</Text>
+      <Text as="h3" tone="label">
+        {label}
+      </Text>
       {paused || !fires?.length ? (
         <Text as="p" tone="hint" role="status">
           {paused ? 'No fires scheduled. Resume the cron job to schedule its next fires.' : 'No fires scheduled.'}
@@ -117,7 +136,11 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
     queryFn: () => fetchPreview(api, typedExpression, typedZone),
     enabled: typedExpression.trim() !== '',
   })
-  const locked = cronJob.definedInCode ? 'Defined in code' : !module.canOperate || (editCron && !editCron.canRun) ? (editCron?.disabledReason ?? viewOnlyReason) : null
+  const locked = cronJob.definedInCode
+    ? 'Defined in code'
+    : !module.canOperate || (editCron && !editCron.canRun)
+      ? (editCron?.disabledReason ?? viewOnlyReason)
+      : null
 
   async function commit(expression: string, timeZoneId: string) {
     const checked = await fetchPreview(api, expression, timeZoneId)
@@ -168,7 +191,9 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
           <GridField label="Expression" action={<Text tone="hint">{locked}</Text>}>
             <Mono>{cronJob.expression}</Mono>
           </GridField>
-          <GridField label="Time zone">{cronJob.timeZoneId || `${zone ?? 'Scheduler zone'} (scheduler zone)`}</GridField>
+          <GridField label="Time zone">
+            {cronJob.timeZoneId || `${zone ?? 'Scheduler zone'} (scheduler zone)`}
+          </GridField>
         </>
       ) : (
         <>
@@ -176,7 +201,8 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
             label="Expression"
             edit={{
               value: cronJob.expression,
-              onDraftChange: (expression) => setDraft({ expression, timeZoneId: draft?.timeZoneId ?? cronJob.timeZoneId }),
+              onDraftChange: (expression) =>
+                setDraft({ expression, timeZoneId: draft?.timeZoneId ?? cronJob.timeZoneId }),
               preview: draftPreview,
               onCommit: (expression) => commit(expression, draft?.timeZoneId ?? cronJob.timeZoneId),
             }}
@@ -186,7 +212,8 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
             edit={{
               // A cron job with no zone of its own fires in the scheduler's, so the field shows that one, not a blank.
               value: cronJob.timeZoneId || zone || '',
-              onDraftChange: (timeZoneId) => setDraft({ expression: draft?.expression ?? cronJob.expression, timeZoneId }),
+              onDraftChange: (timeZoneId) =>
+                setDraft({ expression: draft?.expression ?? cronJob.expression, timeZoneId }),
               onCommit: (timeZoneId) => commit(draft?.expression ?? cronJob.expression, timeZoneId),
             }}
           />
@@ -231,7 +258,14 @@ export function CronActions({ cronJob }: { cronJob: CronJob }) {
         />
       ) : null}
       {toggle ? (
-        <CommandAction module={module.id} command={toggle} ids={[cronJob.id]} noun="cron job" commands={commands.all} disabledReason={refusal(toggle.id)} />
+        <CommandAction
+          module={module.id}
+          command={toggle}
+          ids={[cronJob.id]}
+          noun="cron job"
+          commands={commands.all}
+          disabledReason={refusal(toggle.id)}
+        />
       ) : null}
     </>
   )
@@ -249,7 +283,10 @@ const outcomeSeries = [
  */
 function hourlyOutcomes(runs: readonly Run[], start: number, locale: string, timeZone: string): BarColumn[] {
   const label = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone })
-  const columns = Array.from({ length: 24 }, (_, index) => ({ label: label.format(start + index * hour), values: outcomeSeries.map(() => 0) }))
+  const columns = Array.from({ length: 24 }, (_, index) => ({
+    label: label.format(start + index * hour),
+    values: outcomeSeries.map(() => 0),
+  }))
 
   for (const run of runs) {
     const at = Date.parse(run.executionTime ?? run.createdAt)
@@ -279,7 +316,11 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
   // an hour before the first bar.
   const [stableWindowStart] = useState(() => (Math.floor(Date.now() / hour) - 23) * hour)
   const filter = { cronJobId: cronJob.id, from: new Date(stableWindowStart).toISOString() }
-  const occurrences = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
+  const occurrences = useDashboardKeysetList<Run>({
+    topic: runsTopic,
+    params: filter,
+    fetchPage: (cursor) => fetchRuns(api, filter, cursor),
+  })
   const rows = occurrences.rows
 
   if (occurrences.query.isError) {
@@ -299,7 +340,9 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
       ) : (
         <>
           <Fields label="Outcomes per hour, last 24 h">
-            <Text as="h3" tone="label">Outcomes per hour, last 24 h</Text>
+            <Text as="h3" tone="label">
+              Outcomes per hour, last 24 h
+            </Text>
             <BarChart
               label="Occurrence outcomes per hour"
               series={outcomeSeries}
@@ -307,7 +350,10 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
               unit="occurrences"
             />
             {occurrences.hasMore && total ? (
-              <Text as="p" tone="footnote">{`The bars count the ${format.number(rows.length)} latest of ${format.count(total)} occurrences.`}</Text>
+              <Text
+                as="p"
+                tone="footnote"
+              >{`The bars count the ${format.number(rows.length)} latest of ${format.count(total)} occurrences.`}</Text>
             ) : null}
           </Fields>
           <HistoryList
@@ -333,7 +379,15 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
 }
 
 /** `fires` is unset while they load. */
-export function CronPanel({ cronJob, fires, page }: { cronJob: CronJob; fires: readonly string[] | undefined; page?: boolean }) {
+export function CronPanel({
+  cronJob,
+  fires,
+  page,
+}: {
+  cronJob: CronJob
+  fires: readonly string[] | undefined
+  page?: boolean
+}) {
   const zone = useCronZone(cronJob)
 
   return (

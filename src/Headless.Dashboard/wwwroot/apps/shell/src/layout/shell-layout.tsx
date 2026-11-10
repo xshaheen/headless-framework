@@ -68,7 +68,9 @@ export function ShellLayout() {
           ) : undefined
         }
       />
-      {product && (!phone || menuOpen) ? <ProductSidebar product={product} onNavigate={() => setMenuOpen(false)} /> : null}
+      {product && (!phone || menuOpen) ? (
+        <ProductSidebar product={product} onNavigate={() => setMenuOpen(false)} />
+      ) : null}
       <div className="hd-main">
         <OperationHost>
           {updated ? <UpdatedNotice /> : null}

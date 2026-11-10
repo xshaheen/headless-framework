@@ -26,7 +26,9 @@ function StartOperation() {
   const { start } = useOperations()
 
   return (
-    <Button onPress={() => start({ module: 'diag', command: requeue, filter: { status: 'failed' }, noun: 'failed runs' })}>
+    <Button
+      onPress={() => start({ module: 'diag', command: requeue, filter: { status: 'failed' }, noun: 'failed runs' })}
+    >
       Requeue all failed runs
     </Button>
   )
@@ -59,7 +61,13 @@ function twoProducts(): BootstrapState {
             module: 'jobs',
             label: 'States',
             entries: [
-              { id: 'jobs.nav.failed', label: 'Failed', route: 'runs?status=Failed', state: 'fail', countKey: 'Failed' },
+              {
+                id: 'jobs.nav.failed',
+                label: 'Failed',
+                route: 'runs?status=Failed',
+                state: 'fail',
+                countKey: 'Failed',
+              },
               { id: 'jobs.nav.queued', label: 'Queued', route: 'runs?status=Queued', state: 'enq', countKey: 'Queued' },
               { id: 'jobs.nav.runs', label: 'All runs', route: 'runs', icon: 'runs' },
             ],
@@ -91,7 +99,15 @@ describe('shell layout', () => {
       files,
       api: async (request) => {
         if (request.path.endsWith('/confirm')) {
-          return { operationId: 'op1', count: 3, confirmation: 'confirm', sample: [], token: 't', expiresAt: '', chunkSize: 1 }
+          return {
+            operationId: 'op1',
+            count: 3,
+            confirmation: 'confirm',
+            sample: [],
+            token: 't',
+            expiresAt: '',
+            chunkSize: 1,
+          }
         }
 
         if (request.path.endsWith('/chunks')) {
@@ -104,7 +120,12 @@ describe('shell layout', () => {
             })
           }
 
-          return { operationId: 'op1', rows: [{ id: `r${chunks}`, outcome: 'done' }], nextCursor: chunks < 3 ? `c${chunks}` : null, done: chunks >= 3 }
+          return {
+            operationId: 'op1',
+            rows: [{ id: `r${chunks}`, outcome: 'done' }],
+            nextCursor: chunks < 3 ? `c${chunks}` : null,
+            done: chunks >= 3,
+          }
         }
 
         return emptyAggregates(request)
@@ -129,7 +150,9 @@ describe('shell layout', () => {
 
     release()
     await waitFor(() => expect(chunks).toBe(3))
-    expect(await within(screen.getByRole('group', { name: /Requeue failed runs/ })).findByText(/Completed/)).toBeTruthy()
+    expect(
+      await within(screen.getByRole('group', { name: /Requeue failed runs/ })).findByText(/Completed/),
+    ).toBeTruthy()
     expect(shell.router.state.location.pathname).toBe('/diag/settings')
   })
 
@@ -138,7 +161,10 @@ describe('shell layout', () => {
 
     const tabs = within(await screen.findByRole('navigation', { name: 'Products' })).getAllByRole('link')
     await waitFor(() =>
-      expect(tabs.map((tab) => tab.textContent)).toEqual(['JobsJobs, nothing needs attention', 'PlatformPlatform, nothing needs attention']),
+      expect(tabs.map((tab) => tab.textContent)).toEqual([
+        'JobsJobs, nothing needs attention',
+        'PlatformPlatform, nothing needs attention',
+      ]),
     )
     expect(tabs[1]!.getAttribute('aria-current')).toBe('page')
     expect(tabs[0]!.getAttribute('aria-current')).toBeNull()
@@ -153,7 +179,16 @@ describe('shell layout', () => {
                 id: 'jobs',
                 displayName: 'Jobs',
                 stale: false,
-                items: [{ id: 'f', groupKey: 'f', title: 'CardException: declined', severity: 'critical', count: 23, capped: false }],
+                items: [
+                  {
+                    id: 'f',
+                    groupKey: 'f',
+                    title: 'CardException: declined',
+                    severity: 'critical',
+                    count: 23,
+                    capped: false,
+                  },
+                ],
               },
             ],
           }
@@ -168,7 +203,11 @@ describe('shell layout', () => {
   it('shows a capped count as N+, and the current entry by aria-current', async () => {
     const api: ApiHandler = (request) =>
       request.path === 'counts'
-        ? { product: 'jobs', counts: { Failed: { count: 10000, capped: true }, Queued: { count: 12, capped: false } }, stale: [] }
+        ? {
+            product: 'jobs',
+            counts: { Failed: { count: 10000, capped: true }, Queued: { count: 12, capped: false } },
+            stale: [],
+          }
         : emptyAggregates(request)
     renderShell(twoProducts(), { path: '/jobs/runs?status=Failed', files: moduleFiles(twoProducts().modules), api })
 
@@ -177,7 +216,11 @@ describe('shell layout', () => {
     await waitFor(() => expect(failed.textContent).toBe('Failed10,000+'))
     expect(within(sidebar).getByRole('link', { name: /Queued/ }).textContent).toBe('Queued12')
     expect(failed.getAttribute('aria-current')).toBe('page')
-    expect(within(sidebar).getByRole('link', { name: /All runs/ }).getAttribute('aria-current')).toBeNull()
+    expect(
+      within(sidebar)
+        .getByRole('link', { name: /All runs/ })
+        .getAttribute('aria-current'),
+    ).toBeNull()
   })
 
   it('shows a count that some sources did not answer as N+, naming them in its accessible name', async () => {
@@ -185,7 +228,10 @@ describe('shell layout', () => {
       request.path === 'counts'
         ? {
             product: 'jobs',
-            counts: { Failed: { count: 48120, capped: false, unavailable: ['outbox-2'] }, Queued: { count: 12, capped: false } },
+            counts: {
+              Failed: { count: 48120, capped: false, unavailable: ['outbox-2'] },
+              Queued: { count: 12, capped: false },
+            },
             stale: [],
           }
         : emptyAggregates(request)
@@ -241,7 +287,10 @@ describe('shell layout', () => {
 
     function Runs() {
       const client = useQueryClient()
-      const list = useDashboardList({ topic: 'jobs.run', fetch: async () => ({ items: server.map((row) => ({ ...row })) }) })
+      const list = useDashboardList({
+        topic: 'jobs.run',
+        fetch: async () => ({ items: server.map((row) => ({ ...row })) }),
+      })
 
       return (
         <>
@@ -275,7 +324,14 @@ describe('shell layout', () => {
     await user.click(screen.getByRole('button', { name: 'Pause live updates' }))
 
     for (const id of ['r1', 'r2', 'r3']) {
-      shell.stream.push('change', { module: 'jobs', kind: 'run', id, topic: 'jobs.run', version: '2', projection: { status: 'Succeeded' } })
+      shell.stream.push('change', {
+        module: 'jobs',
+        kind: 'run',
+        id,
+        topic: 'jobs.run',
+        version: '2',
+        projection: { status: 'Succeeded' },
+      })
     }
 
     expect(screen.getByText('Paused · 3 updates')).toBeTruthy()
@@ -308,7 +364,11 @@ describe('shell layout', () => {
       ended,
     )
     const modules = [moduleManifest('jobs')]
-    renderShell(shellState(modules), { path: '/jobs/runs', files: moduleFiles(modules), api: (request) => api.request(request) })
+    renderShell(shellState(modules), {
+      path: '/jobs/runs',
+      files: moduleFiles(modules),
+      api: (request) => api.request(request),
+    })
 
     await user.click(await screen.findByRole('button', { name: 'Pause live updates' }))
     await user.click(screen.getByRole('textbox', { name: 'Go to id' }))
@@ -320,7 +380,9 @@ describe('shell layout', () => {
 
   it('reads a stale module’s counts as en dashes, and announces it once', async () => {
     const api: ApiHandler = (request) =>
-      request.path === 'counts' ? { product: 'jobs', counts: {}, stale: [{ id: 'jobs', displayName: 'Jobs' }] } : emptyAggregates(request)
+      request.path === 'counts'
+        ? { product: 'jobs', counts: {}, stale: [{ id: 'jobs', displayName: 'Jobs' }] }
+        : emptyAggregates(request)
     renderShell(twoProducts(), { path: '/jobs/runs', files: moduleFiles(twoProducts().modules), api })
 
     const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
@@ -491,7 +553,9 @@ describe('shell layout', () => {
     expect(settings.getAttribute('aria-disabled')).toBe('true')
     expect(settings.getAttribute('href')).toBeNull()
     expect(settings.getAttribute('aria-describedby')).toBeTruthy()
-    expect(document.getElementById(settings.getAttribute('aria-describedby')!)?.textContent).toBe('Needs operate permission')
+    expect(document.getElementById(settings.getAttribute('aria-describedby')!)?.textContent).toBe(
+      'Needs operate permission',
+    )
     expect(screen.getByText('View only')).toBeTruthy()
   })
 

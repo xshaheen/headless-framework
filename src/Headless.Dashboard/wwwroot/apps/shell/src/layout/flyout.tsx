@@ -3,7 +3,15 @@
 'use no memo'
 
 import { below } from '@headless/dashboard-sdk/components'
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 
 /** Whether the window is below a named breakpoint now; the top bar folds its controls by it. */
 export function useBelow(width: keyof typeof below) {
@@ -58,7 +66,10 @@ export function Flyout({ label, isOpen, onClose, trigger, className, children }:
 
       // Only Escape from the flyout, its button, or nowhere in particular: a dialog opened above it, such as the
       // palette, holds focus and closes first on its own Escape.
-      if (event.key === 'Escape' && (target === document.body || panel.current?.contains(target) || trigger.current?.contains(target))) {
+      if (
+        event.key === 'Escape' &&
+        (target === document.body || panel.current?.contains(target) || trigger.current?.contains(target))
+      ) {
         // Taken before a list inside it sees it: Escape closes the nearest layer first.
         event.stopPropagation()
         close()

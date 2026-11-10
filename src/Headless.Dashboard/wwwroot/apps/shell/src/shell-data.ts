@@ -116,7 +116,11 @@ export function useResolve(query: string, enabled: boolean): Resolved | undefine
     const request = ++latest.current
     const timer = setTimeout(() => {
       api
-        .request<{ modules: ModuleSection<ResolvedObject>[] }>({ method: 'GET', path: 'resolve', query: { q: query.trim() } })
+        .request<{ modules: ModuleSection<ResolvedObject>[] }>({
+          method: 'GET',
+          path: 'resolve',
+          query: { q: query.trim() },
+        })
         .then(
           ({ modules }): Resolved => ({
             failed: false,

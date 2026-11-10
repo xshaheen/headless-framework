@@ -127,7 +127,14 @@ export default function FunctionsView() {
                 width: '1.4fr',
               },
               { id: 'priority', header: 'Priority', cell: (row) => row.priority, priority: 2, width: 100 },
-              { id: 'limit', header: 'Running / limit', cell: (row) => limit(row), align: 'end', priority: 2, width: 120 },
+              {
+                id: 'limit',
+                header: 'Running / limit',
+                cell: (row) => limit(row),
+                align: 'end',
+                priority: 2,
+                width: 120,
+              },
               {
                 id: 'runs-on',
                 header: 'Runs on',
@@ -138,8 +145,21 @@ export default function FunctionsView() {
                 ),
                 width: '1.3fr',
               },
-              { id: 'succeeded', header: 'Succeeded, 24 h', cell: (row) => format.number(row.succeeded), align: 'end', priority: 2, width: 120 },
-              { id: 'failed', header: 'Failed, 24 h', cell: (row) => format.number(row.failed), align: 'end', width: 100 },
+              {
+                id: 'succeeded',
+                header: 'Succeeded, 24 h',
+                cell: (row) => format.number(row.succeeded),
+                align: 'end',
+                priority: 2,
+                width: 120,
+              },
+              {
+                id: 'failed',
+                header: 'Failed, 24 h',
+                cell: (row) => format.number(row.failed),
+                align: 'end',
+                width: 100,
+              },
             ]}
           />
         )}
@@ -178,13 +198,19 @@ function FunctionFields({ item }: { item: JobFunction }) {
 function WhereItRuns({ item }: { item: JobFunction }) {
   const { api } = useDashboard()
   const filter = { function: item.name }
-  const cronJobs = useDashboardList<CronJob>({ topic: cronJobsTopic, params: filter, fetch: () => fetchCronJobs(api, item.name) })
+  const cronJobs = useDashboardList<CronJob>({
+    topic: cronJobsTopic,
+    params: filter,
+    fetch: () => fetchCronJobs(api, item.name),
+  })
   const listed = cronJobs.data?.items ?? []
 
   return (
     <div>
       <Fields label="Where it runs">
-        <Text as="h3" tone="label">Where it runs</Text>
+        <Text as="h3" tone="label">
+          Where it runs
+        </Text>
         {item.claimedBy.length > 0 ? (
           <div>
             {item.claimedBy.map((node) => (
@@ -203,7 +229,9 @@ function WhereItRuns({ item }: { item: JobFunction }) {
         <LoadError message={cronJobs.error.message} onRetry={() => void cronJobs.refetch()} />
       ) : cronJobs.data && listed.length === 0 ? (
         <Fields label="Recurring jobs using it">
-          <Text as="h3" tone="label">Recurring jobs using it</Text>
+          <Text as="h3" tone="label">
+            Recurring jobs using it
+          </Text>
           <Text tone="hint">None. Add one to run this function on a schedule.</Text>
         </Fields>
       ) : (
@@ -226,7 +254,11 @@ function WhereItRuns({ item }: { item: JobFunction }) {
 function FunctionRuns({ name }: { name: string }) {
   const { api } = useDashboard()
   const filter = { function: name }
-  const runs = useDashboardKeysetList<Run>({ topic: runsTopic, params: filter, fetchPage: (cursor) => fetchRuns(api, filter, cursor) })
+  const runs = useDashboardKeysetList<Run>({
+    topic: runsTopic,
+    params: filter,
+    fetchPage: (cursor) => fetchRuns(api, filter, cursor),
+  })
 
   if (runs.query.isError) {
     return <LoadError message={runs.query.error.message} onRetry={() => void runs.query.refetch()} />
@@ -271,7 +303,11 @@ export function FunctionPanel({ item, page }: { item: JobFunction; page?: boolea
       detachTo={page ? undefined : `/jobs/functions/${encodeURIComponent(item.name)}`}
       actions={
         <>
-          <Button variant="primary" disabledReason={addReason} onPress={() => void navigate('/jobs/runs?create=time-job')}>
+          <Button
+            variant="primary"
+            disabledReason={addReason}
+            onPress={() => void navigate('/jobs/runs?create=time-job')}
+          >
             Add time job
           </Button>
           <Button disabledReason={addReason} onPress={() => void navigate('/jobs/cron-jobs?create=cron-job')}>

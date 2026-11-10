@@ -15,14 +15,31 @@ describe('jobs state roles', () => {
       Skipped: 'off',
     }
 
-    expect(Object.fromEntries(runStatuses.map((status) => [status, runStatusMark({ status, cancelRequested: false }).tone]))).toEqual(expected)
+    expect(
+      Object.fromEntries(runStatuses.map((status) => [status, runStatusMark({ status, cancelRequested: false }).tone])),
+    ).toEqual(expected)
   })
 
   it('maps every attempt outcome, cron state, and node state to a state role', () => {
-    const outcomes: Record<AttemptOutcome, string> = { Succeeded: 'ok', Failed: 'fail', Cancelled: 'off', Lost: 'fail', Skipped: 'off', Released: 'enq' }
+    const outcomes: Record<AttemptOutcome, string> = {
+      Succeeded: 'ok',
+      Failed: 'fail',
+      Cancelled: 'off',
+      Lost: 'fail',
+      Skipped: 'off',
+      Released: 'enq',
+    }
 
     expect(attemptTones).toEqual(outcomes)
-    expect([cronStatusMark({ isPaused: false }).tone, cronStatusMark({ isPaused: true }).tone]).toEqual(['sched', 'off'])
-    expect(['Alive', 'Suspected', 'Dead', 'Left'].map((state) => nodeStatusMark({ state }).tone)).toEqual(['ok', 'proc', 'fail', 'off'])
+    expect([cronStatusMark({ isPaused: false }).tone, cronStatusMark({ isPaused: true }).tone]).toEqual([
+      'sched',
+      'off',
+    ])
+    expect(['Alive', 'Suspected', 'Dead', 'Left'].map((state) => nodeStatusMark({ state }).tone)).toEqual([
+      'ok',
+      'proc',
+      'fail',
+      'off',
+    ])
   })
 })

@@ -84,10 +84,42 @@ const base = {
 }
 
 export const commands: CommandDefinition[] = [
-  { ...base, id: 'jobs.requeue', label: 'Requeue', objectKind: 'run', confirmation: 'confirm', requiresReason: true, supportsFilter: true },
-  { ...base, id: 'jobs.cancel', label: 'Cancel', objectKind: 'run', confirmation: 'confirm', requiresReason: true, supportsFilter: true },
-  { ...base, id: 'jobs.delete', label: 'Delete', objectKind: 'run', confirmation: 'confirm', requiresReason: true, supportsFilter: true },
-  { ...base, id: 'jobs.run-now', label: 'Run now', objectKind: 'cron-job', confirmation: 'none', requiresReason: false, supportsFilter: false },
+  {
+    ...base,
+    id: 'jobs.requeue',
+    label: 'Requeue',
+    objectKind: 'run',
+    confirmation: 'confirm',
+    requiresReason: true,
+    supportsFilter: true,
+  },
+  {
+    ...base,
+    id: 'jobs.cancel',
+    label: 'Cancel',
+    objectKind: 'run',
+    confirmation: 'confirm',
+    requiresReason: true,
+    supportsFilter: true,
+  },
+  {
+    ...base,
+    id: 'jobs.delete',
+    label: 'Delete',
+    objectKind: 'run',
+    confirmation: 'confirm',
+    requiresReason: true,
+    supportsFilter: true,
+  },
+  {
+    ...base,
+    id: 'jobs.run-now',
+    label: 'Run now',
+    objectKind: 'cron-job',
+    confirmation: 'none',
+    requiresReason: false,
+    supportsFilter: false,
+  },
   {
     ...base,
     id: 'jobs.pause',
@@ -119,7 +151,10 @@ export const commands: CommandDefinition[] = [
     arguments: {
       type: 'object',
       required: ['expression'],
-      properties: { expression: { type: 'string', title: 'Expression' }, timeZoneId: { type: 'string', title: 'Time zone' } },
+      properties: {
+        expression: { type: 'string', title: 'Expression' },
+        timeZoneId: { type: 'string', title: 'Time zone' },
+      },
     },
   },
 ]
@@ -262,7 +297,12 @@ export function server({
     }
 
     if (request.method === 'GET' && request.path === 'jobs/cron-preview') {
-      return { timeZoneId: query.timeZoneId || 'Europe/Berlin', reading: 'At 02:00', nextFires: [], validationMessage: undefined }
+      return {
+        timeZoneId: query.timeZoneId || 'Europe/Berlin',
+        reading: 'At 02:00',
+        nextFires: [],
+        validationMessage: undefined,
+      }
     }
 
     if (request.path === 'jobs/commands') {

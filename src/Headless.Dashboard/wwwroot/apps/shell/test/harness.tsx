@@ -62,7 +62,15 @@ export function renderShell(state: BootstrapState, options: RenderShellOptions =
   const signOut = vi.fn(options.signOut ?? (async () => undefined))
 
   const result = render(
-    <ShellApp state={state} router={router} client={client} api={api} stream={stream} loader={loader} signOut={signOut} />,
+    <ShellApp
+      state={state}
+      router={router}
+      client={client}
+      api={api}
+      stream={stream}
+      loader={loader}
+      signOut={signOut}
+    />,
   )
 
   return { ...result, stream, client, requests, imported, router, signOut }

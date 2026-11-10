@@ -16,7 +16,8 @@ const icons: Record<string, string> = {
   dashboard: 'M2.5 2.5h4.5v4.5h-4.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5h-4.5zM9 9h4.5v4.5H9z',
   runs: 'M3 4h10M3 8h10M3 12h6',
   recurring: 'M8 2.5a5.5 5.5 0 1 1 0 11a5.5 5.5 0 0 1 0-11zM8 5v3l2 1.5',
-  function: 'M5.5 3.5C4 3.5 4 5 4 6s-1 2-1.5 2C3 8 4 9 4 10s0 2.5 1.5 2.5M10.5 3.5C12 3.5 12 5 12 6s1 2 1.5 2c-.5 0-1.5 1-1.5 2s0 2.5-1.5 2.5',
+  function:
+    'M5.5 3.5C4 3.5 4 5 4 6s-1 2-1.5 2C3 8 4 9 4 10s0 2.5 1.5 2.5M10.5 3.5C12 3.5 12 5 12 6s1 2 1.5 2c-.5 0-1.5 1-1.5 2s0 2.5-1.5 2.5',
   server: 'M2.5 2.5h11v4.5h-11zM2.5 9h11v4.5h-11zM5 4.75h.01M5 11.25h.01',
 }
 
@@ -72,9 +73,17 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
   const counts = useProductCounts(counted ? product.id : undefined, topics)
   const sections = product.sections.map((section) => ({
     ...section,
-    entries: section.entries.map((entry) => ({ ...entry, module: section.module, to: modulePath(section.module, entry.route) })),
+    entries: section.entries.map((entry) => ({
+      ...entry,
+      module: section.module,
+      to: modulePath(section.module, entry.route),
+    })),
   }))
-  const current = mostSpecificEntry(sections.flatMap((section) => section.entries), new URLSearchParams(location.search), location.pathname)
+  const current = mostSpecificEntry(
+    sections.flatMap((section) => section.entries),
+    new URLSearchParams(location.search),
+    location.pathname,
+  )
 
   return (
     <nav className="hd-sidebar" aria-label={product.label}>
@@ -82,44 +91,52 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
         <div key={`${section.module}:${index}`} className="hd-side-section">
           {section.label ? <h2 className="hd-side-head">{section.label}</h2> : null}
           {section.entries.map((entry) => {
-              const count = entry.countKey ? counts.data?.counts[entry.countKey] : undefined
-              const body = (
-                <>
-                  <Lead entry={entry} />
-                  <span className="hd-side-label" title={entry.label}>
-                    {entry.label}
-                  </span>
-                  {entry.countKey ? (
-                    // A partial count's accessible name lists what it leaves out, in one text node that keeps its spaces.
-                    count?.unavailable ? (
-                      <span className="hd-side-count">
-                        <span aria-hidden="true">{format.count(count)}</span>
-                        <span className="sr-only">{`${format.count(count)} · ${count.unavailable.join(', ')} unavailable`}</span>
-                      </span>
-                    ) : (
-                      <span className="hd-side-count">{count ? format.count(count) : '–'}</span>
-                    )
-                  ) : null}
-                </>
-              )
-              const locked = entry.requires === 'operate' && !state.modules.find((module) => module.id === entry.module)?.canOperate
-
-              return locked ? (
-                <span key={entry.id} className="hd-side-item" role="link" aria-disabled="true" tabIndex={0} aria-describedby={reasonId}>
-                  {body}
+            const count = entry.countKey ? counts.data?.counts[entry.countKey] : undefined
+            const body = (
+              <>
+                <Lead entry={entry} />
+                <span className="hd-side-label" title={entry.label}>
+                  {entry.label}
                 </span>
-              ) : (
-                <Link
-                  key={entry.id}
-                  to={entry.to}
-                  className="hd-side-item"
-                  aria-current={entry === current ? 'page' : undefined}
-                  onClick={onNavigate}
-                >
-                  {body}
-                </Link>
-              )
-            })}
+                {entry.countKey ? (
+                  // A partial count's accessible name lists what it leaves out, in one text node that keeps its spaces.
+                  count?.unavailable ? (
+                    <span className="hd-side-count">
+                      <span aria-hidden="true">{format.count(count)}</span>
+                      <span className="sr-only">{`${format.count(count)} · ${count.unavailable.join(', ')} unavailable`}</span>
+                    </span>
+                  ) : (
+                    <span className="hd-side-count">{count ? format.count(count) : '–'}</span>
+                  )
+                ) : null}
+              </>
+            )
+            const locked =
+              entry.requires === 'operate' && !state.modules.find((module) => module.id === entry.module)?.canOperate
+
+            return locked ? (
+              <span
+                key={entry.id}
+                className="hd-side-item"
+                role="link"
+                aria-disabled="true"
+                tabIndex={0}
+                aria-describedby={reasonId}
+              >
+                {body}
+              </span>
+            ) : (
+              <Link
+                key={entry.id}
+                to={entry.to}
+                className="hd-side-item"
+                aria-current={entry === current ? 'page' : undefined}
+                onClick={onNavigate}
+              >
+                {body}
+              </Link>
+            )
+          })}
         </div>
       ))}
       <span id={reasonId} hidden>

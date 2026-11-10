@@ -1,5 +1,14 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { Banner, Button, Mono, PageFrame, PageHeader, SelectField, StatusMark, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  Banner,
+  Button,
+  Mono,
+  PageFrame,
+  PageHeader,
+  SelectField,
+  StatusMark,
+  usePageFrame,
+} from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
@@ -52,7 +61,10 @@ export default function ScheduledView() {
   const rows = (scheduled.data?.items ?? []).map((item) => ({ ...item, id: item.storageId }))
   const frame = usePageFrame({ viewId: 'messaging.scheduled', rows })
   const served = nodes.data?.items.find((item) => (node ? item.name === node : item.isLocal)) ?? local
-  const storeOptions = [...new Set([...(served?.stores ?? []), ...(store ? [store] : [])])].map((value) => ({ value, label: value }))
+  const storeOptions = [...new Set([...(served?.stores ?? []), ...(store ? [store] : [])])].map((value) => ({
+    value,
+    label: value,
+  }))
   const total = scheduled.data?.totalCount ?? 0
   const pages = Math.max(Math.ceil(total / perPage), 1)
   const nodeSuffix = node ? `&node=${encodeURIComponent(node)}` : ''
@@ -121,7 +133,9 @@ export default function ScheduledView() {
                     header: 'Message',
                     cell: (row) => (
                       <CellText title={row.messageName}>
-                        <Link to={`/messaging/published?open=${encodeURIComponent(`${nodeName}~${data.store}~${row.storageId}`)}${nodeSuffix}`}>
+                        <Link
+                          to={`/messaging/published?open=${encodeURIComponent(`${nodeName}~${data.store}~${row.storageId}`)}${nodeSuffix}`}
+                        >
                           <Mono>{row.messageName}</Mono>
                         </Link>
                       </CellText>
@@ -134,7 +148,10 @@ export default function ScheduledView() {
                     header: 'Status',
                     cell: (row) => (
                       <CellText>
-                        <StatusMark tone={row.isLeased ? 'proc' : 'sched'} label={row.isLeased ? 'Leased' : row.status} />
+                        <StatusMark
+                          tone={row.isLeased ? 'proc' : 'sched'}
+                          label={row.isLeased ? 'Leased' : row.status}
+                        />
                       </CellText>
                     ),
                     width: 130,
@@ -151,7 +168,14 @@ export default function ScheduledView() {
                     priority: 2,
                     width: '1fr',
                   },
-                  { id: 'attempts', header: 'Attempts', cell: (row) => format.number(row.inlineAttempts), align: 'end', priority: 2, width: 90 },
+                  {
+                    id: 'attempts',
+                    header: 'Attempts',
+                    cell: (row) => format.number(row.inlineAttempts),
+                    align: 'end',
+                    priority: 2,
+                    width: 90,
+                  },
                   {
                     id: 'due',
                     header: 'Due',
@@ -166,11 +190,19 @@ export default function ScheduledView() {
               />
               {pages > 1 ? (
                 <Banner as="nav" aria-label="Pages">
-                  <Button variant="ghost" disabledReason={page > 1 ? null : 'This is the first page'} onPress={() => goTo(page - 1)}>
+                  <Button
+                    variant="ghost"
+                    disabledReason={page > 1 ? null : 'This is the first page'}
+                    onPress={() => goTo(page - 1)}
+                  >
                     Previous
                   </Button>
                   <span>{`Page ${format.number(page)} of ${format.number(pages)}`}</span>
-                  <Button variant="ghost" disabledReason={page < pages ? null : 'This is the last page'} onPress={() => goTo(page + 1)}>
+                  <Button
+                    variant="ghost"
+                    disabledReason={page < pages ? null : 'This is the last page'}
+                    onPress={() => goTo(page + 1)}
+                  >
                     Next
                   </Button>
                 </Banner>

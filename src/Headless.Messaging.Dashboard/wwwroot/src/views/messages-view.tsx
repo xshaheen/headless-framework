@@ -1,5 +1,10 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
-import { CommandAction, useAllowedActions, useOperations, type CommandDefinition } from '@headless/dashboard-sdk/commands'
+import {
+  CommandAction,
+  useAllowedActions,
+  useOperations,
+  type CommandDefinition,
+} from '@headless/dashboard-sdk/commands'
 import {
   Banner,
   Button,
@@ -82,7 +87,10 @@ function describe(kind: MessageKind, list: string): { title: string; description
     case 'held':
       return { title: 'Held', description: 'Kept from their consumer until an operator releases them.' }
     case 'succeeded':
-      return { title: 'Succeeded', description: kind === 'received' ? 'Consumed without an exception.' : 'Handed to the broker.' }
+      return {
+        title: 'Succeeded',
+        description: kind === 'received' ? 'Consumed without an exception.' : 'Handed to the broker.',
+      }
     case 'scheduled':
       return { title: 'Scheduled', description: 'Waiting in the store for their due time.' }
     case 'delayed':
@@ -95,9 +103,17 @@ function describe(kind: MessageKind, list: string): { title: string; description
 }
 
 /** The commands an Operation can run over every row a filter matches, as the server registers them. */
-const operationCommands: Readonly<Record<MessageKind, readonly { name: MessageCommandName; variant?: 'primary' | 'danger' }[]>> = {
-  received: [{ name: 're-execute', variant: 'primary' }, { name: 'purge', variant: 'danger' }],
-  published: [{ name: 're-send', variant: 'primary' }, { name: 'delete', variant: 'danger' }],
+const operationCommands: Readonly<
+  Record<MessageKind, readonly { name: MessageCommandName; variant?: 'primary' | 'danger' }[]>
+> = {
+  received: [
+    { name: 're-execute', variant: 'primary' },
+    { name: 'purge', variant: 'danger' },
+  ],
+  published: [
+    { name: 're-send', variant: 'primary' },
+    { name: 'delete', variant: 'danger' },
+  ],
 }
 
 export function MessagesView({ kind }: { kind: MessageKind }) {
@@ -185,7 +201,9 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
     }
 
     const changed = new Set(
-      items.filter((row) => frame.refused.has(row.id) && refusedAt.current.get(row.id) !== (row.version ?? '')).map((row) => row.id),
+      items
+        .filter((row) => frame.refused.has(row.id) && refusedAt.current.get(row.id) !== (row.version ?? ''))
+        .map((row) => row.id),
     )
 
     if (changed.size > 0) {
@@ -200,15 +218,29 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
   // The filters a link set that the header shows as chips to clear: on a state list, every one; on All, those with no
   // select. On the Failed list a pressed cause chip already shows its fingerprint and its consumer or store.
   const chipped: readonly { name: keyof MessageFilter; label: string }[] = [
-    ...(all ? [] : [{ name: 'store', label: 'store' } as const, { name: 'consumer', label: 'consumer' } as const, { name: 'name', label: 'message' } as const]),
+    ...(all
+      ? []
+      : [
+          { name: 'store', label: 'store' } as const,
+          { name: 'consumer', label: 'consumer' } as const,
+          { name: 'name', label: 'message' } as const,
+        ]),
     { name: 'fingerprint', label: 'cause' },
   ]
-  const setFilters = chipped.filter(({ name }) => filter[name] && !(failed && filter.fingerprint && (name === 'fingerprint' || name === 'consumer' || name === 'store')))
+  const setFilters = chipped.filter(
+    ({ name }) =>
+      filter[name] &&
+      !(failed && filter.fingerprint && (name === 'fingerprint' || name === 'consumer' || name === 'store')),
+  )
   const unavailable = unavailableStores(list.data?.pages[0])
 
   let panel
   if (frame.openId) {
-    panel = openRow ? <MessagePanel kind={kind} node={node} row={openRow} pending={pending} /> : <LookedUp kind={kind} node={node} id={frame.openId} pending={pending} />
+    panel = openRow ? (
+      <MessagePanel kind={kind} node={node} row={openRow} pending={pending} />
+    ) : (
+      <LookedUp kind={kind} node={node} id={frame.openId} pending={pending} />
+    )
   }
 
   return (
@@ -218,7 +250,15 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
       header={
         <PageHeader
           title={state.title}
-          tone={all ? undefined : rowMark(listId === 'held' ? { isHeld: true, terminal: false } : { status: filter.status || 'Failed', terminal: !filter.retrying }).tone}
+          tone={
+            all
+              ? undefined
+              : rowMark(
+                  listId === 'held'
+                    ? { isHeld: true, terminal: false }
+                    : { status: filter.status || 'Failed', terminal: !filter.retrying },
+                ).tone
+          }
           count={count ? format.count(count) : undefined}
           description={state.description}
           actions={
@@ -239,7 +279,15 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           }
         >
           <NodeSwitch />
-          {failed ? <FailureChips kind={kind} node={node} filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} /> : null}
+          {failed ? (
+            <FailureChips
+              kind={kind}
+              node={node}
+              filter={filter}
+              count={count ? format.count(count) : undefined}
+              onPick={setFilter}
+            />
+          ) : null}
           {/* A state list keeps its header to one row, as the sidebar already chose the state: its other filters
               arrive by link and show as chips to clear. The All list offers every filter. */}
           {all ? <ListFilters kind={kind} filter={filter} onPick={setFilter} /> : null}
@@ -301,7 +349,9 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
  * the SDK's page, so the extra field is read back by checking for it.
  */
 function unavailableStores(page: object | undefined): string[] {
-  return page && 'unavailable' in page && Array.isArray(page.unavailable) ? page.unavailable.filter((store): store is string => typeof store === 'string') : []
+  return page && 'unavailable' in page && Array.isArray(page.unavailable)
+    ? page.unavailable.filter((store): store is string => typeof store === 'string')
+    : []
 }
 
 /** Options from served names, keeping a value a link set that the server no longer lists. */
@@ -310,7 +360,15 @@ function optionsOf(names: readonly string[], current: string) {
 }
 
 /** The All list's selects: the store or consumer, and the message name, as the node's stores, consumers, and contracts serve them. */
-function ListFilters({ kind, filter, onPick }: { kind: MessageKind; filter: MessageFilter; onPick: (values: Partial<MessageFilter>) => void }) {
+function ListFilters({
+  kind,
+  filter,
+  onPick,
+}: {
+  kind: MessageKind
+  filter: MessageFilter
+  onPick: (values: Partial<MessageFilter>) => void
+}) {
   const nodes = useNodes()
   const { node, local } = useNode()
   const consumers = useConsumers()
@@ -333,7 +391,10 @@ function ListFilters({ kind, filter, onPick }: { kind: MessageKind; filter: Mess
           emptyLabel="Any consumer"
           value={filter.consumer}
           onChange={(value) => onPick({ consumer: value })}
-          options={optionsOf((consumers.data ?? []).map((consumer) => consumer.identity), filter.consumer)}
+          options={optionsOf(
+            (consumers.data ?? []).map((consumer) => consumer.identity),
+            filter.consumer,
+          )}
         />
       )}
       <SelectField
@@ -343,7 +404,10 @@ function ListFilters({ kind, filter, onPick }: { kind: MessageKind; filter: Mess
         onChange={(value) => onPick({ name: value })}
         // Contracts list only the messages the node declares to publish, so a consume-only message name comes from its consumer.
         options={optionsOf(
-          [...(contracts.data ?? []).map((contract) => contract.name), ...(consumers.data ?? []).flatMap((consumer) => consumer.messages.map((message) => message.name))],
+          [
+            ...(contracts.data ?? []).map((contract) => contract.name),
+            ...(consumers.data ?? []).flatMap((consumer) => consumer.messages.map((message) => message.name)),
+          ],
           filter.name,
         )}
       />
@@ -364,7 +428,18 @@ interface MessagesTableProps {
   emptyState: ReactNode
 }
 
-function MessagesTable({ kind, viewId, frame, messages, matches, newRows, failed, pending, onSelectAllMatching, emptyState }: MessagesTableProps) {
+function MessagesTable({
+  kind,
+  viewId,
+  frame,
+  messages,
+  matches,
+  newRows,
+  failed,
+  pending,
+  onSelectAllMatching,
+  emptyState,
+}: MessagesTableProps) {
   const format = useFormat()
   // The server serves a failure's fingerprint, not its exception, on a list row.
   const causeColumn: DataTableColumn<MessageRow> = {
@@ -436,7 +511,14 @@ function MessagesTable({ kind, viewId, frame, messages, matches, newRows, failed
         },
         ...(kind === 'received' ? [consumerColumn] : [storeColumn]),
         ...(failed ? [causeColumn] : []),
-        { id: 'retries', header: 'Retries', cell: (row) => format.number(row.retries), align: 'end', priority: 2, width: 80 },
+        {
+          id: 'retries',
+          header: 'Retries',
+          cell: (row) => format.number(row.retries),
+          align: 'end',
+          priority: 2,
+          width: 80,
+        },
         {
           id: 'added',
           header: failed ? 'Failed at' : 'Added',
@@ -499,12 +581,19 @@ function FailureChips({
 
   return (
     <FilterChips label="Filter by cause">
-      <FilterChip label="All" count={count} pressed={!filter.fingerprint} onPress={() => onPick({ fingerprint: '', consumer: '', store: '' })} />
+      <FilterChip
+        label="All"
+        count={count}
+        pressed={!filter.fingerprint}
+        onPress={() => onPick({ fingerprint: '', consumer: '', store: '' })}
+      />
       {groups.map(({ id, group, label, count: groupCount }) => {
         // Two consumers can fail the same way, so a chip is its pair: one consumer or store and one fingerprint.
         const pressed =
-          filter.fingerprint === group.fingerprint && (kind === 'received' ? filter.consumer === group.consumer : filter.store === group.store)
-        const scope = kind === 'received' ? { consumer: pressed ? '' : group.consumer } : { store: pressed ? '' : group.store }
+          filter.fingerprint === group.fingerprint &&
+          (kind === 'received' ? filter.consumer === group.consumer : filter.store === group.store)
+        const scope =
+          kind === 'received' ? { consumer: pressed ? '' : group.consumer } : { store: pressed ? '' : group.store }
 
         return (
           <FilterChip
@@ -571,7 +660,17 @@ function CheckedActions({
 }
 
 /** Every row the filter matches, past the loaded page: each action runs over them as an Operation on this node. */
-function MatchingActions({ kind, filter, node, count }: { kind: MessageKind; filter: MessageFilter; node: string; count: string }) {
+function MatchingActions({
+  kind,
+  filter,
+  node,
+  count,
+}: {
+  kind: MessageKind
+  filter: MessageFilter
+  node: string
+  count: string
+}) {
   const module = useModule()
   const { start } = useOperations()
   const commands = useMessagingCommands()
@@ -600,7 +699,11 @@ function MatchingActions({ kind, filter, node, count }: { kind: MessageKind; fil
 
 function LookedUp({ kind, node, id, pending }: { kind: MessageKind; node: string; id: string; pending: Pending }) {
   const { api } = useDashboard()
-  const detail = useDashboardObject({ topic: topicOf(kind, node), id, fetch: async () => (await fetchMessage(api, kind, node, id)).row })
+  const detail = useDashboardObject({
+    topic: topicOf(kind, node),
+    id,
+    fetch: async () => (await fetchMessage(api, kind, node, id)).row,
+  })
 
   if (detail.data) {
     return <MessagePanel kind={kind} node={node} row={detail.data} pending={pending} />

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { canScope, circuitTones, nodeMark, operationScope, parseFailureGroup, failureGroupPath, readFilter, rowMark } from '../src/messages.ts'
+import {
+  canScope,
+  circuitTones,
+  nodeMark,
+  operationScope,
+  parseFailureGroup,
+  failureGroupPath,
+  readFilter,
+  rowMark,
+} from '../src/messages.ts'
 import messaging from '../src/module.ts'
 import { lastMinuteRate } from '../src/parts.tsx'
 import { spanSeconds } from '../src/views/consumers.tsx'
@@ -14,7 +23,10 @@ describe('messaging roles', () => {
     expect(rowMark({ status: 'Scheduled', terminal: false })).toEqual({ tone: 'sched', label: 'Scheduled' })
     expect(rowMark({ status: 'Queued', terminal: false })).toEqual({ tone: 'enq', label: 'Queued' })
     expect(rowMark({ terminal: false })).toEqual({ tone: 'off', label: 'Unknown' })
-    expect(rowMark({ status: 'Failed', terminal: true }, 'Re-executing…')).toEqual({ tone: 'fail', label: 'Re-executing…' })
+    expect(rowMark({ status: 'Failed', terminal: true }, 'Re-executing…')).toEqual({
+      tone: 'fail',
+      label: 'Re-executing…',
+    })
   })
 
   it('names a node’s state as the last forwarded call found it', () => {
@@ -40,15 +52,27 @@ describe('messaging roles', () => {
 
   it('reads an unknown-lane report’s node, store, and kind, the node holding a colon', () => {
     expect(parseUnknownLane('unknown-lane:primary:received')).toEqual({ node: '', store: 'primary', kind: 'received' })
-    expect(parseUnknownLane('host:8080:unknown-lane:orders:published')).toEqual({ node: 'host:8080', store: 'orders', kind: 'published' })
+    expect(parseUnknownLane('host:8080:unknown-lane:orders:published')).toEqual({
+      node: 'host:8080',
+      store: 'orders',
+      kind: 'published',
+    })
     expect(parseUnknownLane('failed:received:v1:x:primary')).toBeUndefined()
   })
 
   it('reads a failure group, its fingerprint and consumer holding colons, and opens its failed rows on its node', () => {
     const group = parseFailureGroup('node-b:failed:received:v1:9f2c41:orders:billing-handler:primary')
 
-    expect(group).toEqual({ node: 'node-b', kind: 'received', fingerprint: 'v1:9f2c41', consumer: 'orders:billing-handler', store: 'primary' })
-    expect(failureGroupPath(group!)).toBe('received?status=Failed&terminal=true&fingerprint=v1%3A9f2c41&consumer=orders%3Abilling-handler&node=node-b')
+    expect(group).toEqual({
+      node: 'node-b',
+      kind: 'received',
+      fingerprint: 'v1:9f2c41',
+      consumer: 'orders:billing-handler',
+      store: 'primary',
+    })
+    expect(failureGroupPath(group!)).toBe(
+      'received?status=Failed&terminal=true&fingerprint=v1%3A9f2c41&consumer=orders%3Abilling-handler&node=node-b',
+    )
     expect(parseFailureGroup('failed:published:v1:expired::orders')).toEqual({
       node: '',
       kind: 'published',
@@ -75,7 +99,12 @@ describe('messaging roles', () => {
     // An Operation runs on one store, so a published list over every store cannot select all its matches.
     expect(canScope(readFilter(new URLSearchParams('status=failed'), 'published'), 'published')).toBe(false)
     expect(canScope(readFilter(new URLSearchParams('status=failed&store=orders'), 'published'), 'published')).toBe(true)
-    expect(operationScope(readFilter(new URLSearchParams('status=failed&terminal=true&store=orders'), 'published'), 'node-b')).toEqual({
+    expect(
+      operationScope(
+        readFilter(new URLSearchParams('status=failed&terminal=true&store=orders'), 'published'),
+        'node-b',
+      ),
+    ).toEqual({
       node: 'node-b',
       store: 'orders',
       status: 'Failed',
@@ -84,9 +113,10 @@ describe('messaging roles', () => {
   })
 
   it('registers every sidebar entry with the count key its list counts', () => {
-    const entries: readonly { id: string; label: string; route: string; countKey?: string }[] = messaging.sidebar.flatMap(
-      (section): readonly { id: string; label: string; route: string; countKey?: string }[] => section.entries,
-    )
+    const entries: readonly { id: string; label: string; route: string; countKey?: string }[] =
+      messaging.sidebar.flatMap(
+        (section): readonly { id: string; label: string; route: string; countKey?: string }[] => section.entries,
+      )
 
     expect(entries.map((entry) => entry.label)).toEqual([
       'Dashboard',

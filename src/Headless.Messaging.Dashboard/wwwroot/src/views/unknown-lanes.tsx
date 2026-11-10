@@ -58,13 +58,35 @@ export default function UnknownLanesView() {
             frame={frame}
             rows={rows}
             // Only an answer from every source shows that no row sits on an unknown lane.
-            emptyState={complete ? 'Every stored row is on a lane some consumer registers.' : 'No unknown lanes in the sources that answered.'}
+            emptyState={
+              complete
+                ? 'Every stored row is on a lane some consumer registers.'
+                : 'No unknown lanes in the sources that answered.'
+            }
             columns={[
-              { id: 'title', header: 'Report', cell: (row) => <CellText title={row.title}>{row.title}</CellText>, isRowHeader: true, width: '2fr' },
+              {
+                id: 'title',
+                header: 'Report',
+                cell: (row) => <CellText title={row.title}>{row.title}</CellText>,
+                isRowHeader: true,
+                width: '2fr',
+              },
               { id: 'store', header: 'Store', cell: (row) => <Mono>{row.store}</Mono>, width: 120 },
               { id: 'node', header: 'Node', cell: (row) => <Mono>{row.node}</Mono>, priority: 2, width: 120 },
-              { id: 'count', header: 'Rows', cell: (row) => format.count({ value: row.count, capped: row.capped }), align: 'end', width: 90 },
-              { id: 'seen', header: 'Last seen', cell: (row) => (row.lastSeenAt ? <Time value={row.lastSeenAt} short /> : ''), priority: 2, width: 110 },
+              {
+                id: 'count',
+                header: 'Rows',
+                cell: (row) => format.count({ value: row.count, capped: row.capped }),
+                align: 'end',
+                width: 90,
+              },
+              {
+                id: 'seen',
+                header: 'Last seen',
+                cell: (row) => (row.lastSeenAt ? <Time value={row.lastSeenAt} short /> : ''),
+                priority: 2,
+                width: 110,
+              },
             ]}
           />
         </>

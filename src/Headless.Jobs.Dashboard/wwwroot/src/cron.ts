@@ -62,7 +62,12 @@ export function cronStatusMark(cronJob: Pick<CronJob, 'isPaused'>): { tone: Dash
   return cronJob.isPaused ? { tone: 'off', label: 'Paused' } : { tone: 'sched', label: 'Active' }
 }
 
-const nodeTones: Readonly<Record<string, DashboardStateRole>> = { Alive: 'ok', Suspected: 'proc', Dead: 'fail', Left: 'off' }
+const nodeTones: Readonly<Record<string, DashboardStateRole>> = {
+  Alive: 'ok',
+  Suspected: 'proc',
+  Dead: 'fail',
+  Left: 'off',
+}
 
 export function nodeStatusMark(node: Pick<JobNode, 'state'>): { tone: DashboardStateRole; label: string } {
   return { tone: nodeTones[node.state] ?? 'off', label: node.state }
@@ -85,7 +90,11 @@ export async function fetchCronJobs(api: DashboardApi, functionName?: string) {
 }
 
 export function fetchCronJob(api: DashboardApi, id: string) {
-  return api.request<CronJob>({ method: 'GET', path: `jobs/cron-jobs/${encodeURIComponent(id)}`, query: { fires: '5' } })
+  return api.request<CronJob>({
+    method: 'GET',
+    path: `jobs/cron-jobs/${encodeURIComponent(id)}`,
+    query: { fires: '5' },
+  })
 }
 
 export function fetchPreview(api: DashboardApi, expression: string, timeZoneId: string) {

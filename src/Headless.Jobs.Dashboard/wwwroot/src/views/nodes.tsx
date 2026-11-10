@@ -35,7 +35,9 @@ export default function NodesView() {
         <PageHeader
           title="Servers"
           count={nodes.data ? format.number(rows.length) : undefined}
-          description={nodes.data ? `${format.number(alive)} alive. Each runs the functions its run filter claims.` : undefined}
+          description={
+            nodes.data ? `${format.number(alive)} alive. Each runs the functions its run filter claims.` : undefined
+          }
         />
       }
       panel={open ? <NodePanel node={open} /> : undefined}
@@ -61,7 +63,13 @@ export default function NodesView() {
                 isRowHeader: true,
                 width: '1.5fr',
               },
-              { id: 'role', header: 'Role', cell: (row) => <CellText title={row.role}>{row.role ?? ''}</CellText>, priority: 2, width: '1fr' },
+              {
+                id: 'role',
+                header: 'Role',
+                cell: (row) => <CellText title={row.role}>{row.role ?? ''}</CellText>,
+                priority: 2,
+                width: '1fr',
+              },
               {
                 id: 'state',
                 header: 'State',
@@ -130,7 +138,9 @@ function NodePanel({ node }: { node: JobNode }) {
                 </FieldGrid>
               </div>
               <section aria-label="Functions this server runs">
-                <Text as="h3" tone="label">Functions this server runs</Text>
+                <Text as="h3" tone="label">
+                  Functions this server runs
+                </Text>
                 <div>
                   <Claims node={node} links />
                 </div>

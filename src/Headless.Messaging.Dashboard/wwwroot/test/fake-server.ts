@@ -5,7 +5,13 @@ import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import type { MessageKind, MessageRow } from '../src/messages.ts'
 import messaging from '../src/module.ts'
-import type { MessagingCircuit, MessagingConsumer, MessagingContract, MessagingNodeList, RealtimeMetrics } from '../src/parts.tsx'
+import type {
+  MessagingCircuit,
+  MessagingConsumer,
+  MessagingContract,
+  MessagingNodeList,
+  RealtimeMetrics,
+} from '../src/parts.tsx'
 import type { ScheduledList } from '../src/views/scheduled.tsx'
 
 export const now = new Date('2026-11-05T10:00:00Z')
@@ -13,7 +19,11 @@ export const now = new Date('2026-11-05T10:00:00Z')
 let sequence = 0
 
 /** A stored row on node-a's primary store; a failed one has run out of retries unless `terminal` says otherwise. */
-export function message(kind: MessageKind, status: NonNullable<MessageRow['status']>, overrides: Partial<MessageRow> = {}): MessageRow {
+export function message(
+  kind: MessageKind,
+  status: NonNullable<MessageRow['status']>,
+  overrides: Partial<MessageRow> = {},
+): MessageRow {
   sequence += 1
   const store = overrides.store ?? 'primary'
 
@@ -37,7 +47,10 @@ export function message(kind: MessageKind, status: NonNullable<MessageRow['statu
   }
 }
 
-export const localNodes: MessagingNodeList = { items: [{ name: 'node-a', isLocal: true, stores: ['primary'] }], discovery: null }
+export const localNodes: MessagingNodeList = {
+  items: [{ name: 'node-a', isLocal: true, stores: ['primary'] }],
+  discovery: null,
+}
 
 export const twoNodes: MessagingNodeList = {
   items: [
@@ -54,8 +67,22 @@ const base = {
   arguments: { type: 'object' as const, required: [], properties: {} },
 }
 
-function definition(id: string, label: string, objectKind: string, confirmation: 'confirm' | 'none', supportsFilter = false): CommandDefinition {
-  return { ...base, id: `messaging.${id}`, label, objectKind, confirmation, requiresReason: confirmation === 'confirm', supportsFilter }
+function definition(
+  id: string,
+  label: string,
+  objectKind: string,
+  confirmation: 'confirm' | 'none',
+  supportsFilter = false,
+): CommandDefinition {
+  return {
+    ...base,
+    id: `messaging.${id}`,
+    label,
+    objectKind,
+    confirmation,
+    requiresReason: confirmation === 'confirm',
+    supportsFilter,
+  }
 }
 
 export const commands: CommandDefinition[] = [
@@ -254,7 +281,14 @@ export function open(fake: FakeServer, options: RenderModuleOptions = {}) {
 }
 
 export function change(kind: MessageKind, row: MessageRow, node = '') {
-  return { module: 'messaging', kind, id: row.id, topic: node ? `messaging.${kind}@${node}` : `messaging.${kind}`, version: row.version ?? '1', projection: { ...row } }
+  return {
+    module: 'messaging',
+    kind,
+    id: row.id,
+    topic: node ? `messaging.${kind}@${node}` : `messaging.${kind}`,
+    version: row.version ?? '1',
+    projection: { ...row },
+  }
 }
 
 export function user() {

@@ -21,7 +21,8 @@ export function pausable(stream: DashboardStream): PausableStream {
   const listeners = new Set<() => void>()
   let queue: [StreamEventName, unknown][] | null = null
 
-  const dispatch = (type: StreamEventName, data: unknown) => handlers.get(type)?.forEach((handler) => handler(data as never))
+  const dispatch = (type: StreamEventName, data: unknown) =>
+    handlers.get(type)?.forEach((handler) => handler(data as never))
   const notify = () => listeners.forEach((listener) => listener())
 
   return {
