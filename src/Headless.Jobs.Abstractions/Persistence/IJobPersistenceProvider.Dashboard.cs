@@ -718,5 +718,169 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
         };
     }
 
+    /// <summary>
+    /// Counts per status the runs of one table that <paramref name="query"/> matches, in the buckets
+    /// <paramref name="boundaries"/> bound, by execution time.
+    /// </summary>
+    /// <param name="kind">The table to count.</param>
+    /// <param name="query">The runs to count; the kind filter is the caller's to apply.</param>
+    /// <param name="boundaries">
+    /// The bucket edges (UTC), strictly ascending: bucket <c>i</c> holds execution times from <c>boundaries[i]</c>,
+    /// inclusive, to <c>boundaries[i + 1]</c>, exclusive.
+    /// </param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>One bucket per pair of adjacent edges, in order.</returns>
+    /// <remarks>
+    /// A run without an execution time is in no bucket. A bucket the store cannot measure carries
+    /// <see langword="null"/> counts, never empty ones. The member <see cref="CountJobRunsByBucketAsync"/> is built
+    /// on. The default throws.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<IReadOnlyList<JobRunBucket>> CountJobRunBucketRowsAsync(
+        JobRunKind kind,
+        JobRunQuery query,
+        IReadOnlyList<DateTime> boundaries,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support Jobs dashboard reads.");
+    }
+
+    /// <summary>
+    /// Counts per status the runs <paramref name="query"/> matches in the buckets <paramref name="boundaries"/>
+    /// bound, by execution time, so a future bucket counts the runs scheduled in it.
+    /// </summary>
+    /// <param name="query">The runs to count.</param>
+    /// <param name="boundaries">The bucket edges (UTC), strictly ascending, at least two.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>One bucket per pair of adjacent edges, in order.</returns>
+    /// <remarks>
+    /// Default method built on <see cref="CountJobRunBucketRowsAsync"/>, one grouped read per table. A bucket is
+    /// <see langword="null"/> when either table could not measure it. The buckets count by execution time, while the
+    /// Overview figures count by when a run ended, so the two can place one run on different days.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> or <paramref name="boundaries"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="boundaries"/> has fewer than two edges or is not strictly ascending.</exception>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IReadOnlyList<JobRunBucket>> CountJobRunsByBucketAsync(
+        JobRunQuery query,
+        IReadOnlyList<DateTime> boundaries,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsNotNull(boundaries);
+
+        if (boundaries.Count < 2)
+        {
+            throw new ArgumentException("A bucketed count needs at least two edges.", nameof(boundaries));
+        }
+
+        for (var index = 1; index < boundaries.Count; index++)
+        {
+            if (boundaries[index] <= boundaries[index - 1])
+            {
+                throw new ArgumentException("The bucket edges must be strictly ascending.", nameof(boundaries));
+            }
+        }
+
+        var merged = new Dictionary<JobStatus, int>?[boundaries.Count - 1];
+
+        for (var index = 0; index < merged.Length; index++)
+        {
+            merged[index] = [];
+        }
+
+        foreach (var kind in _RunKinds(query))
+        {
+            var buckets = await CountJobRunBucketRowsAsync(kind, query, boundaries, cancellationToken)
+                .ConfigureAwait(false);
+
+            for (var index = 0; index < merged.Length; index++)
+            {
+                // A bucket one table could not measure is unmeasured as a whole: a partial sum would read as a count.
+                if (merged[index] is not { } total || buckets[index].Counts is not { } counts)
+                {
+                    merged[index] = null;
+
+                    continue;
+                }
+
+                foreach (var (status, count) in counts)
+                {
+                    total[status] = total.GetValueOrDefault(status) + count;
+                }
+            }
+        }
+
+        return
+        [
+            .. merged.Select(
+                (counts, index) =>
+                    new JobRunBucket
+                    {
+                        Start = boundaries[index],
+                        End = boundaries[index + 1],
+                        Counts = counts,
+                    }
+            ),
+        ];
+    }
+
+    /// <summary>Counts one table's <see cref="JobStatus.InProgress"/> runs per claim owner.</summary>
+    /// <param name="kind">The table to count.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The count per owner tag; an owner with no running run has no entry.</returns>
+    /// <remarks>The member <see cref="CountInProgressJobRunsByOwnerAsync"/> is built on. The default throws.</remarks>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<IReadOnlyDictionary<string, int>> CountInProgressJobRunRowsByOwnerAsync(
+        JobRunKind kind,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support Jobs dashboard reads.");
+    }
+
+    /// <summary>
+    /// Counts the <see cref="JobStatus.InProgress"/> runs of both kinds per claim owner, each stopped at
+    /// <paramref name="cap"/>.
+    /// </summary>
+    /// <param name="cap">The cap; the dashboard counts to <see cref="JobRunCount.DefaultCap"/>.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The capped count per owner tag, the tag the store stamps on a claimed row.</returns>
+    /// <remarks>Default method built on <see cref="CountInProgressJobRunRowsByOwnerAsync"/>, one grouped read per table.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="cap"/> is not positive.</exception>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IReadOnlyDictionary<string, JobRunCount>> CountInProgressJobRunsByOwnerAsync(
+        int cap = JobRunCount.DefaultCap,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsPositive(cap);
+
+        var totals = new Dictionary<string, long>(StringComparer.Ordinal);
+
+        foreach (var kind in (JobRunKind[])[JobRunKind.TimeJob, JobRunKind.CronJobOccurrence])
+        {
+            foreach (
+                var (owner, count) in await CountInProgressJobRunRowsByOwnerAsync(kind, cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                totals[owner] = totals.GetValueOrDefault(owner) + count;
+            }
+        }
+
+        return totals.ToDictionary(
+            static pair => pair.Key,
+            pair => JobRunCount.Of(pair.Value, cap),
+            StringComparer.Ordinal
+        );
+    }
+
     #endregion
 }

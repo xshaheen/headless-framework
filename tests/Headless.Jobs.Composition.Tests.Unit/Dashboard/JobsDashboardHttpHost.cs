@@ -30,7 +30,8 @@ internal static class JobsDashboardHttpHost
         FakeTimeProvider time,
         RecordingOperatorLog log,
         CancellationToken cancellationToken,
-        bool addJobs = true
+        bool addJobs = true,
+        Action<IServiceCollection>? configure = null
     )
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -61,6 +62,7 @@ internal static class JobsDashboardHttpHost
                 .AddJobs()
         );
         builder.Services.AddSingleton<IDashboardOperatorLog>(log);
+        configure?.Invoke(builder.Services);
 
         var app = builder.Build();
         app.UseAuthentication();

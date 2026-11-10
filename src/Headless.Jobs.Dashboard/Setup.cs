@@ -98,11 +98,18 @@ public static class SetupJobsDashboard
 
         // Replace, not TryAdd: AddHeadlessJobs may have registered its no-op sender first; when it runs after this
         // call, its TryAdd keeps this one.
-        services.Replace(ServiceDescriptor.Singleton<IJobsNotificationHubSender, JobsDashboardEventNotifier>());
+        // The module reads the host's last exception from the same instance the scheduler notifies.
+        services.TryAddSingleton<JobsDashboardEventNotifier>();
+        services.Replace(
+            ServiceDescriptor.Singleton<IJobsNotificationHubSender>(provider =>
+                provider.GetRequiredService<JobsDashboardEventNotifier>()
+            )
+        );
 
         services.TryAddSingleton(provider => new JobsModule(
             _Backend(provider),
             provider.GetRequiredService<JobsChangePublisher>(),
+            provider.GetRequiredService<JobsDashboardEventNotifier>(),
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<IOptions<JobsDashboardOptions>>().Value
         ));

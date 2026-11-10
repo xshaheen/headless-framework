@@ -538,4 +538,68 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             CronJobId = occurrence.CronJobId,
         };
     }
+
+    public Task<IReadOnlyList<JobRunBucket>> CountJobRunBucketRowsAsync(
+        JobRunKind kind,
+        JobRunQuery query,
+        IReadOnlyList<DateTime> boundaries,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsNotNull(boundaries);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var edges = boundaries.Select(static edge => DateTime.SpecifyKind(edge, DateTimeKind.Utc)).ToArray();
+        var counts = new Dictionary<JobStatus, int>[edges.Length - 1];
+
+        for (var index = 0; index < counts.Length; index++)
+        {
+            counts[index] = [];
+        }
+
+        foreach (var run in _RunsOf(kind, query))
+        {
+            if (run.ExecutionTime is not { } at || at < edges[0] || at >= edges[^1])
+            {
+                continue;
+            }
+
+            // BinarySearch returns the edge's index on a hit, else the complement of the next edge's index; either
+            // way the bucket is the last edge at or before the execution time.
+            var found = Array.BinarySearch(edges, DateTime.SpecifyKind(at, DateTimeKind.Utc));
+            var bucket = found >= 0 ? found : ~found - 1;
+            counts[bucket][run.Status] = counts[bucket].GetValueOrDefault(run.Status) + 1;
+        }
+
+        IReadOnlyList<JobRunBucket> buckets =
+        [
+            .. counts.Select(
+                (bucket, index) =>
+                    new JobRunBucket
+                    {
+                        Start = edges[index],
+                        End = edges[index + 1],
+                        Counts = bucket,
+                    }
+            ),
+        ];
+
+        return Task.FromResult(buckets);
+    }
+
+    public Task<IReadOnlyDictionary<string, int>> CountInProgressJobRunRowsByOwnerAsync(
+        JobRunKind kind,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IReadOnlyDictionary<string, int> counts = _RunsOf(kind, new JobRunQuery { Statuses = [JobStatus.InProgress] })
+            .Where(static run => run.OwnerId is not null)
+            .GroupBy(static run => run.OwnerId!, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
+
+        return Task.FromResult(counts);
+    }
 }

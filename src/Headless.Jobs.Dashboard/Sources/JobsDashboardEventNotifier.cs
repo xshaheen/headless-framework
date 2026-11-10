@@ -10,14 +10,29 @@ namespace Headless.Jobs;
 /// </summary>
 /// <remarks>
 /// The managers notify after their write returned, so the row read back is the committed one. A notification that names
-/// no row, such as a batch add, publishes nothing: the change reader on every node picks those rows up. Scheduler and
-/// host-status notifications carry nothing the module shows, so they are dropped.
+/// no row, such as a batch add, publishes nothing: the change reader on every node picks those rows up. The host's
+/// last exception is kept for the nodes view; the other scheduler and host-status notifications carry nothing the
+/// module shows, so they are dropped.
 /// </remarks>
-internal sealed class JobsDashboardEventNotifier(IJobsDashboardBackend backend, JobsChangePublisher publisher)
-    : IJobsNotificationHubSender
+internal sealed class JobsDashboardEventNotifier(
+    IJobsDashboardBackend backend,
+    JobsChangePublisher publisher,
+    TimeProvider timeProvider
+) : IJobsNotificationHubSender
 {
     private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
     private readonly JobsChangePublisher _publisher = Argument.IsNotNull(publisher);
+    private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
+    private JobsHostException? _lastHostException;
+
+    /// <summary>
+    /// Gets this host's last scheduler exception and when it was reported, or <see langword="null"/> when none was.
+    /// </summary>
+    /// <remarks>
+    /// It lives in this process only and is lost on restart; peers never send theirs, so the nodes view shows it on
+    /// the serving node's row alone.
+    /// </remarks>
+    public JobsHostException? LastHostException => Volatile.Read(ref _lastHostException);
 
     public Task AddCronJobNotifyAsync(object cronJob) => _Row(JobChangeKind.CronJob, cronJob, affectsAttention: true);
 
@@ -51,7 +66,13 @@ internal sealed class JobsDashboardEventNotifier(IJobsDashboardBackend backend, 
 
     public void UpdateHostStatus(object active) { }
 
-    public void UpdateHostException(object exceptionMessage) { }
+    public void UpdateHostException(object exceptionMessage)
+    {
+        if (exceptionMessage?.ToString() is { Length: > 0 } message)
+        {
+            Volatile.Write(ref _lastHostException, new JobsHostException(message, _timeProvider.GetUtcNow()));
+        }
+    }
 
     public Task AddCronOccurrenceAsync(Guid groupId, object occurrence) =>
         _Row(JobChangeKind.CronJobOccurrence, occurrence, affectsAttention: false);
@@ -98,3 +119,6 @@ internal sealed class JobsDashboardEventNotifier(IJobsDashboardBackend backend, 
         return Task.CompletedTask;
     }
 }
+
+/// <summary>A scheduler exception this host reported, and when.</summary>
+internal sealed record JobsHostException(string Message, DateTimeOffset At);

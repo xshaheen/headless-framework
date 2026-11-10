@@ -78,4 +78,16 @@ public sealed class SqlServerDashboardReadsTests(SqlServerJobsCoordinationFixtur
     {
         return base.a_run_serves_its_progress_time_only_once_it_reports_and_its_retry_settings();
     }
+
+    [Fact]
+    public override Task bucketed_counts_place_each_run_by_execution_time_and_count_an_empty_bucket_as_zero()
+    {
+        return base.bucketed_counts_place_each_run_by_execution_time_and_count_an_empty_bucket_as_zero();
+    }
+
+    [Fact]
+    public override Task in_progress_runs_are_counted_per_claim_owner()
+    {
+        return base.in_progress_runs_are_counted_per_claim_owner();
+    }
 }

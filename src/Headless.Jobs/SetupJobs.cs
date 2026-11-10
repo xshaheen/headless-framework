@@ -538,6 +538,17 @@ public static class SetupJobs
                     )
             );
 
+        // Each node publishes its host max concurrency, so the dashboard's nodes view shows it on every node's row and
+        // not only on the node that serves the page.
+        services
+            .AddOptions<CoordinationOptions>()
+            .Configure<SchedulerOptionsBuilder>(
+                (options, scheduler) =>
+                    options.Metadata[JobsNodeMetadata.MaxConcurrencyKey] = scheduler.MaxConcurrency.ToString(
+                        CultureInfo.InvariantCulture
+                    )
+            );
+
         // Only nodes sharing a durable store have a fleet whose cron rules must agree before a rebase.
         services.AddSingleton<CronFleetAgreement>();
 

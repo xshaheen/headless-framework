@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -88,5 +89,23 @@ internal static class JobsNodeMetadata
             // Another node's metadata is input this node does not control; a malformed value reads as unpublished.
             return false;
         }
+    }
+
+    /// <summary>
+    /// Membership metadata key carrying the node's host max concurrency, an invariant-culture integer, so a dashboard
+    /// served by another node can show how many runs this one may run at once.
+    /// </summary>
+    internal const string MaxConcurrencyKey = "headless.jobs.max-concurrency";
+
+    /// <summary>Reads the host max concurrency a node's metadata publishes.</summary>
+    /// <param name="metadata">The node's metadata.</param>
+    /// <returns>The max concurrency, or <see langword="null"/> when the node publishes none or the value is malformed.</returns>
+    public static int? ReadMaxConcurrency(IReadOnlyDictionary<string, string> metadata)
+    {
+        return
+            metadata.TryGetValue(MaxConcurrencyKey, out var value)
+            && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var maxConcurrency)
+            ? maxConcurrency
+            : null;
     }
 }

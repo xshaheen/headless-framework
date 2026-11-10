@@ -38,12 +38,14 @@ internal sealed class JobsModule
     public JobsModule(
         IJobsDashboardBackend backend,
         JobsChangePublisher publisher,
+        JobsDashboardEventNotifier notifier,
         TimeProvider timeProvider,
         JobsDashboardOptions options
     )
     {
         Argument.IsNotNull(backend);
         Argument.IsNotNull(publisher);
+        Argument.IsNotNull(notifier);
         Argument.IsNotNull(timeProvider);
         Argument.IsNotNull(options);
 
@@ -51,7 +53,7 @@ internal sealed class JobsModule
         _counts = new JobsCounts(backend);
         _changes = new JobsChangeSource(Id, backend, timeProvider, options.ChangePageSize, options.ChangeOverlapWindow);
         _commands = new JobsCommands(Id, backend, publisher, timeProvider);
-        _api = new JobsModuleApi(backend, timeProvider);
+        _api = new JobsModuleApi(backend, notifier, timeProvider);
         GroupIds = [_sources.SameCorrelationGroupId, _sources.ChainGroupId, _sources.CronJobGroupId];
     }
 

@@ -11,9 +11,13 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// The Jobs module's own API at <c>{base}/api/jobs</c>: runs, attempts, cron jobs with their next fires, a draft
-/// schedule preview, functions, nodes, and the two create calls, which need the operate policy.
+/// schedule preview, functions, nodes, runs per day, and the two create calls, which need the operate policy.
 /// </summary>
-internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider timeProvider)
+internal sealed class JobsModuleApi(
+    IJobsDashboardBackend backend,
+    JobsDashboardEventNotifier notifier,
+    TimeProvider timeProvider
+)
 {
     /// <summary>The most runs one list call returns.</summary>
     internal const int MaxListLimit = 200;
@@ -21,11 +25,15 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
     /// <summary>The most next fires one preview returns.</summary>
     internal const int MaxFires = 50;
 
+    /// <summary>The most days one series covers.</summary>
+    internal const int MaxSeriesDays = 92;
+
     private const int _DefaultListLimit = 50;
     private const int _DefaultFires = 5;
 
     private readonly IJobsDashboardBackend _backend = Argument.IsNotNull(backend);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
+    private readonly JobsDashboardEventNotifier _notifier = Argument.IsNotNull(notifier);
 
     public void Map(DashboardModuleEndpoints endpoints)
     {
@@ -39,6 +47,7 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
         routes.MapGet("/cron-preview", _Preview);
         routes.MapGet("/functions", _ListFunctionsAsync);
         routes.MapGet("/nodes", _ListNodesAsync);
+        routes.MapGet("/series/daily", _DailySeriesAsync);
         endpoints.RequireOperate(routes.MapPost("/time-jobs", _AddTimeJobAsync));
         endpoints.RequireOperate(routes.MapPost("/cron-jobs", _AddCronJobAsync));
     }
@@ -335,15 +344,31 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
     private async Task<JsonHttpResult<JobsNodeList>> _ListNodesAsync(CancellationToken cancellationToken)
     {
         var nodes = await _backend.GetNodesAsync(cancellationToken).ConfigureAwait(false);
+        var running = await _backend.CountRunningByOwnerAsync(cancellationToken).ConfigureAwait(false);
+        var hostException = _notifier.LastHostException;
 
         return TypedResults.Json(
             new JobsNodeList([
-                .. nodes.Select(static node => new JobsNodeView(
-                    node.Identity,
-                    node.State,
-                    node.Role,
-                    node.ClaimedFunctions
-                )),
+                .. nodes.Select(node =>
+                {
+                    var count = running.GetValueOrDefault(node.Owner);
+                    // Only this host's exception is known here; a peer keeps its own in its own process.
+                    var exception = node.IsLocal ? hostException : null;
+
+                    return new JobsNodeView(
+                        node.Identity,
+                        node.State,
+                        node.Role,
+                        node.ClaimedFunctions,
+                        node.IsLocal,
+                        node.MaxConcurrency,
+                        count.Count,
+                        count.Capped,
+                        node.LastHeartbeatAt,
+                        exception?.Message,
+                        exception?.At
+                    );
+                }),
             ]),
             JobsDashboardJsonContext.Default.JobsNodeList
         );
@@ -512,4 +537,111 @@ internal sealed class JobsModuleApi(IJobsDashboardBackend backend, TimeProvider 
     }
 
     private DateTime _Now() => _timeProvider.GetUtcNow().UtcDateTime;
+
+    private async Task<Results<JsonHttpResult<JobsDailySeries>, BadRequest<string>>> _DailySeriesAsync(
+        string? kind,
+        Guid? cronJobId,
+        DateOnly? from,
+        DateOnly? to,
+        string? zone,
+        CancellationToken cancellationToken
+    )
+    {
+        JobRunKind? runKind = null;
+
+        if (!string.IsNullOrEmpty(kind))
+        {
+            if (!Enum.TryParse<JobRunKind>(kind, ignoreCase: true, out var parsedKind) || !Enum.IsDefined(parsedKind))
+            {
+                return TypedResults.BadRequest("kind must be TimeJob or CronJobOccurrence.");
+            }
+
+            runKind = parsedKind;
+        }
+
+        if (from is not { } first || to is not { } last)
+        {
+            return TypedResults.BadRequest("from and to are required local dates (yyyy-MM-dd).");
+        }
+
+        if (last < first)
+        {
+            return TypedResults.BadRequest("to must not be before from.");
+        }
+
+        if (last.DayNumber - first.DayNumber + 1 > MaxSeriesDays)
+        {
+            return TypedResults.BadRequest($"A series covers at most {MaxSeriesDays} days.");
+        }
+
+        var timeZone = _backend.SchedulerTimeZone;
+
+        if (!string.IsNullOrWhiteSpace(zone) && !TimeZoneInfo.TryFindSystemTimeZoneById(zone, out timeZone))
+        {
+            return TypedResults.BadRequest($"Unknown time zone '{zone}'.");
+        }
+
+        var days = Enumerable.Range(0, last.DayNumber - first.DayNumber + 1).Select(first.AddDays).ToArray();
+        DateTime[] edges =
+        [
+            .. days.Select(day => _DayStartUtc(day, timeZone)),
+            _DayStartUtc(last.AddDays(1), timeZone),
+        ];
+        var asOf = _timeProvider.GetUtcNow();
+        var buckets = await _backend
+            .CountRunsByBucketAsync(new JobRunQuery { Kind = runKind, CronJobId = cronJobId }, edges, cancellationToken)
+            .ConfigureAwait(false);
+        var statuses = Enum.GetValues<JobStatus>();
+
+        return TypedResults.Json(
+            new JobsDailySeries(
+                timeZone.Id,
+                first,
+                last,
+                asOf,
+                buckets.All(static bucket => bucket.Counts is not null),
+                [
+                    .. buckets.Select(
+                        (bucket, index) =>
+                            new JobsDailyBucket(
+                                days[index],
+                                bucket.Start,
+                                bucket.End,
+                                bucket.Counts is { } counts
+                                    ? statuses.ToDictionary(
+                                        static status => status.ToString(),
+                                        status => counts.GetValueOrDefault(status),
+                                        StringComparer.Ordinal
+                                    )
+                                    : null
+                            )
+                    ),
+                ]
+            ),
+            JobsDashboardJsonContext.Default.JobsDailySeries
+        );
+    }
+
+    /// <summary>
+    /// The first instant of a local day: its midnight, or, where a daylight-saving gap skips midnight, the end of the
+    /// gap, and the earlier instant where midnight repeats. So each day starts once and a short or long day keeps its
+    /// true length.
+    /// </summary>
+    private static DateTime _DayStartUtc(DateOnly day, TimeZoneInfo zone)
+    {
+        var local = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+
+        // Gaps begin and end on whole minutes in the time-zone database, so the first valid minute is the gap's end.
+        while (zone.IsInvalidTime(local))
+        {
+            local = local.AddMinutes(1);
+        }
+
+        if (zone.IsAmbiguousTime(local))
+        {
+            return DateTime.SpecifyKind(local - zone.GetAmbiguousTimeOffsets(local).Max(), DateTimeKind.Utc);
+        }
+
+        return DateTime.SpecifyKind(TimeZoneInfo.ConvertTimeToUtc(local, zone), DateTimeKind.Utc);
+    }
 }

@@ -731,4 +731,184 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             CronJobId = x.CronJobId,
         });
     }
+
+    public async Task<IReadOnlyList<JobRunBucket>> CountJobRunBucketRowsAsync(
+        JobRunKind kind,
+        JobRunQuery query,
+        IReadOnlyList<DateTime> boundaries,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsNotNull(boundaries);
+
+        var edges = boundaries.Select(static edge => DateTime.SpecifyKind(edge, DateTimeKind.Utc)).ToArray();
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var rows =
+            kind == JobRunKind.TimeJob
+                ? await _CountBucketsAsync(
+                        _TimeJobRuns(dbContext, query),
+                        static x => x.ExecutionTime,
+                        static x => x.Status,
+                        edges,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+                : await _CountBucketsAsync(
+                        _OccurrenceRuns(dbContext, query),
+                        static x => (DateTime?)x.ExecutionTime,
+                        static x => x.Status,
+                        edges,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+        var counts = new Dictionary<JobStatus, int>[edges.Length - 1];
+
+        for (var index = 0; index < counts.Length; index++)
+        {
+            counts[index] = [];
+        }
+
+        foreach (var row in rows)
+        {
+            counts[row.Bucket][row.Status] = row.Count;
+        }
+
+        return
+        [
+            .. counts.Select(
+                (bucket, index) =>
+                    new JobRunBucket
+                    {
+                        Start = edges[index],
+                        End = edges[index + 1],
+                        Counts = bucket,
+                    }
+            ),
+        ];
+    }
+
+    public async Task<IReadOnlyDictionary<string, int>> CountInProgressJobRunRowsByOwnerAsync(
+        JobRunKind kind,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var rows =
+            kind == JobRunKind.TimeJob
+                ? await dbContext
+                    .Set<TTimeJob>()
+                    .AsNoTracking()
+                    .Where(x => x.Status == JobStatus.InProgress && x.OwnerId != null)
+                    .GroupBy(x => x.OwnerId!)
+                    .Select(group => new OwnerCount { Owner = group.Key, Count = group.Count() })
+                    .ToArrayAsync(cancellationToken)
+                    .ConfigureAwait(false)
+                : await dbContext
+                    .Set<CronJobOccurrenceEntity<TCronJob>>()
+                    .AsNoTracking()
+                    .Where(x => x.Status == JobStatus.InProgress && x.OwnerId != null)
+                    .GroupBy(x => x.OwnerId!)
+                    .Select(group => new OwnerCount { Owner = group.Key, Count = group.Count() })
+                    .ToArrayAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+        return rows.ToDictionary(static row => row.Owner, static row => row.Count, StringComparer.Ordinal);
+    }
+
+    // One grouped read per table: each row's bucket is a CASE over the edges, computed in an inner projection so the
+    // store groups by the projected column instead of repeating the parameterized expression in GROUP BY.
+    private static async Task<BucketCount[]> _CountBucketsAsync<TRow>(
+        IQueryable<TRow> rows,
+        Expression<Func<TRow, DateTime?>> executionTime,
+        Expression<Func<TRow, JobStatus>> status,
+        DateTime[] edges,
+        CancellationToken cancellationToken
+    )
+    {
+        var row = Expression.Parameter(typeof(TRow), "x");
+        var at = _Rebind(executionTime, row);
+        var inRange = Expression.Lambda<Func<TRow, bool>>(
+            Expression.AndAlso(
+                Expression.GreaterThanOrEqual(at, _Parameter<DateTime?>(edges[0])),
+                Expression.LessThan(at, _Parameter<DateTime?>(edges[^1]))
+            ),
+            row
+        );
+
+        Expression bucket = Expression.Constant(edges.Length - 2);
+
+        for (var index = edges.Length - 2; index >= 1; index--)
+        {
+            bucket = Expression.Condition(
+                Expression.LessThan(at, _Parameter<DateTime?>(edges[index])),
+                Expression.Constant(index - 1),
+                bucket
+            );
+        }
+
+        var bucketed = Expression.Lambda<Func<TRow, BucketedRun>>(
+            Expression.MemberInit(
+                Expression.New(typeof(BucketedRun)),
+                Expression.Bind(
+                    typeof(BucketedRun).GetProperty(
+                        nameof(BucketedRun.Bucket),
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                    )!,
+                    bucket
+                ),
+                Expression.Bind(
+                    typeof(BucketedRun).GetProperty(
+                        nameof(BucketedRun.Status),
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                    )!,
+                    _Rebind(status, row)
+                )
+            ),
+            row
+        );
+
+        return await rows.Where(inRange)
+            .Select(bucketed)
+            .GroupBy(x => new { x.Bucket, x.Status })
+            .Select(group => new BucketCount
+            {
+                Bucket = group.Key.Bucket,
+                Status = group.Key.Status,
+                Count = group.Count(),
+            })
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private sealed class BucketedRun
+    {
+        public int Bucket { get; init; }
+
+        public JobStatus Status { get; init; }
+    }
+
+    private sealed class BucketCount
+    {
+        public int Bucket { get; init; }
+
+        public JobStatus Status { get; init; }
+
+        public int Count { get; init; }
+    }
+
+    private sealed class OwnerCount
+    {
+        public required string Owner { get; init; }
+
+        public int Count { get; init; }
+    }
 }

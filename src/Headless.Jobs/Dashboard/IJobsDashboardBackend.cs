@@ -141,6 +141,16 @@ internal interface IJobsDashboardBackend
     /// <returns>The cron job's id.</returns>
     /// <exception cref="ArgumentException">The draft names no registered function, or its request does not bind.</exception>
     Task<Guid> AddCronJobAsync(JobsDashboardCronJobDraft draft, CancellationToken cancellationToken);
+
+    /// <summary>Counts per status the runs <paramref name="query"/> matches in each bucket, by execution time.</summary>
+    Task<IReadOnlyList<JobRunBucket>> CountRunsByBucketAsync(
+        JobRunQuery query,
+        IReadOnlyList<DateTime> boundaries,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Counts the running runs per owner tag, as <see cref="JobsDashboardNode.Owner"/> names a node.</summary>
+    Task<IReadOnlyDictionary<string, JobRunCount>> CountRunningByOwnerAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>A registered function as the dashboard shows it.</summary>
@@ -154,11 +164,21 @@ internal sealed record JobsDashboardFunction(
 );
 
 /// <summary>A live node and the functions its run filter claims, or <see langword="null"/> when it published none.</summary>
+/// <param name="Owner">The owner tag the node stamps on the rows it claims.</param>
+/// <param name="IsLocal">Whether the node is this host, the one serving the request.</param>
+/// <param name="MaxConcurrency">The node's host max concurrency, or <see langword="null"/> when it published none.</param>
+/// <param name="LastHeartbeatAt">
+/// The store-clock time of the node's latest accepted heartbeat, or <see langword="null"/> without node membership.
+/// </param>
 internal sealed record JobsDashboardNode(
     string Identity,
     string State,
     string? Role,
-    IReadOnlyList<string>? ClaimedFunctions
+    IReadOnlyList<string>? ClaimedFunctions,
+    string Owner,
+    bool IsLocal,
+    int? MaxConcurrency,
+    DateTimeOffset? LastHeartbeatAt
 );
 
 /// <summary>A run's stored request: its JSON, and why the host cannot bind it, when it cannot.</summary>

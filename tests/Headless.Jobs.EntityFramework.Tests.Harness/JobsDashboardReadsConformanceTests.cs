@@ -471,6 +471,82 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
         );
     }
 
+    public virtual async Task bucketed_counts_place_each_run_by_execution_time_and_count_an_empty_bucket_as_zero()
+    {
+        await _RunAsync(
+            "reads-buckets",
+            async (store, _, ct) =>
+            {
+                // Thirty daily buckets, twenty in the past and ten ahead, so the store's CASE has far more arms than
+                // a nested expression could hold.
+                var start = _Minute(0).Date.AddDays(-20);
+                DateTime[] edges = [.. Enumerable.Range(0, 31).Select(day => start.AddDays(day))];
+                var cron = await _SeedCronAsync(ct);
+                await _AddTimeJobAsync(store, JobStatus.Succeeded, start.AddHours(1), ct);
+                await _AddTimeJobAsync(store, JobStatus.Succeeded, start.AddHours(23), ct);
+                await _AddTimeJobAsync(store, JobStatus.Failed, start.AddDays(1), ct);
+                await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, start.AddDays(1).AddHours(2), ct);
+                await _AddTimeJobAsync(store, JobStatus.Idle, start.AddDays(25), ct);
+                await _AddTimeJobAsync(store, JobStatus.Queued, start.AddDays(25).AddHours(3), ct);
+                await _AddTimeJobAsync(store, JobStatus.Idle, start.AddDays(29).AddHours(23), ct);
+                await _AddTimeJobAsync(store, JobStatus.Succeeded, start.AddDays(-1), ct);
+                await _AddTimeJobAsync(store, JobStatus.Idle, start.AddDays(30), ct);
+                await _AddTimeJobAsync(store, JobStatus.Idle, executionTime: null, ct);
+
+                var buckets = await store.CountJobRunsByBucketAsync(new JobRunQuery(), edges, ct);
+                var occurrences = await store.CountJobRunsByBucketAsync(
+                    new JobRunQuery { CronJobId = cron },
+                    edges,
+                    ct
+                );
+
+                buckets.Should().HaveCount(30);
+                buckets.Select(x => x.Start).Should().Equal(edges[..^1]);
+                buckets[0].Counts.Should().BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Succeeded] = 2 });
+                buckets[1]
+                    .Counts.Should()
+                    .BeEquivalentTo(
+                        new Dictionary<JobStatus, int> { [JobStatus.Failed] = 1, [JobStatus.Succeeded] = 1 }
+                    );
+                buckets[2].Counts.Should().NotBeNull().And.BeEmpty();
+                buckets[25]
+                    .Counts.Should()
+                    .BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Idle] = 1, [JobStatus.Queued] = 1 });
+                buckets[29].Counts.Should().BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Idle] = 1 });
+                buckets
+                    .Sum(x => x.Counts!.Values.Sum())
+                    .Should()
+                    .Be(7, "runs outside the edges or unscheduled are in no bucket");
+                occurrences[1]
+                    .Counts.Should()
+                    .BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Succeeded] = 1 });
+                occurrences.Sum(x => x.Counts!.Values.Sum()).Should().Be(1);
+            }
+        );
+    }
+
+    public virtual async Task in_progress_runs_are_counted_per_claim_owner()
+    {
+        await _RunAsync(
+            "reads-running",
+            async (store, owner, ct) =>
+            {
+                var first = await _AddTimeJobAsync(store, JobStatus.Idle, _Minute(-60), ct);
+                var second = await _AddTimeJobAsync(store, JobStatus.Idle, _Minute(-61), ct);
+                await _AddTimeJobAsync(store, JobStatus.Succeeded, _Minute(-62), ct);
+                (await store.AcquireImmediateTimeJobsAsync([first, second], ct)).Should().HaveCount(2);
+
+                var running = await store.CountInProgressJobRunsByOwnerAsync(cancellationToken: ct);
+                var capped = await store.CountInProgressJobRunsByOwnerAsync(cap: 1, ct);
+
+                running
+                    .Should()
+                    .BeEquivalentTo(new Dictionary<string, JobRunCount> { [owner] = new(2, Capped: false) });
+                capped[owner].Should().Be(new JobRunCount(1, Capped: true));
+            }
+        );
+    }
+
     #region Helpers
 
     private async Task _RunAsync(

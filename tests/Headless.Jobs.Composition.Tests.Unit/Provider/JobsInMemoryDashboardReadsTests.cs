@@ -527,6 +527,76 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
         charge.LastExecutedAt.Should().Be(_Now.AddMinutes(-5));
     }
 
+    [Fact]
+    public async Task should_count_runs_per_status_in_each_bucket_by_execution_time_and_an_empty_bucket_as_zero()
+    {
+        // given
+        var store = _Create();
+        var start = _Now.UtcDateTime.Date.AddDays(-2);
+        DateTime[] edges = [start, start.AddDays(1), start.AddDays(2), start.AddDays(3), start.AddDays(4)];
+        var cron = await _AddCronJobAsync(store, "report.build");
+        await _AddTimeJobAsync(store, JobStatus.Succeeded, start);
+        await _AddTimeJobAsync(store, JobStatus.Failed, start.AddHours(23).AddMinutes(59));
+        await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, start.AddHours(5));
+        await _AddTimeJobAsync(store, JobStatus.Idle, start.AddDays(3).AddHours(1));
+        await _AddTimeJobAsync(store, JobStatus.Queued, start.AddDays(3).AddHours(2));
+        await _AddTimeJobAsync(store, JobStatus.Idle, start.AddDays(4));
+        await _AddTimeJobAsync(store, JobStatus.Idle, executionTime: null);
+
+        // when
+        var buckets = await _Store(store).CountJobRunsByBucketAsync(new JobRunQuery(), edges, AbortToken);
+        var timeJobs = await _Store(store)
+            .CountJobRunsByBucketAsync(new JobRunQuery { Kind = JobRunKind.TimeJob }, edges, AbortToken);
+
+        // then
+        buckets.Select(x => x.Start).Should().Equal(edges[..^1]);
+        buckets.Select(x => x.End).Should().Equal(edges[1..]);
+        buckets[0]
+            .Counts.Should()
+            .BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Succeeded] = 2, [JobStatus.Failed] = 1 });
+        buckets[1].Counts.Should().NotBeNull().And.BeEmpty();
+        buckets[2].Counts.Should().NotBeNull().And.BeEmpty();
+        buckets[3]
+            .Counts.Should()
+            .BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Idle] = 1, [JobStatus.Queued] = 1 });
+        timeJobs[0]
+            .Counts.Should()
+            .BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Succeeded] = 1, [JobStatus.Failed] = 1 });
+    }
+
+    [Fact]
+    public async Task should_refuse_bucket_edges_that_are_too_few_or_not_strictly_ascending()
+    {
+        // given
+        var store = _Create();
+
+        // when
+        var single = () => _Store(store).CountJobRunsByBucketAsync(new JobRunQuery(), [_Base], AbortToken);
+        var repeated = () => _Store(store).CountJobRunsByBucketAsync(new JobRunQuery(), [_Base, _Base], AbortToken);
+
+        // then
+        await single.Should().ThrowAsync<ArgumentException>();
+        await repeated.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task should_count_in_progress_runs_per_claim_owner_and_stop_each_at_the_cap()
+    {
+        // given
+        var store = _Create();
+        await _StartAsync(store, _Now.AddMinutes(-10), _Now.AddMinutes(-9));
+        await _StartAsync(store, _Now.AddMinutes(-8), _Now.AddMinutes(-7));
+        await _AddTimeJobAsync(store, JobStatus.Succeeded, _Base);
+
+        // when
+        var running = await _Store(store).CountInProgressJobRunsByOwnerAsync(cancellationToken: AbortToken);
+        var capped = await _Store(store).CountInProgressJobRunsByOwnerAsync(cap: 1, AbortToken);
+
+        // then
+        running.Should().BeEquivalentTo(new Dictionary<string, JobRunCount> { [_Owner] = new(2, Capped: false) });
+        capped[_Owner].Should().Be(new JobRunCount(1, Capped: true));
+    }
+
     private static JobOperationScope _Scope(JobOperationKind kind, DateTime highWater)
     {
         return new JobOperationScope

@@ -381,14 +381,53 @@ internal sealed record JobsFunctionView(
 internal sealed record JobsFunctionList(IReadOnlyList<JobsFunctionView> Items);
 
 /// <summary>A live node and the functions its run filter claims, or <see langword="null"/> when it published none.</summary>
+/// <param name="IsLocal">Whether this node serves the request.</param>
+/// <param name="MaxConcurrency">The host max concurrency, or <see langword="null"/> when the node published none.</param>
+/// <param name="Running">The runs the node holds in progress, at most the count cap.</param>
+/// <param name="RunningCapped">Whether more runs are in progress than <paramref name="Running"/>.</param>
+/// <param name="LastHeartbeatAt">The store-clock time of its latest heartbeat, or <see langword="null"/> without membership.</param>
+/// <param name="LastHostException">
+/// The serving node's last scheduler exception; always <see langword="null"/> on a peer, whose exception is known only
+/// on that node.
+/// </param>
+/// <param name="LastHostExceptionAt">When <paramref name="LastHostException"/> was reported.</param>
 internal sealed record JobsNodeView(
     string Identity,
     string State,
     string? Role,
-    IReadOnlyList<string>? ClaimedFunctions
+    IReadOnlyList<string>? ClaimedFunctions,
+    bool IsLocal,
+    int? MaxConcurrency,
+    int Running,
+    bool RunningCapped,
+    DateTimeOffset? LastHeartbeatAt,
+    string? LastHostException,
+    DateTimeOffset? LastHostExceptionAt
 );
 
 internal sealed record JobsNodeList(IReadOnlyList<JobsNodeView> Items);
+
+/// <summary>
+/// Runs per status for each local day of a range in one zone, by execution time, as of <paramref name="AsOf"/>.
+/// </summary>
+/// <param name="Exact">Whether every day was read, so shares of the totals are exact.</param>
+internal sealed record JobsDailySeries(
+    string Zone,
+    DateOnly From,
+    DateOnly To,
+    DateTimeOffset AsOf,
+    bool Exact,
+    IReadOnlyList<JobsDailyBucket> Days
+);
+
+/// <summary>One local day: its UTC bounds, and its runs per status, or <see langword="null"/> when the store could not read it.</summary>
+/// <param name="Counts">Every status with its count, zero included; <see langword="null"/> is written, never left out.</param>
+internal sealed record JobsDailyBucket(
+    DateOnly Date,
+    DateTime Start,
+    DateTime End,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] IReadOnlyDictionary<string, int>? Counts
+);
 
 /// <summary>The id a create call returns.</summary>
 internal sealed record JobsCreated(Guid Id);
@@ -488,6 +527,7 @@ internal sealed record JobsRunScope
 [JsonSerializable(typeof(JobsFunctionView))]
 [JsonSerializable(typeof(JobsFunctionList))]
 [JsonSerializable(typeof(JobsNodeList))]
+[JsonSerializable(typeof(JobsDailySeries))]
 [JsonSerializable(typeof(JobsCreated))]
 [JsonSerializable(typeof(JobsTimeJobBody))]
 [JsonSerializable(typeof(JobsCronJobBody))]

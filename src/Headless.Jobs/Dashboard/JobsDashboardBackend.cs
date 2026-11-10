@@ -202,22 +202,36 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
                     SchedulerOptions.NodeId,
                     nameof(NodeLivenessState.Alive),
                     Role: null,
-                    runsJobs ? Registry.RunFilter.ClaimedFunctions(Registry.Functions.Keys) : []
+                    runsJobs ? Registry.RunFilter.ClaimedFunctions(Registry.Functions.Keys) : [],
+                    // Without membership a claim stamps the configured node id.
+                    Owner: SchedulerOptions.NodeId,
+                    IsLocal: true,
+                    SchedulerOptions.MaxConcurrency,
+                    LastHeartbeatAt: null
                 ),
             ];
         }
 
         var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var local = membership.Identity;
+        var cluster = membership.ClusterName;
 
         return
         [
             .. snapshot
                 .Where(static node => node.State != NodeLivenessState.Dead)
-                .Select(static node => new JobsDashboardNode(
+                .Select(node => new JobsDashboardNode(
                     node.Identity.ToString(),
                     node.State.ToString(),
                     node.Role,
-                    JobsNodeMetadata.TryReadClaimedFunctions(node.Metadata, out var claimed) ? claimed : null
+                    JobsNodeMetadata.TryReadClaimedFunctions(node.Metadata, out var claimed) ? claimed : null,
+                    NodeOwnerTag.Format(cluster, node.Identity),
+                    node.Identity == local,
+                    // This host knows its own setting even when a peer runs a build that does not publish it.
+                    node.Identity == local
+                        ? SchedulerOptions.MaxConcurrency
+                        : JobsNodeMetadata.ReadMaxConcurrency(node.Metadata),
+                    node.LastHeartbeatAt
                 )),
         ];
     }
@@ -459,6 +473,20 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
             .ConfigureAwait(false);
 
         return created.Id;
+    }
+
+    public Task<IReadOnlyList<JobRunBucket>> CountRunsByBucketAsync(
+        JobRunQuery query,
+        IReadOnlyList<DateTime> boundaries,
+        CancellationToken cancellationToken
+    )
+    {
+        return Store.CountJobRunsByBucketAsync(query, boundaries, cancellationToken);
+    }
+
+    public Task<IReadOnlyDictionary<string, JobRunCount>> CountRunningByOwnerAsync(CancellationToken cancellationToken)
+    {
+        return Store.CountInProgressJobRunsByOwnerAsync(cancellationToken: cancellationToken);
     }
 
     private TTimeJob _BuildTimeJob(JobsDashboardTimeJobDraft draft, bool isRoot)
