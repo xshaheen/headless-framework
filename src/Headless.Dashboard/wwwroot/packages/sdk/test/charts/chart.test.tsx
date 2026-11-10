@@ -175,4 +175,70 @@ describe('Chart', () => {
     renderChart({ ...outcomes, parts: zero, empty: 'Nothing ran today' })
     expect(screen.getByText('Nothing ran today')).toBeTruthy()
   })
+
+  it('names counts with no range as covering every item, and keeps their as-of time', () => {
+    renderChart({ ...outcomes, start: undefined, end: undefined })
+
+    expect(screen.getByRole('img').getAttribute('aria-label')).toBe(
+      'Runs by outcome: Succeeded 300 runs, 75%; Failed 100 runs, 25%, all runs; as of Nov 10, 2026, 12:00:04 UTC.',
+    )
+  })
+
+  it('says what partial counts with no range cover, with no shares', () => {
+    renderChart({ ...outcomes, start: undefined, end: undefined, asOf: undefined, complete: false })
+
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.getByText('Counts of all runs. These counts are partial, so no shares are shown.')).toBeTruthy()
+  })
+
+  // Four days from Nov 9; Nov 10 is today, so Nov 11 and 12 count runs scheduled for them.
+  const days: TimeSeriesChartProps = {
+    kind: 'stacked-bar',
+    label: 'Runs per day',
+    unit: 'runs',
+    zone: 'UTC',
+    start: '2026-11-09T12:00:00Z',
+    intervalSeconds: 86_400,
+    asOf: '2026-11-10T12:00:04Z',
+    present: { index: 1, label: 'Today' },
+    series: [
+      { name: 'Succeeded', tone: 'ok', points: [5, 3, 0, 0] },
+      { name: 'Idle', tone: 'sched', points: [0, 2, 4, 1] },
+    ],
+  }
+
+  it('draws the buckets after the present outlined, and marks the present on the axis', () => {
+    const { container } = renderChart(days)
+
+    const bars = [...container.querySelectorAll('.recharts-bar-rectangle path')]
+    // Two series of four buckets; the zero-height bars draw nothing, so only the drawn ones are read.
+    const drawn = bars.map((bar) => ({ fillOpacity: bar.getAttribute('fill-opacity'), stroke: bar.getAttribute('stroke') }))
+    expect(drawn).toEqual([
+      { fillOpacity: '1', stroke: 'none' },
+      { fillOpacity: '1', stroke: 'none' },
+      { fillOpacity: '1', stroke: 'none' },
+      { fillOpacity: '0', stroke: 'var(--series-1)' },
+      { fillOpacity: '0', stroke: 'var(--series-1)' },
+    ])
+    expect(container.querySelector('.recharts-reference-line')).toBeTruthy()
+    expect(screen.getByText('Today')).toBeTruthy()
+    expect(screen.getByRole('img').getAttribute('aria-label')).toBe(
+      'Runs per day: Succeeded and Idle in runs, every 1 day, from Nov 9 to Nov 12 UTC; Today is Nov 10, later buckets are scheduled and drawn outlined; as of Nov 10, 2026, 12:00:04 UTC.',
+    )
+  })
+
+  it('marks the present and the scheduled buckets in the list', async () => {
+    const user = userEvent.setup()
+    renderChart(days)
+
+    await user.click(screen.getByRole('button', { name: 'Show list' }))
+
+    expect(cells(screen.getByRole('table', { name: 'Runs per day' })).map((row) => row[0])).toEqual([
+      'Time',
+      'Nov 9',
+      'Nov 10 · Today',
+      'Nov 11 · scheduled',
+      'Nov 12 · scheduled',
+    ])
+  })
 })
