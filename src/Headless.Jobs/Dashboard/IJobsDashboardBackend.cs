@@ -244,6 +244,10 @@ internal sealed record JobsDashboardCronJobDraft
     public string? RequestJson { get; init; }
 
     public string? Description { get; init; }
+
+    public int Retries { get; init; }
+
+    public int[]? RetryIntervals { get; init; }
 }
 
 /// <summary>The fields of a time job an operator changes; each one left unset keeps its stored value.</summary>

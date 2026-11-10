@@ -594,6 +594,8 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
             TimeZoneId = string.IsNullOrWhiteSpace(draft.TimeZoneId) ? null : draft.TimeZoneId,
             Request = _Request(draft.Function, draft.RequestJson),
             Description = draft.Description,
+            Retries = draft.Retries,
+            RetryIntervals = draft.RetryIntervals,
         };
 
         var created = await _services

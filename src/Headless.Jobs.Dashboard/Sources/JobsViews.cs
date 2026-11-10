@@ -467,6 +467,10 @@ internal sealed record JobsCronJobBody
     public JsonElement? Request { get; init; }
 
     public string? Description { get; init; }
+
+    public int Retries { get; init; }
+
+    public int[]? RetryIntervals { get; init; }
 }
 
 /// <summary>

@@ -146,6 +146,38 @@ public sealed class JobsModuleHostTests : TestBase
     }
 
     [Fact]
+    public async Task should_create_a_cron_job_with_the_retries_and_intervals_the_operator_chose()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var created = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/cron-jobs",
+            new
+            {
+                function = JobsModuleNode.Report,
+                expression = "0 0 * * * *",
+                retries = 3,
+                retryIntervals = new[] { 10, 30, 60 },
+            },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var id = (await JobsDashboardHttpHost.ReadAsync(created, AbortToken)).GetProperty("id").GetGuid();
+        var store = app.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var cronJob = await store.GetCronJobByIdAsync(id, AbortToken);
+        cronJob!.Retries.Should().Be(3);
+        cronJob.RetryIntervals.Should().Equal(10, 30, 60);
+    }
+
+    [Fact]
     public async Task should_refuse_a_time_job_for_an_unknown_function_with_the_reason_alone()
     {
         // given

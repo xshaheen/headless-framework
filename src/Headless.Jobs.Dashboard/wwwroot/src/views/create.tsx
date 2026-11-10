@@ -342,6 +342,9 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
   const [timeZoneId, setTimeZoneId] = useState('')
   const [request, setRequest] = useState('')
   const [description, setDescription] = useState('')
+  const [retries, setRetries] = useState('0')
+  const [retryIntervals, setRetryIntervals] = useState('')
+  const [intervalsError, setIntervalsError] = useState<string>()
   const [fieldErrors, setFieldErrors] = useState<{ function?: string; request?: string }>({})
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -357,11 +360,13 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
     }
 
     const parsed = parseRequest(request)
+    const intervals = parseIntervals(retryIntervals)
     const found = { function: fn ? undefined : chooseFunction, request: parsed.error }
     setFieldErrors(found)
+    setIntervalsError(intervals.error)
     setError(undefined)
 
-    if (found.function || found.request) {
+    if (found.function || found.request || intervals.error) {
       return
     }
 
@@ -377,6 +382,8 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
           ...(timeZoneId ? { timeZoneId } : {}),
           ...(parsed.value !== undefined ? { request: parsed.value } : {}),
           ...(description ? { description } : {}),
+          retries: Number(retries) || 0,
+          ...(intervals.value ? { retryIntervals: intervals.value } : {}),
         },
       })
       onCreated(created.id)
@@ -445,6 +452,14 @@ export function CronJobForm({ onCreated, onCancel }: CreateFormProps) {
           value={request}
           onChange={setRequest}
           error={fieldErrors.request}
+        />
+        <TextInputField label="Retries" inputMode="numeric" value={retries} onChange={setRetries} />
+        <TextInputField
+          label="Retry intervals (seconds)"
+          description="The wait before each retry, such as 30, 60, 300; the last repeats. Blank uses the function's retry policy."
+          value={retryIntervals}
+          onChange={setRetryIntervals}
+          error={intervalsError}
         />
         {error ? (
           <Text as="p" tone="error" role="alert">

@@ -353,4 +353,43 @@ describe('jobs recurring jobs list', () => {
     expect(await screen.findByRole('region', { name: `Cron job ${created.id}` })).toBeTruthy()
     expect(view.location().search).toBe(`?open=${created.id}`)
   })
+
+  it('sends the retries and retry intervals chosen for a recurring job', async () => {
+    const actor = user()
+    const jobs: CronJob[] = []
+    const created = cronJob({ id: 'c0000000-0000-0000-0000-00000000000b' })
+    const view = open(
+      {
+        cronJobs: jobs,
+        extra: (request) => {
+          if (request.method === 'POST' && request.path === 'jobs/cron-jobs') {
+            jobs.push(created)
+
+            return { id: created.id }
+          }
+
+          return undefined
+        },
+      },
+      { path: 'cron-jobs' },
+    )
+
+    await actor.click(await screen.findByRole('button', { name: 'Add recurring job' }))
+    const form = await screen.findByRole('region', { name: 'Add recurring job' })
+    await actor.selectOptions(within(form).getByRole('combobox', { name: 'Function' }), 'billing.charge')
+    await actor.type(within(form).getByRole('textbox', { name: /Expression/ }), '0 2 * * *')
+    const retries = within(form).getByRole('textbox', { name: 'Retries' })
+    await actor.clear(retries)
+    await actor.type(retries, '2')
+    await actor.type(within(form).getByRole('textbox', { name: /Retry intervals/ }), '15, 45')
+    await actor.click(within(form).getByRole('button', { name: 'Create recurring job' }))
+
+    await screen.findByRole('region', { name: `Cron job ${created.id}` })
+    expect(
+      view.requests.find((request) => request.path === 'jobs/cron-jobs' && request.method === 'POST')?.body,
+    ).toMatchObject({
+      retries: 2,
+      retryIntervals: [15, 45],
+    })
+  })
 })

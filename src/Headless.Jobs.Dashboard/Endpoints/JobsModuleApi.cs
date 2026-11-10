@@ -451,6 +451,8 @@ internal sealed class JobsModuleApi(
                         TimeZoneId = zone,
                         RequestJson = _Json(body.Request),
                         Description = body.Description,
+                        Retries = body.Retries,
+                        RetryIntervals = body.RetryIntervals,
                     },
                     cancellationToken
                 )
