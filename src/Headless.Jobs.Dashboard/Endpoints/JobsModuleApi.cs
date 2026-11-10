@@ -344,7 +344,7 @@ internal sealed class JobsModuleApi(
         {
             return DashboardValidation.Problem(
                 "kind",
-                JobsRequestRules.EnumRule,
+                DashboardValidation.EnumRule,
                 "kind must be TimeJob or CronJobOccurrence."
             );
         }
@@ -360,7 +360,7 @@ internal sealed class JobsModuleApi(
 
         if (last < first)
         {
-            return DashboardValidation.Problem("to", JobsRequestRules.MinimumRule, "to must not be before from.");
+            return DashboardValidation.Problem("to", DashboardValidation.MinimumRule, "to must not be before from.");
         }
 
         // The edges run from the first day's midnight to the day after the last, converted to UTC, so a day at either
@@ -369,7 +369,7 @@ internal sealed class JobsModuleApi(
         {
             return DashboardValidation.Problem(
                 first < _FirstSeriesDay ? "from" : "to",
-                first < _FirstSeriesDay ? JobsRequestRules.MinimumRule : JobsRequestRules.MaximumRule,
+                first < _FirstSeriesDay ? DashboardValidation.MinimumRule : DashboardValidation.MaximumRule,
                 string.Create(
                     CultureInfo.InvariantCulture,
                     $"from and to must be between {_FirstSeriesDay:yyyy-MM-dd} and {_LastSeriesDay:yyyy-MM-dd}."
@@ -381,7 +381,7 @@ internal sealed class JobsModuleApi(
         {
             return DashboardValidation.Problem(
                 "to",
-                JobsRequestRules.MaximumRule,
+                DashboardValidation.MaximumRule,
                 $"A series covers at most {MaxSeriesDays} days."
             );
         }
@@ -390,7 +390,7 @@ internal sealed class JobsModuleApi(
 
         if (!string.IsNullOrWhiteSpace(zone) && !TimeZoneInfo.TryFindSystemTimeZoneById(zone, out timeZone))
         {
-            return DashboardValidation.Problem("zone", JobsRequestRules.EnumRule, $"Unknown time zone '{zone}'.");
+            return DashboardValidation.Problem("zone", DashboardValidation.EnumRule, $"Unknown time zone '{zone}'.");
         }
 
         var days = Enumerable.Range(0, last.DayNumber - first.DayNumber + 1).Select(first.AddDays).ToArray();

@@ -27,10 +27,6 @@ namespace Headless.Messaging.Dashboard;
 /// </remarks>
 internal static class PeerEndpoints
 {
-    // The shell names a body that is not JSON the same way, so a peer refusal reads like a local one.
-    private const string _BodyField = "body";
-    private const string _BodyRule = "json";
-
     public static void Map(RouteGroupBuilder peer, MessagingModule module)
     {
         peer.MapGet(
@@ -219,7 +215,11 @@ internal static class PeerEndpoints
 
         if (body is null)
         {
-            return DashboardValidation.Problem(_BodyField, _BodyRule, "Send the Operation's filter.");
+            return DashboardValidation.Problem(
+                DashboardValidation.BodyField,
+                DashboardValidation.JsonRule,
+                "Send the Operation's filter."
+            );
         }
 
         try
@@ -271,7 +271,11 @@ internal static class PeerEndpoints
 
         if (body is null)
         {
-            return DashboardValidation.Problem(_BodyField, _BodyRule, "Send the Operation's chunk.");
+            return DashboardValidation.Problem(
+                DashboardValidation.BodyField,
+                DashboardValidation.JsonRule,
+                "Send the Operation's chunk."
+            );
         }
 
         var entry = new OperatorLogEntry

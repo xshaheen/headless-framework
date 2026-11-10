@@ -45,7 +45,16 @@ internal sealed record CommandCallBody
         }
         catch (JsonException)
         {
-            return (null, [new CommandFieldError("body", "json", "The request body must be a JSON object.")]);
+            return (
+                null,
+                [
+                    new CommandFieldError(
+                        DashboardValidation.BodyField,
+                        DashboardValidation.JsonRule,
+                        "The request body must be a JSON object."
+                    ),
+                ]
+            );
         }
 
         using (document)
@@ -54,7 +63,16 @@ internal sealed record CommandCallBody
 
             if (root.ValueKind != JsonValueKind.Object)
             {
-                return (null, [new CommandFieldError("body", "json", "The request body must be a JSON object.")]);
+                return (
+                    null,
+                    [
+                        new CommandFieldError(
+                            DashboardValidation.BodyField,
+                            DashboardValidation.JsonRule,
+                            "The request body must be a JSON object."
+                        ),
+                    ]
+                );
             }
 
             var errors = new List<CommandFieldError>();

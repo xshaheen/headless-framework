@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Headless.Jobs;
 using Headless.Testing.Tests;
@@ -288,6 +289,34 @@ public sealed class JobsModuleHostTests : TestBase
         (await JobsDashboardHttpHost.RulesAsync(refused, AbortToken))
             .Should()
             .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["children[0].function"] = "enum" });
+    }
+
+    [Theory]
+    [InlineData("/time-jobs")]
+    [InlineData("/cron-jobs")]
+    public async Task should_refuse_a_create_body_that_is_not_json_as_the_body_breaking_the_json_rule(string route)
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        using var malformed = new StringContent("{ not json", Encoding.UTF8, "application/json");
+
+        // when
+        using var refused = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + route,
+            malformed,
+            cookie,
+            AbortToken
+        );
+
+        // then: the same rule the shell's commands and a peer node name a malformed body by
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(refused, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["body"] = "json" });
     }
 
     [Theory]

@@ -46,8 +46,8 @@ internal sealed class JobsCreateEndpoints(
         if (body is null)
         {
             return DashboardValidation.Problem(
-                JobsRequestRules.BodyField,
-                JobsRequestRules.TypeRule,
+                DashboardValidation.BodyField,
+                DashboardValidation.JsonRule,
                 "The body must be a time job: { function, executionTime, timeZoneId, request, children }."
             );
         }
@@ -77,7 +77,7 @@ internal sealed class JobsCreateEndpoints(
         {
             return DashboardValidation.Problem(
                 "timeZoneId",
-                JobsRequestRules.EnumRule,
+                DashboardValidation.EnumRule,
                 $"Unknown time zone '{body.TimeZoneId}'."
             );
         }
@@ -107,8 +107,8 @@ internal sealed class JobsCreateEndpoints(
         if (body is null)
         {
             return DashboardValidation.Problem(
-                JobsRequestRules.BodyField,
-                JobsRequestRules.TypeRule,
+                DashboardValidation.BodyField,
+                DashboardValidation.JsonRule,
                 "The body must be a cron job: { function, expression, timeZoneId, request }."
             );
         }
@@ -141,8 +141,8 @@ internal sealed class JobsCreateEndpoints(
                 preview.Reading is not null
                 && zone is not null
                 && !CronTimeZoneResolver.TryResolve(zone, _reader.SchedulerTimeZone, out _)
-                ? DashboardValidation.Problem("timeZoneId", JobsRequestRules.EnumRule, preview.ValidationMessage!)
-                : DashboardValidation.Problem("expression", JobsRequestRules.FormatRule, preview.ValidationMessage!);
+                ? DashboardValidation.Problem("timeZoneId", DashboardValidation.EnumRule, preview.ValidationMessage!)
+                : DashboardValidation.Problem("expression", DashboardValidation.FormatRule, preview.ValidationMessage!);
         }
 
         try
@@ -178,7 +178,7 @@ internal sealed class JobsCreateEndpoints(
             failures.Add(
                 new ValidationFailure(path + "function", _UnregisteredMessage(body.Function!))
                 {
-                    ErrorCode = JobsRequestRules.EnumRule,
+                    ErrorCode = DashboardValidation.EnumRule,
                 }
             );
         }
@@ -199,7 +199,7 @@ internal sealed class JobsCreateEndpoints(
         _reader.Functions.Any(registered => string.Equals(registered.Name, function, StringComparison.Ordinal));
 
     private static ValidationProblem _Unregistered(string field, string function) =>
-        DashboardValidation.Problem(field, JobsRequestRules.EnumRule, _UnregisteredMessage(function));
+        DashboardValidation.Problem(field, DashboardValidation.EnumRule, _UnregisteredMessage(function));
 
     private static string _UnregisteredMessage(string function) => $"No function named '{function}' is registered.";
 

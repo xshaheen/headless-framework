@@ -135,7 +135,7 @@ internal sealed class JobsRunListQueryValidator : AbstractValidator<JobsRunListQ
     {
         RuleFor(query => query.Kind)
             .Must(JobsRequestRules.IsEnumOrEmpty<JobRunKind>)
-            .WithErrorCode(JobsRequestRules.EnumRule)
+            .WithErrorCode(DashboardValidation.EnumRule)
             .WithMessage("kind must be TimeJob or CronJobOccurrence.");
         // Statuses repeat as status=Failed&status=Lost, with no index, so the refusal names the field and the value.
         RuleFor(query => query.Status)
@@ -149,7 +149,7 @@ internal sealed class JobsRunListQueryValidator : AbstractValidator<JobsRunListQ
                             context.AddFailure(
                                 new ValidationFailure(context.PropertyPath, $"'{value}' is not a run status.")
                                 {
-                                    ErrorCode = JobsRequestRules.EnumRule,
+                                    ErrorCode = DashboardValidation.EnumRule,
                                 }
                             );
                         }
@@ -158,15 +158,15 @@ internal sealed class JobsRunListQueryValidator : AbstractValidator<JobsRunListQ
             );
         RuleFor(query => query.Sort)
             .Must(JobsRequestRules.IsEnumOrEmpty<JobRunSortKey>)
-            .WithErrorCode(JobsRequestRules.EnumRule)
+            .WithErrorCode(DashboardValidation.EnumRule)
             .WithMessage("sort must be executionTime, function, or status.");
         RuleFor(query => query.Direction)
             .Must(JobsRequestRules.IsEnumOrEmpty<ListSortDirection>)
-            .WithErrorCode(JobsRequestRules.EnumRule)
+            .WithErrorCode(DashboardValidation.EnumRule)
             .WithMessage("direction must be ascending or descending.");
         RuleFor(query => query.After)
             .Must(static after => string.IsNullOrEmpty(after) || JobRunCursor.TryParse(after, out _))
-            .WithErrorCode(JobsRequestRules.FormatRule)
+            .WithErrorCode(DashboardValidation.FormatRule)
             .WithMessage("after is not a cursor this list returned.");
     }
 }
@@ -215,47 +215,26 @@ internal sealed record JobsRunScope
 }
 
 /// <summary>
-/// The rules the module's requests share, in the words the shell's command validation names them, so a form reads a
-/// refused field the same way from either.
+/// The checks the module's requests share. Their rules are <see cref="DashboardValidation"/>'s, the words the shell's
+/// command validation uses, so a form reads a refused field the same way from either.
 /// </summary>
 internal static class JobsRequestRules
 {
-    /// <summary>The value is not one of the accepted names.</summary>
-    public const string EnumRule = "enum";
-
-    /// <summary>The value is below its floor.</summary>
-    public const string MinimumRule = "minimum";
-
-    /// <summary>The value is above its ceiling.</summary>
-    public const string MaximumRule = "maximum";
-
-    /// <summary>The text is longer than its limit.</summary>
-    public const string MaxLengthRule = "maxLength";
-
-    /// <summary>The text does not parse.</summary>
-    public const string FormatRule = "format";
-
-    /// <summary>The body is not the JSON object the call takes.</summary>
-    public const string TypeRule = "type";
-
-    /// <summary>The field a refusal names when the body as a whole is wrong.</summary>
-    public const string BodyField = "body";
-
     public static bool IsEnumOrEmpty<TEnum>(string? value)
         where TEnum : struct, Enum =>
         string.IsNullOrEmpty(value) || DashboardValidation.ParseEnum<TEnum>(value) is not null;
 
     public static IRuleBuilderOptions<T, int> JobsRetries<T>(this IRuleBuilder<T, int> rule) =>
         rule.GreaterThanOrEqualTo(0)
-            .WithErrorCode(MinimumRule)
+            .WithErrorCode(DashboardValidation.MinimumRule)
             .WithMessage("Retries cannot be negative.")
             .LessThanOrEqualTo(JobsCommands.MaxRetries)
-            .WithErrorCode(MaximumRule)
+            .WithErrorCode(DashboardValidation.MaximumRule)
             .WithMessage($"Retries cannot be more than {JobsCommands.MaxRetries}.");
 
     public static IRuleBuilderOptions<T, int> JobsRetryInterval<T>(this IRuleBuilder<T, int> rule) =>
         rule.GreaterThanOrEqualTo(0)
-            .WithErrorCode(MinimumRule)
+            .WithErrorCode(DashboardValidation.MinimumRule)
             .WithMessage("Each retry interval is a number of seconds, zero or more.");
 
     public static IRuleBuilderOptions<T, JsonElement?> JobsRequest<T>(this IRuleBuilder<T, JsonElement?> rule) =>
@@ -263,6 +242,6 @@ internal static class JobsRequestRules
                 request is not { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) } value
                 || value.GetRawText().Length <= JobsCommands.MaxRequestLength
             )
-            .WithErrorCode(MaxLengthRule)
+            .WithErrorCode(DashboardValidation.MaxLengthRule)
             .WithMessage($"The request must be at most {JobsCommands.MaxRequestLength} characters of JSON.");
 }

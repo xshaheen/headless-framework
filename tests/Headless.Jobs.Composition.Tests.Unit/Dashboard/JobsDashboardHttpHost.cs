@@ -109,17 +109,26 @@ internal static class JobsDashboardHttpHost
         return cookie[..cookie.IndexOf(';', StringComparison.Ordinal)];
     }
 
-    public static async Task<HttpResponseMessage> PostAsync(
+    public static Task<HttpResponseMessage> PostAsync(
         HttpClient client,
         string path,
         object body,
+        string cookie,
+        CancellationToken cancellationToken
+    ) => PostAsync(client, path, JsonContent.Create(body), cookie, cancellationToken);
+
+    /// <summary>Posts <paramref name="content"/> as it is, such as a body that is not JSON.</summary>
+    public static async Task<HttpResponseMessage> PostAsync(
+        HttpClient client,
+        string path,
+        HttpContent content,
         string cookie,
         CancellationToken cancellationToken
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
         {
-            Content = JsonContent.Create(body),
+            Content = content,
         };
         request.Headers.TryAddWithoutValidation("Cookie", cookie);
         request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");

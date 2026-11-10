@@ -26,6 +26,27 @@ public static class DashboardValidation
     /// <summary>The rule a field breaks when its value is not acceptable.</summary>
     public const string InvalidRule = "invalid";
 
+    /// <summary>The rule a field breaks when its value is not one of the accepted names.</summary>
+    public const string EnumRule = "enum";
+
+    /// <summary>The rule a field breaks when its value is below its floor.</summary>
+    public const string MinimumRule = "minimum";
+
+    /// <summary>The rule a field breaks when its value is above its ceiling.</summary>
+    public const string MaximumRule = "maximum";
+
+    /// <summary>The rule a field breaks when its text is longer than its limit.</summary>
+    public const string MaxLengthRule = "maxLength";
+
+    /// <summary>The rule a field breaks when its text does not parse.</summary>
+    public const string FormatRule = "format";
+
+    /// <summary>The rule <see cref="BodyField"/> breaks when the body is not the JSON object the call takes.</summary>
+    public const string JsonRule = "json";
+
+    /// <summary>The field a refusal names when the body as a whole is wrong, such as malformed JSON.</summary>
+    public const string BodyField = "body";
+
     /// <summary>
     /// Answers the failures of <paramref name="result"/>. Each field is the failure's property path in camel case
     /// (<c>children[0].function</c>); its rule is the failure's error code when the validator set one with
