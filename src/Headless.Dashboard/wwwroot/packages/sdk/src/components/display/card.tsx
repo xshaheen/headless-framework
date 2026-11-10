@@ -82,9 +82,10 @@ export interface CardRowProps {
   children?: ReactNode
 }
 
-// A prose name sets its own face and weight, since the line's mono shorthand would otherwise cover it.
-const monoName = 'min-w-0 overflow-hidden font-medium text-ellipsis'
-const proseName = 'min-w-0 overflow-hidden text-ellipsis type-small-medium text-foreground'
+// The name keeps its letters while it fits in most of the line, so a fact beside it gives way first; only a name wider
+// than that ellipsizes. A prose name sets its own face and weight, since the line's mono shorthand would cover it.
+const monoName = 'min-w-0 max-w-[70%] shrink-0 overflow-hidden font-medium text-ellipsis'
+const proseName = 'min-w-0 max-w-[70%] shrink-0 overflow-hidden text-ellipsis type-small-medium text-foreground'
 
 /**
  * One row of a `Card`: dot, name, faint meta, value, and actions on one line, where only the name gives way, with an
@@ -101,9 +102,7 @@ export function CardRow({ tone, name, prose = false, meta, value, actions, child
         <div className="flex min-w-0 basis-full items-center gap-2.5 type-mono whitespace-nowrap [&>b+*]:ms-auto">
           {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
           <b className={prose ? proseName : monoName}>{name}</b>
-          {/* A long fact gives way three times faster than the name, so a short identifier beside a served sentence
-              keeps its letters and the sentence ends in the ellipsis. */}
-          {meta != null ? <span className="hd-faint min-w-0 shrink-[3] overflow-hidden text-ellipsis">{meta}</span> : null}
+          {meta != null ? <span className="hd-faint min-w-0 overflow-hidden text-ellipsis">{meta}</span> : null}
           {value}
           {actions}
         </div>

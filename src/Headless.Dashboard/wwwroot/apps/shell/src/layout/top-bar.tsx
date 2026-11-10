@@ -200,9 +200,12 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
         <span className="hd-mark" aria-hidden="true" />
         {/* On a phone the word folds away and the count stays, so the product tabs keep room to read; the name is
             still read out. */}
-        <span className={phone ? 'sr-only' : undefined}>Attention</span>
-        {/* The space keeps the button's name `Attention 23`, not `Attention23`; the flex gap lays the parts out. */}
-        {total.value > 0 ? <> {format.count(total)}</> : null}
+        <span>
+          <span className={phone ? 'sr-only' : undefined}>Attention</span>
+          {/* The space keeps the button's name `Attention 23`; with the word folded away it leads the line and
+              collapses, so the count sits flush beside the dot. */}
+          {total.value > 0 ? <> {format.count(total)}</> : null}
+        </span>
       </Button>
       <AttentionPopover
         sections={items.data}
