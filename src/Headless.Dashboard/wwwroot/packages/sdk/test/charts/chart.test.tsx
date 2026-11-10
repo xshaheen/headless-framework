@@ -278,6 +278,14 @@ describe('Chart', () => {
     )
   })
 
+  it('labels an empty range on the scale its grid is drawn at, not zero on every line', () => {
+    renderChart({ ...days, series: days.series.map((item) => ({ ...item, points: item.points.map(() => 0) })) })
+
+    expect(screen.getByText('1')).toBeTruthy()
+    expect(screen.getByText('0.5')).toBeTruthy()
+    expect(screen.getAllByText('0')).toHaveLength(1)
+  })
+
   it('drops the end date the present mark would run into when the range ends today', () => {
     renderChart({ ...days, present: { index: 3, label: 'Today' } })
 

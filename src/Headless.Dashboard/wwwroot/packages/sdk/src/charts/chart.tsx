@@ -205,6 +205,7 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
       ),
     [series, length],
   )
+  // An empty range still draws its grid from zero to one, so the labels read that scale instead of zero on every line.
   const top = useMemo(
     () =>
       Math.max(
@@ -214,7 +215,7 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
 
           return kind === 'stacked-bar' ? values.reduce((sum, value) => sum + value, 0) : Math.max(0, ...values)
         }),
-      ),
+      ) || 1,
     [series, kind, length],
   )
   // Recharts draws no axis: its axes measure text through a node it adds to the page. The labels are text beside the
@@ -230,7 +231,7 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
     <>
       <CartesianGrid vertical={false} stroke="var(--line)" />
       <XAxis dataKey="bucket" hide />
-      <YAxis hide domain={[0, top || 1]} />
+      <YAxis hide domain={[0, top]} />
       <Tooltip
         isAnimationActive={false}
         cursor={{ stroke: 'var(--line)', fill: 'var(--hover)' }}
