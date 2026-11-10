@@ -24,7 +24,7 @@ export function SegmentedControl<T extends string>({ label, options, value, onCh
         <button
           key={option.value}
           type="button"
-          className={`cursor-pointer rounded-sm text-faint transition-fast hover:text-foreground aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground ${size ? 'h-(--seg-form-height) px-2.5 type-small' : 'h-(--chip-height) px-2 type-label font-normal'}`}
+          className={`cursor-pointer rounded-sm text-faint transition-fast hover:text-foreground aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground ${size ? 'h-(--seg-form-height) px-2.5 type-small' : 'h-(--chip-height) px-2 type-label-regular'}`}
           aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
         >

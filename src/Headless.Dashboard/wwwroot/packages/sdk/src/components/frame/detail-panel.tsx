@@ -113,7 +113,7 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
             <span className="sr-only">{status.label}</span>
           </span>
         ) : null}
-        <h2 className={form ? 'type-detail' : 'type-detail font-mono'}>{name}</h2>
+        <h2 className={form ? 'type-detail' : 'type-detail-mono'}>{name}</h2>
         {id ? (
           <>
             <bdi className="hd-mono hd-faint" dir="ltr">

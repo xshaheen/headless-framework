@@ -79,7 +79,9 @@
   --shadow-2xl: var(--shadow-card);
 }
 
-/* The type tokens are `font` shorthands, so each is one utility; never pair one with a `text-` size or `leading-`. */
+/* The type tokens are `font` shorthands, so each is one utility; never pair one with a `text-` size, `leading-`, or
+   `font-` utility: Tailwind emits `type-*` after them, so the shorthand resets their family or weight. A variant that
+   needs another family or weight is its own utility below. */
 @utility type-body {
   font: var(--text-body);
 }
@@ -92,6 +94,12 @@
   font: var(--text-label);
 }
 
+/* An unpressed segmented-control option: the label size at body weight. */
+@utility type-label-regular {
+  font: var(--text-label);
+  font-weight: 400;
+}
+
 @utility type-title {
   font: var(--text-title);
 }
@@ -100,8 +108,20 @@
   font: var(--text-detail);
 }
 
+/* An object's name in the detail panel title. */
+@utility type-detail-mono {
+  font: var(--text-detail);
+  font-family: var(--mono);
+}
+
 @utility type-small {
   font: var(--text-small);
+}
+
+/* A calendar's month heading. */
+@utility type-small-medium {
+  font: var(--text-small);
+  font-weight: 500;
 }
 
 @utility type-stat {
@@ -134,6 +154,12 @@
 
 @utility type-nav {
   font: var(--text-nav);
+}
+
+/* A dashboard card's title. */
+@utility type-nav-strong {
+  font: var(--text-nav);
+  font-weight: 600;
 }
 
 @utility type-tab {

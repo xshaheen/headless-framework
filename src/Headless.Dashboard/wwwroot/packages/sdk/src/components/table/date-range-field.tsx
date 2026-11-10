@@ -85,7 +85,7 @@ export function DateRangeField({ label, onChange }: DateRangeFieldProps) {
               <AriaButton slot="previous" className={`${navClass} size-7`}>
                 <PreviousIcon className="text-current rtl:rotate-180" />
               </AriaButton>
-              <Heading className="type-small font-medium" />
+              <Heading className="type-small-medium" />
               <AriaButton slot="next" className={`${navClass} size-7`}>
                 <NextIcon className="text-current rtl:rotate-180" />
               </AriaButton>

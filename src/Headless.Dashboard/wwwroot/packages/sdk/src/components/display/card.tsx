@@ -31,7 +31,7 @@ export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, chi
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card text-card-foreground" aria-label={title}>
       <header className={`${row} [&>:not(h2,.hd-faint)]:ms-auto`}>
-        <h2 className="flex items-center gap-2 type-nav font-semibold">
+        <h2 className="flex items-center gap-2 type-nav-strong">
           {Icon ? <Icon /> : null}
           {title}
         </h2>
