@@ -58,11 +58,68 @@ public sealed class AuditLogStorageOptions
     /// <remarks>
     /// The trigger stops application code and accidental statements, not a database principal who can run arbitrary
     /// SQL: the purge's bypass is a session setting any such principal can set too, and on SQL Server a principal
-    /// with <c>ALTER</c> on the table can still <c>TRUNCATE</c> it. Turning it on later adds the trigger at the next
-    /// <c>resources provision</c>; turning it off later leaves the trigger in place until it is dropped by hand. The
-    /// Entity Framework provider rejects it, because its table comes from the application's migrations.
+    /// with <c>ALTER</c> on the table can still <c>TRUNCATE</c> it. <see cref="PurgeAuthority"/> closes the first gap on
+    /// PostgreSQL. Turning it on later adds the trigger at the next <c>resources provision</c>; turning it off later
+    /// leaves the trigger in place until it is dropped by hand. The Entity Framework provider rejects it, because its
+    /// table comes from the application's migrations: call <c>migrationBuilder.AddHeadlessAuditLogAppendOnly(...)</c>
+    /// in a migration instead.
     /// </remarks>
     public bool AppendOnly { get; set; }
+
+    /// <summary>
+    /// Who may delete rows from an append-only table. Default: <see cref="AuditLogPurgeAuthority.SessionSetting"/>, any
+    /// login that turns the purge's session setting on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="AuditLogPurgeAuthority.Owner"/> is PostgreSQL only. On the PostgreSQL provider it needs
+    /// <see cref="AppendOnly"/>, and <c>resources provision</c> then adds a schema step that makes the trigger also
+    /// require the deleting role to hold the table owner's rights, and creates the function
+    /// <c>{table}_purge</c> that runs with them. <see cref="IAuditLogRetention{TContext}"/> calls that function
+    /// instead of deleting rows itself. The function is closed to <c>PUBLIC</c>: grant <c>EXECUTE</c> on it to the
+    /// login that runs the retention. Turning it off later leaves the owner check in place.
+    /// </para>
+    /// <para>
+    /// With Entity Framework storage the migration installs the same objects
+    /// (<c>migrationBuilder.AddHeadlessAuditLogAppendOnly(purgeAuthority: AuditLogPurgeAuthority.Owner)</c>), and this
+    /// option tells <see cref="IAuditLogRetention{TContext}"/> to call the function.
+    /// </para>
+    /// </remarks>
+    public AuditLogPurgeAuthority PurgeAuthority { get; set; }
+
+    /// <summary>
+    /// The retention the database enforces whatever period a caller asks for: the owner's purge function and the
+    /// partition drop function refuse a cutoff newer than now minus this period. Default: <see langword="null"/>, no
+    /// floor.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL provider only, with <see cref="AuditLogPurgeAuthority.Owner"/> or
+    /// <see cref="AuditLogPartitioning.Monthly"/>. It is compiled into those functions, so it shapes their schema
+    /// steps: changing it after <c>resources provision</c> fails verification with a checksum mismatch. With Entity
+    /// Framework storage, pass it to the migration helpers instead.
+    /// </remarks>
+    public TimeSpan? MinimumRetention { get; set; }
+
+    /// <summary>
+    /// Partitions the audit table by month on <c>CreatedAt</c>. Default: <see cref="AuditLogPartitioning.None"/>, one
+    /// plain table.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL provider only. <c>resources provision</c> creates the table partitioned, the functions
+    /// <c>{table}_ensure_partitions</c> and <c>{table}_drop_partitions</c>, and the partitions from the current month
+    /// through <see cref="PartitionMonthsAhead"/> months ahead; <see cref="IAuditLogPartitions{TContext}"/> keeps them
+    /// from then on. A row whose <c>CreatedAt</c> falls in no partition fails its insert: there is no default
+    /// partition. PostgreSQL cannot partition a table in place, so turning this on for a table that already exists
+    /// fails verification with a checksum mismatch. With Entity Framework storage, call
+    /// <c>migrationBuilder.AddHeadlessAuditLogPartitions(...)</c> in the migration that creates the table instead.
+    /// </remarks>
+    public AuditLogPartitioning Partitioning { get; set; }
+
+    /// <summary>
+    /// How many months after the current one <see cref="IAuditLogPartitions{TContext}.EnsureAsync"/> and
+    /// <c>resources provision</c> keep a partition for. Default: 3. Range: 0 to 120.
+    /// </summary>
+    public int PartitionMonthsAhead { get; set; } = 3;
 
     /// <summary>Returns the audit log table name to use on a database with <paramref name="style"/>.</summary>
     /// <param name="style">The naming style of the target database.</param>
@@ -84,6 +141,10 @@ public sealed class AuditLogStorageOptions
         target.JsonColumnType = JsonColumnType;
         target.CreatedAtColumnType = CreatedAtColumnType;
         target.AppendOnly = AppendOnly;
+        target.PurgeAuthority = PurgeAuthority;
+        target.MinimumRetention = MinimumRetention;
+        target.Partitioning = Partitioning;
+        target.PartitionMonthsAhead = PartitionMonthsAhead;
     }
 }
 
@@ -108,6 +169,34 @@ public enum AuditLogJsonColumnType
     /// The default for the SqlServer provider and the EF Core provider when targeting SqlServer.
     /// </summary>
     NvarcharMax = 2,
+}
+
+/// <summary>Who may delete rows from an append-only audit log table.</summary>
+[PublicAPI]
+public enum AuditLogPurgeAuthority
+{
+    /// <summary>
+    /// Any login that turns the session setting <c>headless.audit_log_purge</c> on. It stops application code and
+    /// accidental statements, not a principal who can run arbitrary SQL.
+    /// </summary>
+    SessionSetting = 0,
+
+    /// <summary>
+    /// Only a role that holds the table owner's rights, reached through a purge function that runs with them. A login
+    /// without those rights purges by calling that function, and cannot delete rows any other way. PostgreSQL only.
+    /// </summary>
+    Owner = 1,
+}
+
+/// <summary>How the audit log table is partitioned.</summary>
+[PublicAPI]
+public enum AuditLogPartitioning
+{
+    /// <summary>One plain table.</summary>
+    None = 0,
+
+    /// <summary>One range partition per calendar month of <c>CreatedAt</c>, in UTC. PostgreSQL only.</summary>
+    Monthly = 1,
 }
 
 internal static class AuditLogJsonColumnTypeExtensions

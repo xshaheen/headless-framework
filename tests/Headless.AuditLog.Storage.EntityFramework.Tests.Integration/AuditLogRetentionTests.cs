@@ -74,6 +74,63 @@ public sealed class AuditLogRetentionTests : TestBase
         await act.Should().ThrowAsync<OptionsValidationException>().WithMessage("*AppendOnly*migration*");
     }
 
+    [Fact]
+    public async Task should_reject_partitioning_and_a_minimum_retention_because_migrations_own_the_table()
+    {
+        // given - as with append-only, the rejection lands in setup or in the read
+        var act = async () =>
+        {
+            var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
+                configure: null,
+                configureServices: services =>
+                    services.Configure<AuditLogStorageOptions>(options =>
+                    {
+                        options.Partitioning = AuditLogPartitioning.Monthly;
+                        options.MinimumRetention = TimeSpan.FromDays(30);
+                    })
+            );
+            await using var ownedConnection = conn;
+            await using var ownedProvider = sp;
+
+            _ = sp.GetRequiredService<IOptions<AuditLogStorageOptions>>().Value;
+        };
+
+        // then
+        (await act.Should().ThrowAsync<OptionsValidationException>())
+            .Which.Failures.Should()
+            .Contain(failure => failure.Contains("AddHeadlessAuditLogPartitions"))
+            .And.Contain(failure => failure.Contains("minimumRetention"));
+    }
+
+    [Fact]
+    public async Task should_refuse_the_owners_purge_and_partition_calls_on_a_database_other_than_postgresql()
+    {
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
+            configure: null,
+            configureServices: services =>
+                services.Configure<AuditLogStorageOptions>(options =>
+                    options.PurgeAuthority = AuditLogPurgeAuthority.Owner
+                )
+        );
+        await using var _ = conn;
+        await using var __ = sp;
+        var retention = sp.GetRequiredService<IAuditLogRetention<AuditTestDbContext>>();
+        var partitions = sp.GetRequiredService<IAuditLogPartitions<AuditTestDbContext>>();
+
+        // when
+        var purge = () => retention.PurgeAsync(TimeSpan.FromDays(30), limit: 1, AbortToken);
+        var ensure = () => partitions.EnsureAsync(AbortToken);
+        var drop = () => partitions.DropExpiredAsync(TimeSpan.FromDays(30), AbortToken);
+        var dropNothing = () => partitions.DropExpiredAsync(TimeSpan.Zero, AbortToken);
+
+        // then
+        await purge.Should().ThrowAsync<NotSupportedException>().WithMessage("*PostgreSQL only*");
+        await ensure.Should().ThrowAsync<NotSupportedException>().WithMessage("*PostgreSQL only*");
+        await drop.Should().ThrowAsync<NotSupportedException>().WithMessage("*PostgreSQL only*");
+        await dropNothing.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
     private static async Task _AddAsync(IServiceProvider sp, params (string Action, DateTime CreatedAt)[] entries)
     {
         await using var scope = sp.CreateAsyncScope();

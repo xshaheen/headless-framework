@@ -9,7 +9,7 @@ namespace Headless.AuditLog;
 /// <summary>
 /// The relational <see cref="IAuditLogRetention{TContext}"/>: turns on the purge setting the append-only trigger
 /// checks, deletes the oldest expired rows, and turns the setting off again, all in one transaction on its own
-/// connection.
+/// connection. When the table's owner holds the purge authority, the delete is one call to the owner's function.
 /// </summary>
 #pragma warning disable CA2100 // SQL text interpolates only validated schema and table identifiers; values are parameters.
 internal sealed class RelationalAuditLogRetention<TContext>(
@@ -30,8 +30,9 @@ internal sealed class RelationalAuditLogRetention<TContext>(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        await using (var enable = connection.CreateCommand())
+        if (statements.Enable is not null)
         {
+            await using var enable = connection.CreateCommand();
             enable.Transaction = transaction;
             enable.CommandText = statements.Enable;
             await enable.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -68,6 +69,7 @@ internal sealed class RelationalAuditLogRetention<TContext>(
 
 /// <summary>
 /// One provider's retention purge. <see cref="Delete"/> takes <c>@Cutoff</c> and <c>@Limit</c> and returns the deleted
-/// count as a scalar; <see cref="Disable"/> is <see langword="null"/> when the setting ends with the transaction.
+/// count as a scalar. <see cref="Enable"/> is <see langword="null"/> when <see cref="Delete"/> needs no session
+/// setting, and <see cref="Disable"/> when the setting ends with the transaction.
 /// </summary>
-internal sealed record AuditLogPurgeStatements(string Enable, string Delete, string? Disable);
+internal sealed record AuditLogPurgeStatements(string? Enable, string Delete, string? Disable);
