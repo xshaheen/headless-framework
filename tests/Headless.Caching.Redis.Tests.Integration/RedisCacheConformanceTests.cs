@@ -205,6 +205,33 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
         idleRead.HasValue.Should().BeFalse();
     }
 
+    // Overridden with whole-second timings (see note above). A 4s window has a 400ms re-arm tolerance. The read at
+    // 1.5s re-arms the TTL to 4s; a half-window rule would have skipped it and left 2.5s. The idle read at 4.5s
+    // lands 0.5s past the un-re-armed deadline and 1s inside the re-armed one.
+    [Fact]
+    public override async Task should_keep_sliding_entry_for_window_minus_tolerance_after_an_early_read()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var sliding = TimeSpan.FromSeconds(4);
+        var tolerance = TimeSpan.FromMilliseconds(400); // min(1s, 10% of the window)
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(30), SlidingExpiration = sliding };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await Task.Delay(TimeSpan.FromSeconds(1.5), AbortToken);
+
+        var earlyRead = await cache.GetAsync<string>(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
+        var idleRead = await cache.GetAsync<string>(key, AbortToken);
+
+        earlyRead.Value.Should().Be("value");
+        expiration.Should().BeGreaterThan(sliding - tolerance - TimeSpan.FromMilliseconds(200));
+        idleRead.Value.Should().Be("value");
+    }
+
     // Overridden with whole-second timings (see note above): the base's 150ms sliding window leaves only tens
     // of ms of slack per keep-alive read, which parallel-suite scheduling jitter can consume. Every keep-alive
     // read below sits 1s inside its window, and the final read lands past the absolute cap while the sliding

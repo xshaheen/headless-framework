@@ -214,6 +214,12 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
     }
 
     [Fact]
+    public override Task should_keep_sliding_entry_for_window_minus_tolerance_after_an_early_read()
+    {
+        return base.should_keep_sliding_entry_for_window_minus_tolerance_after_an_early_read();
+    }
+
+    [Fact]
     public override Task should_expire_sliding_entry_at_absolute_duration_cap()
     {
         return base.should_expire_sliding_entry_at_absolute_duration_cap();

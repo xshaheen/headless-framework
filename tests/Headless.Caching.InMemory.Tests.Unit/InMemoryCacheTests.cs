@@ -349,9 +349,9 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_rearm_sliding_entry_before_rearm_threshold()
+    public async Task should_not_rearm_sliding_entry_when_deadline_moves_by_at_most_the_tolerance()
     {
-        // given
+        // given - a 2s window, so the re-arm tolerance is min(1s, 200ms) = 200ms
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var options = new CacheEntryOptions
@@ -361,15 +361,58 @@ public sealed class InMemoryCacheTests : TestBase
         };
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
         var before = _GetEntryEnvelope(cache, key);
-        _timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(200));
 
-        // when
+        // when - the read would move the deadline by exactly the tolerance
         var cached = await cache.GetAsync<string>(key, AbortToken);
 
         // then
         var after = _GetEntryEnvelope(cache, key);
         cached.Value.Should().Be("value");
         after.LogicalExpiresAt.Should().Be(before.LogicalExpiresAt);
+    }
+
+    [Fact]
+    public async Task should_rearm_sliding_entry_when_deadline_moves_by_more_than_the_tolerance()
+    {
+        // given - a 2s window, so the re-arm tolerance is 200ms
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(10),
+            SlidingExpiration = TimeSpan.FromSeconds(2),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(200).Add(TimeSpan.FromTicks(1)));
+
+        // when - one tick past the tolerance, still in the first half of the window
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        // then - the deadline moves to a full window from this read
+        var after = _GetEntryEnvelope(cache, key);
+        cached.Value.Should().Be("value");
+        after.LogicalExpiresAt.Should().Be(_timeProvider.GetUtcNow().UtcDateTime.Add(options.SlidingExpiration.Value));
+    }
+
+    [Fact]
+    public async Task should_keep_sliding_entry_for_window_minus_tolerance_after_an_early_read()
+    {
+        // given - a 10s window (1s tolerance), read 3s in: a half-window rule would leave only 7s after this read
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var sliding = TimeSpan.FromSeconds(10);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), SlidingExpiration = sliding };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("value");
+
+        // when - the entry idles for the window minus the tolerance
+        _timeProvider.Advance(sliding - TimeSpan.FromSeconds(1));
+        var idleRead = await cache.GetAsync<string>(key, AbortToken);
+
+        // then
+        idleRead.Value.Should().Be("value");
     }
 
     [Fact]

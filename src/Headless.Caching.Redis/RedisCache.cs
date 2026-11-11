@@ -3538,8 +3538,8 @@ public sealed class RedisCache(
         }
 
         // The frame's embedded logical is a lower bound on the live key TTL (a metadata-only re-arm only ever
-        // pushes the TTL out, never the frame), so the shared helper can use it to skip the KeyTimeToLive probe
-        // when at least half the window still remains. A caller consuming the script's TTL reply passes
+        // pushes the TTL out, never the frame), so the shared helper can use it to skip the script round trip
+        // when even that lower bound is within the re-arm tolerance. A caller consuming the script's TTL reply passes
         // needResultingTtl, which disables that skip: no script run means no TTL to report.
         return _RearmSlidingTtlAsync(
             redisKey,
@@ -3571,12 +3571,14 @@ public sealed class RedisCache(
             return null;
         }
 
-        // Re-arm once roughly half the idle window has elapsed. Exact integer halving (no lossy double cast).
-        var rearmThreshold = TimeSpan.FromTicks(slidingExpiration.Ticks / 2);
+        var expiresIn = _Min(slidingExpiration, remainingToCap);
 
-        // Fast path: when the (lower-bound) embedded logical already proves more than half the window remains,
-        // the live TTL — which can only be larger — does too, so skip both the re-arm and its round trip.
-        if (embeddedLogicalExpiresAt is { } embeddedLogical && embeddedLogical - now > rearmThreshold)
+        // Fast path: the embedded logical is a lower bound on the live deadline, so when even it is within the
+        // tolerance of the re-armed deadline, the live TTL is too: skip both the re-arm and its round trip.
+        if (
+            embeddedLogicalExpiresAt is { } embeddedLogical
+            && !CacheEntryStamps.ShouldRearmSliding(embeddedLogical, now.Add(expiresIn), slidingExpiration)
+        )
         {
             return null;
         }
@@ -3587,8 +3589,7 @@ public sealed class RedisCache(
             // with NOSCRIPT recovery). Previously issued KeyTimeToLiveAsync then (conditionally) KeyExpireAsync.
             // The script replies with the key's resulting TTL, so GetWithExpirationAsync reads the expiration
             // from this same round trip instead of a follow-up KeyTimeToLiveAsync probe.
-            var expiresIn = _Min(slidingExpiration, remainingToCap);
-            var rearmThresholdMs = (long)rearmThreshold.TotalMilliseconds;
+            var rearmToleranceMs = (long)CacheEntryStamps.GetSlidingRearmTolerance(slidingExpiration).TotalMilliseconds;
             var newTtlMs = (long)expiresIn.TotalMilliseconds;
 
             var result = await scriptsLoader
@@ -3598,7 +3599,7 @@ public sealed class RedisCache(
                     new
                     {
                         key = redisKey,
-                        rearmThresholdMs = (RedisValue)rearmThresholdMs,
+                        rearmToleranceMs = (RedisValue)rearmToleranceMs,
                         newTtlMs = (RedisValue)newTtlMs,
                     }
                 )
