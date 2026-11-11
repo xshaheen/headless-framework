@@ -45,6 +45,14 @@ public sealed class MessagingDashboardOptions : DashboardModuleOptions
     public TimeSpan StoreTimeout { get; set; } = TimeSpan.FromSeconds(1.5);
 
     /// <summary>
+    /// Gets or sets how long a content or correlation id search waits for one store. No index serves a search, so it
+    /// reads every row its other filters leave; a store that has not answered by then is cancelled, and the search
+    /// answers with what the other stores found and <c>incomplete</c> set. Defaults to 10 seconds, and must be under
+    /// 30 seconds, the time a node waits for a search it relays to another node.
+    /// </summary>
+    public TimeSpan SearchTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
     /// Gets or sets how this node calls the other Messaging nodes discovery lists, and how it admits their calls.
     /// Forwarding is off until a key or a policy is set.
     /// </summary>
@@ -90,6 +98,11 @@ internal sealed class MessagingDashboardOptionsValidator : AbstractValidator<Mes
             .WithMessage("ChangePageSize must be between 1 and 1000.");
 
         RuleFor(x => x.StoreTimeout).GreaterThan(TimeSpan.Zero).WithMessage("StoreTimeout must be positive.");
+
+        RuleFor(x => x.SearchTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .LessThan(ForwardingClient.WriteTimeout)
+            .WithMessage("SearchTimeout must be positive and under 30 seconds.");
 
         RuleFor(x => x.Forwarding).NotNull().SetValidator(new MessagingForwardingOptionsValidator());
 

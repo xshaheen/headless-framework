@@ -290,9 +290,15 @@ public static class SetupMessagingDashboard
             return false;
         }
 
-        var method = (context.Resource as HttpContext)?.Request.Method ?? string.Empty;
+        var http = context.Resource as HttpContext;
+        var method = http?.Request.Method ?? string.Empty;
 
-        if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method))
+        // A search is a POST only so its text stays out of the URL; it reads, as a GET does.
+        if (
+            HttpMethods.IsGet(method)
+            || HttpMethods.IsHead(method)
+            || http?.GetEndpoint()?.Metadata.GetMetadata<MessagingReadEndpoint>() is not null
+        )
         {
             return true;
         }

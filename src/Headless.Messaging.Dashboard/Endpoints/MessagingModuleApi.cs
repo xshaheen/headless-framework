@@ -29,6 +29,7 @@ internal sealed class MessagingModuleApi(
     MessagingSources sources,
     MessagingMetricsEventListener metrics,
     IServiceProvider services,
+    TimeSpan searchTimeout,
     MessagingForwarding? forwarding = null
 )
 {
@@ -51,6 +52,9 @@ internal sealed class MessagingModuleApi(
 
         routes.MapGet("/published", _ListPublishedAsync);
         routes.MapGet("/received", _ListReceivedAsync);
+        // A search reads and changes nothing; it is a POST so the text it searches for stays out of URLs and logs.
+        routes.MapPost("/published/search", _SearchPublishedAsync).WithMetadata(MessagingReadEndpoint.Instance);
+        routes.MapPost("/received/search", _SearchReceivedAsync).WithMetadata(MessagingReadEndpoint.Instance);
         routes.MapGet("/messages/{kind}/{id}", _GetMessageAsync);
         routes.MapGet("/received/generations", _ListGenerationsAsync);
         routes.MapGet("/scheduled", _ListScheduledAsync);
@@ -67,6 +71,86 @@ internal sealed class MessagingModuleApi(
         CancellationToken cancellationToken
     )
     {
+        return _ReadPublishedAsync(request, search: null, cancellationToken);
+    }
+
+    private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ListReceivedAsync(
+        [AsParameters] MessagingListRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        return _ReadReceivedAsync(request, search: null, cancellationToken);
+    }
+
+    private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _SearchPublishedAsync(
+        HttpContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        return _SearchAsync(context, _ReadPublishedAsync, cancellationToken);
+    }
+
+    private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _SearchReceivedAsync(
+        HttpContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        return _SearchAsync(context, _ReadReceivedAsync, cancellationToken);
+    }
+
+    private static async Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _SearchAsync(
+        HttpContext context,
+        Func<
+            MessagingListRequest,
+            MessagingSearchRequest?,
+            CancellationToken,
+            Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>>
+        > list,
+        CancellationToken cancellationToken
+    )
+    {
+        MessagingSearchRequest? request;
+
+        try
+        {
+            request = await JsonSerializer
+                .DeserializeAsync(
+                    context.Request.Body,
+                    MessagingDashboardJsonContext.Default.MessagingSearchRequest,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        // The problems name the fields, never the text searched for: a problem is served, and a host may log it.
+        if (request is null)
+        {
+            return DashboardValidation.Problem(
+                DashboardValidation.BodyField,
+                DashboardValidation.JsonRule,
+                "The body must be a search: { content, correlationId, and the list's filters }."
+            );
+        }
+
+        var validation = await MessagingSearchRequestValidator
+            .Instance.ValidateAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+
+        return validation.IsValid
+            ? await list(request.ToListRequest(), request, cancellationToken).ConfigureAwait(false)
+            : DashboardValidation.Problem(validation);
+    }
+
+    private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ReadPublishedAsync(
+        MessagingListRequest request,
+        MessagingSearchRequest? search,
+        CancellationToken cancellationToken
+    )
+    {
         // Published rows have no consumer and are never held, so those filters do not apply here.
         return _ListAsync(
             MessageType.Publish,
@@ -76,23 +160,26 @@ internal sealed class MessagingModuleApi(
                 Consumer = null,
                 Held = null,
             },
+            search,
             cancellationToken
         );
     }
 
-    private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ListReceivedAsync(
-        [AsParameters] MessagingListRequest request,
+    private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ReadReceivedAsync(
+        MessagingListRequest request,
+        MessagingSearchRequest? search,
         CancellationToken cancellationToken
     )
     {
         // Received rows live in the main store alone.
-        return _ListAsync(MessageType.Subscribe, _stores.Primary.Name, request, cancellationToken);
+        return _ListAsync(MessageType.Subscribe, _stores.Primary.Name, request, search, cancellationToken);
     }
 
     private async Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ListAsync(
         MessageType type,
         string? storeName,
         MessagingListRequest filter,
+        MessagingSearchRequest? search,
         CancellationToken cancellationToken
     )
     {
@@ -136,7 +223,24 @@ internal sealed class MessagingModuleApi(
             Name = string.IsNullOrEmpty(filter.Name) ? null : filter.Name,
             FailureFingerprint = string.IsNullOrEmpty(filter.Fingerprint) ? null : filter.Fingerprint,
             IsHeld = filter.Held,
+            Lane = DashboardValidation.ParseEnum<MessageLane>(filter.Lane),
+            MessageId = string.IsNullOrEmpty(filter.MessageId) ? null : filter.MessageId,
+            AddedFrom = filter.From,
+            AddedBefore = filter.Before,
+            Content = string.IsNullOrEmpty(search?.Content) ? null : search.Content,
+            CorrelationId = string.IsNullOrEmpty(search?.CorrelationId) ? null : search.CorrelationId,
+            SortBy = filter.ReadSort(),
+            SortDirection = filter.ReadDirection(),
         };
+
+        if (!cursor.Fits(query))
+        {
+            return DashboardValidation.Problem(
+                "after",
+                DashboardValidation.InvalidRule,
+                "after was read with another sort, direction, filter, or search; read the first page again."
+            );
+        }
 
         var take = Math.Clamp(filter.Limit ?? _DefaultListLimit, 1, MaxListLimit);
         var answers = await _stores
@@ -171,6 +275,10 @@ internal sealed class MessagingModuleApi(
 
                     return (page, count);
                 },
+                // A search reads every row its filters leave, so it waits longer and calls a store out of time incomplete.
+                search is null
+                    ? _stores.Timeout
+                    : searchTimeout,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -181,8 +289,9 @@ internal sealed class MessagingModuleApi(
                 .Answered.Where(static answer => answer.Value.page is not null)
                 .Select(static answer => (answer.Store, answer.Value.page!)),
         ];
-        var (rows, taken) = MergedListCursor.Merge(pages, take);
-        var next = cursor.Advance(targets, pages, taken);
+        var (rows, taken) = MergedListCursor.Merge(pages, query, take);
+        var next = cursor.Advance(query, targets, pages, taken);
+        var incomplete = search is not null && answers.TimedOut.Count > 0;
 
         return TypedResults.Json(
             new MessagingRowList(
@@ -198,7 +307,10 @@ internal sealed class MessagingModuleApi(
                 answers.Answered.Sum(static answer => answer.Value.count.Count),
                 answers.Answered.Any(static answer => answer.Value.count.Capped),
                 next?.ToString(),
-                answers.Unavailable
+                incomplete
+                    ? [.. answers.Unavailable.Except(answers.TimedOut, StringComparer.Ordinal)]
+                    : answers.Unavailable,
+                incomplete
             ),
             MessagingDashboardJsonContext.Default.MessagingRowList
         );
