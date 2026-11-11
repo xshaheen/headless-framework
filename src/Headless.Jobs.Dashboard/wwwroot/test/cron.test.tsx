@@ -271,7 +271,7 @@ describe('jobs recurring jobs list', () => {
     const remove = await screen.findByRole('button', { name: 'Delete' })
     await waitFor(() => expect(remove.getAttribute('aria-disabled')).toBeNull())
     await actor.click(remove)
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('2 stored occurrences go with it')).toBeTruthy()
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'Replaced by a new schedule')
     await actor.click(within(dialog).getByRole('button', { name: 'Delete cron job' }))
@@ -315,7 +315,7 @@ describe('jobs recurring jobs list', () => {
     await waitFor(() => expect(counted()).toBeGreaterThan(before))
 
     await actor.click(remove)
-    expect(within(await screen.findByRole('dialog')).getByText('2 stored occurrences go with it')).toBeTruthy()
+    expect(within(await screen.findByRole('alertdialog')).getByText('2 stored occurrences go with it')).toBeTruthy()
   })
 
   it('counts the stored occurrences once for a burst of run changes, after it settles', async () => {

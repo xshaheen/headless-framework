@@ -36,9 +36,9 @@ export function NodeChip({ node }: { node: string }) {
   return <Chip label="node" value={node} mono />
 }
 
-/** A key cap in a shortcut hint: `⌘K`. */
+/** A key cap in a shortcut hint: `⌘K`. Left to right, so a right-to-left page never reads a chord as `K⌘`. */
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="rounded-sm border border-b-2 border-border bg-card px-1 type-tag-mono text-faint">{children}</kbd>
+  return <kbd dir="ltr" className="rounded-sm border border-b-2 border-border bg-card px-1 type-tag-mono text-faint">{children}</kbd>
 }
 
 /** An identifier: mono, left-to-right, bidi-isolated. */

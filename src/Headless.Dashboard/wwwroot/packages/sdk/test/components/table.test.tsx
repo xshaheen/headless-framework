@@ -1106,14 +1106,14 @@ describe('checked rows and bulk refusals', () => {
 
     await user.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
     await user.click(await screen.findByRole('button', { name: 'Requeue 3 of 5' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Requeue 3 of 5' })
+    const dialog = await screen.findByRole('alertdialog', { name: 'Requeue 3 of 5' })
 
     // A change behind the dialog asks the server again; until it answers, every checked row reads as refused.
     act(() => {
       fireEvent.click(screen.getByRole('checkbox', { name: 'Select r1', hidden: true }))
     })
 
-    expect(screen.getByRole('dialog', { name: 'Requeue 3 of 5' })).toBe(dialog)
+    expect(screen.getByRole('alertdialog', { name: 'Requeue 3 of 5' })).toBe(dialog)
     await user.click(within(dialog).getByRole('button', { name: 'Requeue 3 of 5' }))
 
     await waitFor(() => expect(sentIds(requests)).toEqual([['r1', 'r2', 'r4']]))

@@ -157,7 +157,7 @@ describe('shell accessibility', () => {
     expect(document.activeElement).toBe(settings)
   })
 
-  it('moves focus into the phone menu, and Escape closes it back to Menu', async () => {
+  it('opens the phone menu as a modal sheet that holds focus, and Escape closes it back to Menu', async () => {
     atWidth(400)
     const user = userEvent.setup()
     renderJobs()
@@ -165,14 +165,21 @@ describe('shell accessibility', () => {
 
     await user.click(menu)
 
-    const sidebar = screen.getByRole('navigation', { name: 'Jobs' })
+    const sheet = screen.getByRole('dialog', { name: 'Jobs menu' })
+    const sidebar = within(sheet).getByRole('navigation', { name: 'Jobs' })
     expect(menu.getAttribute('aria-controls')).toBe(sidebar.id)
     expect(sidebar.contains(document.activeElement)).toBe(true)
+
+    // Tab from the last entry wraps to the first: focus never leaves for the view behind the scrim.
+    const links = within(sidebar).getAllByRole('link')
+    links.at(-1)!.focus()
+    await user.tab()
+    expect(sheet.contains(document.activeElement)).toBe(true)
 
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('navigation', { name: 'Jobs' })).toBeNull()
-    expect(document.activeElement).toBe(menu)
+    await waitFor(() => expect(document.activeElement).toBe(menu))
   })
 
   it('lands focus on the new view when the control that went there leaves with the menu', async () => {
@@ -184,6 +191,9 @@ describe('shell accessibility', () => {
     await user.click(within(screen.getByRole('navigation', { name: 'Jobs' })).getByRole('link', { name: 'Settings' }))
 
     await screen.findByRole('heading', { name: 'Module jobs settings view' })
+    expect(document.activeElement).toBe(screen.getByRole('main'))
+    // The sheet hands focus back to Menu a frame after it closes, unless focus has moved on, as it has here.
+    await new Promise((resolve) => requestAnimationFrame(resolve))
     expect(document.activeElement).toBe(screen.getByRole('main'))
   })
 })

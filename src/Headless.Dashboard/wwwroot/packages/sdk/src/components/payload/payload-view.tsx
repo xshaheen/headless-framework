@@ -203,7 +203,7 @@ export function PayloadView({ content, contentType, unsupportedVersion }: Payloa
   return (
     <figure className="rounded-md bg-deep">
       <figcaption className="flex items-center justify-between gap-2 ps-3 pe-1 pt-1">
-        <Text tone="hint">{truncated ? `${format.size(bytes)}, first 64 KB shown` : format.size(bytes)}</Text>
+        <Text tone="hint">{truncated ? `${format.size(bytes)}, first ${format.size(payloadDisplayLimit)} shown` : format.size(bytes)}</Text>
         <CopyButton text={content} label={truncated ? 'Copy all' : 'Copy'} />
       </figcaption>
       <pre className="hd-mono max-h-(--payload-max) overflow-auto px-3 pt-2 pb-3 whitespace-pre" dir="ltr">

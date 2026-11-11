@@ -3,7 +3,7 @@
 'use no memo'
 
 import { OperationHost } from '@headless/dashboard-sdk/commands'
-import { Announcer, Button, ToastRegion, useShellKeys } from '@headless/dashboard-sdk/components'
+import { Announcer, Button, Sheet, ToastRegion, useShellKeys } from '@headless/dashboard-sdk/components'
 import { Outlet, useLocation, useNavigate } from '@headless/dashboard-sdk/router'
 import { useEffect, useRef, useState } from 'react'
 import { ShellPalette } from '../palette/shell-palette.tsx'
@@ -86,25 +86,16 @@ export function ShellLayout() {
     seen.current = at
   }, [pathname, location.search])
 
-  // The phone's sidebar opens over the view, so focus goes into it, and Esc closes it back to the Menu button.
+  // A menu left open on a phone stays closed when the window widens past it, where the sidebar is a column again.
+  if (menuOpen && !phone) {
+    setMenuOpen(false)
+  }
+
+  // The sheet traps focus and hands it back to Menu on close; focus starts on the first entry, not on the sheet itself.
   useEffect(() => {
-    if (!menuOpen) {
-      return undefined
+    if (menuOpen) {
+      document.getElementById('hd-sidebar')?.querySelector<HTMLElement>('a[href], [tabindex="0"]')?.focus()
     }
-
-    const sidebar = document.getElementById('hd-sidebar')
-    sidebar?.querySelector<HTMLElement>('a[href], [tabindex="0"]')?.focus()
-
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape' && sidebar?.contains(event.target as Node)) {
-        setMenuOpen(false)
-        menuButton.current?.focus()
-      }
-    }
-
-    document.addEventListener('keydown', onKey)
-
-    return () => document.removeEventListener('keydown', onKey)
   }, [menuOpen])
 
   return (
@@ -137,8 +128,12 @@ export function ShellLayout() {
           ) : undefined
         }
       />
-      {product && (!phone || menuOpen) ? (
-        <ProductSidebar product={product} onNavigate={() => setMenuOpen(false)} />
+      {product && !phone ? <ProductSidebar product={product} /> : null}
+      {/* On a phone the sidebar is a modal sheet: a scrim over the view, Esc and the scrim close it. */}
+      {product && phone ? (
+        <Sheet isOpen={menuOpen} onOpenChange={setMenuOpen} label={`${product.label} menu`}>
+          <ProductSidebar product={product} onNavigate={() => setMenuOpen(false)} />
+        </Sheet>
       ) : null}
       <div className="flex min-h-0 min-w-0 flex-col">
         <OperationHost>

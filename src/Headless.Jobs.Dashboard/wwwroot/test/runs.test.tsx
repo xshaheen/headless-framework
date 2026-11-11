@@ -243,7 +243,7 @@ describe('jobs runs list', () => {
     await actor.click(await screen.findByRole('row', { name: /a\.running/ }))
     await actor.click(within(panel(running.id)).getByRole('button', { name: 'Cancel' }))
 
-    const dialog = await screen.findByRole('dialog', { name: 'Cancel run' })
+    const dialog = await screen.findByRole('alertdialog', { name: 'Cancel run' })
     expect(
       within(dialog)
         .getAllByRole('button')
@@ -329,7 +329,7 @@ describe('jobs runs list', () => {
     await waitFor(() => expect(requeue.getAttribute('aria-disabled')).toBeNull())
     await actor.click(requeue)
 
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByRole('alertdialog')
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
     await actor.click(within(dialog).getByRole('button', { name: 'Requeue run' }))
 
@@ -392,7 +392,7 @@ describe('jobs runs list', () => {
     expect(screen.getByText('3 selected')).toBeTruthy()
     const requeue = await screen.findByRole('button', { name: 'Requeue 2 of 3' })
     await actor.click(requeue)
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByRole('alertdialog')
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
     await actor.click(within(dialog).getByRole('button', { name: /^Requeue 2/ }))
 
@@ -611,7 +611,7 @@ describe('jobs runs list', () => {
     expect(screen.getByText('1 selected')).toBeTruthy()
 
     await actor.click(screen.getByRole('button', { name: 'Requeue' }))
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByRole('alertdialog')
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
     await actor.click(within(dialog).getByRole('button', { name: /^Requeue/ }))
 
@@ -656,7 +656,7 @@ describe('jobs runs list', () => {
       await actor.click(screen.getByRole('checkbox', { name: `Select ${row.id}` }))
     }
     await actor.click(await screen.findByRole('button', { name: 'Requeue 1 of 2' }))
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByRole('alertdialog')
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'gateway fixed')
     await actor.click(within(dialog).getByRole('button', { name: /^Requeue/ }))
 
@@ -1085,7 +1085,7 @@ describe('jobs run actions', () => {
     await waitFor(() => expect(duplicate.getAttribute('aria-disabled')).toBeNull())
     await actor.click(duplicate)
 
-    const dialog = await screen.findByRole('dialog', { name: 'Duplicate run' })
+    const dialog = await screen.findByRole('alertdialog', { name: 'Duplicate run' })
     await actor.click(await within(dialog).findByRole('spinbutton', { name: /month/i }))
     await actor.keyboard('11062026')
     await actor.keyboard('1000')
@@ -1120,7 +1120,7 @@ describe('jobs run actions', () => {
     const duplicate = await within(panel(failed.id)).findByRole('button', { name: 'Duplicate' })
     await waitFor(() => expect(duplicate.getAttribute('aria-disabled')).toBeNull())
     await actor.click(duplicate)
-    const dialog = await screen.findByRole('dialog', { name: 'Duplicate run' })
+    const dialog = await screen.findByRole('alertdialog', { name: 'Duplicate run' })
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'retry')
     await actor.click(within(dialog).getByRole('button', { name: 'Duplicate run' }))
 
@@ -1144,7 +1144,7 @@ describe('jobs run actions', () => {
     await actor.click(forceDelete)
 
     // A two-word label already names its effect, so the confirm keeps it as it is.
-    const dialog = await screen.findByRole('dialog', { name: 'Force delete' })
+    const dialog = await screen.findByRole('alertdialog', { name: 'Force delete' })
     // The store row goes, but a worker still running the job is not stopped; the confirmation must say so.
     expect(within(dialog).getByText('Running code is not stopped.')).toBeTruthy()
     const confirm = within(dialog).getByRole('button', { name: 'Force delete' })

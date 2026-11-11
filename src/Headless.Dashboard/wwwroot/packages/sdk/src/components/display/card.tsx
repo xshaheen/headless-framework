@@ -5,7 +5,19 @@
 import type { ReactNode } from 'react'
 import type { DashboardStateRole } from '../../define-module.ts'
 import type { IconComponent } from '../../icons/index.ts'
+import { LoadError } from './banner.tsx'
 import { EmptyState } from './empty-state.tsx'
+import { Skeleton } from './skeleton.tsx'
+
+/**
+ * What a card shows in place of its rows while they cannot be shown. `loading` names what loads for a screen reader;
+ * `empty` says what would appear and how to fill it; `error` is the server's message as an alert with Retry, so a
+ * failed load never reads as an empty card.
+ */
+export type CardState =
+  | { status: 'loading'; label: string }
+  | { status: 'empty'; message: ReactNode; icon?: IconComponent }
+  | { status: 'error'; message: string; onRetry: () => void }
 
 export interface CardProps {
   /** The card's heading, which also names its region: `Processing now`. */
@@ -22,6 +34,8 @@ export interface CardProps {
   emptyIcon?: IconComponent
   /** `CardRow`s; with none, the card shows `empty`. */
   children?: ReactNode
+  /** Loading, empty, or failed: shown in place of the rows, which are not drawn while it is set. */
+  state?: CardState
   /**
    * Whether the card takes two columns once `Cards` has room for two, for a card whose content reads better wide,
    * such as a chart of days. In one column it takes the one.
@@ -30,8 +44,8 @@ export interface CardProps {
 }
 
 /** A dashboard card: a heading row with a caption and one trailing control, over rows or its empty state. */
-export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, children, wide = false }: CardProps) {
-  const rows = Array.isArray(children) ? children.length > 0 : children != null && children !== false
+export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, children, wide = false, state }: CardProps) {
+  const rows = !state && (Array.isArray(children) ? children.length > 0 : children != null && children !== false)
 
   // Cards that share a row and hold rows end at one line, however many rows each holds: the rows stay at the top and
   // the surface takes the rest. A card with no row is only its heading and its empty state, so it never stretches
@@ -40,6 +54,7 @@ export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, chi
     <section
       className={`flex min-w-0 flex-col rounded-lg border border-border bg-card text-card-foreground${rows ? '' : ' self-start'}${wide ? ' @min-[44.75rem]:col-span-2' : ''}`}
       aria-label={title}
+      aria-busy={state?.status === 'loading' || undefined}
     >
       {/* The heading row is prose and controls in sans; its caption is a served count, so it stays mono. */}
       <header className={`${row} type-nav [&>:not(h2,.hd-faint)]:ms-auto`}>
@@ -50,9 +65,34 @@ export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, chi
         {caption != null ? <span className="hd-faint type-mono tabular-nums">{caption}</span> : null}
         {action}
       </header>
-      {rows ? <ul className="flex-1 [&>li:last-child]:border-0">{children}</ul> : <EmptyState icon={emptyIcon}>{empty}</EmptyState>}
+      {state ? (
+        <CardStateBody state={state} />
+      ) : rows ? (
+        <ul className="flex-1 [&>li:last-child]:border-0">{children}</ul>
+      ) : (
+        <EmptyState icon={emptyIcon}>{empty}</EmptyState>
+      )}
     </section>
   )
+}
+
+function CardStateBody({ state }: { state: CardState }) {
+  switch (state.status) {
+    case 'loading':
+      return (
+        <div className="p-3.5">
+          <Skeleton label={state.label} rows={2} />
+        </div>
+      )
+    case 'empty':
+      return <EmptyState icon={state.icon}>{state.message}</EmptyState>
+    case 'error':
+      return (
+        <div className="p-3.5">
+          <LoadError message={state.message} onRetry={state.onRetry} />
+        </div>
+      )
+  }
 }
 
 const row = 'flex min-h-(--card-row-height) flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border py-1.5 ps-3.5 pe-3'

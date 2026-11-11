@@ -44,4 +44,21 @@ describe('BarChart', () => {
     expect(bars[2]).toEqual(['hd-tone-ok', (100 - (1_300 / 1_340) * 100).toFixed(2), ((1_300 / 1_340) * 100).toFixed(2)])
     expect(bars[3]).toEqual(['hd-tone-fail', '0.00', ((40 / 1_340) * 100).toFixed(2)])
   })
+
+  it.each([
+    ['ltr', [2, 12, 22]],
+    ['rtl', [22, 12, 2]],
+  ] as const)('draws the oldest column at the inline start of a %s page, over its label', (dir, xs) => {
+    render(
+      <div dir={dir}>
+        <LocaleProvider>
+          <BarChart label="Outcomes per hour" series={series} columns={columns} unit="runs" />
+        </LocaleProvider>
+      </div>,
+    )
+
+    // One x per column, read from its first bar, in the columns' served order.
+    const firstBars = [...screen.getByRole('img').querySelectorAll('g')].map((group) => Number(group.querySelector('rect')!.getAttribute('x')))
+    expect(firstBars).toEqual(xs)
+  })
 })

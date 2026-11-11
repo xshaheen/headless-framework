@@ -119,12 +119,45 @@ describe('Gregorian calendar', () => {
 })
 
 describe('duration formatter', () => {
-  it('reads milliseconds, seconds, then whole minutes and seconds, never 60 seconds', () => {
+  it('reads milliseconds, seconds, then minutes and seconds, then hours and minutes, in Intl units', () => {
     const format = createFormatters('en', 'UTC')
 
     expect(format.duration(340)).toBe('340 ms')
-    expect(format.duration(1_240)).toBe('1.2 s')
-    expect(format.duration(184_000)).toBe('3 min 4 s')
-    expect(format.duration(239_600)).toBe('4 min 0 s')
+    expect(format.duration(1_240)).toBe('1.2 sec')
+    expect(format.duration(184_000)).toBe('3 min 4 sec')
+    expect(format.duration(7_500_000)).toBe('2 hr 5 min')
+  })
+
+  it.each([
+    [999.6, '1 sec'],
+    [59_960, '1 min'],
+    [239_600, '4 min'],
+    [3_599_600, '1 hr'],
+  ])('rounds %d ms before it picks the unit, so it reads %s and never 60 of the smaller one', (ms, text) => {
+    expect(createFormatters('en', 'UTC').duration(ms)).toBe(text)
+  })
+
+  it('names the units in the locale', () => {
+    const format = createFormatters('ar', 'UTC')
+
+    expect(format.duration(184_000)).toBe(
+      new Intl.ListFormat('ar', { style: 'narrow', type: 'unit' }).format([
+        new Intl.NumberFormat('ar', { style: 'unit', unit: 'minute', unitDisplay: 'short' }).format(3),
+        new Intl.NumberFormat('ar', { style: 'unit', unit: 'second', unitDisplay: 'short' }).format(4),
+      ]),
+    )
+    expect(format.duration(184_000)).not.toContain('min')
+  })
+})
+
+describe('size formatter', () => {
+  it('steps up through kB, MB, and GB, 1,024 to the step, rounding before it picks the unit', () => {
+    const format = createFormatters('en', 'UTC')
+
+    expect(format.size(812)).toBe('812 bytes')
+    expect(format.size(70 * 1024)).toBe('70 kB')
+    expect(format.size(1.5 * 1024 ** 2)).toBe('1.5 MB')
+    expect(format.size(2.1 * 1024 ** 3)).toBe('2.1 GB')
+    expect(format.size(1024 ** 2 - 20)).toBe('1 MB')
   })
 })

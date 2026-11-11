@@ -6,6 +6,8 @@
 
 import type { LucideIcon } from 'lucide-react'
 import {
+  ArrowDown,
+  ArrowUp,
   Ban,
   Calendar,
   CirclePlay,
@@ -24,6 +26,7 @@ import {
   List,
   Lock,
   LockOpen,
+  Minus,
   PanelBottom,
   PanelRight,
   Pause,
@@ -125,3 +128,10 @@ export const MoveBelowIcon = curate(PanelBottom)
 
 export const ChartIcon = curate(ChartLine)
 export const ListIcon = curate(List)
+
+/** A figure that rose since the comparison period; `TrendChip` leads its change with it. */
+export const RiseIcon = curate(ArrowUp)
+/** A figure that fell since the comparison period. */
+export const FallIcon = curate(ArrowDown)
+/** A figure that did not change since the comparison period. */
+export const NoChangeIcon = curate(Minus)

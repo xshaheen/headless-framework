@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 import { Card, CardRow, Cards } from '../../src/components/display/card.tsx'
 import { ExceptionBlock } from '../../src/components/frame/exception-block.tsx'
 
@@ -98,3 +99,41 @@ describe('ExceptionBlock without a served type', () => {
     expect(document.querySelector('.hd-exception b')).toBeNull()
   })
 })
+
+describe('Card state', () => {
+  it('shows a failed load as an alert with Retry in place of the rows, never as an empty card', async () => {
+    const user = userEvent.setup()
+    const onRetry = vi.fn()
+    render(
+      <Card title="Processing now" empty="Nothing is running." state={{ status: 'error', message: 'The runs did not load (503).', onRetry }}>
+        <CardRow name="stale.row" />
+      </Card>,
+    )
+
+    const card = screen.getByRole('region', { name: 'Processing now' })
+    expect(within(card).getByRole('alert').textContent).toBe('The runs did not load (503).')
+    expect(within(card).queryByText('Nothing is running.')).toBeNull()
+    expect(within(card).queryByRole('listitem')).toBeNull()
+
+    await user.click(within(card).getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it('marks the card busy and names what loads while it loads', () => {
+    render(<Card title="Processing now" state={{ status: 'loading', label: 'Loading the runs in progress' }} />)
+
+    const card = screen.getByRole('region', { name: 'Processing now' })
+    expect(card.getAttribute('aria-busy')).toBe('true')
+    expect(within(card).getByRole('status', { name: 'Loading the runs in progress' })).toBeTruthy()
+    expect(within(card).queryByRole('alert')).toBeNull()
+  })
+
+  it('says what would appear when it is empty', () => {
+    render(<Card title="Processing now" state={{ status: 'empty', message: 'Nothing is running.' }} />)
+
+    const card = screen.getByRole('region', { name: 'Processing now' })
+    expect(within(card).getByText('Nothing is running.')).toBeTruthy()
+    expect(card.hasAttribute('aria-busy')).toBe(false)
+  })
+})
+

@@ -154,12 +154,16 @@ const fallbackBox = { width: 480, height: 140 }
  * first measurement the box is `null` and nothing is drawn, so the chart is not drawn once at a guessed size and again
  * at its own. A box that measures nothing, and every box without `ResizeObserver`, outside a browser, takes a default
  * size.
+ *
+ * It also reads the box's writing direction. The labels beside the drawing are text that the page's `dir` mirrors, so
+ * the drawing follows the same `dir`, not the locale, and the two never disagree about which end time starts at.
  */
 function useBox() {
   const ref = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState<{ width: number; height: number } | null>(() =>
     typeof ResizeObserver === 'undefined' ? fallbackBox : null,
   )
+  const [isRtl, setRtl] = useState(false)
 
   useLayoutEffect(() => {
     const node = ref.current
@@ -170,6 +174,8 @@ function useBox() {
 
     const measure = () => {
       const rect = node.getBoundingClientRect()
+
+      setRtl(getComputedStyle(node).direction === 'rtl')
 
       if (rect.width === 0 || rect.height === 0) {
         // A box that measures nothing, such as one inside a hidden tab, draws at the default size until it has one.
@@ -195,7 +201,7 @@ function useBox() {
     return () => observer.disconnect()
   }, [])
 
-  return [ref, box] as const
+  return [ref, box, isRtl] as const
 }
 
 // The end date labels are not measured, so the present's mark claims the outer fifth of the axis at either end: a date
@@ -203,7 +209,7 @@ function useBox() {
 const presentEdgeShare = 0.2
 
 function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProps; rows: readonly BucketRow[]; format: Formatters }) {
-  const [ref, box] = useBox()
+  const [ref, box, isRtl] = useBox()
   const { series, kind, present } = props
   const length = rows.length
   // The present's centre as a share of the axis; a range that ends today puts it on the last bucket.
@@ -242,8 +248,9 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
   const axes = (
     <>
       <CartesianGrid vertical={false} stroke="var(--line)" />
-      <XAxis dataKey="bucket" hide />
-      <YAxis hide domain={[0, top]} />
+      {/* Time runs from the inline start, so a right-to-left page draws the oldest bucket at the right. */}
+      <XAxis dataKey="bucket" hide reversed={isRtl} />
+      <YAxis hide domain={[0, top]} orientation={isRtl ? 'right' : 'left'} />
       <Tooltip
         isAnimationActive={false}
         cursor={{ stroke: 'var(--line)', fill: 'var(--hover)' }}
@@ -313,7 +320,10 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
         {presentAt !== undefined ? (
           <span
             className="absolute top-0 font-medium text-muted-foreground"
-            style={{ left: `${presentAt * 100}%`, transform: `translateX(${-presentAt * 100}%)` }}
+            style={{
+              insetInlineStart: `${presentAt * 100}%`,
+              transform: `translateX(${(isRtl ? presentAt : -presentAt) * 100}%)`,
+            }}
           >
             {present?.label}
           </span>
@@ -325,6 +335,7 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
 }
 
 function DonutDrawing({ rows, props }: { rows: readonly PartRow[]; props: DonutChartProps }) {
+  // A donut has no axis of time, so it draws the same in either direction.
   const [ref, box] = useBox()
 
   if (!box) {
