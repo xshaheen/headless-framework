@@ -12,12 +12,14 @@ internal sealed class LiveQueriesMetrics
     internal const string FailedRunsName = "headless.live_queries.runs.failed";
     internal const string WakesName = "headless.live_queries.wakes";
     internal const string RowsRuledOutName = "headless.live_queries.rows.ruled_out";
+    internal const string TrackingFallbacksName = "headless.live_queries.tracking.fallbacks";
 
     private readonly UpDownCounter<long> _activeSubscriptions;
     private readonly Counter<long> _runs;
     private readonly Counter<long> _failedRuns;
     private readonly Counter<long> _wakes;
     private readonly Counter<long> _rowsRuledOut;
+    private readonly Counter<long> _trackingFallbacks;
 
     /// <summary>Creates the instruments.</summary>
     /// <param name="meterFactory">
@@ -47,6 +49,10 @@ internal sealed class LiveQueriesMetrics
             RowsRuledOutName,
             description: "Changed rows that a subscription's row filters showed could not affect its result"
         );
+        _trackingFallbacks = meter.CreateCounter<long>(
+            TrackingFallbacksName,
+            description: "Times a tracked data source failed to capture or announce a write and fell back to announcing whole keys"
+        );
     }
 
     public void SubscriptionOpened() => _activeSubscriptions.Add(1);
@@ -60,4 +66,6 @@ internal sealed class LiveQueriesMetrics
     public void SubscriptionWoken() => _wakes.Add(1);
 
     public void RowsRuledOut(int rows) => _rowsRuledOut.Add(rows);
+
+    public void TrackingFellBack() => _trackingFallbacks.Add(1);
 }
