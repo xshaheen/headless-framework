@@ -156,7 +156,7 @@ internal sealed class NodeRelayFilter(MessagingForwarding forwarding, IOptions<H
     /// </summary>
     private async Task<ForwardResponse?> _RelayBodyAsync(HttpContext http, MessagingPeer peer, string path)
     {
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         var chunk = new byte[4096];
         int read;
 

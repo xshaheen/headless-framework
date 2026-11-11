@@ -22,9 +22,10 @@ public sealed class StoredEnvelopeHeaderTests : TestBase
         var options = new MessagingOptions().JsonSerializerOptions;
         var json = new JsonSerializerOptions(options)
         {
-            WriteIndented = variant == "indented",
-            DictionaryKeyPolicy =
-                variant == "upper-keys" ? JsonNamingPolicy.KebabCaseUpper : options.DictionaryKeyPolicy,
+            WriteIndented = string.Equals(variant, "indented", StringComparison.Ordinal),
+            DictionaryKeyPolicy = string.Equals(variant, "upper-keys", StringComparison.Ordinal)
+                ? JsonNamingPolicy.KebabCaseUpper
+                : options.DictionaryKeyPolicy,
         };
         var envelope = JsonSerializer.Serialize(
             new Message(

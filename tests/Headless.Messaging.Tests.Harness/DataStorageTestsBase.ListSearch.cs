@@ -108,9 +108,10 @@ public abstract partial class DataStorageTestsBase
             } while (after is not null && pages < 10);
 
             // then: every row once, names in order, and one name's rows in the store's id order on every page
-            seen.Select(static row => row.StorageId).Should().OnlyHaveUniqueItems();
-            seen.Select(static row => row.StorageId).Should().BeEquivalentTo(stored.Select(static row => row.Id));
-            var names = seen.Select(static row => row.Name).ToList();
+            var ids = seen.ConvertAll(static row => row.StorageId);
+            ids.Should().OnlyHaveUniqueItems();
+            ids.Should().BeEquivalentTo(stored.Select(static row => row.Id));
+            var names = seen.ConvertAll(static row => row.Name);
             names
                 .Should()
                 .Equal(
@@ -132,7 +133,7 @@ public abstract partial class DataStorageTestsBase
                 pageSize: 50,
                 AbortToken
             );
-            seen.Select(static row => row.StorageId).Should().Equal(whole.Items.Select(static row => row.StorageId));
+            ids.Should().Equal(whole.Items.Select(static row => row.StorageId));
         }
     }
 

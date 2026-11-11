@@ -34,7 +34,7 @@ public sealed class MessagingListSearchTests : TestBase
     public async Task should_find_content_from_a_post_body_and_never_log_the_text_searched_for()
     {
         // given: two published rows, one holding the order number; every log line of the host is captured
-        var logs = new CapturingLoggerProvider();
+        using var logs = new CapturingLoggerProvider();
         await using var app = await MessagingModuleTestHost.StartAsync(
             _time,
             AbortToken,
@@ -321,9 +321,9 @@ public sealed class MessagingListSearchTests : TestBase
         return _PostAsync(client, list, JsonContent.Create(body));
     }
 
-    private static Task<HttpResponseMessage> _PostAsync(HttpClient client, string list, HttpContent content)
+    private static async Task<HttpResponseMessage> _PostAsync(HttpClient client, string list, HttpContent content)
     {
-        var request = new HttpRequestMessage(
+        using var request = new HttpRequestMessage(
             HttpMethod.Post,
             new Uri($"{MessagingModuleTestHost.Api}/{list}/search", UriKind.Relative)
         )
@@ -332,7 +332,7 @@ public sealed class MessagingListSearchTests : TestBase
         };
         request.Headers.Add("X-Requested-With", "XMLHttpRequest");
 
-        return client.SendAsync(request, AbortToken);
+        return await client.SendAsync(request, AbortToken);
     }
 
     private static Message _Message(object value, string? correlationId = null)
