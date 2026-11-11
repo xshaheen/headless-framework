@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-219 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+221 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -293,7 +293,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 219 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 221 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -667,6 +667,15 @@ Idempotent admission دائم ومتقسّم حسب الـ tenant: اقبل ال
 | [Headless.Idempotency.ResponseReplay](src/Headless.Idempotency.ResponseReplay/README.md) | HTTP idempotency middleware بأسلوب Stripe: بيـ cache الـ response ويرجّعه عند الـ retry |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | Records الـ idempotency في SQL Server |
 | [Headless.Idempotency.Sqlite](src/Headless.Idempotency.Sqlite/README.md) | Records الـ idempotency في SQLite، والـ admission بيعمل commit لوحده |
+
+### Live Queries
+
+Queries بتفضل محدّثة: الـ query اللي معمول لها watch بتشتغل تاني لما dependency هي سجّلتها يتعلن إنها اتغيّرت، والـ caller بيستلم كل result جديدة. الـ invalidation بيوصل للـ subscriptions اللي في نفس الـ process بس.
+
+| Package | الوصف |
+|---------|-------|
+| [Headless.LiveQueries.Abstractions](src/Headless.LiveQueries.Abstractions/README.md) | `ILiveQueries` و`ILiveQueryInvalidator` و`ILiveQueryDependencies` والـ `LiveUpdate` اللي الـ transport بيبعته |
+| [Headless.LiveQueries](src/Headless.LiveQueries/README.md) | الـ registration، والـ subscription hub جوه الـ process، والـ meter بتاعه |
 
 ### Unit of Work
 

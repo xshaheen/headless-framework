@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-219 packages &bull; One setup grammar &bull; Swap any provider in one line
+221 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -254,7 +254,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 219 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 221 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -628,6 +628,15 @@ Durable, tenant-scoped idempotent admission: admit a key once across processes a
 | [Headless.Idempotency.ResponseReplay](src/Headless.Idempotency.ResponseReplay/README.md) | Stripe-style HTTP idempotency middleware — cache and replay responses on retries |
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | SQL Server idempotency records |
 | [Headless.Idempotency.Sqlite](src/Headless.Idempotency.Sqlite/README.md) | SQLite idempotency records; admission commits on its own |
+
+### Live Queries
+
+Queries that stay current: a watched query runs again when a dependency it recorded is announced as changed, and its caller receives each new result. Invalidation reaches subscriptions in the same process only.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.LiveQueries.Abstractions](src/Headless.LiveQueries.Abstractions/README.md) | `ILiveQueries`, `ILiveQueryInvalidator`, `ILiveQueryDependencies`, and the `LiveUpdate` a transport forwards |
+| [Headless.LiveQueries](src/Headless.LiveQueries/README.md) | Registration, the in-process subscription hub, and its meter |
 
 ### Unit of Work
 

@@ -215,7 +215,8 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.LiveQueries.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )"
+          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )",
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.livequeries.abstractions": {

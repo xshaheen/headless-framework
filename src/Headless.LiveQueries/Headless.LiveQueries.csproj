@@ -4,8 +4,6 @@
     <Description>In-process subscription hub, setup builder, options, and metrics for Headless live queries: a query re-runs when a committed write touches what it read.</Description>
     <PackageTags>headless;live-queries;realtime;dotnet</PackageTags>
     <RootNamespace>Headless.LiveQueries</RootNamespace>
-    <!-- Not packable while the package has no behavior, so a release never publishes it empty. -->
-    <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.LiveQueries.Endpoints" />
@@ -18,6 +16,7 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <!-- Supplies the extended LoggerMessage generator, which accepts the _PascalCase private logging methods the built-in generator rejects (SYSLIB1001). -->
     <PackageReference Include="Microsoft.Extensions.Telemetry.Abstractions" />
+    <PackageReference Include="OpenTelemetry.Api" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />

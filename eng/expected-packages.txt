@@ -119,6 +119,8 @@ Headless.Jobs.EntityFramework
 Headless.Jobs.EntityFramework.PostgreSql
 Headless.Jobs.EntityFramework.SqlServer
 Headless.Jobs.SourceGenerator
+Headless.LiveQueries
+Headless.LiveQueries.Abstractions
 Headless.Logging.Redaction
 Headless.Logging.Redaction.AspNetCore
 Headless.Logging.Serilog
