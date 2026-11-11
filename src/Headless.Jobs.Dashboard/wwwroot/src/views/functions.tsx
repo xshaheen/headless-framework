@@ -18,7 +18,7 @@ import {
   RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
-import { RunsIcon } from '@headless/dashboard-sdk/icons'
+import { AddIcon, RecurringIcon, RunsIcon } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
@@ -184,25 +184,29 @@ function FunctionFields({ item }: { item: JobFunction }) {
   const limit = useLimit()
 
   return (
-    <FieldGrid>
-      <GridField label="Contract version">
-        <Mono>{item.contractVersion}</Mono>
-      </GridField>
-      <GridField label="Priority">{item.priority}</GridField>
-      <GridField label="Running / limit">{limit(item)}</GridField>
-      <GridField label="Kind">
-        <FunctionKind item={item} />
-      </GridField>
-      <GridField label="Request type" span={2}>
-        {item.requestType ? <Mono>{item.requestType}</Mono> : 'None'}
-      </GridField>
-      <GridField label="Last run" span={2}>
-        <RelativeTime value={item.lastExecutedAt} />
-      </GridField>
-      <GridField label="Succeeded, 24 h">{format.number(item.succeeded)}</GridField>
-      <GridField label="Failed, 24 h">{format.number(item.failed)}</GridField>
-      <GridField label="Waiting">{format.number(item.waiting)}</GridField>
-    </FieldGrid>
+    <>
+      <FieldGrid label="Definition">
+        <GridField label="Kind">
+          <FunctionKind item={item} />
+        </GridField>
+        <GridField label="Contract version">
+          <Mono>{item.contractVersion}</Mono>
+        </GridField>
+        <GridField label="Priority">{item.priority}</GridField>
+        <GridField label="Running / limit">{limit(item)}</GridField>
+        <GridField label="Request type" span={2}>
+          {item.requestType ? <Mono>{item.requestType}</Mono> : 'None'}
+        </GridField>
+      </FieldGrid>
+      <FieldGrid label="Activity">
+        <GridField label="Last run" span={2}>
+          <RelativeTime value={item.lastExecutedAt} />
+        </GridField>
+        <GridField label="Waiting">{format.number(item.waiting)}</GridField>
+        <GridField label="Succeeded, 24 h">{format.number(item.succeeded)}</GridField>
+        <GridField label="Failed, 24 h">{format.number(item.failed)}</GridField>
+      </FieldGrid>
+    </>
   )
 }
 
@@ -316,14 +320,18 @@ export function FunctionPanel({ item, page }: { item: JobFunction; page?: boolea
         <>
           <Button
             variant="primary"
+            icon={AddIcon}
             disabledReason={addReason}
             onPress={() => void navigate('/jobs/runs?create=time-job')}
           >
             Add time job
           </Button>
-          <Button disabledReason={addReason} onPress={() => void navigate('/jobs/cron-jobs?create=cron-job')}>
-            Add recurring job
-          </Button>
+          <Button
+            icon={RecurringIcon}
+            aria-label="Add recurring job"
+            disabledReason={addReason}
+            onPress={() => void navigate('/jobs/cron-jobs?create=cron-job')}
+          />
         </>
       }
       tabs={[

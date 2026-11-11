@@ -201,11 +201,14 @@ describe('jobs runs list', () => {
 
     expect(new URLSearchParams(view.location().search).get('open')).toBe(failed.id)
     const opened = panel(failed.id)
-    expect(within(opened).getByRole('tab', { name: 'Overview', selected: true })).toBeTruthy()
+    // A failed run opens on its exception, with the stack already open.
+    expect(within(opened).getByRole('tab', { name: 'Exception', selected: true })).toBeTruthy()
     expect(within(opened).getByText('Gateway timeout').closest('pre')?.textContent).toBe(
       'Gateway timeout\n   at Billing.Charge()',
     )
 
+    await user().click(within(opened).getByRole('tab', { name: 'Overview' }))
+    expect(field(opened, 'Failure')).toBe('Gateway timeout')
     const history = await within(opened).findByRole('region', { name: 'History' })
     expect(
       within(history)
@@ -248,17 +251,36 @@ describe('jobs runs list', () => {
     ).toEqual(['Back', 'Cancel run'])
   })
 
-  it('reads the arguments when their tab opens, and says a run with none has no payload', async () => {
+  it('offers the Arguments tab only to a run that stored a payload, and the Chain tab only to a chain step', async () => {
     const quiet = run('Succeeded', { function: 'a.quiet' })
+    const loud = run('Succeeded', { function: 'a.loud' })
+    const step = run('Succeeded', { function: 'a.step', parentId: quiet.id })
     const actor = user()
-    const view = list({ runs: [quiet] })
+    const view = list({
+      runs: [quiet, loud, step],
+      extra: (request) =>
+        request.path === 'payload' && request.query?.id === loud.id
+          ? { content: '{"amount":12}', contentType: 'application/json' }
+          : undefined,
+    })
 
     await actor.click(await screen.findByRole('row', { name: /a\.quiet/ }))
-    expect(view.requests.some((request) => request.path === 'payload')).toBe(false)
-    await actor.click(within(panel(quiet.id)).getByRole('tab', { name: 'Arguments' }))
-
-    expect(await screen.findByText('This run has no payload.')).toBeTruthy()
+    // The panel reads the payload once it opens, so the tab shows only when there is one; the server says 404 here.
+    await waitFor(() => expect(view.requests.some((request) => request.path === 'payload')).toBe(true))
+    expect(
+      within(panel(quiet.id))
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['Overview'])
     expect(screen.queryByRole('alert')).toBeNull()
+
+    await actor.click(screen.getByRole('row', { name: /a\.loud/ }))
+    await actor.click(await within(panel(loud.id)).findByRole('tab', { name: 'Arguments' }))
+    expect(await screen.findByText('12')).toBeTruthy()
+
+    await actor.click(screen.getByRole('row', { name: /a\.step/ }))
+    await actor.click(await within(panel(step.id)).findByRole('tab', { name: 'Chain' }))
+    expect(field(panel(step.id), 'Runs after')).toBe(quiet.id)
   })
 
   it('reads Cancelling… on a run with a pending cancel and keeps its stored status until the stream changes it', async () => {
@@ -825,7 +847,7 @@ describe('jobs run page', () => {
       within(page)
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
-    ).toEqual(['Overview', 'Arguments', 'Chain'])
+    ).toEqual(['Overview', 'Exception'])
     expect(
       within(page)
         .getByText(/MoveNext at offset 596/)
@@ -835,6 +857,8 @@ describe('jobs run page', () => {
     )
     expect(within(page).queryByRole('button', { name: 'Close details' })).toBeNull()
     expect(within(page).queryByRole('link', { name: 'Open in its own page' })).toBeNull()
+
+    await user().click(within(page).getByRole('tab', { name: 'Overview' }))
     expect(await within(page).findByText('try 1 · node-b · Card declined', { exact: false })).toBeTruthy()
   })
 })
@@ -1022,6 +1046,7 @@ describe('jobs runs list reads', () => {
     list({ runs: [failed, queued] })
 
     await user().click(await screen.findByRole('row', { name: /a\.failed/ }))
+    await user().click(within(panel(failed.id)).getByRole('tab', { name: 'Overview' }))
     expect(field(panel(failed.id), 'Attempt')).toBe('Attempt 3 of 4')
     expect(field(panel(failed.id), 'Retry intervals')).toBe('30 s, 60 s')
 

@@ -180,6 +180,60 @@ describe('messaging lists', () => {
     expect(new URLSearchParams(view.location().search).get('open')).toBe(failed.id)
   })
 
+  it('opens a failed message on its exception, lists its headers as a table, and hides the tabs it has nothing for', async () => {
+    const actor = user()
+    const failed = message('received', 'Failed', { name: 'a.failed' })
+    const quiet = message('received', 'Succeeded', { name: 'a.quiet' })
+    list(
+      {
+        received: [failed, quiet],
+        extra: (request) =>
+          request.path === `messaging/messages/received/${failed.id}`
+            ? {
+                row: failed,
+                headers: { 'headless-msg-id': '01a1c7cb', 'headless-tenant': null },
+                content: '{"orderId":7}',
+                exceptionInfo: 'TimeoutException: The gateway did not answer.\n   at Billing.Charge()',
+              }
+            : undefined,
+      },
+      'received',
+    )
+
+    await actor.click(await screen.findByRole('row', { name: /a\.failed/ }))
+    const panel = screen.getByRole('region', { name: `Message ${failed.id}` })
+    expect(await within(panel).findByRole('tab', { name: 'Exception', selected: true })).toBeTruthy()
+    expect(within(panel).getByText('The gateway did not answer.', { exact: false }).closest('pre')?.textContent).toBe(
+      'TimeoutException: The gateway did not answer.\n   at Billing.Charge()',
+    )
+    expect(
+      within(panel)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['Overview', 'Exception', 'Generations', 'Headers', 'Body'])
+
+    await actor.click(within(panel).getByRole('tab', { name: 'Headers' }))
+    const table = within(panel).getByRole('table', { name: 'Headers' })
+    expect(within(table).getByRole('rowheader', { name: 'headless-msg-id' }).nextElementSibling?.textContent).toBe(
+      '01a1c7cb',
+    )
+    expect(within(table).getByRole('rowheader', { name: 'headless-tenant' }).nextElementSibling?.textContent).toBe(
+      'No value',
+    )
+    expect(within(table).getByRole('button', { name: 'Copy headless-msg-id' })).toBeTruthy()
+
+    // The fake serves the other message with no headers, no body, and no failure.
+    await actor.click(screen.getByRole('row', { name: /a\.quiet/ }))
+    const other = screen.getByRole('region', { name: `Message ${quiet.id}` })
+    await waitFor(() =>
+      expect(
+        within(other)
+          .getAllByRole('tab')
+          .map((tab) => tab.textContent),
+      ).toEqual(['Overview', 'Generations']),
+    )
+  })
+
   it('disables Re-execute for a viewer, with Needs operate permission', async () => {
     const failed = message('received', 'Failed', { name: 'a.failed' })
     list({ received: [failed] }, 'received', { permissions: { canOperate: false } })
