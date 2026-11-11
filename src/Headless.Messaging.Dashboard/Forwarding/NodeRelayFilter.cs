@@ -12,7 +12,8 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Sends a read of the module's API for another node to that node and returns the node's answer as it is: the node
-/// named by <c>?node=</c>, or the node a message id names. A dashboard-only host sends a read without a node to the
+/// named by <c>?node=</c>, or the node a message id names. A search, a read that is a <c>POST</c>, is relayed with its
+/// body. A dashboard-only host sends a read without a node to the
 /// first node discovery lists.
 /// </summary>
 /// <remarks>
@@ -26,6 +27,9 @@ internal sealed class NodeRelayFilter(MessagingForwarding forwarding, IOptions<H
     : IEndpointFilter
 {
     private const string _NodeParameter = "node";
+
+    // A search's body is its filters and text, a few hundred bytes; the cap keeps a relay from buffering more.
+    private const int _MaxRelayedBodyBytes = 16 * 1024;
 
     /// <summary>The field a refused path names in the <c>400</c> validation problem.</summary>
     internal const string PathField = "path";
@@ -118,9 +122,20 @@ internal sealed class NodeRelayFilter(MessagingForwarding forwarding, IOptions<H
                 .Select(static pair => new KeyValuePair<string, StringValues>(pair.Key, pair.Value))
         );
 
-        var response = await forwarding
-            .Client.RelayAsync(peer, escaped + query.ToUriComponent(), http.User, http.RequestAborted)
-            .ConfigureAwait(false);
+        var response = HttpMethods.IsGet(http.Request.Method)
+            ? await forwarding
+                .Client.RelayAsync(peer, escaped + query.ToUriComponent(), http.User, http.RequestAborted)
+                .ConfigureAwait(false)
+            : await _RelayBodyAsync(http, peer, escaped + query.ToUriComponent()).ConfigureAwait(false);
+
+        if (response is null)
+        {
+            return DashboardValidation.Problem(
+                DashboardValidation.BodyField,
+                DashboardValidation.InvalidRule,
+                $"A read relayed to another node carries a body of at most {_MaxRelayedBodyBytes} bytes."
+            );
+        }
 
         if (!response.Answered)
         {
@@ -133,6 +148,38 @@ internal sealed class NodeRelayFilter(MessagingForwarding forwarding, IOptions<H
         }
 
         return new RelayedResult(response.Status, response.Body);
+    }
+
+    /// <summary>
+    /// Relays a read that carries its arguments in a body, a search, with that body; <see langword="null"/> when the
+    /// body is larger than a search's.
+    /// </summary>
+    private async Task<ForwardResponse?> _RelayBodyAsync(HttpContext http, MessagingPeer peer, string path)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[4096];
+        int read;
+
+        while ((read = await http.Request.Body.ReadAsync(chunk, http.RequestAborted).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > _MaxRelayedBodyBytes)
+            {
+                return null;
+            }
+
+            await buffer.WriteAsync(chunk.AsMemory(0, read), http.RequestAborted).ConfigureAwait(false);
+        }
+
+        return await forwarding
+            .Client.RelayAsync(
+                peer,
+                new HttpMethod(http.Request.Method),
+                path,
+                buffer.ToArray(),
+                http.User,
+                http.RequestAborted
+            )
+            .ConfigureAwait(false);
     }
 
     /// <summary>
