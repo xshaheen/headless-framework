@@ -83,6 +83,17 @@ public enum CloseFaultKind
     Hung,
 }
 
+/// <summary>How a publish to the simulated broker misbehaves, set by <see cref="FaultScript.FailPublishes"/> or <see cref="FaultScript.HangPublishes"/>.</summary>
+[PublicAPI]
+public enum PublishFaultKind
+{
+    /// <summary>The broker refuses the publish and reports a failed send; the message is not routed.</summary>
+    Fail,
+
+    /// <summary>The broker never confirms the publish, so the send ends only when the caller cancels it.</summary>
+    Hang,
+}
+
 /// <summary>One armed storage fault: the call it fires on and what it does there.</summary>
 /// <param name="Operation">The operation it faults.</param>
 /// <param name="Kind">What it does to the call.</param>
@@ -116,6 +127,7 @@ public sealed class FaultScript
     private readonly Dictionary<string, (int Remaining, string Reason)> _receiveFaults = new(StringComparer.Ordinal);
     private readonly List<Action> _listeners = [];
     private int _settlementFaults;
+    private readonly Queue<PublishFaultKind> _publishFaults = new();
 #pragma warning disable IDE0032 // Read and written under the gate; an auto property would drop the lock.
     private TimeSpan? _leaseLifetime;
 #pragma warning restore IDE0032
@@ -171,6 +183,24 @@ public sealed class FaultScript
         }
 
         return this;
+    }
+
+    /// <summary>
+    /// Makes the next <paramref name="times"/> publishes fail: the broker refuses each one with a failed send result
+    /// while its connection stays up, so the message is not routed and the publisher sees an ordinary send failure.
+    /// </summary>
+    public FaultScript FailPublishes(int times)
+    {
+        return _ArmPublishes(PublishFaultKind.Fail, times);
+    }
+
+    /// <summary>
+    /// Makes the next <paramref name="times"/> publishes hang: the broker never confirms them, however far the clock
+    /// moves, so each send ends only when the publisher cancels it, as its publish timeout or host shutdown does.
+    /// </summary>
+    public FaultScript HangPublishes(int times)
+    {
+        return _ArmPublishes(PublishFaultKind.Hang, times);
     }
 
     /// <summary>Makes every consumer client closed from now on take <paramref name="duration"/> of simulated time.</summary>
@@ -349,6 +379,15 @@ public sealed class FaultScript
         }
     }
 
+    /// <summary>Takes the fault armed for the next publish, if any, in the order the faults were armed.</summary>
+    internal PublishFaultKind? TakePublishFault()
+    {
+        lock (_gate)
+        {
+            return _publishFaults.TryDequeue(out var kind) ? kind : null;
+        }
+    }
+
     /// <summary>The release a pause waits for, or a completed task when pauses are not held.</summary>
     internal Task TakePauseHold()
     {
@@ -412,6 +451,21 @@ public sealed class FaultScript
         {
             var callNumber = _calls.GetValueOrDefault(operation) + onCall;
             _storeFaults.Add(new StoreFault(operation, kind, callNumber, exception, delay));
+        }
+
+        return this;
+    }
+
+    private FaultScript _ArmPublishes(PublishFaultKind kind, int times)
+    {
+        Argument.IsPositive(times);
+
+        lock (_gate)
+        {
+            for (var i = 0; i < times; i++)
+            {
+                _publishFaults.Enqueue(kind);
+            }
         }
 
         return this;

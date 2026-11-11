@@ -216,8 +216,8 @@ export function dashboardShell(options: DashboardShellOptions): UserConfig {
     base: './',
     plugins: [
       ...reactPlugins(),
-      // Compiles the SDK's one stylesheet, whose `@source` limits Tailwind to the SDK's own files. Only the shell
-      // builds it: a module bundles no SDK code, so it ships no CSS.
+      // Compiles the SDK's one stylesheet, whose `@source` limits Tailwind to the SDK's and the shell's files. Only the
+      // shell builds it: a module bundles no SDK code, so it ships no CSS.
       tailwindcss(),
       englishOnlyReactAriaPlugin(),
       sharedEntriesPlugin(options.root, specifiers),

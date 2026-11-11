@@ -2425,18 +2425,11 @@ public sealed class InMemoryCache
             return;
         }
 
-        var remaining = logicalExpiresAt - now;
-        // Re-arm once roughly half the idle window has elapsed. Exact integer halving (no lossy double cast).
-        var rearmThreshold = TimeSpan.FromTicks(slidingExpiration.Ticks / 2);
-
-        if (remaining > rearmThreshold)
-        {
-            return;
-        }
-
         var rearmedLogicalExpiresAt = _Min(now.Add(slidingExpiration), physicalExpiresAt);
 
-        if (rearmedLogicalExpiresAt <= logicalExpiresAt)
+        // Throttle: skip a move within the tolerance so a hot key does not swap its entry on every read, while
+        // an idle entry still keeps at least its window minus the tolerance after its last read.
+        if (!CacheEntryStamps.ShouldRearmSliding(logicalExpiresAt, rearmedLogicalExpiresAt, slidingExpiration))
         {
             return;
         }

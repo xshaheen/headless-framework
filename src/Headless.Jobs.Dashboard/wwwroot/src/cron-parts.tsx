@@ -12,7 +12,7 @@ import {
   Mono,
   Skeleton,
   Text,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { DeleteIcon, PauseIcon, PlayIcon, RecurringIcon, ResumeIcon } from '@headless/dashboard-sdk/icons'
@@ -234,7 +234,7 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
           {cronJob.reading ?? cronJob.validationMessage ?? ''}
         </GridField>
         <GridField label="Next due" span={2}>
-          {cronJob.isPaused ? 'Paused' : <RelativeTime value={cronJob.nextDueUtc} zone={zone} scheduled />}
+          {cronJob.isPaused ? 'Paused' : <Timestamp value={cronJob.nextDueUtc} zone={zone} scheduled />}
         </GridField>
       </FieldGrid>
     </>
@@ -415,7 +415,7 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
             label="Occurrences"
             items={rows.map((run) => ({
               key: run.id,
-              time: <RelativeTime value={run.executionTime ?? run.createdAt} />,
+              time: <Timestamp value={run.executionTime ?? run.createdAt} />,
               tone: runStatusMark(run).tone,
               state: statusLabel(run.status),
               // Progress joins the note rather than replacing it, so the node, a skip reason, or a failure's first

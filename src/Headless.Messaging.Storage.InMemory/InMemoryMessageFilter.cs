@@ -6,7 +6,8 @@ namespace Headless.Messaging.Storage.InMemory;
 
 /// <summary>
 /// The in-memory form of a <see cref="MessageListQuery"/>'s filters, shared by the list, the capped count, and an
-/// Operation's scope read. Text compares ordinally, as the relational stores compare it byte for byte.
+/// Operation's scope read. Text compares ordinally, as the relational stores compare it byte for byte, except the
+/// content and correlation id searches, which ignore case as the relational stores' <c>LIKE</c> does.
 /// </summary>
 internal static class InMemoryMessageFilter
 {
@@ -36,6 +37,19 @@ internal static class InMemoryMessageFilter
                 || query.TenantId is null
                 || string.Equals(message.InboxKey?.TenantId, query.TenantId, StringComparison.Ordinal)
             )
-            && (query.IsHeld is not { } held || (received ? message.IsHeld == held : !held));
+            && (query.IsHeld is not { } held || (received ? message.IsHeld == held : !held))
+            && (query.AddedFrom is not { } from || message.Added >= from)
+            && (query.AddedBefore is not { } before || message.Added < before)
+            && (
+                string.IsNullOrEmpty(query.Content)
+                || (message.Content?.Contains(query.Content, StringComparison.OrdinalIgnoreCase) ?? false)
+            )
+            && (
+                string.IsNullOrEmpty(query.CorrelationId)
+                || (
+                    message.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
+                    && string.Equals(correlationId, query.CorrelationId, StringComparison.OrdinalIgnoreCase)
+                )
+            );
     }
 }

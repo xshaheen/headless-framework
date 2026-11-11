@@ -1,18 +1,27 @@
 /*
- * The SDK's one stylesheet. Tailwind compiles it from the SDK's own sources and nothing else, so a module ships no
- * CSS and two builds never emit two preflights. Every colour, size, radius, and duration comes from tokens.css; the
- * theme below only names those tokens for the utility classes shadcn's components are written in.
+ * The dashboard's one stylesheet. Tailwind compiles it from the SDK's sources and the shell's, and nothing else, so a
+ * module ships no CSS and two builds never emit two preflights. Every colour, size, radius, and duration comes from
+ * tokens.css; the theme below only names those tokens for the utility classes shadcn's components are written in.
  */
 @import 'tailwindcss' source(none);
 @import '../tokens.css';
 
 @source '../';
+/* The shell draws its frame and sign-in page with the same utilities, and only the shell's build compiles this file,
+   so the shell has no stylesheet of its own. */
+@source '../../../../apps/shell/src';
 
 /*
  * Dark is the default, because a browser that stored no choice renders dark whatever its system setting, so a
  * `dark:` class applies everywhere except under the light theme the account menu sets.
  */
 @custom-variant dark (&:not(:where([data-theme='light'], [data-theme='light'] *)));
+
+/* The current page's link in a navigation: a tab or a sidebar entry. */
+@custom-variant current (&[aria-current]);
+
+/* A container whose child is a page frame or a detail panel, which draw their own edges and run edge to edge. */
+@custom-variant has-frame (&:has(> :is(.hd-frame, .hd-panel)));
 
 /*
  * `inline` makes each utility read the token itself, so a theme switch that redefines a token repaints every class
@@ -54,6 +63,8 @@
   --color-proc: var(--proc);
   --color-ok: var(--ok);
   --color-off: var(--off);
+  --color-avatar: var(--avatar);
+  --color-on-avatar: var(--on-avatar);
   --color-syntax-key: var(--syntax-key);
   --color-syntax-string: var(--syntax-string);
   --color-syntax-number: var(--syntax-number);
@@ -135,6 +146,28 @@
   font: var(--text-tag);
 }
 
+/* The account avatar's initials. */
+@utility type-tag-strong {
+  font: var(--text-tag);
+  font-weight: 600;
+}
+
+/* The sign-in page's heading. */
+@utility type-hero {
+  font: var(--text-hero);
+}
+
+/* The product name beside the mark on the sign-in page. */
+@utility type-brand {
+  font: var(--text-brand);
+}
+
+/* A sidebar entry's count. */
+@utility type-count {
+  font: var(--text-count);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Key caps: the tag size in mono. */
 @utility type-tag-mono {
   font: var(--text-tag);
@@ -174,6 +207,62 @@
 
 @utility type-code {
   font: var(--text-code);
+}
+
+/* Line icons: every svg inside takes the icon box and draws its paths as strokes in the text colour. A descendant
+   rule, so it also redraws the icons of SDK components placed inside, such as a select's chevron. */
+@utility line-icons {
+  & svg {
+    flex: none;
+    inline-size: var(--icon);
+    block-size: var(--icon);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--icon-stroke, 1.4);
+  }
+}
+
+/* A bordered box holding a leading icon and a bare input: the box takes the focus colour, the input only the text. */
+@utility input-box {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--faint);
+
+  &:focus-within {
+    border-color: var(--accent);
+  }
+
+  & input {
+    flex: 1;
+    min-inline-size: 0;
+    color: var(--text);
+    outline: 0;
+  }
+
+  & input::placeholder {
+    color: var(--faint);
+  }
+}
+
+/* A page outside the frame, such as sign-in: a faint dot grid on the ground colour. */
+@utility bg-dot-grid {
+  background: radial-gradient(var(--line) 1px, transparent 1.2px) 0 0 / var(--sign-in-grid) var(--sign-in-grid)
+    var(--ground);
+}
+
+/* An accent edge that marks the current item beside its fill, so the fill is never the only cue. An inset shadow
+   rather than a border, so marking an item never moves its content. */
+@utility accent-bar-start {
+  box-shadow: inset 2px 0 0 var(--accent);
+
+  [dir='rtl'] & {
+    box-shadow: inset -2px 0 0 var(--accent);
+  }
+}
+
+@utility accent-bar-bottom {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 @utility transition-fast {
@@ -248,7 +337,7 @@
 
 /*
  * The SDK's vocabulary classes. A module view and the shell still put these on their own elements, and the shell's
- * stylesheet selects some of them, so each keeps its name; SDK components use the same classes where they draw the
+ * utilities select some of them, so each keeps its name; SDK components use the same classes where they draw the
  * same thing.
  */
 @layer components {
@@ -338,7 +427,7 @@
 
   /*
    * shadcn's button. A class, not utilities on the element, because the shell puts the same look on a plain link
-   * (`hd-btn hd-btn-primary`) and adds its own modifiers (`hd-icon`, `hd-quiet`) that must win over the base.
+   * (`hd-btn hd-btn-primary`), and modifiers (`hd-icon`, the shell's utilities) must win over the base.
    */
   .hd-btn {
     @apply inline-flex h-(--control-height) shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-edge bg-secondary px-3 whitespace-nowrap text-secondary-foreground transition-fast select-none;

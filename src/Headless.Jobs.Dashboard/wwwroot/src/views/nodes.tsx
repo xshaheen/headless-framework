@@ -12,7 +12,7 @@ import {
   Tag,
   Text,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
@@ -116,7 +116,7 @@ export default function NodesView() {
                 header: 'Last beat',
                 cell: (row) => (
                   <CellText>
-                    <RelativeTime value={row.lastHeartbeatAt ?? undefined} missing="Not tracked" />
+                    <Timestamp value={row.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </CellText>
                 ),
                 kind: 'time',
@@ -171,7 +171,7 @@ function HostExceptionAlert({ node }: { node: JobNode }) {
       <Text role="alert" tone="error">
         {`This node's scheduler last failed: ${firstLine(node.lastHostException ?? undefined) ?? ''}`}
       </Text>
-      <RelativeTime value={node.lastHostExceptionAt ?? undefined} />
+      <Timestamp value={node.lastHostExceptionAt ?? undefined} />
     </Banner>
   )
 }
@@ -190,7 +190,7 @@ function HostException({ node }: { node: JobNode }) {
 
   return (
     <>
-      <RelativeTime value={node.lastHostExceptionAt ?? undefined} />
+      <Timestamp value={node.lastHostExceptionAt ?? undefined} />
       <ExceptionBlock message={message} stack={stack.length > 0 ? stack.join('\n') : undefined} />
     </>
   )
@@ -216,7 +216,7 @@ function NodePanel({ node }: { node: JobNode }) {
                   <GridField label="Role">{node.role ?? 'None'}</GridField>
                   <GridField label="Serves this page">{node.isLocal ? 'This node' : 'No'}</GridField>
                   <GridField label="Last beat">
-                    <RelativeTime value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
+                    <Timestamp value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </GridField>
                 </FieldGrid>
                 <FieldGrid label="Load">

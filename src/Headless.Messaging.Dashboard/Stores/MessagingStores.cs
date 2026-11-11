@@ -119,68 +119,106 @@ internal sealed class MessagingStores
     /// answer in time.
     /// </summary>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
-    public async Task<StoreAnswers<T>> ReadEachAsync<T>(
+    public Task<StoreAnswers<T>> ReadEachAsync<T>(
         IEnumerable<MessagingStore> stores,
         Func<MessagingStore, CancellationToken, Task<T>> read,
         CancellationToken cancellationToken
     )
     {
+        return ReadEachAsync(stores, read, Timeout, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="read"/> against every store in <paramref name="stores"/> at once, each bounded by
+    /// <paramref name="timeout"/>, and returns each store's answer, or names it unavailable when it threw or did not
+    /// answer in time. A store that did not answer in time is also named in <see cref="StoreAnswers{T}.TimedOut"/>.
+    /// </summary>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public async Task<StoreAnswers<T>> ReadEachAsync<T>(
+        IEnumerable<MessagingStore> stores,
+        Func<MessagingStore, CancellationToken, Task<T>> read,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
         var targets = stores.ToArray();
-        var reads = targets.Select(store => _ReadOneAsync(store, read, cancellationToken)).ToArray();
+        var reads = targets.Select(store => _ReadOneAsync(store, read, timeout, cancellationToken)).ToArray();
         var results = await Task.WhenAll(reads).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
         var answered = new List<(MessagingStore Store, T Value)>(targets.Length);
         var unavailable = new List<string>();
+        var timedOut = new List<string>();
 
         for (var i = 0; i < targets.Length; i++)
         {
-            if (results[i].Answered)
+            switch (results[i].Outcome)
             {
-                answered.Add((targets[i], results[i].Value!));
-            }
-            else
-            {
-                unavailable.Add(targets[i].Name);
+                case ReadOutcome.Answered:
+                    answered.Add((targets[i], results[i].Value!));
+                    break;
+                case ReadOutcome.TimedOut:
+                    unavailable.Add(targets[i].Name);
+                    timedOut.Add(targets[i].Name);
+                    break;
+                default:
+                    unavailable.Add(targets[i].Name);
+                    break;
             }
         }
 
-        return new StoreAnswers<T>(answered, unavailable);
+        return new StoreAnswers<T>(answered, unavailable) { TimedOut = timedOut };
     }
 
-    private async Task<(bool Answered, T? Value)> _ReadOneAsync<T>(
+    private async Task<(ReadOutcome Outcome, T? Value)> _ReadOneAsync<T>(
         MessagingStore store,
         Func<MessagingStore, CancellationToken, Task<T>> read,
+        TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(Timeout);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
 
         try
         {
             // A provider may block before its first await; Task.Run keeps one store from holding the others back.
-            var value = await Task.Run(() => read(store, timeout.Token), timeout.Token)
-                .WaitAsync(timeout.Token)
+            var value = await Task.Run(() => read(store, deadline.Token), deadline.Token)
+                .WaitAsync(deadline.Token)
                 .ConfigureAwait(false);
 
-            return (true, value);
+            return (ReadOutcome.Answered, value);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // The store did not answer within its timeout: it is reported unavailable, the others still answer.
-            _logger.LogMessagingStoreTimedOut(store.Name, Timeout);
+            _logger.LogMessagingStoreTimedOut(store.Name, timeout);
 
-            return (false, default);
+            return (ReadOutcome.TimedOut, default);
         }
 #pragma warning disable CA1031 // A store that fails is reported unavailable by name, so one store cannot fail a read of the others.
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
 #pragma warning restore CA1031
         {
+            // A provider may surface its own cancellation as a provider exception; the deadline says which it was.
+            if (deadline.IsCancellationRequested)
+            {
+                _logger.LogMessagingStoreTimedOut(store.Name, timeout);
+
+                return (ReadOutcome.TimedOut, default);
+            }
+
             _logger.LogMessagingStoreFailed(exception, store.Name);
 
-            return (false, default);
+            return (ReadOutcome.Failed, default);
         }
+    }
+
+    private enum ReadOutcome
+    {
+        Answered,
+        TimedOut,
+        Failed,
     }
 }
 
@@ -198,7 +236,11 @@ internal sealed record MessagingStore(string Name, IDataStorage Storage, bool Ho
 internal sealed record StoreAnswers<T>(
     IReadOnlyList<(MessagingStore Store, T Value)> Answered,
     IReadOnlyList<string> Unavailable
-);
+)
+{
+    /// <summary>Gets the stores of <see cref="Unavailable"/> that did not answer in time, rather than failing.</summary>
+    public IReadOnlyList<string> TimedOut { get; init; } = [];
+}
 
 internal static partial class MessagingStoresLogs
 {

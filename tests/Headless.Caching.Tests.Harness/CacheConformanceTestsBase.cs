@@ -674,6 +674,32 @@ public abstract class CacheConformanceTestsBase : TestBase
         idleRead.HasValue.Should().BeFalse();
     }
 
+    // Pins the shortest idle lifetime: a read early in the window re-arms, so the entry outlives the old
+    // deadline and lives at least its window minus the re-arm tolerance after that read.
+    public virtual async Task should_keep_sliding_entry_for_window_minus_tolerance_after_an_early_read()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var sliding = TimeSpan.FromSeconds(1);
+        var tolerance = TimeSpan.FromMilliseconds(100); // min(1s, 10% of the window)
+        var options = _CreateSlidingOptions(duration: TimeSpan.FromSeconds(5), sliding: sliding);
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(300));
+
+        var earlyRead = await cache.GetAsync<string>(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        // Idle to just short of window minus tolerance: past the un-re-armed deadline, inside the re-armed one.
+        await AdvanceAsync(sliding - tolerance - TimeSpan.FromMilliseconds(50));
+        var idleRead = await cache.GetAsync<string>(key, AbortToken);
+
+        earlyRead.Value.Should().Be("value");
+        expiration.Should().BeGreaterThanOrEqualTo(sliding - tolerance);
+        idleRead.Value.Should().Be("value");
+    }
+
     public virtual async Task should_expire_sliding_entry_at_absolute_duration_cap()
     {
         await ResetAsync();

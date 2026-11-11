@@ -89,6 +89,47 @@ public sealed class ForwardingNodeTests : TestBase
     }
 
     [Fact]
+    public async Task should_relay_a_viewers_search_to_node_b_as_a_post_with_its_body_and_show_node_b_matches()
+    {
+        // given: node B holds the row; a viewer, who may not operate, searches from node A
+        await using var nodeB = await _StartBAsync();
+        await using var nodeA = await _StartAAsync();
+        var row = await nodeB
+            .Services.GetRequiredService<IDataStorage>()
+            .StoreMessageAsync(
+                MessagingRows.Name,
+                new Message(
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [Headers.MessageId] = "order-991",
+                        [Headers.MessageName] = MessagingRows.Name,
+                    },
+                    new { Order = "ORD-991" }
+                ),
+                cancellationToken: AbortToken
+            );
+        using var client = MessagingCommandHost.Client(nodeA);
+        var cookie = await MessagingCommandHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var response = await MessagingCommandHost.PostAsync(
+            client,
+            $"{_Api}/published/search?node=node-b",
+            new { content = "ORD-991" },
+            cookie,
+            AbortToken
+        );
+
+        // then: node B admits the search as a read and answers with its row; the text never sits in a URL
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Contain(row.StorageId.ToString("D"));
+        var call = _network.Calls.Should().ContainSingle().Subject;
+        call.Method.Should().Be(HttpMethod.Post);
+        call.Uri.Should().Be(new Uri("https://node-b/headless/api/messaging/published/search"));
+        call.Access.Should().Be(ForwardingProtocol.AccessView);
+    }
+
+    [Fact]
     public async Task should_answer_502_with_the_node_state_and_none_of_its_own_rows_when_node_b_does_not_answer()
     {
         // given: discovery lists node B, but nothing answers at its address

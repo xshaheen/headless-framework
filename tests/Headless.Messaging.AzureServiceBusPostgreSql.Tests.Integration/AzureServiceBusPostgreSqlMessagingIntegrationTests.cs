@@ -6,7 +6,6 @@ using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.UnitOfWork;
 using Npgsql;
-using Tests.Guarantees;
 
 namespace Tests;
 
@@ -59,9 +58,7 @@ public sealed class AzureServiceBusPostgreSqlMessagingIntegrationTests(AzureServ
     protected override Task InterruptBrokerAsync(CancellationToken cancellationToken)
     {
         // A real namespace cannot be taken offline from a test; an emulator profile is what can prove this here.
-        Assert.Skip(
-            $"A real Azure Service Bus namespace cannot be made unreachable from a test. {MessagingGuarantees.FillIssueUrl}"
-        );
+        Assert.Skip("A real Azure Service Bus namespace cannot be made unreachable from a test.");
 
         return Task.CompletedTask;
     }

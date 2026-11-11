@@ -114,6 +114,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "intent_type" SMALLINT NOT NULL,
                 "retries" INT NOT NULL,
                 "inline_attempts" INT NOT NULL DEFAULT 0,
+                -- Attempts that failed before the handler ran; they spend this counter instead of the retry budget.
+                "pre_entry_failures" INT NOT NULL DEFAULT 0,
             	"added" TIMESTAMPTZ NOT NULL,
                 "expires_at" TIMESTAMPTZ NULL,
                 "next_retry_at" TIMESTAMPTZ NULL,

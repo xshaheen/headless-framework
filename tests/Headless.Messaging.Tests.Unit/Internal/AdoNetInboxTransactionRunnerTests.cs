@@ -58,7 +58,9 @@ public sealed class AdoNetInboxTransactionRunnerTests : TestBase
             );
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("open failed");
+        (await act.Should().ThrowAsync<InboxAttemptNotStartedException>())
+            .WithInnerException<InvalidOperationException>()
+            .WithMessage("open failed");
         connection.WasDisposed.Should().BeTrue();
         handlerEntered.Should().BeFalse();
     }
@@ -74,7 +76,9 @@ public sealed class AdoNetInboxTransactionRunnerTests : TestBase
         var act = () => runner.ExecuteAsync(_message, (_, _) => Task.CompletedTask, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("already bound");
+        (await act.Should().ThrowAsync<InboxAttemptNotStartedException>())
+            .WithInnerException<InvalidOperationException>()
+            .WithMessage("already bound");
         connection.Transaction!.WasDisposed.Should().BeTrue();
         connection.WasDisposed.Should().BeTrue();
     }

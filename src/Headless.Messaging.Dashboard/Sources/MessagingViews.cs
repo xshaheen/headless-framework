@@ -318,12 +318,18 @@ internal sealed record MessagingMessageDetail(
 /// One page of a list over one table of one or more stores: the rows, the stores' summed capped count, and the stores
 /// that did not answer.
 /// </summary>
+/// <remarks>
+/// <see cref="Incomplete"/> is set when a search ran out of time in a store: that store's rows and count are missing,
+/// so the page and the count say only what the other stores found, never that the store matched nothing. Its rows
+/// come on a later page, as an unavailable store's do.
+/// </remarks>
 internal sealed record MessagingRowList(
     IReadOnlyList<MessagingRowView> Items,
     int Count,
     bool CountCapped,
     string? NextCursor,
-    IReadOnlyList<string> Unavailable
+    IReadOnlyList<string> Unavailable,
+    bool Incomplete = false
 );
 
 /// <summary>The generations of one received message: its rows across consumers and re-executions.</summary>
@@ -425,4 +431,5 @@ internal sealed record MessagingListScope
 [JsonSerializable(typeof(MessagingNodeList))]
 [JsonSerializable(typeof(MessagingRealtimeMetrics))]
 [JsonSerializable(typeof(MessagingListScope))]
+[JsonSerializable(typeof(MessagingSearchRequest))]
 internal sealed partial class MessagingDashboardJsonContext : JsonSerializerContext;

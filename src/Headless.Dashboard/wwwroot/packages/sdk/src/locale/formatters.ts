@@ -3,13 +3,6 @@ import type { CappedCount } from '../data/counts.ts'
 /** Anything a formatter reads as an instant: a `Date`, epoch milliseconds, or an ISO string from the server. */
 export type TimeInput = Date | number | string
 
-export interface RelativeTimeOptions {
-  /** The instant `at` is measured from; the current time by default. */
-  now?: number
-  /** `short` reads `4 min. ago`; `long` reads `4 minutes ago`. */
-  style?: 'long' | 'short'
-}
-
 /** Every text formatter a view needs, bound to one locale and one display time zone. */
 export interface Formatters {
   readonly locale: string
@@ -20,8 +13,8 @@ export interface Formatters {
   count: (count: CappedCount) => string
   /** A byte size: `812 B`, `70.0 KB`. */
   size: (bytes: number) => string
-  /** `4 min. ago`, `in 12 sec.`. The exact time goes in a tooltip beside it. */
-  relativeTime: (at: TimeInput, options?: RelativeTimeOptions) => string
+  /** A duration with its unit: `340 ms`, `1.2 s`, `3 min 4 s`. */
+  duration: (ms: number) => string
   /** The exact time with its zone and offset, in the display time zone. */
   exactTime: (at: TimeInput) => string
   /**
@@ -30,14 +23,6 @@ export interface Formatters {
    */
   zonedTime: (at: TimeInput, timeZone: string) => string
 }
-
-const steps: readonly [Intl.RelativeTimeFormatUnit, number][] = [
-  ['second', 60],
-  ['minute', 60],
-  ['hour', 24],
-  ['day', 30],
-  ['month', 12],
-]
 
 /** Epoch milliseconds of `at`, or `NaN` when a string does not parse. */
 export function toEpoch(at: TimeInput) {
@@ -57,7 +42,6 @@ export function isTimeZone(timeZone: string) {
 /** Builds the formatters for one locale and display time zone, creating each `Intl` formatter once. */
 export function createFormatters(locale: string, timeZone: string): Formatters {
   const numbers = new Map<string, Intl.NumberFormat>()
-  const relatives = new Map<string, Intl.RelativeTimeFormat>()
   const exacts = new Map<string, Intl.DateTimeFormat>()
 
   function numberFormat(options: Intl.NumberFormatOptions = {}) {
@@ -67,17 +51,6 @@ export function createFormatters(locale: string, timeZone: string): Formatters {
     if (!format) {
       format = new Intl.NumberFormat(locale, options)
       numbers.set(key, format)
-    }
-
-    return format
-  }
-
-  function relativeFormat(style: 'long' | 'short') {
-    let format = relatives.get(style)
-
-    if (!format) {
-      format = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style })
-      relatives.set(style, format)
     }
 
     return format
@@ -126,25 +99,19 @@ export function createFormatters(locale: string, timeZone: string): Formatters {
       bytes < 1024
         ? `${numberFormat().format(bytes)} B`
         : `${numberFormat({ minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(bytes / 1024)} KB`,
-    relativeTime: (at, options = {}) => {
-      const time = toEpoch(at)
-
-      if (Number.isNaN(time)) {
-        return String(at)
+    duration: (ms) => {
+      if (ms < 1_000) {
+        return `${numberFormat().format(ms)} ms`
       }
 
-      const format = relativeFormat(options.style ?? 'long')
-      let value = (time - (options.now ?? Date.now())) / 1_000
-
-      for (const [unit, size] of steps) {
-        if (Math.abs(value) < size) {
-          return format.format(Math.round(value), unit)
-        }
-
-        value /= size
+      if (ms < 60_000) {
+        return `${numberFormat({ maximumFractionDigits: 1 }).format(ms / 1_000)} s`
       }
 
-      return format.format(Math.round(value), 'year')
+      // Rounded to whole seconds before the split, so 3 min 59.6 s reads `4 min 0 s`, never `3 min 60 s`.
+      const seconds = Math.round(ms / 1_000)
+
+      return `${numberFormat().format(Math.floor(seconds / 60))} min ${numberFormat().format(seconds % 60)} s`
     },
     exactTime: (at) => zonedTime(at, timeZone),
     zonedTime,

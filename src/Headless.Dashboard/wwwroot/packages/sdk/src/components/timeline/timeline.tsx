@@ -4,7 +4,7 @@
 
 import { useState, type KeyboardEvent } from 'react'
 import type { DashboardStateRole } from '../../define-module.ts'
-import { RelativeTime } from '../display/relative-time.tsx'
+import { Timestamp } from '../display/timestamp.tsx'
 import { Text } from '../display/text.tsx'
 import { StatusMark } from '../marks.tsx'
 
@@ -79,7 +79,7 @@ export function Timeline({ label, events, selectedId, onSelect }: TimelineProps)
         >
           <span role="gridcell">
             {item.tone ? <StatusMark tone={item.tone} label={item.label} /> : <strong>{item.label}</strong>}{' '}
-            <RelativeTime value={item.at} />
+            <Timestamp value={item.at} excludeFromTabOrder />
             {item.actor ? <Text tone="hint">{` by ${item.actor}`}</Text> : null}
             {item.text ? (
               <>

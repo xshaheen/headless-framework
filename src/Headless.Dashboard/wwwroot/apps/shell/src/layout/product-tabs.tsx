@@ -22,7 +22,11 @@ export function ProductTabs({ current, attention }: ProductTabsProps) {
   const { state } = useShell()
 
   return (
-    <nav className="hd-tabs" aria-label="Products">
+    // The bar keeps every other item at full width, so the tabs alone shrink, scrolling in their track.
+    <nav
+      className="flex min-w-0 shrink! gap-0.5 overflow-x-auto rounded-xl border bg-background p-0.5 [scrollbar-width:none]"
+      aria-label="Products"
+    >
       {state.products.map((product) => {
         const { role, text } = productAttention(state, product, attention)
 
@@ -30,7 +34,8 @@ export function ProductTabs({ current, attention }: ProductTabsProps) {
           <Link
             key={product.id}
             to={productHome(product)}
-            className={`hd-tab hd-tone-${role}`}
+            // The fill alone is too faint a cue, so the active tab also carries an accent bottom edge.
+            className={`inline-flex h-(--field-height) flex-none items-center gap-2 rounded-md px-3.5 font-medium text-muted-foreground no-underline hover:text-foreground current:bg-muted current:text-foreground current:accent-bar-bottom hd-tone-${role}`}
             aria-current={product.id === current?.id ? 'page' : undefined}
           >
             <span className="hd-mark" aria-hidden="true" />

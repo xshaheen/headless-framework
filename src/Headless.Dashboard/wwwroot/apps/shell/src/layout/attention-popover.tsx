@@ -2,7 +2,7 @@
 // sit near their size budget.
 'use no memo'
 
-import { Button, RelativeTime, useDelayed } from '@headless/dashboard-sdk/components'
+import { Button, Timestamp, useDelayed } from '@headless/dashboard-sdk/components'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import type { RefObject } from 'react'
@@ -56,10 +56,12 @@ function Item({ item, onOpen }: { item: AttentionItem; onOpen: () => void }) {
   const target = item.target
 
   return (
-    <li className={`hd-attn-item hd-tone-${item.severity === 'critical' ? 'fail' : 'proc'}`}>
+    <li
+      className={`flex items-baseline gap-2 border-t py-1.5 hd-tone-${item.severity === 'critical' ? 'fail' : 'proc'}`}
+    >
       <span className="hd-mark" />
       <span className="sr-only">{item.severity === 'critical' ? 'Critical: ' : 'Warning: '}</span>
-      <span className="hd-attn-text">
+      <span className="flex min-w-0 flex-col wrap-anywhere [&_a]:text-foreground">
         {target ? (
           <a
             href="#"
@@ -79,7 +81,7 @@ function Item({ item, onOpen }: { item: AttentionItem; onOpen: () => void }) {
           {item.since ? (
             <>
               {' · since '}
-              <RelativeTime value={item.since} />
+              <Timestamp value={item.since} />
             </>
           ) : null}
         </span>
@@ -107,7 +109,7 @@ export function AttentionPopover({ sections, isPending, isError, onRetry, isOpen
   const listed = (sections ?? []).filter((section) => section.stale || section.items.length > 0)
 
   return (
-    <Flyout label="Attention" isOpen={isOpen} onClose={onClose} trigger={trigger} className="hd-attn">
+    <Flyout label="Attention" isOpen={isOpen} onClose={onClose} trigger={trigger}>
       <h2 className="hd-title">Attention</h2>
       {isPending ? (
         showLoading ? (
@@ -121,7 +123,7 @@ export function AttentionPopover({ sections, isPending, isError, onRetry, isOpen
         <p className="hd-hint">Nothing needs you.</p>
       ) : (
         listed.map((section) => (
-          <section key={section.id} aria-label={section.displayName}>
+          <section key={section.id} className="flex flex-col gap-1" aria-label={section.displayName}>
             <h3 className="hd-label">{section.displayName}</h3>
             {section.stale ? (
               <p className="hd-hint">
@@ -129,7 +131,7 @@ export function AttentionPopover({ sections, isPending, isError, onRetry, isOpen
                 <Button onPress={onRetry}>Retry</Button>
               </p>
             ) : (
-              <ul className="hd-attn-list">
+              <ul>
                 {section.items.map((item) => (
                   <Item key={item.id} item={item} onOpen={onClose} />
                 ))}

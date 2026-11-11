@@ -368,7 +368,7 @@ public abstract class MessagingIntegrationHostTestsBase : TestBase
 /// </para>
 /// </remarks>
 [PublicAPI]
-public abstract class MessagingIntegrationTestsBase : MessagingIntegrationHostTestsBase
+public abstract partial class MessagingIntegrationTestsBase : MessagingIntegrationHostTestsBase
 {
     public virtual async Task should_publish_and_consume_message_end_to_end()
     {

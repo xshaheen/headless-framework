@@ -18,13 +18,13 @@ public sealed class InMemoryCachePerformanceTests : TestBase
         return new InMemoryCache(_timeProvider, options);
     }
 
-    // Acceptance gate: sliding re-arm must be throttled, never unconditional. A hot key read many times
-    // within the first half of its idle window must NOT be re-written on every read (which would hammer the
-    // store under load); the logical deadline only advances once at least half the window has elapsed.
+    // Acceptance gate: sliding re-arm must be throttled, never unconditional. A hot key read many times with no
+    // time passing must NOT be re-written on every read (which would hammer the store under load); the logical
+    // deadline advances only once a read would move it by more than the tolerance, min(1s, 10% of the window).
     [Fact]
     public async Task sliding_rearm_is_throttled_on_a_hot_key_and_does_not_rewrite_on_every_read()
     {
-        // given - a sliding entry whose idle window (1s) is well inside the absolute cap (30s)
+        // given - a sliding entry whose idle window (1s, so a 100ms tolerance) is well inside the absolute cap (30s)
         using var cache = _CreateCache();
         var store = (IFactoryCacheStore)cache;
         var key = Faker.Random.AlphaNumeric(10);
@@ -33,7 +33,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
         var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(30), SlidingExpiration = sliding };
         await cache.GetOrAddAsync(key, _ => new ValueTask<string?>("value"), options, AbortToken);
 
-        // when - a burst of hot reads with no time advance (more than half the window still remains)
+        // when - a burst of hot reads with no time advance (each would move the deadline by zero)
         for (var i = 0; i < 1_000; i++)
         {
             (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("value");
@@ -44,7 +44,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
         var afterBurst = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
         afterBurst.LogicalExpiresAt.Should().Be(now.Add(sliding));
 
-        // and when - more than half the idle window elapses, the next read re-arms exactly once...
+        // and when - more than the tolerance elapses, the next read re-arms exactly once...
         _timeProvider.Advance(TimeSpan.FromMilliseconds(600));
         var rearmAt = _timeProvider.GetUtcNow().UtcDateTime;
         (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("value");
@@ -52,7 +52,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
         var afterThreshold = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
         afterThreshold.LogicalExpiresAt.Should().Be(rearmAt.Add(sliding));
 
-        // ...and an immediate follow-up read is throttled again (back above the half-window).
+        // ...and an immediate follow-up read is throttled again (its move is back within the tolerance).
         (await cache.GetAsync<string>(key, AbortToken))
             .Value.Should()
             .Be("value");

@@ -165,7 +165,8 @@ describe('jobs recurring jobs list', () => {
       description: 'Nightly ledger export',
       isPaused: true,
     })
-    open({ cronJobs: [cronJob(), paused] }, { path: 'cron-jobs' })
+    // Half an hour past the whole hour, so the floored age reads the same however long the render takes.
+    open({ cronJobs: [cronJob({ nextDueUtc: '2026-11-06T01:30:00Z' }), paused] }, { path: 'cron-jobs' })
 
     const active = await screen.findByRole('row', { name: /reports\.nightly/ })
     expect(active.textContent).toContain('0 2 * * *')

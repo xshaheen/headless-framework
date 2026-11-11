@@ -1,11 +1,26 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers.Text;
+using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text;
+using Headless.Checks;
 
 namespace Headless.Messaging;
 
 #pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
+
+/// <summary>The value a message list sorts on; rows with one value list in storage-identifier order.</summary>
+[PublicAPI]
+public enum MessageListSortKey
+{
+    /// <summary>When the row was added.</summary>
+    Added = 0,
+
+    /// <summary>The message name, compared in the store's order: its column collation, ordinal in memory.</summary>
+    Name = 1,
+}
 
 /// <summary>
 /// Which rows of one messaging table a keyset list, a capped count, or an Operation scope covers, narrowed by each
@@ -55,21 +70,77 @@ public sealed record MessageListQuery
     /// rows. Published rows are never held.
     /// </summary>
     public bool? IsHeld { get; init; }
+
+    /// <summary>Gets the inclusive lower bound of the time a row was added.</summary>
+    public DateTimeOffset? AddedFrom { get; init; }
+
+    /// <summary>Gets the exclusive upper bound of the time a row was added.</summary>
+    public DateTimeOffset? AddedBefore { get; init; }
+
+    /// <summary>
+    /// Gets the text every row read must contain in its stored content, the serialized envelope of headers and body,
+    /// as a literal substring compared without regard to case. <see langword="null"/> or empty matches every row.
+    /// </summary>
+    /// <remarks>
+    /// No index serves the match, so it reads every row the other filters leave. Bound the read with a cancellation
+    /// token, and keep the text out of URLs and logs: it is whatever an operator searched a message body for.
+    /// </remarks>
+    public string? Content { get; init; }
+
+    /// <summary>
+    /// Gets the correlation id (<see cref="Headers.CorrelationId"/>) every row read must carry, compared exactly on
+    /// the value without regard to case. <see langword="null"/> or empty matches every row.
+    /// </summary>
+    /// <remarks>
+    /// No column stores the correlation id, so a relational store finds it in the stored envelope: it matches the
+    /// header written as the configured <see cref="MessagingOptions.JsonSerializerOptions"/> write it, which no body
+    /// text can imitate unless the body holds an object with a property of the header's exact name. Like
+    /// <see cref="Content"/>, the match reads every row the other filters leave, and a store whose envelope a
+    /// replaced <see cref="IMessageSerializer"/> writes in another format finds nothing.
+    /// </remarks>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Gets the value the list sorts on, then the storage identifier. The default is the added time.</summary>
+    public MessageListSortKey SortBy { get; init; }
+
+    /// <summary>
+    /// Gets the direction of the list's order, applied to the sort key and the storage identifier alike. The default
+    /// is descending: newest first. A position is meaningful only under the sort and direction it was read with.
+    /// </summary>
+    public ListSortDirection SortDirection { get; init; } = ListSortDirection.Descending;
+
+    /// <summary>Gets a value indicating whether the list reads in descending order.</summary>
+    public bool Descending => SortDirection == ListSortDirection.Descending;
 }
 
-/// <summary>The keyset position of one row in a message list: when it was added, then its storage identifier.</summary>
+/// <summary>
+/// The keyset position of one row in a message list: when it was added, its name, then its storage identifier. A read
+/// uses the value of its query's <see cref="MessageListQuery.SortBy"/> and the identifier, and ignores the other.
+/// </summary>
 /// <remarks>
 /// Neither value changes after a row is written, so a list paged on this position never repeats or skips a row that
-/// changes state between pages. Stores order identifiers differently, so a position is meaningful only to the store
-/// that produced it. The position round-trips through <see cref="ToString"/> and <see cref="TryParse"/>.
+/// changes state between pages. Stores order identifiers and names differently, so a position is meaningful only to
+/// the store that produced it, under the sort and direction it was read with. The position round-trips through
+/// <see cref="ToString"/> and <see cref="TryParse"/>, which never writes the separators <c>:</c>, <c>|</c> or
+/// <c>=</c> inside a value.
 /// </remarks>
 /// <param name="Added">The row's insert time.</param>
+/// <param name="Name">The row's message name.</param>
 /// <param name="Id">The row's storage identifier.</param>
 [PublicAPI]
 [StructLayout(LayoutKind.Auto)]
-public readonly record struct MessageListPosition(DateTimeOffset Added, Guid Id)
+public readonly record struct MessageListPosition(DateTimeOffset Added, string Name, Guid Id)
 {
-    private const string _FormatVersion = "l1";
+    private const string _FormatVersion = "l2";
+
+    /// <summary>Returns the position of <paramref name="view"/>.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="view"/> is <see langword="null"/>.</exception>
+    public static MessageListPosition Of(MessageView view)
+    {
+        Argument.IsNotNull(view);
+
+        return new(view.Added, view.Name, view.StorageId);
+    }
 
     /// <summary>Formats the position as a string <see cref="TryParse"/> reads back.</summary>
     public override string ToString()
@@ -78,6 +149,7 @@ public readonly record struct MessageListPosition(DateTimeOffset Added, Guid Id)
             ':',
             _FormatVersion,
             Added.UtcTicks.ToString(CultureInfo.InvariantCulture),
+            Base64Url.EncodeToString(Encoding.UTF8.GetBytes(Name ?? "")),
             Id.ToString("N")
         );
     }
@@ -92,19 +164,43 @@ public readonly record struct MessageListPosition(DateTimeOffset Added, Guid Id)
         var parts = value?.Split(':');
 
         if (
-            parts is not { Length: 3 }
+            parts is not { Length: 4 }
             || !string.Equals(parts[0], _FormatVersion, StringComparison.Ordinal)
             || !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
             || ticks > DateTimeOffset.MaxValue.UtcTicks
-            || !Guid.TryParseExact(parts[2], "N", out var id)
+            || !_TryDecode(parts[2], out var name)
+            || !Guid.TryParseExact(parts[3], "N", out var id)
         )
         {
             return false;
         }
 
-        position = new MessageListPosition(new DateTimeOffset(ticks, TimeSpan.Zero), id);
+        position = new MessageListPosition(new DateTimeOffset(ticks, TimeSpan.Zero), name, id);
 
         return true;
+    }
+
+    private static bool _TryDecode(string value, [NotNullWhen(true)] out string? text)
+    {
+        text = null;
+
+        if (!Base64Url.IsValid(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(
+                Base64Url.DecodeFromChars(value)
+            );
+
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            return false;
+        }
     }
 }
 
@@ -116,7 +212,9 @@ public sealed record MessageListPage
     /// <summary>The most rows one list page returns.</summary>
     public const int MaxPageSize = 500;
 
-    /// <summary>Gets the rows, newest first. Their <see cref="MessageView.Content"/> is not projected.</summary>
+    /// <summary>
+    /// Gets the rows, in the query's order. Their <see cref="MessageView.Content"/> is not projected.
+    /// </summary>
     public required IReadOnlyList<MessageView> Items { get; init; }
 
     /// <summary>Gets the position to read the next page after, or <see langword="null"/> when this page is the last.</summary>

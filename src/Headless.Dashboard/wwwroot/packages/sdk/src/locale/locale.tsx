@@ -22,6 +22,22 @@ export function readTimeZone(): string {
   }
 }
 
+/**
+ * `locale` with the Gregorian calendar. A locale whose own default is another one (`ar-SA` Islamic, `th-TH` Buddhist,
+ * `fa-IR` Persian) gets `-u-ca-gregory`, so the calendar, the date fields, and every formatted time agree on the year
+ * with what the server stores; its language, digits, and week start stay. A Gregorian locale comes back unchanged.
+ */
+export function gregorianLocale(locale: string): string {
+  try {
+    return new Intl.DateTimeFormat(locale).resolvedOptions().calendar === 'gregory'
+      ? locale
+      : new Intl.Locale(locale, { calendar: 'gregory' }).toString()
+  } catch {
+    // Not a tag Intl accepts: React Aria and Intl fall back for it as they always did.
+    return locale
+  }
+}
+
 interface LocaleContextValue {
   locale: string
   timeZone: string
@@ -37,11 +53,12 @@ export interface LocaleProviderProps {
 }
 
 /**
- * Holds the locale and the display time zone every formatter reads, and hands the locale to React Aria. The zone
- * is remembered per browser.
+ * Holds the locale and the display time zone every formatter reads, and hands the locale to React Aria. Dates stay
+ * Gregorian under every locale (`gregorianLocale`). The zone is remembered per browser.
  */
-export function LocaleProvider({ locale = defaultLocale, children }: LocaleProviderProps) {
+export function LocaleProvider({ locale: requested = defaultLocale, children }: LocaleProviderProps) {
   const [timeZone, setZone] = useState(readTimeZone)
+  const locale = gregorianLocale(requested)
   const value = useMemo<LocaleContextValue>(
     () => ({
       locale,

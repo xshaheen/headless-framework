@@ -523,6 +523,7 @@ internal sealed partial class InMemoryDataStorage(
                 _ApplyLease(current, message, lease, fenced: originalInlineAttempts.HasValue);
                 current.Retries = message.Retries;
                 current.InlineAttempts = message.InlineAttempts;
+                current.PreEntryFailures = message.PreEntryFailures;
                 current.InboxAttemptFence = keepLease ? current.InboxAttemptFence : null;
                 if (
                     current.InboxGeneration is not null
@@ -1719,6 +1720,7 @@ internal sealed partial class InMemoryDataStorage(
             Lease = m.Lease,
             Retries = m.Retries,
             InlineAttempts = m.InlineAttempts,
+            PreEntryFailures = m.PreEntryFailures,
             InboxKey = m.InboxKey,
             InboxGeneration = m.InboxGeneration,
             InboxAttemptFence = m.InboxAttemptFence,
