@@ -27,6 +27,9 @@ public sealed class MessagingForwardingOptions
     /// <summary>The least length of <see cref="Key"/>.</summary>
     public const int MinimumKeyLength = 32;
 
+    /// <summary>The default of <see cref="MaxResponseBytes"/>: 4 MiB.</summary>
+    public const int DefaultMaxResponseBytes = 4 * 1024 * 1024;
+
     /// <summary>
     /// Gets or sets the key every node of the deployment shares, sent to a peer in the
     /// <c>X-Headless-Forwarding-Key</c> header and compared in fixed time. At least
@@ -48,6 +51,13 @@ public sealed class MessagingForwardingOptions
     /// the forwarding credential and the operator's name would cross the network in clear text.
     /// </summary>
     public bool AllowInsecurePeers { get; set; }
+
+    /// <summary>
+    /// Gets or sets the largest answer, in bytes, this node reads from a peer. A larger answer is not read: the call
+    /// fails as a peer that is not answering. Defaults to <see cref="DefaultMaxResponseBytes"/>; raise it when a
+    /// message payload shown through forwarding can be larger.
+    /// </summary>
+    public int MaxResponseBytes { get; set; } = DefaultMaxResponseBytes;
 
     /// <summary>Gets a value indicating whether forwarding is on: a key or a policy is set.</summary>
     public bool IsEnabled => !string.IsNullOrEmpty(Key) || !string.IsNullOrEmpty(Policy);
@@ -81,6 +91,10 @@ internal sealed class MessagingForwardingOptionsValidator : AbstractValidator<Me
         RuleFor(x => x.Policy)
             .Must(static policy => policy is null || !string.IsNullOrWhiteSpace(policy))
             .WithMessage("Forwarding.Policy must name a host authorization policy, or be null.");
+
+        RuleFor(x => x.MaxResponseBytes)
+            .GreaterThan(0)
+            .WithMessage("Forwarding.MaxResponseBytes must be greater than 0.");
 
         RuleFor(x => x)
             .Must(static forwarding => forwarding.Key is null || forwarding.Policy is null)

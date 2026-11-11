@@ -238,7 +238,18 @@ public static class SetupMessagingDashboard
             );
 
         services.TryAddTransient<SharedKeyForwardingHandler>();
-        services.AddHttpClient(ForwardingProtocol.ClientName).AddHttpMessageHandler<SharedKeyForwardingHandler>();
+        services
+            .AddHttpClient(ForwardingProtocol.ClientName)
+            .ConfigureHttpClient(
+                static (provider, client) =>
+                    client.MaxResponseContentBufferSize = provider
+                        .GetRequiredService<IOptions<MessagingDashboardOptions>>()
+                        .Value.Forwarding.MaxResponseBytes
+            )
+            // A redirect would carry the key and the operator's name to whatever host the peer names, so the client
+            // never follows one; the forwarding client reads a 3xx as a peer that did not answer.
+            .ConfigurePrimaryHttpMessageHandler(static () => new HttpClientHandler { AllowAutoRedirect = false })
+            .AddHttpMessageHandler<SharedKeyForwardingHandler>();
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(provider => new PeerDirectory(

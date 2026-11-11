@@ -38,13 +38,51 @@ internal sealed class ForwardingClient(
     /// <param name="operate">
     /// Whether this node decided the operator may operate; the peer acts at the lower of this and its own ceiling.
     /// </param>
-    public async Task<ForwardResponse> SendAsync(
+    public Task<ForwardResponse> SendAsync(
         MessagingPeer peer,
         HttpMethod method,
         string path,
         ClaimsPrincipal? user,
         bool operate,
         byte[]? json,
+        CancellationToken cancellationToken
+    )
+    {
+        return _SendAsync(peer, method, path, user, operate, json, relayed: false, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends a viewer's read, whose <paramref name="path"/> is escaped and relative to the peer's Messaging API, to
+    /// <paramref name="peer"/> at view access. A relayed read never reaches the peer endpoints, which only this node's
+    /// own calls use.
+    /// </summary>
+    public Task<ForwardResponse> RelayAsync(
+        MessagingPeer peer,
+        string path,
+        ClaimsPrincipal? user,
+        CancellationToken cancellationToken
+    )
+    {
+        return _SendAsync(
+            peer,
+            HttpMethod.Get,
+            path,
+            user,
+            operate: false,
+            json: null,
+            relayed: true,
+            cancellationToken
+        );
+    }
+
+    private async Task<ForwardResponse> _SendAsync(
+        MessagingPeer peer,
+        HttpMethod method,
+        string path,
+        ClaimsPrincipal? user,
+        bool operate,
+        byte[]? json,
+        bool relayed,
         CancellationToken cancellationToken
     )
     {
@@ -63,7 +101,17 @@ internal sealed class ForwardingClient(
                 continue;
             }
 
-            var response = await _SendOneAsync(peer, address, method, path, user, operate, json, cancellationToken)
+            var response = await _SendOneAsync(
+                    peer,
+                    address,
+                    method,
+                    path,
+                    user,
+                    operate,
+                    json,
+                    relayed,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             // Another instance of the same node may answer when this one does not.
@@ -91,11 +139,19 @@ internal sealed class ForwardingClient(
         ClaimsPrincipal? user,
         bool operate,
         byte[]? json,
+        bool relayed,
         CancellationToken cancellationToken
     )
     {
-        var basePath = dashboard.Value.BasePath.TrimEnd('/');
-        var target = new Uri(address, basePath + "/api/" + MessagingDashboardOptions.ModuleId + path);
+        var api = dashboard.Value.BasePath.TrimEnd('/') + "/api/" + MessagingDashboardOptions.ModuleId;
+        var target = new Uri(address, api + path);
+
+        // The key and the operator's name go only to the peer's Messaging API, whatever the path held: the relay
+        // escapes a viewer's path, and this check holds if a caller ever passes one unescaped.
+        if (!_IsInside(target, address, api, relayed))
+        {
+            throw new InvalidOperationException("A forwarded call must stay inside the peer's Messaging API.");
+        }
 
         using var request = new HttpRequestMessage(method, target);
 
@@ -130,10 +186,10 @@ internal sealed class ForwardingClient(
                 .SendAsync(request, HttpCompletionOption.ResponseContentRead, timeout.Token)
                 .ConfigureAwait(false);
 
+            // The client caps the buffered answer at Forwarding.MaxResponseBytes, and a larger one fails the send.
             var body = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
-            var contentType = response.Content.Headers.ContentType?.ToString();
 
-            return new ForwardResponse(_StateOf(response), (int)response.StatusCode, body, contentType);
+            return new ForwardResponse(_StateOf(response), (int)response.StatusCode, body);
         }
         catch (Exception e)
             when ((e is HttpRequestException or OperationCanceledException)
@@ -150,6 +206,25 @@ internal sealed class ForwardingClient(
         }
     }
 
+    private static bool _IsInside(Uri target, Uri address, string api, bool relayed)
+    {
+        // Resolved against the same address, so both sides carry the URI's own escaping and dot-segment removal.
+        var root = new Uri(address, api + "/").AbsolutePath;
+        var peer = new Uri(address, api + "/peer").AbsolutePath;
+        var path = target.AbsolutePath;
+
+        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !relayed
+            || !(
+                string.Equals(path, peer, StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith(peer + "/", StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
     private PeerState _StateOf(HttpResponseMessage response)
     {
         var refusal = response.Headers.TryGetValues(ForwardingProtocol.RefusalHeader, out var values)
@@ -158,6 +233,9 @@ internal sealed class ForwardingClient(
 
         return response.StatusCode switch
         {
+            // Redirects are not followed, so a peer that answers one has not answered: following it would send the
+            // key and the operator's name to wherever the peer points.
+            >= HttpStatusCode.Ambiguous and < HttpStatusCode.BadRequest => PeerState.NotAnswering,
             HttpStatusCode.Unauthorized when options.Forwarding.Key is not null => PeerState.KeyRejected,
             HttpStatusCode.Unauthorized => PeerState.PolicyDenied,
             HttpStatusCode.Forbidden
