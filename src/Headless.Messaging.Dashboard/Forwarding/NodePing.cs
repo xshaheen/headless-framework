@@ -72,7 +72,7 @@ internal static class NodePing
             return new MessagingPingAnswer(
                 peer.Name,
                 MessagingPingAnswer.Answered,
-                Math.Round(latency.TotalMilliseconds, 1),
+                Math.Round(latency.TotalMilliseconds, 1, MidpointRounding.AwayFromZero),
                 State: null,
                 Status: null,
                 Reason: null

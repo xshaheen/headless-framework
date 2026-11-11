@@ -241,6 +241,61 @@ public sealed class ForwardingPingTests : TestBase
         _network.Calls.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_refuse_with_400_on_body_when_the_body_is_not_json()
+    {
+        // given
+        await using var nodeA = await _StartAAsync();
+        using var client = MessagingCommandHost.Client(nodeA);
+        var cookie = await MessagingCommandHost.SignInAsync(client, "ops", AbortToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_Ping, UriKind.Relative))
+        {
+            Content = new StringContent("not json", Encoding.UTF8, "application/json"),
+        };
+        request.Headers.TryAddWithoutValidation("Cookie", cookie);
+        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        request.Headers.TryAddWithoutValidation("X-Headless-Dashboard-Channel", "ui");
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await MessagingCommandHost.ReadAsync(response, AbortToken))
+            .GetProperty("rules")
+            .GetProperty("body")
+            .GetString()
+            .Should()
+            .Be("json");
+        _network.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_answer_no_results_for_all_and_404_for_a_named_node_when_forwarding_is_off()
+    {
+        // given: a node with no forwarding, so discovery lists no node it may call
+        await using var node = await MessagingCommandHost.StartAsync(_time, _logA, AbortToken);
+        using var client = MessagingCommandHost.Client(node);
+        var cookie = await MessagingCommandHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var all = await MessagingCommandHost.PostAsync(client, _Ping, new { }, cookie, AbortToken);
+        using var named = await MessagingCommandHost.PostAsync(
+            client,
+            _Ping,
+            new { node = "node-b" },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        all.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await MessagingCommandHost.ReadAsync(all, AbortToken);
+        result.GetProperty("items").GetArrayLength().Should().Be(0);
+        result.TryGetProperty("discovery", out _).Should().BeFalse();
+        named.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private async Task<WebApplication> _StartBAsync(Action<MessagingDashboardOptions>? options = null)
     {
         var app = await ForwardingHost.StartAsync("node-b", _network, _discoveryB, _time, _logB, AbortToken, options);
