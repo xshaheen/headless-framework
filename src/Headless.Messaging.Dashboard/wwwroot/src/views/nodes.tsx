@@ -220,21 +220,7 @@ export default function NodesView() {
                 kind: 'id',
                 width: '1.5fr',
               },
-              {
-                id: 'state',
-                header: 'State',
-                cell: (row) => {
-                  const mark = nodeMark(row)
-
-                  return (
-                    <CellText>
-                      <StatusMark tone={mark.tone} label={mark.label} />
-                    </CellText>
-                  )
-                },
-                kind: 'status',
-                width: 150,
-              },
+              // The ping's answer sits next to the name, so a phone shows it without a sideways scroll.
               {
                 id: 'ping',
                 header: 'Ping',
@@ -249,6 +235,21 @@ export default function NodesView() {
 
                   return (
                     <CellText title={mark.detail ? `${mark.label}: ${mark.detail}` : mark.label}>
+                      <StatusMark tone={mark.tone} label={mark.label} />
+                    </CellText>
+                  )
+                },
+                kind: 'status',
+                width: 150,
+              },
+              {
+                id: 'state',
+                header: 'State',
+                cell: (row) => {
+                  const mark = nodeMark(row)
+
+                  return (
+                    <CellText>
                       <StatusMark tone={mark.tone} label={mark.label} />
                     </CellText>
                   )

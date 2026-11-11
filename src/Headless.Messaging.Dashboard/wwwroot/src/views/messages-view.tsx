@@ -378,7 +378,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
                 <SearchField
                   key={`content-${searchReset}`}
                   label={`Search ${kind} message content`}
-                  placeholder="Text in headers or body"
+                  placeholder="Search content"
                   mode="submit"
                   compact
                   defaultValue={search.content}

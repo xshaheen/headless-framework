@@ -80,12 +80,13 @@ export default function MessagingDashboard() {
         onRefresh={() => dashboardKeys.forEach((queryKey) => void client.invalidateQueries({ queryKey }))}
       />
       <Cards>
+        {/* Narrow cards fill the first row; each wide chart then shares a row with one narrow card. */}
         <MessagingAttention />
-        <StatusDistributionCard />
-        <LiveThroughput />
-        <HourlyHistoryCard />
         <RecentFailures kind="received" />
         <RecentFailures kind="published" />
+        <LiveThroughput />
+        <StatusDistributionCard />
+        <HourlyHistoryCard />
       </Cards>
     </PageFrame>
   )
