@@ -151,6 +151,8 @@ const actionsClass =
 /** The arrived rows a live list does not hold yet, and the call that loads them, as `useNewRows` reads them. */
 export interface DataTableNewRows {
   count: number
+  /** The count is a floor: the topic passed its cap and dropped the oldest arrivals, so the control reads `500+ new`. */
+  isCapped?: boolean
   show: () => unknown
 }
 
@@ -276,6 +278,7 @@ export function DataTable<T extends { id: string }>({
   const { held, reveal } = useHeldRows(scroller, ids, rowHeight, (id) => selected.has(id))
   const pending = newRows?.count ?? 0
   const arrived = held + pending
+  const arrivedText = `${arrived}${newRows?.isCapped ? '+' : ''} new`
   const allLoaded = listed.length > 0 && listed.every((row) => bulk.has(row.id))
   const someLoaded = listed.some((row) => bulk.has(row.id))
   const more = matchingCount !== undefined && matchingCount > listed.length
@@ -484,13 +487,13 @@ export function DataTable<T extends { id: string }>({
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-2 [&>[role=group]]:ms-auto">
           {arrived > 0 ? (
             <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
-              {`${arrived} new`}
+              {arrivedText}
             </Button>
           ) : null}
           {viewId ? <DensityToggle value={density} onChange={setDensity} /> : null}
         </div>
       ) : null}
-      <Announcer message={arrived > 0 ? `${arrived} new ${arrived === 1 ? 'row' : 'rows'}` : ''} />
+      <Announcer message={arrived > 0 ? `${arrivedText} ${arrived === 1 ? 'row' : 'rows'}` : ''} />
       {selectionMode === 'multiple' && allLoaded && (checks || more) ? (
         <Banner>
           <span>{checks ? `All ${listed.length} loaded rows are checked.` : `All ${listed.length} rows on this page are selected.`}</span>

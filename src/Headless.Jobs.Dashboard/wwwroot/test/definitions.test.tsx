@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { functions, now, open, user } from './fake-server.ts'
 
@@ -49,6 +49,17 @@ describe('jobs functions list', () => {
     expect(mail.textContent).toContain('0 / no limit')
     expect(within(mail).getByText('no node runs it').closest('.hd-tag')?.className).toContain('hd-tone-fail')
     expect(screen.getByText('1 not run by any live node; their runs wait until a node claims them.')).toBeTruthy()
+  })
+
+  it('reads the functions again on a stream reset, since no change carries them', async () => {
+    const view = open({ functions: [unclaimed] }, { path: 'functions' })
+    await screen.findByRole('row', { name: /mail\.send/ })
+    const reads = () => view.requests.filter((request) => request.path === 'jobs/functions').length
+    const before = reads()
+
+    act(() => view.stream.push('reset', {}))
+
+    await waitFor(() => expect(reads()).toBe(before + 1))
   })
 
   it('opens a function in the docked panel with its contract and where it runs', async () => {

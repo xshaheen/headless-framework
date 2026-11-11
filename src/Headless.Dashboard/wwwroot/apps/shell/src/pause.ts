@@ -8,18 +8,27 @@ export interface PausableStream extends DashboardStream {
   onPauseChange(listener: () => void): () => void
 }
 
-// Data changes wait while paused. A stale or session signal is not data, and the operator's own command results come
-// back through the API, not the stream, so both still apply at once.
-const held: ReadonlySet<StreamEventName> = new Set(['change', 'attention.changed', 'reset', 'subscribed'])
+// Data changes wait while paused, and so does a node's reset, which makes its views read again. A stale or session
+// signal is not data, and the operator's own command results come back through the API, not the stream, so both
+// still apply at once.
+const held: ReadonlySet<StreamEventName> = new Set(['change', 'attention.changed', 'reset', 'subscribed', 'node.reset'])
+
+/**
+ * How many events a paused tab holds. Past it the held events give way to one `reset`, which makes every view read
+ * again on Resume: dropping the oldest instead would lose changes the server never sends again.
+ */
+export const maxHeld = 500
 
 /**
  * Wraps the shared stream so this tab can pause applying data changes. The connection stays open for the other tabs;
- * this tab only holds what arrives, and Resume replays it through the same handlers, in the order it came.
+ * this tab only holds what arrives, and Resume replays it through the same handlers, in the order it came. A pause
+ * that outlasts `maxHeld` events replays one `reset` instead, while the count of waiting updates stays exact.
  */
 export function pausable(stream: DashboardStream): PausableStream {
   const handlers = new Map<StreamEventName, Set<(data: never) => void>>()
   const listeners = new Set<() => void>()
   let queue: [StreamEventName, unknown][] | null = null
+  let pending = 0
 
   const dispatch = (type: StreamEventName, data: unknown) =>
     handlers.get(type)?.forEach((handler) => handler(data as never))
@@ -40,7 +49,15 @@ export function pausable(stream: DashboardStream): PausableStream {
         // One listener per event type on the shared stream, for the tab's lifetime; handlers come and go below it.
         stream.on(type, (data) => {
           if (queue && held.has(type)) {
-            queue.push([type, data])
+            // A reopened stream's `subscribed` is bookkeeping, not an update the operator would count.
+            pending += type === 'subscribed' ? 0 : 1
+
+            if (queue.length < maxHeld) {
+              queue.push([type, data])
+            } else {
+              queue = [['reset', {}]]
+            }
+
             notify()
           } else {
             dispatch(type, data)
@@ -62,12 +79,12 @@ export function pausable(stream: DashboardStream): PausableStream {
 
       const waiting = queue
       queue = paused ? [] : null
+      pending = 0
       waiting?.forEach(([type, data]) => dispatch(type, data))
       notify()
     },
 
-    // A reopened stream's `subscribed` is bookkeeping, not an update the operator would count.
-    getPending: () => (queue ? queue.filter(([type]) => type !== 'subscribed').length : null),
+    getPending: () => (queue ? pending : null),
 
     onPauseChange(listener) {
       listeners.add(listener)

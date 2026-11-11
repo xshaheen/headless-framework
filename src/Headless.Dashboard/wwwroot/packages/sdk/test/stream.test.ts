@@ -6,9 +6,17 @@ describe('stream client', () => {
   let locks: FakeLocks
   let channels: FakeChannels
   let sources: FakeSources
+  // What the stream endpoint answers a probe after a refused connection, and the jitter each back-off draws.
+  let probeStatus: number
+  let jitter: number
   const tabs: StreamClient[] = []
 
-  function openTab(onSignedOut?: () => void, scope = 'headless-dashboard:/headless:mona') {
+  function openTab(
+    onSignedOut?: (reason: 'signed-out' | 'session-ended') => void,
+    scope = 'headless-dashboard:/headless:mona',
+    // `null` leaves the client its own probe, which fetches the endpoint.
+    probe: ((url: string) => Promise<number>) | null = async () => probeStatus,
+  ) {
     const tab = createStreamClient({
       url: '/headless/api/stream',
       scope,
@@ -17,6 +25,8 @@ describe('stream client', () => {
       createChannel: channels.create,
       createSource: sources.create,
       onSignedOut,
+      random: () => jitter,
+      probe: probe ?? undefined,
     })
     tabs.push(tab)
 
@@ -28,6 +38,8 @@ describe('stream client', () => {
     locks = new FakeLocks()
     channels = new FakeChannels()
     sources = new FakeSources()
+    probeStatus = 503
+    jitter = 0.999
   })
 
   afterEach(() => {
@@ -195,6 +207,126 @@ describe('stream client', () => {
     expect(routes.sort()).toEqual(['mona', 'mona view-only'])
     expect(sources.open).toHaveLength(0)
     expect(monaViewOnly.isLeader()).toBe(false)
+  })
+
+  it('keeps a dropped topic for 5 s, so a route that takes it back does not reopen the stream', async () => {
+    const leader = openTab()
+    const drop = leader.subscribe(['diag.run'])
+    await vi.advanceTimersByTimeAsync(300)
+    expect(sources.opened).toHaveLength(1)
+
+    // A route change: the old view lets go of the topic and the new one takes it again.
+    drop()
+    await vi.advanceTimersByTimeAsync(1_000)
+    const keep = leader.subscribe(['diag.run'])
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(sources.opened).toHaveLength(1)
+
+    keep()
+    await vi.advanceTimersByTimeAsync(4_900)
+    expect(sources.opened).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(400)
+    expect(sources.opened).toHaveLength(2)
+    expect(sources.open[0]!.param('topics')).toBe('')
+  })
+
+  it('keeps a follower’s dropped topic in the leader’s stream for the grace period too', async () => {
+    openTab()
+    const follower = openTab()
+    const drop = follower.subscribe(['diag.node'])
+    await vi.advanceTimersByTimeAsync(300)
+    expect(sources.open[0]!.param('topics')).toBe('diag.node')
+    const opened = sources.opened.length
+
+    drop()
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(sources.opened).toHaveLength(opened)
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(sources.opened).toHaveLength(opened + 1)
+    expect(sources.open[0]!.param('topics')).toBe('')
+  })
+
+  it('draws each retry from the upper half of the back-off, so dropped browsers do not return in step', async () => {
+    jitter = 0
+    openTab()
+    await vi.advanceTimersByTimeAsync(300)
+
+    sources.open[0]!.readyState = 2
+    sources.open[0]!.emit('error', {})
+    await vi.advanceTimersByTimeAsync(499)
+    expect(sources.opened).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(sources.opened).toHaveLength(2)
+
+    // The next refusal doubles the back-off: with the same draw it waits 1 s, half of 2 s.
+    jitter = 0.5
+    sources.open[0]!.readyState = 2
+    sources.open[0]!.emit('error', {})
+    await vi.advanceTimersByTimeAsync(1_499)
+    expect(sources.opened).toHaveLength(2)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(sources.opened).toHaveLength(3)
+  })
+
+  it('ends the session in every tab, instead of retrying, when the reconnect is refused with 401', async () => {
+    const routes: string[] = []
+    openTab((reason) => routes.push(`leader ${reason}`))
+    openTab((reason) => routes.push(`follower ${reason}`))
+    await vi.advanceTimersByTimeAsync(300)
+
+    probeStatus = 401
+    sources.open[0]!.readyState = 2
+    sources.open[0]!.emit('error', {})
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(routes.sort()).toEqual(['follower session-ended', 'leader session-ended'])
+    expect(sources.opened).toHaveLength(1)
+    expect(sources.open).toHaveLength(0)
+  })
+
+  it('reopens after a probe that gets no answer within 5 s, rather than waiting on it', async () => {
+    // The endpoint accepts the probe and never answers; only the probe's own abort ends it.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted')))),
+      ),
+    )
+    openTab(undefined, undefined, null)
+    await vi.advanceTimersByTimeAsync(300)
+
+    sources.open[0]!.readyState = 2
+    sources.open[0]!.emit('error', {})
+    await vi.advanceTimersByTimeAsync(5_900)
+    expect(sources.opened).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(200)
+    expect(sources.opened).toHaveLength(2)
+    vi.unstubAllGlobals()
+  })
+
+  it('does not open a second stream when a reconnect wins the race with a pending probe', async () => {
+    let answer: (status: number) => void = () => undefined
+    const leader = openTab(undefined, undefined, () => new Promise((resolve) => (answer = resolve)))
+    await vi.advanceTimersByTimeAsync(300)
+
+    sources.open[0]!.readyState = 2
+    sources.open[0]!.emit('error', {})
+    await vi.advanceTimersByTimeAsync(1_000)
+    leader.reconnect()
+    expect(sources.opened).toHaveLength(2)
+
+    answer(503)
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(sources.opened).toHaveLength(2)
+    expect(sources.open).toHaveLength(1)
   })
 
   it('reopens after a refused connection, with back-off', async () => {
