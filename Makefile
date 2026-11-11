@@ -868,6 +868,8 @@ SANDBOX_PG_DATABASE ?= headless_sandbox
 # dashboard's host sign-in session.
 SANDBOX_USABLE_PATH ?= /sandbox/usable
 STORE ?= memory
+# Dashboard sign-in: basic (admin/admin) or host (the sandbox host sign-in, with a viewer role).
+AUTH ?= basic
 TIMEOUT ?= 120
 LINES ?= 200
 # TAIL is the project CLI's name for the line count; LINES, the older name here, still works.
@@ -896,12 +898,13 @@ busy() { (exec 3<>"/dev/tcp/127.0.0.1/$$1") 2>/dev/null || { command -v lsof >/d
 endef
 
 .PHONY: up
-up: ## Build and start the dashboard sandbox in the background (STORE=memory|postgres, SANDBOX_PORT=5300); prints the dashboard URLs.
+up: ## Build and start the dashboard sandbox in the background (STORE=memory|postgres, AUTH=basic|host, SANDBOX_PORT=5300); prints the dashboard URLs.
 	@$(call ports_free,up,$(UP_PORTS))
 	@set -e; mkdir -p "$(SANDBOX_DIR)"; \
 	if [ -f "$(SANDBOX_PID)" ] && kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then \
 	  echo "Sandbox already running (pid $$(cat "$(SANDBOX_PID)"), $$(cat "$(SANDBOX_STATE)" 2>/dev/null)). Run: make down"; exit 0; fi; \
 	case "$(STORE)" in memory|postgres) ;; *) echo "STORE must be memory or postgres. Example: make up STORE=postgres"; exit 2;; esac; \
+	case "$(AUTH)" in basic|host) ;; *) echo "AUTH must be basic or host. Example: make up AUTH=host"; exit 2;; esac; \
 	if [ ! -f "$(SANDBOX_ENV)" ]; then umask 077; \
 	  printf 'Sandbox__MessagingDashboardPassword=%s\n' "$$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)" > "$(SANDBOX_ENV)"; fi; \
 	if [ "$(STORE)" = postgres ]; then \
@@ -910,13 +913,15 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	$(DOTNET) build "$(SANDBOX_PROJECT)" -c "$(CONFIGURATION)" -nologo -v:q -clp:ErrorsOnly -clp:NoSummary; \
 	git rev-parse HEAD > "$(SANDBOX_REV)"; \
 	set -a; . "$(SANDBOX_ENV)"; set +a; \
-	export ASPNETCORE_URLS="$(SANDBOX_URL)" ASPNETCORE_ENVIRONMENT=Development Sandbox__Store="$(STORE)"; \
+	export ASPNETCORE_URLS="$(SANDBOX_URL)" ASPNETCORE_ENVIRONMENT=Development Sandbox__Store="$(STORE)" Sandbox__Auth="$(AUTH)"; \
 	if [ "$(STORE)" = postgres ]; then \
 	  export Sandbox__PostgresConnectionString="Host=127.0.0.1;Port=$(SANDBOX_PG_PORT);Username=postgres;Database=$(SANDBOX_PG_DATABASE)"; fi; \
 	nohup $(DOTNET) "$(SANDBOX_DLL)" > "$(SANDBOX_LOG)" 2>&1 & echo $$! > "$(SANDBOX_PID)"; \
 	printf 'store=%s url=%s compose=%s\n' "$(STORE)" "$(SANDBOX_URL)" "$$([ "$(STORE)" = postgres ] && echo "$(SANDBOX_COMPOSE_PROJECT)" || echo none)" > "$(SANDBOX_STATE)"; \
 	echo "Sandbox starting (pid $$(cat "$(SANDBOX_PID)"), STORE=$(STORE))."; \
-	echo "  Headless dashboard:  $(SANDBOX_URL)/headless/ (host auth: sign in at $(SANDBOX_URL)/sandbox/headless-sign-in with the password in $(SANDBOX_ENV))"; \
+	if [ "$(AUTH)" = host ]; then \
+	  echo "  Headless dashboard:  $(SANDBOX_URL)/headless/ (host auth: sign in at $(SANDBOX_URL)/sandbox/headless-sign-in with the password in $(SANDBOX_ENV))"; \
+	else echo "  Headless dashboard:  $(SANDBOX_URL)/headless/ (sign in as admin / admin)"; fi; \
 	echo "  Jobs module:         $(SANDBOX_URL)/headless/jobs (the Headless dashboard's sign-in)"; \
 	echo "  Messaging module:    $(SANDBOX_URL)/headless/messaging (the Headless dashboard's sign-in)"; \
 	echo "  Scenarios:          make seed SCENARIO=<name>; list them at $(SANDBOX_URL)/sandbox/scenarios"; \
