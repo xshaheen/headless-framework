@@ -823,7 +823,6 @@ describe('DateRangeField compact', () => {
     expect(chip.hasAttribute('data-set')).toBe(false)
     await user.click(chip)
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).queryByRole('spinbutton')).toBeNull()
 
     await user.click(within(dialog).getByRole('button', { name: /November 1, 2026/ }))
     await user.click(within(dialog).getByRole('button', { name: /November 4, 2026/ }))
@@ -839,6 +838,38 @@ describe('DateRangeField compact', () => {
     const set = await screen.findByRole('button', { name: /Due between/ })
     expect(set.hasAttribute('data-set')).toBe(true)
     expect(set.textContent).toBe('Due betweenNov 1 – Nov 4')
+    vi.useRealTimers()
+  })
+
+  it('takes typed start and end days from the keyboard alone, with the calendar keeping the first focus', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-11-10T10:00:00Z'))
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(withDashboard(<DateRangeField label="Due between" compact onChange={onChange} />))
+
+    screen.getByRole('button', { name: /Due between/ }).focus()
+    await user.keyboard('{Enter}')
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByRole('grid').contains(document.activeElement)).toBe(true))
+
+    // The typed days are a group named for the field, and each part is named for its end of the range, as the full
+    // field's are.
+    const typed = within(dialog).getByRole('group', { name: 'Due between' })
+    const months = within(typed).getAllByRole('spinbutton', { name: /month/i })
+    expect(months.map((month) => month.getAttribute('aria-label'))).toEqual(['month, Start Date, ', 'month, End Date, '])
+
+    await user.tab()
+    expect(document.activeElement).toBe(months[0])
+    await user.keyboard('11022026')
+    await user.keyboard('11062026')
+
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith({ start: '2026-11-02T00:00:00.000Z', end: '2026-11-07T00:00:00.000Z' }))
+    // While the end year is still being typed the end falls before the start, and no such range is sent.
+    expect(onChange.mock.calls.every(([range]) => range === undefined || range.end > range.start)).toBe(true)
+
+    await user.keyboard('{Escape}')
+    expect((await screen.findByRole('button', { name: /Due between/ })).textContent).toBe('Due betweenNov 2 – Nov 6')
     vi.useRealTimers()
   })
 })

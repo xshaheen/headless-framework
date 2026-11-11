@@ -102,11 +102,18 @@ internal static class CommandEndpoints
     }
 
     /// <summary>Checks the reason and the arguments of a call to <paramref name="command"/>.</summary>
+    /// <param name="context">The call.</param>
+    /// <param name="command">The command called.</param>
+    /// <param name="body">The call's body.</param>
+    /// <param name="now">
+    /// The moment a not-before-now argument is checked against; the host clock's now when <see langword="null"/>.
+    /// </param>
     /// <returns>The validated arguments, and every error found.</returns>
     internal static (IReadOnlyDictionary<string, JsonElement> Arguments, List<CommandFieldError> Errors) Validate(
         HttpContext context,
         DashboardCommand command,
-        CommandCallBody body
+        CommandCallBody body,
+        DateTimeOffset? now = null
     )
     {
         var errors = new List<CommandFieldError>();
@@ -126,7 +133,7 @@ internal static class CommandEndpoints
             );
         }
 
-        var arguments = ArgumentSchemaValidator.Validate(command.Arguments, body.Arguments, Now(context));
+        var arguments = ArgumentSchemaValidator.Validate(command.Arguments, body.Arguments, now ?? Now(context));
         errors.AddRange(arguments.Errors);
 
         return (arguments.Values, errors);

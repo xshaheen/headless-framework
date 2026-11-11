@@ -19,7 +19,7 @@ public sealed class ForwardingSignatureTests : TestBase
     private const string _Api = "/headless/api/messaging";
     private const string _Scope = _Api + "/peer/operations/messaging.re-execute/scope";
     private const string _Chunk = _Api + "/peer/operations/messaging.re-execute/chunk";
-    private const string _ChunkBody = """{"filter":{},"highWaterMark":"not-a-mark","chunkSize":1}""";
+    private const string _ChunkBody = """{"token":"not-a-token","reason":"incident 42"}""";
 
     private static readonly string _NewKey = new('n', MessagingForwardingOptions.MinimumKeyLength);
     private static readonly string _WrongKey = new('w', MessagingForwardingOptions.MinimumKeyLength);
@@ -64,10 +64,10 @@ public sealed class ForwardingSignatureTests : TestBase
         // when
         using var response = await client.SendAsync(request, AbortToken);
 
-        // then: the endpoint parsed the body the signature check had already hashed, and refused only its mark
+        // then: the endpoint parsed the body the signature check had already hashed, and refused only its token
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var problem = await MessagingCommandHost.ReadAsync(response, AbortToken);
-        problem.GetProperty("rules").GetProperty("highWaterMark").GetString().Should().Be("invalid");
+        problem.GetProperty("rules").GetProperty("token").GetString().Should().Be("invalid");
     }
 
     [Fact]

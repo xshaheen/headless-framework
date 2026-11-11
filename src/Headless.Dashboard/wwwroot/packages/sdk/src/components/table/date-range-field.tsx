@@ -1,6 +1,6 @@
 'use no memo'
 
-import { useState } from 'react'
+import { useContext, useRef, useState, type ReactNode } from 'react'
 import {
   Button as AriaButton,
   CalendarCell,
@@ -10,11 +10,14 @@ import {
   DateSegment,
   Dialog,
   Group,
+  GroupContext,
   Heading,
   Label,
   Popover,
   RangeCalendar,
+  type ContextValue,
   type DateRange,
+  type GroupProps,
 } from 'react-aria-components'
 import type { ListRange } from '../../data/keyset.ts'
 import { CalendarIcon, NextIcon, PreviousIcon } from '../../icons/index.ts'
@@ -32,14 +35,14 @@ export interface DateRangeFieldProps {
   onChange: (range: ListRange | undefined) => void
   /**
    * A filter in a page header's toolbar: a chip at the control height that reads its label, or the chosen days once
-   * picked, and opens the calendar in a popover, so the row holds it beside the other chips. The days are picked on
-   * the calendar (arrow keys move, `Enter` picks); the full field is the one to type a range into.
+   * picked, and opens a popover with the calendar over the typed start and end days, so the row holds it beside the
+   * other chips. The calendar takes focus (arrow keys move, `Enter` picks); `Tab` reaches the typed days.
    */
   compact?: boolean
 }
 
 const groupClass =
-  'flex h-(--field-height) min-w-0 items-center gap-1 rounded-md border border-input bg-deep ps-2 pe-1 text-foreground transition-fast focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30'
+  'flex h-(--field-height) min-w-0 items-center gap-1 rounded-md border border-input bg-deep ps-2 text-foreground transition-fast focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30'
 const segmentClass =
   'rounded-sm px-px tabular-nums outline-none data-placeholder:text-faint data-[type=literal]:text-faint data-focused:bg-primary data-focused:text-primary-foreground'
 const navClass =
@@ -57,6 +60,7 @@ const chipClass =
 export function DateRangeField({ label, onChange, compact }: DateRangeFieldProps) {
   const { locale, timeZone } = useLocale()
   const [value, setValue] = useState<DateRange | null>(null)
+  const chip = useRef<HTMLButtonElement>(null)
 
   function change(next: DateRange | null) {
     setValue(next)
@@ -90,16 +94,35 @@ export function DateRangeField({ label, onChange, compact }: DateRangeFieldProps
     </RangeCalendar>
   )
 
+  // The typed start and end days. The picker hands each its field props through context, which its popover keeps, so
+  // the compact chip's popover holds the same inputs as the full field.
+  const inputs = (
+    <>
+      <DateInput slot="start" className="flex">
+        {(segment) => <DateSegment segment={segment} className={segmentClass} />}
+      </DateInput>
+      <span aria-hidden="true" className="text-faint">
+        –
+      </span>
+      <DateInput slot="end" className="flex">
+        {(segment) => <DateSegment segment={segment} className={segmentClass} />}
+      </DateInput>
+    </>
+  )
+
   if (compact) {
     const days = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
     const reading = value ? `${days.format(value.start.toDate(timeZone))} – ${days.format(value.end.toDate(timeZone))}` : undefined
 
     // The picker closes its popover on every range change by default; it stays open until Esc or a press outside,
-    // so the operator sees the picked days and can clear them in the same place.
+    // so the operator sees the picked days and can clear them in the same place. The picker also anchors its popover
+    // to its group, and moves the typing from the start day on to the end day inside that group. The chip is no group
+    // and the popover clears the group context, so the chip anchors the popover (without it the popover never shows)
+    // and the typed days take the picker's group, read outside the popover and given again inside it.
     return (
       <DateRangePicker className="inline-flex min-w-0" granularity="day" value={value} onChange={change} shouldCloseOnSelect={false}>
         <Label className="sr-only">{label}</Label>
-        <AriaButton className={chipClass} data-set={value ? '' : undefined}>
+        <AriaButton ref={chip} className={chipClass} data-set={value ? '' : undefined}>
           <CalendarIcon className="size-(--icon-sm) text-current" />
           {reading ? (
             <>
@@ -110,16 +133,24 @@ export function DateRangeField({ label, onChange, compact }: DateRangeFieldProps
             label
           )}
         </AriaButton>
-        <Popover className={cn('z-(--z-popover) rounded-lg p-2.5', floatingSurface)}>
-          <Dialog className="flex flex-col gap-2.5 outline-none">
-            {calendar}
-            {value ? (
-              <Button variant="ghost" onPress={() => change(null)}>
-                Clear days
-              </Button>
-            ) : null}
-          </Dialog>
-        </Popover>
+        <PickerGroup>
+          {(group) => (
+            <Popover triggerRef={chip} className={cn('z-(--z-popover) rounded-lg p-2.5', floatingSurface)}>
+              <Dialog className="flex flex-col gap-2.5 outline-none">
+                {calendar}
+                {/* After the calendar in tab order, so its arrow keys stay where focus lands and `Tab` moves on to typing. */}
+                <GroupContext value={group}>
+                  <Group className={`${groupClass} pe-2`}>{inputs}</Group>
+                </GroupContext>
+                {value ? (
+                  <Button variant="ghost" onPress={() => change(null)}>
+                    Clear days
+                  </Button>
+                ) : null}
+              </Dialog>
+            </Popover>
+          )}
+        </PickerGroup>
       </DateRangePicker>
     )
   }
@@ -127,16 +158,8 @@ export function DateRangeField({ label, onChange, compact }: DateRangeFieldProps
   return (
     <DateRangePicker className="flex min-w-0 flex-col gap-1" granularity="day" value={value} onChange={change}>
       <Label className="hd-label">{label}</Label>
-      <Group className={groupClass}>
-        <DateInput slot="start" className="flex">
-          {(segment) => <DateSegment segment={segment} className={segmentClass} />}
-        </DateInput>
-        <span aria-hidden="true" className="text-faint">
-          –
-        </span>
-        <DateInput slot="end" className="flex">
-          {(segment) => <DateSegment segment={segment} className={segmentClass} />}
-        </DateInput>
+      <Group className={`${groupClass} pe-1`}>
+        {inputs}
         <AriaButton className={`${navClass} ms-auto size-7`}>
           <CalendarIcon className="text-current" />
         </AriaButton>
@@ -146,4 +169,9 @@ export function DateRangeField({ label, onChange, compact }: DateRangeFieldProps
       </Popover>
     </DateRangePicker>
   )
+}
+
+/** Hands its children the enclosing picker's group context, which a popover inside the picker no longer sees. */
+function PickerGroup({ children }: { children: (group: ContextValue<GroupProps, HTMLDivElement>) => ReactNode }) {
+  return children(useContext(GroupContext))
 }

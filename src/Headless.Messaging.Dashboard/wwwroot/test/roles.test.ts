@@ -1,3 +1,4 @@
+import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import {
   canScope,
@@ -8,11 +9,36 @@ import {
   failureGroupPath,
   readFilter,
   rowMark,
+  usePending,
 } from '../src/messages.ts'
 import messaging from '../src/module.ts'
 import { lastMinuteRate } from '../src/parts.tsx'
 import { spanSeconds } from '../src/views/consumers.tsx'
 import { parseUnknownLane } from '../src/views/unknown-lanes.tsx'
+
+describe('messaging pending labels', () => {
+  it('reads pending until the row’s version moves past the mark, and not again once a refetch drops the version', () => {
+    const { result } = renderHook(() => usePending())
+
+    act(() =>
+      result.current.mark(
+        ['patched', 'listed'],
+        new Map([
+          ['patched', '7'],
+          ['listed', ''],
+        ]),
+        'Re-executing…',
+      ),
+    )
+
+    // A row a live change patched carries the change's version; one only read from the list carries none.
+    expect(result.current.labelOf({ id: 'patched', version: '7' })).toBe('Re-executing…')
+    expect(result.current.labelOf({ id: 'patched', version: '8' })).toBeUndefined()
+    expect(result.current.labelOf({ id: 'patched' })).toBeUndefined()
+    expect(result.current.labelOf({ id: 'listed' })).toBe('Re-executing…')
+    expect(result.current.labelOf({ id: 'listed', version: '1' })).toBeUndefined()
+  })
+})
 
 describe('messaging roles', () => {
   it('marks a row by its state: held over status, a failure with a retry pending as retrying', () => {

@@ -23,7 +23,15 @@ import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef } from 'react'
 import { StatusDistribution, useRunsPerDay } from '../insight.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import { JobsStats, RunProgress, StaleNotice, useJobsAttention, useJobsCounts, type AttentionItem } from '../parts.tsx'
+import {
+  JobsStats,
+  RunProgress,
+  StaleNotice,
+  useJobsAttention,
+  useJobsCounts,
+  useSettledRefetch,
+  type AttentionItem,
+} from '../parts.tsx'
 import {
   fetchRuns,
   markDone,
@@ -210,7 +218,7 @@ function ProcessingNow() {
  */
 function useNextTimeJob() {
   const { api } = useDashboard()
-  const client = useQueryClient()
+  const reread = useSettledRefetch(['jobs', 'next-time-job'])
   const next = useQuery({
     queryKey: ['jobs', 'next-time-job'],
     queryFn: async () => {
@@ -232,7 +240,8 @@ function useNextTimeJob() {
   })
 
   // Read again when the shown job moves on, or a waiting time job is due sooner; a progress tick of another run is not.
-  // A change with no projection says neither, so it is read again in case it is a time job due sooner.
+  // A change with no projection says neither, so it is read again in case it is a time job due sooner. A burst of such
+  // changes, such as a bulk requeue, reads once.
   useStreamEvent('change', (change) => {
     const shown = next.data
     const run = readRunProjection(change.projection)
@@ -244,7 +253,7 @@ function useNextTimeJob() {
         (!shown?.executionTime || Date.parse(run.executionTime) < Date.parse(shown.executionTime)))
 
     if (change.topic === runsTopic && (change.id === shown?.id || sooner)) {
-      void client.invalidateQueries({ queryKey: ['jobs', 'next-time-job'] })
+      reread()
     }
   })
 

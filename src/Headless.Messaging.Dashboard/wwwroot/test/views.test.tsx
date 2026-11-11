@@ -107,6 +107,24 @@ describe('messaging attention gaps', () => {
     capped: false,
   }
 
+  it('leads a failure group with its consumer and follows it with the count as a fact of its own', async () => {
+    const group = {
+      id: 'failed:received:v1:9f2c41:Billing.Orders.OrderPlacedConsumer:primary',
+      title: '37 messages received by Billing.Orders.OrderPlacedConsumer failed for good',
+      severity: 'critical',
+      count: 37,
+      capped: false,
+    }
+    open({ extra: answer({ stale: false, items: [group] }) }, { path: '' })
+
+    const card = await screen.findByRole('region', { name: 'Needs attention' })
+    // The two parts are separate texts, so a narrow card wraps each whole rather than cutting the sentence mid-way.
+    const consumer = await within(card).findByText('Billing.Orders.OrderPlacedConsumer')
+    expect(within(card).getByText('37 messages failed for good')).toBeTruthy()
+    expect(consumer.closest('a')?.getAttribute('aria-label')).toBe(group.title)
+    expect(within(card).getByTitle(group.title)).toBeTruthy()
+  })
+
   it('shows Retry, never the healthy empty message, when Messaging did not answer', async () => {
     open({ extra: answer({ stale: true }) }, { path: '' })
 
@@ -204,6 +222,17 @@ describe('messaging stale views', () => {
 })
 
 describe('messaging nodes', () => {
+  it('reads the nodes again on a stream reset, since no change carries them', async () => {
+    const view = open({ nodes: twoNodes }, { path: 'nodes' })
+    await screen.findByRole('row', { name: /node-b/ })
+    const reads = () => view.requests.filter((request) => request.path === 'messaging/nodes').length
+    const before = reads()
+
+    act(() => view.stream.push('reset', {}))
+
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
+
   it('cannot read a peer without forwarding', async () => {
     const actor = user()
     open({ nodes: { ...twoNodes, discovery: null } }, { path: 'nodes' })

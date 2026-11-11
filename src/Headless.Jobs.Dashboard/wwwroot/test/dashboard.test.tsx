@@ -381,8 +381,33 @@ describe('jobs dashboard', () => {
 
     waiting.splice(0)
     view.stream.push('change', change({ ...due, status: 'InProgress' }))
+    await act(() => vi.advanceTimersByTimeAsync(1_000))
 
     await waitFor(() => expect(header.textContent).toContain('reports.nightly'))
+  })
+
+  it('reads the next time job again on the next visit when the operator leaves before the burst settles', async () => {
+    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })
+    const waiting = [due]
+    const view = open({
+      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-06T01:00:00Z' })],
+      extra: (request) =>
+        request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
+          ? { items: waiting, count: waiting.length, countCapped: false }
+          : undefined,
+    })
+
+    const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
+    await waitFor(() => expect(header.textContent).toContain('export.ledger'))
+
+    // The shown job starts, and the operator opens another page before the reread settles.
+    waiting.splice(0)
+    view.stream.push('change', change({ ...due, status: 'InProgress' }))
+    await act(() => view.navigate('nodes'))
+    await act(() => view.navigate(''))
+
+    const back = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
+    await waitFor(() => expect(back.textContent).toContain('reports.nightly'))
   })
 
   it('reads the next time job again after a run change that carries no projection', async () => {
@@ -402,8 +427,61 @@ describe('jobs dashboard', () => {
     const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })
     waiting.push(due)
     act(() => view.stream.push('change', { ...change(due), projection: null }))
+    await act(() => vi.advanceTimersByTimeAsync(1_000))
 
     await waitFor(() => expect(header.textContent).toContain('Next execution export.ledger, in 2 hr.'))
+  })
+
+  it('reads the next time job once for a burst of run changes, after it settles', async () => {
+    const view = open({
+      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-06T01:00:00Z' })],
+      extra: (request) =>
+        request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
+          ? { items: [], count: 0, countCapped: false }
+          : undefined,
+    })
+    const reads = () => view.requests.filter((request) => request.query?.kind === 'TimeJob').length
+
+    const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
+    await waitFor(() => expect(header.textContent).toContain('reports.nightly'))
+    const before = reads()
+
+    // A bulk requeue: each change may be a time job due sooner, and none says so.
+    act(() => {
+      for (let index = 0; index < 5; index++) {
+        view.stream.push('change', { ...change(run('Idle', { version: String(index + 2) })), projection: null })
+      }
+    })
+    await act(() => vi.advanceTimersByTimeAsync(900))
+    expect(reads()).toBe(before)
+
+    await act(() => vi.advanceTimersByTimeAsync(100))
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
+
+  it('reads the next time job and the days again on a stream reset, which no change patches', async () => {
+    const view = open({
+      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-06T01:00:00Z' })],
+      daily: () => ({ Succeeded: 3 }),
+      extra: (request) =>
+        request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
+          ? { items: [], count: 0, countCapped: false }
+          : undefined,
+    })
+    const reads = (match: (request: { path: string; query?: Record<string, unknown> }) => boolean) =>
+      view.requests.filter(match).length
+    const nextTimeJob = (request: { query?: Record<string, unknown> }) => request.query?.kind === 'TimeJob'
+    const days = (request: { path: string }) => request.path === 'jobs/series/daily'
+
+    const card = await screen.findByRole('region', { name: 'Runs per day' })
+    await within(card).findByRole('img', { name: /^Runs per day by status/ })
+    await waitFor(() => expect(reads(nextTimeJob)).toBe(1))
+    const before = { nextTimeJob: reads(nextTimeJob), days: reads(days) }
+
+    act(() => view.stream.push('reset', {}))
+
+    await waitFor(() => expect(reads(nextTimeJob)).toBe(before.nextTimeJob + 1))
+    await waitFor(() => expect(reads(days)).toBe(before.days + 1))
   })
 
   it('keeps the next cron fire as the next execution when no time job is due before it', async () => {

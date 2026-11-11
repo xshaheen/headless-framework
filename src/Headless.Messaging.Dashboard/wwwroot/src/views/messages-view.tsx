@@ -23,7 +23,13 @@ import {
   usePageFrame,
   RelativeTime,
 } from '@headless/dashboard-sdk/components'
-import { DashboardApiError, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
+import {
+  DashboardApiError,
+  isNewerVersion,
+  useDashboardKeysetList,
+  useDashboardObject,
+  useNewRows,
+} from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable, type DataTableColumn } from '@headless/dashboard-sdk/table'
@@ -204,7 +210,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
 
     const changed = new Set(
       items
-        .filter((row) => frame.refused.has(row.id) && refusedAt.current.get(row.id) !== (row.version ?? ''))
+        .filter((row) => frame.refused.has(row.id) && isNewerVersion(row.version, refusedAt.current.get(row.id)))
         .map((row) => row.id),
     )
 

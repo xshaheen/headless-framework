@@ -21,6 +21,13 @@ namespace Headless.Messaging.Dashboard;
 /// cannot reach the node-to-node surface. Every answer is this node's own: a peer call is never forwarded again.
 /// </para>
 /// <para>
+/// An Operation over this node's rows is held to the limits and checks of a local one, whatever the calling node
+/// already checked: the scope step refuses a filter matching more than <see cref="CommandRules.MaxRows"/> rows and
+/// signs the scope it counted into the mark it answers, and each chunk runs only over a scope this node signed, at the
+/// shell's chunk size, with its reason and arguments checked against the command. A refusal answers the error a local
+/// confirm or chunk answers.
+/// </para>
+/// <para>
 /// An Operation chunk is recorded in this node's operator log under the operator the calling node named, as
 /// <c>&lt;operator&gt; via &lt;calling node&gt;</c>, beside the calling node's own record of the Operation.
 /// </para>
@@ -211,39 +218,61 @@ internal static class PeerEndpoints
             return Results.NotFound();
         }
 
-        var body = await _ReadAsync<PeerScopeBody>(context).ConfigureAwait(false);
+        var (body, bodyErrors) = await CommandCallBody
+            .ReadAsync(context.Request, context.RequestAborted)
+            .ConfigureAwait(false);
 
         if (body is null)
         {
-            return DashboardValidation.Problem(
-                DashboardValidation.BodyField,
-                DashboardValidation.JsonRule,
-                "Send the Operation's filter."
-            );
+            return _Invalid(bodyErrors);
         }
+
+        if (body.Filter is not { } filter)
+        {
+            return _Invalid([OperationEndpoints.FilterRequired()]);
+        }
+
+        DashboardOperationScope scope;
 
         try
         {
-            var scope = await module
+            // This node's own limits, not the calling node's: a peer call is held to what a local confirm is.
+            scope = await module
                 .LocalCommands.PrepareAsync(
                     new DashboardOperationScopeRequest
                     {
                         CommandId = command.Id,
-                        Filter = body.Filter,
-                        CountLimit = body.CountLimit,
-                        SampleSize = body.SampleSize,
+                        Filter = filter,
+                        CountLimit = CommandRules.MaxRows,
+                        SampleSize = CommandRules.SampleSize,
                         User = context.User,
                     },
                     context.RequestAborted
                 )
                 .ConfigureAwait(false);
-
-            return Results.Json(scope, MessagingForwarding.JsonOptions);
         }
         catch (ArgumentException exception)
         {
-            return _Invalid(exception);
+            return _Invalid([OperationEndpoints.FilterRefused(exception)]);
         }
+
+        if (scope.Count > CommandRules.MaxRows)
+        {
+            return _Invalid([OperationEndpoints.ScopeTooLarge()]);
+        }
+
+        // The scope this node checked is signed into the mark the calling node sends back on every chunk, so a chunk
+        // runs only over a scope this node froze and counted.
+        var token = OperationEndpoints.NewToken(context, MessagingDashboardOptions.ModuleId, command, filter, scope);
+        var protector = context.RequestServices.GetRequiredService<PeerOperationScopeProtector>();
+
+        return Results.Json(
+            scope with
+            {
+                HighWaterMark = protector.Tokens.Protect(token),
+            },
+            MessagingForwarding.JsonOptions
+        );
     }
 
     private static async Task<IResult> _ChunkAsync(HttpContext context, MessagingModule module)
@@ -267,17 +296,42 @@ internal static class PeerEndpoints
             );
         }
 
-        var body = await _ReadAsync<PeerChunkBody>(context).ConfigureAwait(false);
+        var (body, bodyErrors) = await CommandCallBody
+            .ReadAsync(context.Request, context.RequestAborted)
+            .ConfigureAwait(false);
 
         if (body is null)
         {
-            return DashboardValidation.Problem(
-                DashboardValidation.BodyField,
-                DashboardValidation.JsonRule,
-                "Send the Operation's chunk."
-            );
+            return _Invalid(bodyErrors);
         }
 
+        if (string.IsNullOrEmpty(body.Token))
+        {
+            return _Invalid([new CommandFieldError("token", "required", "Send the mark the scope step returned.")]);
+        }
+
+        var protector = context.RequestServices.GetRequiredService<PeerOperationScopeProtector>();
+
+        if (!protector.Tokens.TryUnprotect(body.Token, out var token, out var tokenError))
+        {
+            return _Invalid([tokenError]);
+        }
+
+        if (OperationEndpoints.TokenScopeError(token, MessagingDashboardOptions.ModuleId, command.Id) is { } wrongScope)
+        {
+            return _Invalid([wrongScope]);
+        }
+
+        // A not-before-now argument is checked against the moment the scope was frozen, as a local Operation checks it
+        // once at confirm, so a long Operation does not start refusing its own arguments halfway through.
+        var (arguments, errors) = OperationEndpoints.ValidateCall(context, command, body, token.FrozenAt);
+
+        if (errors.Count > 0)
+        {
+            return _Invalid(errors);
+        }
+
+        var reason = CommandEndpoints.Reason(body);
         var entry = new OperatorLogEntry
         {
             Timestamp = CommandEndpoints.Now(context),
@@ -286,9 +340,9 @@ internal static class PeerEndpoints
             Module = MessagingDashboardOptions.ModuleId,
             CommandId = command.Id,
             Action = OperatorLogAction.OperationChunk,
-            Scope = body.Filter.GetRawText(),
-            Count = body.ChunkSize,
-            Reason = body.Reason,
+            Scope = token.Filter,
+            Count = CommandRules.ChunkSize,
+            Reason = reason,
             Cursor = body.Cursor,
         };
 
@@ -301,12 +355,12 @@ internal static class PeerEndpoints
                     new DashboardOperationChunkRequest
                     {
                         CommandId = command.Id,
-                        Filter = body.Filter,
-                        HighWaterMark = body.HighWaterMark,
+                        Filter = OperationEndpoints.ParseFilter(token.Filter),
+                        HighWaterMark = token.HighWaterMark,
                         Cursor = body.Cursor,
-                        ChunkSize = body.ChunkSize,
-                        Arguments = body.Arguments ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
-                        Reason = body.Reason,
+                        ChunkSize = CommandRules.ChunkSize,
+                        Arguments = arguments,
+                        Reason = reason,
                         User = context.User,
                     },
                     context.RequestAborted
@@ -316,13 +370,15 @@ internal static class PeerEndpoints
         catch (ArgumentException exception)
         {
             // Checked before any row changes, so, like every refused call, it writes no log entry.
-            return _Invalid(exception);
+            return _Invalid([OperationEndpoints.ChunkRefused(exception, body.Cursor)]);
         }
         catch
         {
             // Some rows of the chunk may have changed before it failed; the attempt is recorded before the error
             // reaches the host's error handling.
-            await CommandEndpoints.WriteLogAsync(context, entry with { Failed = body.ChunkSize }).ConfigureAwait(false);
+            await CommandEndpoints
+                .WriteLogAsync(context, entry with { Failed = CommandRules.ChunkSize })
+                .ConfigureAwait(false);
             throw;
         }
 
@@ -359,42 +415,7 @@ internal static class PeerEndpoints
         return module?.ServerCommands.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
     }
 
-    private static async Task<T?> _ReadAsync<T>(HttpContext context)
-        where T : class
-    {
-        try
-        {
-            return await JsonSerializer
-                .DeserializeAsync<T>(context.Request.Body, MessagingForwarding.JsonOptions, context.RequestAborted)
-                .ConfigureAwait(false);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    // The module throws ArgumentException for a filter, mark, or cursor it did not return. Its message stays the
-    // problem's detail, which the calling node shows; the parameter it names says which part of the body was refused.
-    private static ValidationProblem _Invalid(ArgumentException exception) =>
-        DashboardValidation.Problem(
-            exception.ParamName switch
-            {
-                "mark" => "highWaterMark",
-                "request" => "cursor",
-                "commandId" => "commandId",
-                _ => "filter",
-            },
-            DashboardValidation.InvalidRule,
-            _Message(exception)
-        );
-
-    private static string _Message(ArgumentException exception)
-    {
-        var suffix = $" (Parameter '{exception.ParamName}')";
-
-        return exception.ParamName is not null && exception.Message.EndsWith(suffix, StringComparison.Ordinal)
-            ? exception.Message[..^suffix.Length]
-            : exception.Message;
-    }
+    // The calling node shows the detail, so it is the first refusal's message, as a single-error problem's is.
+    private static ValidationProblem _Invalid(IReadOnlyList<CommandFieldError> errors) =>
+        CommandEndpoints.Invalid(errors, errors[0].Message);
 }

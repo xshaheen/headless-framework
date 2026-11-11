@@ -88,15 +88,19 @@ export interface CardRowProps {
   children?: ReactNode
 }
 
+// On a phone there is no pointer to hover the `title`, so a name or fact wider than its cell wraps (an identifier
+// breaks anywhere, as the detail panel's do) instead of ending in an ellipsis that hides its distinguishing end.
+const fit = 'max-w-full truncate max-md:whitespace-normal max-md:wrap-anywhere'
 // A prose name sets its own face and weight, since the line's mono shorthand would otherwise cover it.
-const monoName = 'max-w-full truncate font-medium'
-const proseName = 'max-w-full truncate type-small-medium text-foreground'
+const monoName = `${fit} font-medium`
+const proseName = `${fit} type-small-medium text-foreground`
 
 /**
  * One row of a `Card`: dot, name and faint meta, value, and actions, with an optional second line. The name keeps
  * its letters: it is sized to its content, and the facts beside it move under it when the card is too narrow for
- * both on one line. Only a name or a fact wider than the card itself ends in an ellipsis, with the full text in
- * `title`. The value column is one width on every row, so the times line up down the card.
+ * both on one line. A name or a fact wider than the card itself ends in an ellipsis, with the full text in `title`;
+ * below the phone breakpoint it wraps onto more lines instead. The value column is one width on every row, so the
+ * times line up down the card.
  */
 export function CardRow({ tone, name, prose = false, meta, value, actions, title, children }: CardRowProps) {
   const first = tone != null || name != null || meta != null || value != null || actions != null
@@ -118,7 +122,7 @@ export function CardRow({ tone, name, prose = false, meta, value, actions, title
               drops under the name with the whole width to itself. */}
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0" title={title}>
             {name != null ? <b className={prose ? proseName : monoName}>{name}</b> : null}
-            {meta != null ? <span className="hd-faint max-w-full truncate">{meta}</span> : null}
+            {meta != null ? <span className={`hd-faint ${fit}`}>{meta}</span> : null}
           </div>
           {value != null ? (
             <span className="min-w-(--card-value-width) text-end whitespace-nowrap tabular-nums">{value}</span>
