@@ -13,8 +13,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// A host with live queries tracking <see cref="LiveDb" /> and <see cref="NotesDb" /> on SQLite in memory. Every
-/// context shares the host's one open connection, because an in-memory SQLite database lives only on its connection.
+/// A host with live queries tracking <see cref="LiveDb" /> and <see cref="NotesDb" /> on SQLite in memory, both with
+/// the same tracking options. Every context shares the host's one open connection, because an in-memory SQLite
+/// database lives only on its connection.
 /// </summary>
 internal sealed class LiveEfTestHost : IAsyncDisposable
 {
@@ -40,6 +41,9 @@ internal sealed class LiveEfTestHost : IAsyncDisposable
 
     /// <summary>How many times tracking failed and fell back to announcing whole tables.</summary>
     public long Fallbacks => Meters.Total("headless.live_queries.tracking.fallbacks");
+
+    /// <summary>How many saved rows a live query's row filters showed could not change its result.</summary>
+    public long RowsRuledOut => Meters.Total("headless.live_queries.rows.ruled_out");
 
     [SuppressMessage(
         "Reliability",
@@ -70,7 +74,7 @@ internal sealed class LiveEfTestHost : IAsyncDisposable
             services.AddHeadlessLiveQueries(setup =>
                 setup
                     .UseEntityFramework<LiveDb>(options => configureTracking?.Invoke(options))
-                    .UseEntityFramework<NotesDb>()
+                    .UseEntityFramework<NotesDb>(options => configureTracking?.Invoke(options))
             );
         }
 
@@ -115,7 +119,27 @@ internal sealed class LiveEfTestHost : IAsyncDisposable
         return new LiveEfTestHost(connection, provider, meters);
     }
 
+    /// <summary>Creates a host whose <see cref="LiveDb" /> matches saved rows against each live query's filters.</summary>
+    public static Task<LiveEfTestHost> CreateRowLevelAsync(
+        Action<DbContextOptionsBuilder>? configureOptions = null,
+        bool trackerRunsFirst = false
+    )
+    {
+        return CreateAsync(
+            configureOptions,
+            configureTracking: static options => options.RowLevelMatching = true,
+            trackerRunsFirst: trackerRunsFirst
+        );
+    }
+
     public AsyncServiceScope CreateScope() => _provider.CreateAsyncScope();
+
+    /// <summary>Runs <paramref name="work" /> on a context of its own scope, as one request does.</summary>
+    public async Task WriteAsync(Func<LiveDb, Task> work)
+    {
+        await using var scope = CreateScope();
+        await work(scope.ServiceProvider.GetRequiredService<LiveDb>());
+    }
 
     /// <summary>Watches a query over <see cref="LiveDb" />; nothing runs until its first <c>NextAsync</c>.</summary>
     public Watch<T> Watch<T>(Func<LiveDb, CancellationToken, Task<T>> query, CancellationToken abortToken)

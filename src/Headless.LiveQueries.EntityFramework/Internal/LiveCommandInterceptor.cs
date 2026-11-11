@@ -3,6 +3,8 @@
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.LiveQueries.Internal;
 
@@ -10,7 +12,12 @@ namespace Headless.LiveQueries.Internal;
 /// Sorts every command a tracked context sends: a query's tables are recorded on the live query that runs it, and a
 /// write's tables are handed to the tracker once the command has run.
 /// </summary>
-internal sealed class LiveCommandInterceptor(LiveTableCatalog catalog, LiveWriteTracker tracker) : DbCommandInterceptor
+/// <remarks>
+/// With row matching on, a query whose SQL carries the mark of a shape is recorded with that shape's row filter,
+/// bound to the values this execution sends.
+/// </remarks>
+internal sealed class LiveCommandInterceptor(LiveTableCatalog catalog, LiveWriteTracker tracker, bool matchRows)
+    : DbCommandInterceptor
 {
     public override InterceptionResult<DbDataReader> ReaderExecuting(
         DbCommand command,
@@ -144,8 +151,18 @@ internal sealed class LiveCommandInterceptor(LiveTableCatalog catalog, LiveWrite
 
     private void _Executing(DbCommand command, CommandEventData eventData)
     {
-        // Nothing to do before a command runs unless a live query sends it: a write is recorded after it ran.
-        if (LiveQueryRecorder.Current is not { } recorder || eventData.Context is not { } context)
+        if (eventData.Context is not { } context)
+        {
+            return;
+        }
+
+        if (matchRows && eventData.CommandSource is CommandSource.SaveChanges)
+        {
+            tracker.SaveCommandStarting(context);
+        }
+
+        // Nothing else to do before a command runs unless a live query sends it: a write is recorded after it ran.
+        if (LiveQueryRecorder.Current is not { } recorder)
         {
             return;
         }
@@ -155,7 +172,16 @@ internal sealed class LiveCommandInterceptor(LiveTableCatalog catalog, LiveWrite
             case CommandKind.Read:
                 // Not contained: a query whose tables are unknown would stay stale without any sign, so the run
                 // fails instead.
-                recorder.Add(catalog.Scan(context, command.CommandText));
+                var read = catalog.Scan(context, command.CommandText);
+
+                if (_BindFilter(context, command, read) is { } filter)
+                {
+                    recorder.AddFiltered(read[0], filter.Matches);
+                }
+                else
+                {
+                    recorder.Add(read);
+                }
 
                 break;
             case CommandKind.Write:
@@ -185,7 +211,7 @@ internal sealed class LiveCommandInterceptor(LiveTableCatalog catalog, LiveWrite
             return;
         }
 
-        var keys = _ScanContained(context, command);
+        var keys = _ScanContained(context, command, written: true);
 
         if (kind is CommandKind.Save)
         {
@@ -199,11 +225,29 @@ internal sealed class LiveCommandInterceptor(LiveTableCatalog catalog, LiveWrite
         }
     }
 
-    private string[] _ScanContained(DbContext context, DbCommand command)
+    // The shape was taken from the query before EF Core expanded it. The SQL is what runs, so the filter is used
+    // only when the SQL names the shape's table and no other: whatever EF Core added that reads a second table
+    // shows here.
+    private LiveRowFilter? _BindFilter(DbContext context, DbCommand command, string[] read)
+    {
+        return
+            matchRows
+            && LiveQueryShapes.Find(context.Model, command.CommandText) is { } shape
+            && read is [var key]
+            && string.Equals(key, shape.Key, StringComparison.Ordinal)
+            ? shape.Bind(command, context.GetService<ISqlGenerationHelper>())
+            : null;
+    }
+
+    // For a command that ran, the tables it can change: a delete also changes the tables whose rows the database
+    // removes or clears with the deleted ones.
+    private string[] _ScanContained(DbContext context, DbCommand command, bool written = false)
     {
         try
         {
-            return catalog.Scan(context, command.CommandText);
+            return written
+                ? catalog.ScanWrite(context, command.CommandText)
+                : catalog.Scan(context, command.CommandText);
         }
 #pragma warning disable CA1031 // The fix would make it worse: tracking must not fail the application's write.
         catch (Exception exception)

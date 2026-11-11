@@ -12,7 +12,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.LiveQueries.Internal;
 
 /// <summary>
-/// Holds the tables a tracked context wrote until the write is durable, then announces them to the hub. A write is
+/// Holds the tables and rows a tracked context wrote until the write is durable, then announces them to the hub. A
+/// write is
 /// held by whatever owns its commit: the unit of work bound to the connection, the EF Core transaction, or the
 /// ambient <see cref="Transaction" />. A write outside all three is announced at once.
 /// </summary>
@@ -38,21 +39,23 @@ internal sealed partial class LiveWriteTracker(
     private readonly Lock _ambientLock = new();
     private readonly Dictionary<Transaction, LivePendingWrites> _ambient = [];
 
-    /// <summary>Signals the live queries that read <paramref name="keys" />. The write must already be durable.</summary>
+    /// <summary>
+    /// Signals the live queries <paramref name="writes" /> could change. The write must already be durable.
+    /// </summary>
     /// <remarks>
     /// Runs on the caller's thread. The hub only stamps the keys and signals the subscriptions that read them; it
     /// runs no query and does no I/O, so handing the call to another thread would cost more than making it.
     /// </remarks>
-    public void Announce(IReadOnlyCollection<string> keys)
+    public void Announce(LiveWriteSet writes)
     {
-        if (keys.Count == 0)
+        if (writes.IsEmpty)
         {
             return;
         }
 
         try
         {
-            hub.Invalidate(new LiveWriteSet(keys, []));
+            hub.Invalidate(writes);
         }
 #pragma warning disable CA1031 // The fix would make it worse: an announcement that throws must not fail a commit that already succeeded.
         catch (Exception exception)
@@ -68,14 +71,20 @@ internal sealed partial class LiveWriteTracker(
     /// </summary>
     public void Written(DbContext context, IReadOnlyCollection<string> keys)
     {
-        if (keys.Count == 0)
+        Written(context, new LiveWriteSet(keys, []));
+    }
+
+    /// <inheritdoc cref="Written(DbContext, IReadOnlyCollection{string})" />
+    public void Written(DbContext context, LiveWriteSet writes)
+    {
+        if (writes.IsEmpty)
         {
             return;
         }
 
         try
         {
-            if (_TryHold(context, keys))
+            if (_TryHold(context, writes))
             {
                 return;
             }
@@ -87,16 +96,35 @@ internal sealed partial class LiveWriteTracker(
             Failed(exception);
         }
 
-        Announce(keys);
+        Announce(writes);
     }
+
+    /// <summary>
+    /// Returns whether a live query reads <paramref name="key" /> through row filters, so a save should keep the
+    /// rows it writes to that table.
+    /// </summary>
+    public bool HasNarrowedReader(string key) => hub.HasNarrowedReader(key);
 
     /// <summary>Starts the capture of one save, replacing whatever an earlier save left on the context.</summary>
     public LiveSaveCapture BeginSave(DbContext context)
     {
-        var capture = new LiveSaveCapture(context.ContextId);
+        // A save whose start another interceptor refused never reports an end, and would go on watching the
+        // change tracker.
+        if (_saves.TryGetValue(context, out var abandoned))
+        {
+            abandoned.StopWatching();
+        }
+
+        var capture = new LiveSaveCapture(context.ContextId, Failed);
         _saves.AddOrUpdate(context, capture);
 
         return capture;
+    }
+
+    /// <summary>Records that the save running on <paramref name="context" /> is about to send a command.</summary>
+    public void SaveCommandStarting(DbContext context)
+    {
+        _FindSave(context)?.StopWatching();
     }
 
     /// <summary>Records that a command of the save running on <paramref name="context" /> ran to the end.</summary>
@@ -144,24 +172,29 @@ internal sealed partial class LiveWriteTracker(
     /// <param name="mayBeDurable">
     /// Whether the writes may be stored: the transaction committed, or its commit failed with no answer.
     /// </param>
-    public void TransactionEnded(DbContext? context, DbTransaction transaction, bool mayBeDurable)
+    /// <param name="inDoubt">
+    /// Whether the commit failed with no answer. What it stored is then not known row by row, so the tables are
+    /// announced whole.
+    /// </param>
+    public void TransactionEnded(DbContext? context, DbTransaction transaction, bool mayBeDurable, bool inDoubt = false)
     {
-        string[] keys = [];
+        var writes = LiveWriteSet.Empty;
 
         try
         {
             if (_transactions.TryGetValue(transaction, out var pending))
             {
                 _transactions.Remove(transaction);
-                keys = pending.Take();
             }
 
             // A commit while a save is running ends the transaction EF Core opened for that save, so the save's
-            // tables are durable now. A rollback leaves them: an execution strategy may run the save again.
+            // writes are durable now. A rollback leaves them: an execution strategy may run the save again.
             if (mayBeDurable && context is not null && _FindSave(context) is { } capture)
             {
-                keys = [.. keys, .. capture.TakeForCommit()];
+                (pending ??= new LivePendingWrites()).Add(capture.TakeForCommit());
             }
+
+            writes = pending?.Take() ?? writes;
         }
 #pragma warning disable CA1031 // The fix would make it worse: tracking must not fail the application's commit.
         catch (Exception exception)
@@ -172,7 +205,7 @@ internal sealed partial class LiveWriteTracker(
 
         if (mayBeDurable)
         {
-            Announce(keys);
+            Announce(inDoubt ? writes.AsWholeKeys() : writes);
         }
     }
 
@@ -183,20 +216,20 @@ internal sealed partial class LiveWriteTracker(
         _LogTrackingFailed(_logger, exception);
     }
 
-    private bool _TryHold(DbContext context, IReadOnlyCollection<string> keys)
+    private bool _TryHold(DbContext context, LiveWriteSet writes)
     {
         // The unit is looked up on the connection, which the owning context, a context that joined its transaction
         // and a raw-ADO unit all share.
         if (context.Database.GetDbConnection().UnitOfWork() is { } unit)
         {
-            unit.GetOrAdd(this, static (unit, tracker) => new LiveUnitWrites(unit, tracker)).Add(keys);
+            unit.GetOrAdd(this, static (unit, tracker) => new LiveUnitWrites(unit, tracker)).Add(writes);
 
             return true;
         }
 
         if (context.Database.CurrentTransaction is { } transaction)
         {
-            _transactions.GetValue(transaction.GetDbTransaction(), static _ => new LivePendingWrites()).Add(keys);
+            _transactions.GetValue(transaction.GetDbTransaction(), static _ => new LivePendingWrites()).Add(writes);
 
             return true;
         }
@@ -205,7 +238,7 @@ internal sealed partial class LiveWriteTracker(
         // one of a TransactionScope.
         if ((context.Database.GetEnlistedTransaction() ?? Transaction.Current) is { } ambient)
         {
-            _HoldAmbient(ambient, keys);
+            _HoldAmbient(ambient, writes);
 
             return true;
         }
@@ -213,7 +246,7 @@ internal sealed partial class LiveWriteTracker(
         return false;
     }
 
-    private void _HoldAmbient(Transaction transaction, IReadOnlyCollection<string> keys)
+    private void _HoldAmbient(Transaction transaction, LiveWriteSet writes)
     {
         var created = false;
 
@@ -226,7 +259,7 @@ internal sealed partial class LiveWriteTracker(
                 created = true;
             }
 
-            pending.Add(keys);
+            pending.Add(writes);
         }
 
         if (!created)
@@ -266,11 +299,12 @@ internal sealed partial class LiveWriteTracker(
             return;
         }
 
-        var aborted = false;
+        // Unknown until read, and unknown when reading it throws.
+        var status = TransactionStatus.InDoubt;
 
         try
         {
-            aborted = completed.Transaction?.TransactionInformation.Status is TransactionStatus.Aborted;
+            status = completed.Transaction?.TransactionInformation.Status ?? status;
         }
 #pragma warning disable CA1031 // The fix would make it worse: an exception here would surface from the application's TransactionScope.
         catch (Exception exception)
@@ -279,10 +313,12 @@ internal sealed partial class LiveWriteTracker(
             Failed(exception);
         }
 
-        // Committed and in-doubt both announce; only a transaction known to have aborted stored nothing.
-        if (!aborted)
+        // Committed and in-doubt both announce; only a transaction known to have aborted stored nothing. In doubt,
+        // what was stored is not known row by row, so the tables are announced whole.
+        if (status is not TransactionStatus.Aborted)
         {
-            Announce(pending.Take());
+            var writes = pending.Take();
+            Announce(status is TransactionStatus.Committed ? writes : writes.AsWholeKeys());
         }
     }
 

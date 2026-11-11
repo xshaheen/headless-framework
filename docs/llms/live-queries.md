@@ -69,14 +69,19 @@ public sealed class OrderWriter(IOrderStore store, ILiveQueryInvalidator invalid
 - Every run must record at least one dependency. A run that records none fails the watch with `LiveQueryHasNoDependenciesException`, because no announcement could ever re-run it.
 - Call `DependsOn` on the query's own execution flow. Work started on a detached flow, such as `Task.Run` under `ExecutionContext.SuppressFlow()`, is not recorded.
 - Keep the query read-only and repeatable. It runs once per relevant announcement, each time in a new service scope.
+- Never call `InvalidateAsync` from inside a live query: it throws `InvalidOperationException`. A query that announced a key it read would be out of date the moment it returned and would run again without end. Announce from the command that made the change.
 - With a tracked EF Core context, a live query that writes through it fails: `SaveChanges`, `ExecuteUpdate`, `ExecuteDelete`, and raw SQL that names a mapped table throw `InvalidOperationException`.
+- A delete through a tracked EF Core context also announces the tables whose rows refer to the deleted ones through a foreign key the model maps as cascading or set-null, because the database changes those rows itself. A foreign key the model does not describe that way is not followed: call `InvalidateAsync` for the referring tables.
 - A tracked EF Core context announces only what EF Core sends. After a bulk-copy library, Dapper, a trigger, or another service changes a table, call `InvalidateAsync` with the table's key (`table:{schema}.{name}`), after the commit.
 - In raw SQL through a tracked context, write each table name the way the provider's own SQL writes it (`"Todos"`, `[Todos]`). A name written another way is not found, and the query or write is not tracked.
+- Turn on `RowLevelMatching` to stop one user's write from re-running every other user's stream of the same table. A filter narrows a stream only on a primary-key column or a column configured with `SetAfterSaveBehavior(PropertySaveBehavior.Throw)`; a filter on any other column still matches by table.
+- A column configured as fixed after insert must never change, by any writer. `ExecuteUpdate`, raw SQL, a trigger, or another model that rewrites it leaves an entity loaded earlier matching on the old value, and the stream that now holds the row is not re-run.
 - From code outside an HTTP request, set the tenant before you enumerate. Every run executes on the flow of the caller that enumerates the sequence and sees whatever tenant is ambient there; nothing captures a tenant when `WatchAsync` is called.
 - Compare `Version` tokens for equality only. They have no order and mean nothing across subscriptions.
 - The result type must serialize with `System.Text.Json` defaults. Two results are equal when their JSON is byte-for-byte equal.
 - Make an endpoint live only with `.WithLiveUpdates()` on a `MapGet` call. Do not write a second streaming endpoint beside the ordinary one: the same URL answers both, by `Accept`.
 - A live endpoint handler is read-only and returns materialized values (a list or an object, not a deferred query). It runs again after every relevant change, for every open stream.
+- A live endpoint returns JSON. Return an object, a list, or a JSON result (`TypedResults.Ok(value)`, `Results.Json`); never a `string`, `Results.Text`, or `Results.Content` with another type. A successful run whose body is not `application/json` or a `+json` type fails with `g:live_query_response_not_json`.
 - Do not put a token in the query string to authenticate a stream. A stream authenticates with the cookies or headers of the request that opened it, and every re-run authenticates and authorizes that request again.
 - Serve live endpoints over HTTP/2. Browsers allow six HTTP/1.1 connections per origin, and each open stream holds one.
 - On reconnect a client receives a full result. `Last-Event-ID` is ignored; do not build resumption on it.
@@ -142,6 +147,8 @@ public sealed class StockReader(ILiveQueryDependencies dependencies, IStockStore
 - `DependsOn` and `InvalidateAsync` throw `ArgumentNullException` for a null sequence and `ArgumentException` for a null or empty key. An empty sequence does nothing.
 - `InvalidateAsync` completes once the affected subscriptions are signalled. It does not wait for their queries to run, and it never runs a query on the writer's flow.
 - `InvalidateAsync` throws `OperationCanceledException` and announces nothing when its token is already cancelled.
+- `InvalidateAsync` throws `InvalidOperationException` and announces nothing when a live query calls it with at least one key, on the query's own execution flow. The message names the keys and the read-only rule. A live endpoint treats it as any exception from the handler: the host's error response when the stream opens, or a `g:live_query_run_failed` event on a re-run.
+- **A run ends when the query returns.** Work the query started and left running (a `Task.Run`, a timer, a lazily started loop in a service it touched) is no longer part of the live query once the run has returned: `DependsOn` and tracked reads on it record nothing, `InvalidateAsync` on it is an ordinary announcement, and a write through a tracked EF Core context is an ordinary write that is announced. Do not start such work from a live query on purpose; this rule only keeps it from failing later with the read-only error.
 
 ---
 
@@ -182,7 +189,11 @@ The hub keeps the last change of each announced key so it can re-run a query tha
 
 ### Metrics
 
-The meter is named `Headless.LiveQueries`. It comes from the host's `IMeterFactory` when one is registered (`AddMetrics()`, which ASP.NET Core hosts call), and is created directly otherwise. No instrument carries a tag.
+The meter is named `Headless.LiveQueries`, exposed at compile time as `LiveQueriesDiagnostics.SourceName`, and carries the framework's version. Subscribe with the typed helper `metrics.AddLiveQueriesInstrumentation()` (it surfaces in the `OpenTelemetry.Metrics` namespace and requires only `OpenTelemetry.Api`) or by name with `AddMeter(LiveQueriesDiagnostics.SourceName)`; both are equivalent, and one subscription also covers the instruments live endpoints and tracked data sources add. The meter comes from the host's `IMeterFactory` when one is registered (`AddMetrics()`, which ASP.NET Core hosts call); a host without one records on a meter shared by the process, which a process-wide listener still hears. No instrument carries a tag.
+
+```csharp
+builder.Services.AddOpenTelemetry().WithMetrics(metrics => metrics.AddLiveQueriesInstrumentation());
+```
 
 | Instrument | Kind | Counts |
 | --- | --- | --- |
@@ -190,7 +201,7 @@ The meter is named `Headless.LiveQueries`. It comes from the host's `IMeterFacto
 | `headless.live_queries.runs` | Counter | Runs of a live query, first runs included |
 | `headless.live_queries.runs.failed` | Counter | Runs that threw or reported a failure |
 | `headless.live_queries.wakes` | Counter | Times an announcement signalled a subscription |
-| `headless.live_queries.rows.ruled_out` | Counter | Changed rows that a subscription's row filters showed could not affect its result. Stays at zero until a package that records row filters is installed. |
+| `headless.live_queries.rows.ruled_out` | Counter | Changed rows that a subscription's row filters showed could not affect its result, one count per row and subscription. Stays at zero unless a tracked EF Core context has `RowLevelMatching` on. |
 | `headless.live_queries.tracking.fallbacks` | Counter | Times a tracked data source failed while it captured or announced a write, and announced the tables it knew instead. Stays at zero without a tracked data source. |
 
 Runs far above wakes mean queries are racing writes; wakes far above the changes you expect mean dependency keys are too coarse. A tracking fallback that is not zero means a live query may have missed a write: read the error the tracker logged with it.
@@ -232,7 +243,7 @@ The map call stays ordinary Minimal API; `.WithLiveUpdates()` is the only additi
 - A request whose `Accept` names `text/event-stream` or `application/x-ndjson` receives a stream: the result now, and a new result after each announced change that alters it. A wildcard never selects a stream.
 - The ordinary response and every stream carry `Vary: Accept`, because one URL answers with two representations.
 
-`UseEndpoints` has the usual overloads: none, `IConfiguration`, `Action<LiveEndpointsOptions>`, and `Action<LiveEndpointsOptions, IServiceProvider>`. The host fails at startup when `IProblemDetailsCreator` is not registered. `WithLiveUpdates()` throws `InvalidOperationException` when the endpoints are built, naming the endpoint, for an endpoint that accepts any method but GET and for a host that did not call `UseEndpoints`.
+`UseEndpoints` has the usual overloads: none, `IConfiguration`, `Action<LiveEndpointsOptions>`, and `Action<LiveEndpointsOptions, IServiceProvider>`. The host fails at startup when `IProblemDetailsCreator` is not registered, or when an `IHttpContextAccessor` registered after `UseEndpoints` replaced the one it wrapped (see [Design and runtime behavior](#design-and-runtime-behavior-2)). `WithLiveUpdates()` throws `InvalidOperationException` when the endpoints are built, naming the endpoint, for an endpoint that accepts any method but GET and for a host that did not call `UseEndpoints`.
 
 ### What a client sees
 
@@ -291,6 +302,7 @@ Error codes, as constants on `LiveEndpointsErrorCodes`:
 | Code | Sent | Meaning |
 | --- | --- | --- |
 | `g:live_query_no_dependencies` | 500 response when the stream is opened; failure event later | A run recorded no dependency, so no change could ever update the stream. |
+| `g:live_query_response_not_json` | 500 response when the stream is opened; failure event later | A run answered 200 to 299 with a body that is not declared as JSON. The content type is logged, the body is never sent. |
 | `g:live_query_run_failed` | Failure event | A re-run threw (`status` 500) or answered outside 200 to 299 (`status` is that status). The exception is logged, never sent. |
 | `g:live_query_unauthorized` | Failure event | A re-run found the caller no longer authenticated (`status` 401) or no longer authorized (`status` 403). |
 | `g:live_query_stream_limit_reached` | 429 response with `Retry-After` | The caller or the host already holds the allowed number of streams. |
@@ -457,6 +469,7 @@ Invalid values fail options validation when the host starts.
 
 - **A run is the whole endpoint, executed again.** Every run, the first included, sends a synthetic request through the endpoint: arguments are bound again (route values, query, `[AsParameters]` types, services, keyed services), endpoint filters such as validation run again, and services come from a new scope that is disposed when the run ends. Middleware does not run again: the synthetic request sees what middleware established for the request that opened the stream (the endpoint, route values, request features, the resolved tenant) and has its own response, `Items` copy, user, and service scope. The run's response is buffered in memory and sent whole.
 - **The handler is read-only and returns materialized values.** It runs once per relevant change for every open stream. Writes in it would repeat without bound, and a deferred query would run outside the handler.
+- **A run's body must be JSON.** Both built-in formats place the body in the stream as a JSON value, as the endpoint wrote it. A successful run with a non-empty body whose `Content-Type` is not `application/json` or a `+json` media type (a handler that returns a `string` answers `text/plain`) is therefore a failed run, and its body is never sent: the request that opens the stream gets a 500 problem response with `g:live_query_response_not_json` and no stream, and a later run ends the stream with one failure event carrying that code. An empty body is the value `null`. A request to the same URL that asks for no stream is not checked.
 - **Authentication and authorization are checked on every run.** A run authenticates the default scheme again, which is what notices an expired token, and assigns the fresh principal to the run's request, so `ICurrentUser` and `HttpContext.User` in the handler are the run's. It then evaluates what the authorization middleware evaluates: `[Authorize]` data, `AuthorizationPolicy` metadata, requirement data, and the fallback policy when the endpoint has none of them. `AllowAnonymous` skips the check. A refusal ends the stream with a failure event.
 - **A stream authenticates with what the opening request carried.** Cookies and headers are sent once, when the stream opens, and every run authenticates them again. There is no query-string token. A client that renews its token opens a new stream.
 - **Tenancy.** Runs execute on the opening request's own execution flow, so the ambient tenant the tenancy middleware set stays in effect; a stream of tenant B re-runs under tenant B whoever wrote. A run whose freshly authenticated principal carries a different `tenant_id` claim than the principal that opened the stream, or none, is refused, and the stream ends with a `g:live_query_unauthorized` failure. With catalog identifier resolution, a principal whose tenant claim stops matching the identifier is refused the same way. A host that keeps the tenant in a claim type of its own gets neither comparison on endpoints without the catalog check; there the stream keeps the tenant it opened under.
@@ -465,13 +478,13 @@ Invalid values fail options validation when the host starts.
 - **Command acknowledgement rides the same loop.** A stream reads its session id from the request that opened it, once. Command ids reach it through the hub and are written by the stream's own loop, with the result of a run that started after the command's commit, so an id never arrives ahead of the write it stands for.
 - **Limits gate the stream, nothing else.** The minimum interval and the re-run limit make a stream's own loop wait. No run ever executes on a writer's flow or a shared worker.
 - **Host shutdown.** When the host begins to stop, every open stream ends and the response completes normally. A server-sent events client reconnects after `ReconnectDelay`.
-- **`IHttpContextAccessor`.** Inside a run it returns the run's request. For a streaming request, code outside the endpoint that reads the accessor after the first run (response middleware, for example) reads `null`; use the `HttpContext` it was given.
+- **`IHttpContextAccessor`.** Inside a run it returns the run's request, so `ICurrentUser` and anything else that reads the accessor in the handler sees the run's freshly authenticated principal. Everywhere else it returns what the host's accessor returns: middleware above the endpoint, an exception handler, problem-details creation, and a transport keep reading the request that opened the stream, before and after every run. Work a run started and left running reads `null` from the accessor once that run has returned, because the run's request is gone with its service scope. `UseEndpoints()` does this by wrapping the registered accessor (it calls `AddHttpContextAccessor()` itself), so register a custom `IHttpContextAccessor` before `AddHeadlessLiveQueries`; `AddHttpContextAccessor()` may be called before or after. A host whose accessor was replaced after `UseEndpoints()` fails at startup, since its runs would read the opening request and the principal it opened with.
 - **HTTP/2.** Each open stream holds one connection on HTTP/1.1, and browsers allow six per origin. Serve live endpoints over HTTP/2, where streams share a connection.
 - **One process.** The limit at the top of this guide applies: a change announced in another process does not reach these streams.
 
 ### Metrics
 
-Live endpoints add two instruments to the `Headless.LiveQueries` meter. An open stream is one of its active subscriptions.
+Live endpoints add two instruments to the `Headless.LiveQueries` meter (`LiveQueriesDiagnostics.SourceName`), so `AddLiveQueriesInstrumentation()` subscribes to them too. An open stream is one of its active subscriptions.
 
 | Instrument | Kind | Counts |
 | --- | --- | --- |
@@ -603,22 +616,119 @@ dependencies.DependsOn("table:sales.Orders");
 | Operation through the tracked context | Tracked as |
 | --- | --- |
 | A LINQ query, `FromSql`, `SqlQuery`, inside a live query | A read of every mapped table or view the SQL names |
-| `SaveChanges` | A write of every table of each added, modified, or deleted entity, and of every table the save's commands name |
-| `ExecuteUpdate`, `ExecuteDelete` | A write of every mapped table the SQL names |
-| `ExecuteSql`, `ExecuteSqlRaw`, `ExecuteSqlInterpolated` | A write of every mapped table the SQL names |
+| `SaveChanges` | A write of every table of each added, modified, or deleted entity, and of every table the save's commands name. For a deleted entity, also every table whose rows refer to it |
+| `ExecuteUpdate`, `ExecuteDelete` | A write of every mapped table the SQL names. For a delete, also every table whose rows refer to those tables |
+| `ExecuteSql`, `ExecuteSqlRaw`, `ExecuteSqlInterpolated` | A write of every mapped table the SQL names. For SQL that holds the keyword `DELETE`, `TRUNCATE`, or `REPLACE`, also every table whose rows refer to those tables |
 
 A table is found in SQL by its name as the provider writes it: `"Todos"` on PostgreSQL and SQLite, `[Todos]` on SQL Server. EF Core's own SQL always matches. The schema is not part of the search, so hand-written SQL may qualify the table or leave the schema to the search path. An entity stored in several tables (table-per-type inheritance, entity splitting) reports all of them on every save, because a query may read any one of them alone.
+
+**A delete announces the tables that refer to the deleted rows.** When a row is deleted, the database removes the rows that refer to it (`ON DELETE CASCADE`) or clears their foreign key (`ON DELETE SET NULL`) by itself, with no command the tracker could read, and the context may never have loaded them. The tracker reads the model instead: a delete also announces the tables of every entity type with a foreign key to the deleted type whose delete behavior is `Cascade`, `ClientCascade`, `SetNull`, or `ClientSetNull`, and, through the cascading ones, the tables that refer to those, to any depth. Those tables are announced whole, also with [row-level matching](#row-level-matching) on. A delete is an entity saved in the `Deleted` state, `ExecuteDelete`, or SQL whose text holds `DELETE`, `TRUNCATE`, or `REPLACE` as a word anywhere. `REPLACE` counts because SQLite's `INSERT OR REPLACE` and `REPLACE INTO` (and MySQL's `REPLACE INTO`) delete the row that holds the key before they insert, and that delete runs the foreign keys' actions: the dependents are removed or cleared although the replaced row is still there. Matching a word is deliberately coarse: an update of a column named `Delete`, or one that calls the `replace()` string function, is taken for a delete and costs a re-run, while `deleted_at` or `replaced_by` is not. A foreign key configured as `Restrict` or `NoAction` announces nothing.
 
 Not tracked, with what to do instead:
 
 - **Writes EF Core does not issue.** Bulk-copy libraries, Dapper or ADO.NET on the same connection, triggers, other services, and another process. Call `ILiveQueryInvalidator.InvalidateAsync` with the table keys after the commit.
+- **Referential actions the model does not describe.** A foreign key that exists only in the database, one the model maps as `Restrict` or `NoAction` while the database cascades, `ON UPDATE CASCADE` after a key changed, and a delete made inside a stored procedure or a trigger. The rows the database changes then are announced by nobody. Call `InvalidateAsync` with the keys of the referring tables after the commit.
 - **Raw SQL that writes a table name another way.** `FROM Todos` without quotes on SQL Server or SQLite is not found, as a read or as a write. Quote the name as the provider does, or declare it: `DependsOn` for a read, `InvalidateAsync` for a write. PostgreSQL leaves an all-lowercase name unquoted, so there the bare name matches.
 - **A query that writes.** `FromSql` or `SqlQuery` over `INSERT … RETURNING` or a procedure that writes is treated as a read. Announce the write.
 - **Views, functions, and stored procedures.** A query over a mapped view depends on the view's own key, and a write to the view's base tables does not announce it. Declare the base tables with `DependsOn`.
 - **Read replicas.** A live handler must read from the database its writers commit to. A re-run that reads a replica before the replica applied the write shows the old data, and nothing re-runs it again.
 - **Migrations, scaffolding, and value generators.** Their commands are ignored.
 
-Tracking is per table: any write to a table re-runs every live query that read it, whichever rows it changed. Two tables with one name in two schemas are reported together.
+Tracking is per table unless [row-level matching](#row-level-matching) is on: any write to a table re-runs every live query that read it, whichever rows it changed. Two tables with one name in two schemas are reported together.
+
+### Row-level matching
+
+With `RowLevelMatching` on for a context, a saved row re-runs a live query only when the row can pass the filter the query read the table through. It is off by default, set per context type, and never loses a re-run: wherever a row or a query cannot be trusted to say enough, matching falls back to the table.
+
+```csharp
+using Headless.LiveQueries;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+
+builder.Services.AddHeadlessLiveQueries(setup =>
+    setup.UseEndpoints().UseEntityFramework<AppDbContext>(options => options.RowLevelMatching = true)
+);
+
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+{
+    public DbSet<Todo> Todos => Set<Todo>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // A todo never moves to another owner. EF Core now refuses to update the column, and a filter on it
+        // narrows a live query.
+        modelBuilder
+            .Entity<Todo>()
+            .Property(todo => todo.OwnerId)
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+    }
+}
+
+public sealed class Todo
+{
+    public int Id { get; set; }
+
+    public int OwnerId { get; set; }
+
+    public string Title { get; set; } = "";
+}
+```
+
+```csharp
+// Re-runs when a todo of this owner is added, changed, or deleted, and not for another owner's todo.
+app.MapGet(
+        "/owners/{ownerId:int}/todos",
+        async (int ownerId, AppDbContext db, CancellationToken cancellationToken) =>
+            await db.Todos.Where(todo => todo.OwnerId == ownerId).OrderBy(todo => todo.Id).ToListAsync(cancellationToken)
+    )
+    .WithLiveUpdates();
+```
+
+**Which filters narrow a query.** A condition narrows when it compares a column of the queried entity for equality with a constant or a captured value, and all of these hold:
+
+- The column is a primary-key property, or a property whose `AfterSaveBehavior` is `Throw`. A column that can change after insert does not narrow, because the copy of a row a context holds may be older than the stored row. This includes a tenant or owner column until it is configured as above.
+- The column's type is an integer type, `bool`, an enum, or `Guid`, nullable or not, and the property has no value converter. Text, dates, and fractions do not narrow.
+- The comparison is `==`, a bare `bool` column, or its negation. Conditions joined by `&&`, several `Where` calls, and the predicate of `Count`, `Any`, `First`, `Single`, or `Last` (and their `OrDefault` forms) are combined. A condition that does not qualify is ignored, and the ones beside it still narrow.
+
+**Which queries qualify.** The filter is used only when the query is one chain over one `DbSet` made of `Where`, the ordering operators, `Select`, `Skip`, `Take`, `Distinct`, `Sum`, `Min`, `Max`, `Average`, the tracking and tagging operators, and the terminal operators above, with a filter placed before any `Select`, `Skip`, `Take`, or `Distinct`. `Find` and a precompiled query (`EF.CompileAsyncQuery`) qualify too. A query matches by table when it:
+
+- uses a navigation, `Include`, a join, a set operator, `GroupBy`, `All`, a subquery, `FromSql`, or a function mapped with `HasDbFunction`;
+- reads an entity type with a navigation loaded by default (`AutoInclude`, an owned type), in an inheritance hierarchy, stored in several tables, or sharing its table with another entity type;
+- reads an entity type whose global query filter runs a query of its own or reads a navigation (a filter on the row's own columns, such as soft delete or a tenant id, is fine);
+- reads a navigation by name with `EF.Property`;
+- compares with a captured value that is `null`;
+- ends in SQL that names any table but the entity's own.
+
+**Which writes are matched by row.** Only rows saved by `SaveChanges`:
+
+| Write | Matched on |
+| --- | --- |
+| An added entity | Its key and fixed columns as stored, database-generated values included |
+| A modified or deleted entity that EF Core loaded with a tracking query | Its key, and the fixed columns as they were read |
+| A modified or deleted entity the application built or attached, loaded without tracking, or changed while detached | Its key alone; a filter on a fixed column treats the row as a possible match |
+| A modified or deleted entity whose key has a part of a type rows are not matched on, such as text | The matched parts of its key alone |
+| An entity added by this context and saved again without being read back | Its key alone |
+| `ExecuteUpdate`, `ExecuteDelete`, raw SQL | The table |
+| A row the database removes or clears because the row it refers to was deleted | The table |
+| A save through another context type or model that maps the same table | The table |
+| More than 256 rows of matched tables in one commit | The tables |
+| A commit whose outcome is in doubt | The tables |
+| An entity another interceptor, a cascade on save, or change detection adds to the save after the tracker read it | That entity's tables |
+
+Rows travel with the write: they are held by the transaction or the unit of work and announced with its commit, and a rollback drops them.
+
+**How to see that a filter narrows.** `headless.live_queries.rows.ruled_out` counts each saved row that a stream's filter excluded. When it stays flat while `headless.live_queries.wakes` rises with every write to the table, the query or the column does not qualify and the stream is matching by table. Check the two lists above.
+
+**Limits and costs.**
+
+- **A fixed column must stay fixed.** EF Core enforces it for `SaveChanges` only. Changing the column with `ExecuteUpdate`, raw SQL, a trigger, or a model that maps it as changeable announces the table at that moment, but an entity a context loaded before the change keeps matching on the old value when it is saved later.
+- **A key names one row for good.** If a row is deleted and another is inserted under the same key with different fixed columns while a context still holds the first, a later save of that entity matches on the first row's values. Database-generated keys and GUIDs never repeat; application-assigned keys must not be reused.
+- **One process.** Matching by row changes which streams re-run, not who hears a write.
+- **A comment in the SQL.** A query that qualifies carries `-- live-query-shape:<number>` above its SQL, in every execution, live or not. The number links the SQL to the analysis made when EF Core compiled the query.
+- **A step per entity.** Every entity the context builds from a query passes through a materialization interceptor, which remembers the fixed columns of a tracked entity whose type has any. Other entities cost a check.
+- **No rows without a reader.** A save keeps rows only for a table some open stream reads through a filter at that moment; otherwise it announces the table, at the cost of table-level tracking.
+- **4,096 query shapes per model.** Past it, a newly compiled query matches by table. An application that builds queries dynamically without bound reaches it; one with a fixed set of queries does not.
+- **Shared across hosts.** Two hosts in one process that use one model share the compiled queries and their analysis, as they share EF Core's query cache. Each host still matches only its own streams against its own writes.
 
 ### When a write is announced
 
@@ -647,11 +757,16 @@ The announcement runs on the thread that completed the commit. It stamps the key
 
 A live query must not write through a tracked context. `SaveChanges` with a pending change, `ExecuteUpdate`, `ExecuteDelete`, and raw SQL that names a mapped table throw `InvalidOperationException` before anything is sent, with a message that names the table key and the rule. A live endpoint treats it as any exception from the handler: the host's error response when the stream opens, or a `g:live_query_run_failed` event on a re-run. Raw SQL that names no mapped table, such as a session setting, is allowed.
 
+`ILiveQueryInvalidator.InvalidateAsync` inside a live query is refused the same way, with or without a tracked context: a query that announces a write makes its own run out of date, so it would run again after every run.
+
+The rule covers a run, not the tasks it leaves behind. Once the query has returned, work it started and left running writes through a tracked context like any other code, and the write is announced.
+
 ### Configuration
 
 | Option | Default | Effect |
 | --- | --- | --- |
 | `LiveQueriesEntityFrameworkOptions.MaxCachedCommands` | `1024` | How many SQL command texts the tracker remembers the tables of, per model. Past the limit the memory is emptied and fills again, which costs repeated searches and never a missed table. Must be at least 1. |
+| `LiveQueriesEntityFrameworkOptions.RowLevelMatching` | `false` | Whether a saved row re-runs only the live queries whose filters it can pass. See [Row-level matching](#row-level-matching). |
 
 Invalid values fail options validation when the host starts.
 
@@ -662,5 +777,6 @@ Invalid values fail options validation when the host starts.
 - **Reads are recorded on the live query's own flow.** A query started on a detached flow, or through a context that is not tracked, records nothing; a run that records nothing at all fails with `LiveQueryHasNoDependenciesException`.
 - **Pooled contexts carry nothing over.** Pending writes belong to the transaction or the unit of work, not to the context instance, so a context returned to the pool with an unfinished transaction announces nothing later.
 - **One more change detection per save.** The tracker reads the change tracker before the save, which runs `DetectChanges` once more than EF Core does by itself. With `AutoDetectChangesEnabled` off it does not.
-- **Other interceptors.** Tables an interceptor adds to a save after the tracker read the change tracker are still found, from the text of the save's commands.
+- **Other interceptors.** Tables an interceptor adds to a save after the tracker read the change tracker are still found, from the text of the save's commands. With row-level matching, an entity added or changed after that point has its tables announced whole.
+- **A failure while reading a saved row announces the table.** It is counted and logged like any other tracking failure, and the save is not affected.
 - **One process.** The limit at the top of this guide applies: only this process's writes are announced, and only to this process's subscriptions.

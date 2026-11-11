@@ -107,6 +107,44 @@ public sealed class LiveReadOnlyRuleTests : TestBase
         (await todos.NextAsync()).Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_announce_and_not_refuse_a_write_by_work_that_outlived_the_run_that_started_it()
+    {
+        // given - the query starts work that is still running when the run returns, as a lazily started loop does
+        await using var host = await _CreateWithOneTodoAsync();
+        var runReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task? leftover = null;
+        await using var todos = host.Watch(
+            async (db, cancellationToken) =>
+            {
+                leftover ??= Task.Run(
+                    async () =>
+                    {
+                        await runReturned.Task;
+                        await host.WriteAsync(async writer =>
+                        {
+                            writer.Todos.Add(new Todo { Id = 2, Title = "written after the run" });
+                            await writer.SaveChangesAsync(AbortToken);
+                        });
+                    },
+                    AbortToken
+                );
+
+                return await db.Todos.CountAsync(cancellationToken);
+            },
+            AbortToken
+        );
+        (await todos.NextAsync()).Should().Be(1);
+
+        // when
+        runReturned.SetResult();
+        var write = () => leftover!;
+
+        // then - the write is an ordinary one: it is stored, and the query that reads the table runs again
+        await write.Should().NotThrowAsync();
+        (await todos.NextAsync()).Should().Be(2);
+    }
+
     private static async Task<LiveEfTestHost> _CreateWithOneTodoAsync()
     {
         var host = await LiveEfTestHost.CreateAsync();
