@@ -3,6 +3,8 @@ import type { CappedCount } from '../data/counts.ts'
 /** Anything a formatter reads as an instant: a `Date`, epoch milliseconds, or an ISO string from the server. */
 export type TimeInput = Date | number | string
 
+const byteUnits = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const
+
 /** Every text formatter a view needs, bound to one locale and one display time zone. */
 export interface Formatters {
   readonly locale: string
@@ -11,9 +13,15 @@ export interface Formatters {
   number: (value: number, options?: Intl.NumberFormatOptions) => string
   /** A count, `312`, or `10,000+` when the server capped it. */
   count: (count: CappedCount) => string
-  /** A byte size: `812 B`, `70.0 KB`. */
+  /**
+   * A byte size in the largest unit that keeps it at or above one, 1,024 to the step: `812 bytes`, `70 kB`, `1.5 MB`,
+   * `2.1 GB`. The unit's name comes from `Intl`, so it reads in the locale.
+   */
   size: (bytes: number) => string
-  /** A duration with its unit: `340 ms`, `1.2 s`, `3 min 4 s`. */
+  /**
+   * A duration in at most two units, joined the locale's way: `340 ms`, `1.2 sec`, `3 min 4 sec`, `2 hr 5 min`. A zero
+   * second unit is left out (`4 min`), and every step rounds first, so it never reads `3 min 60 sec`.
+   */
   duration: (ms: number) => string
   /** The exact time with its zone and offset, in the display time zone. */
   exactTime: (at: TimeInput) => string
@@ -43,6 +51,7 @@ export function isTimeZone(timeZone: string) {
 export function createFormatters(locale: string, timeZone: string): Formatters {
   const numbers = new Map<string, Intl.NumberFormat>()
   const exacts = new Map<string, Intl.DateTimeFormat>()
+  let lists: Intl.ListFormat | undefined
 
   function numberFormat(options: Intl.NumberFormatOptions = {}) {
     const key = JSON.stringify(options)
@@ -54,6 +63,16 @@ export function createFormatters(locale: string, timeZone: string): Formatters {
     }
 
     return format
+  }
+
+  // A byte count reads in the long form (`812 bytes`): the short English form is the singular `812 byte`.
+  function unitFormat(unit: string, maximumFractionDigits = 0) {
+    return numberFormat({
+      style: 'unit',
+      unit,
+      unitDisplay: unit === 'byte' ? 'long' : 'short',
+      maximumFractionDigits,
+    })
   }
 
   function zonedTime(at: TimeInput, zone: string) {
@@ -95,23 +114,47 @@ export function createFormatters(locale: string, timeZone: string): Formatters {
 
       return count.capped ? `${text}+` : text
     },
-    size: (bytes) =>
-      bytes < 1024
-        ? `${numberFormat().format(bytes)} B`
-        : `${numberFormat({ minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(bytes / 1024)} KB`,
+    size: (bytes) => {
+      // Rounded as it would be shown before the unit is chosen, so 1,023.96 kB reads `1 MB`, never `1,024 kB`.
+      let value = Math.abs(bytes)
+      let at = 0
+
+      while (at < byteUnits.length - 1 && (at === 0 ? Math.round(value) : Math.round(value * 10) / 10) >= 1024) {
+        value /= 1024
+        at++
+      }
+
+      const unit = byteUnits[at]!
+
+      return unitFormat(unit, unit === 'byte' ? 0 : 1).format(Math.sign(bytes) * value)
+    },
     duration: (ms) => {
-      if (ms < 1_000) {
-        return `${numberFormat().format(ms)} ms`
+      const sign = ms < 0 ? -1 : 1
+      const value = Math.abs(ms)
+
+      // Each step rounds before it checks its threshold, so 999.6 ms reads `1 sec` and 3 min 59.6 s reads `4 min`,
+      // never `1,000 ms` or `3 min, 60 sec`.
+      if (Math.round(value) < 1_000) {
+        return unitFormat('millisecond').format(sign * Math.round(value))
       }
 
-      if (ms < 60_000) {
-        return `${numberFormat({ maximumFractionDigits: 1 }).format(ms / 1_000)} s`
+      const tenths = Math.round(value / 100) / 10
+
+      if (tenths < 60) {
+        return unitFormat('second', 1).format(sign * tenths)
       }
 
-      // Rounded to whole seconds before the split, so 3 min 59.6 s reads `4 min 0 s`, never `3 min 60 s`.
-      const seconds = Math.round(ms / 1_000)
+      // Below an hour the pair is minutes and seconds, from whole seconds; above, hours and minutes, from whole minutes.
+      const seconds = Math.round(value / 1_000)
+      const isHours = seconds >= 3_600
+      const whole = isHours ? Math.round(value / 60_000) : seconds
+      const parts = [unitFormat(isHours ? 'hour' : 'minute').format(sign * Math.floor(whole / 60))]
 
-      return `${numberFormat().format(Math.floor(seconds / 60))} min ${numberFormat().format(seconds % 60)} s`
+      if (whole % 60 > 0) {
+        parts.push(unitFormat(isHours ? 'minute' : 'second').format(whole % 60))
+      }
+
+      return (lists ??= new Intl.ListFormat(locale, { style: 'narrow', type: 'unit' })).format(parts)
     },
     exactTime: (at) => zonedTime(at, timeZone),
     zonedTime,

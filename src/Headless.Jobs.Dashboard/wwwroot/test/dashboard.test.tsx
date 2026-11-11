@@ -183,7 +183,7 @@ describe('jobs dashboard', () => {
     const cancel = within(row).getByRole('button', { name: 'Cancel' })
     await waitFor(() => expect(cancel.getAttribute('aria-disabled')).toBeNull())
     await actor.click(cancel)
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByRole('alertdialog')
     await actor.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'stuck on a lock')
     await actor.click(within(dialog).getByRole('button', { name: 'Cancel run' }))
 

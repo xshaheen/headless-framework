@@ -91,7 +91,7 @@ describe('payload view', () => {
   it('shows the size and the first 64 KB of a large payload, with Copy all', () => {
     render(<PayloadView content={'x'.repeat(70 * 1024)} contentType="text/plain" />)
 
-    expect(screen.getByText('70.0 KB, first 64 KB shown')).toBeTruthy()
+    expect(screen.getByText('70 kB, first 64 kB shown')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Copy all' })).toBeTruthy()
     expect(shownText()).toBe('x'.repeat(64 * 1024))
   })
@@ -105,7 +105,7 @@ describe('payload view', () => {
     render(<PayloadView content={content} contentType="text/plain" />)
 
     const shown = shownText()
-    expect(screen.getByText('70.0 KB, first 64 KB shown')).toBeTruthy()
+    expect(screen.getByText('70 kB, first 64 kB shown')).toBeTruthy()
     expect(encoder.encode(shown).length).toBe(65_535)
     expect(content.startsWith(shown)).toBe(true)
     expect(shown).not.toContain('�')
@@ -118,7 +118,7 @@ describe('payload view', () => {
     render(<PayloadView content={content} contentType="text/plain" />)
 
     expect(shownText()).toBe(content)
-    expect(screen.getByText('64.0 KB')).toBeTruthy()
+    expect(screen.getByText('64 kB')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy()
   })
 

@@ -191,7 +191,7 @@ describe('messaging consumers', () => {
     })
 
     await actor.click(within(table).getByRole('button', { name: 'Force open' }))
-    expect(await screen.findByRole('dialog', { name: 'Force open' })).toBeTruthy()
+    expect(await screen.findByRole('alertdialog', { name: 'Force open' })).toBeTruthy()
   })
 })
 

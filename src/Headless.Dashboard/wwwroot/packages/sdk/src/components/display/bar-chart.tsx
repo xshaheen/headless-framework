@@ -2,6 +2,7 @@
 // changed identity could re-trigger), and the shell's assets sit near their size budget.
 'use no memo'
 
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { DashboardStateRole } from '../../define-module.ts'
 import { useFormat } from '../../locale/locale.tsx'
 
@@ -36,6 +37,17 @@ export interface BarChartProps {
  */
 export function BarChart({ label, series, columns, unit, mini }: BarChartProps) {
   const format = useFormat()
+  const svg = useRef<SVGSVGElement>(null)
+  const [isRtl, setRtl] = useState(false)
+
+  // The column labels under the drawing are text that the page's `dir` mirrors; the drawing reads the same `dir`, so
+  // the oldest column sits over the oldest label at the inline start in either direction.
+  useLayoutEffect(() => {
+    if (svg.current) {
+      setRtl(getComputedStyle(svg.current).direction === 'rtl')
+    }
+  }, [])
+
   const count = (value: number) => format.count({ value, capped: false })
   const top = Math.max(0, ...columns.map((column) => column.values.reduce((sum, value) => sum + value, 0)))
   const scale = 100 / (top || 1)
@@ -52,6 +64,7 @@ export function BarChart({ label, series, columns, unit, mini }: BarChartProps) 
         </span>
       )}
       <svg
+        ref={svg}
         role="img"
         aria-label={sentence}
         className={`w-full border-b border-border [&_rect]:fill-role ${mini ? 'h-(--chart-mini-height)' : 'h-(--chart-height)'}`} viewBox={`0 0 ${columns.length * 10} 100`} preserveAspectRatio="none">
@@ -65,7 +78,7 @@ export function BarChart({ label, series, columns, unit, mini }: BarChartProps) 
                 const height = value * scale
                 base -= height
 
-                return <rect key={at} className={`hd-tone-${series[at]?.tone ?? 'off'}`} x={index * 10 + 2} y={base} width={6} height={height} />
+                return <rect key={at} className={`hd-tone-${series[at]?.tone ?? 'off'}`} x={(isRtl ? columns.length - 1 - index : index) * 10 + 2} y={base} width={6} height={height} />
               })}
             </g>
           )

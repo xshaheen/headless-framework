@@ -14,7 +14,7 @@ import {
   Text,
   useFilter,
 } from 'react-aria-components'
-import { dialogScrim, dialogSurface } from '../dialog.tsx'
+import { dialogScrim, dialogSurface, useViewportStyle } from '../dialog.tsx'
 import { Kbd, Mono } from '../marks.tsx'
 
 export interface PaletteItem {
@@ -39,9 +39,10 @@ export interface CommandPaletteProps {
 /** The command palette: views, commands, and objects, filtered as the operator types. */
 export function CommandPalette({ isOpen, onOpenChange, items, defaultQuery }: CommandPaletteProps) {
   const { contains } = useFilter({ sensitivity: 'base' })
+  const viewportStyle = useViewportStyle()
 
   return (
-    <ModalOverlay className={dialogScrim} isOpen={isOpen} onOpenChange={onOpenChange} isDismissable>
+    <ModalOverlay className={dialogScrim} style={viewportStyle} isOpen={isOpen} onOpenChange={onOpenChange} isDismissable>
       <Modal className={dialogSurface}>
         <AriaDialog aria-label="Command palette" className="flex flex-col outline-none">
           <Autocomplete filter={contains} defaultInputValue={defaultQuery}>

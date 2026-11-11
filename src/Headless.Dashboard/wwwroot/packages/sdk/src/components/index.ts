@@ -1,7 +1,7 @@
 export { below } from './breakpoints.ts'
 export { Button, type ButtonProps, type ButtonVariant } from './button.tsx'
 export { CopyButton, type CopyButtonProps } from './copy-button.tsx'
-export { Dialog, type OverlayProps } from './dialog.tsx'
+export { Dialog, Sheet, type OverlayProps, type SheetProps } from './dialog.tsx'
 export {
   Banner,
   LoadError,
@@ -11,12 +11,13 @@ export {
   type StaleNoticeProps,
 } from './display/banner.tsx'
 export { BarChart, type BarChartProps, type BarColumn, type BarSeries } from './display/bar-chart.tsx'
-export { Card, CardRow, Cards, type CardProps, type CardRowProps } from './display/card.tsx'
+export { Card, CardRow, Cards, type CardProps, type CardRowProps, type CardState } from './display/card.tsx'
 export { Actions, Fields, type FieldsProps } from './display/fields.tsx'
 export { EmptyState, type EmptyStateProps } from './display/empty-state.tsx'
 export { FilterChip, FilterChips, type FilterChipProps } from './display/filter-chips.tsx'
 export { FilterSelect, type FilterSelectProps } from './display/filter-select.tsx'
 export { FilterToolbar, type FilterToolbarProps } from './display/filter-toolbar.tsx'
+export { Meter, type MeterProps, type MeterThreshold } from './display/meter.tsx'
 export { KeyValueTable, type KeyValueRow, type KeyValueTableProps } from './display/key-value-table.tsx'
 export { PageHeader, type PageHeaderProps } from './display/page-header.tsx'
 export { Timestamp, type TimestampProps } from './display/timestamp.tsx'
@@ -26,6 +27,7 @@ export { Skeleton, type SkeletonProps, type SkeletonShape } from './display/skel
 export { StatCard, StatStrip, type StatCardProps } from './display/stat-strip.tsx'
 export { Tag, type TagProps, type TagVariant } from './display/tag.tsx'
 export { Text, type TextProps, type TextTone } from './display/text.tsx'
+export { TrendChip, type TrendChipProps, type GoodDirection } from './display/trend-chip.tsx'
 export { DetailPanel, type DetailPanelProps, type DetailTab } from './frame/detail-panel.tsx'
 export { ExceptionBlock, type ExceptionBlockProps } from './frame/exception-block.tsx'
 export { FieldGrid, GridField, type FieldEdit, type FieldGridProps, type GridFieldProps } from './frame/field-grid.tsx'

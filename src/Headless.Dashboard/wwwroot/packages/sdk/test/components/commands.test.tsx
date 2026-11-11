@@ -70,7 +70,7 @@ describe('commands', () => {
 
     await user.click(screen.getByRole('button', { name: 'Fail 2 runs' }))
 
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
     const toast = await screen.findByText('Fail: 2 done')
     await user.click(within(toast.closest('[role="group"]') as HTMLElement).getByRole('button', { name: 'Undo' }))
 
@@ -132,7 +132,7 @@ describe('commands', () => {
 
     await user.click(screen.getByRole('button', { name: 'Delete' }))
 
-    expect(within(await screen.findByRole('dialog')).getByText('12 stored occurrences go with it')).toBeTruthy()
+    expect(within(await screen.findByRole('alertdialog')).getByText('12 stored occurrences go with it')).toBeTruthy()
   })
 
   it('keeps Confirm disabled until the typed count matches', async () => {
@@ -172,7 +172,7 @@ describe('commands', () => {
     )
 
     await user.click(screen.getByRole('button', { name: 'Requeue 150 runs' }))
-    const dialog = screen.getByRole('dialog')
+    const dialog = screen.getByRole('alertdialog')
     await user.type(within(dialog).getByRole('textbox', { name: /Type 150 to confirm/ }), '150')
     await user.click(within(dialog).getByRole('button', { name: 'Requeue 150 runs' }))
 
@@ -221,7 +221,7 @@ describe('commands', () => {
       throw Object.assign(new Error('x'), { name: 'other' })
     })
     await user.click(screen.getByRole('button', { name: 'Requeue' }))
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Requeue runs' }))
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Requeue runs' }))
 
     expect((await screen.findByRole('alert')).textContent).toBe('Requeue failed. Try again.')
     expect(requests).toHaveLength(1)

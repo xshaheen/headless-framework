@@ -20,6 +20,11 @@ export interface StatCardProps {
   to?: To
   /** What the value is about, from `@headless/dashboard-sdk/icons`, at the label's inline end; never its state. */
   icon?: IconComponent
+  /**
+   * A `TrendChip` with the change the server serves beside the value, such as `<TrendChip value={-0.031}
+   * goodDirection="down" />` under a failure rate. Leave it out when nothing is served; the card derives none.
+   */
+  trend?: ReactNode
 }
 
 // The cell's height is fixed, not a minimum: the label row (18), the value (26), the two caption lines (32), the gaps,
@@ -28,10 +33,10 @@ export interface StatCardProps {
 const stat = 'flex h-(--statstrip-height) flex-col gap-0.5 overflow-hidden border-e border-border px-4 py-2 text-foreground no-underline'
 
 /**
- * One served value with its label and state dot. It draws no sparkline and no empty chart frame: a trend appears
- * only once the server serves its series.
+ * One served value with its label and state dot, and the served change in `trend`. It draws no sparkline and no empty
+ * chart frame: a trend appears only once the server serves it.
  */
-export function StatCard({ label, value, tone, caption, to, icon: Icon }: StatCardProps) {
+export function StatCard({ label, value, tone, caption, to, icon: Icon, trend }: StatCardProps) {
   const body = (
     <>
       <span className={`flex items-center gap-2 type-small text-muted-foreground ${tone ? `hd-tone-${tone}` : ''}`}>
@@ -42,7 +47,14 @@ export function StatCard({ label, value, tone, caption, to, icon: Icon }: StatCa
         {Icon ? <Icon className="ms-auto" /> : null}
       </span>
       {/* The spaces keep the link's name `Failed 23`, not `Failed23`; the flex column drops them from the layout. */}{' '}
-      <span className="type-stat tabular-nums">{value}</span>
+      {/* The chip sits on the value's line, after a space, so the link's name reads `Failed 23 +18%`. */}
+      {trend != null ? (
+        <span className="flex items-center gap-2">
+          <span className="type-stat tabular-nums">{value}</span> {trend}
+        </span>
+      ) : (
+        <span className="type-stat tabular-nums">{value}</span>
+      )}
       {/* A served sentence can run past the cell: it keeps to two lines and shows whole on hover, so the strip stays
           one height at every width. */}
       {caption ? (

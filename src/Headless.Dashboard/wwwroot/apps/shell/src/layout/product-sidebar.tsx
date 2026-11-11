@@ -101,10 +101,10 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
   const current = currentEntry(product, location)
 
   return (
-    // Below 768 px the sidebar opens over the view from the Menu button.
+    // Below 768 px the sidebar fills the shell's sheet, which draws the edge.
     <nav
       id="hd-sidebar"
-      className="flex flex-col gap-0.5 overflow-y-auto border-e bg-deep px-2 py-2.5 line-icons max-md:fixed max-md:start-0 max-md:top-(--topbar-height) max-md:bottom-0 max-md:z-(--z-popover) max-md:w-(--sidebar-phone-width) max-md:max-w-[85vw] max-md:shadow-lg"
+      className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto border-e bg-deep px-2 py-2.5 line-icons max-md:border-e-0"
       aria-label={product.label}
     >
       {sections.map((section, index) => (

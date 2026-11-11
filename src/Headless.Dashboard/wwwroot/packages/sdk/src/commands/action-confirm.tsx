@@ -65,6 +65,7 @@ function ActionConfirmDialog({
   tone,
 }: ActionConfirmProps) {
   const formId = useId()
+  const reachId = useId()
   const [reasonText, setReasonText] = useState('')
   const [typed, setTyped] = useState('')
   const [values, setValues] = useState<ArgumentValues>({})
@@ -75,7 +76,15 @@ function ActionConfirmDialog({
   const blocked = !typedMatches || !reasonGiven || Boolean(isBusy)
 
   return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onCancel())} title={title} isDismissable={!isBusy}>
+    // An alert dialog, since it interrupts with a decision; it reads the reach after the title.
+    <Dialog
+      isOpen
+      onOpenChange={(open) => (open ? undefined : onCancel())}
+      title={title}
+      isDismissable={!isBusy}
+      role="alertdialog"
+      aria-describedby={reach ? reachId : undefined}
+    >
       <form
         id={formId}
         noValidate
@@ -102,7 +111,11 @@ function ActionConfirmDialog({
           })
         }}
       >
-        {reach ? <div className="hd-hint">{reach}</div> : null}
+        {reach ? (
+          <div id={reachId} className="hd-hint">
+            {reach}
+          </div>
+        ) : null}
         {sample && sample.length > 0 ? (
           <ul
             className="flex flex-col rounded-md border border-border *:flex *:justify-between *:gap-3 *:px-2.5 *:py-1.5 *:type-small [&>li+li]:border-t [&>li+li]:border-border"
@@ -150,7 +163,8 @@ function ActionConfirmDialog({
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
-          <Button onPress={onCancel} isDisabled={isBusy}>
+          {/* Focus starts on backing out, so an Enter pressed out of habit never runs the action. */}
+          <Button onPress={onCancel} isDisabled={isBusy} autoFocus>
             {cancelLabel}
           </Button>
           <Button type="submit" variant={tone === 'danger' ? 'danger' : 'primary'} isDisabled={blocked}>

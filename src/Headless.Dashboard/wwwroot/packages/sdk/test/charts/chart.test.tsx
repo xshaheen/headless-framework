@@ -331,4 +331,35 @@ describe('Chart', () => {
       'Nov 12 · scheduled',
     ])
   })
+
+  it.each([
+    ['ltr', (first: number, last: number) => first < last],
+    ['rtl', (first: number, last: number) => first > last],
+  ] as const)('starts time at the inline start of a %s page, where the first date label sits', (dir, ordered) => {
+    const { container } = render(
+      <div dir={dir}>
+        <LocaleProvider>
+          <Chart {...rate} />
+        </LocaleProvider>
+      </div>,
+    )
+
+    const points = segments(container.querySelector('.recharts-line-curve')!.getAttribute('d')!).flat()
+    expect(ordered(points[0]![0]!, points.at(-1)![0]!)).toBe(true)
+  })
+
+  it('keeps the image, its sentence, and the list toggle on a right-to-left page', async () => {
+    const user = userEvent.setup()
+    render(
+      <div dir="rtl">
+        <LocaleProvider>
+          <Chart {...rate} />
+        </LocaleProvider>
+      </div>,
+    )
+
+    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('Throughput')
+    await user.click(screen.getByRole('button', { name: 'Show list: Throughput' }))
+    expect(screen.getByRole('table', { name: 'Throughput' })).toBeTruthy()
+  })
 })
