@@ -161,6 +161,74 @@ public sealed class LiveQueryHubTests : TestBase
         host.Meters.Total("headless.live_queries.wakes").Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_enter_the_rerun_gate_before_every_run_but_the_first_and_release_its_turn_after_the_run()
+    {
+        // given
+        await using var host = new LiveQueriesTestHost();
+        var runs = new OwnerTodosRun(owner: 3) { AlsoReadsWholeKey = true };
+        var gate = new CountingGate();
+        var watch = _Hub(host).WatchAsync(runs.RunAsync, gate.EnterAsync, AbortToken);
+        await using var updates = watch.GetAsyncEnumerator(AbortToken);
+
+        // when
+        await _NextAsync(updates);
+        var enteredForFirstRun = gate.Entered;
+        runs.Result = "[1]";
+        _Hub(host).Invalidate(new LiveWriteSet(["todos"], []));
+        await _NextAsync(updates);
+
+        // then
+        enteredForFirstRun.Should().Be(0);
+        gate.Entered.Should().Be(1);
+        gate.Released.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_run_once_for_the_writes_announced_while_a_subscription_waits_at_the_rerun_gate()
+    {
+        // given - a subscription stopped at the gate by a first write
+        await using var host = new LiveQueriesTestHost();
+        var runs = new OwnerTodosRun(owner: 3) { AlsoReadsWholeKey = true };
+        var held = new HeldRun();
+        var holding = true;
+        var watch = _Hub(host)
+            .WatchAsync(
+                runs.RunAsync,
+                async cancellationToken =>
+                {
+                    if (holding)
+                    {
+                        await held.WaitAsync(cancellationToken);
+                    }
+
+                    return null;
+                },
+                AbortToken
+            );
+        await using var updates = watch.GetAsyncEnumerator(AbortToken);
+        await _NextAsync(updates);
+        _Hub(host).Invalidate(new LiveWriteSet(["todos"], []));
+        var next = updates.MoveNextAsync().AsTask();
+        await held.Entered.WaitAsync(_Patience, AbortToken);
+
+        // when - a second write lands before the gate opens
+        runs.Result = "[2]";
+        _Hub(host).Invalidate(new LiveWriteSet(["todos"], []));
+        holding = false;
+        held.Release();
+        (await next.WaitAsync(_Patience, AbortToken)).Should().BeTrue();
+        var afterBothWrites = updates.Current;
+
+        // then - a third write causes the third run: the second write caused none of its own
+        runs.Result = "[3]";
+        _Hub(host).Invalidate(new LiveWriteSet(["todos"], []));
+        var afterThirdWrite = await _NextAsync(updates);
+        Encoding.UTF8.GetString(afterBothWrites.Payload.Span).Should().Be("[2]");
+        Encoding.UTF8.GetString(afterThirdWrite.Payload.Span).Should().Be("[3]");
+        runs.Count.Should().Be(3);
+    }
+
     private static LiveQueryHub _Hub(LiveQueriesTestHost host) => host.Services.GetRequiredService<LiveQueryHub>();
 
     private static async Task<LiveUpdate> _NextAsync(IAsyncEnumerator<LiveUpdate> updates)
@@ -171,6 +239,62 @@ public sealed class LiveQueryHubTests : TestBase
     }
 
     private sealed record Todo(int OwnerId);
+
+    private sealed class CountingGate
+    {
+        private readonly Lock _lock = new();
+
+        public int Entered
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return field;
+                }
+            }
+            private set;
+        }
+
+        public int Released
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return field;
+                }
+            }
+            private set;
+        }
+
+        public ValueTask<IDisposable?> EnterAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            lock (_lock)
+            {
+                Entered++;
+            }
+
+#pragma warning disable CA2000 // False positive: the hub owns the turn it is handed, and its dispose is what this gate counts.
+            return new(new Turn(this));
+#pragma warning restore CA2000
+        }
+
+        private void _Release()
+        {
+            lock (_lock)
+            {
+                Released++;
+            }
+        }
+
+        private sealed class Turn(CountingGate gate) : IDisposable
+        {
+            public void Dispose() => gate._Release();
+        }
+    }
 
     private sealed class OwnerTodosRun(int owner)
     {
