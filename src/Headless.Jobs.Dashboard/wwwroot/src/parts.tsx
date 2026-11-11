@@ -46,10 +46,10 @@ import {
   type IconComponent,
 } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery } from '@headless/dashboard-sdk/query'
+import { useQuery, useQueryClient, type QueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useModuleStale, useStreamStatus } from '@headless/dashboard-sdk/stream'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { fetchFunctions } from './cron.ts'
 import { RunProgress } from './progress.tsx'
 import {
@@ -115,6 +115,56 @@ export function QueryState<T>({
   }
 
   return children(query.data)
+}
+
+// A finishing chain or a bulk requeue sends many run changes at once; one read after they settle covers them all.
+const SETTLE_MS = 1_000
+// A running job reports progress every few seconds, so with several running the changes never settle; the burst's
+// first change bounds how long the read may wait.
+const SETTLE_MAX_WAIT_MS = 5_000
+
+/** A read `useSettledRefetch` owes: the key to read again, and the timers that will. */
+interface PendingRefetch {
+  key?: readonly unknown[]
+  settle?: ReturnType<typeof setTimeout>
+  deadline?: ReturnType<typeof setTimeout>
+}
+
+function flushRefetch(client: QueryClient, pending: PendingRefetch) {
+  clearTimeout(pending.settle)
+  clearTimeout(pending.deadline)
+
+  if (pending.key) {
+    void client.invalidateQueries({ queryKey: pending.key })
+  }
+
+  pending.key = pending.settle = pending.deadline = undefined
+}
+
+/**
+ * The call a live change handler makes to read `queryKey` again, for an answer no change can patch, such as a series
+ * or a count: it reads once a burst of calls settles for 1 s, and at the latest 5 s after the burst's first call.
+ */
+export function useSettledRefetch(queryKey: readonly unknown[]) {
+  const client = useQueryClient()
+  const pending = useRef<PendingRefetch>({})
+  const keyText = JSON.stringify(queryKey)
+
+  // A read still owed when the view leaves, or moves to another key, is marked at once: nothing refetches on a
+  // remount, so the next visit would otherwise show the answer from before the change.
+  useEffect(() => {
+    const owed = pending.current
+
+    return () => flushRefetch(client, owed)
+  }, [client, keyText])
+
+  return () => {
+    const owed = pending.current
+    clearTimeout(owed.settle)
+    owed.key = queryKey
+    owed.settle = setTimeout(() => flushRefetch(client, owed), SETTLE_MS)
+    owed.deadline ??= setTimeout(() => flushRefetch(client, owed), SETTLE_MAX_WAIT_MS)
+  }
 }
 
 /** The registered functions, one cached answer for the runs list, the add forms, and the Functions views. */

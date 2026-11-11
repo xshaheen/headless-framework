@@ -5,6 +5,7 @@ import { useTopics } from '../stream/hooks.ts'
 import { listKey, objectKey } from './client.tsx'
 import {
   getNewRows,
+  isNewRowsCapped,
   mergeFetchedObject,
   mergeFetchedPage,
   onNewRowsChange,
@@ -54,17 +55,20 @@ export function useDashboardObject<T>(options: DashboardObjectOptions<T>) {
 }
 
 /**
- * The new rows notice of `topic`: how many rows arrived, and the call that shows them. With `matches`, only an
- * arrived row whose projection matches the list's filter counts, because only those would appear on `show`.
+ * The new rows notice of `topic`: how many rows arrived, whether that count is a floor because the topic passed its
+ * cap of 500 and dropped the oldest (`isCapped`, read `500+ new`), and the call that shows them. With `matches`, only
+ * an arrived row whose projection matches the list's filter counts, because only those would appear on `show`.
  */
 export function useNewRows<T>(topic: string, matches?: (row: T) => boolean) {
   const client = useQueryClient()
+  const subscribe = (listener: () => void) => onNewRowsChange(client, listener)
   const count = useSyncExternalStore(
-    (listener) => onNewRowsChange(client, listener),
+    subscribe,
     () => [...getNewRows(client, topic).values()].filter((row) => !matches || (row !== null && matches(row as T))).length,
   )
+  const isCapped = useSyncExternalStore(subscribe, () => isNewRowsCapped(client, topic))
 
-  return { count, show: () => showNewRows(client, topic) }
+  return { count, isCapped, show: () => showNewRows(client, topic) }
 }
 
 /** The dashboard's API client, as the shell configured it. */

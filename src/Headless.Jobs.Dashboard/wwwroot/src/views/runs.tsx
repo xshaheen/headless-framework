@@ -24,6 +24,7 @@ import {
 } from '@headless/dashboard-sdk/components'
 import {
   DashboardApiError,
+  isNewerVersion,
   listKey,
   useDashboardKeysetList,
   useDashboardObject,
@@ -273,7 +274,7 @@ export default function RunsView() {
 
     const changed = new Set(
       items
-        .filter((run) => frame.refused.has(run.id) && refusedAt.current.get(run.id) !== run.version)
+        .filter((run) => frame.refused.has(run.id) && isNewerVersion(run.version, refusedAt.current.get(run.id)))
         .map((run) => run.id),
     )
 

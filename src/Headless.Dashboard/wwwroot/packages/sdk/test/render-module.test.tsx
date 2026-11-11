@@ -48,6 +48,25 @@ describe('renderModule', () => {
     expect(screen.queryByRole('row', { name: /r3/ })).toBeNull()
   })
 
+  it('reads 500+ new once more rows arrived than the notice keeps', async () => {
+    const view = renderModule(diagnostics, { path: 'runs', api: () => runs })
+    await screen.findByRole('row', { name: /billing.charge #1/ })
+
+    for (let index = 0; index < 501; index++) {
+      view.stream.push('change', {
+        module: 'diag',
+        kind: 'run',
+        id: `n${index}`,
+        topic: 'diag.run',
+        version: '1',
+        projection: { status: 'Failed' },
+      })
+    }
+
+    expect(screen.getByRole('button', { name: '500+ new' })).toBeTruthy()
+    expect(screen.getAllByRole('status').some((region) => region.textContent === '500+ new rows')).toBe(true)
+  })
+
   it('renders a viewer’s actions disabled with the reason', async () => {
     renderModule(diagnostics, { path: 'runs', api: () => runs, permissions: { canOperate: false } })
     const action = await screen.findByRole('button', { name: 'Requeue' })

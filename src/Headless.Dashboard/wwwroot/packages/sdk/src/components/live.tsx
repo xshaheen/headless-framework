@@ -1,3 +1,7 @@
+// The React Compiler's memo caches cost the SDK more bytes than these renders save (the one effect here keys on a
+// number, so no changed identity re-triggers it), and the shell's assets sit near their size budget.
+'use no memo'
+
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ProgressBar as AriaProgressBar } from 'react-aria-components'
 import { useDashboard } from '../context.tsx'
@@ -77,16 +81,17 @@ export function LiveIndicator({ paused }: { paused?: number | null }) {
  * until they choose to see them. The count is announced through a live region.
  */
 export function NewRowsNotice({ topic }: { topic: string }) {
-  const { count, show } = useNewRows(topic)
+  const { count, isCapped, show } = useNewRows(topic)
+  const text = `${count}${isCapped ? '+' : ''} new`
 
   return (
     <>
       {count > 0 ? (
         <Button variant="ghost" className="self-center text-primary" onPress={() => void show()}>
-          {`${count} new`}
+          {text}
         </Button>
       ) : null}
-      <Announcer message={count > 0 ? `${count} new ${count === 1 ? 'row' : 'rows'}` : ''} />
+      <Announcer message={count > 0 ? `${text} ${count === 1 ? 'row' : 'rows'}` : ''} />
     </>
   )
 }
