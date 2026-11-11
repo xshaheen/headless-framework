@@ -336,6 +336,66 @@ public sealed class MessagingCommandRuleTests : TestBase
         await prepare.Should().ThrowAsync<ArgumentException>().WithMessage("Store 'billing' is an additional outbox*");
     }
 
+    [Fact]
+    public async Task should_scope_an_operation_to_the_lane_message_id_and_added_range_the_filter_carries()
+    {
+        // given: two failures for good on the main store
+        await using var main = _MainStore(out var primary);
+        await MessagingRows.PublishedAsync(primary, "invoice-1", StatusName.Failed, AbortToken);
+        await MessagingRows.PublishedAsync(primary, "invoice-2", StatusName.Failed, AbortToken);
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var module = _Module(_Stores(primary), services);
+
+        // when: one filter names a message id, one a lane no row travels on, one a range that ends before every row
+        var byId = await _PrepareAsync(module, """{ "status": "Failed", "messageId": "invoice-2" }""");
+        var byLane = await _PrepareAsync(module, """{ "status": "Failed", "lane": "Queue" }""");
+        var byRange = await _PrepareAsync(
+            module,
+            """{ "status": "Failed", "from": "2000-01-01T00:00:00Z", "before": "2000-01-02T00:00:00Z" }"""
+        );
+
+        // then
+        byId.Count.Should().Be(1);
+        byLane.Count.Should().Be(0);
+        byRange.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_refuse_an_operation_filter_whose_range_ends_before_it_starts()
+    {
+        // given
+        await using var main = _MainStore(out var primary);
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var module = _Module(_Stores(primary), services);
+
+        // when
+        var prepare = async () =>
+            await _PrepareAsync(
+                module,
+                """{ "status": "Failed", "from": "2026-11-02T00:00:00Z", "before": "2026-11-01T00:00:00Z" }"""
+            );
+
+        // then
+        await prepare.Should().ThrowAsync<ArgumentException>().WithMessage("*'before' is not later than its 'from'*");
+    }
+
+    private static async Task<DashboardOperationScope> _PrepareAsync(MessagingModule module, string filter)
+    {
+        using var json = JsonDocument.Parse(filter);
+
+        return await module.PrepareAsync(
+            new DashboardOperationScopeRequest
+            {
+                CommandId = MessagingCommands.ResendId,
+                Filter = json.RootElement.Clone(),
+                CountLimit = 100,
+                SampleSize = 5,
+                User = _Operator(),
+            },
+            AbortToken
+        );
+    }
+
     // A second in-memory store stands in for the outbox's database: its own API performs the write, while the ledger
     // the tests read is the main store's.
     private static IDataStorage _Outbox(IDataStorage backing)

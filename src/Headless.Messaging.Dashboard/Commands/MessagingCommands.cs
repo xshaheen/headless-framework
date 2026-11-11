@@ -1128,6 +1128,18 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             );
         }
 
+        // The list refuses such a range, so a filter carrying one did not come from a list the operator saw.
+        if (scope is { From: { } from, Before: { } before } && before <= from)
+        {
+            throw new ArgumentException("The filter's 'before' is not later than its 'from'.", nameof(filter));
+        }
+
+        // A lane the list does not take, such as one stored by a newer host, would scope rows no list shows.
+        if (scope.Lane is { } lane && lane is not (MessageLane.Bus or MessageLane.Queue))
+        {
+            throw new ArgumentException($"The filter names an unknown lane '{lane}'.", nameof(filter));
+        }
+
         var store =
             (string.IsNullOrEmpty(scope.Store) ? _stores.Primary : _stores.Find(scope.Store))
             ?? throw new ArgumentException($"The filter names an unknown store '{scope.Store}'.", nameof(filter));

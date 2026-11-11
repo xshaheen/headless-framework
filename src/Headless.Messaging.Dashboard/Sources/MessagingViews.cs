@@ -505,6 +505,16 @@ internal sealed record MessagingListScope
 
     public string? Fingerprint { get; init; }
 
+    public MessageLane? Lane { get; init; }
+
+    public string? MessageId { get; init; }
+
+    /// <summary>The inclusive lower bound of the added time.</summary>
+    public DateTimeOffset? From { get; init; }
+
+    /// <summary>The exclusive upper bound of the added time.</summary>
+    public DateTimeOffset? Before { get; init; }
+
     public MessageListQuery ToQuery(MessageType type) =>
         new()
         {
@@ -514,6 +524,10 @@ internal sealed record MessagingListScope
             ConsumerIdentity = string.IsNullOrEmpty(Consumer) ? null : Consumer,
             Name = string.IsNullOrEmpty(Name) ? null : Name,
             FailureFingerprint = string.IsNullOrEmpty(Fingerprint) ? null : Fingerprint,
+            Lane = Lane,
+            MessageId = string.IsNullOrEmpty(MessageId) ? null : MessageId,
+            AddedFrom = From,
+            AddedBefore = Before,
         };
 }
 

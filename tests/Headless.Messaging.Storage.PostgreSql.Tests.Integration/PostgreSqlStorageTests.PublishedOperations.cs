@@ -59,6 +59,10 @@ public partial class PostgreSqlStorageTests
     public override Task should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures() =>
         base.should_scope_a_published_delete_to_both_terminal_statuses_and_a_resend_to_failures();
 
+    [Fact]
+    public override Task should_scope_a_published_operation_by_lane_message_id_and_added_time() =>
+        base.should_scope_a_published_operation_by_lane_message_id_and_added_time();
+
     protected override async Task SetPublishedLeaseAsync(
         Guid storageId,
         TimeSpan liveFor,
