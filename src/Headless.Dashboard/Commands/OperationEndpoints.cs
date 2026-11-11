@@ -72,17 +72,11 @@ internal static class OperationEndpoints
             return CommandEndpoints.Invalid(bodyErrors);
         }
 
-        var (arguments, errors) = CommandEndpoints.Validate(context, command!, body);
-
-        // An Operation changes many rows at once, so it always records why, even for a command one row runs without one.
-        if (!command!.RequiresReason && string.IsNullOrWhiteSpace(body.Reason))
-        {
-            errors.Insert(0, new CommandFieldError("reason", "required", "An Operation requires a reason."));
-        }
+        var (arguments, errors) = ValidateCall(context, command!, body);
 
         if (body.Filter is null)
         {
-            errors.Insert(0, new CommandFieldError("filter", "required", "Send the filter the Operation runs over."));
+            errors.Insert(0, FilterRequired());
         }
 
         if (errors.Count > 0)
@@ -112,41 +106,16 @@ internal static class OperationEndpoints
         catch (ArgumentException exception)
         {
             // The runner refuses a filter it does not accept, such as an unknown store, before it reads anything.
-            return CommandEndpoints.Invalid(new CommandFieldError("filter", "invalid", _Message(exception)));
+            return CommandEndpoints.Invalid(FilterRefused(exception));
         }
 
         if (scope.Count > CommandRules.MaxRows)
         {
-            return CommandEndpoints.Invalid(
-                new CommandFieldError(
-                    "filter",
-                    "maxCount",
-                    $"The filter matches more than {CommandRules.MaxRows.ToString("N0", CultureInfo.InvariantCulture)} "
-                        + "rows. Narrow the filter and confirm again."
-                )
-            );
+            return CommandEndpoints.Invalid(ScopeTooLarge());
         }
 
-        var now = CommandEndpoints.Now(context);
-        var token = new OperationScopeToken
-        {
-            OperationId = Guid.CreateVersion7(now).ToString("N"),
-            Module = module.Id,
-            CommandId = command.Id,
-            Filter = filter.GetRawText(),
-            HighWaterMark = scope.HighWaterMark,
-            Count = scope.Count,
-            Actor = CommandAuthorization.GetActor(context.User),
-            Reason = CommandEndpoints.Reason(body),
-            Arguments =
-                arguments.Count == 0
-                    ? null
-                    : JsonSerializer.Serialize(
-                        arguments.ToDictionary(StringComparer.Ordinal),
-                        OperationScopeTokenJsonContext.Default.DictionaryStringJsonElement
-                    ),
-            ExpiresAt = now + CommandRules.TokenLifetime,
-        };
+        var token = NewToken(context, module.Id, command, filter, scope, CommandEndpoints.Reason(body), arguments);
+        var now = token.FrozenAt;
         var protector = context.RequestServices.GetRequiredService<OperationScopeTokenProtector>();
         var signed = protector.Protect(token);
 
@@ -220,19 +189,9 @@ internal static class OperationEndpoints
             return CommandEndpoints.Invalid(tokenError);
         }
 
-        if (
-            !string.Equals(token.Module, module.Id, StringComparison.Ordinal)
-            || !string.Equals(token.CommandId, command!.Id, StringComparison.Ordinal)
-        )
+        if (TokenScopeError(token, module.Id, command!.Id) is { } wrongScope)
         {
-            return CommandEndpoints.Invalid(
-                new CommandFieldError(
-                    "token",
-                    "scope",
-                    $"The token was confirmed for command '{token.CommandId}' of module '{token.Module}'. Send it to "
-                        + "that command's chunk endpoint."
-                )
-            );
+            return CommandEndpoints.Invalid(wrongScope);
         }
 
         var actor = CommandAuthorization.GetActor(context.User);
@@ -274,7 +233,7 @@ internal static class OperationEndpoints
                     new DashboardOperationChunkRequest
                     {
                         CommandId = command.Id,
-                        Filter = _ParseElement(token.Filter),
+                        Filter = ParseFilter(token.Filter),
                         HighWaterMark = token.HighWaterMark,
                         Cursor = body.Cursor,
                         ChunkSize = CommandRules.ChunkSize,
@@ -290,9 +249,7 @@ internal static class OperationEndpoints
         {
             // The runner checks the scope and the cursor before it changes a row, so a refused one changed nothing and,
             // like every other refused call, writes no log entry.
-            return CommandEndpoints.Invalid(
-                new CommandFieldError(body.Cursor is null ? "token" : "cursor", "invalid", _Message(exception))
-            );
+            return CommandEndpoints.Invalid(ChunkRefused(exception, body.Cursor));
         }
         catch
         {
@@ -328,6 +285,111 @@ internal static class OperationEndpoints
     }
 
     /// <summary>
+    /// Checks the reason and the arguments of an Operation over <paramref name="command"/>, as its confirm step does
+    /// and as a node that runs the Operation for another node does on each chunk.
+    /// </summary>
+    /// <param name="context">The call.</param>
+    /// <param name="command">The command the Operation runs.</param>
+    /// <param name="body">The call's body.</param>
+    /// <param name="now">
+    /// The moment a not-before-now argument is checked against: the confirm's now, or the moment the scope was frozen.
+    /// </param>
+    /// <returns>The validated arguments, and every error found.</returns>
+    internal static (IReadOnlyDictionary<string, JsonElement> Arguments, List<CommandFieldError> Errors) ValidateCall(
+        HttpContext context,
+        DashboardCommand command,
+        CommandCallBody body,
+        DateTimeOffset? now = null
+    )
+    {
+        var (arguments, errors) = CommandEndpoints.Validate(context, command, body, now);
+
+        // An Operation changes many rows at once, so it always records why, even for a command one row runs without one.
+        if (!command.RequiresReason && string.IsNullOrWhiteSpace(body.Reason))
+        {
+            errors.Insert(0, new CommandFieldError("reason", "required", "An Operation requires a reason."));
+        }
+
+        return (arguments, errors);
+    }
+
+    /// <summary>The error for an Operation call that sends no filter.</summary>
+    internal static CommandFieldError FilterRequired() =>
+        new("filter", "required", "Send the filter the Operation runs over.");
+
+    /// <summary>The error for a scope over <see cref="CommandRules.MaxRows"/> rows.</summary>
+    internal static CommandFieldError ScopeTooLarge() =>
+        new(
+            "filter",
+            "maxCount",
+            $"The filter matches more than {CommandRules.MaxRows.ToString("N0", CultureInfo.InvariantCulture)} "
+                + "rows. Narrow the filter and confirm again."
+        );
+
+    /// <summary>The error for a filter the runner refused.</summary>
+    internal static CommandFieldError FilterRefused(ArgumentException exception) =>
+        new("filter", "invalid", _Message(exception));
+
+    /// <summary>The error for a chunk the runner refused: its scope on the first chunk, its cursor after.</summary>
+    internal static CommandFieldError ChunkRefused(ArgumentException exception, string? cursor) =>
+        new(cursor is null ? "token" : "cursor", "invalid", _Message(exception));
+
+    /// <summary>
+    /// Freezes an Operation's scope into the token every chunk brings back: the scope the runner counted, the operator,
+    /// and, when the confirm step carries them, the reason and the validated arguments.
+    /// </summary>
+    internal static OperationScopeToken NewToken(
+        HttpContext context,
+        string moduleId,
+        DashboardCommand command,
+        JsonElement filter,
+        DashboardOperationScope scope,
+        string? reason = null,
+        IReadOnlyDictionary<string, JsonElement>? arguments = null
+    )
+    {
+        var now = CommandEndpoints.Now(context);
+
+        return new OperationScopeToken
+        {
+            OperationId = Guid.CreateVersion7(now).ToString("N"),
+            Module = moduleId,
+            CommandId = command.Id,
+            Filter = filter.GetRawText(),
+            HighWaterMark = scope.HighWaterMark,
+            Count = scope.Count,
+            Actor = CommandAuthorization.GetActor(context.User),
+            Reason = reason,
+            Arguments = arguments is not { Count: > 0 }
+                ? null
+                : JsonSerializer.Serialize(
+                    arguments.ToDictionary(StringComparer.Ordinal),
+                    OperationScopeTokenJsonContext.Default.DictionaryStringJsonElement
+                ),
+            FrozenAt = now,
+            ExpiresAt = now + CommandRules.TokenLifetime,
+        };
+    }
+
+    /// <summary>
+    /// The error for a token confirmed for another module or command, which must not run here; <see langword="null"/>
+    /// when the token is for <paramref name="commandId"/> of <paramref name="moduleId"/>.
+    /// </summary>
+    internal static CommandFieldError? TokenScopeError(OperationScopeToken token, string moduleId, string commandId)
+    {
+        return
+            string.Equals(token.Module, moduleId, StringComparison.Ordinal)
+            && string.Equals(token.CommandId, commandId, StringComparison.Ordinal)
+            ? null
+            : new CommandFieldError(
+                "token",
+                "scope",
+                $"The token was confirmed for command '{token.CommandId}' of module '{token.Module}'. Send it to "
+                    + "that command's chunk endpoint."
+            );
+    }
+
+    /// <summary>
     /// The refusal without the <c> (Parameter 'request')</c> suffix .NET adds for a developer: the operator who reads it
     /// never named that parameter.
     /// </summary>
@@ -340,7 +402,8 @@ internal static class OperationEndpoints
             : exception.Message;
     }
 
-    private static JsonElement _ParseElement(string json)
+    /// <summary>Reads back the filter a token holds as JSON text.</summary>
+    internal static JsonElement ParseFilter(string json)
     {
         return JsonSerializer.Deserialize(json, OperationScopeTokenJsonContext.Default.JsonElement);
     }

@@ -232,6 +232,49 @@ public sealed class PeerChangeReaderTests : TestBase
         reader.IsWatching("node-b").Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_send_nothing_and_mark_nothing_stale_when_a_stream_watches_a_node_discovery_does_not_list()
+    {
+        // given
+        await using var nodeA = await _StartAAsync();
+        using var reader = _Reader(nodeA);
+
+        // when: a stream names a node no discovery entry has, and the reader is given time to read it
+        reader.Watch("node-x");
+        await _AdvanceForAsync(TimeSpan.FromSeconds(6));
+
+        // then
+        reader.IsWatching("node-x").Should().BeTrue();
+        reader.IsRelaying("node-x").Should().BeFalse();
+        _network.Calls.Should().BeEmpty();
+        _publisher.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_start_relaying_node_b_when_discovery_lists_it_after_a_stream_watched_it()
+    {
+        // given: discovery lists no node yet when the stream watches node B
+        _discoveryA.Set();
+        await using var nodeB = await _StartPeerAsync("node-b");
+        await using var nodeA = await _StartAAsync();
+        using var reader = _Reader(nodeA);
+        reader.Watch("node-b");
+        await _AdvanceForAsync(TimeSpan.FromSeconds(4));
+        var relayingBefore = reader.IsRelaying("node-b");
+        var callsBefore = _network.Calls.Count;
+        var started = _network.NextCallAsync(call => _IsStart(call, "node-b"));
+
+        // when: node B joins discovery, and time passes with no other call reading discovery
+        _discoveryA.Set(ForwardingHost.Entry("node-b", "https://node-b"));
+        await _AdvanceUntilAsync(started);
+
+        // then
+        relayingBefore.Should().BeFalse();
+        callsBefore.Should().Be(0);
+        reader.IsRelaying("node-b").Should().BeTrue();
+        _publisher.Events.Should().NotContain(e => string.Equals(e.Kind, "stale", StringComparison.Ordinal));
+    }
+
     private PeerChangeReader _Reader(WebApplication node) =>
         ActivatorUtilities.CreateInstance<PeerChangeReader>(node.Services, _publisher);
 
@@ -291,6 +334,16 @@ public sealed class PeerChangeReaderTests : TestBase
 
     private Task<WebApplication> _StartAAsync() =>
         ForwardingHost.StartAsync("node-a", _network, _discoveryA, _time, _log, AbortToken);
+
+    // Moves the shared clock in small steps, as real time would pass, by duration.
+    private async Task _AdvanceForAsync(TimeSpan duration)
+    {
+        for (var passed = TimeSpan.Zero; passed < duration; passed += _Step)
+        {
+            _time.Advance(_Step);
+            await Task.Delay(10, AbortToken);
+        }
+    }
 
     // Moves the shared clock in small steps, as real time would pass, until the task completes or 15 s of real time pass.
     private async Task _AdvanceUntilAsync(Task awaited)

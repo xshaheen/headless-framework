@@ -8,7 +8,8 @@ namespace Headless.Dashboard;
 
 /// <summary>
 /// An Operation's frozen scope, as the confirm step signs it and every chunk call brings it back: the module, the
-/// command, the filter, the high-water mark, the count, the actor, the reason, the arguments, and the expiry.
+/// command, the filter, the high-water mark, the count, the actor, the reason, the arguments, when it was frozen, and
+/// the expiry.
 /// </summary>
 /// <remarks>
 /// The dashboard stores no Operation, so this token is the Operation's only state. It is protected with Data
@@ -38,6 +39,9 @@ internal sealed record OperationScopeToken
     /// <summary>The validated arguments as a JSON object's text, or <see langword="null"/> when there are none.</summary>
     public string? Arguments { get; init; }
 
+    /// <summary>When the scope was frozen; a not-before-now argument is checked against this moment.</summary>
+    public required DateTimeOffset FrozenAt { get; init; }
+
     public required DateTimeOffset ExpiresAt { get; init; }
 }
 
@@ -46,11 +50,30 @@ internal sealed record OperationScopeToken
 /// The expiry is checked against the registered <see cref="TimeProvider"/> rather than a time-limited protector, which
 /// reads the system clock, so the expiry follows the same clock as the rest of the app.
 /// </remarks>
-internal sealed class OperationScopeTokenProtector(IDataProtectionProvider dataProtection, TimeProvider timeProvider)
+internal sealed class OperationScopeTokenProtector
 {
     private const string _Purpose = "Headless.Dashboard.OperationScope.v1";
 
-    private readonly IDataProtector _protector = dataProtection.CreateProtector(_Purpose);
+    private readonly IDataProtector _protector;
+    private readonly TimeProvider _timeProvider;
+
+    /// <summary>Creates the protector of the tokens the shell's confirm step signs.</summary>
+    public OperationScopeTokenProtector(IDataProtectionProvider dataProtection, TimeProvider timeProvider)
+        : this(dataProtection, timeProvider, _Purpose) { }
+
+    /// <summary>
+    /// Creates a protector for <paramref name="purpose"/>, whose tokens no protector of another purpose reads, so a
+    /// module's own scope tokens can never stand in for the shell's.
+    /// </summary>
+    internal OperationScopeTokenProtector(
+        IDataProtectionProvider dataProtection,
+        TimeProvider timeProvider,
+        string purpose
+    )
+    {
+        _protector = dataProtection.CreateProtector(purpose);
+        _timeProvider = timeProvider;
+    }
 
     /// <summary>Protects <paramref name="token"/> into URL-safe text.</summary>
     public string Protect(OperationScopeToken token)
@@ -102,7 +125,7 @@ internal sealed class OperationScopeTokenProtector(IDataProtectionProvider dataP
             return false;
         }
 
-        if (timeProvider.GetUtcNow() >= read.ExpiresAt)
+        if (_timeProvider.GetUtcNow() >= read.ExpiresAt)
         {
             error = new CommandFieldError(
                 "token",

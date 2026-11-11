@@ -14,9 +14,15 @@ namespace Headless.Messaging.Dashboard;
 /// </summary>
 /// <remarks>
 /// <para>
-/// One reader runs per watched node, and it stops when the last stream watching the node closes. A node that does not
-/// answer, or leaves discovery, is reported stale on the first failed read, and only that node's views show it. A
-/// node that left discovery loses its cursor, so it starts over when it comes back.
+/// One reader runs per watched node, and it stops when the last stream watching the node closes. A topic names its node
+/// as the browser chose it, so a node discovery has not listed only waits: it reads discovery about once a second,
+/// sends the node nothing, and its views are never marked stale. Its reader starts on the first discovery read that
+/// lists it.
+/// </para>
+/// <para>
+/// A node that does not answer, or leaves discovery after it was listed, is reported stale on the first failed read,
+/// and only that node's views show it. A node that left discovery loses its cursor, so it starts over when it comes
+/// back.
 /// </para>
 /// <para>
 /// A cursor the node no longer knows, such as after it restarted, is answered with <c>410</c>; the reader then starts
@@ -40,7 +46,9 @@ internal sealed class PeerChangeReader(
     private readonly Dictionary<string, PeerWatch> _watches = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
 
-    /// <summary>Starts relaying <paramref name="node"/>, or counts one more watcher of it.</summary>
+    /// <summary>
+    /// Counts one more watcher of <paramref name="node"/>, and starts relaying it once discovery lists it.
+    /// </summary>
     public void Watch(string node)
     {
         if (!forwarding.IsEnabled || forwarding.Directory.IsLocal(node))
@@ -48,19 +56,23 @@ internal sealed class PeerChangeReader(
             return;
         }
 
+        PeerWatch watch;
+
         lock (_lock)
         {
-            if (_watches.TryGetValue(node, out var watch))
+            if (_watches.TryGetValue(node, out var existing))
             {
-                watch.Count++;
+                existing.Count++;
 
                 return;
             }
 
             watch = new PeerWatch();
             _watches[node] = watch;
-            watch.Loop = Task.Run(() => _RunAsync(node, watch.Stop.Token));
         }
+
+        // The shell's callback must return at once, so the discovery lookup runs off its thread.
+        _ = Task.Run(() => _StartWhenDiscoveredAsync(node, watch));
     }
 
     /// <summary>Counts one fewer watcher of <paramref name="node"/>, and stops relaying it after the last.</summary>
@@ -79,12 +91,21 @@ internal sealed class PeerChangeReader(
         }
     }
 
-    /// <summary>Returns whether <paramref name="node"/> is relayed now.</summary>
+    /// <summary>Returns whether any stream watches <paramref name="node"/>, relayed or waiting for discovery.</summary>
     internal bool IsWatching(string node)
     {
         lock (_lock)
         {
             return _watches.ContainsKey(node);
+        }
+    }
+
+    /// <summary>Returns whether <paramref name="node"/> is relayed now.</summary>
+    internal bool IsRelaying(string node)
+    {
+        lock (_lock)
+        {
+            return _watches.TryGetValue(node, out var watch) && watch.Loop is not null;
         }
     }
 
@@ -99,6 +120,48 @@ internal sealed class PeerChangeReader(
             }
 
             _watches.Clear();
+        }
+    }
+
+    // Reads discovery once per interval until it lists the node: a read sends no call to the node and publishes
+    // nothing, so a topic naming a node discovery never lists costs only the cached discovery lookups.
+    private async Task _StartWhenDiscoveredAsync(string node, PeerWatch watch)
+    {
+        try
+        {
+            var cancellationToken = watch.Stop.Token;
+            using var timer = new PeriodicTimer(PollInterval, timeProvider);
+
+            do
+            {
+                if (await forwarding.Directory.FindAsync(node, cancellationToken).ConfigureAwait(false) is not null)
+                {
+                    _Start(node, watch);
+
+                    return;
+                }
+            } while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException)
+        {
+            // Unwatched before discovery listed the node.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Unwatched before the wait started.
+        }
+    }
+
+    private void _Start(string node, PeerWatch watch)
+    {
+        lock (_lock)
+        {
+            // The watch may have ended, or been replaced by a new one, while discovery was read.
+            if (_watches.TryGetValue(node, out var current) && ReferenceEquals(current, watch) && watch.Loop is null)
+            {
+                var token = watch.Stop.Token;
+                watch.Loop = Task.Run(() => _RunAsync(node, token));
+            }
         }
     }
 
@@ -260,6 +323,11 @@ internal sealed class PeerChangeReader(
             if (batch is null)
             {
                 return (cursor, false, false);
+            }
+
+            if (batch.Changes.Count > 0)
+            {
+                forwarding.ForgetResolved(node);
             }
 
             foreach (var change in batch.Changes)

@@ -29,10 +29,21 @@ internal sealed class MessagingForwarding(
     /// <summary>How long one peer's Needs you answer is shown before the peer is asked again.</summary>
     internal static readonly TimeSpan AttentionLifetime = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// How long one peer's answer to an id lookup is reused, so the lookups a single search makes, and repeated ones,
+    /// ask each peer once.
+    /// </summary>
+    internal static readonly TimeSpan ResolveLifetime = TimeSpan.FromSeconds(5);
+
     internal static readonly JsonSerializerOptions JsonOptions = CommandEndpoints.JsonOptions;
+
+    // Lookup text is the caller's, so the reused answers are bounded: past this many, expired ones are dropped.
+    private const int _MaxResolveEntries = 1_024;
 
     private readonly ConcurrentDictionary<string, (DashboardAttentionAnswer Answer, DateTimeOffset At)> _attention =
         new(StringComparer.Ordinal);
+
+    private readonly ConcurrentDictionary<ResolveKey, ResolveEntry> _resolved = new();
 
     public PeerDirectory Directory => directory;
 
@@ -261,10 +272,8 @@ internal sealed class MessagingForwarding(
         CancellationToken cancellationToken
     )
     {
-        var body = JsonSerializer.SerializeToUtf8Bytes(
-            new PeerScopeBody(request.Filter, request.CountLimit, request.SampleSize),
-            JsonOptions
-        );
+        // The peer applies its own row limit and sample size, so only the filter crosses.
+        var body = JsonSerializer.SerializeToUtf8Bytes(new PeerScopeBody(request.Filter), JsonOptions);
         var response = await client
             .SendAsync(
                 peer,
@@ -277,6 +286,22 @@ internal sealed class MessagingForwarding(
             )
             .ConfigureAwait(false);
 
+        // A scope past the peer's limit is answered as the module contract asks, one past the limit, so the shell
+        // refuses it with the error a local confirm answers. The peer signed no mark for it, so no chunk can run.
+        if (
+            response.Answered
+            && response.Status == (int)HttpStatusCode.BadRequest
+            && string.Equals(_Rule(response, "filter"), "maxCount", StringComparison.Ordinal)
+        )
+        {
+            return new DashboardOperationScope
+            {
+                Count = (long)request.CountLimit + 1,
+                Sample = [],
+                HighWaterMark = string.Empty,
+            };
+        }
+
         return _Read<DashboardOperationScope>(peer, response);
     }
 
@@ -286,15 +311,10 @@ internal sealed class MessagingForwarding(
         CancellationToken cancellationToken
     )
     {
+        // The mark is the scope the peer signed at the scope step; the peer reads the filter from it and applies its
+        // own chunk size, so neither crosses.
         var body = JsonSerializer.SerializeToUtf8Bytes(
-            new PeerChunkBody(
-                request.Filter,
-                request.HighWaterMark,
-                request.Cursor,
-                request.ChunkSize,
-                request.Arguments,
-                request.Reason
-            ),
+            new PeerChunkBody(request.HighWaterMark, request.Cursor, request.Arguments, request.Reason),
             JsonOptions
         );
         var response = await client
@@ -308,6 +328,9 @@ internal sealed class MessagingForwarding(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        // Whatever the answer, the chunk may have changed rows the peer's reused lookups show.
+        ForgetResolved(peer.Name);
 
         return _Read<DashboardOperationChunk>(peer, response);
     }
@@ -369,7 +392,15 @@ internal sealed class MessagingForwarding(
         return new DashboardAttentionAnswer { Items = items, UnavailableSources = unavailable };
     }
 
-    /// <summary>Adds every peer's matches for an id lookup to this node's.</summary>
+    /// <summary>
+    /// Adds the peers' matches for an id lookup to this node's: only the named node's for a full object id, which no
+    /// other node holds, and every peer's otherwise.
+    /// </summary>
+    /// <remarks>
+    /// Each peer's answer is reused for <see cref="ResolveLifetime"/>, and concurrent lookups of the same text share
+    /// one call. A command or an Operation chunk this node sends to a peer, and a change relayed from it, drops that
+    /// peer's reused answers. A failed call is not reused.
+    /// </remarks>
     public async Task<IReadOnlyList<DashboardObject>> ResolveAsync(
         IReadOnlyList<DashboardObject> local,
         string query,
@@ -382,30 +413,28 @@ internal sealed class MessagingForwarding(
             return local;
         }
 
-        var peers = await directory.GetPeersAsync(cancellationToken).ConfigureAwait(false);
-        var answers = await Task.WhenAll(
-                peers.Select(async peer =>
-                {
-                    var response = await client
-                        .SendAsync(
-                            peer,
-                            HttpMethod.Get,
-                            "/peer/resolve?q=" + Uri.EscapeDataString(query),
-                            user,
-                            operate: false,
-                            json: null,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
+        IReadOnlyList<MessagingPeer> peers = MessagingObjectId.TryParse(query, out var objectId)
+            ? await directory.FindAsync(objectId.Node, cancellationToken).ConfigureAwait(false) is { } owner
+                ? [owner]
+                : []
+            : await directory.GetPeersAsync(cancellationToken).ConfigureAwait(false);
 
-                    return response.IsSuccess
-                        ? JsonSerializer.Deserialize<List<DashboardObject>>(response.Body, JsonOptions) ?? []
-                        : [];
-                })
-            )
+        var answers = await Task.WhenAll(peers.Select(peer => _ResolveOnPeerAsync(peer, query, cancellationToken)))
             .ConfigureAwait(false);
 
         return [.. local, .. answers.SelectMany(static answer => answer)];
+    }
+
+    /// <summary>Drops the id lookup answers reused for <paramref name="node"/>, because its rows changed.</summary>
+    public void ForgetResolved(string node)
+    {
+        foreach (var key in _resolved.Keys)
+        {
+            if (string.Equals(key.Node, node, StringComparison.Ordinal))
+            {
+                _resolved.TryRemove(key, out _);
+            }
+        }
     }
 
     public async Task<DashboardPayload?> GetPayloadAsync(
@@ -448,6 +477,93 @@ internal sealed class MessagingForwarding(
             .ConfigureAwait(false);
 
         return response.IsSuccess ? JsonSerializer.Deserialize<T>(response.Body, JsonOptions) : null;
+    }
+
+    private async Task<IReadOnlyList<DashboardObject>> _ResolveOnPeerAsync(
+        MessagingPeer peer,
+        string query,
+        CancellationToken cancellationToken
+    )
+    {
+        var key = new ResolveKey(peer.Name, query);
+        var now = timeProvider.GetUtcNow();
+        var entry = _resolved.AddOrUpdate(
+            key,
+            static (_, state) => state.Self._NewResolveEntry(state.Peer, state.Query, state.Now),
+            static (_, existing, state) =>
+                state.Now - existing.At < ResolveLifetime
+                    ? existing
+                    : state.Self._NewResolveEntry(state.Peer, state.Query, state.Now),
+            (Self: this, Peer: peer, Query: query, Now: now)
+        );
+
+        if (_resolved.Count > _MaxResolveEntries)
+        {
+            _ForgetExpiredResolved(now);
+        }
+
+        IReadOnlyList<DashboardObject>? answer;
+
+        try
+        {
+            // The call is shared by every lookup waiting on it, so one caller leaving does not cancel it; the read
+            // timeout bounds it.
+            answer = await entry.Answer.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            _resolved.TryRemove(new KeyValuePair<ResolveKey, ResolveEntry>(key, entry));
+            throw;
+        }
+
+        if (answer is null)
+        {
+            // The peer did not answer; the next lookup asks it again.
+            _resolved.TryRemove(new KeyValuePair<ResolveKey, ResolveEntry>(key, entry));
+
+            return [];
+        }
+
+        return answer;
+    }
+
+    private ResolveEntry _NewResolveEntry(MessagingPeer peer, string query, DateTimeOffset now)
+    {
+        return new ResolveEntry(
+            new Lazy<Task<IReadOnlyList<DashboardObject>?>>(() => _AskResolveAsync(peer, query)),
+            now
+        );
+    }
+
+    // Sent without the operator: the peer's matches do not depend on who asks, so every lookup can share them.
+    private async Task<IReadOnlyList<DashboardObject>?> _AskResolveAsync(MessagingPeer peer, string query)
+    {
+        var response = await client
+            .SendAsync(
+                peer,
+                HttpMethod.Get,
+                "/peer/resolve?q=" + Uri.EscapeDataString(query),
+                user: null,
+                operate: false,
+                json: null,
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        return response.IsSuccess
+            ? JsonSerializer.Deserialize<List<DashboardObject>>(response.Body, JsonOptions) ?? []
+            : null;
+    }
+
+    private void _ForgetExpiredResolved(DateTimeOffset now)
+    {
+        foreach (var (key, entry) in _resolved)
+        {
+            if (now - entry.At >= ResolveLifetime)
+            {
+                _resolved.TryRemove(new KeyValuePair<ResolveKey, ResolveEntry>(key, entry));
+            }
+        }
     }
 
     private async Task<DashboardAttentionAnswer?> _PeerAttentionAsync(
@@ -536,6 +652,9 @@ internal sealed class MessagingForwarding(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        // Whatever the answer, the command may have changed rows the peer's reused lookups show.
+        ForgetResolved(peer.Name);
 
         if (response.IsSuccess)
         {
@@ -681,7 +800,33 @@ internal sealed class MessagingForwarding(
         }
     }
 
+    // The rule a peer's validation problem names for field, or null when the answer is not one.
+    private static string? _Rule(ForwardResponse response, string field)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(response.Body);
+
+            return
+                document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("rules", out var rules)
+                && rules.ValueKind == JsonValueKind.Object
+                && rules.TryGetProperty(field, out var rule)
+                && rule.ValueKind == JsonValueKind.String
+                ? rule.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private sealed record PeerRows(IReadOnlyList<DashboardRowResult> Rows);
+
+    private readonly record struct ResolveKey(string Node, string Query);
+
+    private sealed record ResolveEntry(Lazy<Task<IReadOnlyList<DashboardObject>?>> Answer, DateTimeOffset At);
 
     private sealed record PeerCommandBody(
         IReadOnlyList<string> Ids,
@@ -692,15 +837,16 @@ internal sealed class MessagingForwarding(
     );
 }
 
-/// <summary>The body of a forwarded Operation scope read.</summary>
-internal sealed record PeerScopeBody(JsonElement Filter, int CountLimit, int SampleSize);
+/// <summary>The body of a forwarded Operation scope read, in the shape of a local confirm's body.</summary>
+internal sealed record PeerScopeBody(JsonElement Filter);
 
-/// <summary>The body of a forwarded Operation chunk.</summary>
+/// <summary>
+/// The body of a forwarded Operation chunk, in the shape of a local chunk's body: <paramref name="Token"/> is the scope
+/// the peer signed.
+/// </summary>
 internal sealed record PeerChunkBody(
-    JsonElement Filter,
-    string HighWaterMark,
+    string Token,
     string? Cursor,
-    int ChunkSize,
     IReadOnlyDictionary<string, JsonElement>? Arguments,
     string? Reason
 );

@@ -274,6 +274,7 @@ public static class SetupMessagingDashboard
             provider.GetService<MessagingStandaloneMarker>() is not null
         ));
         services.TryAddSingleton<PeerChangeReader>();
+        services.TryAddSingleton<PeerOperationScopeProtector>();
         services.TryAddSingleton<NodeRelayFilter>();
         services.AddStartupValidator<ForwardingStartupValidator>();
     }
