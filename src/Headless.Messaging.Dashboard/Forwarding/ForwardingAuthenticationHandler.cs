@@ -2,13 +2,14 @@
 
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Encodings.Web;
 using Headless.Dashboard;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,13 +17,17 @@ using Microsoft.Extensions.Options;
 namespace Headless.Messaging.Dashboard;
 
 /// <summary>
-/// The <c>HeadlessDashboardForwarding</c> scheme: admits a call another Messaging node forwarded, by the shared key or
-/// by the host's forwarding policy, and only then reads the operator and the access the serving node sent.
+/// The <c>HeadlessDashboardForwarding</c> scheme: admits a call another Messaging node forwarded, by its signature
+/// under the shared key or by the host's forwarding policy, and only then reads the operator and the access the serving
+/// node sent.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A request without the hop header gets no result, so a browser's own session still decides for it. A forwarded call
-/// with a missing or wrong key fails (<c>401</c>, refusal <c>key-rejected</c>). Under a host policy, a node the
+/// A request without the hop, signature, or old key header gets no result, so a browser's own session still decides
+/// for it. In key mode a forwarded call fails (<c>401</c>, refusal <c>key-rejected</c>) when its signature is missing,
+/// malformed, outside <see cref="MessagingForwardingOptions.MaxClockSkew"/>, already used, or matches neither
+/// <see cref="MessagingForwardingOptions.Key"/> nor <see cref="MessagingForwardingOptions.PreviousKey"/>, and when it
+/// carries the raw key header older builds sent. Under a host policy, a node the
 /// policy's schemes do not authenticate fails too; a node they authenticate but the policy denies gets an identity
 /// without the admitted claim, so the forwarding policy refuses it (<c>403</c>, refusal <c>policy-denied</c>). Neither
 /// reaches a store.
@@ -38,7 +43,9 @@ internal sealed class ForwardingAuthenticationHandler(
     ILoggerFactory logger,
     UrlEncoder encoder,
     IOptions<MessagingDashboardOptions> module,
-    IOptions<HeadlessDashboardOptions> dashboard
+    IOptions<HeadlessDashboardOptions> dashboard,
+    TimeProvider time,
+    ForwardingNonceCache nonces
 ) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     // Bounded so that "<operator> via <node>" stays a short ledger and log field whatever a caller sends.
@@ -56,7 +63,11 @@ internal sealed class ForwardingAuthenticationHandler(
 
         var hop = Request.Headers[ForwardingProtocol.HopHeader].ToString();
 
-        if (hop.Length == 0 && !Request.Headers.ContainsKey(ForwardingProtocol.KeyHeader))
+        if (
+            hop.Length == 0
+            && !Request.Headers.ContainsKey(ForwardingProtocol.SignatureHeader)
+            && !Request.Headers.ContainsKey(ForwardingProtocol.LegacyKeyHeader)
+        )
         {
             return AuthenticateResult.NoResult();
         }
@@ -68,10 +79,13 @@ internal sealed class ForwardingAuthenticationHandler(
 
         if (forwarding.Key is not null)
         {
-            // The failure message never carries either value: it reaches the host's authentication logs.
-            if (!KeysMatch(Request.Headers[ForwardingProtocol.KeyHeader].ToString(), forwarding.Key))
+            // Each reason is a fixed string: it reaches the host's authentication logs, so it never carries the key,
+            // the signature, or the signed string.
+            var refusal = await _VerifySignatureAsync(forwarding, hop).ConfigureAwait(false);
+
+            if (refusal is not null)
             {
-                return AuthenticateResult.Fail("The forwarding key is missing or wrong.");
+                return AuthenticateResult.Fail(refusal);
             }
         }
         else
@@ -125,15 +139,120 @@ internal sealed class ForwardingAuthenticationHandler(
         Response.StatusCode = StatusCodes.Status403Forbidden;
     }
 
-    /// <summary>Compares two keys in time that does not depend on where they differ, or on their lengths.</summary>
-    internal static bool KeysMatch(string presented, string expected)
+    // Null when the call's signature admits it, else the fixed reason it does not.
+    private async Task<string?> _VerifySignatureAsync(MessagingForwardingOptions forwarding, string hop)
     {
-        // Hashing first gives both sides one length, so the comparison leaks neither the key's length nor the first
-        // differing character.
-        var left = SHA256.HashData(Encoding.UTF8.GetBytes(presented));
-        var right = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
+        // A node on an older build sends its raw key to every peer; refusing the header makes that build fail loudly
+        // during a rollout instead of leaving it half working.
+        if (Request.Headers.ContainsKey(ForwardingProtocol.LegacyKeyHeader))
+        {
+            return "The forwarded call sent a raw forwarding key; peers must sign their calls.";
+        }
 
-        return CryptographicOperations.FixedTimeEquals(left, right) && presented.Length > 0;
+        if (
+            !ForwardingSignature.TryParse(
+                Request.Headers[ForwardingProtocol.SignatureHeader].ToString(),
+                out var timestamp,
+                out var nonce,
+                out var signature
+            )
+        )
+        {
+            return "The forwarding signature is missing or malformed.";
+        }
+
+        var skew = (long)forwarding.MaxClockSkew.TotalSeconds;
+        var now = time.GetUtcNow().ToUnixTimeSeconds();
+
+        if (timestamp < now - skew || timestamp > now + skew)
+        {
+            return "The forwarding signature is outside the allowed clock skew.";
+        }
+
+        var body = await _BodyHashAsync().ConfigureAwait(false);
+
+        if (body is null)
+        {
+            return "The forwarded call's body could not be read.";
+        }
+
+        var canonical = ForwardingSignature.Canonical(
+            timestamp,
+            nonce,
+            Request.Method,
+            _Target(),
+            body,
+            hop,
+            Request.Headers[ForwardingProtocol.ActorHeader].ToString(),
+            Request.Headers[ForwardingProtocol.AccessHeader].ToString()
+        );
+
+        // Both keys are always checked, so the time taken does not say which one matched.
+        var current = ForwardingSignature.Matches(signature, forwarding.Key!, canonical);
+        var previous =
+            forwarding.PreviousKey is not null
+            && ForwardingSignature.Matches(signature, forwarding.PreviousKey, canonical);
+
+        if (!current && !previous)
+        {
+            return "The forwarding signature does not match.";
+        }
+
+        // Recorded only after the signature matched, so a caller without the key cannot fill the cache.
+        return nonces.TryUse(nonce, timestamp + skew) ? null : "The forwarding signature was already used.";
+    }
+
+    // The hex SHA-256 of the body, read through a rewindable buffer so the endpoint still reads it; null when it could
+    // not be read, such as when it is larger than the server's request body limit.
+    private async Task<string?> _BodyHashAsync()
+    {
+        var limit = Context.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize;
+
+        if (limit is { } bufferLimit)
+        {
+            Request.EnableBuffering(bufferLimit);
+        }
+        else
+        {
+            Request.EnableBuffering();
+        }
+
+        try
+        {
+            var hash = await SHA256.HashDataAsync(Request.Body, Context.RequestAborted).ConfigureAwait(false);
+
+            return Convert.ToHexStringLower(hash);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        finally
+        {
+            Request.Body.Position = 0;
+        }
+    }
+
+    // The request target exactly as the calling node sent it, which is what it signed. A server that does not keep the
+    // raw target, such as the test host, gets it rebuilt in the same escaped form.
+    private string _Target()
+    {
+        var raw = Context.Features.Get<IHttpRequestFeature>()?.RawTarget;
+
+        if (!string.IsNullOrEmpty(raw))
+        {
+            if (raw[0] == '/')
+            {
+                return raw;
+            }
+
+            if (Uri.TryCreate(raw, UriKind.Absolute, out var absolute))
+            {
+                return absolute.PathAndQuery;
+            }
+        }
+
+        return UriHelper.BuildRelative(Request.PathBase, Request.Path, Request.QueryString);
     }
 
     private bool _IsModuleRequest()
