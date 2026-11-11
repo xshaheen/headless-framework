@@ -91,7 +91,7 @@ internal sealed class ForwardingClient(
 
         foreach (var address in peer.Addresses)
         {
-            // Refused before the request exists, so neither the key nor the operator's name leaves over plain http.
+            // Refused before the request exists, so neither the signed call nor the operator's name leaves over plain http.
             if (
                 !string.Equals(address.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
                 && !forwarding.AllowInsecurePeers
@@ -146,7 +146,7 @@ internal sealed class ForwardingClient(
         var api = dashboard.Value.BasePath.TrimEnd('/') + "/api/" + MessagingDashboardOptions.ModuleId;
         var target = new Uri(address, api + path);
 
-        // The key and the operator's name go only to the peer's Messaging API, whatever the path held: the relay
+        // The signed call and the operator's name go only to the peer's Messaging API, whatever the path held: the relay
         // escapes a viewer's path, and this check holds if a caller ever passes one unescaped.
         if (!_IsInside(target, address, api, relayed))
         {
@@ -234,7 +234,7 @@ internal sealed class ForwardingClient(
         return response.StatusCode switch
         {
             // Redirects are not followed, so a peer that answers one has not answered: following it would send the
-            // key and the operator's name to wherever the peer points.
+            // signed call and the operator's name to wherever the peer points.
             >= HttpStatusCode.Ambiguous and < HttpStatusCode.BadRequest => PeerState.NotAnswering,
             HttpStatusCode.Unauthorized when options.Forwarding.Key is not null => PeerState.KeyRejected,
             HttpStatusCode.Unauthorized => PeerState.PolicyDenied,

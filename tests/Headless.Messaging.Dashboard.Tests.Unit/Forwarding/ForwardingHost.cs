@@ -17,6 +17,29 @@ internal static class ForwardingHost
     /// <summary>The key every node of a test deployment shares.</summary>
     public static readonly string Key = new('k', MessagingForwardingOptions.MinimumKeyLength);
 
+    // The test server's client resolves a relative request against this address, so a call signed here is signed for
+    // the target the node receives.
+    private static readonly Uri _TestServerAddress = new("http://localhost/");
+
+    /// <summary>
+    /// Signs <paramref name="request"/> as a node holding <paramref name="key"/> (default <see cref="Key"/>) would, at
+    /// <paramref name="time"/>'s now. Call it after the hop, actor, access headers and the body are set.
+    /// </summary>
+    public static Task SignAsync(
+        HttpRequestMessage request,
+        TimeProvider time,
+        CancellationToken cancellationToken,
+        string? key = null
+    )
+    {
+        if (request.RequestUri is { IsAbsoluteUri: false } relative)
+        {
+            request.RequestUri = new Uri(_TestServerAddress, relative);
+        }
+
+        return ForwardingSignature.SignAsync(request, key ?? Key, time, cancellationToken);
+    }
+
     public static Task<WebApplication> StartAsync(
         string nodeName,
         PeerNetwork network,

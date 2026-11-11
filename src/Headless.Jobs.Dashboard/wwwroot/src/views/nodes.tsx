@@ -211,18 +211,20 @@ function NodePanel({ node }: { node: JobNode }) {
           content: (
             <>
               <div>
-                <FieldGrid columns={2}>
+                <FieldGrid label="Server">
                   <GridField label="State">{node.state}</GridField>
                   <GridField label="Role">{node.role ?? 'None'}</GridField>
                   <GridField label="Serves this page">{node.isLocal ? 'This node' : 'No'}</GridField>
-                  <GridField label="Max concurrency">
-                    {node.maxConcurrency == null ? 'Not published' : format.number(node.maxConcurrency)}
+                  <GridField label="Last beat">
+                    <RelativeTime value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </GridField>
+                </FieldGrid>
+                <FieldGrid label="Load">
                   <GridField label="Running">
                     {format.count({ value: node.running, capped: node.runningCapped })}
                   </GridField>
-                  <GridField label="Last beat">
-                    <RelativeTime value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
+                  <GridField label="Max concurrency">
+                    {node.maxConcurrency == null ? 'Not published' : format.number(node.maxConcurrency)}
                   </GridField>
                   <GridField label="Last host exception" span={2}>
                     <HostException node={node} />

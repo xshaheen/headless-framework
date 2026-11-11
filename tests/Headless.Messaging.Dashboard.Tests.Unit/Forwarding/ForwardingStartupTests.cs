@@ -73,6 +73,63 @@ public sealed class ForwardingStartupTests : TestBase
     }
 
     [Theory]
+    [InlineData("short-previous", "Forwarding.PreviousKey must be at least 32 characters")]
+    [InlineData("previous-equals-key", "Forwarding.PreviousKey must differ from Forwarding.Key")]
+    [InlineData("previous-without-key", "Forwarding.PreviousKey needs Forwarding.Key")]
+    [InlineData("previous-with-policy", "Forwarding.PreviousKey needs Forwarding.Key")]
+    [InlineData("zero-skew", "Forwarding.MaxClockSkew must be greater than 0 and at most 10 minutes")]
+    [InlineData("long-skew", "Forwarding.MaxClockSkew must be greater than 0 and at most 10 minutes")]
+    public async Task should_refuse_to_start_and_never_quote_a_key_when_the_rotation_or_skew_options_are_invalid(
+        string configuration,
+        string expected
+    )
+    {
+        // when
+        var start = () =>
+            ForwardingHost.StartAsync(
+                "node-a",
+                _network,
+                _discovery,
+                _time,
+                _log,
+                AbortToken,
+                options =>
+                {
+                    var forwarding = options.Forwarding;
+
+                    switch (configuration)
+                    {
+                        case "short-previous":
+                            forwarding.PreviousKey = _ShortKey;
+                            break;
+                        case "previous-equals-key":
+                            forwarding.PreviousKey = ForwardingHost.Key;
+                            break;
+                        case "previous-without-key":
+                            forwarding.Key = null;
+                            forwarding.PreviousKey = ForwardingHost.Key;
+                            break;
+                        case "previous-with-policy":
+                            forwarding.Key = null;
+                            forwarding.Policy = PeerIdentityHandler.PolicyName;
+                            forwarding.PreviousKey = ForwardingHost.Key;
+                            break;
+                        case "zero-skew":
+                            forwarding.MaxClockSkew = TimeSpan.Zero;
+                            break;
+                        case "long-skew":
+                            forwarding.MaxClockSkew = TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(1);
+                            break;
+                    }
+                }
+            );
+
+        // then
+        var message = await _StartupFailureAsync(start);
+        message.Should().Contain(expected).And.NotContain(ForwardingHost.Key).And.NotContain(_ShortKey);
+    }
+
+    [Theory]
     [InlineData("Missing", "which the host does not register")]
     [InlineData("MessagingViewers", "is also a view or operate policy")]
     public async Task should_refuse_to_start_when_the_forwarding_policy_is_missing_or_a_dashboard_policy(
@@ -127,7 +184,7 @@ public sealed class ForwardingStartupTests : TestBase
         );
         request.Headers.TryAddWithoutValidation(ForwardingProtocol.HopHeader, "node-b");
         // The deployment's old shared key: with a policy set it admits nobody.
-        request.Headers.TryAddWithoutValidation(ForwardingProtocol.KeyHeader, ForwardingHost.Key);
+        request.Headers.TryAddWithoutValidation(ForwardingProtocol.LegacyKeyHeader, ForwardingHost.Key);
 
         // when
         using var response = await client.SendAsync(request, AbortToken);

@@ -67,7 +67,8 @@ public sealed class ForwardingCommandTests : TestBase
         var call = _network.Calls.Should().ContainSingle(sent => sent.Method == HttpMethod.Post).Subject;
         call.Caller.Should().Be("node-a");
         call.Uri.Should().Be(new Uri($"https://node-b{_Commands}/{MessagingCommands.ReExecuteId}"));
-        call.CarriedKey.Should().BeTrue();
+        call.Signed.Should().BeTrue();
+        call.CarriedRawKey.Should().BeFalse();
         call.Access.Should().Be(ForwardingProtocol.AccessOperate);
         call.Actor.Should().Be("ops");
     }
@@ -152,7 +153,7 @@ public sealed class ForwardingCommandTests : TestBase
         // then
         forwarded.StatusCode.Should().Be(HttpStatusCode.OK);
         _logB.Entries.Should().ContainSingle().Which.Actor.Should().Be("ops via node-a");
-        _network.Calls.Should().NotBeEmpty().And.OnlyContain(sent => !sent.CarriedKey);
+        _network.Calls.Should().NotBeEmpty().And.OnlyContain(sent => !sent.Signed && !sent.CarriedRawKey);
     }
 
     [Fact]
@@ -351,13 +352,14 @@ public sealed class ForwardingCommandTests : TestBase
         request.Headers.TryAddWithoutValidation(ForwardingProtocol.HopHeader, "node-a");
         request.Headers.TryAddWithoutValidation(ForwardingProtocol.ActorHeader, "ops");
         request.Headers.TryAddWithoutValidation(ForwardingProtocol.AccessHeader, ForwardingProtocol.AccessOperate);
-        request.Headers.TryAddWithoutValidation(ForwardingProtocol.KeyHeader, ForwardingHost.Key);
         request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
 
         if (body is not null)
         {
             request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
         }
+
+        await ForwardingHost.SignAsync(request, _time, AbortToken);
 
         // when
         using var response = await clientB.SendAsync(request, AbortToken);
@@ -425,7 +427,10 @@ public sealed class ForwardingCommandTests : TestBase
             AbortToken
         );
 
-    /// <summary>Sends a re-execute straight to a node as node A would forward it.</summary>
+    /// <summary>
+    /// Sends a re-execute straight to a node as node A would forward it, signed with <paramref name="key"/>, or unsigned
+    /// when it is <see langword="null"/>.
+    /// </summary>
     private async Task<HttpResponseMessage> _SendAsPeerAsync(
         HttpClient client,
         object body,
@@ -449,7 +454,7 @@ public sealed class ForwardingCommandTests : TestBase
 
         if (key is not null)
         {
-            request.Headers.TryAddWithoutValidation(ForwardingProtocol.KeyHeader, key);
+            await ForwardingHost.SignAsync(request, _time, AbortToken, key);
         }
 
         if (cookie is not null)

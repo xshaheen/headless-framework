@@ -47,8 +47,6 @@
   --ok: oklch(0.76 0.14 155);
   --fail: oklch(0.72 0.16 25);
   --off: oklch(0.62 0.01 275);
-  /* The halo a live or failing state's dot carries; light draws none. */
-  --glow: 8px;
 
   /*
    * Syntax colours for payloads and stack traces: text tones on the role hues, so they never read as a state mark,
@@ -200,6 +198,5 @@
   --syntax-number: oklch(0.5 0.12 65);
   --syntax-literal: oklch(0.48 0.13 245);
   --syntax-method: oklch(0.42 0.08 245);
-  --glow: 0px;
   color-scheme: light;
 }

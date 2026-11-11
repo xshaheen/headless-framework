@@ -74,8 +74,8 @@ public static class SetupMessagingDashboard
         /// <summary>
         /// Adds the Messaging module bound from <paramref name="configuration"/>, with the keys <c>ViewPolicy</c>,
         /// <c>OperatePolicy</c>, <c>NodeName</c>, <c>ChangeOverlapWindow</c>, <c>ChangePageSize</c>,
-        /// <c>StoreTimeout</c>, <c>ForwardedAccess</c>, and <c>Forwarding</c> (<c>Key</c>, <c>Policy</c>,
-        /// <c>AllowInsecurePeers</c>).
+        /// <c>StoreTimeout</c>, <c>ForwardedAccess</c>, and <c>Forwarding</c> (<c>Key</c>, <c>PreviousKey</c>,
+        /// <c>Policy</c>, <c>MaxClockSkew</c>, <c>AllowInsecurePeers</c>, <c>MaxResponseBytes</c>).
         /// </summary>
         /// <param name="configuration">The configuration section to bind.</param>
         /// <returns>The same builder for chaining.</returns>
@@ -237,7 +237,7 @@ public static class SetupMessagingDashboard
                     policy.AddAuthenticationSchemes(ForwardingProtocol.Scheme).RequireAssertion(_AdmitsPeerCall)
             );
 
-        services.TryAddTransient<SharedKeyForwardingHandler>();
+        services.TryAddTransient<SigningForwardingHandler>();
         services
             .AddHttpClient(ForwardingProtocol.ClientName)
             .ConfigureHttpClient(
@@ -246,12 +246,13 @@ public static class SetupMessagingDashboard
                         .GetRequiredService<IOptions<MessagingDashboardOptions>>()
                         .Value.Forwarding.MaxResponseBytes
             )
-            // A redirect would carry the key and the operator's name to whatever host the peer names, so the client
+            // A redirect would carry the signed call and the operator's name to whatever host the peer names, so the client
             // never follows one; the forwarding client reads a 3xx as a peer that did not answer.
             .ConfigurePrimaryHttpMessageHandler(static () => new HttpClientHandler { AllowAutoRedirect = false })
-            .AddHttpMessageHandler<SharedKeyForwardingHandler>();
+            .AddHttpMessageHandler<SigningForwardingHandler>();
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(provider => new ForwardingNonceCache(provider.GetRequiredService<TimeProvider>()));
         services.TryAddSingleton(provider => new PeerDirectory(
             provider,
             provider.GetRequiredService<IOptions<MessagingDashboardOptions>>().Value,

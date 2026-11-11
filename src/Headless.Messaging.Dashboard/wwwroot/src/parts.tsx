@@ -7,6 +7,7 @@ import {
   EmptyState,
   ExceptionBlock,
   FieldGrid,
+  KeyValueTable,
   GridField,
   HistoryList,
   LoadError,
@@ -27,9 +28,15 @@ import {
 import { DashboardApiError, refetchTopics, type CappedCount } from '@headless/dashboard-sdk/data'
 import {
   AttentionIcon,
+  CancelIcon,
+  DeleteIcon,
+  DispatchIcon,
+  HoldIcon,
   PublishedIcon,
   ReceivedIcon,
   RefreshIcon,
+  ReleaseIcon,
+  RetryIcon,
   type IconComponent,
 } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -546,33 +553,39 @@ export function MessageFields({ kind, row }: { kind: MessageKind; row: MessageRo
   const format = useFormat()
 
   return (
-    <FieldGrid>
-      <GridField label="Status">{rowMark(row).label}</GridField>
-      <GridField label="Retries">{format.number(row.retries)}</GridField>
-      <GridField label="Lane">{row.lane}</GridField>
-      {kind === 'published' ? <GridField label="Store">{row.store}</GridField> : null}
-      <Optional label="Consumer" span={2} value={row.consumer ? <Mono>{row.consumer}</Mono> : undefined} />
-      <GridField label="Added" span={2}>
-        <RelativeTime value={row.added} />
-      </GridField>
-      <Optional
-        label="Next retry"
-        span={2}
-        value={row.nextRetryAt ? <RelativeTime value={row.nextRetryAt} /> : undefined}
-      />
-      <Optional label="Expires" span={2} value={row.expiresAt ? <RelativeTime value={row.expiresAt} /> : undefined} />
-      <Optional label="Changed" span={2} value={row.changedAt ? <RelativeTime value={row.changedAt} /> : undefined} />
-      <Optional label="Message id" span={2} value={row.messageId ? <Mono>{row.messageId}</Mono> : undefined} />
-      <Optional
-        label="Fingerprint"
-        span={2}
-        value={row.failureFingerprint ? <Mono>{row.failureFingerprint}</Mono> : undefined}
-      />
-      <Optional label="Tenant" value={row.tenantId ? <Mono>{row.tenantId}</Mono> : undefined} />
-      <GridField label="Storage id" span={2}>
-        <Mono>{row.storageId}</Mono>
-      </GridField>
-    </FieldGrid>
+    <>
+      <FieldGrid label="State">
+        <GridField label="Status">{rowMark(row).label}</GridField>
+        <GridField label="Retries">{format.number(row.retries)}</GridField>
+        <Optional
+          label="Next retry"
+          span={2}
+          value={row.nextRetryAt ? <RelativeTime value={row.nextRetryAt} /> : undefined}
+        />
+        <Optional label="Changed" span={2} value={row.changedAt ? <RelativeTime value={row.changedAt} /> : undefined} />
+        <Optional label="Expires" span={2} value={row.expiresAt ? <RelativeTime value={row.expiresAt} /> : undefined} />
+      </FieldGrid>
+      <FieldGrid label="Delivery">
+        <GridField label="Lane">{row.lane}</GridField>
+        {kind === 'published' ? <GridField label="Store">{row.store}</GridField> : null}
+        <GridField label="Added" span={2}>
+          <RelativeTime value={row.added} />
+        </GridField>
+        <Optional label="Consumer" span={2} value={row.consumer ? <Mono>{row.consumer}</Mono> : undefined} />
+      </FieldGrid>
+      <FieldGrid label="Identity">
+        <Optional label="Message id" span={2} value={row.messageId ? <Mono>{row.messageId}</Mono> : undefined} />
+        <Optional label="Tenant" value={row.tenantId ? <Mono>{row.tenantId}</Mono> : undefined} />
+        <Optional
+          label="Fingerprint"
+          span={2}
+          value={row.failureFingerprint ? <Mono>{row.failureFingerprint}</Mono> : undefined}
+        />
+        <GridField label="Storage id" span={2}>
+          <Mono>{row.storageId}</Mono>
+        </GridField>
+      </FieldGrid>
+    </>
   )
 }
 
@@ -586,88 +599,44 @@ export function useMessageDetail(kind: MessageKind, node: string, row: Pick<Mess
   })
 }
 
-function DetailState({
-  detail,
-  label,
-  children,
-}: {
-  detail: ReturnType<typeof useMessageDetail>
-  label: string
-  children: (data: NonNullable<ReturnType<typeof useMessageDetail>['data']>) => ReactNode
-}) {
-  if (detail.isPending) {
-    return <Skeleton label={label} shape="lines" rows={4} />
-  }
+type MessageDetail = NonNullable<ReturnType<typeof useMessageDetail>['data']>
 
-  if (detail.isError) {
-    return detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
-      <EmptyState role="alert" title="This message no longer exists." />
-    ) : (
-      <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
-    )
-  }
-
-  return children(detail.data)
-}
-
-function MessageOverview({ kind, node, row }: { kind: MessageKind; node: string; row: MessageRow }) {
-  const detail = useMessageDetail(kind, node, row)
-  const info = detail.data?.exceptionInfo
-
+/** The row's own fields, under what the detail read says when it could not be read. */
+function MessageOverview({ kind, row, notice }: { kind: MessageKind; row: MessageRow; notice?: ReactNode }) {
   return (
-    <>
-      {info ? <ExceptionBlock {...exceptionParts(info)} /> : null}
-      <div>
-        <MessageFields kind={kind} row={row} />
-      </div>
-    </>
+    <div>
+      {notice}
+      <MessageFields kind={kind} row={row} />
+    </div>
   )
 }
 
-function MessageHeaders({ kind, node, row }: { kind: MessageKind; node: string; row: MessageRow }) {
-  const detail = useMessageDetail(kind, node, row)
+/** The stored failure on its own tab, the whole stack open. */
+function MessageException({ info }: { info: string }) {
+  return (
+    <div>
+      <ExceptionBlock {...exceptionParts(info)} expanded />
+    </div>
+  )
+}
 
+/** The headers as a name and value table; the tab shows only once the detail says the message has some. */
+function MessageHeaders({ detail }: { detail: MessageDetail }) {
   return (
     <section aria-label="Headers">
-      <DetailState detail={detail} label="Loading the headers">
-        {(data) => {
-          const headers = Object.entries(data.headers)
-
-          return headers.length > 0 ? (
-            <FieldGrid columns={2}>
-              {headers.map(([name, value]) => (
-                <GridField key={name} label={name} span={2}>
-                  {value === null ? <Text tone="faint">No value</Text> : <Mono>{value}</Mono>}
-                </GridField>
-              ))}
-            </FieldGrid>
-          ) : (
-            <EmptyState>This message has no headers.</EmptyState>
-          )
-        }}
-      </DetailState>
+      <KeyValueTable label="Headers" rows={Object.entries(detail.headers).map(([name, value]) => ({ name, value }))} />
     </section>
   )
 }
 
-function MessageBody({ kind, node, row }: { kind: MessageKind; node: string; row: MessageRow }) {
-  const detail = useMessageDetail(kind, node, row)
-
+function MessageBody({ detail }: { detail: MessageDetail }) {
   return (
     <section aria-label="Body">
-      <DetailState detail={detail} label="Loading the body">
-        {(data) =>
-          data.content ? (
-            // The server stores the serialized message, so its own content type names the format.
-            <PayloadView
-              content={data.content}
-              contentType={data.headers['headless-content-type'] ?? data.headers['content-type'] ?? 'application/json'}
-            />
-          ) : (
-            <EmptyState>This message has no body.</EmptyState>
-          )
-        }
-      </DetailState>
+      {/* The server stores the serialized message, so its own content type names the format. */}
+      <PayloadView
+        content={detail.content}
+        contentType={detail.headers['headless-content-type'] ?? detail.headers['content-type'] ?? 'application/json'}
+      />
     </section>
   )
 }
@@ -724,19 +693,19 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
 
 /** The commands each kind's rows offer, in order; the first is the recovery action. */
 export const rowCommands: Readonly<
-  Record<MessageKind, readonly { name: MessageCommandName; variant?: 'primary' | 'danger' }[]>
+  Record<MessageKind, readonly { name: MessageCommandName; variant?: 'primary' | 'danger'; icon: IconComponent }[]>
 > = {
   received: [
-    { name: 're-execute', variant: 'primary' },
-    { name: 'hold' },
-    { name: 'release' },
-    { name: 'purge', variant: 'danger' },
+    { name: 're-execute', variant: 'primary', icon: RetryIcon },
+    { name: 'hold', icon: HoldIcon },
+    { name: 'release', icon: ReleaseIcon },
+    { name: 'purge', variant: 'danger', icon: DeleteIcon },
   ],
   published: [
-    { name: 're-send', variant: 'primary' },
-    { name: 'dispatch-now' },
-    { name: 'revoke' },
-    { name: 'delete', variant: 'danger' },
+    { name: 're-send', variant: 'primary', icon: RetryIcon },
+    { name: 'dispatch-now', icon: DispatchIcon },
+    { name: 'revoke', icon: CancelIcon },
+    { name: 'delete', variant: 'danger', icon: DeleteIcon },
   ],
 }
 
@@ -760,7 +729,7 @@ export function MessageActions({ kind, row, pending }: { kind: MessageKind; row:
     <>
       {rowCommands[kind]
         .filter(({ name }) => offers(row, name))
-        .map(({ name, variant }, index) => {
+        .map(({ name, variant, icon }, index) => {
           const command: CommandDefinition | undefined = commands.find(name)
 
           return command ? (
@@ -771,6 +740,9 @@ export function MessageActions({ kind, row, pending }: { kind: MessageKind; row:
               ids={[row.id]}
               noun="message"
               variant={variant}
+              icon={icon}
+              // The recovery action keeps its label as the row's one primary button; the rest are icons with tooltips.
+              appearance={index === 0 ? 'button' : 'icon'}
               recovery={index === 0}
               commands={commands.all}
               disabledReason={refusal(command.id)}
@@ -794,6 +766,12 @@ export function MessagePanel({
   pending: Pending
 }) {
   const name = row.name ?? '(unnamed)'
+  // The row carries no headers, body, or failure: the detail is read once the panel opens, and each tab shows only
+  // when the message has that part. A missing message keeps the Overview, which says so.
+  const detail = useMessageDetail(kind, node, row)
+  const data = detail.data
+  const gone = detail.isError && detail.error instanceof DashboardApiError && detail.error.status === 404
+  const info = data?.exceptionInfo
 
   return (
     <DetailPanel
@@ -803,13 +781,36 @@ export function MessagePanel({
       status={rowMark(row, pending.labelOf(row))}
       // Keyed by row, so a command still busy or failed for one row does not show on the next one J/K opens.
       actions={<MessageActions key={row.id} kind={kind} row={row} pending={pending} />}
+      // A failed message opens on its exception: that is what the operator came to read.
+      defaultTab={info && rowMark(row).tone === 'fail' ? 'exception' : 'overview'}
       tabs={[
-        { id: 'overview', label: 'Overview', content: <MessageOverview kind={kind} node={node} row={row} /> },
+        {
+          id: 'overview',
+          label: 'Overview',
+          content: (
+            <MessageOverview
+              kind={kind}
+              row={row}
+              notice={
+                gone ? (
+                  <EmptyState role="alert" title="This message no longer exists." />
+                ) : detail.isError ? (
+                  <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
+                ) : null
+              }
+            />
+          ),
+        },
+        { id: 'exception', label: 'Exception', content: info ? <MessageException info={info} /> : null },
         ...(kind === 'received'
           ? [{ id: 'generations', label: 'Generations', content: <MessageGenerations node={node} row={row} /> }]
           : []),
-        { id: 'headers', label: 'Headers', content: <MessageHeaders kind={kind} node={node} row={row} /> },
-        { id: 'body', label: 'Body', content: <MessageBody kind={kind} node={node} row={row} /> },
+        {
+          id: 'headers',
+          label: 'Headers',
+          content: data && Object.keys(data.headers).length > 0 ? <MessageHeaders detail={data} /> : null,
+        },
+        { id: 'body', label: 'Body', content: data?.content ? <MessageBody detail={data} /> : null },
       ]}
     />
   )

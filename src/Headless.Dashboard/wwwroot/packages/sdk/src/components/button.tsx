@@ -2,10 +2,11 @@
 // changed identity could re-trigger), and the shell's assets sit near their size budget.
 'use no memo'
 
-import { useId, type Ref } from 'react'
+import { useId, type ReactNode, type Ref } from 'react'
 import { Button as AriaButton, composeRenderProps, type ButtonProps as AriaButtonProps } from 'react-aria-components'
 import type { IconComponent } from '../icons/index.ts'
 import { cn } from './cn.ts'
+import { Tooltip } from './tooltip.tsx'
 
 export type ButtonVariant = 'secondary' | 'primary' | 'danger' | 'ghost'
 
@@ -16,7 +17,7 @@ export interface ButtonProps extends AriaButtonProps {
   variant?: ButtonVariant
   /**
    * Why the action is not available now, such as `Needs operate permission`. The button stays focusable and shows
-   * the reason beside it, so the operator learns why on hover and focus; pressing it does nothing.
+   * the reason in a tooltip, so the operator learns why on hover and focus; pressing it does nothing.
    */
   disabledReason?: string | null
   /**
@@ -24,6 +25,11 @@ export interface ButtonProps extends AriaButtonProps {
    * and `aria-label` names it, since the icon is hidden from assistive technology.
    */
   icon?: IconComponent
+  /**
+   * What a tooltip says on hover and focus. An icon-only button shows its `aria-label` by default, and its disabled
+   * reason under it; pass a shorter name when the label carries an id, such as `Copy id` for `Copy id 01a1…`.
+   */
+  tooltip?: ReactNode
 }
 
 // The variants are classes in sdk.css rather than utilities here, so the shell can put the same look on a plain link.
@@ -35,9 +41,19 @@ const variantClasses: Record<ButtonVariant, string> = {
 }
 
 /** The dashboard's button: shadcn's, on React Aria's, so press, focus, and keyboard behave the same in every module. */
-export function Button({ variant = 'secondary', disabledReason, className, onPress, icon: Icon, children, ...props }: ButtonProps) {
+export function Button({
+  variant = 'secondary',
+  disabledReason,
+  className,
+  onPress,
+  icon: Icon,
+  tooltip,
+  children,
+  ...props
+}: ButtonProps) {
   const reasonId = useId()
   const square = Icon != null && children == null
+  const tip = tooltip ?? (square ? props['aria-label'] : undefined)
   const classes = composeRenderProps(className, (extra) => cn(variantClasses[variant], square && 'hd-icon', extra))
   // The icon takes the button's own text colour, so it reads as part of the label in every variant and state.
   const content = Icon
@@ -50,27 +66,41 @@ export function Button({ variant = 'secondary', disabledReason, className, onPre
     : children
 
   if (!disabledReason) {
-    return (
+    const button = (
       <AriaButton {...props} onPress={onPress} className={classes}>
         {content}
       </AriaButton>
     )
+
+    return tip === undefined ? button : <Tooltip content={tip}>{button}</Tooltip>
   }
 
-  // The reason is the button's description, so a screen reader reads it with the button. It stays in the page
-  // rather than in a tooltip that mounts on hover, so the description always points at text; on screen it shows on
-  // hover and focus, under the button, so it never widens or wraps the row the button sits in.
+  // The reason is the button's description, so a screen reader reads it with the button. That copy stays in the
+  // page, hidden, rather than in a tooltip that mounts on hover, so the description always points at text. On screen
+  // the reason shows in a tooltip on hover and focus, under the button's name when the tooltip carries one: an
+  // overlay never widens or wraps the row the button sits in, and it moves to stay inside the viewport where a box
+  // anchored to the button would run past the panel's edge.
   return (
-    <span className="group/why relative inline-flex">
-      <AriaButton {...props} className={classes} aria-disabled="true" aria-describedby={reasonId} data-soft-disabled="">
-        {content}
-      </AriaButton>
-      <span
-        id={reasonId}
-        className="type-small pointer-events-none absolute end-0 top-[calc(100%+var(--sp-1))] z-(--z-popover) w-max max-w-[32ch] rounded-md bg-foreground px-2 py-1 whitespace-normal text-background opacity-0 group-focus-within/why:opacity-100 group-hover/why:opacity-100"
-      >
-        {disabledReason}
+    <Tooltip
+      content={
+        tip === undefined ? (
+          disabledReason
+        ) : (
+          <>
+            {tip}
+            <span className="block text-background/80">{disabledReason}</span>
+          </>
+        )
+      }
+    >
+      <span className="inline-flex">
+        <AriaButton {...props} className={classes} aria-disabled="true" aria-describedby={reasonId} data-soft-disabled="">
+          {content}
+        </AriaButton>
+        <span id={reasonId} className="sr-only">
+          {disabledReason}
+        </span>
       </span>
-    </span>
+    </Tooltip>
   )
 }

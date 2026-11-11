@@ -60,7 +60,8 @@ internal sealed class PeerNetwork
         string Caller,
         Uri Uri,
         HttpMethod Method,
-        bool CarriedKey,
+        bool Signed,
+        bool CarriedRawKey,
         string? Access,
         string? Actor
     );
@@ -76,7 +77,8 @@ internal sealed class PeerNetwork
                 caller,
                 request.RequestUri!,
                 request.Method,
-                request.Headers.Contains(ForwardingProtocol.KeyHeader),
+                request.Headers.Contains(ForwardingProtocol.SignatureHeader),
+                request.Headers.Contains(ForwardingProtocol.LegacyKeyHeader),
                 _Header(request, ForwardingProtocol.AccessHeader),
                 _Header(request, ForwardingProtocol.ActorHeader)
             );

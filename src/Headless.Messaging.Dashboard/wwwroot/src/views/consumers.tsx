@@ -15,6 +15,7 @@ import {
   usePageFrame,
   RelativeTime,
 } from '@headless/dashboard-sdk/components'
+import { OpenCircuitIcon, RefreshIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { DataTable } from '@headless/dashboard-sdk/table'
@@ -170,7 +171,11 @@ export default function ConsumersView() {
           />
         )}
       </QueryState>
-      <Section label="Circuit breakers">
+      <Section
+        label="Circuit breakers"
+        caption={circuits.data ? format.number(circuits.data.length) : undefined}
+        description="A breaker opens after repeated failures and closes again on its own; reset one to let its consumer run now."
+      >
         <QueryState query={circuits} label="Loading circuit breakers" rows={2} shape="table">
           {(items) => <CircuitsTable circuits={items} nodeName={nodeName} />}
         </QueryState>
@@ -264,7 +269,7 @@ function CircuitActions({ circuit, nodeName }: { circuit: MessagingCircuit; node
   const refusal = useAllowedActions('circuit', [circuit])
   const noun = `circuit of ${circuit.consumer}${nodeName ? ` on ${nodeName}` : ''}`
 
-  const action = (name: MessageCommandName, variant?: 'danger') => {
+  const action = (name: MessageCommandName, icon: IconComponent, variant?: 'danger') => {
     const command = commands.find(name)
 
     return command ? (
@@ -275,6 +280,8 @@ function CircuitActions({ circuit, nodeName }: { circuit: MessagingCircuit; node
         ids={[circuit.id]}
         noun={noun}
         variant={variant}
+        icon={icon}
+        appearance="icon"
         commands={commands.all}
         disabledReason={refusal(command.id)}
         // The breaker answers no stream topic, so its new state is read back at once rather than at the next poll.
@@ -285,8 +292,8 @@ function CircuitActions({ circuit, nodeName }: { circuit: MessagingCircuit; node
 
   return (
     <>
-      {action('reset-circuit')}
-      {action('force-open', 'danger')}
+      {action('reset-circuit', RefreshIcon)}
+      {action('force-open', OpenCircuitIcon, 'danger')}
     </>
   )
 }
@@ -321,7 +328,7 @@ function ConsumerPanel({
           content: (
             <>
               <div>
-                <FieldGrid columns={2}>
+                <FieldGrid label="Delivery">
                   <GridField label="Lane">{consumer.lane}</GridField>
                   <GridField label="Delivery">{deliveryLabel(consumer)}</GridField>
                   <GridField label="Runs here">

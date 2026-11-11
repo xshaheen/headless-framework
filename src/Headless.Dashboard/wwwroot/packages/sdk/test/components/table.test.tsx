@@ -241,6 +241,36 @@ describe('data table', () => {
     expect(count).toContain('justify-end')
   })
 
+  // The pin itself is layout, which only a browser measures; what jsdom can see is that the actions stay the last
+  // column, after every data column, in the header and in each row.
+  it('keeps the row actions as the last column, and a table without them has no actions column', () => {
+    const columns: DataTableProps<Row>['columns'] = [
+      { id: 'title', header: 'Run', cell: (row) => row.title },
+      { id: 'reason', header: 'Reason', cell: () => 'Card declined' },
+    ]
+    const { unmount } = render(
+      <DataTable
+        label="Runs"
+        rows={rows}
+        columns={columns}
+        rowActions={(row) => <button type="button">{`Retry ${row.id}`}</button>}
+        emptyState="No runs yet."
+      />,
+    )
+
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Run', 'Reason', 'Actions'])
+    for (const row of rows) {
+      const cells = within(screen.getByRole('row', { name: new RegExp(row.title) })).getAllByRole('gridcell')
+      expect(cells.at(-1)?.textContent).toBe(`Retry ${row.id}`)
+    }
+
+    unmount()
+    render(<DataTable label="Runs" rows={rows} columns={columns} emptyState="No runs yet." />)
+
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Run', 'Reason'])
+    expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull()
+  })
+
   it('offers select all matching once every loaded row is selected', () => {
     render(
       <DataTable
