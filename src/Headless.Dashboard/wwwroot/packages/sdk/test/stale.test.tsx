@@ -18,6 +18,10 @@ function nodeNotice(node: string) {
   return `Stale. Live updates stopped, so ${node}'s runs may be out of date.`
 }
 
+// Navigating inside act() runs the view's effects before the next push, so the notices already listen to the store.
+// A view the router opens at mount commits outside act(), in a transition whose effects React runs in a later task,
+// and findByRole('main') can resolve before them: a report pushed then shows only once the notices subscribe and read
+// the store. Those tests await the first notice instead of reading it at once.
 async function openHealth(view: ReturnType<typeof renderModule>) {
   await act(() => view.navigate('health'))
   await screen.findByRole('main')
@@ -39,7 +43,7 @@ describe('stale state', () => {
     await screen.findByRole('main')
 
     view.stream.push('module.stale', { module: 'diag', stale: true })
-    expect(screen.getByText(moduleNotice)).toBeTruthy()
+    expect(await screen.findByText(moduleNotice)).toBeTruthy()
 
     view.stream.push('module.stale', { module: 'diag', stale: false, unavailable: ['archive'] })
     expect(screen.queryByText(moduleNotice)).toBeNull()
@@ -81,7 +85,7 @@ describe('stale state', () => {
     await screen.findByRole('main')
 
     view.stream.push('node.stale', { module: 'diag', node: 'node-b', stale: true })
-    expect(screen.getByText(nodeNotice('node-b'))).toBeTruthy()
+    expect(await screen.findByText(nodeNotice('node-b'))).toBeTruthy()
 
     view.stream.push('subscribed', { topics: ['diag.run'], added: [] })
     expect(screen.queryByText(nodeNotice('node-b'))).toBeNull()
@@ -95,7 +99,7 @@ describe('stale state', () => {
     view.stream.push('subscribed', { topics: ['diag.run'], added: [] })
     view.stream.push('module.stale', { module: 'diag', stale: true })
 
-    expect(screen.getByText(moduleNotice)).toBeTruthy()
+    expect(await screen.findByText(moduleNotice)).toBeTruthy()
   })
 
   it('starts the next page from no reports', async () => {
