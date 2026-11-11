@@ -14,7 +14,6 @@ import { useBelow, useFlyout } from './flyout.tsx'
 import { ProductSidebar } from './product-sidebar.tsx'
 import { ShortcutList } from './shortcut-list.tsx'
 import { TopBar } from './top-bar.tsx'
-import './shell.css'
 
 /**
  * The frame around every signed-in view: the top bar, the active product's sidebar, Operations docked above the
@@ -51,8 +50,15 @@ export function ShellLayout() {
   useEffect(() => loader.onError(() => setUpdated(true)), [loader])
 
   return (
-    <div className={product ? 'hd-shell' : 'hd-shell hd-shell-bare'}>
-      <a className="hd-skip" href="#hd-canvas">
+    // The bar spans the top row, and the sidebar and the view fill the second in order. Off every product (Not found,
+    // no module registered), and below 768 px where the sidebar opens over the view, there is no sidebar column.
+    <div
+      className={`grid h-dvh grid-cols-1 grid-rows-[var(--topbar-height)_minmax(0,1fr)] ${product ? 'md:grid-cols-[var(--sidebar-width)_minmax(0,1fr)]' : ''}`}
+    >
+      <a
+        className="absolute start-2 top-[-100vh] z-(--z-palette) rounded-md bg-card px-3 py-2 focus:top-2"
+        href="#hd-canvas"
+      >
         Skip to content
       </a>
       <TopBar
@@ -71,10 +77,15 @@ export function ShellLayout() {
       {product && (!phone || menuOpen) ? (
         <ProductSidebar product={product} onNavigate={() => setMenuOpen(false)} />
       ) : null}
-      <div className="hd-main">
+      <div className="flex min-h-0 min-w-0 flex-col">
         <OperationHost>
-          {updated ? <UpdatedNotice /> : null}
-          <main id="hd-canvas" className="hd-canvas" tabIndex={-1}>
+          {updated ? <UpdatedNotice className="mx-5 mt-2" /> : null}
+          {/* A view that draws its own frame or panel runs edge to edge. */}
+          <main
+            id="hd-canvas"
+            className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto bg-card p-5 pb-7 focus:outline-none max-md:p-4 max-md:pb-5 has-frame:gap-0 has-frame:p-0"
+            tabIndex={-1}
+          >
             <Outlet />
           </main>
           <ShellPalette
