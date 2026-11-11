@@ -108,8 +108,29 @@ internal sealed partial class LiveQueryHub(
     /// </param>
     /// <param name="cancellationToken">Ends the subscription.</param>
     /// <exception cref="LiveQueryHasNoDependenciesException">A successful run recorded no dependency.</exception>
+    public IAsyncEnumerable<LiveUpdate> WatchAsync(
+        Func<CancellationToken, ValueTask<LiveRunResult>> run,
+        CancellationToken cancellationToken
+    )
+    {
+        return WatchAsync(run, enterRerun: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Watches as <see cref="WatchAsync(Func{CancellationToken, ValueTask{LiveRunResult}}, CancellationToken)" />
+    /// does, and lets the caller hold back every run after the first.
+    /// </summary>
+    /// <param name="run">One run of the query; see the other overload.</param>
+    /// <param name="enterRerun">
+    /// Awaited on the enumerating caller's flow before each run after the first. It returns when the run may start,
+    /// with a turn that is disposed when the run ends, or <see langword="null" /> for nothing to release. A caller
+    /// uses it to space the runs of one subscription and to bound the runs in flight across subscriptions.
+    /// </param>
+    /// <param name="cancellationToken">Ends the subscription.</param>
+    /// <exception cref="LiveQueryHasNoDependenciesException">A successful run recorded no dependency.</exception>
     public async IAsyncEnumerable<LiveUpdate> WatchAsync(
         Func<CancellationToken, ValueTask<LiveRunResult>> run,
+        Func<CancellationToken, ValueTask<IDisposable?>>? enterRerun,
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
@@ -123,20 +144,38 @@ internal sealed partial class LiveQueryHub(
             // subscription's tokens, and nothing about how many writes the process has seen.
             var salt = RandomNumberGenerator.GetBytes(_SaltLength);
             byte[]? lastMac = null;
+            var firstRun = true;
 
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Read before the run: a write committed after this point either lands in the run's result or stamps
-                // a key above this version, which the staleness check below catches.
-                var startVersion = Volatile.Read(ref _version);
+                // Entered before the version is read: a write that lands while the subscription waits for its turn
+                // is then read by the run itself, instead of making the run stale and causing one more.
+                var turn =
+                    firstRun || enterRerun is null ? null : await enterRerun(cancellationToken).ConfigureAwait(false);
 
-                // A signal already waiting was raised by a write this run will see or the staleness check will
-                // catch, so acting on it again after the run would only repeat the run.
-                subscription.ClearSignal();
-                metrics.RunStarted();
-                var result = await _RunAsync(run, cancellationToken).ConfigureAwait(false);
+                firstRun = false;
+                long startVersion;
+                LiveRunResult result;
+
+                try
+                {
+                    // Read before the run: a write committed after this point either lands in the run's result or
+                    // stamps a key above this version, which the staleness check below catches.
+                    startVersion = Volatile.Read(ref _version);
+
+                    // A signal already waiting was raised by a write this run will see or the staleness check will
+                    // catch, so acting on it again after the run would only repeat the run.
+                    subscription.ClearSignal();
+                    metrics.RunStarted();
+                    result = await _RunAsync(run, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    turn?.Dispose();
+                }
+
                 subscription.Dependencies = result.Dependencies;
 
                 var mac = HMACSHA256.HashData(salt, result.Payload.Span);

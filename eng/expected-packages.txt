@@ -121,6 +121,7 @@ Headless.Jobs.EntityFramework.SqlServer
 Headless.Jobs.SourceGenerator
 Headless.LiveQueries
 Headless.LiveQueries.Abstractions
+Headless.LiveQueries.Endpoints
 Headless.Logging.Redaction
 Headless.Logging.Redaction.AspNetCore
 Headless.Logging.Serilog

@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-221 packages &bull; One setup grammar &bull; Swap any provider in one line
+222 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -254,7 +254,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 221 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 222 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -637,6 +637,7 @@ Queries that stay current: a watched query runs again when a dependency it recor
 |---------|-------------|
 | [Headless.LiveQueries.Abstractions](src/Headless.LiveQueries.Abstractions/README.md) | `ILiveQueries`, `ILiveQueryInvalidator`, `ILiveQueryDependencies`, and the `LiveUpdate` a transport forwards |
 | [Headless.LiveQueries](src/Headless.LiveQueries/README.md) | Registration, the in-process subscription hub, and its meter |
+| [Headless.LiveQueries.Endpoints](src/Headless.LiveQueries.Endpoints/README.md) | `.WithLiveUpdates()` for Minimal API GET endpoints: server-sent events and NDJSON streams, authorization on every re-run, and stream limits |
 
 ### Unit of Work
 
