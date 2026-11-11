@@ -282,6 +282,58 @@ Error codes, as constants on `LiveEndpointsErrorCodes`:
 | `g:live_query_unauthorized` | Failure event | A re-run found the caller no longer authenticated (`status` 401) or no longer authorized (`status` 403). |
 | `g:live_query_stream_limit_reached` | 429 response with `Retry-After` | The caller or the host already holds the allowed number of streams. |
 
+### OpenAPI and generated clients
+
+`.WithLiveUpdates()` also attaches `LiveUpdatesMetadata` (`Headless.Api.Abstractions`) to the endpoint. A host that uses `Headless.OpenApi` then documents each live operation with no further code: the operation carries the `x-headless-live` extension, and its success response lists `text/event-stream` and `application/x-ndjson` beside `application/json`, each typed with the same schema as the single response. [OpenAPI](openapi.md#design-constraints) shows the exact shape. There is no separate manifest of live endpoints; the OpenAPI document is the contract a client is generated from.
+
+```json
+{
+  "paths": {
+    "/todos": {
+      "get": {
+        "operationId": "GetTodos",
+        "x-headless-live": { "mediaTypes": ["text/event-stream", "application/x-ndjson"] }
+      }
+    }
+  }
+}
+```
+
+A TypeScript client comes from that document with any OpenAPI generator. `openapi-typescript` is one example; this framework neither ships nor requires it:
+
+```bash
+npx openapi-typescript https://localhost:5001/openapi/v1.json --output src/api/schema.d.ts
+```
+
+The generated types give every operation its response body type. The generator does not read `x-headless-live`, so the client decides per operation from the marker: an operation without it is one request, and an operation with it may be opened as a stream whose `result` events carry the same body type.
+
+```ts
+import type { paths } from "./api/schema";
+
+type Todos = paths["/todos"]["get"]["responses"][200]["content"]["application/json"];
+
+// A one-time read: the ordinary request, as for any operation.
+const todos: Todos = await (await fetch("/todos", { headers: { Accept: "application/json" } })).json();
+
+// A live read: the same URL, opened as server-sent events. EventSource sends Accept: text/event-stream.
+const stream = new EventSource("/todos", { withCredentials: true });
+
+stream.addEventListener("result", (event) => {
+  render(JSON.parse(event.data) as Todos);
+});
+
+stream.addEventListener("failure", (event) => {
+  // A problem-details body. It is the last event; close so the browser does not reconnect.
+  stream.close();
+  report(JSON.parse(event.data));
+});
+```
+
+- **Find the live operations from the document, not from a list kept by hand.** A build step that reads the document (`Object.entries(document.paths)`, then each method's `x-headless-live`) yields the operations a client may open as streams, and `mediaTypes` yields the `Accept` values to choose from.
+- **Reuse the generated type.** A `result` event's `data`, and a `result` line's `value` in NDJSON, parse to the operation's `application/json` type. The generated `application/x-ndjson` type is the union of the three line kinds.
+- **`EventSource` cannot send an `Authorization` header.** It suits cookie authentication. A client that authenticates with a bearer token reads the stream with `fetch` and `Accept: text/event-stream` or `Accept: application/x-ndjson`, and parses the body itself.
+- **A published client package and UI-framework hooks are not part of this repository.** They belong with the framework's web packages, generated from this same document. There is no .NET client either.
+
 ### Configuration
 
 | Option | Default | Effect |

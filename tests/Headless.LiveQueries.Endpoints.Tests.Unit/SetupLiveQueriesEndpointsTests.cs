@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Api;
 using Headless.LiveQueries;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -136,6 +137,30 @@ public sealed class SetupLiveQueriesEndpointsTests : TestBase
 
         // then
         building.Should().Throw<InvalidOperationException>().WithMessage("*/todos*UseEndpoints()*");
+    }
+
+    [Fact]
+    public async Task should_mark_only_the_live_endpoint_for_api_documentation()
+    {
+        // given
+        await using var app = await LiveTestApp.StartAsync(
+            app =>
+            {
+                app.MapGet("/todos", () => new[] { "milk" }).WithLiveUpdates();
+                app.MapGet("/plain", () => new[] { "milk" });
+            },
+            AbortToken
+        );
+
+        // when
+        var endpoints = ((IEndpointRouteBuilder)app.App)
+            .DataSources.SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToDictionary(endpoint => endpoint.RoutePattern.RawText!, StringComparer.Ordinal);
+
+        // then
+        endpoints["/todos"].Metadata.GetMetadata<LiveUpdatesMetadata>().Should().NotBeNull();
+        endpoints["/plain"].Metadata.GetMetadata<LiveUpdatesMetadata>().Should().BeNull();
     }
 
     [Fact]

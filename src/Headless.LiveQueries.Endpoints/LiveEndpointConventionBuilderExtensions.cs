@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api;
 using Headless.Checks;
 using Headless.LiveQueries.Internal;
 using Microsoft.AspNetCore.Builder;
@@ -34,6 +35,10 @@ public static class LiveEndpointConventionBuilderExtensions
         /// On a route group it applies to every endpoint of the group. The host must register live endpoints with
         /// <c>AddHeadlessLiveQueries(setup =&gt; setup.UseEndpoints())</c>.
         /// </para>
+        /// <para>
+        /// It also attaches <see cref="LiveUpdatesMetadata" />, which Headless.OpenApi renders as the
+        /// <c>x-headless-live</c> operation extension and the stream media types of the success response.
+        /// </para>
         /// </remarks>
         /// <returns>The builder, to allow chaining.</returns>
         /// <exception cref="InvalidOperationException">
@@ -45,6 +50,8 @@ public static class LiveEndpointConventionBuilderExtensions
             Argument.IsNotNull(builder);
 
             builder.AddEndpointFilter(LiveEndpointFilter.Instance);
+            // Read by API documentation only, which describes the stream without a reference to this package.
+            builder.WithMetadata(new LiveUpdatesMetadata());
 
             // Finally, so the check sees the methods whatever order the conventions were added in.
             builder.Finally(static endpoint =>
