@@ -76,6 +76,63 @@ describe('DetailPanel', () => {
     expect(screen.getByText('Chain body')).toBeTruthy()
   })
 
+  it('shows a tab only when it has content, and opens the default tab first', async () => {
+    const user = userEvent.setup()
+    render(
+      <DetailPanel
+        label="Run details"
+        name="billing.charge"
+        defaultTab="exception"
+        tabs={[
+          { id: 'overview', label: 'Overview', content: <p>Overview body</p> },
+          { id: 'exception', label: 'Exception', content: <p>Exception body</p> },
+          { id: 'arguments', label: 'Arguments', content: null },
+          { id: 'chain', label: 'Chain', content: false },
+        ]}
+      />,
+    )
+
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'Exception'])
+    expect(screen.getByRole('tab', { name: 'Exception', selected: true })).toBeTruthy()
+    expect(screen.getByRole('tabpanel', { name: 'Exception' }).textContent).toBe('Exception body')
+
+    // A picked tab wins over the default from then on.
+    await user.click(screen.getByRole('tab', { name: 'Overview' }))
+    expect(screen.getByRole('tabpanel', { name: 'Overview' }).textContent).toBe('Overview body')
+  })
+
+  it('falls back to the first tab when the default tab has no content', () => {
+    render(
+      <DetailPanel
+        label="Run details"
+        name="billing.charge"
+        defaultTab="exception"
+        tabs={[
+          { id: 'overview', label: 'Overview', content: <p>Overview body</p> },
+          { id: 'exception', label: 'Exception', content: null },
+        ]}
+      />,
+    )
+
+    expect(screen.getByRole('tab', { name: 'Overview', selected: true })).toBeTruthy()
+  })
+
+  it('names its window controls and shows each name in a tooltip on focus', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Copy id r1' }))
+    // Keyboard focus, as an operator tabbing from the copy control past the tabs; a programmatic focus opens none.
+    await user.tab()
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move details to the side' }))
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Move details to the side')
+
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close details' }))
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Close details')
+  })
+
   it('renders as the object’s own page outside a PageFrame, with nothing to close or move', () => {
     render(<DetailPanel label="Run details" name="billing.charge" />)
 

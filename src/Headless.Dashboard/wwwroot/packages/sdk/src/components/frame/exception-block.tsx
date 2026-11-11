@@ -15,6 +15,8 @@ export interface ExceptionBlockProps {
    * as an inner exception's `Type: message` or `--- End of inner exception stack trace ---`, reads as it is.
    */
   stack?: string
+  /** Opens with the whole stack shown, as the Exception tab does; the block under an overview starts folded. */
+  expanded?: boolean
 }
 
 /** The lines shown before `Full stack`: enough to see where it threw without pushing the fields out of view. */
@@ -24,12 +26,12 @@ const shownLines = 3
  * A failure's exception: the type in the danger tone, the message, and its stack with frames and inner exceptions
  * coloured, with Full stack and Copy.
  */
-export function ExceptionBlock({ type, message, stack }: ExceptionBlockProps) {
-  const [full, setFull] = useState(false)
+export function ExceptionBlock({ type, message, stack, expanded = false }: ExceptionBlockProps) {
+  const [full, setFull] = useState(expanded)
   const lines = useMemo(() => stackLines(stack).map(tokenizeStackLine), [stack])
 
   return (
-    <div className="hd-exception overflow-hidden rounded-lg border border-border bg-deep">
+    <div className="hd-exception shrink-0 overflow-hidden rounded-lg border border-border bg-deep">
       <pre className="hd-mono m-0 px-3 py-2.5 type-code wrap-anywhere whitespace-pre-wrap">
         {type ? (
           <>

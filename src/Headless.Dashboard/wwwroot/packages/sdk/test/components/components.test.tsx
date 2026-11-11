@@ -125,7 +125,7 @@ describe('toasts and buttons', () => {
     expect(document.activeElement).toBe(button)
     expect(button.getAttribute('aria-disabled')).toBe('true')
     expect(button.hasAttribute('disabled')).toBe(false)
-    expect(screen.getByText('Running - cancel instead').id).toBe(button.getAttribute('aria-describedby'))
+    expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent).toBe('Running - cancel instead')
 
     await user.click(button)
     expect(onPress).not.toHaveBeenCalled()

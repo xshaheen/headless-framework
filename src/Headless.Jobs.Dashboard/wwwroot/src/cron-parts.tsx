@@ -15,7 +15,7 @@ import {
   RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardObject } from '@headless/dashboard-sdk/data'
-import { RecurringIcon } from '@headless/dashboard-sdk/icons'
+import { DeleteIcon, PauseIcon, PlayIcon, RecurringIcon, ResumeIcon } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
@@ -185,55 +185,59 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
     ) : undefined
 
   return (
-    <FieldGrid columns={2}>
-      <GridField label="Function">
-        <Link to={`/jobs/functions/${encodeURIComponent(cronJob.function)}`}>
-          <Mono>{cronJob.function}</Mono>
-        </Link>
-      </GridField>
-      <GridField label="Description">{cronJob.description || 'None'}</GridField>
-      {locked ? (
-        <>
-          <GridField label="Expression" action={<Text tone="hint">{locked}</Text>}>
-            <Mono>{cronJob.expression}</Mono>
-          </GridField>
-          <GridField label="Time zone">
-            {cronJob.timeZoneId || `${zone ?? 'Scheduler zone'} (scheduler zone)`}
-          </GridField>
-        </>
-      ) : (
-        <>
-          <GridField
-            label="Expression"
-            edit={{
-              value: cronJob.expression,
-              onDraftChange: (expression) =>
-                setDraft({ expression, timeZoneId: draft?.timeZoneId ?? cronJob.timeZoneId }),
-              preview: draftPreview,
-              onCommit: (expression) => commit(expression, draft?.timeZoneId ?? cronJob.timeZoneId),
-            }}
-          />
-          <GridField
-            label="Time zone"
-            edit={{
-              // A cron job with no zone of its own fires in the scheduler's, so the field shows that one, not a blank.
-              value: cronJob.timeZoneId || zone || '',
-              onDraftChange: (timeZoneId) =>
-                setDraft({ expression: draft?.expression ?? cronJob.expression, timeZoneId }),
-              onCommit: (timeZoneId) => commit(draft?.expression ?? cronJob.expression, timeZoneId),
-            }}
-          />
-        </>
-      )}
-      <GridField label="Reads" span={2}>
-        {cronJob.reading ?? cronJob.validationMessage ?? ''}
-      </GridField>
-      <GridField label="Overlap">{cronJob.onOverlap === 'Skip' ? 'Skip while running' : 'Allow'}</GridField>
-      <GridField label="Retries">{format.number(cronJob.retries)}</GridField>
-      <GridField label="Next due" span={2}>
-        {cronJob.isPaused ? 'Paused' : <RelativeTime value={cronJob.nextDueUtc} zone={zone} scheduled />}
-      </GridField>
-    </FieldGrid>
+    <>
+      <FieldGrid label="Job" columns={2}>
+        <GridField label="Function">
+          <Link to={`/jobs/functions/${encodeURIComponent(cronJob.function)}`}>
+            <Mono>{cronJob.function}</Mono>
+          </Link>
+        </GridField>
+        <GridField label="Description">{cronJob.description || 'None'}</GridField>
+        <GridField label="Overlap">{cronJob.onOverlap === 'Skip' ? 'Skip while running' : 'Allow'}</GridField>
+        <GridField label="Retries">{format.number(cronJob.retries)}</GridField>
+      </FieldGrid>
+      <FieldGrid label="Schedule" columns={2}>
+        {locked ? (
+          <>
+            <GridField label="Expression" action={<Text tone="hint">{locked}</Text>}>
+              <Mono>{cronJob.expression}</Mono>
+            </GridField>
+            <GridField label="Time zone">
+              {cronJob.timeZoneId || `${zone ?? 'Scheduler zone'} (scheduler zone)`}
+            </GridField>
+          </>
+        ) : (
+          <>
+            <GridField
+              label="Expression"
+              edit={{
+                value: cronJob.expression,
+                onDraftChange: (expression) =>
+                  setDraft({ expression, timeZoneId: draft?.timeZoneId ?? cronJob.timeZoneId }),
+                preview: draftPreview,
+                onCommit: (expression) => commit(expression, draft?.timeZoneId ?? cronJob.timeZoneId),
+              }}
+            />
+            <GridField
+              label="Time zone"
+              edit={{
+                // A cron job with no zone of its own fires in the scheduler's, so the field shows that one, not a blank.
+                value: cronJob.timeZoneId || zone || '',
+                onDraftChange: (timeZoneId) =>
+                  setDraft({ expression: draft?.expression ?? cronJob.expression, timeZoneId }),
+                onCommit: (timeZoneId) => commit(draft?.expression ?? cronJob.expression, timeZoneId),
+              }}
+            />
+          </>
+        )}
+        <GridField label="Reads" span={2}>
+          {cronJob.reading ?? cronJob.validationMessage ?? ''}
+        </GridField>
+        <GridField label="Next due" span={2}>
+          {cronJob.isPaused ? 'Paused' : <RelativeTime value={cronJob.nextDueUtc} zone={zone} scheduled />}
+        </GridField>
+      </FieldGrid>
+    </>
   )
 }
 
@@ -303,6 +307,7 @@ export function CronActions({ cronJob, onDeleted }: { cronJob: CronJob; onDelete
           ids={[cronJob.id]}
           noun="cron job"
           variant="primary"
+          icon={PlayIcon}
           commands={commands.all}
           disabledReason={refusal(commands.runNow.id)}
           onDone={(rows) => setNewRun(rows.find((row) => row.outcome === 'done')?.reason)}
@@ -314,6 +319,8 @@ export function CronActions({ cronJob, onDeleted }: { cronJob: CronJob; onDelete
           command={toggle}
           ids={[cronJob.id]}
           noun="cron job"
+          icon={cronJob.isPaused ? ResumeIcon : PauseIcon}
+          appearance="icon"
           commands={commands.all}
           disabledReason={refusal(toggle.id)}
         />
@@ -325,6 +332,8 @@ export function CronActions({ cronJob, onDeleted }: { cronJob: CronJob; onDelete
           ids={[cronJob.id]}
           noun="cron job"
           variant="danger"
+          icon={DeleteIcon}
+          appearance="icon"
           commands={commands.all}
           disabledReason={refusal(remove.id)}
           reach={

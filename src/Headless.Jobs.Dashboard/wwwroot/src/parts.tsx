@@ -33,9 +33,15 @@ import { DashboardApiError, useDashboardObject, type CappedCount } from '@headle
 import {
   AttentionIcon,
   CalendarIcon,
+  CancelIcon,
   ChartIcon,
+  DeleteIcon,
+  DuplicateIcon,
+  EditIcon,
+  ForceDeleteIcon,
   ListIcon,
   PlayIcon,
+  RetryIcon,
   ScheduledIcon,
   type IconComponent,
 } from '@headless/dashboard-sdk/icons'
@@ -312,14 +318,6 @@ function exceptionParts(message: string, stack?: string) {
   return { message: first, stack: [...rest, ...(stack ? [stack] : [])].join('\n') }
 }
 
-/**
- * A stored exception as its block: the outer exception's type and message, then its frames and every inner exception.
- * A reason the store wrote itself has no type and no stack.
- */
-export function RunException({ type, message, stack }: { type?: string; message: string; stack?: string }) {
-  return <ExceptionBlock type={type} {...exceptionParts(message, stack)} />
-}
-
 function TraceLink({ traceId }: { traceId: string }) {
   const { traceLinkTemplate } = useDashboard()
 
@@ -354,18 +352,21 @@ export function RunFields({ run }: { run: Run }) {
 
   return (
     <>
-      {run.exceptionMessage ? (
-        <RunException type={run.exceptionType} message={run.exceptionMessage} stack={run.exceptionStack} />
-      ) : null}
-      <FieldGrid>
-        <GridField label="Kind">{kindLabel(run.kind)}</GridField>
-        <GridField label="Attempt">{attemptText(run, format.number)}</GridField>
-        <GridField label="Node">{run.node ? <Mono>{run.node}</Mono> : 'Not recorded'}</GridField>
-        <Optional label="Tenant" value={run.tenantId ? <Mono>{run.tenantId}</Mono> : undefined} />
+      <FieldGrid label="Outcome">
         <GridField label="Status" span={2}>
           {run.cancelRequested && !isFinished(run.status)
             ? `${statusLabel(run.status)}, cancel requested`
             : statusLabel(run.status)}
+        </GridField>
+        <GridField label={run.status === 'Failed' ? 'Failed at' : 'Executed'} span={2}>
+          <RelativeTime value={run.executedAt} missing={running} />
+        </GridField>
+        <GridField label="Duration">
+          {run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}
+        </GridField>
+        <GridField label="Attempt">{attemptText(run, format.number)}</GridField>
+        <GridField label="Node" span={2}>
+          {run.node ? <Mono>{run.node}</Mono> : 'Not recorded'}
         </GridField>
         {/* A handler that does not observe its cancellation token finishes on its own terms; the run keeps the status
             it really ended with, and this says the cancel asked for was not honoured. */}
@@ -375,12 +376,55 @@ export function RunFields({ run }: { run: Run }) {
           </GridField>
         ) : null}
         {run.status === 'DueDone' ? <GridField label="Note">Started late</GridField> : null}
-        <GridField label={run.status === 'Failed' ? 'Failed at' : 'Executed'} span={2}>
-          <RelativeTime value={run.executedAt} missing={running} />
+        {run.progressPercent !== undefined ? (
+          <GridField label="Progress" span={2}>
+            <RunProgress run={run} />
+          </GridField>
+        ) : null}
+        <Optional label="Skipped because" span={2} value={run.skippedReason} />
+        <Optional label="Failure" span={2} value={run.exceptionMessage ? firstLine(run.exceptionMessage) : undefined} />
+      </FieldGrid>
+      <FieldGrid label="Schedule">
+        <GridField label="Kind">{kindLabel(run.kind)}</GridField>
+        <GridField label="Due" span={2}>
+          {/* A chain step has no due time of its own: it runs once its parent ends. */}
+          <RelativeTime value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
         </GridField>
-        <GridField label="Duration">
-          {run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}
+        <GridField label="Created">
+          <RelativeTime value={run.createdAt} />
         </GridField>
+        <Optional
+          label="Retry intervals"
+          span={2}
+          value={
+            run.retryIntervals && run.retryIntervals.length > 0
+              ? run.retryIntervals.map((seconds) => `${format.number(seconds)} s`).join(', ')
+              : undefined
+          }
+        />
+        <Optional
+          label="Cron job"
+          span={2}
+          value={
+            run.cronJobId ? (
+              <Link to={`/jobs/cron-jobs/${encodeURIComponent(run.cronJobId)}`}>
+                <Mono>{run.cronJobId}</Mono>
+              </Link>
+            ) : undefined
+          }
+        />
+      </FieldGrid>
+      <FieldGrid label="Identity">
+        <GridField label="Function" span={2}>
+          <Link to={`/jobs/functions/${encodeURIComponent(run.function)}`}>
+            <Mono>{run.function}</Mono>
+          </Link>
+        </GridField>
+        <Optional
+          label="Contract version"
+          value={run.contractVersion ? <Mono>{run.contractVersion}</Mono> : undefined}
+        />
+        <Optional label="Tenant" value={run.tenantId ? <Mono>{run.tenantId}</Mono> : undefined} />
         <Optional
           label="Correlation"
           span={2}
@@ -394,52 +438,10 @@ export function RunFields({ run }: { run: Run }) {
             ) : undefined
           }
         />
-        {run.progressPercent !== undefined ? (
-          <GridField label="Progress" span={2}>
-            <RunProgress run={run} />
-          </GridField>
-        ) : null}
-        <GridField label="Due" span={2}>
-          {/* A chain step has no due time of its own: it runs once its parent ends. */}
-          <RelativeTime value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
-        </GridField>
-        <GridField label="Created" span={2}>
-          <RelativeTime value={run.createdAt} />
-        </GridField>
-        <GridField label="Function" span={2}>
-          <Link to={`/jobs/functions/${encodeURIComponent(run.function)}`}>
-            <Mono>{run.function}</Mono>
-          </Link>
-        </GridField>
-        <Optional
-          label="Retry intervals"
-          span={2}
-          value={
-            run.retryIntervals && run.retryIntervals.length > 0
-              ? run.retryIntervals.map((seconds) => `${format.number(seconds)} s`).join(', ')
-              : undefined
-          }
-        />
-        <Optional label="Skipped because" span={2} value={run.skippedReason} />
         <Optional label="Trace id" span={2} value={run.traceId ? <Mono>{run.traceId}</Mono> : undefined} />
         <Optional label="Causation" span={2} value={run.causationId ? <Mono>{run.causationId}</Mono> : undefined} />
-        <Optional
-          label="Contract version"
-          value={run.contractVersion ? <Mono>{run.contractVersion}</Mono> : undefined}
-        />
         <Optional label="Business key" span={2} value={run.businessKey ? <Mono>{run.businessKey}</Mono> : undefined} />
         <Optional label="Description" span={2} value={run.description} />
-        <Optional
-          label="Cron job"
-          span={2}
-          value={
-            run.cronJobId ? (
-              <Link to={`/jobs/cron-jobs/${encodeURIComponent(run.cronJobId)}`}>
-                <Mono>{run.cronJobId}</Mono>
-              </Link>
-            ) : undefined
-          }
-        />
       </FieldGrid>
     </>
   )
@@ -602,7 +604,12 @@ export function RunActions({ run, pending, page }: { run: Run; pending: Pending;
     return name === 'edit' ? undefined : markDone(pending, versions, name)
   }
 
-  const action = (name: RunActionName, command: CommandDefinition | undefined, variant?: 'primary' | 'danger') =>
+  const action = (
+    name: RunActionName,
+    command: CommandDefinition | undefined,
+    icon: IconComponent,
+    variant?: 'primary' | 'danger',
+  ) =>
     command ? (
       <CommandAction
         key={name}
@@ -611,6 +618,9 @@ export function RunActions({ run, pending, page }: { run: Run; pending: Pending;
         ids={[run.id]}
         noun="run"
         variant={variant}
+        icon={icon}
+        // The recovery action keeps its label as the row's one primary button; the rest are icons with tooltips.
+        appearance={name === 'requeue' ? 'button' : 'icon'}
         recovery={name === 'requeue'}
         commands={commands.all}
         disabledReason={refusal(command.id)}
@@ -622,12 +632,12 @@ export function RunActions({ run, pending, page }: { run: Run; pending: Pending;
 
   return (
     <>
-      {action('requeue', commands.requeue, 'primary')}
-      {action('edit', commands.edit)}
-      {action('duplicate', commands.duplicate)}
-      {action('cancel', commands.cancel)}
-      {action('delete', commands.delete, 'danger')}
-      {action('force-delete', commands.forceDelete, 'danger')}
+      {action('requeue', commands.requeue, RetryIcon, 'primary')}
+      {action('edit', commands.edit, EditIcon)}
+      {action('duplicate', commands.duplicate, DuplicateIcon)}
+      {action('cancel', commands.cancel, CancelIcon)}
+      {action('delete', commands.delete, DeleteIcon, 'danger')}
+      {action('force-delete', commands.forceDelete, ForceDeleteIcon, 'danger')}
     </>
   )
 }
@@ -638,11 +648,15 @@ interface PayloadAnswer {
   headers?: Readonly<Record<string, string>>
 }
 
-/** The run's arguments, read when their tab opens and already redacted by the server's formatter. */
-export function RunPayload({ runId }: { runId: string }) {
+/**
+ * The run's arguments, already redacted by the server's formatter, read once the panel opens so the Arguments tab
+ * shows only for a run that stored some: the server answers 404 for one that stored none.
+ */
+function useRunPayload(runId: string) {
   const { api } = useDashboard()
   const module = useModule()
-  const payload = useQuery({
+
+  return useQuery({
     queryKey: ['payload', module.id, 'run', runId],
     queryFn: () =>
       api.request<PayloadAnswer>({
@@ -650,7 +664,12 @@ export function RunPayload({ runId }: { runId: string }) {
         path: 'payload',
         query: { module: module.id, kind: 'run', id: runId },
       }),
+    retry: false,
   })
+}
+
+export function RunPayload({ runId }: { runId: string }) {
+  const payload = useRunPayload(runId)
 
   return (
     <section aria-label="Arguments">
@@ -670,36 +689,58 @@ export function RunPayload({ runId }: { runId: string }) {
   )
 }
 
-function RunChain({ run }: { run: Pick<Run, 'id' | 'parentId'> }) {
-  const { api } = useDashboard()
-  const detail = useDashboardObject({ topic: runsTopic, id: run.id, fetch: () => fetchRun(api, run.id) })
+function RunChain({ run, steps }: { run: Pick<Run, 'parentId'>; steps: readonly string[] }) {
   const step = (id: string) => (
     <Link key={id} to={`/jobs/runs/${encodeURIComponent(id)}`}>
       <Mono>{id}</Mono>
     </Link>
   )
-  const children = detail.data?.children
 
   return (
     <FieldGrid columns={2}>
       <GridField label="Runs after">
         {run.parentId ? step(run.parentId) : 'Nothing: this run starts its chain'}
       </GridField>
-      <GridField label="Steps after this run">
-        {children
-          ? children.length > 0
-            ? children.map(step)
-            : 'None'
-          : detail.isError
-            ? 'The chain did not load.'
-            : 'Loading…'}
-      </GridField>
+      <GridField label="Steps after this run">{steps.length > 0 ? steps.map(step) : 'None'}</GridField>
     </FieldGrid>
   )
 }
 
+/** The exception on its own tab: the whole stack open, with the failure's context under it. */
+function RunExceptionTab({ run }: { run: Run }) {
+  const format = useFormat()
+
+  return (
+    <div>
+      <ExceptionBlock
+        type={run.exceptionType}
+        {...exceptionParts(run.exceptionMessage ?? '', run.exceptionStack)}
+        expanded
+      />
+      <FieldGrid label="Failure">
+        <GridField label="Failed at" span={2}>
+          <RelativeTime value={run.executedAt} />
+        </GridField>
+        <GridField label="Attempt">{attemptText(run, format.number)}</GridField>
+        <GridField label="Node">{run.node ? <Mono>{run.node}</Mono> : 'Not recorded'}</GridField>
+        <Optional
+          label="Fingerprint"
+          span={2}
+          value={run.failureFingerprint ? <Mono>{run.failureFingerprint}</Mono> : undefined}
+        />
+      </FieldGrid>
+    </div>
+  )
+}
+
 export function RunPanel({ run, pending, page }: { run: Run; pending: Pending; page?: boolean }) {
+  const { api } = useDashboard()
   useTraceKey(run)
+  // The row carries no chain children and no arguments: both are read once the panel opens, and their tabs show
+  // only when the run has them. A step always has its parent, so its Chain tab needs no wait.
+  const detail = useDashboardObject({ topic: runsTopic, id: run.id, fetch: () => fetchRun(api, run.id) })
+  const payload = useRunPayload(run.id)
+  const chain = run.parentId !== undefined || (detail.data?.children.length ?? 0) > 0
 
   return (
     <DetailPanel
@@ -710,6 +751,8 @@ export function RunPanel({ run, pending, page }: { run: Run; pending: Pending; p
       detachTo={page ? undefined : `/jobs/runs/${encodeURIComponent(run.id)}`}
       // Keyed by run, so a command still busy or failed for one run does not show on the next one J/K opens.
       actions={<RunActions key={run.id} run={run} pending={pending} page={page} />}
+      // A failed run opens on its exception: that is what the operator came to read.
+      defaultTab={run.status === 'Failed' && run.exceptionMessage ? 'exception' : 'overview'}
       tabs={[
         {
           id: 'overview',
@@ -723,8 +766,13 @@ export function RunPanel({ run, pending, page }: { run: Run; pending: Pending; p
             </>
           ),
         },
-        { id: 'arguments', label: 'Arguments', content: <RunPayload runId={run.id} /> },
-        { id: 'chain', label: 'Chain', content: <RunChain run={run} /> },
+        { id: 'exception', label: 'Exception', content: run.exceptionMessage ? <RunExceptionTab run={run} /> : null },
+        { id: 'arguments', label: 'Arguments', content: payload.isSuccess ? <RunPayload runId={run.id} /> : null },
+        {
+          id: 'chain',
+          label: 'Chain',
+          content: chain ? <RunChain run={run} steps={detail.data?.children ?? []} /> : null,
+        },
       ]}
     />
   )

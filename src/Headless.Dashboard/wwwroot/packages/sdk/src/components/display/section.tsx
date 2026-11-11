@@ -7,6 +7,8 @@ export interface SectionProps {
   label: string
   /** A short served fact after the heading, such as a count. */
   caption?: ReactNode
+  /** One sentence on what the block holds, as a page header's description reads. */
+  description?: ReactNode
   /** One trailing control at the inline end, such as a link to the full list. */
   action?: ReactNode
   children: ReactNode
@@ -16,12 +18,13 @@ export interface SectionProps {
  * A second block on a page under its main list, such as the circuit breakers under the consumers: a hairline, the
  * heading row on the page gutter, then its content. A detail panel's inner headings use `Fields` and `Text` instead.
  */
-export function Section({ label, caption, action, children }: SectionProps) {
+export function Section({ label, caption, description, action, children }: SectionProps) {
   return (
     <section aria-label={label} className="flex flex-col border-t border-border pt-3.5">
       <div className="flex flex-wrap items-center gap-2.5 px-4 pb-1">
         <h2 className="type-title">{label}</h2>
         {caption != null ? <span className="type-mono text-faint tabular-nums">{caption}</span> : null}
+        {description ? <p className="hd-hint">{description}</p> : null}
         {action != null ? <span className="ms-auto">{action}</span> : null}
       </div>
       {children}
