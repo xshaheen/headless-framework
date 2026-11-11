@@ -587,6 +587,72 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     }
 
     [Fact]
+    public async Task should_free_the_application_lock_when_a_lock_whose_probe_failed_is_disposed_as_lost()
+    {
+        // given (a failed probe reports the lock lost but leaves its connection open, still holding the application lock)
+        var timeProvider = new FakeTimeProvider();
+        var storage = new SqlServerConnectionScopedLockStorage(
+            Options.Create(
+                new SqlServerDistributedLockOptions
+                {
+                    ConnectionString = fixture.ConnectionString,
+                    KeyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+                    EnableFencing = false,
+                }
+            ),
+            Options.Create(new DistributedLocksStorageOptions()),
+            timeProvider
+        )
+        {
+            ProbeGateAcquiredAsync = () => throw new TimeoutException("Simulated probe failure."),
+        };
+        var resource = Faker.Random.AlphaNumeric(12);
+        var handle = await storage.TryAcquireAsync(
+            resource,
+            Guid.NewGuid().ToString("N"),
+            isShared: false,
+            observeLoss: true,
+            AbortToken
+        );
+        handle.Should().NotBeNull();
+        var lost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var lostRegistration = handle!.ConnectionLostToken.Register(() => lost.TrySetResult());
+
+        timeProvider.Advance(TimeSpan.FromSeconds(30));
+        await lost.Task.Bounded();
+        (await _CanTakeExclusiveSessionLockAsync(resource)).Should().BeFalse();
+
+        // when (the provider is torn down, disposing the still-registered lock as lost)
+        await storage.DisposeAsync();
+
+        // then (the session was ended rather than pooled, so a second holder takes the lock on its first attempt)
+        await using var secondStorage = new SqlServerConnectionScopedLockStorage(
+            Options.Create(
+                new SqlServerDistributedLockOptions
+                {
+                    ConnectionString = new SqlConnectionStringBuilder(fixture.ConnectionString)
+                    {
+                        Pooling = false,
+                    }.ConnectionString,
+                    KeyPrefix = DistributedLockOptions.DefaultKeyPrefix,
+                    EnableFencing = false,
+                }
+            ),
+            Options.Create(new DistributedLocksStorageOptions()),
+            TimeProvider.System
+        );
+        var second = await secondStorage.TryAcquireAsync(
+            resource,
+            Guid.NewGuid().ToString("N"),
+            isShared: false,
+            observeLoss: false,
+            AbortToken
+        );
+        second.Should().NotBeNull();
+        await second!.ReleaseAsync(AbortToken);
+    }
+
+    [Fact]
     public async Task should_free_the_application_lock_when_its_release_throws()
     {
         // given (a release that fails before it reaches the server leaves the lock held on its session)
