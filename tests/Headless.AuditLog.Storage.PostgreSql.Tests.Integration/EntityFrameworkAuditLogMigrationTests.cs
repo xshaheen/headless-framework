@@ -310,7 +310,7 @@ public sealed class EntityFrameworkAuditLogLeastPrivilegeTests(PostgreSqlAuditLo
     }
 
     [Fact]
-    public async Task should_partition_the_migrated_table_and_keep_the_keys_and_indexes_the_model_maps()
+    public async Task should_add_partitions_to_the_migrated_table_and_keep_the_keys_and_indexes_the_model_maps()
     {
         // given, when
         const string schema = PartitionedAuditDbContext.Schema;
@@ -399,17 +399,16 @@ public sealed class EntityFrameworkAuditLogLeastPrivilegeTests(PostgreSqlAuditLo
     }
 
     [Fact]
-    public async Task should_refuse_to_partition_a_table_that_holds_rows()
+    public async Task should_refuse_a_table_that_was_not_created_partitioned()
     {
-        // given - a plain table an earlier migration created and the application wrote to
-        const string schema = "audit_log_ef_partition_rows";
+        // given - the plain table EF Core scaffolds, without the PARTITION BY edit
+        const string schema = "audit_log_ef_not_partitioned";
         await PostgreSqlTestDatabase.ExecuteAsync(
             fixture.ConnectionString,
             $"""
             DROP SCHEMA IF EXISTS "{schema}" CASCADE;
             CREATE SCHEMA "{schema}";
             CREATE TABLE "{schema}"."{_Table}" ("id" bigint NOT NULL, "created_at" timestamp with time zone NOT NULL, PRIMARY KEY ("created_at", "id"));
-            INSERT INTO "{schema}"."{_Table}" VALUES (1, now());
             """,
             AbortToken
         );
@@ -420,19 +419,20 @@ public sealed class EntityFrameworkAuditLogLeastPrivilegeTests(PostgreSqlAuditLo
         // when
         var act = () => PostgreSqlTestDatabase.ExecuteAsync(fixture.ConnectionString, sql, AbortToken);
 
-        // then
+        // then - nothing was installed beside the plain table
         (await act.Should().ThrowAsync<PostgresException>())
             .Which.SqlState.Should()
             .Be(PostgresErrorCodes.ObjectNotInPrerequisiteState);
         (
             await PostgreSqlTestDatabase.ScalarAsync<long>(
                 fixture.ConnectionString,
-                $"""SELECT count(*) FROM "{schema}"."{_Table}";""",
+                $"""
+                SELECT count(*) FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
+                WHERE n.nspname = '{schema}';
+                """,
                 AbortToken
             )
-        )
-            .Should()
-            .Be(1);
+        ).Should().Be(0);
     }
 
     private async Task<ServiceProvider> _MigrateAsOwnerAsync<TContext>(string schema)

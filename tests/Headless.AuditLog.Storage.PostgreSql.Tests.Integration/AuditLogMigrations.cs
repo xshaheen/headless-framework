@@ -24,6 +24,23 @@ internal static class AuditLogMigrationScripts
         return context.Database.GenerateCreateScript();
     }
 
+    /// <summary>
+    /// The same script with the audit table created partitioned, the one edit an application makes by hand: EF Core
+    /// has no partitioning API, so the scaffolded table creation becomes SQL that ends in <c>PARTITION BY</c>.
+    /// </summary>
+    public static string PartitionedCreateScript<TContext>(Func<DbContextOptions<TContext>, TContext> create)
+        where TContext : DbContext
+    {
+        var script = CreateScript(create);
+        var end = script.IndexOf(
+            "\n);",
+            script.IndexOf("CREATE TABLE", StringComparison.Ordinal),
+            StringComparison.Ordinal
+        );
+
+        return script.Insert(end + 2, " PARTITION BY RANGE (created_at)");
+    }
+
     public static void MapAuditLog(ModelBuilder modelBuilder, string schema)
     {
         modelBuilder.ConfigureHeadlessAuditLog(
@@ -115,7 +132,7 @@ public sealed class CreatePartitionedAuditLog : Migration
     {
         const string schema = PartitionedAuditDbContext.Schema;
 
-        migrationBuilder.Sql(AuditLogMigrationScripts.CreateScript<PartitionedAuditDbContext>(o => new(o)));
+        migrationBuilder.Sql(AuditLogMigrationScripts.PartitionedCreateScript<PartitionedAuditDbContext>(o => new(o)));
         migrationBuilder.AddHeadlessAuditLogPartitions(schema: schema, monthsAhead: 1);
         migrationBuilder.AddHeadlessAuditLogAppendOnly(schema: schema);
         migrationBuilder.Sql(

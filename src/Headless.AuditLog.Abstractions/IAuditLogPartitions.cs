@@ -12,7 +12,8 @@ namespace Headless.AuditLog;
 /// <remarks>
 /// <para>
 /// PostgreSQL only. The table is partitioned by <c>AuditLogStorageOptions.Partitioning</c> on the PostgreSQL provider,
-/// or by <c>migrationBuilder.AddHeadlessAuditLogPartitions(...)</c> with Entity Framework storage. Both install the
+/// or by the application's migration, with <c>migrationBuilder.AddHeadlessAuditLogPartitions(...)</c>, on Entity
+/// Framework storage. Both install the
 /// database functions this service calls; the functions run with their owner's rights, so the calling login needs
 /// only <c>EXECUTE</c> on them and no DDL rights.
 /// </para>

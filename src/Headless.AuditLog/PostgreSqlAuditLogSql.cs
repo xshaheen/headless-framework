@@ -229,62 +229,20 @@ internal static class PostgreSqlAuditLogSql
     }
 
     /// <summary>
-    /// Replaces a plain, empty audit log table with a partitioned one of the same columns, key, and indexes. It does
-    /// nothing when the table is already partitioned.
+    /// Stops with an error unless the audit log table is a partitioned table. The partition functions only add and
+    /// drop partitions; PostgreSQL cannot partition a table in place, so the table must be created partitioned.
     /// </summary>
-    /// <remarks>
-    /// PostgreSQL cannot partition a table in place. A table with rows, or with a trigger that the swap would lose,
-    /// stops the statement with an error instead. Privileges granted on the plain table are not carried over.
-    /// </remarks>
-    public static string ConvertToPartitioned(string schema, string table)
+    public static string RequirePartitioned(string schema, string table)
     {
         var qualified = Qualify(schema, table);
-        var plain = $"{table}_plain";
-        var qualifiedPlain = Qualify(schema, plain);
 
         return $"""
             DO $headless$
-            DECLARE
-                v_table regclass := '{qualified}'::regclass;
-                v_has_rows boolean;
-                v_definitions text[];
-                v_definition text;
             BEGIN
-                IF (SELECT c.relkind FROM pg_catalog.pg_class AS c WHERE c.oid = v_table) = 'p' THEN
-                    RETURN;
-                END IF;
-                EXECUTE 'SELECT EXISTS (SELECT 1 FROM {qualified})' INTO v_has_rows;
-                IF v_has_rows THEN
-                    RAISE EXCEPTION 'The audit log table {schema}.{table} holds rows, and PostgreSQL cannot partition a table in place. Partition it in the migration that creates it, or move its rows by hand.'
+                IF (SELECT c.relkind FROM pg_catalog.pg_class AS c WHERE c.oid = '{qualified}'::regclass) <> 'p' THEN
+                    RAISE EXCEPTION 'The audit log table {schema}.{table} is not partitioned. Create it with PARTITION BY RANGE ("created_at") before you add the audit log partitions.'
                         USING ERRCODE = 'object_not_in_prerequisite_state';
                 END IF;
-                IF EXISTS (SELECT 1 FROM pg_catalog.pg_trigger AS t WHERE t.tgrelid = v_table AND NOT t.tgisinternal) THEN
-                    RAISE EXCEPTION 'The audit log table {schema}.{table} has triggers that partitioning it would drop. Partition the table before you make it append-only.'
-                        USING ERRCODE = 'object_not_in_prerequisite_state';
-                END IF;
-                SELECT pg_catalog.array_agg(d.definition ORDER BY d.position) INTO v_definitions
-                FROM (
-                    SELECT 0 AS position, pg_catalog.format(
-                        'ALTER TABLE %s ADD CONSTRAINT %I %s', v_table, k.conname, pg_catalog.pg_get_constraintdef(k.oid)
-                    ) AS definition
-                    FROM pg_catalog.pg_constraint AS k
-                    WHERE k.conrelid = v_table AND k.contype IN ('p', 'u')
-                    UNION ALL
-                    SELECT 1, pg_catalog.pg_get_indexdef(i.indexrelid)
-                    FROM pg_catalog.pg_index AS i
-                    WHERE i.indrelid = v_table
-                        AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint AS k WHERE k.conindid = i.indexrelid)
-                ) AS d;
-                ALTER TABLE {qualified} RENAME TO "{plain}";
-                CREATE TABLE {qualified} (
-                    LIKE {qualifiedPlain} INCLUDING DEFAULTS INCLUDING IDENTITY INCLUDING GENERATED INCLUDING STORAGE INCLUDING COMPRESSION INCLUDING COMMENTS
-                ) PARTITION BY RANGE ("created_at");
-                DROP TABLE {qualifiedPlain};
-                -- The definitions were read under the table's first name, so they now create the key and indexes on
-                -- the partitioned table, under the names the model expects.
-                FOREACH v_definition IN ARRAY COALESCE(v_definitions, ARRAY[]::text[]) LOOP
-                    EXECUTE v_definition;
-                END LOOP;
             END;
             $headless$;
             """;

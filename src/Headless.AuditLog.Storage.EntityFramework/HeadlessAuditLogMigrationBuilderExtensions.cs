@@ -133,10 +133,10 @@ public static class HeadlessAuditLogMigrationBuilderExtensions
     }
 
     /// <summary>
-    /// Partitions the audit log table by month on <c>created_at</c> (PostgreSQL only): replaces the plain table the
-    /// migration created with a partitioned one of the same columns, key, and indexes, creates the functions
-    /// <c>{table}_ensure_partitions</c> and <c>{table}_drop_partitions</c> that <see cref="IAuditLogPartitions{TContext}"/>
-    /// calls, and creates the partitions from the current month through <paramref name="monthsAhead"/> months ahead.
+    /// Adds monthly partitions to an audit log table that the migration created partitioned (PostgreSQL only): creates
+    /// the functions <c>{table}_ensure_partitions</c> and <c>{table}_drop_partitions</c> that
+    /// <see cref="IAuditLogPartitions{TContext}"/> calls, and the partitions from the current month through
+    /// <paramref name="monthsAhead"/> months ahead.
     /// </summary>
     /// <param name="migrationBuilder">The migration builder.</param>
     /// <param name="table">The audit log table; <see langword="null"/> for <c>audit_log_entries</c>.</param>
@@ -148,11 +148,10 @@ public static class HeadlessAuditLogMigrationBuilderExtensions
     /// <returns>The operation builder.</returns>
     /// <remarks>
     /// <para>
-    /// Call it in the migration that creates the table, after <c>CreateTable</c> and its <c>CreateIndex</c> calls and
-    /// before <see cref="AddHeadlessAuditLogAppendOnly"/>. PostgreSQL cannot partition a table in place, so the
-    /// migration fails when the table holds rows or has triggers; a table that is already partitioned by another
-    /// migration is left as it is and only gains the functions and partitions. Privileges granted on the plain table
-    /// are not carried over, so grant after this call.
+    /// The table must already be partitioned by range on <c>created_at</c>: PostgreSQL cannot partition a table in
+    /// place, and EF Core scaffolds a plain <c>CreateTable</c>. Create the table in the migration with
+    /// <c>PARTITION BY RANGE ("created_at")</c>, then call this, then <see cref="AddHeadlessAuditLogAppendOnly"/>.
+    /// The migration fails when the table is not partitioned.
     /// </para>
     /// <para>
     /// Both functions run with their owner's rights and are closed to <c>PUBLIC</c>: grant <c>EXECUTE</c> on them to
@@ -187,7 +186,7 @@ public static class HeadlessAuditLogMigrationBuilderExtensions
 
         return migrationBuilder.Sql(
             new StringBuilder()
-                .AppendLine(PostgreSqlAuditLogSql.ConvertToPartitioned(schema, tableName))
+                .AppendLine(PostgreSqlAuditLogSql.RequirePartitioned(schema, tableName))
                 .AppendLine(PostgreSqlAuditLogSql.PartitionFunctions(schema, tableName, minimumRetention))
                 .Append(PostgreSqlAuditLogSql.EnsurePartitionsNow(schema, tableName, monthsAhead))
                 .ToString()

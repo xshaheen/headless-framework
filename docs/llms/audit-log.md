@@ -274,7 +274,7 @@ A partitioned audit table keeps one range partition per calendar month of `creat
 | Storage | Switch | Creates |
 | --- | --- | --- |
 | `UsePostgreSql` | `AuditLogStorageOptions.Partitioning = AuditLogPartitioning.Monthly` | the table as `PARTITION BY RANGE (created_at)` (step `AuditLog/1`), the partition functions (step `AuditLog/5`), and the partitions (the `AuditLogPartitions` resource) |
-| `UseEntityFramework` | `migrationBuilder.AddHeadlessAuditLogPartitions(...)` in the migration that creates the table | the same functions, and the partitions from the current month through `monthsAhead` months ahead (default 3) |
+| `UseEntityFramework` | the application's migration creates the table with `PARTITION BY RANGE ("created_at")`, then calls `migrationBuilder.AddHeadlessAuditLogPartitions(...)` | the same functions, and the partitions from the current month through `monthsAhead` months ahead (default 3). The helper never creates or replaces the table. |
 
 ```csharp
 // Raw PostgreSQL storage
@@ -284,7 +284,16 @@ setup.ConfigureStorage(options =>
     options.PartitionMonthsAhead = 6; // default 3, range 0 to 120
 });
 
-// Entity Framework storage: after CreateTable and its CreateIndex calls, before AddHeadlessAuditLogAppendOnly
+// Entity Framework storage. EF Core has no partitioning API, so replace the scaffolded CreateTable of the audit
+// table with its SQL (dotnet ef migrations script prints it) ending in PARTITION BY, and keep the CreateIndex calls.
+migrationBuilder.Sql(
+    """
+    CREATE TABLE "headless"."audit_log_entries" (
+        -- the columns of the scaffolded table, unchanged
+        CONSTRAINT "pk_audit_log_entries" PRIMARY KEY ("created_at", "id")
+    ) PARTITION BY RANGE ("created_at");
+    """
+);
 migrationBuilder.AddHeadlessAuditLogPartitions(monthsAhead: 6);
 migrationBuilder.AddHeadlessAuditLogAppendOnly();
 ```
@@ -308,7 +317,7 @@ public sealed class AuditLogPartitionsJob(IAuditLogPartitions<AppDbContext> part
 - **Least privilege.** Both members call `{schema}.{table}_ensure_partitions(from, months_ahead)` and `{schema}.{table}_drop_partitions(cutoff)`: `SECURITY DEFINER`, `search_path` pinned, closed to `PUBLIC`. A login with no DDL rights keeps the partitions once it is granted `EXECUTE` on them; the partitions belong to the functions' owner. `MinimumRetention` (or the helper's `minimumRetention:`) puts the same floor under the drop function as under the purge function.
 - **Locks.** Creating or dropping a partition takes an `ACCESS EXCLUSIVE` lock on the table for an instant. Both functions set `lock_timeout` to 5 seconds, so a call made while a long transaction holds the table fails with `55P03` instead of queueing every writer behind it. Run the job again.
 - **Raw provider.** `resources provision` runs the `AuditLogPartitions/{schema}/{table}` resource after the schema steps on every release, which tops the horizon up as `EnsureAsync` does. A starting host checks with one catalog read that the current month has a partition, and holds the `warmup` readiness check `Unhealthy` until it does. `PartitionMonthsAhead` is not part of any step, so changing it needs no migration. `EnsureAsync` and `DropExpiredAsync` throw `InvalidOperationException` when `Partitioning` is `None`.
-- **Entity Framework.** PostgreSQL cannot partition a table in place, so `AddHeadlessAuditLogPartitions` replaces the empty plain table the migration just created with a partitioned one of the same columns, key, and index names. It fails with `55000` when the table holds rows, or has triggers the swap would drop; a table another migration already partitioned is left as it is and gains only the functions and partitions. Privileges granted on the plain table are not carried over, so grant after the call. There is no `Down` helper: drop the table and both functions.
+- **Entity Framework.** The application owns the table, so it creates it partitioned: PostgreSQL cannot partition a table in place, and the framework does not rewrite a table a migration created. `AddHeadlessAuditLogPartitions` fails with `55000` when the table is not partitioned, and installs nothing. The default composite key `(created_at, id)` already satisfies PostgreSQL's rule that a partitioned table's key includes the partition column. Call the helper before `AddHeadlessAuditLogAppendOnly`. There is no `Down` helper: drop the table and both functions.
 - **Existing tables.** On the raw provider, turning `Partitioning` on for a table that exists changes step `AuditLog/1` and fails verification with a checksum mismatch. Move the rows by hand, or start with a new table name.
 - SQL Server partitioning is not provided: its options validation refuses `Partitioning`, and `IAuditLogPartitions<TContext>` is not registered by `UseSqlServer`.
 

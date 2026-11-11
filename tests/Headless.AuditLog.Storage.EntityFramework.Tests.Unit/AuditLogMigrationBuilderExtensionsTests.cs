@@ -102,7 +102,7 @@ public sealed class AuditLogMigrationBuilderExtensionsTests
     }
 
     [Fact]
-    public void should_partition_the_table_install_the_functions_and_create_the_months_ahead()
+    public void should_require_a_partitioned_table_install_the_functions_and_create_the_months_ahead()
     {
         // given
         var migrationBuilder = new MigrationBuilder(_Npgsql);
@@ -112,7 +112,8 @@ public sealed class AuditLogMigrationBuilderExtensionsTests
 
         // then
         var sql = _Sql(migrationBuilder);
-        sql.Should().Contain("""PARTITION BY RANGE ("created_at")""");
+        sql.Should().StartWith("DO $headless$").And.Contain("is not partitioned");
+        sql.Should().NotContain("CREATE TABLE \"headless\"", "the helper never creates or replaces the table itself");
         sql.Should().Contain("""CREATE OR REPLACE FUNCTION "headless"."audit_log_entries_ensure_partitions"(""");
         sql.Should().Contain("""CREATE OR REPLACE FUNCTION "headless"."audit_log_entries_drop_partitions"(""");
         sql.Should().Contain("make_interval(secs => 2592000)");
