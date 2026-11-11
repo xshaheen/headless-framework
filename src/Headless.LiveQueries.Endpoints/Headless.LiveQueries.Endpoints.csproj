@@ -1,0 +1,23 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>ASP.NET Core Minimal API integration for Headless live queries: a GET endpoint streams its result over server-sent events or NDJSON and re-sends it when the data it read changes.</Description>
+    <PackageTags>headless;live-queries;realtime;minimal-api;server-sent-events;dotnet</PackageTags>
+    <RootNamespace>Headless.LiveQueries</RootNamespace>
+    <!-- Not packable while the package has no behavior, so a release never publishes it empty. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.LiveQueries.Endpoints.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.LiveQueries.Abstractions\Headless.LiveQueries.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.LiveQueries\Headless.LiveQueries.csproj" />
+  </ItemGroup>
+</Project>
