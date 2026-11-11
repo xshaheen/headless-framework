@@ -1,0 +1,15 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Entity Framework storage for Headless audit logging on PostgreSQL: migration helpers for an append-only, monthly-partitioned audit table, and the retention and partition services that work with it.</Description>
+    <PackageTags>headless;audit;log;storage;postgresql;entity-framework;dotnet</PackageTags>
+    <RootNamespace>Headless.AuditLog.PostgreSql.EntityFramework</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.AuditLog.Storage.EntityFramework\Headless.AuditLog.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.AuditLog.Storage.PostgreSql\Headless.AuditLog.Storage.PostgreSql.csproj" />
+  </ItemGroup>
+</Project>

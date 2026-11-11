@@ -41,13 +41,17 @@
         <Project Path="src\Headless.AuditLog\Headless.AuditLog.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.EntityFramework\Headless.AuditLog.Storage.EntityFramework.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.PostgreSql\Headless.AuditLog.Storage.PostgreSql.csproj" />
+        <Project Path="src\Headless.AuditLog.Storage.PostgreSql.EntityFramework\Headless.AuditLog.Storage.PostgreSql.EntityFramework.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.SqlServer\Headless.AuditLog.Storage.SqlServer.csproj" />
+        <Project Path="src\Headless.AuditLog.Storage.SqlServer.EntityFramework\Headless.AuditLog.Storage.SqlServer.EntityFramework.csproj" />
     </Folder>
     <Folder Name="/AuditLog/Tests/">
         <Project Path="tests\Headless.AuditLog.Tests.Unit\Headless.AuditLog.Tests.Unit.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.EntityFramework.Tests.Integration\Headless.AuditLog.Storage.EntityFramework.Tests.Integration.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.EntityFramework.Tests.Unit\Headless.AuditLog.Storage.EntityFramework.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.AuditLog.Storage.PostgreSql.EntityFramework.Tests.Unit\Headless.AuditLog.Storage.PostgreSql.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.PostgreSql.Tests.Integration\Headless.AuditLog.Storage.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.AuditLog.Storage.SqlServer.EntityFramework.Tests.Unit\Headless.AuditLog.Storage.SqlServer.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.SqlServer.Tests.Integration\Headless.AuditLog.Storage.SqlServer.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Blobs.Tus/">

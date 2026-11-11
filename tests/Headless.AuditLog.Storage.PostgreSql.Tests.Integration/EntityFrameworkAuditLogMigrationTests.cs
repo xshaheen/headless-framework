@@ -51,7 +51,7 @@ internal static class EntityFrameworkAuditLogServices
                 options.Schema = schema;
                 configureStorage?.Invoke(options);
             });
-            setup.UseEntityFramework<TContext>();
+            setup.UsePostgreSqlEntityFramework<TContext>();
         });
 
         return services.BuildServiceProvider();

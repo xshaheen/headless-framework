@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.AuditLog;
+namespace Headless.AuditLog.SqlServer;
 
 /// <summary>
-/// The SQL Server DDL behind an append-only audit log table. The SQL Server provider's schema step and the Entity
+/// The SQL Server DDL behind an append-only audit log table. This provider's schema step and the SQL Server Entity
 /// Framework migration helper both emit it, so a table created by either carries the same trigger.
 /// </summary>
 /// <remarks>

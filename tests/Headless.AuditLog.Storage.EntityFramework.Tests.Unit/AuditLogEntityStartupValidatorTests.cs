@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.AuditLog;
 using Headless.AuditLog.Internal;
 using Headless.Hosting;
@@ -76,6 +77,57 @@ public sealed class AuditLogEntityStartupValidatorTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*PurgeAuthority*PostgreSQL only*");
+    }
+
+    [Theory]
+    [InlineData(StorageProvider.PostgreSql, "UsePostgreSqlEntityFramework<TContext>()")]
+    [InlineData(StorageProvider.SqlServer, "UseSqlServerEntityFramework<TContext>()")]
+    public async Task should_reject_a_registration_made_for_another_database(
+        StorageProvider registered,
+        string registration
+    )
+    {
+        // given - that database's purge and helpers would run against a database that does not know them
+        await using var services = new ServiceCollection()
+            .AddSingleton<IDbContextFactory<ConfiguredAuditLogDbContext>>(
+                new TestDbContextFactory<ConfiguredAuditLogDbContext>(() =>
+                    new ConfiguredAuditLogDbContext(_Options<ConfiguredAuditLogDbContext>())
+                )
+            )
+            .AddSingleton(new EfAuditLogDatabase(registered))
+            .BuildServiceProvider();
+        var validator = new AuditLogEntityStartupValidator<ConfiguredAuditLogDbContext>(services);
+
+        // when
+        var act = () => validator.ValidateAsync(AbortToken);
+
+        // then - it names what was registered and what the context's database needs
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should()
+            .Contain(registration)
+            .And.Contain("Microsoft.EntityFrameworkCore.Sqlite")
+            .And.Contain("Register it with UseEntityFramework<TContext>()");
+    }
+
+    [Fact]
+    public async Task should_accept_the_provider_neutral_registration_on_a_database_without_its_own_package()
+    {
+        // given
+        await using var services = new ServiceCollection()
+            .AddSingleton<IDbContextFactory<ConfiguredAuditLogDbContext>>(
+                new TestDbContextFactory<ConfiguredAuditLogDbContext>(() =>
+                    new ConfiguredAuditLogDbContext(_Options<ConfiguredAuditLogDbContext>())
+                )
+            )
+            .AddSingleton(new EfAuditLogDatabase(Registered: null))
+            .BuildServiceProvider();
+        var validator = new AuditLogEntityStartupValidator<ConfiguredAuditLogDbContext>(services);
+
+        // when
+        var act = () => validator.ValidateAsync(AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
     }
 
     private static ServiceProvider _Services<TContext>(Func<TContext> createContext)

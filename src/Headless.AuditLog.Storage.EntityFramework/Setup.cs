@@ -27,10 +27,19 @@ public static class SetupAuditLogEntityFramework
         /// application startup.
         /// </typeparam>
         /// <remarks>
+        /// <para>
         /// This overload uses EF Core migrations for schema management, so it registers no provisioned resource. A startup gate validates that the registered
         /// <typeparamref name="TContext"/> fully configured <c>AuditLogEntry</c> through
         /// <c>modelBuilder.ConfigureHeadlessAuditLog(...)</c> and throws <see cref="InvalidOperationException"/>
         /// when the model did not run that configuration.
+        /// </para>
+        /// <para>
+        /// This registration knows nothing about the database behind the context, and the startup gate refuses it
+        /// on PostgreSQL and SQL Server. There, use <c>UsePostgreSqlEntityFramework&lt;TContext&gt;()</c> or
+        /// <c>UseSqlServerEntityFramework&lt;TContext&gt;()</c> from that database's Entity Framework audit package:
+        /// they add the migration helpers for an append-only or partitioned table, a retention purge that passes
+        /// the append-only trigger, and, on PostgreSQL, <see cref="IAuditLogPartitions{TContext}"/>.
+        /// </para>
         /// </remarks>
         public HeadlessAuditLogSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext
@@ -41,10 +50,25 @@ public static class SetupAuditLogEntityFramework
         }
     }
 
-    private sealed class EntityFrameworkAuditLogOptionsExtension(Type dbContextType) : IAuditLogStorageOptionsExtension
+    /// <summary>
+    /// The storage registration, shared with the database-specific Entity Framework audit packages.
+    /// </summary>
+    /// <param name="dbContextType">The context that owns the audit log table.</param>
+    /// <param name="database">The database the registration is for; <see langword="null"/> for any.</param>
+    /// <param name="addDatabaseServices">
+    /// Registers what one database does differently, such as its retention purge. It runs first, so its services win
+    /// over the defaults registered here.
+    /// </param>
+    internal sealed class EntityFrameworkAuditLogOptionsExtension(
+        Type dbContextType,
+        StorageProvider? database = null,
+        Action<IServiceCollection, Type>? addDatabaseServices = null
+    ) : IAuditLogStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
+            addDatabaseServices?.Invoke(services, dbContextType);
+            services.TryAddSingleton(new EfAuditLogDatabase(database));
             services.AddOptions<AuditLogStorageOptions, EntityFrameworkAuditLogStorageOptionsValidator>();
             services.TryAddScoped<IAuditLogStore, EfAuditLogStore>();
             services.TryAddScoped(
@@ -62,10 +86,6 @@ public static class SetupAuditLogEntityFramework
             services.TryAddSingleton(
                 typeof(IAuditLogRetention<>).MakeGenericType(dbContextType),
                 typeof(EfAuditLogRetention<>).MakeGenericType(dbContextType)
-            );
-            services.TryAddSingleton(
-                typeof(IAuditLogPartitions<>).MakeGenericType(dbContextType),
-                typeof(EfAuditLogPartitions<>).MakeGenericType(dbContextType)
             );
             services.RequireSingletonService(
                 typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
@@ -96,18 +116,18 @@ public static class SetupAuditLogEntityFramework
                 .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
                 .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
             RuleFor(x => x.PurgeAuthority).IsInEnum();
-            RuleFor(x => x.PartitionMonthsAhead).InclusiveBetween(0, PostgreSqlAuditLogSql.MaxMonthsAhead);
+            RuleFor(x => x.PartitionMonthsAhead).InclusiveBetween(0, AuditLogStorageOptions.MaxPartitionMonthsAhead);
             // The application's migrations own this table, so the provider has no schema step to create these in. An
             // option that the provider accepted and then ignored would read as a guarantee it does not give.
             RuleFor(x => x.AppendOnly)
                 .Must(appendOnly => !appendOnly)
                 .WithMessage(
-                    $"{nameof(AuditLogStorageOptions.AppendOnly)} applies to the PostgreSql and SqlServer audit-log providers. With Entity Framework storage, call migrationBuilder.AddHeadlessAuditLogAppendOnly(...) in a migration; IAuditLogRetention<TContext> still purges through it."
+                    $"{nameof(AuditLogStorageOptions.AppendOnly)} applies to the PostgreSql and SqlServer audit-log providers. With Entity Framework storage, register UsePostgreSqlEntityFramework<TContext>() or UseSqlServerEntityFramework<TContext>() and call migrationBuilder.AddHeadlessAuditLogAppendOnly(...) in a migration; IAuditLogRetention<TContext> still purges through it."
                 );
             RuleFor(x => x.Partitioning)
                 .Equal(AuditLogPartitioning.None)
                 .WithMessage(
-                    $"{nameof(AuditLogStorageOptions.Partitioning)} applies to the PostgreSql audit-log provider. With Entity Framework storage, create the table partitioned in a migration and call migrationBuilder.AddHeadlessAuditLogPartitions(...); IAuditLogPartitions<TContext> then keeps the partitions."
+                    $"{nameof(AuditLogStorageOptions.Partitioning)} applies to the PostgreSql audit-log provider. With Entity Framework storage, register UsePostgreSqlEntityFramework<TContext>(), create the table partitioned in a migration, and call migrationBuilder.AddHeadlessAuditLogPartitions(...); IAuditLogPartitions<TContext> then keeps the partitions."
                 );
             RuleFor(x => x.MinimumRetention)
                 .Null()
