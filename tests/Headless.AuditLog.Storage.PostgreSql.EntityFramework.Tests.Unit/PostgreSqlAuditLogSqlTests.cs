@@ -78,10 +78,11 @@ public sealed class PostgreSqlAuditLogSqlTests
         PostgreSqlAuditLogSql.DropPartitionsFunction("audit").Should().Be("audit_drop_partitions");
         PostgreSqlAuditLogSql.Qualify("s", "t").Should().Be("\"s\".\"t\"");
         PostgreSqlAuditLogSql.Qualify("s", "we\"ird").Should().Be("\"s\".\"we\"\"ird\"");
+        PostgreSqlAuditLogSql.TemplateTable("audit").Should().Be("audit_template");
         PostgreSqlAuditLogSql
             .EnsurePartitionsNow("s", "t", 6)
             .Should()
-            .Be("SELECT \"s\".\"t_ensure_partitions\"(pg_catalog.now(), 6);");
+            .Contain("PERFORM \"s\".\"t_ensure_partitions\"(pg_catalog.now(), 6);");
     }
 
     private static string _Normalize(string sql) => sql.Replace("\r\n", "\n", StringComparison.Ordinal);

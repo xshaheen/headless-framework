@@ -4,7 +4,7 @@ Entity Framework audit log storage for PostgreSQL.
 
 ## Why use this package
 
-Use it when audit entries commit through the application's EF Core `DbContext` and the database is PostgreSQL. It adds what only PostgreSQL has to `Headless.AuditLog.Storage.EntityFramework`: migration helpers that make the audit table append-only and add monthly partitions with the same SQL the raw PostgreSQL provider uses, a retention purge that passes the append-only trigger or runs through the table owner's function, and the service that keeps the partitions.
+Use it when audit entries commit through the application's EF Core `DbContext` and the database is PostgreSQL. It adds what only PostgreSQL has to `Headless.AuditLog.Storage.EntityFramework`: migration helpers that make the audit table append-only and create it partitioned by month, with the same SQL the raw PostgreSQL provider uses, a retention purge that passes the append-only trigger or runs through the table owner's function, and the service that keeps the partitions.
 
 ## Install
 

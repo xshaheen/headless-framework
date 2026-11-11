@@ -46,8 +46,61 @@ internal static class PostgreSqlAuditLogSql
     /// <summary>The unqualified name of the function that drops expired partitions.</summary>
     public static string DropPartitionsFunction(string table) => $"{table}_drop_partitions";
 
+    /// <summary>
+    /// The unqualified name of the plain table a migration creates first when it creates the audit log partitioned;
+    /// see <see cref="PartitionedFromTemplate"/>.
+    /// </summary>
+    public static string TemplateTable(string table) => $"{table}_template";
+
     /// <summary>Returns <paramref name="name"/> quoted and qualified by <paramref name="schema"/>.</summary>
     public static string Qualify(string schema, string name) => $"{_Quote(schema)}.{_Quote(name)}";
+
+    /// <summary>
+    /// Creates the audit log table partitioned by month from the plain table <see cref="TemplateTable"/> names, then
+    /// drops that table. For a migration: EF Core has no partitioning API, so the migration creates the columns it
+    /// scaffolded under the template's name and PostgreSQL copies their definitions.
+    /// </summary>
+    /// <remarks>
+    /// <c>LIKE</c> copies the columns with their defaults, identity, checks, and comments. It names a copied key or
+    /// index by its own rules, so the caller adds the keys and indexes to the new table under the model's names. Two
+    /// things are carried over here: the table's own comment, which is not a column property, and the names of the
+    /// not-null constraints, which PostgreSQL 18 derives from the table name and copies as the template's.
+    /// </remarks>
+    public static string PartitionedFromTemplate(string schema, string table)
+    {
+        var qualified = Qualify(schema, table);
+        var templateName = TemplateTable(table);
+        var template = Qualify(schema, templateName);
+        var suffixStart = (templateName.Length + 1).ToString(CultureInfo.InvariantCulture);
+
+        // A name PostgreSQL shortened to fit 63 bytes no longer starts with the template's name and keeps it; only
+        // the name is affected.
+        return $"""
+            CREATE TABLE {qualified} (LIKE {template} INCLUDING ALL EXCLUDING INDEXES) PARTITION BY RANGE ("created_at");
+            DO $headless$
+            DECLARE
+                v_comment text := pg_catalog.obj_description('{template}'::regclass, 'pg_class');
+                v_constraint text;
+            BEGIN
+                IF v_comment IS NOT NULL THEN
+                    EXECUTE pg_catalog.format('COMMENT ON TABLE %s IS %L', '{qualified}'::regclass, v_comment);
+                END IF;
+                FOR v_constraint IN
+                    SELECT c.conname::text FROM pg_catalog.pg_constraint AS c
+                    WHERE c.conrelid = '{qualified}'::regclass
+                        AND c.contype = 'n'
+                        AND pg_catalog.starts_with(c.conname::text, '{templateName}_')
+                LOOP
+                    EXECUTE pg_catalog.format(
+                        'ALTER TABLE %s RENAME CONSTRAINT %I TO %I',
+                        '{qualified}'::regclass, v_constraint, '{table}' || pg_catalog.substr(v_constraint, {suffixStart})
+                    );
+                END LOOP;
+            END;
+            $headless$;
+            DROP TABLE {template};
+            """;
+    }
 
     /// <summary>
     /// The append-only guard: a row trigger that refuses <c>UPDATE</c> and <c>DELETE</c> and a statement trigger that
@@ -230,7 +283,8 @@ internal static class PostgreSqlAuditLogSql
 
     /// <summary>
     /// Stops with an error unless the audit log table is a partitioned table. The partition functions only add and
-    /// drop partitions; PostgreSQL cannot partition a table in place, so the table must be created partitioned.
+    /// drop partitions; PostgreSQL cannot partition a table in place, so the migration that creates the table must
+    /// create it partitioned.
     /// </summary>
     public static string RequirePartitioned(string schema, string table)
     {
@@ -240,7 +294,7 @@ internal static class PostgreSqlAuditLogSql
             DO $headless$
             BEGIN
                 IF (SELECT c.relkind FROM pg_catalog.pg_class AS c WHERE c.oid = '{qualified}'::regclass) <> 'p' THEN
-                    RAISE EXCEPTION 'The audit log table {schema}.{table} is not partitioned. Create it with PARTITION BY RANGE ("created_at") before you add the audit log partitions.'
+                    RAISE EXCEPTION 'The audit log table {schema}.{table} is not partitioned, and PostgreSQL cannot partition a table in place. Add the audit log partitions in the migration that creates the table.'
                         USING ERRCODE = 'object_not_in_prerequisite_state';
                 END IF;
             END;
@@ -267,9 +321,42 @@ internal static class PostgreSqlAuditLogSql
     }
 
     /// <summary>The statement that creates the partitions from now through <paramref name="monthsAhead"/> months ahead.</summary>
+    /// <remarks>
+    /// A block, not a bare <c>SELECT</c>: an idempotent migration script runs each migration's statements inside a
+    /// PL/pgSQL block, where a <c>SELECT</c> with no target fails.
+    /// </remarks>
     public static string EnsurePartitionsNow(string schema, string table, int monthsAhead)
     {
-        return $"SELECT {Qualify(schema, EnsurePartitionsFunction(table))}(pg_catalog.now(), {monthsAhead.ToString(CultureInfo.InvariantCulture)});";
+        var months = monthsAhead.ToString(CultureInfo.InvariantCulture);
+
+        return $"""
+            DO $headless$
+            BEGIN
+                PERFORM {Qualify(schema, EnsurePartitionsFunction(table))}(pg_catalog.now(), {months});
+            END;
+            $headless$;
+            """;
+    }
+
+    /// <summary>
+    /// Removes the functions <see cref="PartitionFunctions"/> created. The partitions belong to the table and go when
+    /// it is dropped.
+    /// </summary>
+    public static string DropPartitionFunctions(string schema, string table)
+    {
+        return $"""
+            DROP FUNCTION IF EXISTS {Qualify(schema, EnsurePartitionsFunction(table))};
+            DROP FUNCTION IF EXISTS {Qualify(schema, DropPartitionsFunction(table))};
+            """;
+    }
+
+    /// <summary>
+    /// Lets <paramref name="role"/> call the functions <see cref="PartitionFunctions"/> created, which are closed to
+    /// <c>PUBLIC</c>.
+    /// </summary>
+    public static string GrantPartitionFunctions(string schema, string table, string role)
+    {
+        return $"GRANT EXECUTE ON FUNCTION {Qualify(schema, EnsurePartitionsFunction(table))}, {Qualify(schema, DropPartitionsFunction(table))} TO {_Quote(role)};";
     }
 
     /// <summary>Removes everything <see cref="AppendOnly"/> and <see cref="OwnerPurge"/> created.</summary>

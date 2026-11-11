@@ -4,7 +4,9 @@ using Headless.AuditLog;
 using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace Tests;
 
@@ -25,8 +27,8 @@ internal static class AuditLogMigrationScripts
     }
 
     /// <summary>
-    /// The same script with the audit table created partitioned, the one edit an application makes by hand: EF Core
-    /// has no partitioning API, so the scaffolded table creation becomes SQL that ends in <c>PARTITION BY</c>.
+    /// The same script with the audit table created partitioned by hand, for an application that writes the table's
+    /// SQL itself instead of letting <c>AddHeadlessAuditLogPartitions</c> change the scaffolded table creation.
     /// </summary>
     public static string PartitionedCreateScript<TContext>(Func<DbContextOptions<TContext>, TContext> create)
         where TContext : DbContext
@@ -39,6 +41,21 @@ internal static class AuditLogMigrationScripts
         );
 
         return script.Insert(end + 2, " PARTITION BY RANGE (created_at)");
+    }
+
+    /// <summary>
+    /// The operations <c>dotnet ef migrations add</c> scaffolds into the first migration of
+    /// <typeparamref name="TContext"/>: the schema, each table with its keys and constraints, then the indexes.
+    /// </summary>
+    public static IReadOnlyList<MigrationOperation> ScaffoldedOperations<TContext>(
+        Func<DbContextOptions<TContext>, TContext> create
+    )
+        where TContext : DbContext
+    {
+        using var context = create(new DbContextOptionsBuilder<TContext>().UseNpgsql().Options);
+        var model = context.GetService<IDesignTimeModel>().Model.GetRelationalModel();
+
+        return context.GetService<IMigrationsModelDiffer>().GetDifferences(source: null, model);
     }
 
     public static void MapAuditLog(ModelBuilder modelBuilder, string schema)
@@ -143,5 +160,70 @@ public sealed class CreatePartitionedAuditLog : Migration
             GRANT EXECUTE ON FUNCTION "{schema}"."audit_log_entries_drop_partitions" TO "{PostgreSqlAuditLogRolesFixture.App}";
             """
         );
+    }
+}
+
+/// <summary>
+/// Partitioned by the helper alone: the migration keeps the scaffolded table creation, with a column and a check
+/// constraint the application added to the audit entity, and grants the partition functions to the application login.
+/// </summary>
+public sealed class ScaffoldedPartitionedAuditDbContext(DbContextOptions<ScaffoldedPartitionedAuditDbContext> options)
+    : DbContext(options)
+{
+    public const string Schema = "audit_log_ef_scaffolded";
+    public const string Category = "Category";
+    public const string CategoryCheck = "ck_audit_log_entries_category";
+    public const string TableComment = "Who did what, and when.";
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        AuditLogMigrationScripts.MapAuditLog(modelBuilder, Schema);
+
+        modelBuilder.Entity<AuditLogEntry>(entry =>
+        {
+            entry.Property<string>(Category).HasColumnName("category").HasMaxLength(32).HasDefaultValue("data");
+            entry.ToTable(table =>
+            {
+                table.HasComment(TableComment);
+                table.HasCheckConstraint(CategoryCheck, "category <> ''");
+            });
+        });
+    }
+}
+
+[DbContext(typeof(ScaffoldedPartitionedAuditDbContext))]
+[Migration("20260101000000_CreateScaffoldedPartitionedAuditLog")]
+public sealed class CreateScaffoldedPartitionedAuditLog : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        const string schema = ScaffoldedPartitionedAuditDbContext.Schema;
+
+        migrationBuilder.Operations.AddRange(
+            AuditLogMigrationScripts.ScaffoldedOperations<ScaffoldedPartitionedAuditDbContext>(o => new(o))
+        );
+        migrationBuilder.AddHeadlessAuditLogPartitions(schema: schema, monthsAhead: 1);
+        migrationBuilder.AddHeadlessAuditLogAppendOnly(schema: schema);
+        migrationBuilder.Sql(
+            $"""
+            GRANT USAGE ON SCHEMA "{schema}" TO "{PostgreSqlAuditLogRolesFixture.App}";
+            GRANT SELECT, INSERT ON "{schema}"."audit_log_entries" TO "{PostgreSqlAuditLogRolesFixture.App}";
+            """
+        );
+        migrationBuilder.Sql(
+            PostgreSqlAuditLogPartitionFunctions.GrantExecuteStatement(
+                PostgreSqlAuditLogRolesFixture.App,
+                schema: schema
+            )
+        );
+    }
+
+    protected override void Down(MigrationBuilder migrationBuilder)
+    {
+        const string schema = ScaffoldedPartitionedAuditDbContext.Schema;
+
+        migrationBuilder.DropHeadlessAuditLogAppendOnly(schema: schema);
+        migrationBuilder.DropHeadlessAuditLogPartitions(schema: schema);
+        migrationBuilder.DropTable("audit_log_entries", schema);
     }
 }

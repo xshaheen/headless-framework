@@ -27,7 +27,7 @@ public sealed class EfAuditLogStoreTests : TestBase
         await using (conn)
         await using (db)
         {
-            var store = new EfAuditLogStore();
+            var store = new EfAuditLogStore([]);
             IReadOnlyList<AuditLogEntryData> entries = [_CreateEntryData("first"), _CreateEntryData("second")];
 
             var handles = store.Save(entries, db);
@@ -70,7 +70,7 @@ public sealed class EfAuditLogStoreTests : TestBase
         await using (conn)
         await using (db)
         {
-            var store = new EfAuditLogStore();
+            var store = new EfAuditLogStore([]);
 
             // when
             var act = () => store.PrepareForRetry(db);
@@ -88,7 +88,7 @@ public sealed class EfAuditLogStoreTests : TestBase
         await using (conn)
         await using (db)
         {
-            var store = new EfAuditLogStore();
+            var store = new EfAuditLogStore([]);
             _ = store.Save([_CreateEntryData()], db);
             await db.SaveChangesAsync(AbortToken);
 
@@ -116,7 +116,7 @@ public sealed class EfAuditLogStoreTests : TestBase
         await using (conn)
         await using (db)
         {
-            var store = new EfAuditLogStore();
+            var store = new EfAuditLogStore([]);
             var handle = store.Save([_CreateEntryData()], db).Single();
 
             // when
@@ -144,7 +144,7 @@ public sealed class EfAuditLogStoreTests : TestBase
         await using (conn)
         await using (db)
         {
-            var store = new EfAuditLogStore();
+            var store = new EfAuditLogStore([]);
             var handle = store.Save([_CreateEntryData()], db).Single();
             await db.SaveChangesAsync(AbortToken);
 
@@ -167,7 +167,7 @@ public sealed class EfAuditLogStoreTests : TestBase
         await using (conn)
         await using (db)
         {
-            var store = new EfAuditLogStore();
+            var store = new EfAuditLogStore([]);
             var handle = store.Save([_CreateEntryData()], db).Single();
             await db.SaveChangesAsync(AbortToken);
             handle.ReleaseAfterCommit();
@@ -189,7 +189,7 @@ public sealed class EfAuditLogStoreTests : TestBase
     public void should_throw_argument_exception_when_save_saving_context_is_not_a_db_context()
     {
         // given
-        var store = new EfAuditLogStore();
+        var store = new EfAuditLogStore([]);
 
         // when
         var act = () => store.Save([_CreateEntryData()], new object());
@@ -202,7 +202,7 @@ public sealed class EfAuditLogStoreTests : TestBase
     public async Task should_throw_argument_exception_when_save_async_saving_context_is_not_a_db_context()
     {
         // given
-        var store = new EfAuditLogStore();
+        var store = new EfAuditLogStore([]);
 
         // when
         var act = () => store.SaveAsync([_CreateEntryData()], new object(), AbortToken);

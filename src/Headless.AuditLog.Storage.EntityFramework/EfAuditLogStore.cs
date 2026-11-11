@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.AuditLog.Internal;
 using Headless.Checks;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.AuditLog;
 
-internal sealed class EfAuditLogStore : IAuditLogStore
+internal sealed class EfAuditLogStore(IEnumerable<IAuditLogEntryEnricher> enrichers) : IAuditLogStore
 {
     // Cache the empty-result task so the empty-entries fast path allocates nothing.
     private static readonly Task<IReadOnlyList<IAuditLogStoreEntry>> _EmptyResultTask = Task.FromResult<
@@ -128,8 +129,9 @@ internal sealed class EfAuditLogStore : IAuditLogStore
                     ErrorCode = AuditLogFieldLimits.Truncate(entry.ErrorCode, AuditLogFieldLimits.ErrorCode),
                 };
 
-                set.Add(auditEntity);
+                var tracked = set.Add(auditEntity);
                 (addedThisCall ??= []).Add(auditEntity);
+                enrichers.Enrich(tracked);
                 _TrackEntry(context, auditEntity);
                 auditEntries.Add(new EfAuditLogStoreEntry(this, context, auditEntity));
             }

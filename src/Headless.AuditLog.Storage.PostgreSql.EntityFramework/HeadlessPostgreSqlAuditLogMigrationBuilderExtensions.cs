@@ -122,7 +122,7 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     }
 
     /// <summary>
-    /// Adds monthly partitions to an audit log table that the migration created partitioned: creates the functions
+    /// Partitions the audit log table by month: creates the functions
     /// <c>{table}_ensure_partitions</c> and <c>{table}_drop_partitions</c> that
     /// <see cref="IAuditLogPartitions{TContext}"/> calls, and the partitions from the current month through
     /// <paramref name="monthsAhead"/> months ahead.
@@ -137,20 +137,30 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// <returns>The operation builder.</returns>
     /// <remarks>
     /// <para>
-    /// The table must already be partitioned by range on <c>created_at</c>: PostgreSQL cannot partition a table in
-    /// place, and EF Core scaffolds a plain <c>CreateTable</c>. Create the table in the migration with
-    /// <c>PARTITION BY RANGE ("created_at")</c>, then call this, then <see cref="AddHeadlessAuditLogAppendOnly"/>.
-    /// The migration fails when the table is not partitioned.
+    /// Call it in the migration that creates the table, after the scaffolded <c>CreateTable</c> of the audit log, and
+    /// before <see cref="AddHeadlessAuditLogAppendOnly"/>. EF Core has no partitioning API, so this changes that
+    /// <c>CreateTable</c>: it creates the scaffolded columns as a plain table named <c>{table}_template</c>, has
+    /// PostgreSQL create the audit log table from it with <c>PARTITION BY RANGE ("created_at")</c>, drops the
+    /// template, and adds the scaffolded primary key, unique constraints, and foreign keys to the partitioned table.
+    /// Columns the application added to the entity are carried over like the rest. It needs PostgreSQL 17 or later,
+    /// the first version with identity columns on a partitioned table.
+    /// </para>
+    /// <para>
+    /// In a later migration the table exists already, and PostgreSQL cannot partition a table in place: the migration
+    /// then fails unless an earlier migration created the table partitioned.
     /// </para>
     /// <para>
     /// Both functions run with their owner's rights and are closed to <c>PUBLIC</c>: grant <c>EXECUTE</c> on them to
-    /// the application's login. A row whose <c>created_at</c> falls in no partition fails its insert, so schedule
-    /// <see cref="IAuditLogPartitions{TContext}.EnsureAsync"/>.
+    /// the application's login with <see cref="PostgreSqlAuditLogPartitionFunctions.GrantExecuteStatement"/>. A row
+    /// whose <c>created_at</c> falls in no partition fails its insert, so schedule
+    /// <see cref="IAuditLogPartitions{TContext}.EnsureAsync"/>. Use <see cref="DropHeadlessAuditLogPartitions"/> in
+    /// <c>Down</c>.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="migrationBuilder"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// A name is not a valid PostgreSQL identifier, or <paramref name="minimumRetention"/> is shorter than one second.
+    /// A name is not a valid PostgreSQL identifier, <paramref name="table"/> leaves no room for the template table's
+    /// name, or <paramref name="minimumRetention"/> is shorter than one second.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="monthsAhead"/> is outside 0 to 120.</exception>
     /// <exception cref="NotSupportedException">The migration's database is not PostgreSQL.</exception>
@@ -165,9 +175,12 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
         Argument.IsNotNull(migrationBuilder);
         Argument.IsInclusiveBetween(monthsAhead, 0, PostgreSqlAuditLogSql.MaxMonthsAhead);
         _ValidateMinimumRetention(minimumRetention);
+
         AuditLogMigrationNames.EnsureProvider(migrationBuilder.ActiveProvider, StorageProvider.PostgreSql, _Package);
 
         var tableName = AuditLogMigrationNames.Resolve(StorageProvider.PostgreSql, schema, table);
+
+        _CreatePartitioned(migrationBuilder, schema, tableName);
 
         return migrationBuilder.Sql(
             new StringBuilder()
@@ -176,6 +189,80 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
                 .Append(PostgreSqlAuditLogSql.EnsurePartitionsNow(schema, tableName, monthsAhead))
                 .ToString()
         );
+    }
+
+    /// <summary>
+    /// Removes the functions <see cref="AddHeadlessAuditLogPartitions"/> created. Use it in
+    /// <c>Down</c>; the partitions go with the table when the migration drops it.
+    /// </summary>
+    /// <param name="migrationBuilder">The migration builder.</param>
+    /// <param name="table">The audit log table; <see langword="null"/> for <c>audit_log_entries</c>.</param>
+    /// <param name="schema">The table's schema. The default is <see cref="HeadlessStorageDefaults.Schema"/>.</param>
+    /// <returns>The operation builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="migrationBuilder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A name is not a valid PostgreSQL identifier.</exception>
+    /// <exception cref="NotSupportedException">The migration's database is not PostgreSQL.</exception>
+    public static OperationBuilder<SqlOperation> DropHeadlessAuditLogPartitions(
+        this MigrationBuilder migrationBuilder,
+        string? table = null,
+        string schema = HeadlessStorageDefaults.Schema
+    )
+    {
+        Argument.IsNotNull(migrationBuilder);
+
+        AuditLogMigrationNames.EnsureProvider(migrationBuilder.ActiveProvider, StorageProvider.PostgreSql, _Package);
+
+        var tableName = AuditLogMigrationNames.Resolve(StorageProvider.PostgreSql, schema, table);
+
+        return migrationBuilder.Sql(PostgreSqlAuditLogSql.DropPartitionFunctions(schema, tableName));
+    }
+
+    // When this migration also creates the table, its CreateTable becomes the template PostgreSQL copies into the
+    // partitioned table. The new operations go right after it, so the scaffolded CreateIndex calls that follow find
+    // the partitioned table wherever in Up the helper is called.
+    private static void _CreatePartitioned(MigrationBuilder migrationBuilder, string schema, string tableName)
+    {
+        var operations = migrationBuilder.Operations;
+        var index = operations.FindIndex(operation =>
+            operation is CreateTableOperation create
+            && string.Equals(create.Name, tableName, StringComparison.Ordinal)
+            && string.Equals(create.Schema, schema, StringComparison.Ordinal)
+        );
+
+        if (index < 0)
+        {
+            return;
+        }
+
+        var template = PostgreSqlAuditLogSql.TemplateTable(tableName);
+
+        Argument.IsTrue(
+            template.Length <= StorageIdentifier.PostgreSql.IdentifierMaxLength,
+            $"'{tableName}' leaves no room for the template table '{template}' the partitioned audit log is created from.",
+            "table"
+        );
+
+        var create = (CreateTableOperation)operations[index];
+        List<MigrationOperation> added =
+        [
+            new SqlOperation { Sql = PostgreSqlAuditLogSql.PartitionedFromTemplate(schema, tableName) },
+        ];
+
+        // LIKE names a copied key by its own rules, and copies no foreign key. They keep the model's names when the
+        // operations EF scaffolded add them to the partitioned table instead.
+        if (create.PrimaryKey is { } primaryKey)
+        {
+            added.Add(primaryKey);
+            create.PrimaryKey = null;
+        }
+
+        added.AddRange(create.UniqueConstraints);
+        added.AddRange(create.ForeignKeys);
+        create.UniqueConstraints.Clear();
+        create.ForeignKeys.Clear();
+        create.Name = template;
+
+        operations.InsertRange(index + 1, added);
     }
 
     private static void _ValidateMinimumRetention(TimeSpan? minimumRetention)

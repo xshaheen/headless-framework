@@ -17,7 +17,8 @@ public sealed class EfAuditLogTests : TestBase
     private static EfAuditLog<AuditStoreDbContext> _CreateSut(
         AuditStoreDbContext db,
         IOptions<AuditLogOptions>? options = null,
-        IAuditClientInfoProvider? clientInfo = null
+        IAuditClientInfoProvider? clientInfo = null,
+        IEnumerable<IAuditLogEntryEnricher>? enrichers = null
     )
     {
         var currentUser = Substitute.For<ICurrentUser>();
@@ -32,6 +33,7 @@ public sealed class EfAuditLogTests : TestBase
             correlationIdProvider,
             timeProvider,
             options ?? Options.Create(new AuditLogOptions()),
+            enrichers ?? [],
             clientInfo
         );
     }

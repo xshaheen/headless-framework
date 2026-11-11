@@ -127,7 +127,7 @@ public static class SetupAuditLogEntityFramework
             RuleFor(x => x.Partitioning)
                 .Equal(AuditLogPartitioning.None)
                 .WithMessage(
-                    $"{nameof(AuditLogStorageOptions.Partitioning)} applies to the PostgreSql audit-log provider. With Entity Framework storage, register UsePostgreSqlEntityFramework<TContext>(), create the table partitioned in a migration, and call migrationBuilder.AddHeadlessAuditLogPartitions(...); IAuditLogPartitions<TContext> then keeps the partitions."
+                    $"{nameof(AuditLogStorageOptions.Partitioning)} applies to the PostgreSql audit-log provider. With Entity Framework storage, register UsePostgreSqlEntityFramework<TContext>() and call migrationBuilder.AddHeadlessAuditLogPartitions(...) in the migration that creates the table; IAuditLogPartitions<TContext> then keeps the partitions."
                 );
             RuleFor(x => x.MinimumRetention)
                 .Null()

@@ -110,8 +110,8 @@ public sealed class AuditLogStorageOptions
     /// through <see cref="PartitionMonthsAhead"/> months ahead; <see cref="IAuditLogPartitions{TContext}"/> keeps them
     /// from then on. A row whose <c>CreatedAt</c> falls in no partition fails its insert: there is no default
     /// partition. PostgreSQL cannot partition a table in place, so turning this on for a table that already exists
-    /// fails verification with a checksum mismatch. With Entity Framework storage, call
-    /// create the table partitioned in a migration and call <c>migrationBuilder.AddHeadlessAuditLogPartitions(...)</c>
+    /// fails verification with a checksum mismatch. With Entity Framework storage,
+    /// call <c>migrationBuilder.AddHeadlessAuditLogPartitions(...)</c> in the migration that creates the table
     /// instead.
     /// </remarks>
     public AuditLogPartitioning Partitioning { get; set; }

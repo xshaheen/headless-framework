@@ -16,6 +16,7 @@ internal sealed class EfAuditLog<TContext>(
     ICorrelationIdProvider correlationIdProvider,
     TimeProvider timeProvider,
     IOptions<AuditLogOptions> options,
+    IEnumerable<IAuditLogEntryEnricher> enrichers,
     IAuditClientInfoProvider? clientInfo = null
 ) : IAuditLog<TContext>
     where TContext : DbContext
@@ -31,7 +32,7 @@ internal sealed class EfAuditLog<TContext>(
             return Task.CompletedTask;
         }
 
-        context
+        var entry = context
             .Set<AuditLogEntry>()
             .Add(
                 ExplicitAuditLogEntry.Create(
@@ -43,6 +44,18 @@ internal sealed class EfAuditLog<TContext>(
                     clientInfo
                 )
             );
+
+        try
+        {
+            enrichers.Enrich(entry);
+        }
+        catch
+        {
+            // The caller may catch this and still save: the row must not go out with its columns half filled.
+            entry.State = EntityState.Detached;
+
+            throw;
+        }
 
         return Task.CompletedTask;
     }
