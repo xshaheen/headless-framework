@@ -18,6 +18,8 @@ A messaging change is confirmed in seconds by the fast tier, and the slower tier
 | End to end | `Headless.Messaging.<Broker><Store>.Tests.Integration` | as above | Outbox to broker to consumer to inbox through the real host |
 | Scheduled | `Headless.Messaging.Tests.Chaos` | `make test-messaging-chaos`; weekly (full sizes) or on dispatch | Several hosts under broker, storage, and network faults, checked by a message ledger; never selected by an affected run |
 
+The simulated broker refuses a publish on `FaultScript.FailPublishes` and leaves one unconfirmed on `FaultScript.HangPublishes`, so a fast-tier test can drive the outbox's send failures, its publish timeout, and a send cut off by shutdown; `BrokerEventKind.PublishFailed` and `PublishHung` record each. A hung send ends only when its token is cancelled, and the simulation host registers no `IHostApplicationLifetime`, so a test that stops the host mid-send registers one it can stop.
+
 Fast-tier projects may not start a container or open a socket, and `Policy/FastTierPolicyTests` counts real waits (`Task.Delay`, `Thread.Sleep`, `SpinWait.SpinUntil`, `TimeProvider.System.Delay`) in the two core unit projects and this harness against `Policy/real-wait-baseline.txt`. A new wait fails the test; converting one lowers its line. Waits that back off, reconnect, or time out I/O read the keyed back-off clock (`MessagingOptions.BackoffClockServiceKey`), which `SimulationHost` replaces with the simulated clock.
 
 ## Guarantees and quarantine
@@ -377,9 +379,11 @@ Some storage scenarios carry `[Fact]` on the base method, so every leaf runs the
 builder. Its leaves live in pair projects, `tests/Headless.Messaging.<Broker><Store>.Tests.Integration`, not in the
 provider integration projects: each broker pairs with PostgreSQL, and SQL Server pairs with RabbitMQ. A change to a
 storage package then selects only the pair projects, and a change to a broker selects its own pair and provider
-projects. Scenarios that carry `[Fact]` on the base, such as the unit-of-work, retry-to-terminal, duplicate-delivery,
-broker-outage, and host-restart ones, run on every leaf without an override; the older scenarios are opted into one by
-one. Each pair project's `ProviderConformanceEvidenceTests` checks that every guarantee it inherits runs there.
+projects. Scenarios that carry `[Fact]` or `[Theory]` on the base, such as the unit-of-work, retry-to-terminal,
+duplicate-delivery, broker-outage, host-restart, and reply-ordering ones, run on every leaf without an override; the
+older scenarios are opted into one by one. The reply-ordering scenario skips on a transport without request/reply, and
+holds the request's received row from another transaction with the row-lock SQL of the leaf's database, so a new
+database pair adds its dialect to `MessagingIntegrationTestsBase.ReplyOrdering.cs`. Each pair project's `ProviderConformanceEvidenceTests` checks that every guarantee it inherits runs there.
 
 ```csharp
 [Collection("RabbitMqPostgreSql")]

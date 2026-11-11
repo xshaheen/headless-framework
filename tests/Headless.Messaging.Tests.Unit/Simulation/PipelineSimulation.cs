@@ -398,25 +398,34 @@ internal static class PipelineHosts
     /// outrun the attempt's lease. Waiting on the pickup itself keeps every step at rest without waiting real time.
     /// </para>
     /// <para>
-    /// A retry dispatch awaits its attempt, so a pickup that went idle has written the attempt's outcome.
+    /// A retry dispatch awaits its attempt, so a pickup that went idle has written the attempt's outcome. A published
+    /// row that never failed is the exception: its pickup hands it to the publish channel, so wait on the send itself.
     /// </para>
     /// </remarks>
+    /// <param name="host">The host whose retry pickup runs.</param>
+    /// <param name="advance">How far to move the clock once the pickup is parked.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <param name="claim">
+    /// The claim the released pickup must finish: received rows by default, or
+    /// <see cref="StorageOperation.GetPublishedMessagesOfNeedRetry"/> for the outbox relay.
+    /// </param>
     public static async Task RunRetryPickupAsync(
         this SimulationHost host,
         TimeSpan advance,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        StorageOperation claim = StorageOperation.GetReceivedMessagesOfNeedRetry
     )
     {
         await host.WhenRetryPickupParkedAsync(cancellationToken).ConfigureAwait(false);
 
-        var claims = host.Storage.CallsFinished(StorageOperation.GetReceivedMessagesOfNeedRetry);
+        var claims = host.Storage.CallsFinished(claim);
         host.Advance(advance);
 
         // The mark is read before the count, so a claim finishing between the two still ends the wait.
         while (true)
         {
             var mark = host.Storage.CallMark;
-            if (host.Storage.CallsFinished(StorageOperation.GetReceivedMessagesOfNeedRetry) != claims)
+            if (host.Storage.CallsFinished(claim) != claims)
             {
                 break;
             }
