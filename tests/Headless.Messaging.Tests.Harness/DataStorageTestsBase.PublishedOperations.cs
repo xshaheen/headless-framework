@@ -186,11 +186,13 @@ public abstract partial class DataStorageTestsBase
         var name = $"published-race-{Guid.NewGuid():N}";
         var raced = await _FailPublishedAsync(storage, name);
         var other = await _FailPublishedAsync(storage, name);
+        // The re-send and the second failure below run within the same store clock tick as the confirm, so a mark read
+        // from the store's latest marker can be at or after the raced row's later markers.
         var scope = new MessageOperationScope
         {
             Kind = MessageOperationKind.Resend,
             Query = new MessageListQuery { MessageType = MessageType.Publish, Name = name },
-            HighWaterMark = (await storage.GetLatestMessageChangeMarkerAsync(AbortToken))!.Value,
+            HighWaterMark = await _SeedMarkerBeforeNowAsync(published: true, raced.StorageId, other.StorageId),
         };
         var staleChunk = await _ReadWholePublishedScopeAsync(nodeB, scope, chunkSize: 10);
         staleChunk.Should().HaveCount(2);
