@@ -391,12 +391,14 @@
       "headless.livequeries.entityframework": {
         "type": "Project",
         "dependencies": {
+          "FluentValidation": "[12.2.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.LiveQueries": "[1.0.0, )",
           "Headless.LiveQueries.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )"
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )",
+          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )"
         }
       },
       "headless.logging.redaction": {

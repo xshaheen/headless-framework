@@ -229,6 +229,21 @@ public sealed class LiveQueryHubTests : TestBase
         runs.Count.Should().Be(3);
     }
 
+    [Fact]
+    public async Task should_count_each_time_a_tracked_data_source_reports_that_it_fell_back()
+    {
+        // given
+        await using var host = new LiveQueriesTestHost();
+        var metrics = host.Services.GetRequiredService<LiveQueriesMetrics>();
+
+        // when
+        metrics.TrackingFellBack();
+        metrics.TrackingFellBack();
+
+        // then
+        host.Meters.Total("headless.live_queries.tracking.fallbacks").Should().Be(2);
+    }
+
     private static LiveQueryHub _Hub(LiveQueriesTestHost host) => host.Services.GetRequiredService<LiveQueryHub>();
 
     private static async Task<LiveUpdate> _NextAsync(IAsyncEnumerator<LiveUpdate> updates)

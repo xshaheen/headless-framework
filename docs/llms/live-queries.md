@@ -1,13 +1,13 @@
 ---
 domain: Live Queries
-packages: LiveQueries.Abstractions, LiveQueries, LiveQueries.Endpoints
+packages: LiveQueries.Abstractions, LiveQueries, LiveQueries.Endpoints, LiveQueries.EntityFramework
 ---
 
 # Live Queries
 
 > A watched query runs again when a dependency it recorded is announced as changed, and its caller receives each result that differs from the last one.
 
-**One process only.** An announced change reaches the subscriptions of the process that announced it, and no other. There is no backplane. On a second instance of the same service, or on a separate job host that writes the same data, a subscription keeps its last result: the stream stays open, stays stale, and reports no error. Run live queries where every writer of the watched data and every subscriber share one process, or accept that a change written elsewhere shows only after something in the subscriber's process announces the same key.
+**One process only.** An announced change reaches the subscriptions of the process that announced it, and no other. There is no backplane. On a second instance of the same service, or on a separate job host that writes the same data, a subscription keeps its last result: the stream stays open, stays stale, and reports no error. Run live queries where every writer of the watched data and every subscriber share one process, or accept that a change written elsewhere shows only after something in the subscriber's process announces the same key. Entity Framework Core tracking does not lift the limit: it announces the writes of its own process, and a row another process committed re-runs nothing here.
 
 ## Orientation
 
@@ -24,6 +24,8 @@ Three singletons carry the feature:
 - `ILiveQueryInvalidator.InvalidateAsync` is called by a writer, after its change is durable, to announce the keys it changed.
 
 An HTTP API does not call `ILiveQueries`. It marks a GET endpoint with `.WithLiveUpdates()` from [Headless.LiveQueries.Endpoints](#headlesslivequeriesendpoints), and a browser or any HTTP client subscribes with an `Accept` header.
+
+An application on Entity Framework Core writes neither `DependsOn` nor `InvalidateAsync` for what its context does. [Headless.LiveQueries.EntityFramework](#headlesslivequeriesentityframework) records the tables a query read and announces the tables a committed write changed.
 
 ```csharp
 using Headless.LiveQueries;
@@ -67,6 +69,9 @@ public sealed class OrderWriter(IOrderStore store, ILiveQueryInvalidator invalid
 - Every run must record at least one dependency. A run that records none fails the watch with `LiveQueryHasNoDependenciesException`, because no announcement could ever re-run it.
 - Call `DependsOn` on the query's own execution flow. Work started on a detached flow, such as `Task.Run` under `ExecutionContext.SuppressFlow()`, is not recorded.
 - Keep the query read-only and repeatable. It runs once per relevant announcement, each time in a new service scope.
+- With a tracked EF Core context, a live query that writes through it fails: `SaveChanges`, `ExecuteUpdate`, `ExecuteDelete`, and raw SQL that names a mapped table throw `InvalidOperationException`.
+- A tracked EF Core context announces only what EF Core sends. After a bulk-copy library, Dapper, a trigger, or another service changes a table, call `InvalidateAsync` with the table's key (`table:{schema}.{name}`), after the commit.
+- In raw SQL through a tracked context, write each table name the way the provider's own SQL writes it (`"Todos"`, `[Todos]`). A name written another way is not found, and the query or write is not tracked.
 - From code outside an HTTP request, set the tenant before you enumerate. Every run executes on the flow of the caller that enumerates the sequence and sees whatever tenant is ambient there; nothing captures a tenant when `WatchAsync` is called.
 - Compare `Version` tokens for equality only. They have no order and mean nothing across subscriptions.
 - The result type must serialize with `System.Text.Json` defaults. Two results are equal when their JSON is byte-for-byte equal.
@@ -183,8 +188,9 @@ The meter is named `Headless.LiveQueries`. It comes from the host's `IMeterFacto
 | `headless.live_queries.runs.failed` | Counter | Runs that threw or reported a failure |
 | `headless.live_queries.wakes` | Counter | Times an announcement signalled a subscription |
 | `headless.live_queries.rows.ruled_out` | Counter | Changed rows that a subscription's row filters showed could not affect its result. Stays at zero until a package that records row filters is installed. |
+| `headless.live_queries.tracking.fallbacks` | Counter | Times a tracked data source failed while it captured or announced a write, and announced the tables it knew instead. Stays at zero without a tracked data source. |
 
-Runs far above wakes mean queries are racing writes; wakes far above the changes you expect mean dependency keys are too coarse.
+Runs far above wakes mean queries are racing writes; wakes far above the changes you expect mean dependency keys are too coarse. A tracking fallback that is not zero means a live query may have missed a write: read the error the tracker logged with it.
 
 ---
 
@@ -371,3 +377,131 @@ builder.Services.AddHeadlessLiveQueries(setup => setup.UseEndpoints().AddTranspo
 - `cancellationToken` is cancelled when the client disconnects or the host stops. Return or let `OperationCanceledException` leave.
 - A heartbeat is the transport's to write. Read `IOptions<LiveEndpointsOptions>.Value.HeartbeatInterval` and wait real time.
 - New members of `ILiveTransport` arrive as default interface members, so a transport keeps compiling across versions.
+
+---
+
+## Headless.LiveQueries.EntityFramework
+
+Tracks an Entity Framework Core context for live queries: a query through the context depends on the tables it read, and a committed write through the context re-runs the live queries that read the written tables. The application writes no `DependsOn` and no `InvalidateAsync` for what the context does.
+
+### Setup
+
+```bash
+dotnet add package Headless.LiveQueries.EntityFramework
+```
+
+```csharp
+using Headless.LiveQueries;
+using Microsoft.EntityFrameworkCore;
+
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddHeadlessLiveQueries(setup => setup.UseEndpoints().UseEntityFramework<AppDbContext>());
+
+var app = builder.Build();
+
+// Depends on the Todos table, because that is what the query read.
+app.MapGet(
+        "/todos",
+        async (AppDbContext db, CancellationToken cancellationToken) =>
+            await db.Todos.OrderBy(todo => todo.Id).ToListAsync(cancellationToken)
+    )
+    .WithLiveUpdates();
+
+// Re-runs every stream that read Todos, once the save has committed.
+app.MapPost(
+    "/todos",
+    async (Todo todo, AppDbContext db, CancellationToken cancellationToken) =>
+    {
+        db.Todos.Add(todo);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.Created();
+    }
+);
+```
+
+`UseEntityFramework<TContext>` has the usual overloads: none, `IConfiguration`, `Action<LiveQueriesEntityFrameworkOptions>`, and `Action<LiveQueriesEntityFrameworkOptions, IServiceProvider>`. Call it once for each context type to track. Each context type keeps its own options, registered as options named after the context type's full name; a second call for the same type applies its options on top and attaches nothing twice.
+
+The call attaches interceptors to that context type only, through `ConfigureDbContext<TContext>`, so it works in either order with `AddDbContext`, `AddDbContextPool`, `AddDbContextFactory`, and `AddPooledDbContextFactory`. A context built by hand from options the service collection did not build is not tracked. Registration starts no background work and does no I/O.
+
+### Dependency keys
+
+A table's dependency key is `table:{schema}.{name}`, or `table:{name}` when the model maps the table without a schema. Both parts are the model's names, case-sensitive, not the database's default schema: an entity mapped with `ToTable("Orders", "sales")` has the key `table:sales.Orders`, and one mapped with `ToTable("Todos")` has `table:Todos` on every provider. A mapped view has a key of the same form.
+
+These are the keys to pass when the tracker cannot see a read or a write:
+
+```csharp
+// A writer EF Core does not issue: announce after its commit.
+await bulkCopy.WriteToServerAsync(rows, cancellationToken);
+await invalidator.InvalidateAsync(["table:sales.Orders"], cancellationToken);
+
+// A read the tracker cannot attribute: a view, a function, a cache in front of the table.
+dependencies.DependsOn("table:sales.Orders");
+```
+
+### What is tracked
+
+| Operation through the tracked context | Tracked as |
+| --- | --- |
+| A LINQ query, `FromSql`, `SqlQuery`, inside a live query | A read of every mapped table or view the SQL names |
+| `SaveChanges` | A write of every table of each added, modified, or deleted entity, and of every table the save's commands name |
+| `ExecuteUpdate`, `ExecuteDelete` | A write of every mapped table the SQL names |
+| `ExecuteSql`, `ExecuteSqlRaw`, `ExecuteSqlInterpolated` | A write of every mapped table the SQL names |
+
+A table is found in SQL by its name as the provider writes it: `"Todos"` on PostgreSQL and SQLite, `[Todos]` on SQL Server. EF Core's own SQL always matches. The schema is not part of the search, so hand-written SQL may qualify the table or leave the schema to the search path. An entity stored in several tables (table-per-type inheritance, entity splitting) reports all of them on every save, because a query may read any one of them alone.
+
+Not tracked, with what to do instead:
+
+- **Writes EF Core does not issue.** Bulk-copy libraries, Dapper or ADO.NET on the same connection, triggers, other services, and another process. Call `ILiveQueryInvalidator.InvalidateAsync` with the table keys after the commit.
+- **Raw SQL that writes a table name another way.** `FROM Todos` without quotes on SQL Server or SQLite is not found, as a read or as a write. Quote the name as the provider does, or declare it: `DependsOn` for a read, `InvalidateAsync` for a write. PostgreSQL leaves an all-lowercase name unquoted, so there the bare name matches.
+- **A query that writes.** `FromSql` or `SqlQuery` over `INSERT … RETURNING` or a procedure that writes is treated as a read. Announce the write.
+- **Views, functions, and stored procedures.** A query over a mapped view depends on the view's own key, and a write to the view's base tables does not announce it. Declare the base tables with `DependsOn`.
+- **Read replicas.** A live handler must read from the database its writers commit to. A re-run that reads a replica before the replica applied the write shows the old data, and nothing re-runs it again.
+- **Migrations, scaffolding, and value generators.** Their commands are ignored.
+
+Tracking is per table: any write to a table re-runs every live query that read it, whichever rows it changed. Two tables with one name in two schemas are reported together.
+
+### When a write is announced
+
+A write is announced after it is durable, by whatever owns its commit:
+
+| The write runs in | Announced |
+| --- | --- |
+| No transaction (`ExecuteUpdate`, `ExecuteDelete`, raw SQL) | When the command completes |
+| `SaveChanges` with no transaction | After the transaction EF Core opens for the save commits, or after the save's single command completes |
+| An EF Core transaction (`Database.BeginTransaction`) | When a tracked context commits it. A rollback, or a dispose without a commit, announces nothing |
+| A Headless unit of work, begun on the context or on its connection | When the unit completes, after its commit. A rollback, an abandoned unit, or a commit the database refused announces nothing |
+| A `TransactionScope`, or a transaction passed to `Database.EnlistTransaction` | When that transaction completes as committed. An aborted one announces nothing |
+
+- **Several saves, one announcement.** Everything written inside one transaction or unit of work is announced together, once.
+- **Contexts that share a transaction.** A second context that joined a unit of work, or adopted a transaction with `Database.UseTransaction`, has its writes announced with the owner's commit. Both context types must be tracked.
+- **An in-doubt commit is announced.** When a commit throws after it may have reached the database (a unit of work that fails as `InDoubt`, an EF Core commit that throws, a `TransactionScope` that ends in doubt), the write may be stored, so the tables are announced. The cost is one re-run that may find nothing new.
+- **A crash loses the announcement.** A process that dies between a commit and its announcement never announces it. This is accepted for one process: its subscribers died with it, and they receive a full result when they reconnect.
+- **A transaction committed behind EF Core's back is not seen.** When a context adopts a `DbTransaction` with `UseTransaction` and the application commits that transaction itself, outside a unit of work, no commit is observed. Run the work in a unit of work, or announce the tables.
+- **A failed or cancelled save announces nothing**, with one exception: a save whose command had already run outside a transaction of its own before the save threw is announced, because the write may be stored.
+- **A rollback to a savepoint is not followed.** The tables written before it stay pending and are announced with the commit: an extra re-run, never a missed one.
+- **`TransactionScope` on SQLite.** SQLite cannot enlist in a `TransactionScope`, and EF Core refuses the save unless `AmbientTransactionWarning` is ignored. With the warning ignored the write is stored at once and is still announced only for a completed scope. Do not combine the two.
+
+The announcement runs on the thread that completed the commit. It stamps the keys and signals the subscriptions that read them; it runs no query and does no I/O.
+
+### The read-only rule
+
+A live query must not write through a tracked context. `SaveChanges` with a pending change, `ExecuteUpdate`, `ExecuteDelete`, and raw SQL that names a mapped table throw `InvalidOperationException` before anything is sent, with a message that names the table key and the rule. A live endpoint treats it as any exception from the handler: the host's error response when the stream opens, or a `g:live_query_run_failed` event on a re-run. Raw SQL that names no mapped table, such as a session setting, is allowed.
+
+### Configuration
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `LiveQueriesEntityFrameworkOptions.MaxCachedCommands` | `1024` | How many SQL command texts the tracker remembers the tables of, per model. Past the limit the memory is emptied and fills again, which costs repeated searches and never a missed table. Must be at least 1. |
+
+Invalid values fail options validation when the host starts.
+
+### Design and runtime behavior
+
+- **Tracking never fails the application's write.** An exception while the tracker reads the change tracker, holds a write, or announces it is caught, logged as an error, and counted on `headless.live_queries.tracking.fallbacks`. The tables it knows are then announced whole, and the save or commit goes on. The read-only rule is the one exception that reaches the caller.
+- **An error while recording a read fails the run.** Unlike a write, a query is not allowed to continue untracked, because it would stay stale without any sign. A query whose SQL names no mapped table is not an error: it records nothing.
+- **Reads are recorded on the live query's own flow.** A query started on a detached flow, or through a context that is not tracked, records nothing; a run that records nothing at all fails with `LiveQueryHasNoDependenciesException`.
+- **Pooled contexts carry nothing over.** Pending writes belong to the transaction or the unit of work, not to the context instance, so a context returned to the pool with an unfinished transaction announces nothing later.
+- **One more change detection per save.** The tracker reads the change tracker before the save, which runs `DetectChanges` once more than EF Core does by itself. With `AutoDetectChangesEnabled` off it does not.
+- **Other interceptors.** Tables an interceptor adds to a save after the tracker read the change tracker are still found, from the text of the save's commands.
+- **One process.** The limit at the top of this guide applies: only this process's writes are announced, and only to this process's subscriptions.
