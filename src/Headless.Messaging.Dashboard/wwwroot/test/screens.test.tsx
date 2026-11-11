@@ -84,27 +84,61 @@ describe('messaging list search', () => {
     await waitFor(() => expect(searches(view.requests)).toHaveLength(2))
   })
 
-  it('acts on the checked rows only while a search is set, and says why', async () => {
+  it('confirms every match of a search as an Operation, with the text in the body and never the URL', async () => {
     const actor = user()
     const rows = [message('received', 'Failed'), message('received', 'Failed')]
-    open(
+    const view = open(
       {
         received: rows,
-        extra: (request) =>
-          request.method === 'POST' && request.path === 'messaging/received/search'
-            ? { items: rows, count: 240, countCapped: false, nextCursor: 'next', unavailable: [], incomplete: false }
-            : undefined,
+        extra: (request) => {
+          if (request.method === 'POST' && request.path === 'messaging/received/search') {
+            return {
+              items: rows,
+              count: 240,
+              countCapped: false,
+              nextCursor: 'next',
+              unavailable: [],
+              incomplete: false,
+            }
+          }
+
+          if (request.path === 'messaging/commands/messaging.re-execute/confirm') {
+            return {
+              operationId: 'op1',
+              count: 240,
+              confirmation: 'typed',
+              sample: [],
+              token: 't',
+              expiresAt: '',
+              chunkSize: 500,
+            }
+          }
+
+          return undefined
+        },
       },
       { path: 'received?status=Failed&terminal=true' },
     )
 
     await screen.findAllByRole('row', { name: /OrderPlaced/ })
-    await actor.type(screen.getByRole('searchbox', { name: 'Search received message content' }), 'ORD{Enter}')
+    await actor.type(screen.getByRole('searchbox', { name: 'Search received message content' }), 'ORD-991{Enter}')
     await waitFor(() => expect(screen.getByRole('group', { name: 'Set filters' })).toBeTruthy())
     await actor.click(screen.getByRole('checkbox', { name: 'Select all loaded' }))
+    await actor.click(await screen.findByRole('button', { name: /^Select all 240/ }))
 
-    expect(await screen.findByText(/While a search is set, actions run on the checked rows only/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /^Select all 240/ })).toBeNull()
+    // The bar names the search without its text.
+    expect(screen.getByText(/^All 240 matching .* that match the search$/)).toBeTruthy()
+    await actor.click(screen.getByRole('button', { name: /^Re-execute 240/ }))
+    await actor.type(await screen.findByRole('textbox', { name: /Reason/ }), 'card service back')
+    await actor.click(screen.getByRole('button', { name: 'Count rows' }))
+
+    await waitFor(() =>
+      expect(view.requests.find((request) => request.path.endsWith('/confirm'))?.body).toMatchObject({
+        filter: { status: 'Failed', terminalOnly: true, content: 'ORD-991' },
+      }),
+    )
+    expect(view.requests.every((request) => !JSON.stringify(request.query ?? {}).includes('ORD-991'))).toBe(true)
+    expect(view.location().search).not.toContain('ORD-991')
   })
 
   it('finds a message by correlation id through the search body', async () => {
@@ -600,7 +634,8 @@ describe('messaging node ping', () => {
     const all = await screen.findByRole('button', { name: 'Ping all' })
     expect(all.getAttribute('aria-disabled')).toBe('true')
     expect(described(all)).toBe('Needs operate permission')
-    expect(described(screen.getByRole('button', { name: 'Ping node-b' }))).toContain('Needs operate permission')
+    // The table draws its rows after the toolbar, so a row's Ping can land a render after Ping all.
+    expect(described(await screen.findByRole('button', { name: 'Ping node-b' }))).toContain('Needs operate permission')
   })
 
   it('offers no ping without forwarding', async () => {

@@ -21,7 +21,6 @@ import {
   PageHeader,
   Skeleton,
   StatusMark,
-  Text,
   usePageFrame,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
@@ -76,7 +75,6 @@ import {
   readFilter,
   rowMark,
   searchKey,
-  searchScopeReason,
   topicOf,
   useMessagingCommands,
   usePending,
@@ -197,7 +195,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
   const listId = listName(filter)
   const state = describe(kind, listId)
   const failed = listId === 'failed'
-  const scoped = canScope(filter, kind, isSearching)
+  const scoped = canScope(filter, kind)
 
   useNodeReset()
 
@@ -432,10 +430,16 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           }
           actions={
             allMatching && count ? (
-              <MatchingActions kind={kind} filter={filter} node={node} range={range} count={format.count(count)} />
+              <MatchingActions
+                kind={kind}
+                filter={filter}
+                node={node}
+                range={range}
+                search={search}
+                count={format.count(count)}
+              />
             ) : checkedRows.length > 0 ? (
               <CheckedActions
-                hint={isSearching ? searchScopeReason : undefined}
                 kind={kind}
                 rows={checkedRows}
                 pending={pending}
@@ -487,7 +491,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
             pending={pending}
             sort={listSort}
             onSortChange={setSort}
-            // An Operation's scope cannot say retrying, held, or a search, so those lists act on the checked rows only.
+            // An Operation's scope cannot say retrying or held, so those lists act on the checked rows only.
             onSelectAllMatching={scoped ? () => setAllMatching(true) : undefined}
             emptyState={
               incomplete ? (
@@ -831,11 +835,8 @@ function CheckedActions({
   rows,
   pending,
   frame,
-  hint,
   onRefused,
 }: {
-  /** Why the actions run on the checked rows only, when the list cannot offer every match. */
-  hint?: string
   kind: MessageKind
   rows: readonly MessageRow[]
   pending: Pending
@@ -854,11 +855,6 @@ function CheckedActions({
   return (
     <>
       <span>{`${rows.length} selected`}</span>
-      {hint ? (
-        <Text tone="hint" role="status">
-          {hint}
-        </Text>
-      ) : null}
       {names.map(({ name, variant }) => {
         const command: CommandDefinition | undefined = commands.find(name)
 
@@ -888,18 +884,21 @@ function MatchingActions({
   filter,
   node,
   range,
+  search,
   count,
 }: {
   kind: MessageKind
   filter: MessageFilter
   node: string
   range: ListRange | undefined
+  search: MessageSearch
   count: string
 }) {
   const module = useModule()
   const { start } = useOperations()
   const commands = useMessagingCommands()
-  const noun = messagesNoun(kind, filter, node)
+  // The confirm and the progress name the search, never its text: both stay on screen while the Operation runs.
+  const noun = `${messagesNoun(kind, filter, node)}${searchKey(search) ? ' that match the search' : ''}`
 
   return (
     <>
@@ -912,7 +911,9 @@ function MatchingActions({
             key={command.id}
             variant={variant}
             disabledReason={command.canRun ? null : (command.disabledReason ?? viewOnlyReason)}
-            onPress={() => start({ module: module.id, command, filter: operationScope(filter, node, range), noun })}
+            onPress={() =>
+              start({ module: module.id, command, filter: operationScope(filter, node, range, search), noun })
+            }
           >
             {`${command.label} ${count}`}
           </Button>

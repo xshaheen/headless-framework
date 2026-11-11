@@ -3,7 +3,7 @@
 'use no memo'
 
 import { OperationHost } from '@headless/dashboard-sdk/commands'
-import { Announcer, Button, Sheet, ToastRegion, useShellKeys } from '@headless/dashboard-sdk/components'
+import { Announcer, Button, Sheet, ToastRegion, useShellKeys, useViewTitle } from '@headless/dashboard-sdk/components'
 import { Outlet, useLocation, useNavigate } from '@headless/dashboard-sdk/router'
 import { useEffect, useRef, useState } from 'react'
 import { ShellPalette } from '../palette/shell-palette.tsx'
@@ -36,11 +36,17 @@ export function ShellLayout() {
   const attention = useFlyout()
   const product = productOf(state, pathname)
   const entry = product ? currentEntry(product, location) : undefined
-  // The served title, such as `Dashboard`, ends every view's: `Runs · Jobs · Dashboard`, with no word said twice.
+  // The served title, such as `Dashboard`, ends every view's: `Runs · Jobs · Dashboard`, with no word said twice. A
+  // view that names its own page, such as a run, takes the sidebar entry's place: `billing.charge run · Jobs · …`.
   const [served] = useState(() => document.title)
-  const title = [...new Set([entry?.label, product?.label, served].filter(Boolean))].join(' · ')
-  const [arrived, setArrived] = useState('')
+  const view = useViewTitle()
+  const titleOf = (label: string | undefined) =>
+    [...new Set([label, product?.label, served].filter(Boolean))].join(' · ')
+  const title = titleOf(view.title ?? entry?.label)
+  const [arrived, setArrived] = useState({ message: '', count: 0 })
   const shownPath = useRef(pathname)
+  // A new view whose name is still loading has not been said yet.
+  const unsaid = useRef(false)
   // The location the canvas last saw; a page load leaves focus where the browser puts it.
   const seen = useRef(`${pathname}${location.search}`)
   // A fresh key per opening, so the palette starts from the search it was opened with.
@@ -65,13 +71,21 @@ export function ShellLayout() {
   }, [title])
 
   // A view the router swaps in is a new page to the operator, but nothing tells a screen reader so: the live region
-  // says the new title once. A filter or an open row changes the search alone and is not a new page.
+  // says the new title once. A filter or an open row changes the search alone and is not a new page. A view that names
+  // its page is said once its name arrives, read from the store because the view named it after this render.
   useEffect(() => {
     if (pathname !== shownPath.current) {
       shownPath.current = pathname
-      setArrived(document.title)
+      unsaid.current = true
     }
-  }, [pathname])
+
+    const named = useViewTitle.getState()
+
+    if (unsaid.current && !(named.isNamed && named.title === undefined)) {
+      unsaid.current = false
+      setArrived((current) => ({ message: titleOf(named.title ?? entry?.label), count: current.count + 1 }))
+    }
+  }, [pathname, view.isNamed, view.title])
 
   // A control that took the operator elsewhere, such as a sidebar link in the phone's menu or a panel's Open in its own
   // page, may leave with the old view; focus it dropped to the body lands on the canvas instead. Focus still on a
@@ -158,7 +172,8 @@ export function ShellLayout() {
         </OperationHost>
       </div>
       <ToastRegion />
-      <Announcer message={arrived} />
+      {/* Keyed by arrival, so two pages with one title are each said. */}
+      <Announcer message={arrived.message} id={arrived.count} />
     </div>
   )
 }

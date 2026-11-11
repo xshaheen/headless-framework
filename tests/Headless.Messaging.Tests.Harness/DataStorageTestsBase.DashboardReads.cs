@@ -547,11 +547,15 @@ public abstract partial class DataStorageTestsBase
             .BeTrue();
     }
 
-    private static async Task<MediumMessage> _AdmitTerminalInboxAsync(IDataStorage storage, string consumer)
+    private static async Task<MediumMessage> _AdmitTerminalInboxAsync(
+        IDataStorage storage,
+        string consumer,
+        Message? message = null
+    )
     {
         var admitted = await _AdmitInboxAsync(
             storage,
-            CreateMessage($"scope-{Guid.NewGuid():N}", "orders.created"),
+            message ?? CreateMessage($"scope-{Guid.NewGuid():N}", "orders.created"),
             consumerIdentity: consumer
         );
         admitted.Disposition.Should().Be(InboxAdmissionDisposition.Winner);

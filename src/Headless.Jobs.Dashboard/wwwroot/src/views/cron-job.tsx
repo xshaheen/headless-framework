@@ -1,6 +1,6 @@
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { Link, useParams } from '@headless/dashboard-sdk/router'
-import { EmptyState } from '@headless/dashboard-sdk/components'
+import { EmptyState, usePageTitle } from '@headless/dashboard-sdk/components'
 import { RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { useState } from 'react'
 import { CronPanel, deletedText, useCronJob } from '../cron-parts.tsx'
@@ -12,8 +12,19 @@ export default function CronJobPage() {
   // The delete's change makes the page read the cron job again and find it gone, which replaces the panel and its
   // outcome; the page keeps the outcome so the operator still sees how many occurrences went with it.
   const [deleted, setDeleted] = useState<string>()
+  const isGone = cronJob.error instanceof DashboardApiError && cronJob.error.status === 404
 
-  if (cronJob.error instanceof DashboardApiError && cronJob.error.status === 404) {
+  usePageTitle(
+    isGone
+      ? 'Recurring job not found'
+      : cronJob.data
+        ? `${cronJob.data.function} recurring job`
+        : cronJob.error
+          ? 'Recurring job'
+          : undefined,
+  )
+
+  if (isGone) {
     return (
       <section aria-label="Recurring job not found">
         <EmptyState

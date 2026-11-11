@@ -151,23 +151,25 @@ export function messageMatches(row: MessageRow, filter: MessageFilter, range?: L
  * Whether an Operation can scope by `filter` on a `kind` list. An Operation's filter names a store, status, terminal,
  * consumer, name, fingerprint, lane, message id, and added range; it cannot say retrying or held, so those lists act on
  * the checked rows only. An Operation also runs on one store, so a published list that merges every store acts on the
- * checked rows until a store is picked: otherwise its count would cover rows the Operation never touches. A search
- * never scopes one, for the reason `searchScopeReason` gives.
+ * checked rows until a store is picked: otherwise its count would cover rows the Operation never touches.
  */
-export function canScope(filter: MessageFilter, kind: MessageKind, isSearching = false) {
-  return !isSearching && !filter.retrying && !filter.held && (kind !== 'published' || Boolean(filter.store))
+export function canScope(filter: MessageFilter, kind: MessageKind) {
+  return !filter.retrying && !filter.held && (kind !== 'published' || Boolean(filter.store))
 }
 
 /**
- * Why a searched list acts on its checked rows only: the shell records an Operation's filter in the operator log, and
- * search text must never reach a log.
+ * The filter as an Operation's scope, on `node`: the server freezes exactly the rows it matches at confirm. A search
+ * travels in the confirm's body and the server's encrypted token, never a URL; the operator log records it redacted.
  */
-export const searchScopeReason =
-  'While a search is set, actions run on the checked rows only: an action over every match would record the search text in the operator log.'
-
-/** The filter as an Operation's scope, on `node`: the server freezes exactly the rows it matches at confirm. */
-export function operationScope(filter: MessageFilter, node: string, range?: ListRange) {
+export function operationScope(
+  filter: MessageFilter,
+  node: string,
+  range?: ListRange,
+  search: MessageSearch = noSearch,
+) {
   return {
+    ...(search.content ? { content: search.content } : {}),
+    ...(search.correlationId ? { correlationId: search.correlationId } : {}),
     ...(filter.lane ? { lane: filter.lane } : {}),
     ...(filter.messageId ? { messageId: filter.messageId } : {}),
     ...(range ? { from: range.start, before: range.end } : {}),

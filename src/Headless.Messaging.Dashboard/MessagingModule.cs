@@ -67,7 +67,7 @@ internal sealed class MessagingModule
         LocalSources = new MessagingSources(stores, LocalCounts, metrics);
         LocalChanges = new MessagingChangeSource(stores, options.ChangePageSize, options.ChangeOverlapWindow);
         _api = new MessagingModuleApi(stores, LocalSources, metrics, services, options.SearchTimeout, forwarding);
-        LocalCommands = new MessagingCommands(stores, LocalSources, services);
+        LocalCommands = new MessagingCommands(stores, LocalSources, services, options.SearchTimeout);
         _options = options;
         _forwarding = forwarding;
         _peerChanges = peerChanges;

@@ -47,8 +47,11 @@ export function CommandPalette({ isOpen, onOpenChange, items, defaultQuery }: Co
         <AriaDialog aria-label="Command palette" className="flex flex-col outline-none">
           <Autocomplete filter={contains} defaultInputValue={defaultQuery}>
             <SearchField aria-label="Search commands, views, and objects" autoFocus>
+              {/* The field sits flush against the surface, which clips anything outside it, so focus draws the accent
+                  ring inside the field, as a focused table row does. A text field takes keys whatever moved focus
+                  there, so the ring shows on every focus, not only a keyboard one. */}
               <Input
-                className="h-(--palette-input-height) w-full border-b border-border bg-transparent px-4 outline-none placeholder:text-faint"
+                className="h-(--palette-input-height) w-full rounded-t-lg border-b border-border bg-transparent px-4 outline-none placeholder:text-faint data-focused:outline-solid data-focused:outline-2 data-focused:-outline-offset-2 data-focused:outline-ring"
                 placeholder="Search commands, views, and objects" />
             </SearchField>
             <Menu
