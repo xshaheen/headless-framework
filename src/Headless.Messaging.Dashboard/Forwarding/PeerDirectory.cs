@@ -144,11 +144,19 @@ internal sealed class PeerDirectory(
                 .GroupBy(static node => node.Name, StringComparer.Ordinal)
         )
         {
-            var addresses = group.Select(_AddressOf).OfType<Uri>().ToArray();
+            var callable = group
+                .Select(static node => (Node: node, Uri: _AddressOf(node)))
+                .Where(static entry => entry.Uri is not null)
+                .ToArray();
 
-            if (addresses.Length > 0)
+            if (callable.Length > 0)
             {
-                peers.Add(new MessagingPeer(group.Key, addresses));
+                peers.Add(
+                    new MessagingPeer(group.Key, [.. callable.Select(static entry => entry.Uri!)])
+                    {
+                        Instances = [.. callable.Select(static entry => _InstanceOf(entry.Node))],
+                    }
+                );
             }
         }
 
@@ -159,6 +167,13 @@ internal sealed class PeerDirectory(
 
         return peers;
     }
+
+    private static MessagingPeerInstance _InstanceOf(Node node) =>
+        new(
+            node.Address,
+            node.Port,
+            node.Tags?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? []
+        );
 
     private static Uri? _AddressOf(Node node)
     {

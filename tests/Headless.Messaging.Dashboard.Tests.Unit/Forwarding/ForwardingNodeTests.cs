@@ -182,6 +182,64 @@ public sealed class ForwardingNodeTests : TestBase
     }
 
     [Fact]
+    public async Task should_list_each_discovered_instance_of_a_node_with_its_address_port_and_tags()
+    {
+        // given: two instances of node B, one with a port and tags, and one whose address is not callable
+        _discoveryA.Set(
+            new Node
+            {
+                Id = "node-b-1",
+                Name = "node-b",
+                Address = "https://node-b-1",
+                Port = 8443,
+                Tags = "zone=eu-1, canary ,,",
+            },
+            new Node
+            {
+                Id = "node-b-2",
+                Name = "node-b",
+                Address = "https://node-b-2",
+                Port = 0,
+                Tags = string.Empty,
+            },
+            new Node
+            {
+                Id = "node-b-3",
+                Name = "node-b",
+                Address = "ftp://node-b-3",
+                Port = 0,
+                Tags = "ignored",
+            }
+        );
+        await using var nodeA = await _StartAAsync();
+        using var client = MessagingCommandHost.Client(nodeA);
+        var cookie = await MessagingCommandHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var response = await MessagingCommandHost.GetAsync(client, $"{_Api}/nodes", cookie, AbortToken);
+
+        // then: the callable instances, in discovery order; this node has none, since discovery does not list it
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var items = (await MessagingCommandHost.ReadAsync(response, AbortToken)).GetProperty("items");
+        items[0].GetProperty("isLocal").GetBoolean().Should().BeTrue();
+        items[0].TryGetProperty("instances", out _).Should().BeFalse();
+        var instances = items[1].GetProperty("instances");
+        instances.GetArrayLength().Should().Be(2);
+        instances[0].GetProperty("address").GetString().Should().Be("https://node-b-1");
+        instances[0].GetProperty("port").GetInt32().Should().Be(8443);
+        instances[0]
+            .GetProperty("tags")
+            .EnumerateArray()
+            .Select(static tag => tag.GetString())
+            .Should()
+            .Equal("zone=eu-1", "canary");
+        instances[1].GetProperty("address").GetString().Should().Be("https://node-b-2");
+        instances[1].GetProperty("port").GetInt32().Should().Be(0);
+        instances[1].GetProperty("tags").GetArrayLength().Should().Be(0);
+        _network.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_fold_two_instances_of_one_node_into_one_needs_you_item_when_neither_answers()
     {
         // given: discovery lists two instances of node B, neither of which answers

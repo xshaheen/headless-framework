@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Headless.Checks;
 using Headless.Dashboard;
 using Headless.Hosting;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -38,15 +39,20 @@ internal sealed class MessagingModuleApi(
 
     private const int _DefaultListLimit = 50;
     private const int _MaxScheduledPageSize = 200;
+    private const int _MaxGenerationPageSize = 200;
 
     private readonly MessagingStores _stores = Argument.IsNotNull(stores);
     private readonly MessagingSources _sources = Argument.IsNotNull(sources);
     private readonly MessagingMetricsEventListener _metrics = Argument.IsNotNull(metrics);
     private readonly IServiceProvider _services = Argument.IsNotNull(services);
 
-    /// <summary>Maps the reads on <paramref name="routes"/>, and the node list, which is always this node's, on <paramref name="local"/>.</summary>
-    public void Map(IEndpointRouteBuilder routes, IEndpointRouteBuilder local)
+    /// <summary>
+    /// Maps the reads on <paramref name="routes"/>, and the node list and Ping, which are always this node's, on
+    /// <paramref name="local"/>. Ping needs operate permission, which <paramref name="endpoints"/> requires.
+    /// </summary>
+    public void Map(DashboardModuleEndpoints endpoints, IEndpointRouteBuilder routes, IEndpointRouteBuilder local)
     {
+        Argument.IsNotNull(endpoints);
         Argument.IsNotNull(routes);
         Argument.IsNotNull(local);
 
@@ -63,7 +69,10 @@ internal sealed class MessagingModuleApi(
         routes.MapGet("/contracts", _Contracts);
         routes.MapGet("/circuits", _Circuits);
         local.MapGet("/nodes", _NodesAsync);
+        // Ping changes nothing, yet it makes this node call others, so a viewer may not start one.
+        endpoints.RequireOperate(local.MapPost("/nodes/ping", _PingAsync));
         routes.MapGet("/metrics/realtime", _Realtime);
+        routes.MapGet("/metrics/hourly", _HourlyAsync);
     }
 
     private Task<Results<JsonHttpResult<MessagingRowList>, ValidationProblem, NotFound>> _ListPublishedAsync(
@@ -355,6 +364,7 @@ internal sealed class MessagingModuleApi(
     }
 
     private async Task<Results<JsonHttpResult<MessagingGenerationList>, ValidationProblem>> _ListGenerationsAsync(
+        HttpContext context,
         string? messageId,
         string? consumer,
         CancellationToken cancellationToken
@@ -366,16 +376,26 @@ internal sealed class MessagingModuleApi(
         }
 
         var store = _stores.Primary;
+        var consumerFilter = string.IsNullOrEmpty(consumer) ? null : consumer;
         var page = await store
             .Monitoring.ListMessagesAsync(
                 new MessageListQuery
                 {
                     MessageType = MessageType.Subscribe,
                     MessageId = messageId,
-                    ConsumerIdentity = string.IsNullOrEmpty(consumer) ? null : consumer,
+                    ConsumerIdentity = consumerFilter,
                 },
                 after: null,
                 MessageListPage.MaxPageSize,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        var generations = await _ReadGenerationsAsync(
+                store,
+                context,
+                messageId,
+                consumerFilter,
+                storageId => new MessagingObjectId(_stores.NodeName, store.Name, storageId).ToString(),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -388,16 +408,76 @@ internal sealed class MessagingModuleApi(
                     .Where(row =>
                         string.Equals(row.MessageId, messageId, StringComparison.Ordinal)
                         && (
-                            string.IsNullOrEmpty(consumer)
-                            || string.Equals(row.ConsumerIdentity, consumer, StringComparison.Ordinal)
+                            consumerFilter is null
+                            || string.Equals(row.ConsumerIdentity, consumerFilter, StringComparison.Ordinal)
                         )
                     )
                     .OrderBy(static row => row.Added)
                     .Select(row =>
-                        MessagingRowView.From(new MessagingObjectId(_stores.NodeName, store.Name, row.StorageId), row)
+                        MessagingRowView.From(
+                            new MessagingObjectId(_stores.NodeName, store.Name, row.StorageId),
+                            row
+                        ) with
+                        {
+                            Generation = generations.GetValueOrDefault(row.StorageId),
+                        }
                     ),
             ]),
             MessagingDashboardJsonContext.Default.MessagingGenerationList
+        );
+    }
+
+    // Each generation's inbox fields, by the row they belong to. A store without inbox operations, or a row admitted
+    // without a generation, serves its row with none, never an error.
+    private static async Task<IReadOnlyDictionary<Guid, MessagingGenerationView>> _ReadGenerationsAsync(
+        MessagingStore store,
+        HttpContext context,
+        string messageId,
+        string? consumer,
+        Func<Guid, string> idOf,
+        CancellationToken cancellationToken
+    )
+    {
+        IndexPage<InboxGenerationView> generations;
+
+        try
+        {
+            generations = await store
+                .Storage.GetInboxOperationsApi()
+                .QueryAsync(
+                    new InboxGenerationQuery
+                    {
+                        MessageId = messageId,
+                        ConsumerIdentity = consumer,
+                        // The most a generation read returns; a row past it is served without its generation.
+                        PageSize = _MaxGenerationPageSize,
+                    },
+                    new OperatorAuthorizationContext(Reader(context.User)),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return new Dictionary<Guid, MessagingGenerationView>();
+        }
+
+        // The rows the store's '=' matched with trailing spaces belong to another message.
+        var matched = generations
+            .Items.Where(generation => string.Equals(generation.MessageId, messageId, StringComparison.Ordinal))
+            .ToArray();
+        var rowsByIncarnation = matched.ToDictionary(static generation => generation.IncarnationId);
+
+        return matched.ToDictionary(
+            static generation => generation.StorageId,
+            generation =>
+                MessagingGenerationView.From(
+                    generation,
+                    generation.ReplayParentIncarnationId is { } parent
+                    && rowsByIncarnation.TryGetValue(parent, out var parentRow)
+                        ? idOf(parentRow.StorageId)
+                        : null
+                )
         );
     }
 
@@ -591,7 +671,8 @@ internal sealed class MessagingModuleApi(
                     peer.Name,
                     IsLocal: false,
                     Stores: [],
-                    State: forwarding.Directory.StatusOf(peer.Name)?.State.ToWire()
+                    State: forwarding.Directory.StatusOf(peer.Name)?.State.ToWire(),
+                    Instances: peer.Instances
                 ))
             );
 
@@ -601,6 +682,164 @@ internal sealed class MessagingModuleApi(
         return TypedResults.Json(
             new MessagingNodeList(items) { Discovery = discovery },
             MessagingDashboardJsonContext.Default.MessagingNodeList
+        );
+    }
+
+    // Every store's published rows, and the main store's received rows, per hour over the last 24, read at once. A store
+    // that fails or does not answer in time has null series and is named, so a missing store never reads as zero.
+    private async Task<JsonHttpResult<MessagingHourlyHistory>> _HourlyAsync(CancellationToken cancellationToken)
+    {
+        var asOf = (_services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        var current = asOf.TruncateToHours();
+        DateTimeOffset[] hours =
+        [
+            .. Enumerable
+                .Range(0, MessagingHourlyHistory.Hours)
+                .Select(i => current.AddHours(i - (MessagingHourlyHistory.Hours - 1))),
+        ];
+
+        var answers = await _stores
+            .ReadEachAsync(
+                _stores.All,
+                async (store, token) =>
+                {
+                    var published = await _ReadHourlyAsync(store.Monitoring, MessageType.Publish, hours, token)
+                        .ConfigureAwait(false);
+                    var received = store.HoldsReceived
+                        ? await _ReadHourlyAsync(store.Monitoring, MessageType.Subscribe, hours, token)
+                            .ConfigureAwait(false)
+                        : null;
+
+                    return (published, received);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var byStore = answers.Answered.ToDictionary(static answer => answer.Store.Name, StringComparer.Ordinal);
+
+        return TypedResults.Json(
+            new MessagingHourlyHistory(
+                asOf,
+                hours,
+                [
+                    .. _stores.All.Select(store =>
+                        byStore.TryGetValue(store.Name, out var answer)
+                            ? new MessagingHourlyStore(store.Name, answer.Value.published, answer.Value.received)
+                            : new MessagingHourlyStore(store.Name, Published: null, Received: null)
+                    ),
+                ],
+                answers.Unavailable
+            ),
+            MessagingDashboardJsonContext.Default.MessagingHourlyHistory
+        );
+    }
+
+    private static async Task<MessagingHourlySeries> _ReadHourlyAsync(
+        IMonitoringApi monitoring,
+        MessageType type,
+        IReadOnlyList<DateTimeOffset> hours,
+        CancellationToken cancellationToken
+    )
+    {
+        var succeeded = await monitoring.GetHourlySucceededJobsAsync(type, cancellationToken).ConfigureAwait(false);
+        var failed = await monitoring.GetHourlyFailedJobsAsync(type, cancellationToken).ConfigureAwait(false);
+
+        // The store keys every hour it counted, an empty one as zero. An hour it has no key for is one it did not count,
+        // as when the hour turned between this node's clock read and the store's, so it is null, never zero.
+        return new MessagingHourlySeries(
+            [.. hours.Select(hour => succeeded.TryGetValue(hour, out var count) ? count : (int?)null)],
+            [.. hours.Select(hour => failed.TryGetValue(hour, out var count) ? count : (int?)null)]
+        );
+    }
+
+    private async Task<
+        Results<JsonHttpResult<MessagingPingResult>, ValidationProblem, ProblemHttpResult, NotFound>
+    > _PingAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        // A call another node forwarded never makes this node call further nodes.
+        if (MessagingForwarding.IsForwarded(context.User))
+        {
+            return TypedResults.NotFound();
+        }
+
+        MessagingPingRequest? request;
+
+        try
+        {
+            request = context.Request.ContentLength is 0
+                ? new MessagingPingRequest(Node: null)
+                : await JsonSerializer
+                    .DeserializeAsync(
+                        context.Request.Body,
+                        MessagingDashboardJsonContext.Default.MessagingPingRequest,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            request = null;
+        }
+
+        if (request is null)
+        {
+            return DashboardValidation.Problem(
+                DashboardValidation.BodyField,
+                DashboardValidation.JsonRule,
+                "The body must be { node } to ping one node, or {} to ping every node discovery lists."
+            );
+        }
+
+        var directory = forwarding?.IsEnabled == true ? forwarding.Directory : null;
+        IReadOnlyList<MessagingPeer> peers;
+
+        if (string.IsNullOrEmpty(request.Node))
+        {
+            peers = directory is null ? [] : await directory.GetPeersAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (
+            string.Equals(request.Node, _stores.NodeName, StringComparison.Ordinal)
+            || directory?.IsLocal(request.Node) == true
+        )
+        {
+            return DashboardValidation.Problem(
+                "node",
+                DashboardValidation.InvalidRule,
+                "node names this node, which is serving the page; Ping reaches other nodes."
+            );
+        }
+        // Only discovery entries are callable, so a caller cannot point this node at an address of its choosing.
+        else if (
+            directory is not null
+            && await directory.FindAsync(request.Node, cancellationToken).ConfigureAwait(false) is { } peer
+        )
+        {
+            peers = [peer];
+        }
+        else
+        {
+            return TypedResults.Problem(
+                detail: $"Discovery lists no Messaging node named '{request.Node}'.",
+                statusCode: StatusCodes.Status404NotFound
+            );
+        }
+
+        var answers =
+            peers.Count == 0
+                ? []
+                : await NodePing
+                    .PingAsync(
+                        forwarding!.Client,
+                        peers,
+                        _services.GetService<TimeProvider>() ?? TimeProvider.System,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+        return TypedResults.Json(
+            new MessagingPingResult(answers) { Discovery = directory?.DiscoveryState },
+            MessagingDashboardJsonContext.Default.MessagingPingResult
         );
     }
 

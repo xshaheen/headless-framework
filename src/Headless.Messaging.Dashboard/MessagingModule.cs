@@ -220,7 +220,7 @@ internal sealed class MessagingModule
 
         if (_forwarding is null)
         {
-            _api.Map(routes, routes);
+            _api.Map(endpoints, routes, routes);
 
             return;
         }
@@ -228,7 +228,7 @@ internal sealed class MessagingModule
         // Reads that name another node go to it; the node list and the peer endpoints are always this node's.
         var relayed = routes.MapGroup(string.Empty);
         relayed.AddEndpointFilter<NodeRelayFilter>();
-        _api.Map(relayed, routes);
+        _api.Map(endpoints, relayed, routes);
         PeerEndpoints.Map(routes.MapGroup("/peer"), this);
     }
 

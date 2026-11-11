@@ -28,7 +28,8 @@ internal static class MessagingModuleTestHost
         IDataStorage? sharedStorage = null,
         bool addMessaging = true,
         bool addJobs = false,
-        Action<IServiceCollection>? configure = null
+        Action<IServiceCollection>? configure = null,
+        Action<MessagingSetupBuilder>? messaging = null
     )
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -42,6 +43,7 @@ internal static class MessagingModuleTestHost
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
+                messaging?.Invoke(setup);
             });
         }
 
