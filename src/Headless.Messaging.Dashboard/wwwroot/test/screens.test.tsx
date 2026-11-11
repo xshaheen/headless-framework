@@ -600,7 +600,8 @@ describe('messaging node ping', () => {
     const all = await screen.findByRole('button', { name: 'Ping all' })
     expect(all.getAttribute('aria-disabled')).toBe('true')
     expect(described(all)).toBe('Needs operate permission')
-    expect(described(screen.getByRole('button', { name: 'Ping node-b' }))).toContain('Needs operate permission')
+    // The table draws its rows after the toolbar, so a row's Ping can land a render after Ping all.
+    expect(described(await screen.findByRole('button', { name: 'Ping node-b' }))).toContain('Needs operate permission')
   })
 
   it('offers no ping without forwarding', async () => {
