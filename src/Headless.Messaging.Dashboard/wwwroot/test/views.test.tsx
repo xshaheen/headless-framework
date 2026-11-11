@@ -34,7 +34,8 @@ describe('messaging dashboard', () => {
     const actor = user()
     const view = open({ nodes: twoNodes }, { path: 'received' })
 
-    await actor.selectOptions(await screen.findByRole('combobox', { name: 'Node' }), 'node-b')
+    await actor.click(await screen.findByRole('button', { name: /Node/ }))
+    await actor.click(await screen.findByRole('option', { name: 'node-b' }))
 
     await waitFor(() => expect(new URLSearchParams(view.location().search).get('node')).toBe('node-b'))
     await waitFor(() =>
@@ -48,7 +49,7 @@ describe('messaging dashboard', () => {
     open({ received: [message('received', 'Failed', { name: 'a.failed' })] }, { path: 'received' })
 
     await screen.findByRole('row', { name: /a\.failed/ })
-    expect(screen.queryByRole('combobox', { name: 'Node' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Node/ })).toBeNull()
   })
 })
 
@@ -57,7 +58,7 @@ describe('messaging node persistence', () => {
 
   it('keeps ?node= across a sidebar route and a module command, and the next read carries it', async () => {
     const view = open({ nodes: twoNodes }, { path: 'received?node=node-b' })
-    await screen.findByRole('combobox', { name: 'Node' })
+    await screen.findByRole('button', { name: /Node/ })
 
     // The sidebar's route for All published, as the shell links it: no `node`.
     void view.navigate('published')
@@ -82,12 +83,13 @@ describe('messaging node persistence', () => {
     const actor = user()
     const view = open({ nodes: twoNodes }, { path: 'received?node=node-b' })
 
-    await actor.selectOptions(await screen.findByRole('combobox', { name: 'Node' }), 'node-a')
+    await actor.click(await screen.findByRole('button', { name: /Node/ }))
+    await actor.click(await screen.findByRole('option', { name: 'node-a (this node)' }))
     await waitFor(() => expect(nodeOf(view)).toBeNull())
 
     void view.navigate('published')
     await waitFor(() => expect(view.location().pathname).toBe('/messaging/published'))
-    await screen.findByRole('combobox', { name: 'Node' })
+    await screen.findByRole('button', { name: /Node/ })
     expect(nodeOf(view)).toBeNull()
   })
 })
@@ -251,7 +253,8 @@ describe('messaging operator log', () => {
     const view = open({}, { path: 'operator-log' })
 
     expect(await screen.findByText('No operator has acted on a stored message yet.')).toBeTruthy()
-    await actor.selectOptions(screen.getByRole('combobox', { name: 'Target' }), 'Inbox')
+    await actor.click(screen.getByRole('button', { name: /Target/ }))
+    await actor.click(await screen.findByRole('option', { name: 'Received' }))
 
     await waitFor(() => expect(new URLSearchParams(view.location().search).get('targetKind')).toBe('Inbox'))
     await waitFor(() =>

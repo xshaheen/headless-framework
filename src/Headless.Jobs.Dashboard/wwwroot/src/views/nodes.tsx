@@ -12,13 +12,14 @@ import {
   Tag,
   Text,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { fetchNodes, nodeStatusMark, type JobNode } from '../cron.ts'
-import { CellText, firstLine, JobsStats, QueryState, StaleNotice, Time } from '../parts.tsx'
+import { CellText, firstLine, JobsStats, QueryState, StaleNotice } from '../parts.tsx'
 
 export default function NodesView() {
   const { api } = useDashboard()
@@ -47,7 +48,7 @@ export default function NodesView() {
     >
       <StaleNotice what="these servers" onRefresh={() => void nodes.refetch()} />
       {serving ? <HostExceptionAlert node={serving} /> : null}
-      <QueryState query={nodes} label="Loading servers" rows={3}>
+      <QueryState query={nodes} label="Loading servers" rows={3} shape="table">
         {() => (
           <DataTable
             label="Servers"
@@ -66,6 +67,7 @@ export default function NodesView() {
                   </CellText>
                 ),
                 isRowHeader: true,
+                kind: 'id',
                 width: '1.5fr',
               },
               {
@@ -83,6 +85,7 @@ export default function NodesView() {
                     <StatusMark {...nodeStatusMark(row)} />
                   </CellText>
                 ),
+                kind: 'status',
                 width: 120,
               },
               {
@@ -97,6 +100,7 @@ export default function NodesView() {
                     )}
                   </CellText>
                 ),
+                kind: 'number',
                 priority: 2,
                 width: 130,
               },
@@ -104,6 +108,7 @@ export default function NodesView() {
                 id: 'running',
                 header: 'Running',
                 cell: (row) => <CellText>{format.count({ value: row.running, capped: row.runningCapped })}</CellText>,
+                kind: 'number',
                 width: 90,
               },
               {
@@ -111,9 +116,10 @@ export default function NodesView() {
                 header: 'Last beat',
                 cell: (row) => (
                   <CellText>
-                    <Time value={row.lastHeartbeatAt ?? undefined} short missing="Not tracked" />
+                    <RelativeTime value={row.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </CellText>
                 ),
+                kind: 'time',
                 priority: 2,
                 width: 110,
               },
@@ -165,7 +171,7 @@ function HostExceptionAlert({ node }: { node: JobNode }) {
       <Text role="alert" tone="error">
         {`This node's scheduler last failed: ${firstLine(node.lastHostException ?? undefined) ?? ''}`}
       </Text>
-      <Time value={node.lastHostExceptionAt ?? undefined} />
+      <RelativeTime value={node.lastHostExceptionAt ?? undefined} />
     </Banner>
   )
 }
@@ -184,7 +190,7 @@ function HostException({ node }: { node: JobNode }) {
 
   return (
     <>
-      <Time value={node.lastHostExceptionAt ?? undefined} />
+      <RelativeTime value={node.lastHostExceptionAt ?? undefined} />
       <ExceptionBlock message={message} stack={stack.length > 0 ? stack.join('\n') : undefined} />
     </>
   )
@@ -216,7 +222,7 @@ function NodePanel({ node }: { node: JobNode }) {
                     {format.count({ value: node.running, capped: node.runningCapped })}
                   </GridField>
                   <GridField label="Last beat">
-                    <Time value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
+                    <RelativeTime value={node.lastHeartbeatAt ?? undefined} missing="Not tracked" />
                   </GridField>
                   <GridField label="Last host exception" span={2}>
                     <HostException node={node} />

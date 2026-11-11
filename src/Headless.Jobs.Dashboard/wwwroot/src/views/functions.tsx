@@ -2,6 +2,7 @@ import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import {
   Button,
   DetailPanel,
+  EmptyState,
   FieldGrid,
   Fields,
   GridField,
@@ -14,13 +15,15 @@ import {
   Tag,
   Text,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
+import { RunsIcon } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { cronJobsTopic, cronStatusMark, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, QueryState, StaleNotice, Time, useFunctions } from '../parts.tsx'
+import { CellText, JobsStats, QueryState, StaleNotice, useFunctions } from '../parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
 
 /** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */
@@ -85,7 +88,7 @@ export default function FunctionsView() {
       panel={open ? <FunctionPanel item={open} /> : undefined}
     >
       <StaleNotice what="these functions" onRefresh={() => void functions.refetch()} />
-      <QueryState query={functions} label="Loading functions" rows={4}>
+      <QueryState query={functions} label="Loading functions" rows={4} shape="table">
         {() => (
           <DataTable
             label="Functions"
@@ -103,6 +106,7 @@ export default function FunctionsView() {
                   </CellText>
                 ),
                 isRowHeader: true,
+                kind: 'id',
                 width: '1.6fr',
               },
               {
@@ -123,15 +127,22 @@ export default function FunctionsView() {
                     <Mono>{row.requestType ?? '–'}</Mono>
                   </CellText>
                 ),
+                kind: 'id',
                 priority: 2,
                 width: '1.4fr',
               },
-              { id: 'priority', header: 'Priority', cell: (row) => row.priority, priority: 2, width: 100 },
+              {
+                id: 'priority',
+                header: 'Priority',
+                cell: (row) => row.priority,
+                priority: 2,
+                width: 100,
+              },
               {
                 id: 'limit',
                 header: 'Running / limit',
                 cell: (row) => limit(row),
-                align: 'end',
+                kind: 'number',
                 priority: 2,
                 width: 120,
               },
@@ -149,7 +160,7 @@ export default function FunctionsView() {
                 id: 'succeeded',
                 header: 'Succeeded, 24 h',
                 cell: (row) => format.number(row.succeeded),
-                align: 'end',
+                kind: 'number',
                 priority: 2,
                 width: 120,
               },
@@ -157,7 +168,7 @@ export default function FunctionsView() {
                 id: 'failed',
                 header: 'Failed, 24 h',
                 cell: (row) => format.number(row.failed),
-                align: 'end',
+                kind: 'number',
                 width: 100,
               },
             ]}
@@ -186,7 +197,7 @@ function FunctionFields({ item }: { item: JobFunction }) {
         {item.requestType ? <Mono>{item.requestType}</Mono> : 'None'}
       </GridField>
       <GridField label="Last run" span={2}>
-        <Time value={item.lastExecutedAt} />
+        <RelativeTime value={item.lastExecutedAt} />
       </GridField>
       <GridField label="Succeeded, 24 h">{format.number(item.succeeded)}</GridField>
       <GridField label="Failed, 24 h">{format.number(item.failed)}</GridField>
@@ -271,13 +282,13 @@ function FunctionRuns({ name }: { name: string }) {
   return (
     <div>
       {runs.rows.length === 0 ? (
-        <p>No runs of this function yet.</p>
+        <EmptyState icon={RunsIcon}>No runs of this function yet.</EmptyState>
       ) : (
         <HistoryList
           label="Latest runs"
           items={runs.rows.map((run) => ({
             key: run.id,
-            time: <Time value={run.executionTime ?? run.createdAt} short />,
+            time: <RelativeTime value={run.executionTime ?? run.createdAt} />,
             tone: runStatusMark(run).tone,
             state: statusLabel(run.status),
             note: run.node,

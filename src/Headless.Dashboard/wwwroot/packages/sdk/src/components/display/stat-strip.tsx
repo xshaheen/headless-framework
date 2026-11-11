@@ -22,7 +22,10 @@ export interface StatCardProps {
   icon?: IconComponent
 }
 
-const stat = 'flex flex-col gap-0.5 border-e border-border px-4 pt-2.5 pb-1.5 text-foreground no-underline'
+// The cell's height is fixed, not a minimum: the label row (18), the value (26), the two caption lines (32), the gaps,
+// and the padding add up to the token, so a cell with a served sentence stands as tall as one without, and the strip
+// never grows or breaks its rows into uneven heights.
+const stat = 'flex h-(--statstrip-height) flex-col gap-0.5 overflow-hidden border-e border-border px-4 py-2 text-foreground no-underline'
 
 /**
  * One served value with its label and state dot. It draws no sparkline and no empty chart frame: a trend appears
@@ -33,12 +36,23 @@ export function StatCard({ label, value, tone, caption, to, icon: Icon }: StatCa
     <>
       <span className={`flex items-center gap-2 type-small text-muted-foreground ${tone ? `hd-tone-${tone}` : ''}`}>
         {tone ? <i className="hd-mark" aria-hidden="true" /> : null}
-        {label}
+        <span className="truncate" title={label}>
+          {label}
+        </span>
         {Icon ? <Icon className="ms-auto" /> : null}
       </span>
       {/* The spaces keep the link's name `Failed 23`, not `Failed23`; the flex column drops them from the layout. */}{' '}
       <span className="type-stat tabular-nums">{value}</span>
-      {caption ? <> <span className="hd-label">{caption}</span></> : null}
+      {/* A served sentence can run past the cell: it keeps to two lines and shows whole on hover, so the strip stays
+          one height at every width. */}
+      {caption ? (
+        <>
+          {' '}
+          <span className="hd-label line-clamp-2 text-pretty" title={typeof caption === 'string' ? caption : undefined}>
+            {caption}
+          </span>
+        </>
+      ) : null}
     </>
   )
 
@@ -54,9 +68,11 @@ export function StatCard({ label, value, tone, caption, to, icon: Icon }: StatCa
 /** The row of stat cards above a page, named for what it summarizes: `Runs by state`. Up to six cards. */
 export function StatStrip({ label, children }: { label: string; children: ReactNode }) {
   return (
+    // Six cells share the width only where each keeps about 200 px; below 1280 px they wrap three to a row, and on a
+    // phone two, so a label never breaks into a third line and the strip reads as one block.
     <section
       aria-label={label}
-      className="grid auto-cols-[minmax(0,1fr)] grid-flow-col border-b border-border bg-card max-md:grid-flow-row max-md:grid-cols-2"
+      className="grid auto-cols-[minmax(0,1fr)] grid-flow-col border-b border-border bg-card max-xl:grid-flow-row max-xl:grid-cols-3 max-md:grid-cols-2 max-xl:[&>*:nth-child(-n+3)]:border-b max-md:[&>*:nth-child(3)]:border-b-0 max-md:[&>*:nth-child(-n+2)]:border-b"
     >
       {children}
     </section>

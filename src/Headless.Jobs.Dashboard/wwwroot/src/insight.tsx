@@ -191,7 +191,7 @@ export function useRunsPerDay({ cronJobId, unit, unitOne }: { cronJobId?: string
   ) : series.isError ? (
     <LoadError message={series.error.message} onRetry={() => void series.refetch()} />
   ) : !data ? (
-    <Skeleton label="Loading the runs per day" rows={3} />
+    <Skeleton label="Loading the runs per day" shape="chart" />
   ) : data.days.length === 0 ? (
     <Text as="p" tone="hint">
       No days in this range.

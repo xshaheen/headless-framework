@@ -15,3 +15,4 @@ export {
   useLocale,
   type LocaleProviderProps,
 } from './locale.tsx'
+export { relativeTickOf, useNow } from './now.ts'

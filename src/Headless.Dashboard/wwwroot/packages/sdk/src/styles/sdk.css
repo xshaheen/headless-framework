@@ -88,6 +88,8 @@
 
 @utility type-mono {
   font: var(--text-mono);
+  /* The font shorthand resets the numeric variant, so mono data keeps its aligned figures here, not in a sibling class. */
+  font-variant-numeric: tabular-nums;
 }
 
 @utility type-label {
@@ -126,13 +128,14 @@
 
 @utility type-stat {
   font: var(--text-stat);
+  font-variant-numeric: tabular-nums;
 }
 
 @utility type-tag {
   font: var(--text-tag);
 }
 
-/* Key caps and a progress caption: the tag size in mono. */
+/* Key caps: the tag size in mono. */
 @utility type-tag-mono {
   font: var(--text-tag);
   font-family: var(--mono);
@@ -146,10 +149,13 @@
 
 @utility type-axis {
   font: var(--text-axis);
+  font-variant-numeric: tabular-nums;
 }
 
 @utility type-mono-small {
   font: var(--text-mono-small);
+  /* The font shorthand resets the numeric variant, so mono data keeps its aligned figures here, not in a sibling class. */
+  font-variant-numeric: tabular-nums;
 }
 
 @utility type-nav {
@@ -293,10 +299,6 @@
     @apply flex flex-wrap items-center gap-2.5 rounded-md bg-primary-soft px-3 py-2;
   }
 
-  .hd-skeleton {
-    @apply h-(--row-height) rounded-md bg-muted;
-  }
-
   .hd-span-2 {
     grid-column: span 2;
   }
@@ -355,7 +357,17 @@
    * (`hd-btn hd-btn-primary`) and adds its own modifiers (`hd-icon`, `hd-quiet`) that must win over the base.
    */
   .hd-btn {
-    @apply inline-flex h-(--control-height) shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-edge bg-secondary px-3 font-medium whitespace-nowrap text-secondary-foreground transition-fast select-none;
+    @apply inline-flex h-(--control-height) shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-edge bg-secondary px-3 whitespace-nowrap text-secondary-foreground transition-fast select-none;
+    /* A button's label is a verb in the body face wherever it sits, so one inside a mono row or a small caption
+       reads the same as every other button rather than taking its container's font. */
+    font: var(--text-body);
+    font-weight: 500;
+  }
+
+  /* React Aria marks keyboard focus with `data-focus-visible`; a press that leaves the browser matching
+     `:focus-visible` anyway, such as focus restored after the button's content swapped, draws no ring. */
+  .hd-btn[data-rac]:focus-visible:not([data-focus-visible]) {
+    outline: none;
   }
 
   .hd-btn[data-hovered]:not([data-disabled], [data-soft-disabled]),

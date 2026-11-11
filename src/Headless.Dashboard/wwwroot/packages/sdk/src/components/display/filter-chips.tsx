@@ -23,7 +23,8 @@ export interface FilterChipProps {
   onClear?: () => void
 }
 
-const chip = 'inline-flex h-(--fchip-height) items-center gap-1.5 rounded-md border px-2 type-small text-muted-foreground transition-fast'
+// One control height, so a chip lines up with the buttons and compact fields that share its header row.
+const chip = 'inline-flex h-(--control-height) items-center gap-1.5 rounded-md border px-2 type-small whitespace-nowrap text-muted-foreground transition-fast'
 
 /** One filter as a chip: a toggle with its count, or a set filter with `Clear`. */
 export function FilterChip({ label, value, count, failing, title, pressed, onPress, onClear }: FilterChipProps) {

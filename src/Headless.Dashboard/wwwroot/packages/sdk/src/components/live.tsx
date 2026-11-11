@@ -133,7 +133,8 @@ export function ToastRegion() {
  * `shortText` in place of the value text, and an optional `detail` (such as when the value was reported) on one line
  * that ends in an ellipsis, for a table cell or a row note that must not grow taller than its row. The bar gives up
  * width before the text does, since the value and its detail are what an operator reads. Assistive technology still
- * reads the full `valueText`.
+ * reads the full `valueText`. The text is in sans with tabular figures, because it carries a message as well as the
+ * number, and a finished value shown as plain hint text then reads in the same face.
  */
 export function ProgressBar({
   label,
@@ -166,7 +167,7 @@ export function ProgressBar({
         <span className="block h-1 w-12 min-w-6 shrink overflow-hidden rounded-xs bg-muted" aria-hidden="true">
           <i className="block h-full rounded-xs bg-proc" style={{ inlineSize: `${percent}%` }} />
         </span>
-        <span className="min-w-0 truncate type-tag-mono text-faint tabular-nums">
+        <span className="min-w-0 truncate type-small text-faint tabular-nums">
           {shortText ?? valueText}
           {detail ? <> · {detail}</> : null}
         </span>
@@ -176,7 +177,7 @@ export function ProgressBar({
 
   return (
     <AriaProgressBar className="flex flex-col gap-1" aria-label={label} value={value} maxValue={Math.max(max, 1)} valueLabel={valueText}>
-      <span className="order-1 type-tag-mono text-faint tabular-nums">{valueText}</span>
+      <span className="order-1 type-small text-faint tabular-nums">{valueText}</span>
       <span className="block h-1 max-w-(--bar-max) overflow-hidden rounded-xs bg-muted" aria-hidden="true">
         <i className="block h-full rounded-xs bg-proc" style={{ inlineSize: `${percent}%` }} />
       </span>

@@ -10,25 +10,20 @@ import {
   PageFrame,
   PageHeader,
   Skeleton,
+  Text,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
+import { AttentionIcon, PlayIcon, RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef } from 'react'
 import { StatusDistribution, useRunsPerDay } from '../insight.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import {
-  JobsStats,
-  RunProgress,
-  StaleNotice,
-  Time,
-  useJobsAttention,
-  useJobsCounts,
-  type AttentionItem,
-} from '../parts.tsx'
+import { JobsStats, RunProgress, StaleNotice, useJobsAttention, useJobsCounts, type AttentionItem } from '../parts.tsx'
 import {
   fetchRuns,
   markDone,
@@ -73,7 +68,7 @@ export default function JobsDashboard() {
           description={
             next ? (
               <>
-                Next execution <Time value={next.at} /> · <Mono>{next.function}</Mono>
+                Next execution <Mono>{next.function}</Mono>, <RelativeTime value={next.at} scheduled />
               </>
             ) : undefined
           }
@@ -155,6 +150,8 @@ function ProcessingNow() {
   return (
     <Card
       title="Processing now"
+      icon={PlayIcon}
+      emptyIcon={PlayIcon}
       // The served count answers for the last fetch; while every running run is loaded, the shown rows are newer.
       caption={
         running.length > 0
@@ -178,6 +175,7 @@ function ProcessingNow() {
           tone="proc"
           name={<Link to={`/jobs/runs?status=InProgress&open=${encodeURIComponent(run.id)}`}>{run.function}</Link>}
           meta={run.node ? <Mono>{run.node}</Mono> : undefined}
+          title={run.node ? `${run.function} ${run.node}` : run.function}
           actions={
             cancel ? (
               <CommandAction
@@ -277,12 +275,13 @@ function RunsByStatus() {
         counts.isError ? (
           <LoadError message={counts.error.message} onRetry={() => void counts.refetch()} />
         ) : (
-          <Skeleton label="Loading the runs by status" rows={2} />
+          <Skeleton label="Loading the runs by status" shape="chart" />
         )
       }
     >
       {counts.data ? (
-        <CardRow name="All stored runs">
+        <CardRow>
+          <Text tone="hint">All stored runs</Text>
           <StatusDistribution
             counts={counts.data.counts}
             stale={counts.data.stale.length > 0}
@@ -300,8 +299,11 @@ function RunsPerDay() {
   const { control, body } = useRunsPerDay({ unit: 'runs', unitOne: 'run' })
 
   return (
-    <Card title="Runs per day" action={control}>
-      <CardRow name={`By execution day, ${format.timeZone}`}>{body}</CardRow>
+    <Card title="Runs per day" action={control} wide>
+      <CardRow>
+        <Text tone="hint">{`By execution day, ${format.timeZone}`}</Text>
+        {body}
+      </CardRow>
     </Card>
   )
 }
@@ -324,7 +326,10 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
   return (
     <Card
       title="Next recurring runs"
-      action={total > 0 ? <Link to="/jobs/cron-jobs">{`All ${total}`}</Link> : undefined}
+      icon={RecurringIcon}
+      emptyIcon={RecurringIcon}
+      caption={next.length > 0 ? `${next.length} scheduled` : undefined}
+      action={total > 0 ? <Link to="/jobs/cron-jobs">All</Link> : undefined}
       empty={
         list.isError ? (
           <LoadError message={list.error.message} onRetry={() => void list.refetch()} />
@@ -351,12 +356,16 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
           tone="sched"
           name={<Link to={`/jobs/cron-jobs/${encodeURIComponent(cronJob.id)}`}>{cronJob.function}</Link>}
           meta={cronJob.expression}
-          value={<Time value={cronJob.nextDueUtc} short />}
+          title={`${cronJob.function} ${cronJob.expression}`}
+          value={<RelativeTime value={cronJob.nextDueUtc} scheduled />}
         />
       ))}
     </Card>
   )
 }
+
+/** `37 failed runs of billing.charge`, as the server titles a failure group, split into its function and its count. */
+const failedRunsTitle = /^(\d[\d,]*\+? failed runs?) of (\S+)$/
 
 function attentionPath(item: AttentionItem) {
   const scope = item.recommended?.filter
@@ -377,7 +386,10 @@ function JobsAttention() {
   return (
     <Card
       title="Needs attention"
-      caption={items.length > 0 ? String(items.length) : undefined}
+      icon={AttentionIcon}
+      emptyIcon={AttentionIcon}
+      caption={items.length > 0 ? `${items.length} ${items.length === 1 ? 'item' : 'items'}` : undefined}
+      action={items.length > 0 ? <Link to="/jobs/runs?status=Failed">All</Link> : undefined}
       empty={
         answer.isError ? (
           <LoadError message={answer.error.message} onRetry={() => void answer.refetch()} />
@@ -388,14 +400,27 @@ function JobsAttention() {
         )
       }
     >
-      {items.map((item) => (
-        <CardRow
-          key={item.id}
-          tone={item.severity === 'critical' ? 'fail' : 'proc'}
-          name={<Link to={attentionPath(item)}>{item.title}</Link>}
-          value={item.lastSeenAt ? <Time value={item.lastSeenAt} short /> : undefined}
-        />
-      ))}
+      {items.map((item) => {
+        // The function is the identifier, so it leads the row in mono and the count follows as its fact; the link
+        // still answers to the whole title. A title in another shape reads as the prose it is.
+        const parts = failedRunsTitle.exec(item.title)
+
+        return (
+          <CardRow
+            key={item.id}
+            tone={item.severity === 'critical' ? 'fail' : 'proc'}
+            prose={!parts}
+            name={
+              <Link to={attentionPath(item)} aria-label={item.title}>
+                {parts ? <Mono>{parts[2]}</Mono> : item.title}
+              </Link>
+            }
+            meta={parts ? parts[1] : undefined}
+            title={item.title}
+            value={item.lastSeenAt ? <RelativeTime value={item.lastSeenAt} /> : undefined}
+          />
+        )
+      })}
     </Card>
   )
 }

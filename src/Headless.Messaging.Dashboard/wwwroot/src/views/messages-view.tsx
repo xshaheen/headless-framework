@@ -9,16 +9,19 @@ import {
   Banner,
   Button,
   DetailPanel,
+  EmptyState,
   FilterChip,
   FilterChips,
+  FilterSelect,
+  FilterToolbar,
   LoadError,
   Mono,
   PageFrame,
   PageHeader,
-  SelectField,
   Skeleton,
   StatusMark,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardKeysetList, useDashboardObject, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -32,7 +35,6 @@ import {
   NodeSwitch,
   QueryState,
   StaleNotice,
-  Time,
   offers,
   rowCommands,
   useConsumers,
@@ -261,6 +263,41 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           }
           count={count ? format.count(count) : undefined}
           description={state.description}
+          toolbar={
+            <FilterToolbar
+              active={(['store', 'consumer', 'name'] as const).filter((name) => filter[name]).length}
+              chips={
+                <>
+                  {failed ? (
+                    <FailureChips
+                      kind={kind}
+                      node={node}
+                      filter={filter}
+                      count={count ? format.count(count) : undefined}
+                      onPick={setFilter}
+                    />
+                  ) : null}
+                  {setFilters.length > 0 ? (
+                    <FilterChips label="Set filters">
+                      {setFilters.map(({ name, label }) => (
+                        <FilterChip
+                          key={name}
+                          label={label}
+                          value={filter[name]}
+                          onClear={() => setFilter({ [name]: '' })}
+                        />
+                      ))}
+                    </FilterChips>
+                  ) : null}
+                </>
+              }
+            >
+              <NodeSwitch />
+              {/* A state list keeps only the node, as the sidebar already chose the state: its other filters arrive
+                  by link and show as chips to clear. The All list offers every filter. */}
+              {all ? <ListFilters kind={kind} filter={filter} onPick={setFilter} /> : null}
+            </FilterToolbar>
+          }
           actions={
             allMatching && count ? (
               <MatchingActions kind={kind} filter={filter} node={node} count={format.count(count)} />
@@ -277,28 +314,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
               />
             ) : null
           }
-        >
-          <NodeSwitch />
-          {failed ? (
-            <FailureChips
-              kind={kind}
-              node={node}
-              filter={filter}
-              count={count ? format.count(count) : undefined}
-              onPick={setFilter}
-            />
-          ) : null}
-          {/* A state list keeps its header to one row, as the sidebar already chose the state: its other filters
-              arrive by link and show as chips to clear. The All list offers every filter. */}
-          {all ? <ListFilters kind={kind} filter={filter} onPick={setFilter} /> : null}
-          {setFilters.length > 0 ? (
-            <FilterChips label="Set filters">
-              {setFilters.map(({ name, label }) => (
-                <FilterChip key={name} label={label} value={filter[name]} onClear={() => setFilter({ [name]: '' })} />
-              ))}
-            </FilterChips>
-          ) : null}
-        </PageHeader>
+        />
       }
       panel={panel}
     >
@@ -308,7 +324,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           {`Some stores did not answer, so their messages are missing: ${unavailable.join(', ')}.`}
         </Banner>
       ) : null}
-      <QueryState query={list} label={`Loading ${kind} messages`} rows={6}>
+      <QueryState query={list} label={`Loading ${kind} messages`} rows={6} shape="table">
         {() => (
           <MessagesTable
             // A new filter is a new list: the held rows and the scroll start again.
@@ -378,7 +394,7 @@ function ListFilters({
   return (
     <>
       {kind === 'published' ? (
-        <SelectField
+        <FilterSelect
           label="Store"
           emptyLabel="Any store"
           value={filter.store}
@@ -386,7 +402,7 @@ function ListFilters({
           options={optionsOf(served?.stores ?? [], filter.store)}
         />
       ) : (
-        <SelectField
+        <FilterSelect
           label="Consumer"
           emptyLabel="Any consumer"
           value={filter.consumer}
@@ -397,7 +413,7 @@ function ListFilters({
           )}
         />
       )}
-      <SelectField
+      <FilterSelect
         label="Message"
         emptyLabel="Any message"
         value={filter.name}
@@ -450,6 +466,7 @@ function MessagesTable({
         <Mono>{row.failureFingerprint ?? ''}</Mono>
       </CellText>
     ),
+    kind: 'id',
     priority: 2,
     width: '1.5fr',
   }
@@ -461,6 +478,7 @@ function MessagesTable({
         <Mono>{row.consumer ?? ''}</Mono>
       </CellText>
     ),
+    kind: 'id',
     priority: 2,
     width: '2fr',
   }
@@ -497,6 +515,7 @@ function MessagesTable({
             </CellText>
           ),
           isRowHeader: true,
+          kind: 'id',
           width: '2fr',
         },
         {
@@ -507,6 +526,7 @@ function MessagesTable({
               <StatusMark {...rowMark(row, pending.labelOf(row))} />
             </CellText>
           ),
+          kind: 'status',
           width: 130,
         },
         ...(kind === 'received' ? [consumerColumn] : [storeColumn]),
@@ -515,7 +535,7 @@ function MessagesTable({
           id: 'retries',
           header: 'Retries',
           cell: (row) => format.number(row.retries),
-          align: 'end',
+          kind: 'number',
           priority: 2,
           width: 80,
         },
@@ -524,9 +544,10 @@ function MessagesTable({
           header: failed ? 'Failed at' : 'Added',
           cell: (row) => (
             <CellText>
-              <Time value={failed ? (row.changedAt ?? row.added) : row.added} short />
+              <RelativeTime value={failed ? (row.changedAt ?? row.added) : row.added} />
             </CellText>
           ),
+          kind: 'time',
           width: 110,
         },
       ]}
@@ -713,12 +734,12 @@ function LookedUp({ kind, node, id, pending }: { kind: MessageKind; node: string
     <DetailPanel label={`Message ${id}`} name="Message" id={id}>
       {detail.isError ? (
         detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
-          <p role="alert">This message no longer exists.</p>
+          <EmptyState role="alert" title="This message no longer exists." />
         ) : (
           <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
         )
       ) : (
-        <Skeleton label="Loading the message" />
+        <Skeleton label="Loading the message" shape="fields" rows={4} />
       )}
     </DetailPanel>
   )

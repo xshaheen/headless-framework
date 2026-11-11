@@ -8,16 +8,19 @@ import {
 import {
   Button,
   DetailPanel,
+  EmptyState,
   FilterChip,
   FilterChips,
+  FilterSelect,
+  FilterToolbar,
   LoadError,
   Mono,
   PageFrame,
   PageHeader,
-  SelectField,
   Skeleton,
   StatusMark,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import {
   DashboardApiError,
@@ -45,7 +48,6 @@ import {
   QueryState,
   RunPanel,
   StaleNotice,
-  Time,
   useFunctions,
   useJobsAttention,
 } from '../parts.tsx'
@@ -343,6 +345,70 @@ export default function RunsView() {
           tone={status ? runStatusMark({ status }).tone : undefined}
           count={count ? format.count(count) : undefined}
           description={state?.description ?? 'Every time job and cron occurrence, newest first.'}
+          toolbar={
+            <FilterToolbar
+              active={[filter.kind, filter.function, filter.range, range].filter(Boolean).length}
+              chips={
+                <>
+                  {status === 'Failed' ? (
+                    <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} />
+                  ) : null}
+                  {setFilters.length > 0 ? (
+                    <FilterChips label="Set filters">
+                      {setFilters.map(({ name, label }) => (
+                        <FilterChip key={name} label={label} value={filter[name]} onClear={() => setFilter(name, '')} />
+                      ))}
+                    </FilterChips>
+                  ) : null}
+                </>
+              }
+              search={
+                // Restarted with the current text, so emptying the day picker never empties a search still applied.
+                <SearchField
+                  key={`search-${scopeReset}`}
+                  label="Search runs"
+                  placeholder="Function, id, key, description"
+                  compact
+                  defaultValue={search}
+                  onSearch={setSearch}
+                />
+              }
+              // The day range sits behind More filters, so the row stays one line beside the title at 1024 px.
+              more={
+                status ? undefined : (
+                  <DateRangeField key={`range-${scopeReset}`} label="Due between" onChange={pickRange} compact />
+                )
+              }
+            >
+              {/* A state list keeps only the search, as the sidebar already chose the state: its other filters
+                  arrive by link and show as chips to clear. The All runs list offers every filter. */}
+              {status ? null : (
+                <>
+                  <FilterSelect
+                    label="Kind"
+                    emptyLabel="Any kind"
+                    value={filter.kind}
+                    onChange={(value) => setFilter('kind', value)}
+                    options={kindOptions}
+                  />
+                  <FilterSelect
+                    label="Function"
+                    emptyLabel="Any function"
+                    value={filter.function}
+                    onChange={(value) => setFilter('function', value)}
+                    options={functionOptions}
+                  />
+                  <FilterSelect
+                    label="Time range"
+                    emptyLabel="Any time"
+                    value={filter.range}
+                    onChange={(value) => setFilter('range', value)}
+                    options={rangeOptions}
+                  />
+                </>
+              )}
+            </FilterToolbar>
+          }
           actions={
             <>
               {allMatching && count ? (
@@ -372,59 +438,12 @@ export default function RunsView() {
               </Button>
             </>
           }
-        >
-          {status === 'Failed' ? (
-            <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} />
-          ) : null}
-          {/* Restarted with the current text, so emptying the day picker never empties a search still applied. */}
-          <SearchField
-            key={`search-${scopeReset}`}
-            label="Search runs"
-            placeholder="Function, id, key, description"
-            defaultValue={search}
-            onSearch={setSearch}
-          />
-          {/* A state list keeps its header to one row, as the sidebar already chose the state: its other filters
-              arrive by link and show as chips to clear. The All runs list offers every filter. */}
-          {status ? null : (
-            <>
-              <SelectField
-                label="Kind"
-                emptyLabel="Any kind"
-                value={filter.kind}
-                onChange={(value) => setFilter('kind', value)}
-                options={kindOptions}
-              />
-              <SelectField
-                label="Function"
-                emptyLabel="Any function"
-                value={filter.function}
-                onChange={(value) => setFilter('function', value)}
-                options={functionOptions}
-              />
-              <SelectField
-                label="Time range"
-                emptyLabel="Any time"
-                value={filter.range}
-                onChange={(value) => setFilter('range', value)}
-                options={rangeOptions}
-              />
-              <DateRangeField key={`range-${scopeReset}`} label="Due between" onChange={pickRange} />
-            </>
-          )}
-          {setFilters.length > 0 ? (
-            <FilterChips label="Set filters">
-              {setFilters.map(({ name, label }) => (
-                <FilterChip key={name} label={label} value={filter[name]} onClear={() => setFilter(name, '')} />
-              ))}
-            </FilterChips>
-          ) : null}
-        </PageHeader>
+        />
       }
       panel={panel}
     >
       <StaleNotice what="these runs" onRefresh={() => void list.refetch()} />
-      <QueryState query={list} label="Loading runs" rows={6}>
+      <QueryState query={list} label="Loading runs" rows={6} shape="table">
         {() => (
           <RunsTable
             // A new filter is a new list: the held rows and the scroll start again.
@@ -525,6 +544,7 @@ function RunsTable({
             </CellText>
           ),
           isRowHeader: true,
+          kind: 'id',
           width: '2fr',
           sortKey: 'function',
         },
@@ -536,6 +556,7 @@ function RunsTable({
               <StatusMark {...runStatusMark(run, pending.labelOf(run))} />
             </CellText>
           ),
+          kind: 'status',
           width: 130,
           sortKey: 'status',
         },
@@ -561,7 +582,7 @@ function RunsTable({
           id: 'retries',
           header: 'Retries',
           cell: (run) => format.number(run.retryCount),
-          align: 'end',
+          kind: 'number',
           priority: 2,
           width: 80,
         },
@@ -569,7 +590,7 @@ function RunsTable({
           id: 'duration',
           header: 'Duration',
           cell: (run) => (run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : ''),
-          align: 'end',
+          kind: 'duration',
           priority: 2,
           width: 100,
         },
@@ -578,12 +599,12 @@ function RunsTable({
           header: failed ? 'Failed at' : 'Due',
           cell: (run) => (
             <CellText>
-              <Time
+              <RelativeTime
                 value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)}
-                short
               />
             </CellText>
           ),
+          kind: 'time',
           width: 110,
           // The Failed list shows when each run failed, while the server sorts by when it was due.
           ...(failed ? {} : { sortKey: 'executionTime' }),
@@ -749,12 +770,12 @@ function LookedUpRun({ id, pending }: { id: string; pending: Pending }) {
     <DetailPanel label={`Run ${id}`} name="Run" id={id}>
       {detail.isError ? (
         detail.error instanceof DashboardApiError && detail.error.status === 404 ? (
-          <p role="alert">This run no longer exists.</p>
+          <EmptyState role="alert" title="This run no longer exists." />
         ) : (
           <LoadError message={detail.error.message} onRetry={() => void detail.refetch()} />
         )
       ) : (
-        <Skeleton label="Loading the run" />
+        <Skeleton label="Loading the run" shape="fields" rows={4} />
       )}
     </DetailPanel>
   )

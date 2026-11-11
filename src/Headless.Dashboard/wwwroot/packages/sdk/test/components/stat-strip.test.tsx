@@ -20,6 +20,16 @@ describe('StatStrip', () => {
     expect(within(strip).queryByRole('img')).toBeNull()
   })
 
+  it('gives a served caption its whole text on hover, since the cell clamps it to two lines', () => {
+    render(
+      <StatStrip label="Runs by state">
+        <StatCard label="Succeeded, 24 h" value="28.6 %" caption="no runs finished in the previous 24 h" />
+      </StatStrip>,
+    )
+
+    expect(screen.getByTitle('no runs finished in the previous 24 h').textContent).toBe('no runs finished in the previous 24 h')
+  })
+
   it('links a card to the list it counts', () => {
     const router = createMemoryRouter([{ path: '/', element: <StatCard label="Failed" value="23" tone="fail" to="/jobs/runs?status=Failed" /> }])
     render(<RouterProvider router={router} />)

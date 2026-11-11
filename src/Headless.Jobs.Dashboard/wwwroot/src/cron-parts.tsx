@@ -3,6 +3,7 @@ import { CommandAction, createCommandsApi, useAllowedActions } from '@headless/d
 import {
   Button,
   DetailPanel,
+  EmptyState,
   FieldGrid,
   Fields,
   GridField,
@@ -11,8 +12,10 @@ import {
   Mono,
   Skeleton,
   Text,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardObject } from '@headless/dashboard-sdk/data'
+import { RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
@@ -20,7 +23,7 @@ import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useState } from 'react'
 import { cronJobsTopic, cronStatusMark, fetchCronJob, fetchPreview, type CronJob } from './cron.ts'
 import { useRunsPerDay } from './insight.tsx'
-import { firstLine, RunProgress, Time } from './parts.tsx'
+import { firstLine, RunProgress } from './parts.tsx'
 import {
   fetchRuns,
   readRunProjection,
@@ -90,7 +93,7 @@ export function NextFires({
   const label = `Next fires, ${zone ?? 'scheduler zone'}`
 
   if (!fires && !paused) {
-    return <Skeleton label="Loading the next fires" rows={2} />
+    return <Skeleton label="Loading the next fires" rows={5} shape="lines" />
   }
 
   return (
@@ -106,7 +109,9 @@ export function NextFires({
         <ol aria-label={label}>
           {fires.map((fire) => (
             <li key={fire}>
-              <time dateTime={fire}>{zone ? format.zonedTime(fire, zone) : format.exactTime(fire)}</time>
+              <time dateTime={fire}>
+                <Mono>{zone ? format.zonedTime(fire, zone) : format.exactTime(fire)}</Mono>
+              </time>
             </li>
           ))}
         </ol>
@@ -170,7 +175,9 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
           {shown.reading}
           <ol aria-label={`Next fires, ${shown.timeZoneId}`}>
             {shown.nextFires.map((fire) => (
-              <li key={fire}>{format.zonedTime(fire, shown.timeZoneId)}</li>
+              <li key={fire}>
+                <Mono>{format.zonedTime(fire, shown.timeZoneId)}</Mono>
+              </li>
             ))}
           </ol>
         </span>
@@ -224,7 +231,7 @@ export function CronFields({ cronJob }: { cronJob: CronJob }) {
       <GridField label="Overlap">{cronJob.onOverlap === 'Skip' ? 'Skip while running' : 'Allow'}</GridField>
       <GridField label="Retries">{format.number(cronJob.retries)}</GridField>
       <GridField label="Next due" span={2}>
-        {cronJob.isPaused ? 'Paused' : <Time value={cronJob.nextDueUtc} zone={zone} />}
+        {cronJob.isPaused ? 'Paused' : <RelativeTime value={cronJob.nextDueUtc} zone={zone} scheduled />}
       </GridField>
     </FieldGrid>
   )
@@ -384,20 +391,22 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
   }
 
   if (occurrences.query.isPending) {
-    return <Skeleton label="Loading the occurrences" rows={3} />
+    return <Skeleton label="Loading the occurrences" rows={3} shape="rows" />
   }
 
   return (
     <div>
       {rows.length === 0 ? (
-        <p>No occurrences in the last 24 hours. One appears each time the cron job fires.</p>
+        <EmptyState icon={RecurringIcon} title="No occurrences in the last 24 hours.">
+          One appears each time the cron job fires.
+        </EmptyState>
       ) : (
         <>
           <HistoryList
             label="Occurrences"
             items={rows.map((run) => ({
               key: run.id,
-              time: <Time value={run.executionTime ?? run.createdAt} short />,
+              time: <RelativeTime value={run.executionTime ?? run.createdAt} />,
               tone: runStatusMark(run).tone,
               state: statusLabel(run.status),
               // Progress joins the note rather than replacing it, so the node, a skip reason, or a failure's first

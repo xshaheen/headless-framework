@@ -115,15 +115,21 @@
 
   --topbar-height: 48px;
   --sidebar-width: 208px;
-  --statstrip-height: 85px;
+  /* A stat cell with its label, value, and a two-line caption; every cell stands this tall, so the strip is one height. */
+  --statstrip-height: 96px;
   --row-height: 34px;
   --row-height-compact: 28px;
   --card-row-height: 40px;
-  --chip-height: 22px;
-  --fchip-height: 26px;
-  --seg-form-height: 24px;
+  /* A card row's value column: wide enough for `due 42 sec. ago`, so every row's time ends on the same edge. */
+  --card-value-width: 7rem;
+  /* A page header's search field and a filter chip's longest reading, so a toolbar lays out the same in every view. */
+  --search-width: 14rem;
+  --filter-max-width: 16rem;
+  /* A segment inside the 28 px control track, which the track's 2 px padding fills out to --control-height. */
+  --seg-height: 24px;
   --tag-height: 18px;
   --tag-pill-height: 20px;
+  --mark-size: 22px;
   --icon: 15px;
   --icon-sm: 13px;
   --grip-width: 36px;

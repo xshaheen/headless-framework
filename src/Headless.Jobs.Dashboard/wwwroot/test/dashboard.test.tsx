@@ -13,6 +13,13 @@ afterEach(() => {
   localStorage.clear()
 })
 
+/** Each row of a table as the text of its cells, header row first. */
+function cellsOf(table: HTMLElement) {
+  return within(table)
+    .getAllByRole('row')
+    .map((row) => [...row.querySelectorAll('th, td')].map((cell) => cell.textContent))
+}
+
 function described(button: HTMLElement) {
   return document.getElementById(button.getAttribute('aria-describedby')!)?.textContent
 }
@@ -247,9 +254,30 @@ describe('jobs dashboard', () => {
           .map((item) => item.querySelector('a')?.textContent),
       ).toEqual(['sandbox.progress', 'reports.daily']),
     )
-    expect(within(card).getByRole('link', { name: 'All 3' }).getAttribute('href')).toBe('/jobs/cron-jobs')
+    expect(within(card).getByRole('link', { name: 'All' }).getAttribute('href')).toBe('/jobs/cron-jobs')
+    expect(within(card).getByText('2 scheduled')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' }).closest('header')?.textContent).toContain(
-      'Next execution in 6 seconds · sandbox.progress',
+      'Next execution sandbox.progress, in 6 sec.',
+    )
+    expect(within(card).getAllByRole('listitem')[0]!.textContent).toContain('in 6 sec.')
+  })
+
+  it('says a next fire that has passed is due, in the header and in the card', async () => {
+    open({
+      cronJobs: [
+        cronJob({
+          id: 'c1',
+          function: 'sandbox.overlap-fails',
+          expression: '*/5 * * * * *',
+          nextDueUtc: '2026-11-05T09:59:18Z',
+        }),
+      ],
+    })
+
+    const card = await screen.findByRole('region', { name: 'Next recurring runs' })
+    await waitFor(() => expect(within(card).getByRole('listitem').textContent).toContain('due 42 sec. ago'))
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' }).closest('header')?.textContent).toContain(
+      'Next execution sandbox.overlap-fails, due 42 sec. ago',
     )
   })
 
@@ -297,6 +325,8 @@ describe('jobs dashboard', () => {
     expect(
       (await within(card).findByRole('link', { name: '3 failed runs of billing.charge' })).getAttribute('href'),
     ).toBe('/jobs/runs?status=Failed&function=billing.charge&fingerprint=v1%3Acard')
+    // The function leads the row as its identifier and the count follows as its fact.
+    expect(within(card).getAllByRole('listitem')[0]!.textContent).toBe('billing.charge3 failed runs')
     expect(within(card).getByRole('link', { name: 'No live node runs mail.send' }).getAttribute('href')).toBe(
       '/jobs/functions/mail.send',
     )
@@ -325,7 +355,7 @@ describe('jobs dashboard', () => {
     })
 
     const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
-    await waitFor(() => expect(header.textContent).toContain('Next execution in 2 hours · export.ledger'))
+    await waitFor(() => expect(header.textContent).toContain('Next execution export.ledger, in 2 hr.'))
     expect(view.requests.find((request) => request.query?.kind === 'TimeJob')?.query).toMatchObject({
       status: ['Idle', 'Queued'],
       from: expect.stringMatching(/^2026-11-05T10:00:/),
@@ -373,7 +403,7 @@ describe('jobs dashboard', () => {
     waiting.push(due)
     act(() => view.stream.push('change', { ...change(due), projection: null }))
 
-    await waitFor(() => expect(header.textContent).toContain('Next execution in 2 hours · export.ledger'))
+    await waitFor(() => expect(header.textContent).toContain('Next execution export.ledger, in 2 hr.'))
   })
 
   it('keeps the next cron fire as the next execution when no time job is due before it', async () => {
@@ -390,7 +420,7 @@ describe('jobs dashboard', () => {
     })
 
     const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
-    await waitFor(() => expect(header.textContent).toContain('Next execution in 60 minutes · reports.nightly'))
+    await waitFor(() => expect(header.textContent).toContain('Next execution reports.nightly, in 60 min.'))
   })
 })
 
@@ -424,11 +454,11 @@ describe('jobs dashboard status distribution', () => {
 
     const card = await screen.findByRole('region', { name: 'Runs by status' })
     const table = await within(card).findByRole('table', { name: 'Runs by status' })
-    const rows = within(table)
-      .getAllByRole('row')
-      .map((row) => row.textContent)
-    expect(rows).toContain('Failed10,000+ runs')
-    expect(rows).toContain('Succeeded4,210 runs')
+    // The caption names the unit once; each count cell is the number alone.
+    expect(within(table).getByText('Counts in runs')).toBeTruthy()
+    const rows = cellsOf(table)
+    expect(rows).toContainEqual(['Failed', '10,000+'])
+    expect(rows).toContainEqual(['Succeeded', '4,210'])
     expect(table.textContent).not.toContain('%')
     expect(within(table).queryByRole('columnheader', { name: 'Share' })).toBeNull()
     expect(within(card).queryByRole('img')).toBeNull()
@@ -446,11 +476,7 @@ describe('jobs dashboard status distribution', () => {
 
     await actor.click(within(card).getByRole('button', { name: 'Show list' }))
     const table = within(card).getByRole('table', { name: 'Runs by status' })
-    expect(
-      within(table)
-        .getAllByRole('row')
-        .map((row) => row.textContent),
-    ).toContain('Succeeded4,210 runs98.2%')
+    expect(cellsOf(table)).toContainEqual(['Succeeded', '4,210', '98.2%'])
     expect(within(card).queryByRole('img')).toBeNull()
   })
 })
@@ -473,14 +499,17 @@ describe('jobs dashboard runs per day', () => {
     )
 
     await actor.click(within(card).getByRole('button', { name: 'Show list' }))
-    const rows = within(within(card).getByRole('table', { name: 'Runs per day by status' })).getAllByRole('row')
-    const unread = rows.find((row) => row.textContent?.startsWith('Nov 3'))!
-    expect(unread.textContent).toContain('not measured')
-    expect(unread.textContent).not.toContain('0 runs')
-    expect(rows.find((row) => row.textContent?.startsWith('Nov 4'))?.textContent).toContain('3 runs')
+    const table = within(card).getByRole('table', { name: 'Runs per day by status' })
+    expect(within(table).getByText('Values in runs')).toBeTruthy()
+    const rows = cellsOf(table)
+    const unread = rows.find((row) => row[0] === 'Nov 3')!
+    expect(unread.slice(1).every((cell) => cell === 'not measured')).toBe(true)
+    // Numbers alone: the unit is in the caption, never in a cell.
+    expect(rows.find((row) => row[0] === 'Nov 4')).toContain('3')
+    expect(rows.flat().some((cell) => cell?.includes('runs'))).toBe(false)
     // Today is Nov 5 in Cairo; the days after it count scheduled runs.
-    expect(rows.find((row) => row.textContent?.startsWith('Nov 5'))?.textContent).toContain('Nov 5 · Today')
-    expect(rows.find((row) => row.textContent?.startsWith('Nov 12'))?.textContent).toContain('Nov 12 · scheduled')
+    expect(rows.map((row) => row[0])).toContain('Nov 5 · Today')
+    expect(rows.map((row) => row[0])).toContain('Nov 12 · scheduled')
   })
 
   it('reads the days again once a burst of run changes ends', async () => {

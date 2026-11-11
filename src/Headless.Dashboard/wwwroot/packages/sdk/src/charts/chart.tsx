@@ -60,7 +60,7 @@ function TimeSeriesChart(props: TimeSeriesChartProps) {
       tones={props.series.map((item) => item.tone)}
       sentence={timeSeriesSentence(props, rows, format)}
       drawing={<TimeSeriesDrawing props={props} rows={rows} format={format} />}
-      list={<BucketList label={props.label} series={props.series.map((item) => item.name)} rows={rows} />}
+      list={<BucketList label={props.label} unit={props.unit} series={props.series.map((item) => item.name)} rows={rows} />}
     />
   )
 }
@@ -81,7 +81,7 @@ function DonutChart(props: DonutChartProps) {
 
     return (
       <figure className="flex min-w-0 flex-col gap-2" style={seriesVariables(tones) as CSSProperties}>
-        <PartList label={props.label} rows={rows} />
+        <PartList label={props.label} unit={props.unit} rows={rows} />
         <figcaption className="type-small">
           <Text tone="faint">{`${covers}These counts are partial, so no shares are shown.`}</Text>
         </figcaption>
@@ -95,7 +95,7 @@ function DonutChart(props: DonutChartProps) {
       tones={tones}
       sentence={donutSentence(props, rows, format)}
       drawing={<DonutDrawing rows={rows} props={props} />}
-      list={<PartList label={props.label} rows={rows} />}
+      list={<PartList label={props.label} unit={props.unit} rows={rows} />}
     />
   )
 }
@@ -205,18 +205,21 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
       ),
     [series, length],
   )
-  const top = useMemo(
-    () =>
-      Math.max(
-        0,
-        ...Array.from({ length }, (_, index) => {
-          const values = series.map((item) => item.points[index] ?? 0)
+  // An empty range still draws its grid from zero to one, so the labels read that scale instead of zero on every line.
+  // A series of whole counts rounds its top up to an even number, so the middle label is a count too, never "15.5 runs".
+  const top = useMemo(() => {
+    const highest = Math.max(
+      0,
+      ...Array.from({ length }, (_, index) => {
+        const values = series.map((item) => item.points[index] ?? 0)
 
-          return kind === 'stacked-bar' ? values.reduce((sum, value) => sum + value, 0) : Math.max(0, ...values)
-        }),
-      ),
-    [series, kind, length],
-  )
+        return kind === 'stacked-bar' ? values.reduce((sum, value) => sum + value, 0) : Math.max(0, ...values)
+      }),
+    )
+    const isCounts = series.every((item) => item.points.every((point) => point === null || Number.isInteger(point)))
+
+    return isCounts ? Math.max(2, Math.ceil(highest / 2) * 2) : highest || 1
+  }, [series, kind, length])
   // Recharts draws no axis: its axes measure text through a node it adds to the page. The labels are text beside the
   // drawing, as the SDK's other charts draw them, and the image's sentence already says the range.
   const shared = {
@@ -230,7 +233,7 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
     <>
       <CartesianGrid vertical={false} stroke="var(--line)" />
       <XAxis dataKey="bucket" hide />
-      <YAxis hide domain={[0, top || 1]} />
+      <YAxis hide domain={[0, top]} />
       <Tooltip
         isAnimationActive={false}
         cursor={{ stroke: 'var(--line)', fill: 'var(--hover)' }}
@@ -365,12 +368,28 @@ function TooltipBody({ title, entries }: { title: string; entries: readonly (rea
   )
 }
 
-const listClasses = 'w-full type-mono-small tabular-nums [&_td]:border-t [&_td]:border-border [&_td]:py-1 [&_th]:py-1 [&_th]:font-medium [&_th]:text-muted-foreground'
+// The list is a small data table: sans headers that never wrap, numbers alone in tabular mono at the inline end, and
+// the unit said once in the caption rather than in every cell. Cells pad 8 between columns; the first and last sit on
+// the card row's own inset, so the table lines up with the legend above it. Too wide for its card, it scrolls inside.
+const listClasses =
+  'w-full type-small tabular-nums [&_:is(th,td)]:px-2 [&_:is(th,td)]:whitespace-nowrap [&_:is(th,td):first-child]:ps-0 [&_:is(th,td):last-child]:pe-0 [&_td]:border-t [&_td]:border-border [&_td]:py-1 [&_th]:pb-1 [&_th]:type-label [&_th]:text-faint'
+const numberCell = 'text-end type-mono-small text-foreground'
 
-function BucketList({ label, series, rows }: { label: string; series: readonly string[]; rows: readonly BucketRow[] }) {
+/** The unit, stated once for every number in the table. */
+function ListCaption({ children }: { children: string }) {
+  return <caption className="pb-1 text-start text-muted-foreground">{children}</caption>
+}
+
+/** A value the server did not measure: said in words, never a zero. */
+function NumberCell({ value }: { value: string | null }) {
+  return <td className={value === null ? 'text-end text-muted-foreground' : numberCell}>{value ?? 'not measured'}</td>
+}
+
+function BucketList({ label, unit, series, rows }: { label: string; unit: string; series: readonly string[]; rows: readonly BucketRow[] }) {
   return (
-    <div className="max-h-[calc(var(--chart-height)*2)] overflow-auto">
+    <div className="max-h-[calc(var(--chart-height)*2)] min-w-0 overflow-auto">
       <table aria-label={label} className={listClasses}>
+        <ListCaption>{`Values in ${unit}`}</ListCaption>
         <thead>
           <tr>
             <th scope="col" className="text-start">Time</th>
@@ -382,9 +401,9 @@ function BucketList({ label, series, rows }: { label: string; series: readonly s
         <tbody>
           {rows.map((row, index) => (
             <tr key={index}>
-              <td>{bucketName(row)}</td>
-              {row.values.map((value, at) => (
-                <td key={at} className="text-end">{value}</td>
+              <td className="type-mono-small text-foreground">{bucketName(row)}</td>
+              {row.numbers.map((value, at) => (
+                <NumberCell key={at} value={value} />
               ))}
             </tr>
           ))}
@@ -394,32 +413,35 @@ function BucketList({ label, series, rows }: { label: string; series: readonly s
   )
 }
 
-function PartList({ label, rows }: { label: string; rows: readonly PartRow[] }) {
+function PartList({ label, unit, rows }: { label: string; unit: string; rows: readonly PartRow[] }) {
   const shares = rows.every((row) => row.share !== null)
 
   return (
-    <table aria-label={label} className={listClasses}>
-      <thead>
-        <tr>
-          <th scope="col" className="text-start">Part</th>
-          <th scope="col" className="text-end">Count</th>
-          {shares ? <th scope="col" className="text-end">Share</th> : null}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, index) => (
-          <tr key={row.name}>
-            <td>
-              <span className="flex items-center gap-1.5">
-                <Swatch index={index} />
-                {row.name}
-              </span>
-            </td>
-            <td className="text-end">{row.count}</td>
-            {shares ? <td className="text-end">{row.share}</td> : null}
+    <div className="min-w-0 overflow-x-auto">
+      <table aria-label={label} className={listClasses}>
+        <ListCaption>{`Counts in ${unit}`}</ListCaption>
+        <thead>
+          <tr>
+            <th scope="col" className="text-start">Part</th>
+            <th scope="col" className="text-end">Count</th>
+            {shares ? <th scope="col" className="text-end">Share</th> : null}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.name}>
+              <td className="text-foreground">
+                <span className="flex items-center gap-1.5">
+                  <Swatch index={index} />
+                  {row.name}
+                </span>
+              </td>
+              <NumberCell value={row.number} />
+              {shares ? <NumberCell value={row.share} /> : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

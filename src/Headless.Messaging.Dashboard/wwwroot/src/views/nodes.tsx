@@ -45,7 +45,7 @@ export default function NodesView() {
       panel={open ? <NodePanel node={open} forwarding={forwarding} /> : undefined}
     >
       <StaleNotice what="these nodes" onRefresh={() => void nodes.refetch()} />
-      <QueryState query={nodes} label="Loading nodes" rows={3}>
+      <QueryState query={nodes} label="Loading nodes" rows={3} shape="table">
         {() => (
           <DataTable
             label="Nodes"
@@ -63,6 +63,7 @@ export default function NodesView() {
                   </CellText>
                 ),
                 isRowHeader: true,
+                kind: 'id',
                 width: '2fr',
               },
               {
@@ -77,6 +78,7 @@ export default function NodesView() {
                     </CellText>
                   )
                 },
+                kind: 'status',
                 width: 150,
               },
               {

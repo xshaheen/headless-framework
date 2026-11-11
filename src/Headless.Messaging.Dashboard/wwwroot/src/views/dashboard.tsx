@@ -4,14 +4,18 @@ import {
   Card,
   CardRow,
   Cards,
+  FilterToolbar,
   LoadError,
   Mono,
   PageFrame,
   PageHeader,
   Skeleton,
   usePageFrame,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList } from '@headless/dashboard-sdk/data'
+import { AttentionIcon, PublishedIcon, ReceivedIcon } from '@headless/dashboard-sdk/icons'
+import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import {
@@ -29,7 +33,6 @@ import {
   MessagingStats,
   NodeSwitch,
   StaleNotice,
-  Time,
   useMessagingAttention,
   useNode,
   useNodeReset,
@@ -61,9 +64,14 @@ export default function MessagingDashboard() {
       frame={frame}
       stats={<MessagingStats />}
       header={
-        <PageHeader title="Dashboard">
-          <NodeSwitch />
-        </PageHeader>
+        <PageHeader
+          title="Dashboard"
+          toolbar={
+            <FilterToolbar>
+              <NodeSwitch />
+            </FilterToolbar>
+          }
+        />
       }
     >
       <StaleNotice
@@ -78,6 +86,9 @@ export default function MessagingDashboard() {
     </PageFrame>
   )
 }
+
+/** `3 messages received by sandbox.orders failed for good`, as the server titles a failure group, split into parts. */
+const failedGroupTitle = /^(\d[\d,]*\+? messages?) received by (\S+) (failed .*)$/
 
 /** Where an attention item leads: a failure group's failed rows, or the unknown lanes. */
 function attentionPath(item: AttentionItem) {
@@ -100,7 +111,13 @@ function MessagingAttention() {
   return (
     <Card
       title="Needs attention"
-      caption={items.length > 0 ? `${items.length}${complete ? '' : '+'}` : undefined}
+      icon={AttentionIcon}
+      emptyIcon={AttentionIcon}
+      caption={
+        items.length > 0
+          ? `${items.length}${complete ? '' : '+'} ${items.length === 1 && complete ? 'item' : 'items'}`
+          : undefined
+      }
       empty={
         answer.isError ? (
           <LoadError message={answer.error.message} onRetry={retry} />
@@ -117,13 +134,28 @@ function MessagingAttention() {
         ? [
             ...items.map((item) => {
               const path = attentionPath(item)
+              // The consumer is the identifier, so it leads the row in mono and the count follows as its fact; the
+              // link still answers to the whole title. A title in another shape reads as the prose it is.
+              const parts = failedGroupTitle.exec(item.title)
+              const name = parts ? <Mono>{parts[2]}</Mono> : item.title
 
               return (
                 <CardRow
                   key={item.id}
                   tone={item.severity === 'critical' ? 'fail' : 'proc'}
-                  name={path ? <Link to={path}>{item.title}</Link> : item.title}
-                  value={item.lastSeenAt ? <Time value={item.lastSeenAt} short /> : undefined}
+                  prose={!parts}
+                  name={
+                    path ? (
+                      <Link to={path} aria-label={item.title}>
+                        {name}
+                      </Link>
+                    ) : (
+                      name
+                    )
+                  }
+                  meta={parts ? `${parts[1]} ${parts[3]}` : undefined}
+                  title={item.title}
+                  value={item.lastSeenAt ? <RelativeTime value={item.lastSeenAt} /> : undefined}
                 />
               )
             }),
@@ -150,6 +182,7 @@ function MessagingAttention() {
 /** The newest failed rows of one kind on the node the views read, each opening in its list. */
 function RecentFailures({ kind }: { kind: MessageKind }) {
   const { api } = useDashboard()
+  const format = useFormat()
   const { node } = useNode()
   const filter = readFilter(failedParams, kind)
   const failed = useDashboardKeysetList<MessageRow>({
@@ -164,6 +197,9 @@ function RecentFailures({ kind }: { kind: MessageKind }) {
   return (
     <Card
       title={kind === 'received' ? 'Recent received failures' : 'Recent published failures'}
+      icon={kind === 'received' ? ReceivedIcon : PublishedIcon}
+      emptyIcon={kind === 'received' ? ReceivedIcon : PublishedIcon}
+      caption={shown.length > 0 && failed.count ? `${format.count(failed.count)} failed` : undefined}
       action={shown.length > 0 ? <Link to={listPath}>All</Link> : undefined}
       empty={
         failed.query.isError ? (
@@ -181,7 +217,8 @@ function RecentFailures({ kind }: { kind: MessageKind }) {
           tone="fail"
           name={<Link to={`${listPath}&open=${encodeURIComponent(row.id)}`}>{row.name ?? '(unnamed)'}</Link>}
           meta={kind === 'received' && row.consumer ? <Mono>{row.consumer}</Mono> : row.store}
-          value={<Time value={row.changedAt ?? row.added} short />}
+          title={`${row.name ?? '(unnamed)'} ${(kind === 'received' ? row.consumer : row.store) ?? ''}`.trim()}
+          value={<RelativeTime value={row.changedAt ?? row.added} />}
         />
       ))}
     </Card>

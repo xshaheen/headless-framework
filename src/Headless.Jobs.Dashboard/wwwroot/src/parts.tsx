@@ -6,8 +6,8 @@ import {
   type RowResult,
 } from '@headless/dashboard-sdk/commands'
 import {
-  Button,
   DetailPanel,
+  EmptyState,
   ExceptionBlock,
   FieldGrid,
   Fields,
@@ -25,7 +25,9 @@ import {
   useDelayed,
   useViewKeys,
   type HistoryItem,
+  type SkeletonShape,
   type TimelineEvent,
+  RelativeTime,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardObject, type CappedCount } from '@headless/dashboard-sdk/data'
 import {
@@ -67,34 +69,6 @@ import {
 export { RunProgress }
 
 /**
- * A timestamp as relative time, with the exact time, zone, and offset on hover; in `zone` when one is named. `short`
- * reads `4 min. ago`, so a list column stays narrow enough for a phone.
- */
-export function Time({
-  value,
-  zone,
-  short,
-  missing = 'Not yet',
-}: {
-  value: string | undefined
-  zone?: string
-  short?: boolean
-  missing?: string
-}) {
-  const format = useFormat()
-
-  if (!value) {
-    return <Text tone="hint">{missing}</Text>
-  }
-
-  return (
-    <time dateTime={value} title={zone ? format.zonedTime(value, zone) : format.exactTime(value)}>
-      {format.relativeTime(value, short ? { style: 'short' } : undefined)}
-    </time>
-  )
-}
-
-/**
  * A list cell's content, with `title` giving the full text on hover. The table ends a cell's only child in an
  * ellipsis when the column is too narrow for it.
  */
@@ -107,22 +81,27 @@ type LoadState<T> =
   | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
   | { isPending: false; isError: false; data: T }
 
-/** A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. */
+/**
+ * A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. The
+ * skeleton takes the `shape` of what loads: `table` for a list region, `rows` by default.
+ */
 export function QueryState<T>({
   query,
   label,
   rows,
+  shape,
   children,
 }: {
   query: LoadState<T>
   label: string
   rows: number
+  shape?: SkeletonShape
   children: (data: T) => ReactNode
 }) {
   const showLoading = useDelayed(query.isPending)
 
   if (query.isPending) {
-    return showLoading ? <Skeleton label={label} rows={rows} /> : null
+    return showLoading ? <Skeleton label={label} rows={rows} shape={shape} /> : null
   }
 
   if (query.isError) {
@@ -369,7 +348,6 @@ export function useTraceKey(run: Pick<Run, 'correlationId'> | undefined) {
 
 export function RunFields({ run }: { run: Run }) {
   const format = useFormat()
-  const open = useModuleNavigate()
   // The store stamps `executedAt` when a run ends, so a running run has none yet; it reads as running, not as unrun.
   const running = run.status === 'InProgress' ? 'Running' : undefined
   const correlationId = run.correlationId
@@ -398,7 +376,7 @@ export function RunFields({ run }: { run: Run }) {
         ) : null}
         {run.status === 'DueDone' ? <GridField label="Note">Started late</GridField> : null}
         <GridField label={run.status === 'Failed' ? 'Failed at' : 'Executed'} span={2}>
-          <Time value={run.executedAt} missing={running} />
+          <RelativeTime value={run.executedAt} missing={running} />
         </GridField>
         <GridField label="Duration">
           {run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}
@@ -410,9 +388,7 @@ export function RunFields({ run }: { run: Run }) {
             correlationId ? (
               <>
                 <Mono>{correlationId}</Mono>
-                <Button variant="ghost" onPress={() => open(tracePath(correlationId))}>
-                  Trace
-                </Button>
+                <Link to={`/jobs/${tracePath(correlationId)}`}>Open trace</Link>
                 {run.traceId ? <TraceLink traceId={run.traceId} /> : null}
               </>
             ) : undefined
@@ -425,10 +401,10 @@ export function RunFields({ run }: { run: Run }) {
         ) : null}
         <GridField label="Due" span={2}>
           {/* A chain step has no due time of its own: it runs once its parent ends. */}
-          <Time value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
+          <RelativeTime value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
         </GridField>
         <GridField label="Created" span={2}>
-          <Time value={run.createdAt} />
+          <RelativeTime value={run.createdAt} />
         </GridField>
         <GridField label="Function" span={2}>
           <Link to={`/jobs/functions/${encodeURIComponent(run.function)}`}>
@@ -517,7 +493,7 @@ export function AttemptTimeline({ run }: { run: Pick<Run, 'id' | 'version' | 'cr
 
   return (
     <Fields label="Timeline">
-      <Text as="h3" tone="title">
+      <Text as="h3" tone="label">
         Timeline
       </Text>
       {attempts.data ? (
@@ -525,9 +501,7 @@ export function AttemptTimeline({ run }: { run: Pick<Run, 'id' | 'version' | 'cr
       ) : attempts.isError ? (
         <LoadError message={attempts.error.message} onRetry={() => void attempts.refetch()} />
       ) : (
-        <Text as="p" tone="hint" role="status">
-          Loading the attempts…
-        </Text>
+        <Skeleton label="Loading the attempts" shape="lines" rows={3} />
       )}
     </Fields>
   )
@@ -554,7 +528,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
         {attempts.isError ? (
           <LoadError message={attempts.error.message} onRetry={() => void attempts.refetch()} />
         ) : (
-          <Skeleton label="Loading the history" />
+          <Skeleton label="Loading the history" shape="lines" rows={4} />
         )}
       </section>
     )
@@ -562,7 +536,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
 
   const items: HistoryItem[] = [...attempts.data].reverse().map((attempt) => ({
     key: String(attempt.number),
-    time: <Time value={attempt.endedAt ?? attempt.startedAt} short />,
+    time: <RelativeTime value={attempt.endedAt ?? attempt.startedAt} />,
     tone: attempt.outcome ? attemptTones[attempt.outcome] : 'proc',
     state: attempt.outcome ?? 'Running',
     note: attemptNote(attempt),
@@ -573,7 +547,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
       label="History"
       items={[
         ...items,
-        { key: 'created', time: <Time value={run.createdAt} short />, tone: 'sched', state: 'Created' },
+        { key: 'created', time: <RelativeTime value={run.createdAt} />, tone: 'sched', state: 'Created' },
       ]}
     />
   )
@@ -681,11 +655,11 @@ export function RunPayload({ runId }: { runId: string }) {
   return (
     <section aria-label="Arguments">
       {payload.isPending ? (
-        <Skeleton label="Loading the arguments" />
+        <Skeleton label="Loading the arguments" shape="lines" rows={4} />
       ) : payload.isError ? (
         // The server answers 404 for a run that stored no arguments: that is the run's payload, not a failed load.
         payload.error instanceof DashboardApiError && payload.error.status === 404 ? (
-          <p>This run has no payload.</p>
+          <EmptyState>This run has no payload.</EmptyState>
         ) : (
           <LoadError message={payload.error.message} onRetry={() => void payload.refetch()} />
         )

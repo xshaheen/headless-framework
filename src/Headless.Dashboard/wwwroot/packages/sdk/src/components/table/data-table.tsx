@@ -18,6 +18,7 @@ import type { ListSort } from '../../data/keyset.ts'
 import { below, useBelow } from '../breakpoints.ts'
 import { Button } from '../button.tsx'
 import { Banner } from '../display/banner.tsx'
+import { EmptyState } from '../display/empty-state.tsx'
 import { Tag } from '../display/tag.tsx'
 import { Text } from '../display/text.tsx'
 import type { PageFrameState } from '../frame/page-frame.tsx'
@@ -30,7 +31,13 @@ export interface DataTableColumn<T> {
   id: string
   header: string
   cell: (row: T) => ReactNode
-  /** `end` for numbers, which also read in tabular figures. */
+  /**
+   * What the cells hold, which sets their face and alignment: `time` (a `RelativeTime`), `number`, and `duration`
+   * read in mono with tabular figures, the last two at the inline end; `id` is a mono identifier kept left to right;
+   * `status` is a dot and a word; `prose`, the default, is sans text such as a reason or a kind.
+   */
+  kind?: DataTableCellKind
+  /** `end` for a value read against the others, such as a count; a `number` or `duration` column ends by default. */
   align?: 'start' | 'end'
   /** The column that names the row for assistive technology; the first column when none says so. */
   isRowHeader?: boolean
@@ -46,6 +53,24 @@ export interface DataTableColumn<T> {
    * order, ascending first and descending on the next press, when the table has `onSortChange`.
    */
   sortKey?: string
+}
+
+/** What a column's cells hold; see `DataTableColumn.kind`. */
+export type DataTableCellKind = 'time' | 'number' | 'duration' | 'id' | 'status' | 'prose'
+
+// Times, numbers, durations, and ids are mono, with tabular figures where digits line up down a column, as every
+// figure on the dashboard is; a `Mono` inside an id cell keeps it left to right. A status and prose keep the sans face.
+const kindClasses: Readonly<Record<DataTableCellKind, string>> = {
+  time: 'type-mono tabular-nums',
+  number: 'type-mono tabular-nums',
+  duration: 'type-mono tabular-nums',
+  id: 'type-mono',
+  status: 'type-small',
+  prose: 'type-small',
+}
+
+function ends(column: { kind?: DataTableCellKind; align?: 'start' | 'end' }) {
+  return column.align ? column.align === 'end' : column.kind === 'number' || column.kind === 'duration'
 }
 
 /**
@@ -73,14 +98,17 @@ const isolated = { onPointerDown: isolate, onClick: isolate, onKeyDown: isolate 
 // virtualizer wraps each cell and the header in an inline block, sticky for the header and the pinned columns, which
 // the table marks `data-pinned`: a sticky wrapper paints its row's fill, so the cells that scroll sideways under it
 // stay hidden, and aligns to the top so it stays on its row.
+// A row's first cell pads to the page gutter (16 px), so the first column's text lines up with the page title and the
+// header's controls above it; the rest keep the 10 px cell inset.
 const tableClass =
-  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_:has(>[data-pinned])]:bg-inherit [&_:has(>[data-pinned])]:align-top'
+  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_:has(>[data-pinned])]:bg-inherit [&_:has(>[data-pinned])]:align-top [&_[role=row]>:first-child>*]:ps-4'
 const headClass = 'flex h-full items-center border-b border-border bg-card px-2.5 type-label whitespace-nowrap text-faint'
 // The sort button fills its header, so the whole header is its target; the sorted column reads in the foreground.
 const sortClass =
   '-mx-1 inline-flex h-full cursor-pointer items-center gap-1 rounded-sm px-1 text-inherit outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring group-data-sort-direction:text-foreground'
+// The face comes from the column's kind (one `type-*` utility per cell, since each is a `font` shorthand).
 const cellClass =
-  'flex h-full items-center gap-2 overflow-hidden px-2.5 type-small text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
+  'flex h-full items-center gap-2 overflow-hidden px-2.5 text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
 const endClass = 'justify-end text-end tabular-nums'
 // Checked state lives on the checkbox alone, never on the row's fill; the margin makes a 24 px target.
 const checkClass = 'flex h-full items-center ps-4 [&_input]:m-1 [&_input]:size-4 [&_input]:accent-primary'
@@ -156,6 +184,16 @@ const moveKeys = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'Page
 
 /** The header row's height in px; the virtualizer lays the header out by it, and its cells fill that height. */
 const headingHeight = 32
+
+/** A column's narrowest width in px, past which the table scrolls sideways rather than squeeze it further. */
+const columnMinWidth = 96
+
+/**
+ * The row header column's narrowest width in px: a pinned name such as `sandbox.overlap-fails` (about 24 mono
+ * characters with the gutter) stays whole on a phone, where the other columns share the 96 px floor and scroll under
+ * it, so the identifying column is never the one that ends in an ellipsis.
+ */
+const rowHeaderMinWidth = 192
 
 /**
  * The dashboard's list of one object kind, as a virtualized WAI-ARIA grid: only the rows in view are in the page,
@@ -385,15 +423,20 @@ export function DataTable<T extends { id: string }>({
       onKeyDownCapture={(event: KeyboardEvent) => (moving.current = !event.shiftKey && moveKeys.has(event.key))}
       onKeyDown={() => (moving.current = false)}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 [&>[role=group]]:ms-auto">
-        {arrived > 0 ? (
-          <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
-            {`${arrived} new`}
-          </Button>
-        ) : null}
-        <Announcer message={arrived > 0 ? `${arrived} new ${arrived === 1 ? 'row' : 'rows'}` : ''} />
-        <DensityToggle value={density} onChange={setDensity} />
-      </div>
+      {/* The table insets its own first column, so its toolbar takes the same gutter rather than meeting the page edge.
+          A table with no view id remembers no density, so it offers no toggle, and a toolbar with nothing in it is
+          left out rather than spacing the table down. */}
+      {viewId || arrived > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-2 [&>[role=group]]:ms-auto">
+          {arrived > 0 ? (
+            <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
+              {`${arrived} new`}
+            </Button>
+          ) : null}
+          {viewId ? <DensityToggle value={density} onChange={setDensity} /> : null}
+        </div>
+      ) : null}
+      <Announcer message={arrived > 0 ? `${arrived} new ${arrived === 1 ? 'row' : 'rows'}` : ''} />
       {selectionMode === 'multiple' && allLoaded && (checks || more) ? (
         <Banner>
           <span>{checks ? `All ${listed.length} loaded rows are checked.` : `All ${listed.length} rows on this page are selected.`}</span>
@@ -407,7 +450,10 @@ export function DataTable<T extends { id: string }>({
       {/* The empty state sits outside the grid: inside it the virtualizer gives it no height, so its next step
           (`Clear filters`) could not be seen or clicked. */}
       {listed.length === 0 && !hasMore ? (
-        <div className="mx-auto max-w-[46ch] py-5 text-center text-muted-foreground">{emptyState}</div>
+        // On the table's own gutter, start-aligned as a list's empty state is; only an empty page centres one.
+        <div className="px-0.5">
+          <EmptyState>{emptyState}</EmptyState>
+        </div>
       ) : (
         <Virtualizer layout={layout} layoutOptions={{ rowHeight, headingHeight, loaderHeight: rowHeight }}>
           <Table
@@ -450,10 +496,10 @@ export function DataTable<T extends { id: string }>({
                     id={column.id}
                     isRowHeader={column.id === rowHeaderId}
                     defaultWidth={column.width}
-                    minWidth={96}
+                    minWidth={column.id === rowHeaderId ? rowHeaderMinWidth : columnMinWidth}
                     data-pinned={at <= lastPinned || undefined}
                     allowsSorting={sortable}
-                    className={`group ${column.align === 'end' ? `${headClass} ${endClass}` : headClass}`}
+                    className={`group ${ends(column) ? `${headClass} ${endClass}` : headClass}`}
                   >
                     {/* React Aria's header owns the press and `aria-sort`; the button only names the control for assistive
                         technology, so it takes no tab stop and no handler of its own. */}
@@ -512,7 +558,7 @@ export function DataTable<T extends { id: string }>({
                     {shown.map((column, at) => (
                       <Cell
                         key={column.id}
-                        className={column.align === 'end' ? `${cellClass} ${endClass}` : cellClass}
+                        className={`${cellClass} ${kindClasses[column.kind ?? 'prose']}${ends(column) ? ` ${endClass}` : ''}`}
                         data-pinned={at <= lastPinned || undefined}
                       >
                         {column.cell(row)}
@@ -520,9 +566,7 @@ export function DataTable<T extends { id: string }>({
                         {stale && column.id === rowHeaderId ? (
                           <>
                             {' '}
-                            <span className="inline-flex h-(--chip-height) flex-none items-center rounded-md bg-muted px-1.5 type-label text-muted-foreground">
-                              No longer matches
-                            </span>
+                            <Tag variant="filled">No longer matches</Tag>
                           </>
                         ) : null}
                         {refusal !== undefined && column.id === rowHeaderId ? (

@@ -3,8 +3,8 @@
 'use no memo'
 
 import { useState, type KeyboardEvent } from 'react'
-import { useFormat } from '../../locale/locale.tsx'
 import type { DashboardStateRole } from '../../define-module.ts'
+import { RelativeTime } from '../display/relative-time.tsx'
 import { Text } from '../display/text.tsx'
 import { StatusMark } from '../marks.tsx'
 
@@ -37,7 +37,6 @@ export interface TimelineProps {
  * and `Enter` selects the focused one into the inspector without leaving the timeline.
  */
 export function Timeline({ label, events, selectedId, onSelect }: TimelineProps) {
-  const format = useFormat()
   const [focused, setFocused] = useState(0)
   const current = Math.min(focused, events.length - 1)
 
@@ -80,9 +79,7 @@ export function Timeline({ label, events, selectedId, onSelect }: TimelineProps)
         >
           <span role="gridcell">
             {item.tone ? <StatusMark tone={item.tone} label={item.label} /> : <strong>{item.label}</strong>}{' '}
-            <time dateTime={item.at} title={format.exactTime(item.at)}>
-              {format.relativeTime(item.at)}
-            </time>
+            <RelativeTime value={item.at} />
             {item.actor ? <Text tone="hint">{` by ${item.actor}`}</Text> : null}
             {item.text ? (
               <>

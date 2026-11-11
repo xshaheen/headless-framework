@@ -147,10 +147,8 @@ describe('data table', () => {
     const user = userEvent.setup()
     render(withDashboard(<ListView selectionMode="multiple" />))
 
-    // The filter, then the density toggle's two buttons, then the grid's one tab stop.
+    // The filter, then the grid's one tab stop: a list with no view id offers no density toggle between them.
     await user.click(screen.getByRole('textbox', { name: 'Filter' }))
-    await user.tab()
-    await user.tab()
     await user.tab()
     expect(document.activeElement).toBe(row(/#1/))
     expect(inspector()).toBe('Nothing selected')
@@ -218,6 +216,31 @@ describe('data table', () => {
     expect(screen.getByText('No runs yet.')).toBeTruthy()
   })
 
+  it('sets each cell’s face and alignment by its column kind', () => {
+    render(
+      <DataTable
+        label="Runs"
+        rows={[rows[0]!]}
+        columns={[
+          { id: 'title', header: 'Run', cell: (row) => row.title, kind: 'id' },
+          { id: 'retries', header: 'Retries', cell: () => '3', kind: 'number' },
+          { id: 'reason', header: 'Reason', cell: () => 'Card declined', kind: 'prose' },
+          { id: 'count', header: 'Count', cell: () => '7', align: 'end' },
+        ]}
+        emptyState="No runs yet."
+      />,
+    )
+
+    const cells = [...screen.getByRole('row', { name: /billing\.charge #1/ }).querySelectorAll('[role="rowheader"], [role="gridcell"]')]
+    const [title, retries, reason, count] = cells.map((cell) => cell.className)
+    expect(title).toContain('type-mono')
+    expect(retries).toContain('type-mono')
+    expect(retries).toContain('justify-end')
+    expect(reason).toContain('type-small')
+    expect(reason).not.toContain('justify-end')
+    expect(count).toContain('justify-end')
+  })
+
   it('offers select all matching once every loaded row is selected', () => {
     render(
       <DataTable
@@ -249,7 +272,7 @@ function runs(count: number, from = 1): Run[] {
 
 const runColumns = [
   { id: 'id', header: 'Run', cell: (run: Run) => run.id, isRowHeader: true },
-  { id: 'status', header: 'Status', cell: (run: Run) => run.status },
+  { id: 'status', header: 'Status', cell: (run: Run) => run.status, width: 130 },
   { id: 'note', header: 'Note', cell: () => 'note', priority: 2 as const },
 ]
 
@@ -454,19 +477,20 @@ describe('virtualized keyset table', () => {
 
   it('holds the rows in view when three rows arrive above them, and shows 3 new', async () => {
     const user = userEvent.setup()
-    const view = render(withDashboard(<SelectableRuns rows={runs(5_000, 4)} />))
+    // Enough rows to scroll well past the window the table renders; 5,000 made the test slow without proving more.
+    const view = render(withDashboard(<SelectableRuns rows={runs(400, 4)} />))
 
-    scrollTo(1_000 * rowHeight)
+    scrollTo(200 * rowHeight)
     const before = renderedIds()
-    expect(before).toContain('r1004')
+    expect(before).toContain('r204')
 
-    view.rerender(withDashboard(<SelectableRuns rows={[...runs(3, 1), ...runs(5_000, 4)]} />))
+    view.rerender(withDashboard(<SelectableRuns rows={[...runs(3, 1), ...runs(400, 4)]} />))
     // The browser follows the table's own scroll correction with a scroll event.
     act(() => {
       fireEvent.scroll(grid())
     })
 
-    expect(grid().scrollTop).toBe(1_003 * rowHeight)
+    expect(grid().scrollTop).toBe(203 * rowHeight)
     expect(renderedIds()).toEqual(before)
     expect(screen.queryByRole('row', { name: /^r1\b/ })).toBeNull()
 
@@ -534,23 +558,35 @@ describe('virtualized keyset table', () => {
     expect(fetchPage).toHaveBeenCalledTimes(1)
   })
 
-  it('drops a low-priority column at 400 px and keeps the row selectable', async () => {
+  it('drops a low-priority column at 400 px, keeps the name column readable, and keeps the row selectable', async () => {
     const user = userEvent.setup()
-    // A 400 px screen: a max-width query matches when its width is at least 400 px.
+    // A 400 px screen: a max-width query matches when its width is at least 400 px, and the table is 300 px wide
+    // beside the page gutter and the checkbox column.
     vi.stubGlobal('matchMedia', (query: string) => {
       const width = /max-width: (\d+)px/.exec(query)?.[1]
 
       return { matches: width !== undefined && Number(width) >= 400, media: query }
     })
-    render(withDashboard(<SelectableRuns rows={runs(5)} />))
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 300 })
 
-    expect(screen.queryByRole('columnheader', { name: 'Note' })).toBeNull()
-    expect(screen.getByRole('columnheader', { name: 'Run' })).toBeTruthy()
-    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeTruthy()
+    try {
+      render(withDashboard(<SelectableRuns rows={runs(5)} />))
 
-    await user.click(row(/^r3\b/))
+      expect(screen.queryByRole('columnheader', { name: 'Note' })).toBeNull()
+      expect(screen.getByRole('columnheader', { name: 'Run' })).toBeTruthy()
+      expect(screen.getByRole('columnheader', { name: 'Status' })).toBeTruthy()
+      // The name column is the one a phone must keep whole: rather than squeeze it into the 170 px left beside the
+      // status, the table keeps it readable and lets the status scroll sideways under it.
+      const widthOf = (name: string) => parseFloat(screen.getByRole('columnheader', { name }).parentElement?.style.width ?? '0')
+      expect(widthOf('Status')).toBe(130)
+      expect(widthOf('Run') + widthOf('Status')).toBeGreaterThan(300)
 
-    expect(row(/^r3\b/).getAttribute('aria-selected')).toBe('true')
+      await user.click(row(/^r3\b/))
+
+      expect(row(/^r3\b/).getAttribute('aria-selected')).toBe('true')
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 1000 })
+    }
   })
 
   it('remembers compact density for the view across a reload', async () => {
@@ -741,6 +777,39 @@ describe('virtualized keyset table', () => {
     // is sent, never one whose end year is still being typed.
     await waitFor(() => expect(asked(fetchPage).at(-1)?.range).toEqual({ start: '2026-10-31T22:00:00.000Z', end: '2026-11-10T22:00:00.000Z' }))
     expect(asked(fetchPage).filter((request) => request.range !== undefined)).toHaveLength(1)
+  })
+})
+
+describe('DateRangeField compact', () => {
+  it('is a chip that reads its label, opens the calendar, and reads the picked days once set', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-11-10T10:00:00Z'))
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(withDashboard(<DateRangeField label="Due between" compact onChange={onChange} />))
+
+    const chip = screen.getByRole('button', { name: /Due between/ })
+    expect(chip.textContent).toBe('Due between')
+    expect(chip.hasAttribute('data-set')).toBe(false)
+    await user.click(chip)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('spinbutton')).toBeNull()
+
+    await user.click(within(dialog).getByRole('button', { name: /November 1, 2026/ }))
+    await user.click(within(dialog).getByRole('button', { name: /November 4, 2026/ }))
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ start: '2026-11-01T00:00:00.000Z', end: '2026-11-05T00:00:00.000Z' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Clear days' }))
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(undefined))
+
+    // The popover hides the page from assistive technology while open, so the chip reads again once it closes.
+    await user.click(within(dialog).getByRole('button', { name: /November 1, 2026/ }))
+    await user.click(within(dialog).getByRole('button', { name: /November 4, 2026/ }))
+    await user.keyboard('{Escape}')
+    const set = await screen.findByRole('button', { name: /Due between/ })
+    expect(set.hasAttribute('data-set')).toBe(true)
+    expect(set.textContent).toBe('Due betweenNov 1 – Nov 4')
+    vi.useRealTimers()
   })
 })
 

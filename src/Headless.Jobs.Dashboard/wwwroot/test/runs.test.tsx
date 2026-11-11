@@ -87,7 +87,10 @@ describe('jobs runs list', () => {
     list({ runs: [run('Failed')] })
 
     await screen.findByRole('row', { name: /billing\.charge/ })
-    const unset = screen.getAllByRole('combobox').map((select) => (select as HTMLSelectElement).options[0]!.textContent)
+    const filters = within(screen.getByRole('group', { name: 'Filters' }))
+    const unset = ['Kind', 'Function', 'Time range'].map(
+      (name) => filters.getByRole('button', { name: new RegExp(name) }).textContent,
+    )
     expect(unset).toEqual(['Any kind', 'Any function', 'Any time'])
   })
 
@@ -108,7 +111,7 @@ describe('jobs runs list', () => {
 
     expect(await screen.findByText(/No runs match\. Clear filters or widen the time range\./)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Clear function filter' })).toBeTruthy()
-    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Kind/ })).toBeNull()
 
     await actor.click(screen.getByRole('button', { name: 'Clear filters' }))
 
@@ -666,7 +669,11 @@ describe('jobs runs list', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'All runs' })).toBeTruthy()
     expect(await screen.findByRole('row', { name: /a\.done/ })).toBeTruthy()
     expect(view.requests.find((request) => request.path === 'jobs/runs')?.query?.status).toBeUndefined()
-    expect(screen.getAllByRole('combobox')).toHaveLength(3)
+    const filters = within(screen.getByRole('group', { name: 'Filters' }))
+    for (const name of ['Kind', 'Function', 'Time range']) {
+      expect(filters.getByRole('button', { name: new RegExp(name) })).toBeTruthy()
+    }
+    expect(filters.getByRole('button', { name: 'More filters' })).toBeTruthy()
   })
 
   it('opens a run the loaded page does not hold, reading it once by its id', async () => {
@@ -783,7 +790,7 @@ describe('jobs run page', () => {
   it('says the run no longer exists on 404', async () => {
     open({}, { path: 'runs/00000000-0000-0000-0000-00000000dead' })
 
-    expect((await screen.findByRole('alert')).textContent).toBe('This run no longer exists.')
+    expect((await screen.findByRole('alert')).textContent).toContain('This run no longer exists.')
     expect(screen.getByRole('link', { name: 'Back to runs' }).getAttribute('href')).toBe('/jobs/runs')
   })
 
@@ -981,10 +988,11 @@ describe('jobs runs list reads', () => {
     )
     await screen.findByRole('row', { name: /a\.done/ })
 
-    const picker = screen.getByRole('group', { name: 'Due between' })
-    await actor.click(within(picker).getAllByRole('spinbutton', { name: /month/i })[0]!)
-    await actor.keyboard('11012026')
-    await actor.keyboard('11042026')
+    // The day range sits behind More filters, as a chip that opens the calendar.
+    await actor.click(screen.getByRole('button', { name: 'More filters 1' }))
+    await actor.click(await screen.findByRole('button', { name: /Due between/ }))
+    await actor.click(await screen.findByRole('button', { name: /November 1, 2026/ }))
+    await actor.click(screen.getByRole('button', { name: /November 4, 2026/ }))
 
     await waitFor(() =>
       expect(lastList(view)).toMatchObject({ from: '2026-11-01T00:00:00.000Z', before: '2026-11-05T00:00:00.000Z' }),
@@ -1000,7 +1008,8 @@ describe('jobs runs list reads', () => {
     await actor.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'refund')
     await act(() => vi.advanceTimersByTimeAsync(300))
     await waitFor(() => expect(lastList(view).search).toBe('refund'))
-    await actor.selectOptions(screen.getByRole('combobox', { name: 'Time range' }), 'Last 24 h')
+    await actor.click(screen.getByRole('button', { name: /Time range/ }))
+    await actor.click(await screen.findByRole('option', { name: 'Last 24 h' }))
 
     await waitFor(() => expect(lastList(view).from).toBeDefined())
     expect(lastList(view).search).toBe('refund')

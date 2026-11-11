@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Input, Label, SearchField as AriaSearchField, Button as AriaButton } from 'react-aria-components'
 import { CloseIcon } from '../../icons/index.ts'
 import { Button } from '../button.tsx'
-import { inputClass } from '../form.tsx'
+import { compactInputClass, inputClass } from '../form.tsx'
 
 export interface SearchFieldProps {
   /** Names the field, such as `Search runs`. */
@@ -24,6 +24,8 @@ export interface SearchFieldProps {
   /** The text the field starts with, such as a search restored from the view's state. */
   defaultValue?: string
   placeholder?: string
+  /** A search in a page header: one control high, in line with the chips and buttons beside it. */
+  compact?: boolean
 }
 
 const defaultDelay = 300
@@ -32,7 +34,7 @@ const defaultDelay = 300
  * A list's text search. While typing, a debounced field waits for a pause and a submit field sends nothing; `Esc`
  * or the clear button clears the search at once in either mode. The same text is never sent twice in a row.
  */
-export function SearchField({ label, onSearch, mode = 'debounce', delay = defaultDelay, defaultValue = '', placeholder }: SearchFieldProps) {
+export function SearchField({ label, onSearch, mode = 'debounce', delay = defaultDelay, defaultValue = '', placeholder, compact }: SearchFieldProps) {
   const [text, setText] = useState(defaultValue)
   const sent = useRef(defaultValue.trim())
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -64,11 +66,12 @@ export function SearchField({ label, onSearch, mode = 'debounce', delay = defaul
   useEffect(() => cancel, [])
 
   // The `Search` button sits outside React Aria's field: inside it, the field's button slot would make it a clear button.
+  // `hd-search` lets a toolbar give the compact field the whole row on a phone.
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
+    <div className={compact ? 'hd-search flex w-(--search-width) min-w-0 items-center gap-1.5 max-md:w-auto' : 'flex min-w-0 items-center gap-1.5'}>
       <AriaSearchField className="relative flex min-w-0 flex-1 items-center" value={text} onChange={change} onSubmit={send} onClear={() => send('')}>
         <Label className="sr-only">{label}</Label>
-        <Input className={`${inputClass} pe-7 [&::-webkit-search-cancel-button]:hidden`} placeholder={placeholder} />
+        <Input className={`${compact ? `${compactInputClass} w-full` : inputClass} pe-7 [&::-webkit-search-cancel-button]:hidden`} placeholder={placeholder} />
         {text !== '' ? (
           <AriaButton className="absolute end-1 grid size-6 cursor-pointer place-content-center rounded-sm text-muted-foreground outline-none hover:text-foreground data-focus-visible:ring-2 data-focus-visible:ring-ring">
             <CloseIcon className="text-current" />
