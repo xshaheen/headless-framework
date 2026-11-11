@@ -96,6 +96,7 @@ internal sealed class ForwardingClient(
     {
         var forwarding = options.Forwarding;
         var state = PeerState.NotAnswering;
+        var timedOut = false;
 
         foreach (var address in peer.Addresses)
         {
@@ -131,12 +132,16 @@ internal sealed class ForwardingClient(
             }
 
             state = PeerState.NotAnswering;
+            timedOut = response.TimedOut;
         }
 
         directory.Report(peer.Name, state);
         logger.PeerNotReached(peer.Name, state);
 
-        return ForwardResponse.Failed(state);
+        return ForwardResponse.Failed(state) with
+        {
+            TimedOut = state == PeerState.NotAnswering && timedOut,
+        };
     }
 
     private async Task<ForwardResponse> _SendOneAsync(
@@ -210,7 +215,11 @@ internal sealed class ForwardingClient(
                 logger.PeerCallFailed(peer.Name, e.GetType().Name);
             }
 
-            return ForwardResponse.Failed(PeerState.NotAnswering);
+            // HttpClient reports its own timeout, and this call's, as a cancellation.
+            return ForwardResponse.Failed(PeerState.NotAnswering) with
+            {
+                TimedOut = e is OperationCanceledException,
+            };
         }
     }
 

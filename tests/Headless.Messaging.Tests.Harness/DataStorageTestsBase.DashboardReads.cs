@@ -415,6 +415,54 @@ public abstract partial class DataStorageTestsBase
         ledger.Items.Should().ContainSingle().Which.Reason.Should().BeNull();
     }
 
+    public virtual async Task should_read_every_generation_of_one_message_by_its_id_and_name_the_replays_parent()
+    {
+        // given: a terminal generation re-executed once, and another message of the same consumer
+        var storage = GetStorage();
+        var operations = storage.GetInboxOperationsApi();
+        var consumer = $"generations-consumer-{Guid.NewGuid():N}";
+        var original = await _AdmitTerminalInboxAsync(storage, consumer);
+        await _AdmitTerminalInboxAsync(storage, consumer);
+        var replay = await operations.ForceReprocessAsync(
+            new InboxOperationRequest(
+                Guid.NewGuid(),
+                original.InboxGeneration!.IncarnationId,
+                StatusName.Failed,
+                Reason: null,
+                _Operator("generations-operator")
+            ),
+            AbortToken
+        );
+        replay.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        var messageId = original.InboxKey!.MessageId;
+
+        // when
+        var generations = await operations.QueryAsync(
+            new InboxGenerationQuery { MessageId = messageId, ConsumerIdentity = consumer },
+            _Viewer(),
+            AbortToken
+        );
+        var padded = await operations.QueryAsync(
+            new InboxGenerationQuery { MessageId = messageId + " ", ConsumerIdentity = consumer },
+            _Viewer(),
+            AbortToken
+        );
+
+        // then: the original and its replay, which names the original as its parent; an id one space longer is
+        // another message
+        generations.Items.Should().HaveCount(2);
+        generations.Items.Should().OnlyContain(item => item.MessageId == messageId);
+        var first = generations.Items.Should().ContainSingle(item => item.ReplayParentIncarnationId == null).Which;
+        first.IncarnationId.Should().Be(original.InboxGeneration.IncarnationId);
+        first.IsCurrentGeneration.Should().BeFalse();
+        var second = generations.Items.Should().ContainSingle(item => item.ReplayParentIncarnationId != null).Which;
+        second.IncarnationId.Should().Be(replay.ChildIncarnationId!.Value);
+        second.ReplayParentIncarnationId.Should().Be(original.InboxGeneration.IncarnationId);
+        second.Generation.Should().Be(replay.ChildGeneration!.Value);
+        second.IsCurrentGeneration.Should().BeTrue();
+        padded.Items.Should().BeEmpty();
+    }
+
     public virtual async Task should_serve_reads_to_a_viewer_without_a_named_operator_and_refuse_its_writes()
     {
         // given: a held generation, and a viewer authenticated without an operator name

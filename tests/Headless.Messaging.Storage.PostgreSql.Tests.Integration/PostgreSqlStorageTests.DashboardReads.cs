@@ -41,6 +41,10 @@ public partial class PostgreSqlStorageTests
         base.should_accept_an_empty_reason_for_a_single_hold_and_store_it_as_null();
 
     [Fact]
+    public override Task should_read_every_generation_of_one_message_by_its_id_and_name_the_replays_parent() =>
+        base.should_read_every_generation_of_one_message_by_its_id_and_name_the_replays_parent();
+
+    [Fact]
     public override Task should_serve_reads_to_a_viewer_without_a_named_operator_and_refuse_its_writes() =>
         base.should_serve_reads_to_a_viewer_without_a_named_operator_and_refuse_its_writes();
 }

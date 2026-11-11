@@ -12,5 +12,8 @@ internal sealed record ForwardResponse(PeerState State, int Status, byte[] Body)
 
     public bool IsSuccess => Answered && Status is >= 200 and < 300;
 
+    /// <summary>Gets a value indicating whether the last attempt got no answer because it ran out of time.</summary>
+    public bool TimedOut { get; init; }
+
     public static ForwardResponse Failed(PeerState state) => new(state, Status: 0, []);
 }

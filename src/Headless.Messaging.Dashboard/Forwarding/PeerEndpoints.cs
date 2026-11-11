@@ -12,8 +12,8 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// The endpoints another node calls at <c>{base}/api/messaging/peer</c>: this node's own Needs you, id lookup,
-/// payloads, command availability, change feed, sidebar counts, Overview, and the scope and chunks of an Operation
-/// over this node's rows.
+/// payloads, command availability, change feed, sidebar counts, Overview, a ping, and the scope and chunks of an
+/// Operation over this node's rows.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -87,6 +87,12 @@ internal static class PeerEndpoints
                     context,
                     async token => await module.LocalSources.GetOverviewAsync(token).ConfigureAwait(false)
                 )
+        );
+        // A ping proves this node admits the calling node's signed call and answers; it reads nothing.
+        peer.MapGet(
+            "/ping",
+            Task<IResult> (HttpContext context) =>
+                _AnswerAsync(context, _ => Task.FromResult(new PeerPing(module.NodeName)))
         );
 #pragma warning disable ASP0018 // False positive: the handlers read commandId from the route values, not a bound parameter.
         peer.MapPost(

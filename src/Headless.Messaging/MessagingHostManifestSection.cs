@@ -199,6 +199,12 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
             writer.WriteStartObject();
             writer.WriteString("name", message.MessageName);
             writer.WriteString("contractVersion", message.MessageContractVersion);
+            // One identity can bind each message to its own class, so the handler is named per message.
+            writer.WriteString("consumerType", message.ConsumerType.FullName ?? message.ConsumerType.Name);
+            writer.WriteString(
+                "handlerMethod",
+                message.IsResponder ? nameof(IRespond<,>.RespondAsync) : nameof(IConsume<>.ConsumeAsync)
+            );
             writer.WriteEndObject();
         }
 

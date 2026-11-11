@@ -207,6 +207,13 @@ internal sealed partial class InMemoryDataStorage
             rows = rows.Where(message => message.InboxGeneration!.IncarnationId == incarnationId);
         }
 
+        if (!string.IsNullOrEmpty(query.MessageId))
+        {
+            rows = rows.Where(message =>
+                string.Equals(message.InboxKey!.MessageId, query.MessageId, StringComparison.Ordinal)
+            );
+        }
+
         if (!string.IsNullOrEmpty(query.ConsumerIdentity))
         {
             rows = rows.Where(message =>

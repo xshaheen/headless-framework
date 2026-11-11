@@ -113,6 +113,11 @@ internal sealed partial class RelationalDataStorage
             where += $" AND {_t.GenerationIncarnationId}=@IncarnationId";
         }
 
+        if (!string.IsNullOrEmpty(query.MessageId))
+        {
+            where += RelationalMessageFilter.ExactText(_t.MessageId, "GenerationMessageId");
+        }
+
         if (!string.IsNullOrEmpty(query.ConsumerIdentity))
         {
             where += RelationalMessageFilter.ExactText(_t.ConsumerIdentity, "ConsumerIdentity");
@@ -141,6 +146,13 @@ internal sealed partial class RelationalDataStorage
         void bind(DbCommand command)
         {
             _dialect.AddParameter(command, "IncarnationId", SqlColumnType.Guid, query.IncarnationId);
+            RelationalMessageFilter.BindExactText(
+                _dialect,
+                command,
+                "GenerationMessageId",
+                query.MessageId,
+                SqlColumnType.KeyText(_NameMaxLength)
+            );
             RelationalMessageFilter.BindExactText(
                 _dialect,
                 command,

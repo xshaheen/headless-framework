@@ -252,6 +252,12 @@ internal sealed record MessagingRowView
     /// <summary>Whether a received row is held; <see langword="null"/> when the read did not say.</summary>
     public bool? IsHeld { get; init; }
 
+    /// <summary>
+    /// The inbox generation a received row is, set only by the generations read, and <see langword="null"/> there for
+    /// a row the store keeps no generation for.
+    /// </summary>
+    public MessagingGenerationView? Generation { get; init; }
+
     /// <summary>Whether the row failed for good: <see cref="StatusName.Failed"/> with no retry pending.</summary>
     public bool Terminal => Status == StatusName.Failed && NextRetryAt is null;
 
@@ -332,8 +338,49 @@ internal sealed record MessagingRowList(
     bool Incomplete = false
 );
 
-/// <summary>The generations of one received message: its rows across consumers and re-executions.</summary>
+/// <summary>
+/// The generations of one received message: its rows across consumers and re-executions, oldest first, each with its
+/// <see cref="MessagingRowView.Generation"/>.
+/// </summary>
 internal sealed record MessagingGenerationList(IReadOnlyList<MessagingRowView> Items);
+
+/// <summary>What the inbox records about one generation of a received message.</summary>
+/// <param name="Number">The generation number: <c>0</c> for the first delivery, one more for each re-execution.</param>
+/// <param name="IncarnationId">The generation's incarnation, which its audited operations fence on.</param>
+/// <param name="Origin"><c>original</c> for a delivered generation, <c>replay</c> for one an operator re-executed.</param>
+/// <param name="IsCurrent">Whether this is the message's current generation for its consumer.</param>
+/// <param name="ReplayOfIncarnationId">The incarnation a replay re-executed; null for an original.</param>
+/// <param name="ReplayOfId">
+/// The object id of the row a replay re-executed, when the store still keeps it; null otherwise.
+/// </param>
+/// <param name="ExpiresAt">When retention may delete the ended generation; null while it has not ended.</param>
+/// <param name="Recovery">
+/// <c>orphaned</c> when no host had the consumer registered, so the generation waits for its registration to return
+/// and recovery probes it; else <c>routable</c>.
+/// </param>
+internal sealed record MessagingGenerationView(
+    long Number,
+    Guid IncarnationId,
+    string Origin,
+    bool IsCurrent,
+    Guid? ReplayOfIncarnationId,
+    string? ReplayOfId,
+    DateTimeOffset? ExpiresAt,
+    string Recovery
+)
+{
+    public static MessagingGenerationView From(InboxGenerationView generation, string? replayOfId) =>
+        new(
+            generation.Generation,
+            generation.IncarnationId,
+            generation.ReplayParentIncarnationId is null ? "original" : "replay",
+            generation.IsCurrentGeneration,
+            generation.ReplayParentIncarnationId,
+            replayOfId,
+            generation.EffectiveExpiresAt,
+            generation.IsOrphaned ? "orphaned" : "routable"
+        );
+}
 
 /// <summary>The pending scheduled deliveries of one store, or why the store cannot list them.</summary>
 internal sealed record MessagingScheduledList(
@@ -367,7 +414,17 @@ internal sealed record MessagingCircuitList(IReadOnlyList<MessagingCircuitView> 
 /// What the last forwarded call to another node found, such as <c>not-answering</c>, or null before the first call
 /// and for this node.
 /// </param>
-internal sealed record MessagingNodeView(string Name, bool IsLocal, IReadOnlyList<string> Stores, string? State = null);
+/// <param name="Instances">
+/// Each discovered instance of another node, with its address, port, and tags; null for this node, which discovery
+/// does not list.
+/// </param>
+internal sealed record MessagingNodeView(
+    string Name,
+    bool IsLocal,
+    IReadOnlyList<string> Stores,
+    string? State = null,
+    IReadOnlyList<MessagingPeerInstance>? Instances = null
+);
 
 internal sealed record MessagingNodeList(IReadOnlyList<MessagingNodeView> Items)
 {
@@ -385,6 +442,50 @@ internal sealed record MessagingRealtimeMetrics(
     IReadOnlyList<int?> ConsumedPerSecond,
     IReadOnlyList<int?> ConsumeElapsedMs
 );
+
+/// <summary>
+/// The last 24 hours of each store's finished rows, per UTC hour: one series per status, its entries in the order of
+/// <see cref="HourStarts"/>. A row counts in the hour it was added, under its status now.
+/// </summary>
+/// <param name="AsOf">When this node read the stores.</param>
+/// <param name="HourStarts">The start of each hour, oldest first; the last is the current, still running hour.</param>
+/// <param name="Stores">
+/// Every store this node reads, in its configured order. A store that did not answer has null series and is named in
+/// <paramref name="Unavailable"/>; it is never shown as zero.
+/// </param>
+/// <param name="Unavailable">The stores that failed or did not answer in time.</param>
+internal sealed record MessagingHourlyHistory(
+    DateTimeOffset AsOf,
+    IReadOnlyList<DateTimeOffset> HourStarts,
+    IReadOnlyList<MessagingHourlyStore> Stores,
+    IReadOnlyList<string> Unavailable
+)
+{
+    /// <summary>How many hours the history covers.</summary>
+    public const int Hours = 24;
+
+    /// <summary>Gets the width of one bucket, as an ISO 8601 duration.</summary>
+    public string Interval { get; init; } = "PT1H";
+
+    /// <summary>Gets the zone the buckets are cut in.</summary>
+    public string Zone { get; init; } = "UTC";
+}
+
+/// <summary>One store's hourly series.</summary>
+/// <param name="Published">The store's published rows; null when the store did not answer.</param>
+/// <param name="Received">
+/// The store's received rows; null when the store did not answer, and for an additional outbox, which holds none.
+/// </param>
+internal sealed record MessagingHourlyStore(
+    string Store,
+    MessagingHourlySeries? Published,
+    MessagingHourlySeries? Received
+);
+
+/// <summary>
+/// Succeeded and failed counts per hour. An entry is null for an hour the store did not count, never zero.
+/// </summary>
+internal sealed record MessagingHourlySeries(IReadOnlyList<int?> Succeeded, IReadOnlyList<int?> Failed);
 
 /// <summary>The filter a received or published list sends, and a Needs-you group hands over.</summary>
 internal sealed record MessagingListScope
@@ -430,6 +531,9 @@ internal sealed record MessagingListScope
 [JsonSerializable(typeof(MessagingCircuitList))]
 [JsonSerializable(typeof(MessagingNodeList))]
 [JsonSerializable(typeof(MessagingRealtimeMetrics))]
+[JsonSerializable(typeof(MessagingHourlyHistory))]
+[JsonSerializable(typeof(MessagingPingResult))]
+[JsonSerializable(typeof(MessagingPingRequest))]
 [JsonSerializable(typeof(MessagingListScope))]
 [JsonSerializable(typeof(MessagingSearchRequest))]
 internal sealed partial class MessagingDashboardJsonContext : JsonSerializerContext;
