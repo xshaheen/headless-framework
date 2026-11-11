@@ -65,6 +65,16 @@ public class MediumMessage
     /// </summary>
     public int InlineAttempts { get; set; }
 
+    /// <summary>
+    /// Gets or sets how many transactional inbox attempts of this received row failed before the handler ran (opening
+    /// the connection, beginning the transaction, or the delivery-coordination check). Such a failure reschedules the
+    /// row without spending <see cref="Retries"/> or <see cref="InlineAttempts"/>; this count bounds those reschedules
+    /// against <c>RetryPolicyOptions.MaxPreEntryFailures</c>. A storage provider persists it with the received row's
+    /// state and returns it with every received row it hands to dispatch; a provider that drops it lets a fault that
+    /// never clears reschedule forever.
+    /// </summary>
+    public int PreEntryFailures { get; set; }
+
     /// <summary>The durable logical inbox key when this is a received inbox row.</summary>
     public InboxKey? InboxKey { get; set; }
 

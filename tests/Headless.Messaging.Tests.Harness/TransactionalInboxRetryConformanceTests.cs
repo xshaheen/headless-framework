@@ -226,6 +226,94 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_a_pre_entry_fault_that_outlasts_the_execution_strategy_as_never_started()
+    {
+        // given: every transaction start fails, and the execution strategy replays an attempt only once
+        var transactionStarts = 0;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<InboxRetryDbContext>(options =>
+        {
+            ConfigureContext(options);
+            options.ReplaceService<IExecutionStrategyFactory, OneShotRetryExecutionStrategyFactory>();
+            options.AddInterceptors(new PersistentBeginFaultInterceptor(() => transactionStarts++));
+        });
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            ConfigureStorage(setup);
+            setup.Options.CommandTimeout = TimeSpan.FromSeconds(1);
+        });
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        var storage = provider.GetRequiredService<IDataStorage>();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
+
+        var id = Guid.NewGuid();
+        var admission = await storage.AdmitReceivedMessageAsync(
+            "tests.inbox-pre-entry",
+            "tests.inbox-pre-entry.consumer",
+            "v1",
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = new Message(
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [Headers.MessageId] = id.ToString(),
+                        [Headers.MessageName] = "tests.inbox-pre-entry",
+                        [Headers.ConsumerIdentity] = "tests.inbox-pre-entry.consumer",
+                    },
+                    id
+                ),
+                Content = string.Empty,
+                Lane = MessageLane.Bus,
+            },
+            cancellationToken: AbortToken
+        );
+        var message = admission.Message;
+        var originalInlineAttempts = message.InlineAttempts++;
+        (
+            await storage.LeaseReceiveAndReserveAttemptAsync(
+                message,
+                TimeSpan.FromMinutes(1),
+                originalInlineAttempts,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        // when
+        var handlerEntries = 0;
+        Exception? error;
+        await using (var attemptScope = provider.CreateAsyncScope())
+        {
+            error = await Record.ExceptionAsync(() =>
+                attemptScope
+                    .ServiceProvider.GetRequiredService<IInboxTransactionRunner>()
+                    .ExecuteAsync(
+                        message,
+                        (_, _) =>
+                        {
+                            handlerEntries++;
+                            return Task.CompletedTask;
+                        },
+                        AbortToken
+                    )
+            );
+        }
+
+        // then: the strategy saw the raw fault and replayed it, and the executor is told the handler never ran
+        transactionStarts.Should().Be(2);
+        handlerEntries.Should().Be(0);
+        error
+            .Should()
+            .BeOfType<InboxAttemptNotStartedException>()
+            .Which.InnerException.Should()
+            .BeOfType<RetryableInboxException>();
+    }
+
+    [Fact]
     [Guarantee("MSG-CONSUME-08")]
     public async Task should_report_success_when_the_drain_faults_after_a_durable_commit()
     {
@@ -604,6 +692,20 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
                 // has this one proxy, so resetting its server lifts the toxic and nothing else.
                 await proxy.ResetServerAsync(CancellationToken.None);
             }
+        }
+    }
+
+    private sealed class PersistentBeginFaultInterceptor(Action onStart) : DbTransactionInterceptor
+    {
+        public override ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
+            DbConnection connection,
+            TransactionStartingEventData eventData,
+            InterceptionResult<DbTransaction> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            onStart();
+            throw new RetryableInboxException();
         }
     }
 

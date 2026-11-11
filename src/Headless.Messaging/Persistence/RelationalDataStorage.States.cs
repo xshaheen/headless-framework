@@ -387,8 +387,10 @@ internal sealed partial class RelationalDataStorage
         if (received)
         {
             // The received table also ends the inbox attempt with the lease, and stamps an inbox generation's terminal
-            // time and the retention it starts.
+            // time and the retention it starts. It also carries the count of attempts that failed before the handler
+            // ran, which bounds the reschedules that spend no retry budget.
             set.Add($"{_t.AttemptId}=CASE WHEN @KeepLease = {_t.True} THEN {_t.AttemptId} ELSE NULL END");
+            set.Add($"{_t.PreEntryFailures}=@PreEntryFailures");
             set.Add(
                 $"{_t.TerminalAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} AND @IsTerminal = {_t.True} THEN {SqlDialectTokens.Now} ELSE {_t.TerminalAt} END"
             );
@@ -453,6 +455,7 @@ internal sealed partial class RelationalDataStorage
             if (received)
             {
                 _dialect.AddParameter(command, "IsTerminal", SqlColumnType.Boolean, isTerminal);
+                _dialect.AddParameter(command, "PreEntryFailures", SqlColumnType.Int32, message.PreEntryFailures);
                 _BindInboxAttempt(command, message.InboxAttemptFence, matchStorageId: false);
             }
         }

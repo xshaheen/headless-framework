@@ -1616,7 +1616,257 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         writes[1].FailureFingerprint.Should().NotBe(writes[0].FailureFingerprint);
     }
 
+    // ─── Transactional attempts that fail before the handler runs ───────────────────────────────────
+
+    [Fact]
+    public async Task should_reschedule_an_attempt_that_failed_before_the_handler_ran_without_spending_the_budget()
+    {
+        // given — a pool timeout while the inbox transaction opens, on a consumer with immediate and delayed retries
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _AlwaysThrowing(new TimeoutException("handler"), out var invocations);
+        var exhausted = 0;
+        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        var writes = _CaptureWrites(storage);
+        var message = _CreateInboxMessage();
+        var runner = _NotStartingRunner(message, new TimeoutException("pool exhausted"), out var runs);
+        await using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+
+        // when
+        var result = await executor.ExecuteAsync(
+            message,
+            dispatchServices,
+            _CreateDescriptor(_Policy(immediate: 2, delayed: 3)),
+            AbortToken
+        );
+
+        // then — one reschedule that hands the reserved attempt back, with no inline retry and no handler run
+        result.Succeeded.Should().BeFalse();
+        runs().Should().Be(1, "an attempt that never started is not retried inside the dispatch");
+        invocations().Should().Be(0);
+        var write = writes.Should().ContainSingle().Which;
+        write.Status.Should().Be(StatusName.Scheduled);
+        write.KeepLease.Should().BeFalse();
+        write.OriginalRetries.Should().Be(0);
+        write.OriginalInlineAttempts.Should().Be(1, "the write is fenced on the attempt this dispatch reserved");
+        write.Delay.Should().NotBeNull();
+        write
+            .Delay!.Value.Delay.Should()
+            .BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(0.8))
+            .And.BeLessThan(TimeSpan.FromSeconds(1.2));
+        write.ExceptionInfo.Should().Contain("pool exhausted");
+        message.Retries.Should().Be(0);
+        message.InlineAttempts.Should().Be(0, "the next pickup reserves the attempt the handler never used");
+        message.PreEntryFailures.Should().Be(1);
+        exhausted.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_back_off_a_repeated_pre_entry_failure_from_the_rows_stored_count()
+    {
+        // given — the row already failed before entry three times
+        var storage = Substitute.For<IDataStorage>();
+        var executor = _CreateExecutor(_Succeeding(out _), storage, new MessagingOptions());
+        var writes = _CaptureWrites(storage);
+        var message = _CreateInboxMessage();
+        message.PreEntryFailures = 3;
+        var runner = _NotStartingRunner(message, new TimeoutException("pool exhausted"), out _);
+        await using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+
+        // when
+        await executor.ExecuteAsync(message, dispatchServices, _CreateDescriptor(_Policy(0, 0)), AbortToken);
+
+        // then — the fourth reschedule waits about 2^3 seconds, and even a consumer with no retries is not ended
+        var write = writes.Should().ContainSingle().Which;
+        _IsTerminal(write).Should().BeFalse();
+        write
+            .Delay!.Value.Delay.Should()
+            .BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(6.4))
+            .And.BeLessThan(TimeSpan.FromSeconds(9.6));
+        message.PreEntryFailures.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task should_count_a_pre_entry_failure_against_the_budget_once_the_row_reaches_the_bound()
+    {
+        // given — a row already at MaxPreEntryFailures, on a consumer with no retries
+        var storage = Substitute.For<IDataStorage>();
+        var terminals = new List<TerminalMessageInfo>();
+        var options = _OptionsCountingExhausted(terminals.Add);
+        options.RetryPolicy.MaxPreEntryFailures = 2;
+        var executor = _CreateExecutor(_Succeeding(out _), storage, options);
+        var writes = _CaptureWrites(storage);
+        var message = _CreateInboxMessage();
+        message.PreEntryFailures = 2;
+        var runner = _NotStartingRunner(message, new TimeoutException("login revoked"), out _);
+        await using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+
+        // when
+        var result = await executor.ExecuteAsync(
+            message,
+            dispatchServices,
+            _CreateDescriptor(_Policy(0, 0)),
+            AbortToken
+        );
+
+        // then — today's accounting: the spent budget ends the row, and the terminal callback sees the fault itself
+        result.Exception.Should().BeOfType<TimeoutException>().Which.Message.Should().Be("login revoked");
+        writes.Should().ContainSingle().Which.Should().Match<StateWrite>(write => _IsTerminal(write));
+        terminals.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.RetriesExhausted);
+        terminals[0].Exception.Should().BeOfType<TimeoutException>();
+        message.PreEntryFailures.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_end_a_pre_entry_failure_that_never_clears_after_the_bound_plus_the_budget()
+    {
+        // given — every attempt fails before entry; the bound is 3 and the consumer has one delayed retry
+        var storage = Substitute.For<IDataStorage>();
+        var exhausted = 0;
+        var options = _OptionsCountingExhausted(() => exhausted++);
+        options.RetryPolicy.MaxPreEntryFailures = 3;
+        var executor = _CreateExecutor(_Succeeding(out var invocations), storage, options);
+        var writes = _CaptureWrites(storage);
+        var descriptor = _CreateDescriptor(_Policy(immediate: 0, delayed: 1));
+        var message = _CreateInboxMessage();
+        var runner = _NotStartingRunner(message, new TimeoutException("wrong connection string"), out var runs);
+        await using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+
+        // when — the first dispatch, then one dispatch per pickup, until the row turns terminal
+        var dispatches = 0;
+        while (!writes.Exists(_IsTerminal) && dispatches < 20)
+        {
+            dispatches++;
+            await executor.ExecuteRetryAsync(
+                message,
+                dispatchServices,
+                new RetryExecutionState(),
+                descriptor,
+                AbortToken
+            );
+        }
+
+        // then — three free reschedules, then the first attempt and its one delayed retry are spent
+        dispatches.Should().Be(5);
+        runs().Should().Be(5);
+        invocations().Should().Be(0);
+        writes.Take(3).Should().AllSatisfy(write => write.Status.Should().Be(StatusName.Scheduled));
+        writes[3].Should().Match<StateWrite>(write => !_IsTerminal(write) && write.OriginalRetries == 0);
+        _IsTerminal(writes[4]).Should().BeTrue();
+        exhausted.Should().Be(1);
+        message.PreEntryFailures.Should().Be(3);
+        message.Retries.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_count_a_requests_pre_entry_failure_against_the_budget()
+    {
+        // given — a request: its caller waits only until the deadline, so a free reschedule could outlive it
+        var storage = Substitute.For<IDataStorage>();
+        var executor = _CreateExecutor(_Succeeding(out _), storage, new MessagingOptions());
+        var writes = _CaptureWrites(storage);
+        var message = _CreateInboxMessage();
+        message.Lane = MessageLane.Queue;
+        message.Origin.Headers[Headers.ReplyTo] = "replies";
+        var runner = _NotStartingRunner(message, new TimeoutException("pool exhausted"), out _);
+        await using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+
+        // when
+        var result = await executor.ExecuteAsync(
+            message,
+            dispatchServices,
+            _CreateDescriptor(_Policy(0, 0)),
+            AbortToken
+        );
+
+        // then
+        result.Exception.Should().BeOfType<TimeoutException>();
+        _IsTerminal(writes.Should().ContainSingle().Which).Should().BeTrue();
+        message.PreEntryFailures.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_spend_the_budget_when_the_handler_ran_and_failed_inside_the_inbox_transaction()
+    {
+        // given — the attempt entered the handler, which failed
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ConsumerExecutedResult>(new TimeoutException("handler")));
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var writes = _CaptureWrites(storage);
+        var message = _CreateInboxMessage();
+        var runner = Substitute.For<IInboxTransactionRunner>();
+        runner
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<Func<IUnitOfWork, CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+                call.ArgAt<Func<IUnitOfWork, CancellationToken, Task>>(1)(
+                    Substitute.For<IUnitOfWork>(),
+                    call.ArgAt<CancellationToken>(2)
+                )
+            );
+        await using var dispatchServices = new ServiceCollection().AddSingleton(runner).BuildServiceProvider();
+
+        // when
+        await executor.ExecuteAsync(
+            message,
+            dispatchServices,
+            _CreateDescriptor(_Policy(immediate: 0, delayed: 1)),
+            AbortToken
+        );
+
+        // then — the delayed retry is spent as before, and the pre-entry count is untouched
+        var write = writes.Should().ContainSingle().Which;
+        write.Status.Should().Be(StatusName.Failed);
+        write.Delay.Should().NotBeNull();
+        message.Retries.Should().Be(1);
+        message.PreEntryFailures.Should().Be(0);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────────────────────────
+
+    private static MediumMessage _CreateInboxMessage()
+    {
+        var message = _CreateMediumMessage();
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            "test.messageName",
+            "v1",
+            CancellationExecutorTestConsumer.Identity,
+            Generation: 0
+        );
+        return message;
+    }
+
+    /// <summary>A runner whose every attempt fails before the handler runs, as the shared runner reports it.</summary>
+    private static IInboxTransactionRunner _NotStartingRunner(
+        MediumMessage message,
+        Exception fault,
+        out Func<int> runs
+    )
+    {
+        var count = 0;
+        var runner = Substitute.For<IInboxTransactionRunner>();
+        runner
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<Func<IUnitOfWork, CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref count);
+                return Task.FromException(new InboxAttemptNotStartedException(message.StorageId, fault));
+            });
+        runs = () => Volatile.Read(ref count);
+        return runner;
+    }
 
     private sealed record StateWrite(
         StatusName Status,
