@@ -38,6 +38,7 @@ import {
   useNodeReset,
   type AttentionItem,
 } from '../parts.tsx'
+import { HourlyHistoryCard, LiveThroughput, StatusDistributionCard } from '../insight.tsx'
 
 const cardRows = 6
 
@@ -80,6 +81,9 @@ export default function MessagingDashboard() {
       />
       <Cards>
         <MessagingAttention />
+        <StatusDistributionCard />
+        <LiveThroughput />
+        <HourlyHistoryCard />
         <RecentFailures kind="received" />
         <RecentFailures kind="published" />
       </Cards>

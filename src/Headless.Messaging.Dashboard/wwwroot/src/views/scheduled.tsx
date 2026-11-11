@@ -11,12 +11,22 @@ import {
   usePageFrame,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
+import { FilterCombobox } from '@headless/dashboard-sdk/combobox'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { nodeQuery } from '../messages.ts'
-import { CellText, MessagingStats, NodeSwitch, QueryState, StaleNotice, useNode } from '../parts.tsx'
+import {
+  CellText,
+  MessagingStats,
+  NodeSwitch,
+  QueryState,
+  StaleNotice,
+  useConsumers,
+  useContracts,
+  useNode,
+} from '../parts.tsx'
 
 export interface ScheduledDelivery {
   storageId: string
@@ -48,14 +58,23 @@ export default function ScheduledView() {
   const [params, setParams] = useSearchParams()
   const { node, nodes, local } = useNode()
   const store = params.get('store') ?? ''
+  const name = params.get('name') ?? ''
+  const contracts = useContracts()
+  const consumers = useConsumers()
   const page = Math.max(Number.parseInt(params.get('page') ?? '1', 10) || 1, 1)
   const scheduled = useQuery({
-    queryKey: ['messaging', 'scheduled', node, store, page],
+    queryKey: ['messaging', 'scheduled', node, store, name, page],
     queryFn: () =>
       api.request<ScheduledList>({
         method: 'GET',
         path: 'messaging/scheduled',
-        query: { ...(store ? { store } : {}), page: String(page), perPage: String(perPage), ...nodeQuery(node) },
+        query: {
+          ...(store ? { store } : {}),
+          ...(name ? { name } : {}),
+          page: String(page),
+          perPage: String(perPage),
+          ...nodeQuery(node),
+        },
       }),
   })
   // A published row's id names the node that stores it, the local one included.
@@ -70,6 +89,28 @@ export default function ScheduledView() {
   const total = scheduled.data?.totalCount ?? 0
   const pages = Math.max(Math.ceil(total / perPage), 1)
   const nodeSuffix = node ? `&node=${encodeURIComponent(node)}` : ''
+  // A host can declare hundreds of messages, so the name is typed to narrow rather than scanned in a select.
+  const nameOptions = [
+    ...new Set([
+      ...(contracts.data ?? []).map((contract) => contract.name),
+      ...(consumers.data ?? []).flatMap((consumer) => consumer.messages.map((message) => message.name)),
+      ...(name ? [name] : []),
+    ]),
+  ]
+    .sort()
+    .map((value) => ({ value, label: value }))
+
+  function setName(value: string) {
+    update((next) => {
+      next.delete('page')
+
+      if (value) {
+        next.set('name', value)
+      } else {
+        next.delete('name')
+      }
+    })
+  }
 
   function update(change: (next: URLSearchParams) => void) {
     setParams(
@@ -97,7 +138,7 @@ export default function ScheduledView() {
           count={scheduled.data?.supported ? format.number(total) : undefined}
           description="Messages the store holds for a later delivery, soonest first."
           toolbar={
-            <FilterToolbar active={store ? 1 : 0}>
+            <FilterToolbar active={(store ? 1 : 0) + (name ? 1 : 0)}>
               <NodeSwitch />
               <FilterSelect
                 label="Store"
@@ -116,6 +157,13 @@ export default function ScheduledView() {
                 }
                 options={storeOptions}
               />
+              <FilterCombobox
+                label="Message"
+                emptyLabel="Any message"
+                value={name}
+                onChange={setName}
+                options={nameOptions}
+              />
             </FilterToolbar>
           }
         />
@@ -131,7 +179,11 @@ export default function ScheduledView() {
                 viewId="messaging.scheduled"
                 frame={frame}
                 rows={rows}
-                emptyState="Nothing is scheduled. A delivery appears here when a host publishes a message with a delay."
+                emptyState={
+                  name
+                    ? `No ${name} delivery is scheduled.`
+                    : 'Nothing is scheduled. A delivery appears here when a host publishes a message with a delay.'
+                }
                 columns={[
                   {
                     id: 'name',

@@ -7,6 +7,7 @@ import {
   type DashboardApi,
   type DashboardListPage,
 } from '@headless/dashboard-sdk/data'
+import type { ListPageRequest, ListRange } from '@headless/dashboard-sdk/table'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import { useState } from 'react'
@@ -16,6 +17,11 @@ export type MessageKind = 'published' | 'received'
 export const messageStatuses = ['Failed', 'Scheduled', 'Succeeded', 'Delayed', 'Queued'] as const
 
 export type MessageStatus = (typeof messageStatuses)[number]
+
+/** The lanes a list filters by, as the server names them. */
+export const messageLanes = ['Bus', 'Queue'] as const
+
+export type MessageLane = (typeof messageLanes)[number]
 
 /**
  * One stored row, as a list, a by-id read, and a live change's projection carry it. Its id is
@@ -61,6 +67,8 @@ export interface MessageFilter {
   name: string
   fingerprint: string
   held: string
+  lane: MessageLane | ''
+  messageId: string
 }
 
 // Typed as the whole filter, so a field added to MessageFilter must be listed here, and so in filterNames.
@@ -73,6 +81,8 @@ const emptyFilter: MessageFilter = {
   name: '',
   fingerprint: '',
   held: '',
+  lane: '',
+  messageId: '',
 }
 
 export const filterNames = Object.keys(emptyFilter) as (keyof MessageFilter)[]
@@ -87,6 +97,8 @@ export function readFilter(params: URLSearchParams, kind: MessageKind): MessageF
 
     if (name === 'status') {
       filter.status = messageStatuses.find((status) => status.toLowerCase() === value.toLowerCase()) ?? ''
+    } else if (name === 'lane') {
+      filter.lane = messageLanes.find((lane) => lane.toLowerCase() === value.toLowerCase()) ?? ''
     } else if (flags.has(name)) {
       // A flag reads only as `true`, the one value the server reads as set.
       filter[name] = value.toLowerCase() === 'true' ? 'true' : ''
@@ -113,9 +125,17 @@ export function readFilter(params: URLSearchParams, kind: MessageKind): MessageF
   return filter
 }
 
-/** Whether `row` matches `filter` as the server reads it, so a live change can tell a row it left the filter. */
-export function messageMatches(row: MessageRow, filter: MessageFilter) {
+/**
+ * Whether `row` matches `filter`, and the added time falls in `range`, as the server reads them, so a live change can
+ * tell a row it left the filter. A search the browser cannot check, since a row carries no content, is the view's.
+ */
+export function messageMatches(row: MessageRow, filter: MessageFilter, range?: ListRange) {
+  const added = Date.parse(row.added)
+
   return (
+    (!range || (added >= Date.parse(range.start) && added < Date.parse(range.end))) &&
+    (!filter.lane || row.lane === filter.lane) &&
+    (!filter.messageId || row.messageId === filter.messageId) &&
     (!filter.store || row.store === filter.store) &&
     (!filter.status || row.status === filter.status) &&
     (!filter.terminal || row.terminal) &&
@@ -129,17 +149,28 @@ export function messageMatches(row: MessageRow, filter: MessageFilter) {
 
 /**
  * Whether an Operation can scope by `filter` on a `kind` list. An Operation's filter names a store, status, terminal,
- * consumer, name, and fingerprint; it cannot say retrying or held, so those lists act on the checked rows only. An
- * Operation also runs on one store, so a published list that merges every store acts on the checked rows until a store
- * is picked: otherwise its count would cover rows the Operation never touches.
+ * consumer, name, fingerprint, lane, message id, and added range; it cannot say retrying or held, so those lists act on
+ * the checked rows only. An Operation also runs on one store, so a published list that merges every store acts on the
+ * checked rows until a store is picked: otherwise its count would cover rows the Operation never touches. A search
+ * never scopes one, for the reason `searchScopeReason` gives.
  */
-export function canScope(filter: MessageFilter, kind: MessageKind) {
-  return !filter.retrying && !filter.held && (kind !== 'published' || Boolean(filter.store))
+export function canScope(filter: MessageFilter, kind: MessageKind, isSearching = false) {
+  return !isSearching && !filter.retrying && !filter.held && (kind !== 'published' || Boolean(filter.store))
 }
 
+/**
+ * Why a searched list acts on its checked rows only: the shell records an Operation's filter in the operator log, and
+ * search text must never reach a log.
+ */
+export const searchScopeReason =
+  'While a search is set, actions run on the checked rows only: an action over every match would record the search text in the operator log.'
+
 /** The filter as an Operation's scope, on `node`: the server freezes exactly the rows it matches at confirm. */
-export function operationScope(filter: MessageFilter, node: string) {
+export function operationScope(filter: MessageFilter, node: string, range?: ListRange) {
   return {
+    ...(filter.lane ? { lane: filter.lane } : {}),
+    ...(filter.messageId ? { messageId: filter.messageId } : {}),
+    ...(range ? { from: range.start, before: range.end } : {}),
     ...(node ? { node } : {}),
     ...(filter.store ? { store: filter.store } : {}),
     ...(filter.status ? { status: filter.status } : {}),
@@ -216,42 +247,121 @@ interface MessageListAnswer {
   nextCursor?: string | null
   /** The stores that did not answer; their rows are missing from the page. */
   unavailable?: string[]
+  /** A search that ran out of time in some store, whose matches may be missing from the page. */
+  incomplete?: boolean
+}
+
+/** A list's search through stored messages. It lives in the view's state only: never the URL, the cursor, or a log. */
+export interface MessageSearch {
+  /** Text in the stored headers or body, as a literal substring, without regard to case. */
+  content: string
+  /** The correlation id header, exactly, without regard to case. */
+  correlationId: string
+}
+
+export const noSearch: MessageSearch = { content: '', correlationId: '' }
+
+/**
+ * The search as the keyset list's `search`, which keys its cache and comes back in each page request: empty when
+ * nothing is searched, so the list reads the plain route.
+ */
+export function searchKey(search: MessageSearch) {
+  return search.content || search.correlationId ? JSON.stringify([search.content, search.correlationId]) : ''
+}
+
+function readSearchKey(key: string | undefined): MessageSearch {
+  if (!key) {
+    return noSearch
+  }
+
+  const parsed: unknown = JSON.parse(key)
+
+  return Array.isArray(parsed) && typeof parsed[0] === 'string' && typeof parsed[1] === 'string'
+    ? { content: parsed[0], correlationId: parsed[1] }
+    : noSearch
+}
+
+export type MessagePage = DashboardListPage<MessageRow> & {
+  count: CappedCount
+  unavailable: string[]
+  incomplete: boolean
 }
 
 const pageSize = 100
+const flagFields = new Set<keyof MessageFilter>(['terminal', 'retrying', 'held'])
 
-/** One page of a list, newest first: the first page, or the page after the row `cursor` names. */
+/**
+ * One page of a list in the server order `request.sort` names, newest first by default: the first page, or the page
+ * after the row `cursor` names. A search goes in the body of the list's search route, so its text never enters a URL.
+ */
 export async function fetchMessages(
   api: DashboardApi,
   kind: MessageKind,
   node: string,
   filter: MessageFilter,
   cursor?: string,
+  request: Partial<Pick<ListPageRequest, 'sort' | 'search' | 'range'>> = {},
   limit = pageSize,
-): Promise<DashboardListPage<MessageRow> & { count: CappedCount; unavailable: string[] }> {
-  const query: Record<string, string> = { limit: String(limit), ...nodeQuery(node) }
+): Promise<MessagePage> {
+  const fields: Record<string, string> = {}
 
   for (const name of filterNames) {
     const value = filter[name]
 
     if (value) {
-      query[name] = value
+      fields[name] = value
     }
   }
 
-  if (cursor) {
-    query.after = cursor
+  if (request.sort) {
+    fields.sort = request.sort.key
+    fields.direction = request.sort.direction
   }
 
-  const answer = await api.request<MessageListAnswer>({ method: 'GET', path: `messaging/${kind}`, query })
+  if (request.range) {
+    fields.from = request.range.start
+    fields.before = request.range.end
+  }
+
+  if (cursor) {
+    fields.after = cursor
+  }
+
+  const search = readSearchKey(request.search)
+  const answer =
+    search.content || search.correlationId
+      ? await api.request<MessageListAnswer>({
+          method: 'POST',
+          path: `messaging/${kind}/search`,
+          query: nodeQuery(node),
+          // The body is JSON, so the flags travel as booleans and the limit as a number.
+          body: {
+            ...Object.fromEntries(
+              Object.entries(fields).map(([name, value]) => [
+                name,
+                flagFields.has(name as keyof MessageFilter) ? value === 'true' : value,
+              ]),
+            ),
+            limit,
+            ...(search.content ? { content: search.content } : {}),
+            ...(search.correlationId ? { correlationId: search.correlationId } : {}),
+          },
+        })
+      : await api.request<MessageListAnswer>({
+          method: 'GET',
+          path: `messaging/${kind}`,
+          query: { ...fields, limit: String(limit), ...nodeQuery(node) },
+        })
   const unavailable = answer.unavailable ?? []
+  const incomplete = answer.incomplete === true
 
   return {
     items: answer.items,
-    // A store that did not answer is missing from the count, so the count reads as at least.
-    count: { value: answer.count, capped: answer.countCapped || unavailable.length > 0 },
+    // A store that did not answer, or a search that ran out of time, leaves rows out of the count: it reads as at least.
+    count: { value: answer.count, capped: answer.countCapped || unavailable.length > 0 || incomplete },
     nextCursor: answer.nextCursor ?? null,
     unavailable,
+    incomplete,
   }
 }
 
@@ -264,12 +374,32 @@ export async function fetchMessage(api: DashboardApi, kind: MessageKind, node: s
   })
 }
 
+/** An inbox generation of a received row, as the store's inbox operations keep it. */
+export interface InboxGeneration {
+  /** `0` for the first delivery, one more per re-execution. */
+  number: number
+  incarnationId: string
+  origin: 'original' | 'replay'
+  isCurrent: boolean
+  replayOfIncarnationId?: string | null
+  /** The object id of the row a replay re-executed, while the store keeps it. */
+  replayOfId?: string | null
+  /** When retention may delete the ended generation; absent while it runs. */
+  expiresAt?: string | null
+  /** `orphaned` while no host has the consumer registered. */
+  recovery: 'orphaned' | 'routable'
+}
+
+/** A received row with its generation, when the store keeps one for it. */
+export type GenerationRow = MessageRow & { generation?: InboxGeneration | null }
+
 /** The rows of one received message across its consumers and re-executions, oldest first. */
 export async function fetchGenerations(api: DashboardApi, node: string, messageId: string, consumer?: string) {
   const query = { messageId, ...(consumer ? { consumer } : {}), ...nodeQuery(node) }
 
-  return (await api.request<{ items: MessageRow[] }>({ method: 'GET', path: 'messaging/received/generations', query }))
-    .items
+  return (
+    await api.request<{ items: GenerationRow[] }>({ method: 'GET', path: 'messaging/received/generations', query })
+  ).items
 }
 
 export const viewOnlyReason = 'Needs operate permission'

@@ -56,10 +56,12 @@ import {
   useMessagingCommands,
   versionsOf,
   type MessageCommandName,
+  type GenerationRow,
   type MessageKind,
   type MessageRow,
   type Pending,
 } from './messages.ts'
+import { envelopeBody } from './envelope.ts'
 
 /**
  * A list cell's content, with `title` giving the full text on hover. The table ends a cell's only child in an
@@ -123,12 +125,21 @@ export function useStale() {
   return status === 'stale' || isStale || (node !== '' && isNodeStale)
 }
 
+/** One instance discovery lists for a node: its address, port (`0` when the address carries it), and tags. */
+export interface MessagingNodeInstance {
+  address: string
+  port: number
+  tags: string[]
+}
+
 export interface MessagingNode {
   name: string
   isLocal: boolean
   stores: string[]
   /** What the last forwarded call to the node found, such as `not-answering`; none before the first call. */
   state?: string | null
+  /** Each instance discovery lists for the node, in discovery order; absent for this node. */
+  instances?: MessagingNodeInstance[] | null
 }
 
 export interface MessagingNodeList {
@@ -313,6 +324,7 @@ export function useMessagingCounts() {
               node,
               readFilter(new URLSearchParams(params), kind),
               undefined,
+              {},
               1,
             )
 
@@ -548,43 +560,85 @@ function Optional({ label, value, span }: { label: string; value: ReactNode; spa
   )
 }
 
-/** A row's own fields, which a list row and a live change carry. */
-export function MessageFields({ kind, row }: { kind: MessageKind; row: MessageRow }) {
+/** The headers that tie a message to the work around it, in the order the Correlation group shows them. */
+const correlationHeaders: readonly { header: string; label: string }[] = [
+  { header: 'headless-corr-id', label: 'Correlation id' },
+  { header: 'headless-corr-seq', label: 'Sequence' },
+  { header: 'headless-causation-id', label: 'Causation id' },
+  { header: 'traceparent', label: 'Trace parent' },
+  { header: 'headless-request-id', label: 'Request id' },
+  { header: 'headless-in-reply-to', label: 'In reply to' },
+  { header: 'headless-reply-to', label: 'Reply to' },
+]
+
+/**
+ * A row's fields in three groups: who it is, how and when it travels, and what it belongs to. The row carries the first
+ * two; the correlation comes from the stored headers, so it shows once the detail is read.
+ */
+export function MessageFields({
+  kind,
+  row,
+  headers,
+}: {
+  kind: MessageKind
+  row: MessageRow
+  headers?: Readonly<Record<string, string | null>>
+}) {
   const format = useFormat()
+  const correlation = correlationHeaders.flatMap(({ header, label }) => {
+    const value = headers?.[header]
+
+    return value ? [{ label, value }] : []
+  })
 
   return (
     <>
-      <FieldGrid label="State">
-        <GridField label="Status">{rowMark(row).label}</GridField>
-        <GridField label="Retries">{format.number(row.retries)}</GridField>
-        <Optional
-          label="Next retry"
-          span={2}
-          value={row.nextRetryAt ? <Timestamp value={row.nextRetryAt} /> : undefined}
-        />
-        <Optional label="Changed" span={2} value={row.changedAt ? <Timestamp value={row.changedAt} /> : undefined} />
-        <Optional label="Expires" span={2} value={row.expiresAt ? <Timestamp value={row.expiresAt} /> : undefined} />
-      </FieldGrid>
-      <FieldGrid label="Delivery">
-        <GridField label="Lane">{row.lane}</GridField>
-        {kind === 'published' ? <GridField label="Store">{row.store}</GridField> : null}
-        <GridField label="Added" span={2}>
-          <Timestamp value={row.added} />
-        </GridField>
-        <Optional label="Consumer" span={2} value={row.consumer ? <Mono>{row.consumer}</Mono> : undefined} />
-      </FieldGrid>
       <FieldGrid label="Identity">
         <Optional label="Message id" span={2} value={row.messageId ? <Mono>{row.messageId}</Mono> : undefined} />
         <Optional label="Tenant" value={row.tenantId ? <Mono>{row.tenantId}</Mono> : undefined} />
+        <GridField label="Storage id" span={2}>
+          <Mono>{row.storageId}</Mono>
+        </GridField>
         <Optional
           label="Fingerprint"
           span={2}
           value={row.failureFingerprint ? <Mono>{row.failureFingerprint}</Mono> : undefined}
         />
-        <GridField label="Storage id" span={2}>
-          <Mono>{row.storageId}</Mono>
-        </GridField>
       </FieldGrid>
+      <FieldGrid label="Delivery">
+        <GridField label="Status">{rowMark(row).label}</GridField>
+        <GridField label="Lane">{row.lane}</GridField>
+        {kind === 'published' ? <GridField label="Store">{row.store}</GridField> : null}
+        <GridField label="Retries">{format.number(row.retries)}</GridField>
+        <Optional label="Consumer" span={2} value={row.consumer ? <Mono>{row.consumer}</Mono> : undefined} />
+        <GridField label="Added" span={2}>
+          <Mono>{format.exactTime(row.added)}</Mono>
+        </GridField>
+        <Optional
+          label="Changed"
+          span={2}
+          value={row.changedAt ? <Mono>{format.exactTime(row.changedAt)}</Mono> : undefined}
+        />
+        <Optional
+          label="Next retry"
+          span={2}
+          value={row.nextRetryAt ? <Timestamp value={row.nextRetryAt} scheduled /> : undefined}
+        />
+        <Optional
+          label="Expires"
+          span={2}
+          value={row.expiresAt ? <Timestamp value={row.expiresAt} scheduled /> : undefined}
+        />
+      </FieldGrid>
+      {correlation.length > 0 ? (
+        <FieldGrid label="Correlation">
+          {correlation.map(({ label, value }) => (
+            <GridField key={label} label={label} span={2}>
+              <Mono>{value}</Mono>
+            </GridField>
+          ))}
+        </FieldGrid>
+      ) : null}
     </>
   )
 }
@@ -602,11 +656,21 @@ export function useMessageDetail(kind: MessageKind, node: string, row: Pick<Mess
 type MessageDetail = NonNullable<ReturnType<typeof useMessageDetail>['data']>
 
 /** The row's own fields, under what the detail read says when it could not be read. */
-function MessageOverview({ kind, row, notice }: { kind: MessageKind; row: MessageRow; notice?: ReactNode }) {
+function MessageOverview({
+  kind,
+  row,
+  headers,
+  notice,
+}: {
+  kind: MessageKind
+  row: MessageRow
+  headers?: Readonly<Record<string, string | null>>
+  notice?: ReactNode
+}) {
   return (
     <div>
       {notice}
-      <MessageFields kind={kind} row={row} />
+      <MessageFields kind={kind} row={row} headers={headers} />
     </div>
   )
 }
@@ -630,11 +694,14 @@ function MessageHeaders({ detail }: { detail: MessageDetail }) {
 }
 
 function MessageBody({ detail }: { detail: MessageDetail }) {
+  // The store keeps the whole envelope; its headers already have their own tab, so the body shows the value alone.
+  const body = envelopeBody(detail.content)
+
   return (
     <section aria-label="Body">
       {/* The server stores the serialized message, so its own content type names the format. */}
       <PayloadView
-        content={detail.content}
+        content={body ?? detail.content}
         contentType={detail.headers['headless-content-type'] ?? detail.headers['content-type'] ?? 'application/json'}
       />
     </section>
@@ -643,10 +710,12 @@ function MessageBody({ detail }: { detail: MessageDetail }) {
 
 /**
  * The rows of one received message across its consumers and re-executions, newest first. The store keeps each
- * generation's row, not each move between states, so only those show.
+ * generation's row, not each move between states, so only those show: with its number, whether it is the current one
+ * or a replay of another, when retention may delete it, and whether a host can still run it.
  */
 function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
   const { api } = useDashboard()
+  const format = useFormat()
   const messageId = row.messageId
   const generations = useQuery({
     queryKey: ['messaging', 'generations', node, messageId, row.version ?? ''],
@@ -679,6 +748,7 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
       tone: mark.tone,
       state: generation.id === row.id ? `${mark.label} (this row)` : mark.label,
       note: [
+        generationNote(generation, format.exactTime),
         generation.consumer,
         `${generation.retries} retries`,
         generation.failureFingerprint && `fingerprint ${generation.failureFingerprint}`,
@@ -689,6 +759,25 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
   })
 
   return <HistoryList label="Generations" items={items} />
+}
+
+/** `Generation 1, current, replay of generation 0, orphaned, expires …`: what the store records about a generation. */
+export function generationNote(row: GenerationRow, exactTime: (at: string) => string) {
+  const generation = row.generation
+
+  if (!generation) {
+    return 'No generation recorded'
+  }
+
+  return [
+    `Generation ${generation.number}`,
+    generation.isCurrent ? 'current' : 'retired',
+    generation.origin === 'replay' ? 'replay' : 'original',
+    generation.recovery === 'orphaned' ? 'orphaned: no host registers its consumer' : undefined,
+    generation.expiresAt ? `expires ${exactTime(generation.expiresAt)}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(', ')
 }
 
 /** The commands each kind's rows offer, in order; the first is the recovery action. */
@@ -791,6 +880,7 @@ export function MessagePanel({
             <MessageOverview
               kind={kind}
               row={row}
+              headers={data?.headers}
               notice={
                 gone ? (
                   <EmptyState role="alert" title="This message no longer exists." />
@@ -823,7 +913,8 @@ export interface MessagingConsumer {
   runState: 'runs-here' | 'registered-not-run-here'
   /** Whether the host's consume-only list names the consumer; missing when the host has no such list. */
   consumeOnly?: 'listed' | 'not-listed'
-  messages: { name: string; contractVersion: string }[]
+  /** Each message it consumes, with the type that implements it and the method that handles it, when the host says. */
+  messages: { name: string; contractVersion: string; consumerType?: string | null; handlerMethod?: string | null }[]
   concurrency: number
   inboxRetentionSeconds?: number
   rateLimit?:

@@ -15,10 +15,12 @@ import {
   usePageFrame,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
+import { FilterCombobox } from '@headless/dashboard-sdk/combobox'
 import { OpenCircuitIcon, RefreshIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { DataTable } from '@headless/dashboard-sdk/table'
+import { useState } from 'react'
 import { circuitTones, formatSeconds, nodeQuery, useMessagingCommands, type MessageCommandName } from '../messages.ts'
 import {
   CellText,
@@ -71,12 +73,35 @@ export function spanSeconds(span: string) {
   return Number(days) * 86_400 + Number(hours) * 3_600 + Number(minutes) * 60 + Number(seconds)
 }
 
+/**
+ * The types that implement a consumer, short: the class name without its namespace, as the list has room for. A
+ * consumer of several messages may name several.
+ */
+function implementations(consumer: MessagingConsumer) {
+  return [...new Set(consumer.messages.flatMap((message) => (message.consumerType ? [message.consumerType] : [])))]
+}
+
+function shortType(type: string) {
+  // A nested or generic type keeps its outer name: `Billing.OrderConsumer+Inner` reads `OrderConsumer+Inner`.
+  const generic = type.indexOf('`')
+  const plain = generic < 0 ? type : type.slice(0, generic)
+
+  return plain.slice(plain.lastIndexOf('.') + 1)
+}
+
 export default function ConsumersView() {
   const format = useFormat()
   const { node, local } = useNode()
   const consumers = useConsumers()
   const circuits = useCircuits()
-  const rows = (consumers.data ?? []).map((consumer) => ({ ...consumer, id: consumer.identity }))
+  // A host can register hundreds of consumers, so the message they consume narrows the list as the operator types.
+  const [message, setMessage] = useState('')
+  const messageOptions = [...new Set((consumers.data ?? []).flatMap((item) => item.messages.map((each) => each.name)))]
+    .sort()
+    .map((name) => ({ value: name, label: name }))
+  const rows = (consumers.data ?? [])
+    .filter((consumer) => !message || consumer.messages.some((each) => each.name === message))
+    .map((consumer) => ({ ...consumer, id: consumer.identity }))
   const frame = usePageFrame({ viewId: 'messaging.consumers', rows })
   const nodeName = node || local?.name || ''
   // A circuit's link opens its consumer, as the circuit is one consumer's breaker on one node.
@@ -94,8 +119,15 @@ export default function ConsumersView() {
           count={consumers.data ? format.number(rows.length) : undefined}
           description="Every consumer the node registers, with how it runs and its circuit breaker."
           toolbar={
-            <FilterToolbar>
+            <FilterToolbar active={message ? 1 : 0}>
               <NodeSwitch />
+              <FilterCombobox
+                label="Message"
+                emptyLabel="Any message"
+                value={message}
+                onChange={setMessage}
+                options={messageOptions}
+              />
             </FilterToolbar>
           }
         />
@@ -118,7 +150,7 @@ export default function ConsumersView() {
             viewId="messaging.consumers"
             frame={frame}
             rows={rows}
-            emptyState="This node registers no consumers."
+            emptyState={message ? `No consumer on this node consumes ${message}.` : 'This node registers no consumers.'}
             columns={[
               {
                 id: 'identity',
@@ -131,6 +163,22 @@ export default function ConsumersView() {
                 isRowHeader: true,
                 kind: 'id',
                 width: '2fr',
+              },
+              {
+                id: 'type',
+                header: 'Implementation',
+                cell: (row) => {
+                  const types = implementations(row)
+
+                  return (
+                    <CellText title={types.join(', ')}>
+                      <Mono>{types.map(shortType).join(', ')}</Mono>
+                    </CellText>
+                  )
+                },
+                kind: 'id',
+                priority: 2,
+                width: '1.5fr',
               },
               {
                 id: 'messages',
@@ -368,6 +416,21 @@ function ConsumerPanel({
                         : 'Off'}
                     </GridField>
                   ) : null}
+                </FieldGrid>
+                <FieldGrid label="Handlers" columns={2}>
+                  {consumer.messages.map((message) => (
+                    <GridField key={message.name} label={`${message.name} v${message.contractVersion}`} span={2}>
+                      {message.consumerType ? (
+                        <Mono>
+                          {message.handlerMethod
+                            ? `${message.consumerType}.${message.handlerMethod}`
+                            : message.consumerType}
+                        </Mono>
+                      ) : (
+                        'Not reported by this host'
+                      )}
+                    </GridField>
+                  ))}
                 </FieldGrid>
               </div>
               <section aria-label="Messages it consumes">
