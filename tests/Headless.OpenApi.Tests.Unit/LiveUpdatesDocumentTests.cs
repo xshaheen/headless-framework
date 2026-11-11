@@ -71,7 +71,7 @@ public sealed class LiveUpdatesDocumentTests : TestBase
     }
 
     [Fact]
-    public async Task should_describe_a_newline_delimited_line_as_a_result_a_failure_or_a_heartbeat()
+    public async Task should_describe_a_newline_delimited_line_as_a_result_a_failure_a_heartbeat_or_an_acknowledgement()
     {
         var document = await _GetDocumentAsync(withLiveEndpoints: true);
         var content = document.Operation("/live/orders/{id}", "get")["responses"]!["200"]!["content"]!;
@@ -88,7 +88,8 @@ public sealed class LiveUpdatesDocumentTests : TestBase
                       "properties": {
                         "kind": { "type": "string", "const": "result" },
                         "version": { "type": "string" },
-                        "value": { "$ref": "#/components/schemas/OrderView" }
+                        "value": { "$ref": "#/components/schemas/OrderView" },
+                        "acknowledged": { "type": "array", "items": { "type": "string" } }
                       }
                     },
                     {
@@ -105,6 +106,14 @@ public sealed class LiveUpdatesDocumentTests : TestBase
                       "type": "object",
                       "properties": {
                         "kind": { "type": "string", "const": "heartbeat" }
+                      }
+                    },
+                    {
+                      "required": ["kind", "acknowledged"],
+                      "type": "object",
+                      "properties": {
+                        "kind": { "type": "string", "const": "acknowledged" },
+                        "acknowledged": { "type": "array", "items": { "type": "string" } }
                       }
                     }
                   ]
@@ -139,7 +148,7 @@ public sealed class LiveUpdatesDocumentTests : TestBase
 
         var result = content[_Ndjson]!["schema"]!["oneOf"]![0]!;
         result.Required().Should().Equal("kind", "version", "value");
-        result["properties"]!.AsObject().Select(x => x.Key).Should().Equal("kind", "version");
+        result["properties"]!.AsObject().Select(x => x.Key).Should().Equal("kind", "version", "acknowledged");
     }
 
     [Fact]

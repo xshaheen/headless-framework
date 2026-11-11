@@ -80,6 +80,9 @@ public sealed class OrderWriter(IOrderStore store, ILiveQueryInvalidator invalid
 - Do not put a token in the query string to authenticate a stream. A stream authenticates with the cookies or headers of the request that opened it, and every re-run authenticates and authorizes that request again.
 - Serve live endpoints over HTTP/2. Browsers allow six HTTP/1.1 connections per origin, and each open stream holds one.
 - On reconnect a client receives a full result. `Last-Event-ID` is ignored; do not build resumption on it.
+- For optimistic updates, tag the command with `X-Headless-Live-Session` and `X-Headless-Live-Command` and call `app.UseHeadlessLiveCommands()` after `UseAuthentication()`. Do not invent a version comparison: a client holds its optimistic result until one of its own streams reports the command id, as [Command acknowledgement](#command-acknowledgement) specifies.
+- Open a stream that must report command ids with `fetch`, not `EventSource`: `EventSource` cannot send the session header.
+- Never put data or a secret in a command id. It is echoed to the sender's other streams, and only ASCII letters, digits and hyphens are accepted.
 
 ## Core Concepts
 
@@ -128,11 +131,11 @@ public sealed class StockReader(ILiveQueryDependencies dependencies, IStockStore
 | `ILiveQueryDependencies` | `DependsOn(params IEnumerable<string> keys)` makes the running live query depend on the keys. |
 | `ILiveQueryInvalidator` | `InvalidateAsync(keys, cancellationToken)` signals every subscription in this process that depends on one of the keys. |
 | `LiveSnapshot<T>` | One result: `Value`, the `Version` token, and `IsInitial` for the first result of the subscription. |
-| `LiveUpdate` | One update as a transport forwards it: `Kind`, `Payload` (the result as UTF-8 JSON bytes), and the `Version` token. |
-| `LiveUpdateKind` | `Initial`, `Changed`, or `Failed`. A `Failed` update carries the failure body and is the last update of its subscription. |
+| `LiveUpdate` | One update as a transport forwards it: `Kind`, `Payload` (the result as UTF-8 JSON bytes), the `Version` token, and `AcknowledgedCommands`, the ids of the subscriber's own commands that the result reflects (empty for most updates). |
+| `LiveUpdateKind` | `Initial`, `Changed`, `Failed`, or `Acknowledged`. A `Failed` update carries the failure body and is the last update of its subscription. An `Acknowledged` update carries no result: its `Payload` is empty, its `Version` repeats the last result's token, and it exists only for its `AcknowledgedCommands`. |
 | `LiveQueryHasNoDependenciesException` | Thrown while enumerating when a run recorded no dependency. |
 
-`LiveSnapshot<T>` and `LiveUpdate` are records built with object initializers; both reject an empty `Version`.
+`LiveSnapshot<T>` and `LiveUpdate` are records built with object initializers; both reject an empty `Version`. `ILiveQueries.WatchAsync` never yields for an `Acknowledged` update: a subscription opened from .NET code has no client session, so no command is acknowledged to it.
 
 ### Design and runtime behavior
 
@@ -248,6 +251,13 @@ event: result
 id: 0b7e2a9c4d6f8e1a3c5b7d9f2e4a6c8b
 data: [{"id":1,"title":"milk"},{"id":2,"title":"eggs"}]
 
+event: result
+id: 3c9d1e5f7a2b4c6d8e0f1a3b5c7d9e2f;2f6c1a52-7d0e-4c58-9f0a-6f1f3b1d9a11
+data: [{"id":1,"title":"milk"},{"id":2,"title":"eggs"},{"id":3,"title":"bread"}]
+
+event: acknowledged
+data: ["8f1c44a0-3b7e-4d0e-b7a5-0a1e5d2c9f43"]
+
 event: failure
 id: 9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d
 data: {"type":"…","title":"Forbidden","status":403,"detail":"…","error":{"code":"g:live_query_unauthorized","description":"…"}}
@@ -258,7 +268,8 @@ data: {"type":"…","title":"Forbidden","status":403,"detail":"…","error":{"co
 | `retry:` | Sent once, first. `LiveEndpointsOptions.ReconnectDelay` in milliseconds. |
 | `event: result` | The endpoint's response body, on one `data:` line even when the host's serializer indents. |
 | `event: failure` | A problem-details body. It is the last event; the server then ends the response. |
-| `id:` | The update's opaque version token. Compare for equality only. |
+| `id:` | The update's opaque version token. Compare for equality only. On a result that holds commands of this client, the token is followed by `;` and the command ids, separated by `,`. Neither character occurs in a token or an id. |
+| `event: acknowledged` | Commands of this client that the last result already reflects, with no new result: `data:` is a JSON array of the command ids. It has no `id:`. Sent only on a stream opened with a session id; see [Command acknowledgement](#command-acknowledgement). |
 | `: heartbeat` | A comment line, written whenever `HeartbeatInterval` passes with nothing sent. `EventSource` ignores it. |
 
 Newline-delimited JSON (`Accept: application/x-ndjson`), for callers that read a plain stream. One object per line:
@@ -266,12 +277,14 @@ Newline-delimited JSON (`Accept: application/x-ndjson`), for callers that read a
 ```text
 {"kind":"result","version":"5f1c0c1d8a4e4b0f9d2a7c3e6b1f0a9d","value":[{"id":1,"title":"milk"}]}
 {"kind":"heartbeat"}
+{"kind":"result","version":"3c9d1e5f7a2b4c6d8e0f1a3b5c7d9e2f","acknowledged":["2f6c1a52-7d0e-4c58-9f0a-6f1f3b1d9a11"],"value":[{"id":1,"title":"milk"},{"id":3,"title":"bread"}]}
+{"kind":"acknowledged","acknowledged":["8f1c44a0-3b7e-4d0e-b7a5-0a1e5d2c9f43"]}
 {"kind":"failure","version":"9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d","value":{"title":"Forbidden","status":403,"error":{"code":"g:live_query_unauthorized","description":"…"}}}
 ```
 
-A client ignores a `kind` it does not know. Both formats send `Cache-Control: no-cache, no-store` and `X-Accel-Buffering: no`, and turn response buffering off, so each update leaves when it is written. `UseHeadless` does not buffer either format: neither media type is in its response-compression list.
+A result line has an `acknowledged` member only when it holds commands of this client; a failure line never has one. A client ignores a `kind` it does not know. Both formats send `Cache-Control: no-cache, no-store` and `X-Accel-Buffering: no`, and turn response buffering off, so each update leaves when it is written. `UseHeadless` does not buffer either format: neither media type is in its response-compression list.
 
-A re-run whose result equals the last one sent sends nothing. A client that reconnects opens a new stream and receives a full result; `Last-Event-ID` is ignored.
+A re-run whose result equals the last one sent sends nothing, unless the stream has a command to acknowledge, and then it sends the acknowledgement alone. A client that reconnects opens a new stream and receives a full result; `Last-Event-ID` is ignored.
 
 Error codes, as constants on `LiveEndpointsErrorCodes`:
 
@@ -281,6 +294,95 @@ Error codes, as constants on `LiveEndpointsErrorCodes`:
 | `g:live_query_run_failed` | Failure event | A re-run threw (`status` 500) or answered outside 200 to 299 (`status` is that status). The exception is logged, never sent. |
 | `g:live_query_unauthorized` | Failure event | A re-run found the caller no longer authenticated (`status` 401) or no longer authorized (`status` 403). |
 | `g:live_query_stream_limit_reached` | 429 response with `Retry-After` | The caller or the host already holds the allowed number of streams. |
+
+### Command acknowledgement
+
+A client that shows the expected result of a command at once (an optimistic update) needs to know when the server's result holds that command, so it can drop its own guess in the same step and never show the change twice or not at all. The client tags the command, and the server reports the command id on that client's own streams. No other client is told.
+
+```csharp
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseHeadlessLiveCommands(); // after UseAuthentication, before the endpoints
+```
+
+`UseHeadlessLiveCommands()` reads the headers below from every request and passes a request without them through untouched. Streams need no middleware: a host that acknowledges no command leaves the call out. Place it after `UseAuthentication()`: the user is read when the request reaches it, so ahead of authentication every command counts as anonymous and a signed-in client's streams acknowledge nothing. It is not part of `UseHeadless()`; calling it twice adds it once.
+
+The headers, as constants on `LiveCommandHeaders`:
+
+| Header | On | Value |
+| --- | --- | --- |
+| `X-Headless-Live-Session` | Request: every stream and every command of one client | An id the client generates once, for itself: 22 to 64 ASCII letters, digits and hyphens, random. `crypto.randomUUID()` fits. |
+| `X-Headless-Live-Command` | Request: a command | An id the client generates for this command: 1 to 64 ASCII letters, digits and hyphens. |
+| `X-Headless-Live-Acknowledgement` | Response: a command whose two ids were accepted | `pending`: the command committed a tracked write, and each open stream of the client reports the command id. `none`: it committed none, and no stream will. |
+
+What the server does:
+
+- **An id of any other shape is ignored.** So is a header sent more than once, and a command id without a usable session id. The command still runs; the response carries no `X-Headless-Live-Acknowledgement`, and nothing is acknowledged. The shape is enforced because a command id is written to another connection's stream.
+- **A tracked write is one announced on the command's own request.** That is a commit of a tracked EF Core context, or a call to `ILiveQueryInvalidator.InvalidateAsync`, made on the request's execution flow before the request ends. A commit completed elsewhere, such as an ambient `TransactionScope` that finishes on another thread, or work the handler leaves running after it returns, is announced as nobody's command: streams still receive the new result, with no command id.
+- **Only the sender's streams are told.** A stream reports a command id when it was opened with the same session id by the same user (the user defined under [Configuration](#configuration-1); two anonymous requests are the same user). Another user who learned the session id is told nothing, and neither is the same user's other tab or device, which has its own session id.
+- **A stream the write could change reports the id with the result that holds it.** The stream runs again after the commit. If the result changed, the id travels on that result (`id:` in server-sent events, `acknowledged` in NDJSON). If the result is the same as the last one sent, the id travels alone, as an `acknowledged` event or line.
+- **A stream the write does not touch reports the id alone, without running again.** So a client can drop an optimistic result it applied to a query the command turned out not to change.
+- **The response header is decided when the response starts.** A handler that streams its response before it commits answers `none` and is acknowledged on the streams all the same.
+- **A command that commits more than once** may be reported after its first commit and again after a later one. Commit once, in one unit of work, when the client must see one step.
+- **A stream holds at most 1,024 ids it has not sent yet.** Past that, which takes a client that stopped reading its stream, the oldest are dropped.
+- **One process.** The command and the stream must be served by the same process, as for every announcement. On a second instance the response still says `pending` and no stream reports the id.
+
+What a client does:
+
+1. Generate a session id once, when the application starts. Send it on every stream and every command. Open streams with `fetch`, because `EventSource` cannot send a header.
+2. For a command with an optimistic result: generate a command id, apply the patch to each query it should change, and send the command with both headers. A query's displayed value is the last server result with its pending patches applied on top.
+3. When the command's response arrives:
+   - failed: remove its patches (roll back);
+   - `X-Headless-Live-Acknowledgement: pending`: keep each patch until that query's stream reports the command id;
+   - `none`, or no such header: remove its patches now. No stream will report the id.
+4. On a stream: for a result that carries command ids, replace the server result and remove those commands' patches from that query in the same step. For an `acknowledged` event or line, remove the patches and keep the server result.
+5. When a stream opens or reopens, its first result reflects every command committed before it opened, and the ids reported to the stream it replaces are gone. So for each patch of that query whose command was sent before the first result arrived, remove the patch once both the first result and the command's response are in, whether or not an id came. In the rare case that the command committed just after the stream opened, the result without it shows for a moment, and the stream sends the result with it next.
+
+Version tokens play no part: a client never compares them to decide whether a result holds a command.
+
+```ts
+const session = crypto.randomUUID();
+
+async function watch(url: string, onResult: (value: unknown) => void, acknowledged: (ids: string[]) => void) {
+  const response = await fetch(url, {
+    headers: { Accept: "application/x-ndjson", "X-Headless-Live-Session": session },
+  });
+  const lines = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+
+  for (;;) {
+    const { value, done } = await lines.read();
+    if (done) return;
+    buffer += value;
+
+    for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
+      const line = JSON.parse(buffer.slice(0, end));
+      buffer = buffer.slice(end + 1);
+
+      // The result first, then the ids it holds, with no render in between.
+      if (line.kind === "result") onResult(line.value);
+      if (line.acknowledged) acknowledged(line.acknowledged);
+    }
+  }
+}
+
+async function send(url: string, body: unknown, patch: { remove(): void; command: string }) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Headless-Live-Session": session,
+      "X-Headless-Live-Command": patch.command,
+    },
+    body: JSON.stringify(body),
+  });
+
+  // Kept only while a stream is going to report the command.
+  if (!response.ok || response.headers.get("X-Headless-Live-Acknowledgement") !== "pending") patch.remove();
+}
+```
+
+A browser client on another origin needs both request headers allowed and `X-Headless-Live-Acknowledgement` exposed by the host's CORS policy.
 
 ### OpenAPI and generated clients
 
@@ -360,6 +462,7 @@ Invalid values fail options validation when the host starts.
 - **Tenancy.** Runs execute on the opening request's own execution flow, so the ambient tenant the tenancy middleware set stays in effect; a stream of tenant B re-runs under tenant B whoever wrote. A run whose freshly authenticated principal carries a different `tenant_id` claim than the principal that opened the stream, or none, is refused, and the stream ends with a `g:live_query_unauthorized` failure. With catalog identifier resolution, a principal whose tenant claim stops matching the identifier is refused the same way. A host that keeps the tenant in a claim type of its own gets neither comparison on endpoints without the catalog check; there the stream keeps the tenant it opened under.
 - **The first run decides whether there is a stream.** A first run that answers outside 200 to 299 is sent to the client as it is (status, headers, body). A first run that throws takes the host's ordinary error handling. A first run that records no dependency is refused with a 500 problem. None of them opens a stream.
 - **A failed re-run ends the stream.** The client receives one failure event and the response ends. The host keeps serving; the client may reconnect.
+- **Command acknowledgement rides the same loop.** A stream reads its session id from the request that opened it, once. Command ids reach it through the hub and are written by the stream's own loop, with the result of a run that started after the command's commit, so an id never arrives ahead of the write it stands for.
 - **Limits gate the stream, nothing else.** The minimum interval and the re-run limit make a stream's own loop wait. No run ever executes on a writer's flow or a shared worker.
 - **Host shutdown.** When the host begins to stop, every open stream ends and the response completes normally. A server-sent events client reconnects after `ReconnectDelay`.
 - **`IHttpContextAccessor`.** Inside a run it returns the run's request. For a streaming request, code outside the endpoint that reads the accessor after the first run (response middleware, for example) reads `null`; use the `HttpContext` it was given.
@@ -410,7 +513,9 @@ public sealed class LineLiveTransport : ILiveTransport
         await foreach (var update in updates.WithCancellation(cancellationToken))
         {
             var payload = Encoding.UTF8.GetString(update.Payload.Span);
-            await httpContext.Response.WriteAsync($"{update.Kind}|{update.Version}|{payload}\n", cancellationToken);
+            var commands = string.Join(',', update.AcknowledgedCommands);
+            var line = $"{update.Kind}|{update.Version}|{commands}|{payload}\n";
+            await httpContext.Response.WriteAsync(line, cancellationToken);
             await httpContext.Response.Body.FlushAsync(cancellationToken);
         }
     }
@@ -424,6 +529,8 @@ builder.Services.AddHeadlessLiveQueries(setup => setup.UseEndpoints().AddTranspo
 - A transport is a singleton shared by every stream. Keep per-stream state in locals.
 - Enumerate `updates` once, and await each step from `WriteAsync` itself. A re-run executes inside that step and must stay on the request's execution flow; do not move the enumeration to `Task.Run` or a channel reader on another flow.
 - The first update is available at once. A `Failed` update is the last one; its payload is a problem-details body.
+- `AcknowledgedCommands` holds the ids of the client's own commands that the update's result reflects; see [Command acknowledgement](#command-acknowledgement). Carry them in the same record as the result, never in one before or after it: a client that learned them apart would show its optimistic result twice or not at all in between. Each id is a token of ASCII letters, digits and hyphens, at most 64 characters, and needs no escaping. The list is empty unless the stream was opened with a session id.
+- An `Acknowledged` update has ids and no result: its `Payload` is empty and its `Version` repeats the last result's. Write the ids, or skip the update in a format that carries no acknowledgement. Do not write its empty payload as a result.
 - `Payload` is the endpoint's response body, unchanged. It contains line breaks when the host's serializer indents; a line-based format removes them between tokens, as the built-in transports do, and the sample above does not.
 - The transport starts the response: content type, cache headers, and flushing after each update. `Vary: Accept` is already set.
 - `cancellationToken` is cancelled when the client disconnects or the host stops. Return or let `OperationCanceledException` leave.

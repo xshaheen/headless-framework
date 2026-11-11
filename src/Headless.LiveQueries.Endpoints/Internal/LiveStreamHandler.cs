@@ -73,7 +73,10 @@ internal sealed class LiveStreamHandler(
         );
 
         var stream = new LiveStream(httpContext, endpoint, this, ending.Token);
-        var subscription = hub.WatchAsync(stream.RunAsync, stream.EnterRerunAsync, ending.Token)
+        // Read once, from the request that opened the stream: the commands this client session sends are
+        // acknowledged on it, and nobody else's.
+        var subscriber = LiveCaller.SubscriberOf(httpContext);
+        var subscription = hub.WatchAsync(stream.RunAsync, stream.EnterRerunAsync, subscriber, ending.Token)
             .GetAsyncEnumerator(ending.Token);
         var updates = new LiveUpdateSequence(subscription);
 
@@ -139,6 +142,12 @@ internal sealed class LiveStreamHandler(
 
         if (subscription.Current.Kind is LiveUpdateKind.Failed)
         {
+            // The first run answered with something a stream cannot carry, which the client must not be sent.
+            if (stream.OpeningProblem is { } refused)
+            {
+                return Results.Problem(refused);
+            }
+
             await _CopyAsync(stream.LastResponse!, httpContext.Response, cancellationToken).ConfigureAwait(false);
 
             return Results.Empty;

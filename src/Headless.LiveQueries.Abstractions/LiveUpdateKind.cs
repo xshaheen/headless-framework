@@ -14,4 +14,10 @@ public enum LiveUpdateKind
 
     /// <summary>The run did not succeed. The subscription ends after this update.</summary>
     Failed,
+
+    /// <summary>
+    /// No new result: the update only names commands of the subscriber that the last result sent already reflects,
+    /// in <see cref="LiveUpdate.AcknowledgedCommands" />. A transport with no use for them skips the update.
+    /// </summary>
+    Acknowledged,
 }

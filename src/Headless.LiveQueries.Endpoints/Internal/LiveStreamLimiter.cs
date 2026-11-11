@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Claims;
-using Headless.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -49,20 +47,9 @@ internal sealed class LiveStreamLimiter
     /// <summary>Returns who a stream of <paramref name="httpContext" /> counts against.</summary>
     public static string OwnerOf(HttpContext httpContext)
     {
-        var user = httpContext.User;
-
-        if (user.Identity?.IsAuthenticated == true)
+        if (LiveCaller.UserOf(httpContext.User) is { } user)
         {
-            var id =
-                user.FindFirst(UserClaimTypes.UserId)?.Value
-                ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                ?? user.Identity.Name;
-
-            if (!string.IsNullOrEmpty(id))
-            {
-                // The same user id in two tenants is two users.
-                return $"user:{user.FindFirst(UserClaimTypes.TenantId)?.Value}:{id}";
-            }
+            return $"user:{user}";
         }
 
         // Anonymous callers cannot be told apart, so the address stands in for the user.
