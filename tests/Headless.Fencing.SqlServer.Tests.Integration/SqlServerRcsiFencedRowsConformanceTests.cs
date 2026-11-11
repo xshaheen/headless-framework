@@ -140,6 +140,12 @@ public sealed class SqlServerRcsiFencedRowsConformanceTests(SqlServerRcsiFencing
     }
 
     [Fact]
+    public override Task should_hand_the_abandoned_row_to_the_callers_transaction_and_restore_it_on_rollback()
+    {
+        return base.should_hand_the_abandoned_row_to_the_callers_transaction_and_restore_it_on_rollback();
+    }
+
+    [Fact]
     public override Task should_abandon_only_expired_active_attempts_and_count_each_as_a_takeover()
     {
         return base.should_abandon_only_expired_active_attempts_and_count_each_as_a_takeover();

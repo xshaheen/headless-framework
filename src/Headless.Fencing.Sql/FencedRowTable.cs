@@ -358,7 +358,7 @@ public sealed class FencedRowTable<TKey>
                 condition is null ? filter : $"{filter} AND ({condition})",
                 [ExpiresAt],
                 set is null ? assignments : assignments + ", " + set,
-                [Generation],
+                [.. KeyColumns, Generation],
                 BatchSizeParameter
             )
         );
@@ -385,7 +385,7 @@ public sealed class FencedRowTable<TKey>
                 condition is null ? filter : $"{filter} AND ({condition})",
                 [ExpiresAt],
                 set is null ? assignments : assignments + ", " + set,
-                [Generation],
+                [.. KeyColumns, Generation],
                 BatchSizeParameter
             )
         );
