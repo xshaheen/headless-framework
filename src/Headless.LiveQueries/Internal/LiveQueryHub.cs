@@ -88,7 +88,7 @@ internal sealed partial class LiveQueryHub(
         var subscriptions = 0;
         var woken = 0;
 
-        foreach (var subscription in _subscriptions.Keys)
+        foreach (var (subscription, _) in _subscriptions)
         {
             subscriptions++;
 
@@ -114,6 +114,29 @@ internal sealed partial class LiveQueryHub(
         }
 
         _LogInvalidated(_logger, writes.Keys.Count, writes.Rows.Count, woken, subscriptions);
+    }
+
+    /// <summary>
+    /// Returns whether a subscription read <paramref name="key" /> through row filters in its last run, so the rows
+    /// of a write to the key could spare it a re-run. A writer that hears <see langword="false" /> announces the
+    /// key whole and need not describe its rows.
+    /// </summary>
+    /// <remarks>
+    /// A subscription whose first run has not finished, or that starts after this call, is not counted. It is still
+    /// served: a row is matched against whatever a subscription has read by the time the write is announced, and a
+    /// run that races the announcement is checked against the key, which every row stamps.
+    /// </remarks>
+    public bool HasNarrowedReader(string key)
+    {
+        foreach (var subscription in _subscriptions)
+        {
+            if (subscription.Key.Dependencies.IsNarrowed(key))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
