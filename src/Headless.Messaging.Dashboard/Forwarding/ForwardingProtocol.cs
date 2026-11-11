@@ -14,7 +14,16 @@ internal static class ForwardingProtocol
     /// <summary>Marks a forwarded call and names the serving node; a peer serves such a call itself.</summary>
     public const string HopHeader = "X-Headless-Forwarded";
 
-    public const string KeyHeader = "X-Headless-Forwarding-Key";
+    /// <summary>
+    /// The signature of a key-mode call: <c>v1;ts={unix seconds};nonce={base64url};sig={base64url HMAC-SHA256}</c>.
+    /// </summary>
+    public const string SignatureHeader = "X-Headless-Forwarding-Signature";
+
+    /// <summary>
+    /// The raw shared key older builds sent. A peer refuses a call that carries it, so a node on an older build fails
+    /// loudly instead of sending its key to every node it calls.
+    /// </summary>
+    public const string LegacyKeyHeader = "X-Headless-Forwarding-Key";
 
     /// <summary>The operator's name, escaped with <see cref="Uri.EscapeDataString(string)"/>.</summary>
     public const string ActorHeader = "X-Headless-Forwarded-Actor";

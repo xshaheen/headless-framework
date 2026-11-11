@@ -128,9 +128,9 @@ public sealed class ForwardingNodeTests : TestBase
             new Uri($"{_Api}/received?node=node-c", UriKind.Relative)
         );
         request.Headers.TryAddWithoutValidation(ForwardingProtocol.HopHeader, "node-a");
-        request.Headers.TryAddWithoutValidation(ForwardingProtocol.KeyHeader, ForwardingHost.Key);
         request.Headers.TryAddWithoutValidation(ForwardingProtocol.ActorHeader, "ops");
         request.Headers.TryAddWithoutValidation(ForwardingProtocol.AccessHeader, ForwardingProtocol.AccessView);
+        await ForwardingHost.SignAsync(request, _time, AbortToken);
 
         // when
         using var response = await clientB.SendAsync(request, AbortToken);

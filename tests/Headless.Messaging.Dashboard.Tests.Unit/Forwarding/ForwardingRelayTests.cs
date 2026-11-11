@@ -140,7 +140,8 @@ public sealed class ForwardingRelayTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var call = _network.Calls.Should().ContainSingle().Subject;
         call.Uri.Should().Be(new Uri($"https://node-b{_Api}/messages/published/{id}"));
-        call.CarriedKey.Should().BeTrue();
+        call.Signed.Should().BeTrue();
+        call.CarriedRawKey.Should().BeFalse();
     }
 
     [Theory]
@@ -217,7 +218,7 @@ public sealed class ForwardingRelayTests : TestBase
     }
 
     [Fact]
-    public async Task should_send_the_key_to_no_other_host_when_a_peer_on_the_network_redirects()
+    public async Task should_send_the_signed_call_to_no_other_host_when_a_peer_on_the_network_redirects()
     {
         // given: a real peer on loopback that redirects every call to another listener, reached through the
         // forwarding client's own primary handler rather than the test network
@@ -227,7 +228,7 @@ public sealed class ForwardingRelayTests : TestBase
             {
                 lock (stolen)
                 {
-                    stolen.Add(context.Request.Headers[ForwardingProtocol.KeyHeader].ToString());
+                    stolen.Add(context.Request.Headers[ForwardingProtocol.SignatureHeader].ToString());
                 }
 
                 return Task.CompletedTask;
