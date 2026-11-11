@@ -12,6 +12,7 @@ import type {
   MessagingNodeList,
   RealtimeMetrics,
 } from '../src/parts.tsx'
+import type { HourlyHistory } from '../src/insight.tsx'
 import type { ScheduledList } from '../src/views/scheduled.tsx'
 
 export const now = new Date('2026-11-05T10:00:00Z')
@@ -147,6 +148,7 @@ export interface FakeServer {
   circuits?: MessagingCircuit[]
   scheduled?: ScheduledList
   realtime?: RealtimeMetrics
+  hourly?: HourlyHistory
   receipts?: unknown[]
   extra?: (request: ApiRequest) => unknown
 }
@@ -160,7 +162,9 @@ function matches(row: MessageRow, query: Readonly<Record<string, string | string
     (!query.consumer || row.consumer === query.consumer) &&
     (!query.name || row.name === query.name) &&
     (!query.fingerprint || row.failureFingerprint === query.fingerprint) &&
-    (!query.held || row.isHeld === true)
+    (!query.held || row.isHeld === true) &&
+    (!query.lane || row.lane === query.lane) &&
+    (!query.messageId || row.messageId === query.messageId)
   )
 }
 
@@ -176,6 +180,7 @@ export function server({
   circuits = [],
   scheduled = { store: 'primary', supported: true, items: [], totalCount: 0 },
   realtime = { seconds: [], publishedPerSecond: [], consumedPerSecond: [], consumeElapsedMs: [] },
+  hourly = { interval: 'PT1H', zone: 'UTC', asOf: now.toISOString(), hourStarts: [], stores: [], unavailable: [] },
   receipts = [],
   extra,
 }: FakeServer) {
@@ -238,6 +243,8 @@ export function server({
         return scheduled
       case 'messaging/metrics/realtime':
         return realtime
+      case 'messaging/metrics/hourly':
+        return hourly
       case 'messaging/receipts':
         return { items: receipts, nextCursor: null }
       case 'messaging/commands':

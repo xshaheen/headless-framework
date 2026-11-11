@@ -558,6 +558,63 @@ public abstract partial class DataStorageTestsBase
         resendTargets.Should().OnlyContain(static target => target.Status == StatusName.Failed);
     }
 
+    public virtual async Task should_scope_a_published_operation_by_lane_message_id_and_added_time()
+    {
+        // given: failures for good under one name, one of them on the queue lane
+        var storage = GetStorage();
+        var published = storage.GetPublishedOperationsApi();
+        var monitoring = storage.GetMonitoringApi();
+        var name = $"published-narrow-scope-{Guid.NewGuid():N}";
+        await _FailPublishedAsync(storage, name);
+        var second = await _FailPublishedAsync(storage, name, messageId: $"narrow-{Guid.NewGuid():N}");
+        var queued = await _FailPublishedAsync(storage, name, lane: MessageLane.Queue);
+        var rows = await monitoring.ListMessagesAsync(
+            new MessageListQuery { MessageType = MessageType.Publish, Name = name },
+            after: null,
+            pageSize: 10,
+            AbortToken
+        );
+        var from = rows.Items.Min(static row => row.Added);
+        var before = rows.Items.Max(static row => row.Added);
+        var scope = new MessageOperationScope
+        {
+            Kind = MessageOperationKind.Delete,
+            Query = new MessageListQuery { MessageType = MessageType.Publish, Name = name },
+            HighWaterMark = (await storage.GetLatestMessageChangeMarkerAsync(AbortToken))!.Value,
+        };
+
+        // when: each narrower filter scopes an Operation as it filters the list
+        var byLane = await _ReadWholePublishedScopeAsync(
+            published,
+            scope with
+            {
+                Query = scope.Query with { Lane = MessageLane.Queue },
+            },
+            chunkSize: 10
+        );
+        var byMessageId = await _ReadWholePublishedScopeAsync(
+            published,
+            scope with
+            {
+                Query = scope.Query with { MessageId = second.Origin.Id },
+            },
+            chunkSize: 10
+        );
+        var rangeScope = scope with { Query = scope.Query with { AddedFrom = from, AddedBefore = before } };
+        var byRange = await _ReadWholePublishedScopeAsync(published, rangeScope, chunkSize: 10);
+        var rangeCount = await published.CountOperationScopeAsync(rangeScope, cancellationToken: AbortToken);
+
+        // then: the start is inclusive and the end exclusive, as on the list
+        byLane.Select(static target => target.StorageId).Should().Equal(queued.StorageId);
+        byMessageId.Select(static target => target.StorageId).Should().Equal(second.StorageId);
+        var expected = rows
+            .Items.Where(row => row.Added >= from && row.Added < before)
+            .Select(static row => row.StorageId)
+            .ToList();
+        byRange.Select(static target => target.StorageId).Should().BeEquivalentTo(expected);
+        rangeCount.Should().Be(new MessageCount(expected.Count, Capped: false));
+    }
+
     private static async Task<MediumMessage> _SucceedPublishedAsync(IDataStorage storage, string name)
     {
         var message = await storage.StoreMessageAsync(name, CreateMessage(), cancellationToken: AbortToken);
@@ -637,10 +694,22 @@ public abstract partial class DataStorageTestsBase
     private static async Task<MediumMessage> _FailPublishedAsync(
         IDataStorage storage,
         string name,
-        RetryDelay? retryDelay = null
+        RetryDelay? retryDelay = null,
+        string? messageId = null,
+        MessageLane lane = MessageLane.Bus
     )
     {
-        var message = await storage.StoreMessageAsync(name, CreateMessage(), cancellationToken: AbortToken);
+        var message = await storage.StoreMessageAsync(
+            name,
+            new MediumMessage
+            {
+                StorageId = Guid.Empty,
+                Origin = CreateMessage(messageId),
+                Content = string.Empty,
+                Lane = lane,
+            },
+            cancellationToken: AbortToken
+        );
         (
             await storage.ChangePublishStateAsync(
                 message,

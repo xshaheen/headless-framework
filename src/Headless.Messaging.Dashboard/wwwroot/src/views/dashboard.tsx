@@ -38,6 +38,7 @@ import {
   useNodeReset,
   type AttentionItem,
 } from '../parts.tsx'
+import { HourlyHistoryCard, LiveThroughput, StatusDistributionCard } from '../insight.tsx'
 
 const cardRows = 6
 
@@ -79,9 +80,13 @@ export default function MessagingDashboard() {
         onRefresh={() => dashboardKeys.forEach((queryKey) => void client.invalidateQueries({ queryKey }))}
       />
       <Cards>
+        {/* Narrow cards fill the first row; each wide chart then shares a row with one narrow card. */}
         <MessagingAttention />
         <RecentFailures kind="received" />
         <RecentFailures kind="published" />
+        <LiveThroughput />
+        <StatusDistributionCard />
+        <HourlyHistoryCard />
       </Cards>
     </PageFrame>
   )

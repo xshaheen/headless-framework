@@ -20,9 +20,11 @@ import {
   PageHeader,
   Skeleton,
   StatusMark,
+  Text,
   usePageFrame,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
+import { FilterCombobox } from '@headless/dashboard-sdk/combobox'
 import {
   DashboardApiError,
   isNewerVersion,
@@ -32,7 +34,14 @@ import {
 } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
-import { DataTable, type DataTableColumn } from '@headless/dashboard-sdk/table'
+import { DateRangeField, timeRangePresets, useListRange, useTimeRangeSearch } from '@headless/dashboard-sdk/date-range'
+import {
+  DataTable,
+  SearchField,
+  type DataTableColumn,
+  type ListRange,
+  type ListSort,
+} from '@headless/dashboard-sdk/table'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   CellText,
@@ -57,12 +66,16 @@ import {
   filterNames,
   listName,
   markDone,
+  messageLanes,
   messageMatches,
   messagesNoun,
+  noSearch,
   operationScope,
   parseFailureGroup,
   readFilter,
   rowMark,
+  searchKey,
+  searchScopeReason,
   topicOf,
   useMessagingCommands,
   usePending,
@@ -72,8 +85,11 @@ import {
   type MessageFilter,
   type MessageKind,
   type MessageRow,
+  type MessageSearch,
   type Pending,
 } from '../messages.ts'
+
+const laneOptions = messageLanes.map((lane) => ({ value: lane, label: lane }))
 
 const titles: Readonly<Record<MessageKind, string>> = { published: 'published', received: 'received' }
 
@@ -130,17 +146,43 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
   const [params, setParams] = useSearchParams()
   const { node } = useNode()
   const filter = readFilter(params, kind)
-  const filterKey = [node, ...filterNames.map((name) => filter[name])].join('\n')
+  // The range is in the URL, so a link keeps it; the search and the sort are this view's own state, so search text
+  // never reaches the URL, and a reload starts without it.
+  const [timeRange, setTimeRange] = useTimeRangeSearch({ presets: timeRangePresets })
+  const range = useListRange(timeRange)
+  const [search, setSearch] = useState<MessageSearch>(noSearch)
+  const [sort, setSort] = useState<ListSort>()
+  // Bumped to empty the search boxes, which keep their own text.
+  const [searchReset, setSearchReset] = useState(0)
+  const isSearching = searchKey(search) !== ''
+  const filterKey = [
+    node,
+    ...filterNames.map((name) => filter[name]),
+    searchKey(search),
+    range?.start,
+    range?.end,
+  ].join('\n')
   const topic = topicOf(kind, node)
   const listParams = { ...filter, node }
+  // The Failed list's time column shows when a row failed, so an added-time order chosen on another list does not apply.
+  const listSort = filter.status === 'Failed' && sort?.key === 'added' ? undefined : sort
   const messages = useDashboardKeysetList<MessageRow>({
     topic,
     params: listParams,
-    fetchPage: (cursor) => fetchMessages(api, kind, node, filter, cursor),
+    sort: listSort,
+    search: searchKey(search),
+    range,
+    fetchPage: (cursor, request) => fetchMessages(api, kind, node, filter, cursor, request),
   })
   const items = messages.rows
   const list = messages.query
-  const matches = (row: MessageRow) => messageMatches(row, filter)
+  const firstPage = pageFacts(list.data?.pages[0])
+  // A row carries no content, so the browser cannot tell whether a changed row still matches a search: while one is
+  // set, the list keeps to the rows the server matched.
+  const searched = isSearching
+    ? new Set(list.data?.pages.flatMap((page) => page.items.map((row) => row.id)))
+    : undefined
+  const matches = (row: MessageRow) => messageMatches(row, filter, range) && (!searched || searched.has(row.id))
   const viewId = `messaging.${kind}`
   const frame = usePageFrame({ viewId, rows: items, matches })
   const newRows = useNewRows<MessageRow>(topic, matches)
@@ -154,7 +196,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
   const listId = listName(filter)
   const state = describe(kind, listId)
   const failed = listId === 'failed'
-  const scoped = canScope(filter, kind)
+  const scoped = canScope(filter, kind, isSearching)
 
   useNodeReset()
 
@@ -184,7 +226,22 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
 
   // The list itself, chosen in the sidebar, is its status and flags; clearing the filters keeps them.
   function clearFilters() {
-    update((next) => (['store', 'consumer', 'name', 'fingerprint'] as const).forEach((name) => next.delete(name)))
+    setSearch(noSearch)
+    setSearchReset((count) => count + 1)
+    update((next) =>
+      (['store', 'consumer', 'name', 'fingerprint', 'lane', 'messageId', 'range', 'from', 'to'] as const).forEach(
+        (name) => next.delete(name),
+      ),
+    )
+  }
+
+  function searchFor(values: Partial<MessageSearch>) {
+    setSearch((current) => ({ ...current, ...values }))
+  }
+
+  function clearSearch(name: keyof MessageSearch) {
+    searchFor({ [name]: '' })
+    setSearchReset((count) => count + 1)
   }
 
   // A new filter or node is a new list, whether the header, the sidebar, a link, or Back changed it: the checked rows,
@@ -220,7 +277,11 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
   }, [items])
 
   const count = messages.count
-  const narrowed = (['store', 'consumer', 'name', 'fingerprint'] as const).some((name) => filter[name] !== '')
+  const incomplete = firstPage.incomplete
+  const narrowed =
+    (['store', 'consumer', 'name', 'fingerprint', 'lane', 'messageId'] as const).some((name) => filter[name] !== '') ||
+    isSearching ||
+    range !== undefined
   const openRow = items.find((row) => row.id === frame.openId)
   const all = listId === 'all'
   // The filters a link set that the header shows as chips to clear: on a state list, every one; on All, those with no
@@ -234,13 +295,21 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           { name: 'name', label: 'message' } as const,
         ]),
     { name: 'fingerprint', label: 'cause' },
+    { name: 'messageId', label: 'message id' },
+    { name: 'lane', label: 'lane' },
   ]
   const setFilters = chipped.filter(
     ({ name }) =>
       filter[name] &&
       !(failed && filter.fingerprint && (name === 'fingerprint' || name === 'consumer' || name === 'store')),
   )
-  const unavailable = unavailableStores(list.data?.pages[0])
+  const unavailable = firstPage.unavailable
+  const searchChips = (
+    [
+      { name: 'content', label: 'content' },
+      { name: 'correlationId', label: 'correlation' },
+    ] as const
+  ).filter(({ name }) => search[name])
 
   let panel
   if (frame.openId) {
@@ -271,7 +340,11 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           description={state.description}
           toolbar={
             <FilterToolbar
-              active={(['store', 'consumer', 'name'] as const).filter((name) => filter[name]).length}
+              active={
+                (['store', 'consumer', 'name', 'lane', 'messageId'] as const).filter((name) => filter[name]).length +
+                (timeRange ? 1 : 0) +
+                (search.correlationId ? 1 : 0)
+              }
               chips={
                 <>
                   {failed ? (
@@ -283,7 +356,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
                       onPick={setFilter}
                     />
                   ) : null}
-                  {setFilters.length > 0 ? (
+                  {setFilters.length > 0 || searchChips.length > 0 ? (
                     <FilterChips label="Set filters">
                       {setFilters.map(({ name, label }) => (
                         <FilterChip
@@ -293,8 +366,60 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
                           onClear={() => setFilter({ [name]: '' })}
                         />
                       ))}
+                      {searchChips.map(({ name, label }) => (
+                        <FilterChip key={name} label={label} value={search[name]} onClear={() => clearSearch(name)} />
+                      ))}
                     </FilterChips>
                   ) : null}
+                </>
+              }
+              search={
+                // Restarted with the current text, so clearing a chip empties its box.
+                <SearchField
+                  key={`content-${searchReset}`}
+                  label={`Search ${kind} message content`}
+                  placeholder="Search content"
+                  mode="submit"
+                  compact
+                  defaultValue={search.content}
+                  onSearch={(content) => searchFor({ content })}
+                />
+              }
+              // The rarer filters sit behind More filters, so the row stays one line beside the title at 1024 px.
+              more={
+                <>
+                  <FilterSelect
+                    label="Lane"
+                    emptyLabel="Any lane"
+                    value={filter.lane}
+                    onChange={(value) => setFilter({ lane: value as MessageFilter['lane'] })}
+                    options={laneOptions}
+                  />
+                  <DateRangeField
+                    label="Added"
+                    value={timeRange}
+                    onChange={setTimeRange}
+                    presets={timeRangePresets}
+                    compact
+                  />
+                  <SearchField
+                    key={`message-id-${searchReset}-${filter.messageId}`}
+                    label="Message id"
+                    placeholder="Exact message id"
+                    mode="submit"
+                    compact
+                    defaultValue={filter.messageId}
+                    onSearch={(messageId) => setFilter({ messageId })}
+                  />
+                  <SearchField
+                    key={`correlation-${searchReset}`}
+                    label="Correlation id"
+                    placeholder="Exact correlation id"
+                    mode="submit"
+                    compact
+                    defaultValue={search.correlationId}
+                    onSearch={(correlationId) => searchFor({ correlationId })}
+                  />
                 </>
               }
             >
@@ -306,9 +431,10 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           }
           actions={
             allMatching && count ? (
-              <MatchingActions kind={kind} filter={filter} node={node} count={format.count(count)} />
+              <MatchingActions kind={kind} filter={filter} node={node} range={range} count={format.count(count)} />
             ) : checkedRows.length > 0 ? (
               <CheckedActions
+                hint={isSearching ? searchScopeReason : undefined}
                 kind={kind}
                 rows={checkedRows}
                 pending={pending}
@@ -330,6 +456,14 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
           {`Some stores did not answer, so their messages are missing: ${unavailable.join(', ')}.`}
         </Banner>
       ) : null}
+      {incomplete ? (
+        <Banner role="status">
+          <span>Search did not finish; results may be missing.</span>
+          <Button variant="ghost" onPress={() => void list.refetch()}>
+            Retry
+          </Button>
+        </Banner>
+      ) : null}
       <QueryState query={list} label={`Loading ${kind} messages`} rows={6} shape="table">
         {() => (
           <MessagesTable
@@ -343,10 +477,15 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
             newRows={newRows}
             failed={failed}
             pending={pending}
-            // An Operation's scope cannot say retrying or held, so those lists act on the checked rows only.
+            sort={listSort}
+            onSortChange={setSort}
+            // An Operation's scope cannot say retrying, held, or a search, so those lists act on the checked rows only.
             onSelectAllMatching={scoped ? () => setAllMatching(true) : undefined}
             emptyState={
-              narrowed ? (
+              incomplete ? (
+                // A search out of time that found nothing yet is not the same as no match.
+                'The search ran out of time before it found a match; results may be missing.'
+              ) : narrowed ? (
                 <span>
                   {`No ${kind} messages match. `}
                   <Button variant="ghost" onPress={clearFilters}>
@@ -367,13 +506,17 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
 }
 
 /**
- * The stores the first page says did not answer. The keyset list keeps each page as the fetch returned it, typed as
- * the SDK's page, so the extra field is read back by checking for it.
+ * What the first page says beyond its rows: the stores that did not answer, and whether a search ran out of time. The
+ * keyset list keeps each page as the fetch returned it, typed as the SDK's page, so the extra fields are read back by
+ * checking for them.
  */
-function unavailableStores(page: object | undefined): string[] {
-  return page && 'unavailable' in page && Array.isArray(page.unavailable)
-    ? page.unavailable.filter((store): store is string => typeof store === 'string')
-    : []
+function pageFacts(page: object | undefined): { unavailable: string[]; incomplete: boolean } {
+  const unavailable =
+    page && 'unavailable' in page && Array.isArray(page.unavailable)
+      ? page.unavailable.filter((store): store is string => typeof store === 'string')
+      : []
+
+  return { unavailable, incomplete: page !== undefined && 'incomplete' in page && page.incomplete === true }
 }
 
 /** Options from served names, keeping a value a link set that the server no longer lists. */
@@ -408,7 +551,7 @@ function ListFilters({
           options={optionsOf(served?.stores ?? [], filter.store)}
         />
       ) : (
-        <FilterSelect
+        <FilterCombobox
           label="Consumer"
           emptyLabel="Any consumer"
           value={filter.consumer}
@@ -419,7 +562,7 @@ function ListFilters({
           )}
         />
       )}
-      <FilterSelect
+      <FilterCombobox
         label="Message"
         emptyLabel="Any message"
         value={filter.name}
@@ -446,6 +589,8 @@ interface MessagesTableProps {
   newRows: ReturnType<typeof useNewRows<MessageRow>>
   failed: boolean
   pending: Pending
+  sort: ListSort | undefined
+  onSortChange: (sort: ListSort) => void
   onSelectAllMatching?: () => void
   emptyState: ReactNode
 }
@@ -459,6 +604,8 @@ function MessagesTable({
   newRows,
   failed,
   pending,
+  sort,
+  onSortChange,
   onSelectAllMatching,
   emptyState,
 }: MessagesTableProps) {
@@ -511,6 +658,8 @@ function MessagesTable({
       matchingCount={onSelectAllMatching ? messages.count?.value : undefined}
       onSelectAllMatching={onSelectAllMatching}
       emptyState={emptyState}
+      sort={sort}
+      onSortChange={onSortChange}
       columns={[
         {
           id: 'name',
@@ -523,6 +672,19 @@ function MessagesTable({
           isRowHeader: true,
           kind: 'id',
           width: '2fr',
+          sortKey: 'name',
+        },
+        {
+          // Two messages of one name read apart by their ids.
+          id: 'messageId',
+          header: 'Message id',
+          cell: (row) => (
+            <CellText title={row.messageId}>
+              <Mono>{row.messageId ?? ''}</Mono>
+            </CellText>
+          ),
+          kind: 'id',
+          width: '1.5fr',
         },
         {
           id: 'status',
@@ -555,6 +717,24 @@ function MessagesTable({
           ),
           kind: 'time',
           width: 110,
+          // The Failed list shows when each row failed, while the server sorts by when it was added.
+          ...(failed ? {} : { sortKey: 'added' }),
+        },
+        {
+          id: 'exact',
+          header: failed ? 'Failed at, exact' : 'Added at',
+          cell: (row) => {
+            const at = failed ? (row.changedAt ?? row.added) : row.added
+
+            return (
+              <CellText title={format.exactTime(at)}>
+                <Mono>{format.exactTime(at)}</Mono>
+              </CellText>
+            )
+          },
+          kind: 'time',
+          priority: 2,
+          width: 250,
         },
       ]}
     />
@@ -643,8 +823,11 @@ function CheckedActions({
   rows,
   pending,
   frame,
+  hint,
   onRefused,
 }: {
+  /** Why the actions run on the checked rows only, when the list cannot offer every match. */
+  hint?: string
   kind: MessageKind
   rows: readonly MessageRow[]
   pending: Pending
@@ -663,6 +846,11 @@ function CheckedActions({
   return (
     <>
       <span>{`${rows.length} selected`}</span>
+      {hint ? (
+        <Text tone="hint" role="status">
+          {hint}
+        </Text>
+      ) : null}
       {names.map(({ name, variant }) => {
         const command: CommandDefinition | undefined = commands.find(name)
 
@@ -691,11 +879,13 @@ function MatchingActions({
   kind,
   filter,
   node,
+  range,
   count,
 }: {
   kind: MessageKind
   filter: MessageFilter
   node: string
+  range: ListRange | undefined
   count: string
 }) {
   const module = useModule()
@@ -714,7 +904,7 @@ function MatchingActions({
             key={command.id}
             variant={variant}
             disabledReason={command.canRun ? null : (command.disabledReason ?? viewOnlyReason)}
-            onPress={() => start({ module: module.id, command, filter: operationScope(filter, node), noun })}
+            onPress={() => start({ module: module.id, command, filter: operationScope(filter, node, range), noun })}
           >
             {`${command.label} ${count}`}
           </Button>
