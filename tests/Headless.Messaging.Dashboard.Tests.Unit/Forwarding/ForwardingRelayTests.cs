@@ -25,7 +25,6 @@ public sealed class ForwardingRelayTests : TestBase
 {
     private const string _Api = "/headless/api/messaging";
     private const string _PeerApi = _Api + "/";
-    private const string _PeerEndpoints = _Api + "/peer";
 
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 8, 12, 0, 0, TimeSpan.Zero));
     private readonly PeerNetwork _network = new();
