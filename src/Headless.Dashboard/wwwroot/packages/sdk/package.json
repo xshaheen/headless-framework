@@ -8,6 +8,7 @@
     "./components": "./src/components/index.ts",
     "./table": "./src/components/table/index.ts",
     "./date-range": "./src/date-range/index.ts",
+    "./combobox": "./src/combobox/index.ts",
     "./charts": "./src/charts/index.ts",
     "./icons": "./src/icons/index.ts",
     "./data": "./src/data/index.ts",
