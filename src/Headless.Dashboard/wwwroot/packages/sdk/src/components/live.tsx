@@ -10,11 +10,15 @@ import { useStreamStatus } from '../stream/hooks.ts'
 import { CloseIcon } from '../icons/index.ts'
 import { Button } from './button.tsx'
 
-/** A visually hidden polite live region: what it holds is announced, never shown. */
-export function Announcer({ message }: { message: string }) {
+/**
+ * A visually hidden polite live region: what it holds is announced, never shown. The region stays in the page while
+ * its text changes, because a screen reader may stay silent about a region added with its text already in it. A new
+ * `id` replaces the text node, so the same words said again, such as a second `Copied`, are announced again.
+ */
+export function Announcer({ message, id }: { message: string; id?: string | number }) {
   return (
     <div role="status" aria-live="polite" className="sr-only">
-      {message}
+      <span key={id}>{message}</span>
     </div>
   )
 }
@@ -76,6 +80,9 @@ export function LiveIndicator({ paused }: { paused?: number | null }) {
   )
 }
 
+/** What a live list says once when rows arrive that it does not show yet; the button beside it carries the count. */
+export const newRowsAnnouncement = 'New rows arrived. Show them with the new rows button.'
+
 /**
  * `3 new` above a live list when rows arrived that the list does not show yet: the list keeps the operator's place
  * until they choose to see them. The count is announced through a live region.
@@ -91,7 +98,8 @@ export function NewRowsNotice({ topic }: { topic: string }) {
           {text}
         </Button>
       ) : null}
-      <Announcer message={count > 0 ? `${text} ${count === 1 ? 'row' : 'rows'}` : ''} />
+      {/* The same words while the count climbs, so a busy list is announced once rather than on every arrival. */}
+      <Announcer message={count > 0 ? newRowsAnnouncement : ''} />
     </>
   )
 }
@@ -107,11 +115,16 @@ export function ToastRegion() {
     <section
       className="pointer-events-none fixed inset-x-4 bottom-[calc(var(--toast-lift,0px)+var(--sp-7))] z-(--z-toast) flex flex-col-reverse items-end gap-2"
       aria-label="Notifications"
+      // The region is always in the page and announces each toast added to it: a toast that brought its own live region
+      // with it could go unheard, since a screen reader may stay silent about a region added with its text in it.
+      aria-live="polite"
     >
       {items.map((toast) => (
+        // A group named by its message, so Undo and Dismiss read as this toast's.
         <div
           key={toast.id}
-          role="status"
+          role="group"
+          aria-label={toast.message}
           className="pointer-events-auto flex max-w-full items-center gap-2.5 rounded-xl bg-foreground py-1.5 ps-3 pe-1.5 text-background shadow-lg [&_.hd-btn]:h-auto [&_.hd-btn]:px-1 [&_.hd-btn]:font-semibold [&_.hd-btn]:text-inherit"
         >
           <span>{toast.message}</span>

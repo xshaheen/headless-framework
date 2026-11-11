@@ -183,7 +183,9 @@ export function OperationPanel({ label, run, onDismiss, onRunAgain }: OperationP
       aria-label={label}
     >
       <div className="hd-fields">
-        <strong>{state.status === 'running' ? label : `${label}: ${endText[state.status]}`}</strong>
+        {/* The title line is a live region that stays while the Operation runs, so its turn to Completed, Stopped, or
+            Failed is announced once; the chunks between change only the progress bar, which answers anyone who asks. */}
+        <strong aria-live="polite">{state.status === 'running' ? label : `${label}: ${endText[state.status]}`}</strong>
         <ProgressBar label={`${label} progress`} value={processed} max={state.total} valueText={counts} />
         {state.status === 'failed' ? (
           <p role="alert" className="hd-error">

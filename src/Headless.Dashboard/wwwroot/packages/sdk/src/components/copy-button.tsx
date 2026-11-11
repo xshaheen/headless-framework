@@ -5,6 +5,7 @@
 import { useRef, useState } from 'react'
 import { CopyIcon } from '../icons/index.ts'
 import { Button } from './button.tsx'
+import { Announcer } from './live.tsx'
 
 export interface CopyButtonProps {
   /** The text the clipboard receives: the stored value, not what the page draws of it. */
@@ -27,6 +28,7 @@ type Outcome = 'copied' | 'failed' | undefined
  */
 export function CopyButton({ text, label, 'aria-label': ariaLabel, tooltip }: CopyButtonProps) {
   const [outcome, setOutcome] = useState<Outcome>()
+  const [presses, setPresses] = useState(0)
   const button = useRef<HTMLButtonElement>(null)
 
   async function copy() {
@@ -40,6 +42,7 @@ export function CopyButton({ text, label, 'aria-label': ariaLabel, tooltip }: Co
     }
 
     setOutcome(isCopied ? 'copied' : 'failed')
+    setPresses((count) => count + 1)
   }
 
   const message = outcome === 'copied' ? 'Copied' : outcome === 'failed' ? 'Copy failed. Select the text to copy it.' : ''
@@ -56,9 +59,7 @@ export function CopyButton({ text, label, 'aria-label': ariaLabel, tooltip }: Co
       >
         {label === undefined ? undefined : outcome === 'copied' ? 'Copied' : label}
       </Button>
-      <span role="status" className="sr-only">
-        {message}
-      </span>
+      <Announcer message={message} id={presses} />
     </>
   )
 }

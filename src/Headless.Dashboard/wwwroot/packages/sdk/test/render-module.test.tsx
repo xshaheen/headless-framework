@@ -37,6 +37,8 @@ describe('renderModule', () => {
     expect(view.requests.filter((request) => request.path === 'diag/runs')).toHaveLength(1)
   })
 
+  const newRowsText = 'New rows arrived. Show them with the new rows button.'
+
   it('announces new rows through a live region instead of moving the list', async () => {
     const view = renderModule(diagnostics, { path: 'runs', api: () => runs })
     await screen.findByRole('row', { name: /billing.charge #1/ })
@@ -44,7 +46,7 @@ describe('renderModule', () => {
     view.stream.push('change', { module: 'diag', kind: 'run', id: 'r3', topic: 'diag.run', version: '1', projection: { status: 'Failed' } })
 
     expect(screen.getByRole('button', { name: '1 new' })).toBeTruthy()
-    expect(screen.getAllByRole('status').some((region) => region.textContent === '1 new row')).toBe(true)
+    expect(screen.getAllByRole('status').some((region) => region.textContent === newRowsText)).toBe(true)
     expect(screen.queryByRole('row', { name: /r3/ })).toBeNull()
   })
 
@@ -64,7 +66,8 @@ describe('renderModule', () => {
     }
 
     expect(screen.getByRole('button', { name: '500+ new' })).toBeTruthy()
-    expect(screen.getAllByRole('status').some((region) => region.textContent === '500+ new rows')).toBe(true)
+    // The count lives on the button; the region keeps one sentence, so 501 arrivals are announced once, not 501 times.
+    expect(screen.getAllByRole('status').filter((region) => region.textContent === newRowsText)).toHaveLength(1)
   })
 
   it('renders a viewer’s actions disabled with the reason', async () => {

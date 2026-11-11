@@ -91,6 +91,25 @@ describe('sign-in page', () => {
     )
   })
 
+  it('marks both fields invalid after a refused sign-in, each described by the refusal', async () => {
+    const user = userEvent.setup()
+    renderSignIn('basic', '', { session: 401 })
+    const name = screen.getByRole('textbox', { name: /User name/ })
+    const password = screen.getByLabelText('Password')
+
+    expect(name.getAttribute('aria-invalid')).toBeNull()
+
+    await user.type(name, 'ops')
+    await user.type(password, 'nope')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    const refusal = await screen.findByRole('alert')
+    for (const field of [name, password]) {
+      expect(field.getAttribute('aria-invalid')).toBe('true')
+      expect(field.getAttribute('aria-describedby')).toBe(refusal.id)
+    }
+  })
+
   it('says when Caps Lock is on in the password, and shows the password on request', async () => {
     const user = userEvent.setup()
     renderSignIn('basic', '')

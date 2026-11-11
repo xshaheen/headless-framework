@@ -6,6 +6,7 @@ import {
   type CommandDefinition,
 } from '@headless/dashboard-sdk/commands'
 import {
+  Announcer,
   Banner,
   Button,
   DetailPanel,
@@ -451,13 +452,20 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
       panel={panel}
     >
       <StaleNotice what={`these ${kind} messages`} onRefresh={() => void list.refetch()} />
+      {/* Said from a region that stays in the page: a banner that brought its own live region could go unheard. */}
+      <Announcer
+        message={[
+          unavailable.length > 0 ? 'Some stores did not answer.' : '',
+          incomplete ? 'Search did not finish.' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      />
       {unavailable.length > 0 ? (
-        <Banner role="status">
-          {`Some stores did not answer, so their messages are missing: ${unavailable.join(', ')}.`}
-        </Banner>
+        <Banner>{`Some stores did not answer, so their messages are missing: ${unavailable.join(', ')}.`}</Banner>
       ) : null}
       {incomplete ? (
-        <Banner role="status">
+        <Banner>
           <span>Search did not finish; results may be missing.</span>
           <Button variant="ghost" onPress={() => void list.refetch()}>
             Retry

@@ -3,7 +3,7 @@
 'use no memo'
 
 import { OperationHost } from '@headless/dashboard-sdk/commands'
-import { Button, ToastRegion, useShellKeys } from '@headless/dashboard-sdk/components'
+import { Announcer, Button, ToastRegion, useShellKeys } from '@headless/dashboard-sdk/components'
 import { Outlet, useLocation, useNavigate } from '@headless/dashboard-sdk/router'
 import { useEffect, useRef, useState } from 'react'
 import { ShellPalette } from '../palette/shell-palette.tsx'
@@ -11,7 +11,7 @@ import { productHome, productOf } from '../route-handles.ts'
 import { useShell } from '../shell-context.tsx'
 import { UpdatedNotice } from '../views/module-error.tsx'
 import { useBelow, useFlyout } from './flyout.tsx'
-import { ProductSidebar } from './product-sidebar.tsx'
+import { currentEntry, ProductSidebar } from './product-sidebar.tsx'
 import { ShortcutList } from './shortcut-list.tsx'
 import { TopBar } from './top-bar.tsx'
 
@@ -27,11 +27,22 @@ export function ShellLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [updated, setUpdated] = useState(false)
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const location = useLocation()
+  const { pathname } = location
   const phone = useBelow('phone')
   const goTo = useRef<HTMLInputElement>(null)
+  const canvas = useRef<HTMLElement>(null)
+  const menuButton = useRef<HTMLButtonElement>(null)
   const attention = useFlyout()
   const product = productOf(state, pathname)
+  const entry = product ? currentEntry(product, location) : undefined
+  // The served title, such as `Dashboard`, ends every view's: `Runs · Jobs · Dashboard`, with no word said twice.
+  const [served] = useState(() => document.title)
+  const title = [...new Set([entry?.label, product?.label, served].filter(Boolean))].join(' · ')
+  const [arrived, setArrived] = useState('')
+  const shownPath = useRef(pathname)
+  // The location the canvas last saw; a page load leaves focus where the browser puts it.
+  const seen = useRef(`${pathname}${location.search}`)
   // A fresh key per opening, so the palette starts from the search it was opened with.
   const openPalette = (query?: string) => setPalette((current) => ({ open: true, query, key: current.key + 1 }))
 
@@ -48,6 +59,53 @@ export function ShellLayout() {
     },
   })
   useEffect(() => loader.onError(() => setUpdated(true)), [loader])
+
+  useEffect(() => {
+    document.title = title
+  }, [title])
+
+  // A view the router swaps in is a new page to the operator, but nothing tells a screen reader so: the live region
+  // says the new title once. A filter or an open row changes the search alone and is not a new page.
+  useEffect(() => {
+    if (pathname !== shownPath.current) {
+      shownPath.current = pathname
+      setArrived(document.title)
+    }
+  }, [pathname])
+
+  // A control that took the operator elsewhere, such as a sidebar link in the phone's menu or a panel's Open in its own
+  // page, may leave with the old view; focus it dropped to the body lands on the canvas instead. Focus still on a
+  // control, such as a filter that changed the search, stays where it is.
+  useEffect(() => {
+    const at = `${pathname}${location.search}`
+
+    if (at !== seen.current && (!document.activeElement || document.activeElement === document.body)) {
+      canvas.current?.focus({ preventScroll: true })
+    }
+
+    seen.current = at
+  }, [pathname, location.search])
+
+  // The phone's sidebar opens over the view, so focus goes into it, and Esc closes it back to the Menu button.
+  useEffect(() => {
+    if (!menuOpen) {
+      return undefined
+    }
+
+    const sidebar = document.getElementById('hd-sidebar')
+    sidebar?.querySelector<HTMLElement>('a[href], [tabindex="0"]')?.focus()
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape' && sidebar?.contains(event.target as Node)) {
+        setMenuOpen(false)
+        menuButton.current?.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKey)
+
+    return () => document.removeEventListener('keydown', onKey)
+  }, [menuOpen])
 
   return (
     // The bar spans the top row, and the sidebar and the view fill the second in order. Off every product (Not found,
@@ -68,7 +126,12 @@ export function ShellLayout() {
         onMany={openPalette}
         menu={
           phone && product ? (
-            <Button aria-expanded={menuOpen} onPress={() => setMenuOpen((open) => !open)}>
+            <Button
+              ref={menuButton}
+              aria-expanded={menuOpen}
+              aria-controls={menuOpen ? 'hd-sidebar' : undefined}
+              onPress={() => setMenuOpen((open) => !open)}
+            >
               Menu
             </Button>
           ) : undefined
@@ -82,6 +145,7 @@ export function ShellLayout() {
           {updated ? <UpdatedNotice className="mx-5 mt-2" /> : null}
           {/* A view that draws its own frame or panel runs edge to edge. */}
           <main
+            ref={canvas}
             id="hd-canvas"
             className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto bg-card p-5 pb-7 focus:outline-none max-md:p-4 max-md:pb-5 has-frame:gap-0 has-frame:p-0"
             tabIndex={-1}
@@ -99,6 +163,7 @@ export function ShellLayout() {
         </OperationHost>
       </div>
       <ToastRegion />
+      <Announcer message={arrived} />
     </div>
   )
 }

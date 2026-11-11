@@ -9,6 +9,7 @@ import type { DashboardStateRole } from '../../define-module.ts'
 import { CloseIcon, ExternalLinkIcon, MoveBelowIcon, MoveSideIcon } from '../../icons/index.ts'
 import { Button } from '../button.tsx'
 import { CopyButton } from '../copy-button.tsx'
+import { SectionHeading } from '../section-heading.ts'
 import { Tooltip } from '../tooltip.tsx'
 import { useFrame } from './page-frame.tsx'
 
@@ -51,7 +52,10 @@ const focusable = 'a[href], button:not([disabled]), input, select, textarea, [ta
  */
 export function DetailPanel({ label, name, id, status, tabs, defaultTab, children, actions, detachTo }: DetailPanelProps) {
   // Outside a frame the panel is the object's own page: nothing to close, move, or trap focus in.
-  const { close, stale, form, modal, side, setSide } = useFrame() ?? { stale: false, form: false, modal: false, side: null }
+  const frame = useFrame()
+  const { close, stale, form, modal, side, setSide } = frame ?? { stale: false, form: false, modal: false, side: null }
+  // On its own page the object's name is the page's heading; docked under a list, the list's title is.
+  const Heading = frame ? 'h2' : 'h1'
   const ref = useRef<HTMLDivElement>(null)
   const base = useId()
   const [picked, setPicked] = useState<string>()
@@ -123,7 +127,7 @@ export function DetailPanel({ label, name, id, status, tabs, defaultTab, childre
               <span className="sr-only">{status.label}</span>
             </span>
           ) : null}
-          <h2 className={`whitespace-nowrap ${form ? 'type-detail' : 'type-detail-mono'}`}>{name}</h2>
+          <Heading className={`whitespace-nowrap ${form ? 'type-detail' : 'type-detail-mono'}`}>{name}</Heading>
           {id ? (
             // One group, so the copy button never wraps onto a line of its own away from the id it copies. On a phone
             // the id takes its own line under the name and wraps there rather than truncate, so it reads whole.
@@ -187,7 +191,7 @@ export function DetailPanel({ label, name, id, status, tabs, defaultTab, childre
         role={tab ? 'tabpanel' : undefined}
         aria-labelledby={tab ? `${base}${index}` : undefined}
       >
-        {tab ? tab.content : children}
+        <SectionHeading value={frame ? 'h3' : 'h2'}>{tab ? tab.content : children}</SectionHeading>
       </div>
     </div>
   )

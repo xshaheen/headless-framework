@@ -23,7 +23,7 @@ import { Tag } from '../display/tag.tsx'
 import { Text } from '../display/text.tsx'
 import type { PageFrameState } from '../frame/page-frame.tsx'
 import { useViewKeys } from '../keymap.tsx'
-import { Announcer } from '../live.tsx'
+import { Announcer, newRowsAnnouncement } from '../live.tsx'
 import { DensityToggle, rowHeights, useDensity } from './density.tsx'
 import { loadAheadRows, useHeldRows } from './paging.ts'
 
@@ -493,7 +493,8 @@ export function DataTable<T extends { id: string }>({
           {viewId ? <DensityToggle value={density} onChange={setDensity} /> : null}
         </div>
       ) : null}
-      <Announcer message={arrived > 0 ? `${arrivedText} ${arrived === 1 ? 'row' : 'rows'}` : ''} />
+      {/* The same words while the count climbs, so a busy list is announced once rather than on every arrival. */}
+      <Announcer message={arrived > 0 ? newRowsAnnouncement : ''} />
       {selectionMode === 'multiple' && allLoaded && (checks || more) ? (
         <Banner>
           <span>{checks ? `All ${listed.length} loaded rows are checked.` : `All ${listed.length} rows on this page are selected.`}</span>

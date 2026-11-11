@@ -2,7 +2,7 @@
 // sit near their size budget.
 'use no memo'
 
-import { Button, Kbd, LiveIndicator } from '@headless/dashboard-sdk/components'
+import { Announcer, Button, Kbd, LiveIndicator } from '@headless/dashboard-sdk/components'
 import { TimeZoneField, useFormat, useLocale } from '@headless/dashboard-sdk/locale'
 import { useEffect, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { BootstrapProduct } from '../bootstrap.ts'
@@ -52,6 +52,18 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
   const objects = resolved && !resolved.failed ? resolved.objects : undefined
   const openObject = useOpenObject()
 
+  // Typing settles into a lookup whose matches appear below the field; a screen reader hears what came back and what
+  // Enter does with it, since the list is not where its focus is.
+  const outcome = !resolved
+    ? ''
+    : resolved.failed
+      ? 'Lookup failed.'
+      : resolved.objects.length === 0
+        ? 'No match.'
+        : resolved.objects.length === 1
+          ? `1 match: ${resolved.objects[0]!.title}. Press Enter to open it.`
+          : `${resolved.objects.length} matches. Press Enter to list them.`
+
   function open(object: ResolvedObject) {
     setQuery('')
     void openObject(object.target).catch(() => undefined)
@@ -59,8 +71,9 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
 
   return (
     <div className="relative">
-      {/* Below 1024 px the field shrinks to its search icon, and opens to full width while it has focus. */}
-      <label className="input-box h-(--control-height) w-(--goto-width) cursor-text rounded-md border ps-2 pe-1 max-lg:not-focus-within:w-(--control-height) max-lg:not-focus-within:px-1.5 max-lg:not-focus-within:[&_:is(input,kbd)]:hidden">
+      {/* Below 1024 px the field shrinks to its search icon, and opens to full width while it has focus. The folded
+          input is only visually hidden, never `display: none`, so Tab still reaches it and opens the field. */}
+      <label className="input-box h-(--control-height) w-(--goto-width) cursor-text rounded-md border ps-2 pe-1 max-lg:not-focus-within:w-(--control-height) max-lg:not-focus-within:px-1.5 max-lg:not-focus-within:[&_input]:sr-only max-lg:not-focus-within:[&_kbd]:hidden">
         <Glyph d={searchGlyph} />
         <span className="sr-only">Go to id</span>
         <input
@@ -86,6 +99,7 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
           <Kbd>/</Kbd>
         </span>
       </label>
+      <Announcer message={outcome} />
       {resolved ? (
         <div
           className="absolute end-0 top-full mt-1 z-(--z-popover) flex w-(--popover-width) flex-col rounded-xl border bg-card p-1.5 whitespace-normal shadow-lg"
