@@ -6,7 +6,7 @@ import { useId, type ReactNode, type Ref } from 'react'
 import { Button as AriaButton, composeRenderProps, type ButtonProps as AriaButtonProps } from 'react-aria-components'
 import type { IconComponent } from '../icons/index.ts'
 import { cn } from './cn.ts'
-import { Tooltip, tooltipSurface } from './tooltip.tsx'
+import { Tooltip } from './tooltip.tsx'
 
 export type ButtonVariant = 'secondary' | 'primary' | 'danger' | 'ghost'
 
@@ -17,7 +17,7 @@ export interface ButtonProps extends AriaButtonProps {
   variant?: ButtonVariant
   /**
    * Why the action is not available now, such as `Needs operate permission`. The button stays focusable and shows
-   * the reason beside it, so the operator learns why on hover and focus; pressing it does nothing.
+   * the reason in a tooltip, so the operator learns why on hover and focus; pressing it does nothing.
    */
   disabledReason?: string | null
   /**
@@ -75,40 +75,32 @@ export function Button({
     return tip === undefined ? button : <Tooltip content={tip}>{button}</Tooltip>
   }
 
-  // The reason is the button's description, so a screen reader reads it with the button. It stays in the page
-  // rather than in a tooltip that mounts on hover, so the description always points at text; on screen it shows on
-  // hover and focus, under the button, so it never widens or wraps the row the button sits in. A button with a
-  // tooltip shows the reason there instead, under its name, and keeps the description hidden.
-  const button = (
-    <span className="group/why relative inline-flex">
-      <AriaButton {...props} className={classes} aria-disabled="true" aria-describedby={reasonId} data-soft-disabled="">
-        {content}
-      </AriaButton>
-      <span
-        id={reasonId}
-        className={
-          tip === undefined
-            ? `${tooltipSurface} pointer-events-none absolute end-0 top-[calc(100%+var(--sp-1))] w-max whitespace-normal opacity-0 group-focus-within/why:opacity-100 group-hover/why:opacity-100`
-            : 'sr-only'
-        }
-      >
-        {disabledReason}
-      </span>
-    </span>
-  )
-
-  return tip === undefined ? (
-    button
-  ) : (
+  // The reason is the button's description, so a screen reader reads it with the button. That copy stays in the
+  // page, hidden, rather than in a tooltip that mounts on hover, so the description always points at text. On screen
+  // the reason shows in a tooltip on hover and focus, under the button's name when the tooltip carries one: an
+  // overlay never widens or wraps the row the button sits in, and it moves to stay inside the viewport where a box
+  // anchored to the button would run past the panel's edge.
+  return (
     <Tooltip
       content={
-        <>
-          {tip}
-          <span className="block text-background/80">{disabledReason}</span>
-        </>
+        tip === undefined ? (
+          disabledReason
+        ) : (
+          <>
+            {tip}
+            <span className="block text-background/80">{disabledReason}</span>
+          </>
+        )
       }
     >
-      {button}
+      <span className="inline-flex">
+        <AriaButton {...props} className={classes} aria-disabled="true" aria-describedby={reasonId} data-soft-disabled="">
+          {content}
+        </AriaButton>
+        <span id={reasonId} className="sr-only">
+          {disabledReason}
+        </span>
+      </span>
     </Tooltip>
   )
 }

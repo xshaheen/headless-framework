@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { Button } from '../../src/components/button.tsx'
 import { KeyValueTable } from '../../src/components/display/key-value-table.tsx'
+import { DataTable } from '../../src/components/table/data-table.tsx'
 import { DeleteIcon, EditIcon } from '../../src/icons/index.ts'
 
 describe('icon actions', () => {
@@ -37,6 +38,56 @@ describe('icon actions', () => {
     expect(screen.getByRole('button', { name: 'Copy id 01a1c7dd' })).toBeTruthy()
     await user.tab()
     expect((await screen.findByRole('tooltip')).textContent).toBe('Copy id')
+  })
+})
+
+describe('row-action tooltips', () => {
+  function Circuits() {
+    return (
+      <DataTable
+        label="Circuit breakers"
+        rows={[{ id: 'orders', consumer: 'orders' }]}
+        columns={[{ id: 'consumer', header: 'Consumer', cell: (row) => row.consumer }]}
+        rowActions={() => <Button icon={DeleteIcon} aria-label="Force open" />}
+        emptyState="No circuits"
+      />
+    )
+  }
+
+  it('shows the name of a row action on keyboard focus and keeps it through a key that moves nothing', async () => {
+    const user = userEvent.setup()
+    render(<Circuits />)
+
+    await user.tab()
+    await user.keyboard('{ArrowRight}{ArrowRight}')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Force open' }))
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Force open')
+
+    await user.keyboard('{Shift}')
+    expect(screen.getByRole('tooltip').textContent).toBe('Force open')
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('opens no tooltip when a row action is clicked', async () => {
+    const user = userEvent.setup()
+    render(<Circuits />)
+
+    await user.click(screen.getByRole('button', { name: 'Force open' }))
+    // Past the hover delay, so a tooltip the click left pending would have opened by now.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+})
+
+describe('disabled reasons', () => {
+  it('shows the reason of a labelled button in a tooltip on keyboard focus', async () => {
+    const user = userEvent.setup()
+    render(<Button disabledReason="Running - cancel instead">Requeue</Button>)
+
+    await user.tab()
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Running - cancel instead')
   })
 })
 

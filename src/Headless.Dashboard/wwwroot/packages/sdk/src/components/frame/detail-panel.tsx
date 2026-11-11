@@ -115,7 +115,7 @@ export function DetailPanel({ label, name, id, status, tabs, defaultTab, childre
           the window controls never land on a row of their own. On a phone the window controls leave the flow and keep
           the top end corner, where a sheet's close sits; the row pads past them so the name never runs under. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 ps-4 pe-3 pt-2 max-md:pe-20">
-        <div className="flex min-w-0 max-w-full items-center gap-2.5">
+        <div className="flex min-w-0 max-w-full items-center gap-2.5 max-md:flex-wrap max-md:gap-y-0.5">
           {status ? (
             <span className={`hd-tone-${status.tone} inline-flex items-center`}>
               <span className="hd-mark" aria-hidden="true" />
@@ -124,9 +124,10 @@ export function DetailPanel({ label, name, id, status, tabs, defaultTab, childre
           ) : null}
           <h2 className={`whitespace-nowrap ${form ? 'type-detail' : 'type-detail-mono'}`}>{name}</h2>
           {id ? (
-            // One group, so the copy button never wraps onto a line of its own away from the id it copies.
-            <span className="inline-flex min-w-0 items-center gap-1">
-              <bdi className="hd-mono hd-faint truncate" dir="ltr">
+            // One group, so the copy button never wraps onto a line of its own away from the id it copies. On a phone
+            // the id takes its own line under the name and wraps there rather than truncate, so it reads whole.
+            <span className="inline-flex min-w-0 items-center gap-1 max-md:basis-full">
+              <bdi className="hd-mono hd-faint truncate max-md:whitespace-normal max-md:wrap-anywhere" dir="ltr">
                 {id}
               </bdi>
               <Button
