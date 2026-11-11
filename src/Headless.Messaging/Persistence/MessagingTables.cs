@@ -63,6 +63,7 @@ internal sealed class MessagingTables
         IntentType = column("IntentType");
         Retries = column("Retries");
         InlineAttempts = column("InlineAttempts");
+        PreEntryFailures = column("PreEntryFailures");
         Added = column("Added");
         ExpiresAt = column("ExpiresAt");
         NextRetryAt = column("NextRetryAt");
@@ -179,6 +180,9 @@ internal sealed class MessagingTables
     public string Retries { get; }
 
     public string InlineAttempts { get; }
+
+    /// <summary>The received table's count of attempts that failed before the handler ran.</summary>
+    public string PreEntryFailures { get; }
 
     public string Added { get; }
 

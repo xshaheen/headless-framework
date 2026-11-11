@@ -959,6 +959,12 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     }
 
     [Fact]
+    public override Task should_keep_the_pre_entry_failure_count_across_reschedule_pickup_and_readmission()
+    {
+        return base.should_keep_the_pre_entry_failure_count_across_reschedule_pickup_and_readmission();
+    }
+
+    [Fact]
     public override Task should_decide_received_retry_due_on_database_clock()
     {
         return base.should_decide_received_retry_due_on_database_clock();

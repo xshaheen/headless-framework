@@ -4,7 +4,6 @@
 
 import { Button } from '@headless/dashboard-sdk/components'
 import { useEffect, useState, type FormEvent } from 'react'
-import './sign-in.css'
 import { fetchAuthInfo, safeReturnUrl, type BootstrapState, type SignInState } from '../bootstrap.ts'
 
 interface SignInPageProps {
@@ -192,26 +191,35 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
   const host = typeof location === 'undefined' ? 'the application' : location.host
 
   return (
-    <div className="hd-sign-in">
-      <main className="hd-sign-in-card" aria-labelledby="sign-in-title">
-        <span className="hd-sign-in-brand">
-          <span className="hd-sign-in-mark" aria-hidden="true">
+    // Outside the frame, on a dot grid, in the stored theme.
+    <div className="grid min-h-dvh place-items-center bg-dot-grid px-4 py-12">
+      <main
+        className="flex w-[min(var(--sign-in-width),100%)] flex-col gap-5 rounded-2xl border bg-card p-7 shadow-2xl line-icons [--icon-stroke:1.5]"
+        aria-labelledby="sign-in-title"
+      >
+        <span className="inline-flex items-center gap-2.5 type-brand [letter-spacing:-0.01em]">
+          <span
+            className="inline-grid size-(--field-height) place-items-center rounded-xl bg-foreground text-card"
+            aria-hidden="true"
+          >
             <Icon d="M4.5 3v10M11.5 3v10M4.5 8h7" />
           </span>
           headless
         </span>
-        <div className="hd-sign-in-head">
-          <h1 id="sign-in-title">Sign in</h1>
+        <div className="flex flex-col gap-1">
+          <h1 id="sign-in-title" className="type-hero [letter-spacing:-0.015em]">
+            Sign in
+          </h1>
           <p className="hd-hint">
             <span className="hd-mono">{host}</span> dashboard
           </p>
         </div>
         {forbidden ? (
-          <p role="alert" className="hd-sign-in-alert">
+          <p role="alert" className={alert}>
             {forbidden}
           </p>
         ) : notice ? (
-          <p role="status" className="hd-sign-in-state">
+          <p role="status" className="rounded-xl bg-deep px-3 py-2.5 type-small">
             {stateText[notice]}
           </p>
         ) : null}
@@ -221,23 +229,23 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
               Checking for your sign-in to the application…
             </p>
           ) : signInAvailable === false ? (
-            <p className="hd-prose">
+            <p className={prose}>
               Your session comes from the application. Sign in there, then open the dashboard again.{' '}
               <a href="/">Go to the application</a>
             </p>
           ) : (
-            <a className="hd-btn hd-btn-primary hd-sign-in-go" href={hostSignIn}>
+            <a className={`hd-btn hd-btn-primary ${go}`} href={hostSignIn}>
               {`Sign in with ${host}`}
             </a>
           )
         ) : mode === 'none' ? (
-          <p className="hd-prose">
+          <p className={prose}>
             This dashboard needs no sign-in. <a href={`${state.basePath}/`}>Open the dashboard</a>
           </p>
         ) : (
-          <form className="hd-sign-in-form" onSubmit={(event) => void submit(event)} noValidate>
+          <form className="flex flex-col gap-3.5" onSubmit={(event) => void submit(event)} noValidate>
             {phase.kind === 'refused' ? (
-              <p role="alert" className="hd-sign-in-alert">
+              <p role="alert" className={alert}>
                 {phase.message}
               </p>
             ) : null}
@@ -269,7 +277,7 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
                 autoComplete="off"
               />
             )}
-            <Button type="submit" variant="primary" className="hd-sign-in-go" isPending={phase.kind === 'busy'}>
+            <Button type="submit" variant="primary" className={go} isPending={phase.kind === 'busy'}>
               Sign in
             </Button>
           </form>
@@ -278,6 +286,12 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
     </div>
   )
 }
+
+// The sign-in page loads on its own, so it repeats the shell's running-text measure rather than import a view for it.
+const prose = 'max-w-[72ch] type-body'
+const alert = 'rounded-xl border border-destructive-edge px-3 py-2.5 text-destructive'
+/** The primary action, as tall as the fields above it. */
+const go = 'mt-1.5 h-(--sign-in-field-height) rounded-xl type-detail no-underline'
 
 const userIcon = 'M8 8a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM3 14c0-3 2-4 5-4s5 1 5 4'
 const keyIcon = 'M4 7h8v7H4zM6 7V5a2 2 0 0 1 4 0v2'
@@ -314,7 +328,7 @@ function SignInField({ label, icon, value, onChange, autoComplete, secret }: Sig
       <label className="hd-label" htmlFor={id}>
         {label}
       </label>
-      <span className="hd-sign-in-field">
+      <span className="input-box h-(--sign-in-field-height) rounded-xl border border-input bg-deep ps-3 pe-1.5 focus-within:ring-3 focus-within:ring-primary-soft">
         <Icon d={icon} />
         <input
           id={id}
@@ -334,6 +348,7 @@ function SignInField({ label, icon, value, onChange, autoComplete, secret }: Sig
             variant="ghost"
             aria-label={shown ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
             aria-pressed={shown}
+            className="aria-pressed:text-primary"
             onPress={() => setShown(!shown)}
           >
             <Icon d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8zM8 6.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3z" />
@@ -341,7 +356,7 @@ function SignInField({ label, icon, value, onChange, autoComplete, secret }: Sig
         ) : null}
       </span>
       {secret && caps ? (
-        <span id={`${id}-caps`} className="hd-sign-in-caps">
+        <span id={`${id}-caps`} className="type-small text-muted-foreground before:text-proc before:content-['⇪_']">
           Caps Lock is on
         </span>
       ) : null}

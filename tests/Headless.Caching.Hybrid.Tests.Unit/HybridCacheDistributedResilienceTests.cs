@@ -384,7 +384,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
             AbortToken
         );
 
-        // advance past the half-window throttle so the re-arm fires, then capture the re-arm instant
+        // advance past the re-arm tolerance (40ms for a 400ms window) so the re-arm fires, then capture the re-arm instant
         _timeProvider.Advance(TimeSpan.FromMilliseconds(300));
         var rearmedAt = _timeProvider.GetUtcNow().UtcDateTime;
 

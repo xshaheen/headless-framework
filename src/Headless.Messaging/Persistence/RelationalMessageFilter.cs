@@ -20,10 +20,15 @@ internal static class RelationalMessageFilter
         $"{t.StatusName} IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND {t.NextRetryAt} IS NULL";
 
     /// <summary>Returns the predicate and the binder of <paramref name="query"/>'s filters.</summary>
+    /// <remarks>
+    /// <paramref name="jsonOptions"/> are the options the stored envelopes were written with, which a correlation id
+    /// filter matches the header's text against.
+    /// </remarks>
     public static (string Where, Action<DbCommand> Bind) Build(
         MessagingTables t,
         ISqlDialect dialect,
-        MessageListQuery query
+        MessageListQuery query,
+        JsonSerializerOptions jsonOptions
     )
     {
         var received = query.MessageType == MessageType.Subscribe;
@@ -77,6 +82,31 @@ internal static class RelationalMessageFilter
                 : "";
         }
 
+        if (query.AddedFrom is not null)
+        {
+            where += $" AND {t.Added} >= @FilterAddedFrom";
+        }
+
+        if (query.AddedBefore is not null)
+        {
+            where += $" AND {t.Added} < @FilterAddedBefore";
+        }
+
+        var content = string.IsNullOrEmpty(query.Content) ? null : query.Content;
+        var correlation = string.IsNullOrEmpty(query.CorrelationId)
+            ? null
+            : StoredEnvelopeHeader.Text(jsonOptions, Headers.CorrelationId, query.CorrelationId);
+
+        if (content is not null)
+        {
+            where += $" AND {dialect.LikeIgnoringCase(t.Content, "FilterContent")}";
+        }
+
+        if (correlation is not null)
+        {
+            where += $" AND {dialect.LikeIgnoringCase(t.Content, "FilterCorrelation")}";
+        }
+
         void bind(DbCommand command)
         {
             if (query.Status is { } status)
@@ -103,6 +133,37 @@ internal static class RelationalMessageFilter
                 query.FailureFingerprint,
                 SqlColumnType.Text(MessagingFailureFingerprints.MaxLength)
             );
+
+            if (query.AddedFrom is { } from)
+            {
+                dialect.AddParameter(command, "FilterAddedFrom", SqlColumnType.Timestamp, from);
+            }
+
+            if (query.AddedBefore is { } before)
+            {
+                dialect.AddParameter(command, "FilterAddedBefore", SqlColumnType.Timestamp, before);
+            }
+
+            // Escaped, so a %, _, [ or \ in the text matches itself instead of acting as a wildcard.
+            if (content is not null)
+            {
+                dialect.AddParameter(
+                    command,
+                    "FilterContent",
+                    SqlColumnType.Text(-1),
+                    SqlLikePattern.Contains(content)
+                );
+            }
+
+            if (correlation is not null)
+            {
+                dialect.AddParameter(
+                    command,
+                    "FilterCorrelation",
+                    SqlColumnType.Text(-1),
+                    SqlLikePattern.Contains(correlation)
+                );
+            }
 
             if (received)
             {
@@ -156,4 +217,22 @@ internal static class RelationalMessageFilter
     /// </summary>
     public static string Before(string atColumn, string idColumn, string atParameter, string idParameter) =>
         $"({atColumn} < @{atParameter} OR ({atColumn} = @{atParameter} AND {idColumn} < @{idParameter}))";
+
+    /// <summary>
+    /// The keyset predicate of a read in <paramref name="descending"/> or ascending (<paramref name="keyColumn"/>,
+    /// <paramref name="idColumn"/>) order: rows strictly after (<paramref name="keyParameter"/>,
+    /// <paramref name="idParameter"/>) in that order.
+    /// </summary>
+    public static string After(
+        string keyColumn,
+        string idColumn,
+        string keyParameter,
+        string idParameter,
+        bool descending
+    )
+    {
+        var past = descending ? "<" : ">";
+
+        return $"({keyColumn} {past} @{keyParameter} OR ({keyColumn} = @{keyParameter} AND {idColumn} {past} @{idParameter}))";
+    }
 }

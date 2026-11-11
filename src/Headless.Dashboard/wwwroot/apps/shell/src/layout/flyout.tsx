@@ -42,7 +42,6 @@ interface FlyoutProps {
   onClose: () => void
   /** The button that opened it: a press on it toggles rather than counting as outside, and Escape returns focus there. */
   trigger: RefObject<HTMLElement | null>
-  className?: string
   children: ReactNode
 }
 
@@ -50,7 +49,7 @@ interface FlyoutProps {
  * A non-modal panel under the top bar, such as the Attention list or the account menu. It takes focus when it opens;
  * Escape or a press outside closes it, and Escape returns focus to its button. The page behind stays usable.
  */
-export function Flyout({ label, isOpen, onClose, trigger, className, children }: FlyoutProps) {
+export function Flyout({ label, isOpen, onClose, trigger, children }: FlyoutProps) {
   const panel = useRef<HTMLDivElement>(null)
   const close = useEffectEvent(onClose)
 
@@ -95,7 +94,13 @@ export function Flyout({ label, isOpen, onClose, trigger, className, children }:
   }, [isOpen, trigger])
 
   return isOpen ? (
-    <div ref={panel} role="dialog" aria-label={label} tabIndex={-1} className={`hd-flyout ${className ?? ''}`}>
+    <div
+      ref={panel}
+      role="dialog"
+      aria-label={label}
+      tabIndex={-1}
+      className="fixed end-3 top-(--topbar-height) mt-1 z-(--z-popover) flex max-h-[calc(100dvh-var(--topbar-height)-var(--sp-7))] w-(--flyout-width) max-w-[calc(100vw-2*var(--sp-5))] flex-col gap-2.5 overflow-auto rounded-xl border bg-card p-3 whitespace-normal shadow-lg outline-none"
+    >
       {children}
     </div>
   ) : null

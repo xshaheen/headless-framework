@@ -264,18 +264,58 @@ public sealed class JobsDurableRetryTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_run_a_rescheduled_retry_when_the_scheduler_wakes_late_for_it()
+    {
+        // given: the scheduler's sleep toward the retry ends 1.5 s after the retry is due, as a starved thread pool or a
+        // long GC pause makes it, and the fallback sweep is too far away to rescue the retry within the bound
+        var probe = new RetryProbe(failures: 1);
+        using var host = _BuildHost(
+            probe,
+            timeProvider: new LateTimerTimeProvider(TimeSpan.FromSeconds(1.5)),
+            fallbackInterval: TimeSpan.FromMinutes(10)
+        );
+        await host.StartAsync(AbortToken);
+        try
+        {
+            var store = _Store(host);
+            var id = await host
+                .Services.GetRequiredService<IJobScheduler>()
+                .EnqueueAsync<RetryJob>(o => o.WithRetries(2).WithRetryIntervals(2), AbortToken);
+
+            // when
+            var done = await _WaitForAsync(store, id, row => row.Status is JobStatus.Succeeded or JobStatus.DueDone);
+
+            // then: the late wake still ran the retry it slept toward
+            done.RetryCount.Should().Be(1);
+            probe.Invocations.Should().Be(2);
+        }
+        finally
+        {
+            await host.StopAsync(AbortToken);
+        }
+    }
+
     private static IHost _BuildHost(
         RetryProbe probe,
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity>? store = null,
         Action? onExhausted = null,
         int maxConcurrency = 1,
-        IJobExceptionHandler? exceptionHandler = null
+        IJobExceptionHandler? exceptionHandler = null,
+        TimeProvider? timeProvider = null,
+        TimeSpan? fallbackInterval = null
     )
     {
         return new HostBuilder()
             .ConfigureServices(services =>
             {
                 services.AddSingleton(probe);
+
+                if (timeProvider is not null)
+                {
+                    services.AddSingleton(timeProvider);
+                }
+
                 services.AddHeadlessJobs(options =>
                     options
                         .AddModule<RetryJobsModule>()
@@ -290,6 +330,11 @@ public sealed class JobsDurableRetryTests : TestBase
                         {
                             scheduler.MaxConcurrency = maxConcurrency;
                             scheduler.ShutdownTimeout = TimeSpan.FromSeconds(2);
+                            if (fallbackInterval is { } interval)
+                            {
+                                scheduler.FallbackIntervalChecker = interval;
+                                scheduler.LeaseDuration = interval;
+                            }
                         })
                 );
 
@@ -529,6 +574,29 @@ public sealed class JobsDurableRetryTests : TestBase
             JobType jobType,
             CancellationToken cancellationToken = default
         ) => Task.CompletedTask;
+    }
+
+    // The system clock, except that every timer of one second or more fires late by a fixed amount: a scheduler sleep
+    // that ends past its planned wake, as a starved thread pool or a GC pause makes it on a loaded node. Shorter timers
+    // (the restart debounce, an in-process retry) stay on time.
+    private sealed class LateTimerTimeProvider(TimeSpan lateness) : TimeProvider
+    {
+        private static readonly TimeSpan _LateFrom = TimeSpan.FromSeconds(1);
+
+        public override DateTimeOffset GetUtcNow() => System.GetUtcNow();
+
+        public override long GetTimestamp() => System.GetTimestamp();
+
+        public override long TimestampFrequency => System.TimestampFrequency;
+
+        public override TimeZoneInfo LocalTimeZone => System.LocalTimeZone;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var late = dueTime >= _LateFrom && dueTime != Timeout.InfiniteTimeSpan ? dueTime + lateness : dueTime;
+
+            return System.CreateTimer(callback, state, late, period);
+        }
     }
 
     public sealed class RetryJob : IJob

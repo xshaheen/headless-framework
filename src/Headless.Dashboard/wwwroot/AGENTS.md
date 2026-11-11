@@ -4,7 +4,7 @@ These rules cover every dashboard front end: the shell (`apps/shell`), the SDK (
 
 ## Stack
 
-React 19 and TypeScript in strict mode (`tsconfig.base.json`: `noUncheckedIndexedAccess`, `verbatimModuleSyntax`), built with Vite. React Router and TanStack Query come from the shell through an import map, so a module imports them only from the SDK's `/router` and `/query` entries. The SDK's components are shadcn's React Aria components, styled by a Tailwind build that compiles only the SDK's sources. Icons are Lucide through the SDK's `/icons` entry, and charts are Recharts through `/charts`. Tests run on Vitest with Testing Library and jsdom. Every package is a member of the npm workspace at the repository root, which owns the one `package-lock.json`.
+React 19 and TypeScript in strict mode (`tsconfig.base.json`: `noUncheckedIndexedAccess`, `verbatimModuleSyntax`), built with Vite. React Router and TanStack Query come from the shell through an import map, so a module imports them only from the SDK's `/router` and `/query` entries. The SDK's components are shadcn's React Aria components, styled by a Tailwind build that compiles only the SDK's and the shell's sources. Icons are Lucide through the SDK's `/icons` entry, and charts are Recharts through `/charts`. Tests run on Vitest with Testing Library and jsdom. Every package is a member of the npm workspace at the repository root, which owns the one `package-lock.json`.
 
 ## Build and check
 
@@ -35,7 +35,7 @@ Prettier owns formatting, configured once in the repository-root `.prettierrc.js
 ## UI
 
 - A module ships no CSS: no stylesheet, no `style` attribute, and no `className`. Each module's lint configuration and the preset's manifest check enforce this. Compose SDK components; when one is missing, add it to the SDK with its tests and document it in the dashboards guide.
-- Tailwind compiles only the SDK's sources, so only SDK components write its classes, and only the semantic classes mapped to `tokens.css`. Dark is the default theme and light is the other; use logical properties so a right-to-left page mirrors.
+- Tailwind compiles only the SDK's and the shell's sources, so only SDK components and the shell write its classes, and only the semantic classes mapped to `tokens.css`. The shell has no stylesheet of its own: a rule another front end could reuse becomes an SDK token, utility, or component, and the rest are utilities on the shell's elements. Dark is the default theme and light is the other; use logical properties so a right-to-left page mirrors.
 - A status is a coloured dot and a word, never an icon. Icons decorate stat cards, card titles, actions, and empty states.
 - Draw a chart only from a series the server serves. A point the server did not measure is a gap, never zero, and a percentage appears only when every count behind it is exact.
 - Every view handles loading, empty, error, and stale data explicitly. A failed request never shows as an empty list.

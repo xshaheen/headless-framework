@@ -77,7 +77,8 @@ public interface IFactoryCacheStore
     /// place (Redis <c>KeyExpire</c>, in-memory logical-expiration swap) rather than re-encode and re-store the
     /// payload. Implementations must (a) only ever extend, never shorten, the entry's lifetime, (b) cap the new
     /// logical deadline at <paramref name="physicalExpiresAt"/>, (c) throttle so a hot key is not re-armed on
-    /// every read (re-arm only once roughly half the idle window has elapsed), and (d) treat the call as
+    /// every read (re-arm only when <see cref="CacheEntryStamps.ShouldRearmSliding"/> reports that the new deadline
+    /// moves the live one out by more than <see cref="CacheEntryStamps.GetSlidingRearmTolerance"/>), and (d) treat the call as
     /// best-effort — a re-arm failure must not surface to the caller, because the value read already succeeded.
     /// It is a no-op when the entry is missing or already past its physical cap.
     /// </remarks>

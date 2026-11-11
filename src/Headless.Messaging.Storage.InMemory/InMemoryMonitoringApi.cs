@@ -377,14 +377,37 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         cancellationToken.ThrowIfCancellationRequested();
 
         var received = query.MessageType == MessageType.Subscribe;
-        var rows = _Rows(query)
-            .Where(message =>
-                after is not { } position
-                || message.Added < position.Added
-                || (message.Added == position.Added && message.StorageId.CompareTo(position.Id) < 0)
+        var byName = query.SortBy == MessageListSortKey.Name;
+        var sign = query.Descending ? -1 : 1;
+
+        // Compares a row's (key, id) to the position's in ascending order; the direction's sign turns it around.
+        int compare(MemoryMessage message, MessageListPosition position)
+        {
+            var key = byName
+                ? string.CompareOrdinal(message.Name, position.Name)
+                : message.Added.CompareTo(position.Added);
+
+            return key != 0 ? key : message.StorageId.CompareTo(position.Id);
+        }
+
+        var filtered = _Rows(query)
+            .Where(message => after is not { } position || sign * compare(message, position) > 0);
+        var ordered = byName
+            ? (
+                query.Descending
+                    ? filtered.OrderByDescending(static message => message.Name, StringComparer.Ordinal)
+                    : filtered.OrderBy(static message => message.Name, StringComparer.Ordinal)
             )
-            .OrderByDescending(static message => message.Added)
-            .ThenByDescending(static message => message.StorageId)
+            : (
+                query.Descending
+                    ? filtered.OrderByDescending(static message => message.Added)
+                    : filtered.OrderBy(static message => message.Added)
+            );
+        var rows = (
+            query.Descending
+                ? ordered.ThenByDescending(static message => message.StorageId)
+                : ordered.ThenBy(static message => message.StorageId)
+        )
             .Take(pageSize + 1)
             .Select(message => new MessageView
             {
@@ -410,11 +433,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
         var page = rows.Count > pageSize ? rows.GetRange(0, pageSize) : rows;
         return ValueTask.FromResult(
-            new MessageListPage
-            {
-                Items = page,
-                Next = rows.Count > pageSize ? new MessageListPosition(page[^1].Added, page[^1].StorageId) : null,
-            }
+            new MessageListPage { Items = page, Next = rows.Count > pageSize ? MessageListPosition.Of(page[^1]) : null }
         );
     }
 

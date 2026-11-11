@@ -451,11 +451,14 @@ internal sealed class RelationalMonitoringApi(
 
         var received = query.MessageType == MessageType.Subscribe;
         var table = received ? _receivedTable : _publishedTable;
-        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query);
+        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query, _messagingOptions.JsonSerializerOptions);
+        var byName = query.SortBy == MessageListSortKey.Name;
+        var keyColumn = byName ? _t.Name : _t.Added;
+        var direction = query.Descending ? "DESC" : "ASC";
 
         if (after is not null)
         {
-            where += " AND " + RelationalMessageFilter.Before(_t.Added, _t.Id, "AfterAdded", "AfterId");
+            where += " AND " + RelationalMessageFilter.After(keyColumn, _t.Id, "AfterKey", "AfterId", query.Descending);
         }
 
         var receivedColumns = received
@@ -465,7 +468,7 @@ internal sealed class RelationalMonitoringApi(
             SELECT {_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_lockedUntil},{_t.ChangedAt},{_t.FailureFingerprint}{receivedColumns}
             FROM {table}
             WHERE {where}
-            ORDER BY {_t.Added} DESC,{_t.Id} DESC
+            ORDER BY {keyColumn} {direction},{_t.Id} {direction}
             {_dialect.Limit("Limit")};
             """;
 
@@ -482,7 +485,15 @@ internal sealed class RelationalMonitoringApi(
                     _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, pageSize + 1);
                     if (after is { } position)
                     {
-                        _dialect.AddParameter(command, "AfterAdded", SqlColumnType.Timestamp, position.Added);
+                        if (byName)
+                        {
+                            _dialect.AddParameter(command, "AfterKey", SqlColumnType.Text(200), position.Name);
+                        }
+                        else
+                        {
+                            _dialect.AddParameter(command, "AfterKey", SqlColumnType.Timestamp, position.Added);
+                        }
+
                         _dialect.AddParameter(command, "AfterId", SqlColumnType.Guid, position.Id);
                     }
                 },
@@ -533,7 +544,7 @@ internal sealed class RelationalMonitoringApi(
         return new MessageListPage
         {
             Items = page,
-            Next = rows.Count > pageSize ? new MessageListPosition(page[^1].Added, page[^1].StorageId) : null,
+            Next = rows.Count > pageSize ? MessageListPosition.Of(page[^1]) : null,
         };
     }
 
@@ -548,7 +559,7 @@ internal sealed class RelationalMonitoringApi(
         Argument.IsPositive(cap);
 
         var table = query.MessageType == MessageType.Subscribe ? _receivedTable : _publishedTable;
-        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query);
+        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query, _messagingOptions.JsonSerializerOptions);
 
         await using var connection = _storage.CreateConnection();
         var matched = await CountCappedAsync(

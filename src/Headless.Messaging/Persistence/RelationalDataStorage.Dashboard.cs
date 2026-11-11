@@ -194,7 +194,7 @@ internal sealed partial class RelationalDataStorage
             throw new ArgumentException("An Operation scope reads received inbox generations only.", nameof(scope));
         }
 
-        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, scope.Query);
+        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, scope.Query, Options.JsonSerializerOptions);
         where +=
             $" AND {_t.IsInboxRecord} = {_t.True} AND {RelationalMessageFilter.Terminal(_t)} AND {_t.ChangedAt} <= @HighWaterMark";
         where += scope.Kind switch

@@ -63,16 +63,24 @@ internal sealed class ForwardingClient(
         CancellationToken cancellationToken
     )
     {
-        return _SendAsync(
-            peer,
-            HttpMethod.Get,
-            path,
-            user,
-            operate: false,
-            json: null,
-            relayed: true,
-            cancellationToken
-        );
+        return RelayAsync(peer, HttpMethod.Get, path, json: null, user, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends a viewer's read as <paramref name="method"/> with the body <paramref name="json"/>: a search, whose text
+    /// travels in a body so it never sits in a URL. A read other than <c>GET</c> waits as long as a write does, so the
+    /// peer's own search timeout ends it first.
+    /// </summary>
+    public Task<ForwardResponse> RelayAsync(
+        MessagingPeer peer,
+        HttpMethod method,
+        string path,
+        byte[]? json,
+        ClaimsPrincipal? user,
+        CancellationToken cancellationToken
+    )
+    {
+        return _SendAsync(peer, method, path, user, operate: false, json, relayed: true, cancellationToken);
     }
 
     private async Task<ForwardResponse> _SendAsync(

@@ -106,7 +106,7 @@ internal sealed partial class RelationalDataStorage : IAdditionalOutboxOperation
             throw new ArgumentException("A published Operation scope reads published rows only.", nameof(scope));
         }
 
-        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, scope.Query);
+        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, scope.Query, Options.JsonSerializerOptions);
         where += $" AND {RelationalMessageFilter.Terminal(_t)} AND {_t.ChangedAt} <= @HighWaterMark";
         where += scope.Kind switch
         {

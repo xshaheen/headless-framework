@@ -123,6 +123,9 @@ public sealed class FencedRowTable<TKey>
                 $"SELECT {Generation}, {State}, CASE WHEN {State} = {ActiveLiteral} AND {ExpiresAt} > {now} THEN 1 ELSE 0 END "
                     + $"FROM {Table} WHERE {byKey};"
             )
+            {
+                ReadsOneRow = true,
+            }
         );
 
         AbandonSql = RenderAbandon(condition: null, set: null);
