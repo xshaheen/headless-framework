@@ -239,7 +239,7 @@ describe('shell layout', () => {
 
     const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
     const failed = await within(sidebar).findByRole('link', { name: /^Failed\s?48,120\+ · outbox-2 unavailable$/ })
-    expect(failed.querySelector('.hd-side-count > [aria-hidden="true"]')?.textContent).toBe('48,120+')
+    expect(failed.querySelector(':scope > span:last-child > [aria-hidden="true"]')?.textContent).toBe('48,120+')
     expect(within(sidebar).getByRole('link', { name: /Queued/ }).textContent).toBe('Queued12')
     expect(within(sidebar).queryByRole('status')?.textContent ?? '').toBe('')
   })
@@ -477,7 +477,7 @@ describe('shell layout', () => {
     const modules = [moduleManifest('jobs')]
     const shell = renderShell(shellState(modules), { path: '/jobs/runs', files: moduleFiles(modules) })
 
-    const clock = (await screen.findByRole('banner')).querySelector('time.hd-clock')!
+    const clock = (await screen.findByRole('banner')).querySelector('time')!
     expect(clock.closest('[aria-live], [role="status"]')).toBeNull()
 
     shell.stream.setStatus('stale')
@@ -501,14 +501,14 @@ describe('shell layout', () => {
 
     const bar = await screen.findByRole('banner')
     expect(within(bar).queryByRole('button', { name: /Display time zone/ })).toBeNull()
-    expect(bar.querySelector('time.hd-clock')).toBeNull()
+    expect(bar.querySelector('time')).toBeNull()
     expect(within(bar).getByRole('button', { name: 'Pause live updates' })).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: 'Account: Mona Haddad' }))
 
     const menu = screen.getByRole('dialog', { name: 'Account' })
     expect(within(menu).getByRole('combobox', { name: 'Time zone' })).toBeTruthy()
-    expect(menu.querySelector('time.hd-clock')).toBeTruthy()
+    expect(menu.querySelector('time')).toBeTruthy()
   })
 
   it('closes the sidebar behind a Menu button at 400 px', async () => {

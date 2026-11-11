@@ -91,7 +91,8 @@ export function OperationHost({ children, chunkDelayMs }: OperationHostProps) {
   return (
     <OperationsContext.Provider value={{ start }}>
       {active.length > 0 ? (
-        <section className="hd-operations" aria-label="Operations">
+        // Docked above the view, edge to edge with the view's gutter.
+        <section className="border-b bg-card px-5 max-md:px-4" aria-label="Operations">
           {active.map((operation) => (
             <OperationPanel
               key={operation.key}
