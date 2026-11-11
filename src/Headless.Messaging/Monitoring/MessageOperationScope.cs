@@ -41,6 +41,12 @@ public enum MessageOperationKind
 /// written after confirm carries a later marker, so it stays out of the scope however many chunks run.
 /// </para>
 /// <para>
+/// One exception: a marker rises per row, from the database clock or one step past the row's previous marker, so it
+/// is not ordered against other rows' markers. A row written within the same database clock tick as the confirm, or
+/// one step behind another row stamped ahead of the clock, can carry a marker at or before the mark and fall inside
+/// the scope. A real failure arrives after a broker round trip and exhausted retries, far outside that tick.
+/// </para>
+/// <para>
 /// Re-execute keeps a generation in scope only while it is the current generation of its lineage. Re-executing a
 /// generation retires it and starts a child whose first write is after the mark, so running the Operation again, or
 /// serving one chunk on two nodes, re-executes no message twice: a stale chunk's write is refused by the single-row
@@ -49,7 +55,8 @@ public enum MessageOperationKind
 /// <para>
 /// Re-send and delete over published rows keep the same promise another way: each chunk target carries the row's
 /// change marker, and the single-row write applies only while the row still carries it. A row re-sent and failed
-/// again after the read has a later marker, so a stale chunk's write is refused and a new read leaves the row out.
+/// again after the read has a later marker than its own earlier one, so a stale chunk's write is refused. A new read
+/// leaves the row out unless that later marker still falls at or before the mark, the exception above.
 /// </para>
 /// <para>This record grows by <see langword="init"/> members.</para>
 /// </remarks>
