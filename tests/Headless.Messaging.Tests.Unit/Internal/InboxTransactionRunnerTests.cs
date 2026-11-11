@@ -210,15 +210,86 @@ public sealed class InboxTransactionRunnerTests : TestBase
         var act = () => runner.ExecuteAsync(_message, _Handler(), AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Database*");
+        var thrown = await act.Should().ThrowAsync<InboxAttemptNotStartedException>();
+        thrown.WithInnerException<InvalidOperationException>().WithMessage("*Database*");
+        _handlerEntries.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_mark_a_fault_before_the_handler_runs_as_an_attempt_that_never_started()
+    {
+        // given
+        var runner = _CreateRunner(beginFaults: 1);
+
+        // when
+        var act = () => runner.ExecuteAsync(_message, _Handler(), AbortToken);
+
+        // then
+        var thrown = await act.Should().ThrowAsync<InboxAttemptNotStartedException>();
+        thrown.WithMessage($"*{_message.StorageId}*").WithInnerException<TimeoutException>();
+        _handlerEntries.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_mark_a_pre_entry_fault_the_retry_wrapper_could_not_clear_as_never_started()
+    {
+        // given — the wrapper replays once, and the fault outlasts it
+        var runner = _CreateRunner(retries: 1, beginFaults: 2);
+
+        // when
+        var act = () => runner.ExecuteAsync(_message, _Handler(), AbortToken);
+
+        // then
+        (await act.Should().ThrowAsync<InboxAttemptNotStartedException>()).WithInnerException<TimeoutException>();
+        _calls.Count(call => string.Equals(call, "begin", StringComparison.Ordinal)).Should().Be(2);
+        _handlerEntries.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_leave_a_cancelled_attempt_a_cancellation_rather_than_a_never_started_attempt()
+    {
+        // given — the attempt's token is cancelled while the connection opens
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var runner = _CreateRunner(beginFault: new OperationCanceledException(cancellation.Token));
+
+        // when
+        var act = () => runner.ExecuteAsync(_message, _Handler(), cancellation.Token);
+
+        // then — the executor recognizes a stopping dispatch only by the cancellation itself
+        await act.Should().ThrowExactlyAsync<OperationCanceledException>();
+        _handlerEntries.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_mark_a_cancellation_raised_while_the_attempt_token_is_live_as_never_started()
+    {
+        // given — a provider timeout surfaces as a cancellation the attempt did not ask for
+        var runner = _CreateRunner(beginFault: new OperationCanceledException("open timed out"));
+
+        // when
+        var act = () => runner.ExecuteAsync(_message, _Handler(), AbortToken);
+
+        // then
+        (
+            await act.Should().ThrowAsync<InboxAttemptNotStartedException>()
+        ).WithInnerException<OperationCanceledException>();
         _handlerEntries.Should().Be(0);
     }
 
     #region Helpers
 
-    private TestRunner _CreateRunner(FakeAttempt? attempt = null, int retries = 0, int beginFaults = 0)
+    private TestRunner _CreateRunner(
+        FakeAttempt? attempt = null,
+        int retries = 0,
+        int beginFaults = 0,
+        Exception? beginFault = null
+    )
     {
-        return new TestRunner(this, attempt ?? new FakeAttempt(this), retries, beginFaults);
+        return new TestRunner(this, attempt ?? new FakeAttempt(this), retries, beginFault is null ? beginFaults : 1)
+        {
+            BeginFault = beginFault,
+        };
     }
 
     private Func<IUnitOfWork, CancellationToken, Task> _Handler(Exception? fault = null)
@@ -303,13 +374,15 @@ public sealed class InboxTransactionRunnerTests : TestBase
     {
         private int _beginFaultsLeft = beginFaults;
 
+        public Exception? BeginFault { get; init; }
+
         protected override ValueTask<InboxAttemptTransaction> BeginAttemptAsync(CancellationToken cancellationToken)
         {
             test._calls.Add("begin");
             if (_beginFaultsLeft > 0)
             {
                 _beginFaultsLeft--;
-                throw new TimeoutException("transient begin fault");
+                throw BeginFault ?? new TimeoutException("transient begin fault");
             }
 
             return ValueTask.FromResult<InboxAttemptTransaction>(attempt);

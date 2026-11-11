@@ -84,7 +84,9 @@ internal sealed partial class RelationalDataStorage
         var attemptAssignment = received
             ? $"{_t.AttemptId} = CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.NewGuid()} ELSE NULL END"
             : null;
-        string[] returning = received ? [.. _RetryClaimColumns(), .. _InboxClaimColumns()] : _RetryClaimColumns();
+        string[] returning = received
+            ? [.. _RetryClaimColumns(), .. _InboxClaimColumns(), _t.PreEntryFailures]
+            : _RetryClaimColumns();
         // The claim carries no retry cap. A received row's budget belongs to its consumer's failure policy and a
         // published row's to MaxPersistedRetries; the executor and the sender check it after the claim and end a row
         // already past it. Capping the claim instead would strand a row past a lowered cap, never exhausted or purged.
@@ -241,6 +243,13 @@ internal sealed partial class RelationalDataStorage
                     Lease = _ReadClaimedLease(reader, holder, takeoverOrdinal: 9),
 #pragma warning restore CA1849
                 };
+
+                if (received)
+                {
+                    // Only the received table counts attempts that failed before the handler ran; it follows the
+                    // inbox columns.
+                    mediumMessage.PreEntryFailures = reader.GetInt32(21);
+                }
 
                 if (received && reader.GetBoolean(10))
                 {

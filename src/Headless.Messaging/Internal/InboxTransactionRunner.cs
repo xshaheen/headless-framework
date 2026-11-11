@@ -27,11 +27,25 @@ internal abstract class InboxTransactionRunner(
     {
         EnsureNoAmbientTransaction();
 
-        var attemptError = await ExecuteWithPreEntryRetryAsync(
-                ct => _RunAttemptAsync(message, handler, ct),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        ExceptionDispatchInfo? attemptError;
+        try
+        {
+            attemptError = await ExecuteWithPreEntryRetryAsync(
+                    ct => _RunAttemptAsync(message, handler, ct),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // Only a fault before the handler ran escapes the attempt (every later one is its result), so the handler
+            // never ran. Marked here, outside the provider's retry wrapper, so an execution strategy still sees the
+            // raw fault and can classify it as transient. A cancelled attempt stays a cancellation: the executor
+            // writes nothing for a stopping dispatch.
+            throw new InboxAttemptNotStartedException(message.StorageId, exception);
+        }
+
         attemptError?.Throw();
     }
 
