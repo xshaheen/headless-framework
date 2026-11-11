@@ -31,8 +31,26 @@ namespace Headless.Messaging.Dashboard;
 /// node's memory: their commands act here and write no receipt, and the shell's operator log records them.
 /// </para>
 /// </remarks>
-internal sealed class MessagingCommands(MessagingStores stores, MessagingSources sources, IServiceProvider services)
+internal sealed class MessagingCommands(
+    MessagingStores stores,
+    MessagingSources sources,
+    IServiceProvider services,
+    TimeSpan searchTimeout
+)
 {
+    /// <summary>What the operator log records in place of a content or correlation id the operator searched for.</summary>
+    internal const string RedactedSearch = "(redacted)";
+
+    /// <summary>The refusal of a confirm whose search ran out of time before it counted its scope.</summary>
+    internal const string SearchConfirmOutOfTime =
+        "The search ran out of time before it counted every matching message, so nothing was confirmed. Narrow the "
+        + "filters or the time range, then confirm again.";
+
+    /// <summary>The refusal of a chunk whose search ran out of time before it read the chunk's rows.</summary>
+    internal const string SearchChunkOutOfTime =
+        "The search ran out of time before it found the next rows, so the Operation stopped incomplete: no row it had "
+        + "not reached was changed. Narrow the filters, then run it again.";
+
     internal const string NeedsNamedOperator = "Sign in with a named account";
     internal const string Gone = "Gone";
     internal const string OtherNode = "Served by another node";
@@ -74,6 +92,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
     private readonly MessagingStores _stores = Argument.IsNotNull(stores);
     private readonly MessagingSources _sources = Argument.IsNotNull(sources);
     private readonly IServiceProvider _services = Argument.IsNotNull(services);
+    private readonly TimeSpan _searchTimeout = Argument.IsPositive(searchTimeout);
 
     // Kubernetes discovery is the one provider that registers no current-node identity, because it addresses each
     // node by its Service; a Service spreads requests over its pods, so a call cannot choose the pod it acts on.
@@ -327,6 +346,30 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         var highWater = await store.Storage.GetLatestMessageChangeMarkerAsync(cancellationToken).ConfigureAwait(false);
         var scope = _Scope(type, kind, filter, highWater ?? DateTimeOffset.MinValue);
 
+        // A search reads every row its other filters leave, as the list's does, so it gets the list's search time; a
+        // count it could not finish is refused rather than confirmed short.
+        using var deadline = _SearchDeadline(filter, cancellationToken);
+
+        try
+        {
+            return await _PrepareAsync(request, store, type, scope, filter, deadline?.Token ?? cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (_IsSearchTimeout(exception, deadline, cancellationToken))
+        {
+            throw new ArgumentException(SearchConfirmOutOfTime, nameof(request), exception);
+        }
+    }
+
+    private async Task<DashboardOperationScope> _PrepareAsync(
+        DashboardOperationScopeRequest request,
+        MessagingStore store,
+        MessageType type,
+        MessageOperationScope scope,
+        MessagingListScope filter,
+        CancellationToken cancellationToken
+    )
+    {
         var count =
             type == MessageType.Subscribe
                 ? await store
@@ -363,6 +406,7 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             Count = count.Capped ? (long)request.CountLimit + 1 : count.Count,
             Sample = sample,
             HighWaterMark = scope.HighWaterMark.UtcTicks.ToString(CultureInfo.InvariantCulture),
+            LoggedFilter = _LoggedFilter(filter),
         };
     }
 
@@ -389,15 +433,30 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
                 : throw new ArgumentException($"'{value}' is not a Messaging Operation cursor.", nameof(request));
         }
 
-        var chunk = await _ReadScopeAsync(
-                store,
-                type,
-                scope,
-                after,
-                Math.Clamp(request.ChunkSize, 1, MessageOperationChunk.MaxChunkSize),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        MessageOperationChunk chunk;
+
+        // Each chunk reads its rows again with the search, so a row is acted on only while it still matches. The read
+        // gets the list's search time; one out of time changes nothing and stops the Operation with that said.
+        using (var deadline = _SearchDeadline(filter, cancellationToken))
+        {
+            try
+            {
+                chunk = await _ReadScopeAsync(
+                        store,
+                        type,
+                        scope,
+                        after,
+                        Math.Clamp(request.ChunkSize, 1, MessageOperationChunk.MaxChunkSize),
+                        deadline?.Token ?? cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (_IsSearchTimeout(exception, deadline, cancellationToken))
+            {
+                throw new ArgumentException(SearchChunkOutOfTime, nameof(request), exception);
+            }
+        }
+
         var rows = new List<DashboardRowResult>(chunk.Targets.Count);
         var authority = DashboardOperatorAuthority.Resolve(request.User);
 
@@ -1134,6 +1193,25 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
             throw new ArgumentException("The filter's 'before' is not later than its 'from'.", nameof(filter));
         }
 
+        // The list's search refuses longer text, so a filter carrying it did not come from a list the operator saw. The
+        // refusal names the field, never the text: a refused confirm is answered and may be logged.
+        if (scope.Content is { Length: > MessagingSearchRequestValidator.MaxContentLength })
+        {
+            throw new ArgumentException(
+                $"The filter's 'content' takes at most {MessagingSearchRequestValidator.MaxContentLength} characters.",
+                nameof(filter)
+            );
+        }
+
+        if (scope.CorrelationId is { Length: > MessagingSearchRequestValidator.MaxCorrelationIdLength })
+        {
+            throw new ArgumentException(
+                $"The filter's 'correlationId' takes at most {MessagingSearchRequestValidator.MaxCorrelationIdLength} "
+                    + "characters.",
+                nameof(filter)
+            );
+        }
+
         // A lane the list does not take, such as one stored by a newer host, would scope rows no list shows.
         if (scope.Lane is { } lane && lane is not (MessageLane.Bus or MessageLane.Queue))
         {
@@ -1155,6 +1233,55 @@ internal sealed class MessagingCommands(MessagingStores stores, MessagingSources
         }
 
         return (store, scope);
+    }
+
+    /// <summary>The search's time limit over the caller's token; <see langword="null"/> when the filter searches nothing.</summary>
+    private CancellationTokenSource? _SearchDeadline(MessagingListScope filter, CancellationToken cancellationToken)
+    {
+        if (!filter.IsSearch)
+        {
+            return null;
+        }
+
+        var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(_searchTimeout);
+
+        return deadline;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> is the search running out of its time rather than the request ending. A
+    /// provider reports a cancelled command its own way (SqlClient as a <c>SqlException</c>), so the deadline, not the
+    /// exception's type, decides.
+    /// </summary>
+    private static bool _IsSearchTimeout(
+        Exception exception,
+        CancellationTokenSource? deadline,
+        CancellationToken cancellationToken
+    ) =>
+        exception is not ArgumentException
+        && deadline is { IsCancellationRequested: true }
+        && !cancellationToken.IsCancellationRequested;
+
+    /// <summary>
+    /// The filter the operator log records: the parsed filter, with the searched text replaced by a marker, so neither
+    /// the text nor a property that only looks unlike it reaches the log. <see langword="null"/> when nothing was
+    /// searched, so the log records the filter as sent.
+    /// </summary>
+    private static JsonElement? _LoggedFilter(MessagingListScope filter)
+    {
+        if (!filter.IsSearch)
+        {
+            return null;
+        }
+
+        var redacted = filter with
+        {
+            Content = string.IsNullOrEmpty(filter.Content) ? null : RedactedSearch,
+            CorrelationId = string.IsNullOrEmpty(filter.CorrelationId) ? null : RedactedSearch,
+        };
+
+        return JsonSerializer.SerializeToElement(redacted, MessagingDashboardJsonContext.Default.MessagingListScope);
     }
 
     private static MessageOperationScope _Scope(

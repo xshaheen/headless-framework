@@ -169,9 +169,17 @@ internal static class MessagingCommandHost
     /// Admits a received row as an inbox generation and fails it for good. The inbox commands act on a generation's
     /// incarnation, so a row stored without one is refused as not supported by the store.
     /// </summary>
+    public static Task<MediumMessage> InboxFailureAsync(
+        IDataStorage storage,
+        string messageId,
+        CancellationToken cancellationToken
+    ) => InboxFailureAsync(storage, messageId, content: null, cancellationToken);
+
+    /// <summary>As <see cref="InboxFailureAsync(IDataStorage, string, CancellationToken)"/>, with the stored content.</summary>
     public static async Task<MediumMessage> InboxFailureAsync(
         IDataStorage storage,
         string messageId,
+        string? content,
         CancellationToken cancellationToken
     )
     {
@@ -179,7 +187,7 @@ internal static class MessagingCommandHost
             MessagingRows.Name,
             MessagingRows.Consumer,
             "v1",
-            MessagingRows.Medium(messageId),
+            MessagingRows.Medium(messageId, content: content),
             cancellationToken: cancellationToken
         );
         var message = admitted.Message;

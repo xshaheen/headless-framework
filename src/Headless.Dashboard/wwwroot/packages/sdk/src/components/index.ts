@@ -63,6 +63,7 @@ export {
   type ViewKeyHandlers,
 } from './keymap.tsx'
 export { CommandPalette, type CommandPaletteProps, type PaletteItem } from './palette/command-palette.tsx'
+export { usePageTitle, useViewTitle, type ViewTitle } from './page-title.ts'
 export { Popover, type PopoverProps } from './popover.tsx'
 export { formatJson, payloadDisplayLimit, PayloadView, type PayloadViewProps } from './payload/payload-view.tsx'
 // The timeline and the strip ride in this entry: as entries of their own they cost the shell's total budget more

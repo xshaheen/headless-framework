@@ -150,7 +150,7 @@ internal static class MessagingRows
     public const string Consumer = "billing.charge-consumer";
     public const string Name = "billing.charge";
 
-    public static MediumMessage Medium(string messageId, string name = Name) =>
+    public static MediumMessage Medium(string messageId, string name = Name, string? content = null) =>
         new()
         {
             StorageId = Guid.Empty,
@@ -162,7 +162,7 @@ internal static class MessagingRows
                 },
                 value: null
             ),
-            Content = "{\"Headers\":{},\"Value\":{\"amount\":42}}",
+            Content = content ?? "{\"Headers\":{},\"Value\":{\"amount\":42}}",
             Lane = MessageLane.Bus,
         };
 
