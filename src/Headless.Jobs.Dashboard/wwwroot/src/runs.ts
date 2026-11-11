@@ -2,7 +2,7 @@ import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { isNewerVersion, type DashboardApi, type DashboardListPage } from '@headless/dashboard-sdk/data'
-import type { ListPageRequest, ListRange } from '@headless/dashboard-sdk/table'
+import type { ListPageRequest, ListRange, ListSort } from '@headless/dashboard-sdk/table'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import { useState } from 'react'
@@ -95,10 +95,6 @@ export interface RunFilter {
   cronJobId: string
   correlationId: string
   fingerprint: string
-  /** The time range's name in the URL: `1h`, `24h`, `7d`, or empty for any time. */
-  range: string
-  /** The range's start, fixed when the operator chose it, so the list keeps one cache key. */
-  from: string
 }
 
 // Typed as the whole filter, so a field added to RunFilter must be listed here, and so in filterNames.
@@ -109,8 +105,6 @@ const emptyFilter: RunFilter = {
   cronJobId: '',
   correlationId: '',
   fingerprint: '',
-  range: '',
-  from: '',
 }
 
 export const filterNames = Object.keys(emptyFilter) as (keyof RunFilter)[]
@@ -142,15 +136,33 @@ export function isFiltered(filter: RunFilter) {
 }
 
 /**
- * What narrows the list besides its URL filter: the search text and a custom day range, which the operator types and
- * the server matches, so the list, its live matching, and an Operation over it read the same rows.
+ * What narrows the list besides its filter: the search text and the due-time range, which the server matches, so the
+ * list, its live matching, and an Operation over it read the same rows.
  */
 export interface RunScope {
   search?: string
   range?: ListRange
 }
 
-export const rangeSpans: Readonly<Record<string, number>> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 }
+/** The search text in the URL (`?q=`). Jobs search reads function names, ids, business keys, and descriptions. */
+export function readSearch(params: URLSearchParams) {
+  return params.get('q')?.trim() ?? ''
+}
+
+export const runSortKeys = ['executionTime', 'function', 'status'] as const
+
+const sortDirections = ['ascending', 'descending'] as const
+
+/**
+ * The sort in the URL, `?sort=function&direction=descending`, named as the server's list reads them; `undefined`, the
+ * newest-first default, for a key no column sorts by. A missing or unknown direction reads ascending, the first one a
+ * column's sort button asks for.
+ */
+export function readSort(params: URLSearchParams): ListSort | undefined {
+  const key = oneOf(runSortKeys, params.get('sort'))
+
+  return key ? { key, direction: oneOf(sortDirections, params.get('direction')) ?? 'ascending' } : undefined
+}
 
 /** Whether `run` matches `filter` as the server reads it, so a live change can tell a row it left the filter. */
 export function runMatches(run: Run, filter: RunFilter, scope: RunScope = {}) {
@@ -162,8 +174,7 @@ export function runMatches(run: Run, filter: RunFilter, scope: RunScope = {}) {
     (!filter.status || run.status === filter.status) &&
     (!filter.cronJobId || run.cronJobId === filter.cronJobId) &&
     (!filter.correlationId || run.correlationId === filter.correlationId) &&
-    (!filter.fingerprint || run.failureFingerprint === filter.fingerprint) &&
-    (!filter.from || (run.executionTime !== undefined && Date.parse(run.executionTime) >= Date.parse(filter.from)))
+    (!filter.fingerprint || run.failureFingerprint === filter.fingerprint)
   )
 }
 
@@ -195,7 +206,6 @@ export function operationScope(filter: RunFilter, scope: RunScope = {}) {
     ...(filter.cronJobId ? { cronJobId: filter.cronJobId } : {}),
     ...(filter.correlationId ? { correlationId: filter.correlationId } : {}),
     ...(filter.fingerprint ? { fingerprint: filter.fingerprint } : {}),
-    ...(filter.from && !scope.range ? { from: filter.from } : {}),
     ...(scope.range ? { from: scope.range.start, before: scope.range.end } : {}),
     ...(scope.search ? { search: scope.search } : {}),
   }
@@ -318,6 +328,12 @@ interface RunListAnswer {
 
 const runsPageSize = 100
 
+/** A filter a list reads runs by: the runs list's, or an open-ended due-time window, such as a cron job's last day. */
+export interface RunReadFilter extends Partial<RunFilter> {
+  /** The earliest due time read, as a UTC instant; a `range` in the request replaces it. */
+  from?: string
+}
+
 /**
  * One page of runs, newest first unless `request` names a sort: the first page, or the page after the run `cursor`
  * names. The server refuses a cursor read under another sort, search, or range, so the keyset list never sends one.
@@ -325,19 +341,22 @@ const runsPageSize = 100
  */
 export async function fetchRuns(
   api: DashboardApi,
-  filter: Partial<RunFilter>,
+  filter: RunReadFilter,
   cursor?: string,
   request: Partial<Pick<ListPageRequest, 'sort' | 'search' | 'range'>> = {},
 ): Promise<DashboardListPage<Run>> {
   const query: Record<string, string> = { limit: String(runsPageSize) }
 
-  // `range` lives only in the URL; the server filters on the `from` it fixed.
-  for (const name of filterNames.filter((field) => field !== 'range')) {
+  for (const name of filterNames) {
     const value = filter[name]
 
     if (value) {
       query[name] = value
     }
+  }
+
+  if (filter.from) {
+    query.from = filter.from
   }
 
   if (request.sort) {
@@ -349,7 +368,6 @@ export async function fetchRuns(
     query.search = request.search
   }
 
-  // A custom range replaces the preset's start, so the list never reads two starts at once.
   if (request.range) {
     query.from = request.range.start
     query.before = request.range.end
