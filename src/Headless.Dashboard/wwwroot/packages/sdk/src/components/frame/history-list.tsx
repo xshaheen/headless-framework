@@ -4,6 +4,7 @@
 
 import type { ReactNode } from 'react'
 import type { DashboardStateRole } from '../../define-module.ts'
+import { useSectionHeading } from '../section-heading.ts'
 
 /** One event in an object's history: when, its state, and what happened. */
 export interface HistoryItem {
@@ -27,9 +28,11 @@ export interface HistoryListProps {
 
 /** An object's events in order, each row a time, a state dot, the state, and a faint note. */
 export function HistoryList({ label, items }: HistoryListProps) {
+  const Heading = useSectionHeading()
+
   return (
     <section aria-label={label}>
-      <h3 className="hd-label">{label}</h3>
+      <Heading className="hd-label">{label}</Heading>
       {/* The rows share one grid, so the time column is as wide as the longest time and every dot lines up. */}
       <ol className="mt-2 grid grid-cols-[max-content_var(--sp-5)_minmax(0,1fr)_auto] gap-x-2.5">
         {items.map((item, index) => (

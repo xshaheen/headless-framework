@@ -4,6 +4,7 @@
 
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { inputClass } from '../form.tsx'
+import { useSectionHeading } from '../section-heading.ts'
 
 /** An editable field's value, how it commits, and what it shows while the operator types. */
 export interface FieldEdit {
@@ -138,10 +139,11 @@ const columnClasses: Record<NonNullable<FieldGridProps['columns']>, string> = {
  */
 export function FieldGrid({ columns = 4, label, footnote, children }: FieldGridProps) {
   const Element = label ? 'section' : 'div'
+  const Heading = useSectionHeading()
 
   return (
     <Element aria-label={label} className="@container not-first:border-t not-first:border-border not-first:pt-3.5">
-      {label ? <h3 className="hd-label mb-2">{label}</h3> : null}
+      {label ? <Heading className="hd-label mb-2">{label}</Heading> : null}
       <dl className={`m-0 grid ${columnClasses[columns]} gap-x-4 gap-y-3 type-mono wrap-anywhere`}>{children}</dl>
       {footnote ? <p className="hd-footnote">{footnote}</p> : null}
     </Element>

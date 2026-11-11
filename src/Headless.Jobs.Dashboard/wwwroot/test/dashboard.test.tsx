@@ -540,7 +540,7 @@ describe('jobs dashboard status distribution', () => {
     expect(table.textContent).not.toContain('%')
     expect(within(table).queryByRole('columnheader', { name: 'Share' })).toBeNull()
     expect(within(card).queryByRole('img')).toBeNull()
-    expect(within(card).queryByRole('button', { name: 'Show chart' })).toBeNull()
+    expect(within(card).queryByRole('button', { name: /^Show chart:/ })).toBeNull()
     expect(within(card).getByText('Counts of all runs. These counts are partial, so no shares are shown.')).toBeTruthy()
   })
 
@@ -552,7 +552,7 @@ describe('jobs dashboard status distribution', () => {
     const donut = await within(card).findByRole('img', { name: /^Runs by status:/ })
     expect(donut.getAttribute('aria-label')).toContain('Failed 23 runs, 0.5%')
 
-    await actor.click(within(card).getByRole('button', { name: 'Show list' }))
+    await actor.click(within(card).getByRole('button', { name: /^Show list:/ }))
     const table = within(card).getByRole('table', { name: 'Runs by status' })
     expect(cellsOf(table)).toContainEqual(['Succeeded', '4,210', '98.2%'])
     expect(within(card).queryByRole('img')).toBeNull()
@@ -576,7 +576,7 @@ describe('jobs dashboard runs per day', () => {
       'unmeasured buckets are gaps; Today is Nov 5, later buckets are scheduled and drawn outlined',
     )
 
-    await actor.click(within(card).getByRole('button', { name: 'Show list' }))
+    await actor.click(within(card).getByRole('button', { name: /^Show list:/ }))
     const table = within(card).getByRole('table', { name: 'Runs per day by status' })
     expect(within(table).getByText('Values in runs')).toBeTruthy()
     const rows = cellsOf(table)

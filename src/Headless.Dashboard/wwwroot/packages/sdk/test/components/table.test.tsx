@@ -1054,7 +1054,7 @@ describe('checked rows and bulk refusals', () => {
     expect(row(/^r5\b/).textContent).toContain('Held')
     expect(row(/^r1\b/).textContent).not.toContain('Running')
 
-    await user.click(within(toast.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'View' }))
+    await user.click(within(toast.closest('[role="group"]') as HTMLElement).getByRole('button', { name: 'View' }))
 
     expect(row(/^r3\b/).hasAttribute('data-highlighted')).toBe(true)
     expect(row(/^r5\b/).hasAttribute('data-highlighted')).toBe(true)
@@ -1133,7 +1133,7 @@ describe('checked rows and bulk refusals', () => {
     await act(async () => release())
 
     const toast = await screen.findByText('Requeue: 3 done · 2 refused')
-    expect(within(toast.closest('[role="status"]') as HTMLElement).queryByRole('button', { name: 'View' })).toBeNull()
+    expect(within(toast.closest('[role="group"]') as HTMLElement).queryByRole('button', { name: 'View' })).toBeNull()
     expect(row(/^r3\b/).textContent).not.toContain('Running')
     expect(row(/^r5\b/).textContent).not.toContain('Held')
   })

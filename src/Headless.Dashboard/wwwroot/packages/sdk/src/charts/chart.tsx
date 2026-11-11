@@ -56,6 +56,7 @@ function TimeSeriesChart(props: TimeSeriesChartProps) {
 
   return (
     <ChartFrame
+      label={props.label}
       legend={props.series.map((item) => item.name)}
       tones={props.series.map((item) => item.tone)}
       sentence={timeSeriesSentence(props, rows, format)}
@@ -91,6 +92,7 @@ function DonutChart(props: DonutChartProps) {
 
   return (
     <ChartFrame
+      label={props.label}
       legend={rows.map((row) => `${row.name} ${row.share}`)}
       tones={tones}
       sentence={donutSentence(props, rows, format)}
@@ -101,6 +103,7 @@ function DonutChart(props: DonutChartProps) {
 }
 
 interface ChartFrameProps {
+  label: string
   legend: readonly string[]
   tones: readonly ChartTone[]
   sentence: string
@@ -108,7 +111,7 @@ interface ChartFrameProps {
   list: ReactNode
 }
 
-function ChartFrame({ legend, tones, sentence, drawing, list }: ChartFrameProps) {
+function ChartFrame({ label, legend, tones, sentence, drawing, list }: ChartFrameProps) {
   const [asList, setAsList] = useState(false)
 
   return (
@@ -123,7 +126,14 @@ function ChartFrame({ legend, tones, sentence, drawing, list }: ChartFrameProps)
             </li>
           ))}
         </ul>
-        <Button variant="ghost" icon={asList ? ChartIcon : ListIcon} className="ms-auto" onPress={() => setAsList(!asList)}>
+        {/* A page holds several charts, so the name says whose: `Show list: Throughput`, still led by the words shown. */}
+        <Button
+          variant="ghost"
+          icon={asList ? ChartIcon : ListIcon}
+          className="ms-auto"
+          aria-label={`${asList ? 'Show chart' : 'Show list'}: ${label}`}
+          onPress={() => setAsList(!asList)}
+        >
           {asList ? 'Show chart' : 'Show list'}
         </Button>
       </div>

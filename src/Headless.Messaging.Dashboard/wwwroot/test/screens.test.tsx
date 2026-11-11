@@ -76,6 +76,7 @@ describe('messaging list search', () => {
     await actor.type(screen.getByRole('searchbox', { name: 'Search received message content' }), 'gone{Enter}')
 
     expect(await screen.findByText('Search did not finish; results may be missing.')).toBeTruthy()
+    expect(screen.getAllByRole('status').some((region) => region.textContent === 'Search did not finish.')).toBe(true)
     expect(screen.queryByText(/^No received messages/)).toBeNull()
     expect(screen.getByText('The search ran out of time before it found a match; results may be missing.')).toBeTruthy()
 
@@ -323,7 +324,7 @@ describe('messaging dashboard insight', () => {
     const range = (label: string | null) => /from (.*?) to (.*?) /.exec(label ?? '')?.slice(1)
     expect(range(rate.getAttribute('aria-label'))).toEqual(range(latency.getAttribute('aria-label')))
 
-    await actor.click(within(card).getAllByRole('button', { name: 'Show list' })[0]!)
+    await actor.click(within(card).getAllByRole('button', { name: /^Show list:/ })[0]!)
     const table = within(card).getByRole('table', { name: 'Message rate' })
     expect(cellsOf(table)[2]!.slice(1)).toEqual(['not measured', 'not measured'])
   })
@@ -383,7 +384,7 @@ describe('messaging dashboard insight', () => {
 
     const card = await screen.findByRole('region', { name: 'Last 24 hours' })
     expect(await within(card).findByText('Not counted, as these stores did not answer: billing.')).toBeTruthy()
-    await actor.click(within(card).getByRole('button', { name: 'Show list' }))
+    await actor.click(within(card).getByRole('button', { name: /^Show list:/ }))
     const rows = cellsOf(within(card).getByRole('table', { name: 'Received per hour' }))
     expect(rows[1]!.slice(1)).toEqual(['5', '1'])
     expect(rows[2]![1]).toBe('not measured')
@@ -528,6 +529,33 @@ describe('messaging node ping', () => {
     expect(view.requests.find((request) => request.path === 'messaging/nodes/ping')?.body).toEqual({})
     expect(await within(screen.getByRole('row', { name: /node-b/ })).findByText('42 ms')).toBeTruthy()
     expect(within(screen.getByRole('row', { name: /node-c/ })).getByText('Timed out')).toBeTruthy()
+  })
+
+  it('says what Ping all found once it settles, since the results land in cells away from the button', async () => {
+    const actor = user()
+    open(pinging(), { path: 'nodes' })
+
+    await screen.findByRole('row', { name: /node-b/ })
+    await actor.click(screen.getByRole('button', { name: 'Ping all' }))
+
+    await waitFor(() =>
+      expect(screen.getAllByRole('status').some((region) => region.textContent === 'Ping all: 1 of 2 answered.')).toBe(
+        true,
+      ),
+    )
+  })
+
+  it('says one node’s ping from the same region on every press', async () => {
+    const actor = user()
+    open(pinging(), { path: 'nodes' })
+    const said = () => screen.getAllByRole('status').find((region) => region.textContent === 'Ping node-b: 42 ms.')
+
+    await actor.click(await screen.findByRole('button', { name: 'Ping node-b' }))
+    await waitFor(() => expect(said()).toBeTruthy())
+    const region = said()
+
+    await actor.click(screen.getByRole('button', { name: 'Ping node-b' }))
+    await waitFor(() => expect(said()).toBe(region))
   })
 
   it('pings one node by name from its row', async () => {

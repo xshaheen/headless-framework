@@ -402,7 +402,7 @@ describe('jobs runs list', () => {
     })
     expect(within(screen.getByRole('row', { name: /a\.done/ })).getByText('Not failed')).toBeTruthy()
     expect(
-      within(toast.closest('[role="status"]') ?? toast.parentElement!).getByRole('button', { name: 'View' }),
+      within(toast.closest('[role="group"]') ?? toast.parentElement!).getByRole('button', { name: 'View' }),
     ).toBeTruthy()
   })
 

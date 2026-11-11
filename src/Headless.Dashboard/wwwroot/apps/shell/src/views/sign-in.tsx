@@ -189,6 +189,8 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
   const forbidden =
     phase.kind === 'forbidden' ? phase.message : notice === 'forbidden' ? stateText.forbidden : undefined
   const host = typeof location === 'undefined' ? 'the application' : location.host
+  // A refusal is about the credential, so each field it covers reads invalid and points at why.
+  const error = phase.kind === 'refused' ? errorId : undefined
 
   return (
     // Outside the frame, on a dot grid, in the stored theme.
@@ -245,7 +247,7 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
         ) : (
           <form className="flex flex-col gap-3.5" onSubmit={(event) => void submit(event)} noValidate>
             {phase.kind === 'refused' ? (
-              <p role="alert" className={alert}>
+              <p id={errorId} role="alert" className={alert}>
                 {phase.message}
               </p>
             ) : null}
@@ -253,6 +255,7 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
               <>
                 <SignInField
                   label="User name"
+                  error={error}
                   icon={userIcon}
                   value={userName}
                   onChange={setUserName}
@@ -260,6 +263,7 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
                 />
                 <SignInField
                   label="Password"
+                  error={error}
                   icon={keyIcon}
                   value={password}
                   onChange={setPassword}
@@ -270,6 +274,7 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
             ) : (
               <SignInField
                 label="API key"
+                error={error}
                 icon={keyIcon}
                 value={apiKey}
                 onChange={setApiKey}
@@ -286,6 +291,8 @@ export function SignInPage({ state, search, fetch: fetcher, assign }: SignInPage
     </div>
   )
 }
+
+const errorId = 'sign-in-error'
 
 // The sign-in page loads on its own, so it repeats the shell's running-text measure rather than import a view for it.
 const prose = 'max-w-[72ch] type-body'
@@ -312,13 +319,15 @@ interface SignInFieldProps {
   autoComplete: string
   /** A password or key: hidden as typed, with a Show toggle and a Caps Lock hint. */
   secret?: boolean
+  /** The id of the refusal the field is invalid by, after a failed sign-in. */
+  error?: string
 }
 
 /**
  * A sign-in field: a native input, so password managers and the platform treat it as one. A secret field hides what
  * is typed until Show, and says when Caps Lock is on, since a wrong case reads as a wrong password.
  */
-function SignInField({ label, icon, value, onChange, autoComplete, secret }: SignInFieldProps) {
+function SignInField({ label, icon, value, onChange, autoComplete, secret, error }: SignInFieldProps) {
   const id = `sign-in-${label.toLowerCase().replace(/\s+/g, '-')}`
   const [shown, setShown] = useState(false)
   const [caps, setCaps] = useState(false)
@@ -337,7 +346,8 @@ function SignInField({ label, icon, value, onChange, autoComplete, secret }: Sig
           autoComplete={autoComplete}
           autoCapitalize="none"
           spellCheck={false}
-          aria-describedby={secret && caps ? `${id}-caps` : undefined}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={[error, secret && caps ? `${id}-caps` : undefined].filter(Boolean).join(' ') || undefined}
           value={value}
           onChange={(event) => onChange(event.currentTarget.value)}
           onKeyUp={(event) => setCaps(event.getModifierState('CapsLock'))}

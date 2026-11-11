@@ -23,9 +23,9 @@ const prose = 'max-w-[72ch] type-body'
 export function ModuleError({ module }: { module: BootstrapModule }) {
   return (
     <section className={`${card} max-w-(--dialog-width)`} aria-labelledby="module-error-title">
-      <h2 id="module-error-title" className="hd-title">
+      <h1 id="module-error-title" className="hd-title">
         {module.displayName} is not available
-      </h2>
+      </h1>
       <p role="alert" className={prose}>
         {refusalText(module)}
       </p>
@@ -39,9 +39,9 @@ export function ModuleError({ module }: { module: BootstrapModule }) {
 export function NotFound() {
   return (
     <section className={`${card} m-auto max-w-[46ch] items-center text-center`} aria-labelledby="not-found-title">
-      <h2 id="not-found-title" className="hd-title">
+      <h1 id="not-found-title" className="hd-title">
         Nothing lives at this address
-      </h2>
+      </h1>
       <p className={prose}>The link may name a module this dashboard does not serve, or one you may not view.</p>
       <Link to="/">Go to the dashboard</Link>
     </section>
@@ -67,9 +67,9 @@ export function RouteError() {
 
   return (
     <section className={`${card} max-w-(--dialog-width)`} role="alert" aria-labelledby="route-error-title">
-      <h2 id="route-error-title" className="hd-title">
+      <h1 id="route-error-title" className="hd-title">
         This view failed
-      </h2>
+      </h1>
       <p className={prose}>{message} Reload the page, or open another view.</p>
       <div className="hd-actions">
         <Button variant="primary" onPress={() => window.location.reload()}>

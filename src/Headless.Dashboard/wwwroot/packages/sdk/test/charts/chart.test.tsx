@@ -90,10 +90,11 @@ describe('Chart', () => {
     await waitFor(() => expect(within(tooltip).getByText('12:02:00')).toBeTruthy())
     expect(within(tooltip).getByText('Published').nextElementSibling?.textContent).toBe('not measured')
 
-    const toggle = screen.getByRole('button', { name: 'Show list' })
+    // A page holds several charts, so the toggle names its own, still led by the words it shows.
+    const toggle = screen.getByRole('button', { name: 'Show list: Throughput' })
     await user.click(toggle)
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show chart' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show chart: Throughput' }))
     expect(screen.queryByRole('img')).toBeNull()
 
     // The unit is said once, in the caption; each cell holds the number alone, and an unmeasured bucket says so.
@@ -108,7 +109,7 @@ describe('Chart', () => {
     expect(rows).toHaveLength(19)
 
     await user.keyboard('{Enter}')
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show list' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Show list:/ }))
     expect(screen.getByRole('img')).toBeTruthy()
   })
 
@@ -139,7 +140,7 @@ describe('Chart', () => {
     const user = userEvent.setup()
     renderChart(outcomes)
 
-    await user.click(screen.getByRole('button', { name: 'Show list' }))
+    await user.click(screen.getByRole('button', { name: /^Show list:/ }))
 
     const table = screen.getByRole('table', { name: 'Runs by outcome' })
     expect(within(table).getByText('Counts in runs')).toBeTruthy()
@@ -159,12 +160,12 @@ describe('Chart', () => {
       </LocaleProvider>,
     )
 
-    const [series, donut] = screen.getAllByRole('button', { name: 'Show list' })
+    const [series, donut] = screen.getAllByRole('button', { name: /^Show list:/ })
     expect(series!.className).toBe(donut!.className)
 
     // A pointer press leaves no keyboard-focus mark, which the stylesheet reads to hide the ring; Tab sets it.
     await user.click(series!)
-    const pressed = screen.getByRole('button', { name: 'Show chart' })
+    const pressed = screen.getByRole('button', { name: /^Show chart:/ })
     expect(document.activeElement).toBe(pressed)
     expect(pressed.hasAttribute('data-focus-visible')).toBe(false)
     await user.tab()
@@ -172,7 +173,7 @@ describe('Chart', () => {
     expect(donut!.hasAttribute('data-focus-visible')).toBe(true)
 
     await user.keyboard('{Enter}')
-    expect(screen.getAllByRole('button', { name: 'Show chart' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /^Show chart:/ })).toHaveLength(2)
     expect(screen.getAllByRole('table').map((table) => table.getAttribute('aria-label'))).toEqual([
       'Throughput',
       'Runs by outcome',
@@ -320,7 +321,7 @@ describe('Chart', () => {
     const user = userEvent.setup()
     renderChart(days)
 
-    await user.click(screen.getByRole('button', { name: 'Show list' }))
+    await user.click(screen.getByRole('button', { name: /^Show list:/ }))
 
     expect(cells(screen.getByRole('table', { name: 'Runs per day' })).map((row) => row[0])).toEqual([
       'Time',

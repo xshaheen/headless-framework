@@ -1,6 +1,7 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
 import {
+  Announcer,
   Button,
   DetailPanel,
   FieldGrid,
@@ -45,10 +46,40 @@ export interface PingAnswer {
 /** A node's last ping on this page: waiting for the server, its answer, or why the server refused or failed the ping. */
 type PingResult = { kind: 'pending' } | { kind: 'answer'; answer: PingAnswer } | { kind: 'refused'; reason: string }
 
+/**
+ * What a settled ping says to a screen reader, since its result lands in a cell away from the button pressed: one
+ * node's mark, or how many of every node's answered.
+ */
+function pingOutcome(
+  targets: readonly string[],
+  one: string | undefined,
+  items: readonly PingAnswer[],
+  duration: (ms: number) => string,
+) {
+  if (one) {
+    const item = items.find((answer) => answer.node === one)
+
+    if (!item) {
+      return `Ping ${one}: no answer for this node.`
+    }
+
+    const mark = pingMark({ kind: 'answer', answer: item }, duration)
+
+    return `Ping ${one}: ${mark.label}${mark.detail ? `, ${mark.detail}` : ''}.`
+  }
+
+  const answered = items.filter((item) => item.outcome === 'answered').length
+
+  return `Ping all: ${answered} of ${targets.length} answered.`
+}
+
 /** The pings this page sent, by node, and the call that sends one node's or every node's. */
 function usePing() {
   const { api } = useDashboard()
+  const format = useFormat()
   const [results, setResults] = useState<ReadonlyMap<string, PingResult>>(new Map())
+  // A count per settled ping, so the same words after a second ping are announced again.
+  const [said, setSaid] = useState({ text: '', round: 0 })
 
   async function ping(targets: readonly string[], one?: string) {
     setResults((current) => new Map([...current, ...targets.map((node) => [node, { kind: 'pending' }] as const)]))
@@ -74,6 +105,10 @@ function usePing() {
 
         return next
       })
+      setSaid((current) => ({
+        text: pingOutcome(targets, one, answer.items, format.duration),
+        round: current.round + 1,
+      }))
     } catch (error) {
       // The refusal shows on each node it covers, in place: a viewer's `403`, or a node discovery no longer lists.
       const reason =
@@ -86,10 +121,11 @@ function usePing() {
       setResults(
         (current) => new Map([...current, ...targets.map((node) => [node, { kind: 'refused', reason }] as const)]),
       )
+      setSaid((current) => ({ text: `Ping refused: ${reason}`, round: current.round + 1 }))
     }
   }
 
-  return { results, ping }
+  return { results, ping, said }
 }
 
 /** A ping result as the row and the panel show it: a dot and a word, and the detail after it. */
@@ -137,7 +173,7 @@ export default function NodesView() {
   const frame = usePageFrame({ viewId: 'messaging.nodes', rows })
   const open = rows.find((row) => row.id === frame.openId)
   const discovery = nodes.data?.discovery
-  const { results, ping } = usePing()
+  const { results, ping, said } = usePing()
   const peers = rows.filter((row) => !row.isLocal).map((row) => row.name)
   // Ping makes this node call others, so it needs operate permission, as a command does.
   const pingReason = !module.canOperate
@@ -188,6 +224,7 @@ export default function NodesView() {
       }
     >
       <StaleNotice what="these nodes" onRefresh={() => void nodes.refetch()} />
+      <Announcer message={said.text} id={said.round} />
       <QueryState query={nodes} label="Loading nodes" rows={3} shape="table">
         {() => (
           <DataTable

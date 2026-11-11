@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EmptyState } from '../../src/components/display/empty-state.tsx'
@@ -131,6 +131,28 @@ describe('FilterSelect', () => {
     await user.click(chip)
     await user.click(await screen.findByRole('option', { name: 'Any kind' }))
     expect(onChange).toHaveBeenCalledWith('')
+  })
+
+  it('opens from the keyboard, and Esc closes the list back to the chip', async () => {
+    const user = userEvent.setup()
+    render(
+      <FilterSelect
+        label="Kind"
+        emptyLabel="Any kind"
+        value=""
+        onChange={() => undefined}
+        options={[{ value: 'TimeJob', label: 'Time jobs' }]}
+      />,
+    )
+    const chip = screen.getByRole('button', { name: /Kind/ })
+
+    chip.focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('listbox')).toBeTruthy()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(chip))
   })
 
   it('offers no empty choice and no set state for a required choice such as the node', async () => {

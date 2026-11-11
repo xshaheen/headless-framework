@@ -38,8 +38,8 @@ const sideItem = 'flex h-(--field-height) items-center gap-2.5 rounded-md px-2.5
 // Weight and an inline-start accent bar mark the current entry, so the fill is never the only cue.
 const sideLink = `${sideItem} text-muted-foreground hover:text-foreground current:bg-muted current:font-medium current:text-foreground current:accent-bar-start`
 
-function mostSpecificEntry(entries: readonly { to: string }[], search: URLSearchParams, pathname: string) {
-  let best
+function mostSpecificEntry<T extends { to: string }>(entries: readonly T[], search: URLSearchParams, pathname: string) {
+  let best: T | undefined
   let score = -1
 
   for (const entry of entries) {
@@ -61,6 +61,27 @@ function mostSpecificEntry(entries: readonly { to: string }[], search: URLSearch
   return best
 }
 
+/** A product's sidebar entries, each with the path it links to. */
+function productSections(product: BootstrapProduct) {
+  return product.sections.map((section) => ({
+    ...section,
+    entries: section.entries.map((entry) => ({
+      ...entry,
+      module: section.module,
+      to: modulePath(section.module, entry.route),
+    })),
+  }))
+}
+
+/** The sidebar entry the location is on, such as `Runs` on a run's own page; the shell titles the page with it. */
+export function currentEntry(product: BootstrapProduct, location: { pathname: string; search: string }) {
+  return mostSpecificEntry(
+    productSections(product).flatMap((section) => section.entries),
+    new URLSearchParams(location.search),
+    location.pathname,
+  )
+}
+
 /**
  * The active product's sidebar: its modules' sections in order, each entry with an icon or a state dot and, when it
  * declares a count key, its count from one request. A count reads an en dash while loading or failed, never 0, and
@@ -76,23 +97,13 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
     .flatMap((module) => Object.keys(module.objectKinds ?? {}).map((kind) => `${module.id}.${kind}`))
   const counted = product.sections.some((section) => section.entries.some((entry) => entry.countKey))
   const counts = useProductCounts(counted ? product.id : undefined, topics)
-  const sections = product.sections.map((section) => ({
-    ...section,
-    entries: section.entries.map((entry) => ({
-      ...entry,
-      module: section.module,
-      to: modulePath(section.module, entry.route),
-    })),
-  }))
-  const current = mostSpecificEntry(
-    sections.flatMap((section) => section.entries),
-    new URLSearchParams(location.search),
-    location.pathname,
-  )
+  const sections = productSections(product)
+  const current = currentEntry(product, location)
 
   return (
     // Below 768 px the sidebar opens over the view from the Menu button.
     <nav
+      id="hd-sidebar"
       className="flex flex-col gap-0.5 overflow-y-auto border-e bg-deep px-2 py-2.5 line-icons max-md:fixed max-md:start-0 max-md:top-(--topbar-height) max-md:bottom-0 max-md:z-(--z-popover) max-md:w-(--sidebar-phone-width) max-md:max-w-[85vw] max-md:shadow-lg"
       aria-label={product.label}
     >
@@ -139,7 +150,7 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
                 key={entry.id}
                 to={entry.to}
                 className={sideLink}
-                aria-current={entry === current ? 'page' : undefined}
+                aria-current={entry.to === current?.to ? 'page' : undefined}
                 onClick={onNavigate}
               >
                 {body}

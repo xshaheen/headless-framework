@@ -1,7 +1,9 @@
 'use no memo'
 
 import type { ReactNode } from 'react'
+import { useStreamStatus } from '../../stream/hooks.ts'
 import { Button } from '../button.tsx'
+import { Announcer } from '../live.tsx'
 import { Text } from './text.tsx'
 
 export interface BannerProps {
@@ -49,18 +51,26 @@ export interface StaleNoticeProps {
   onRefresh: () => void
 }
 
-/** `Stale` while live updates stopped, with Refresh; the data on screen is kept. */
+/**
+ * `Stale` while live updates stopped, with Refresh; the data on screen is kept. The turn to stale is announced once,
+ * from a region that is always in the page; when the whole stream dropped, the top bar's live state already said so,
+ * and this notice stays quiet.
+ */
 export function StaleNotice({ stale, what, onRefresh }: StaleNoticeProps) {
-  if (!stale) {
-    return null
-  }
+  const { status } = useStreamStatus()
+  const text = `Stale. Live updates stopped, so ${what} may be out of date.`
 
   return (
-    <Banner role="status">
-      <span>{`Stale. Live updates stopped, so ${what} may be out of date.`}</span>
-      <Button variant="ghost" onPress={onRefresh}>
-        Refresh
-      </Button>
-    </Banner>
+    <>
+      <Announcer message={stale && status !== 'stale' ? `Live updates stopped for ${what}.` : ''} />
+      {stale ? (
+        <Banner>
+          <span>{text}</span>
+          <Button variant="ghost" onPress={onRefresh}>
+            Refresh
+          </Button>
+        </Banner>
+      ) : null}
+    </>
   )
 }
