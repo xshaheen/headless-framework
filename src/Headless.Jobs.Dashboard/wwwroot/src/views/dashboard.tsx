@@ -12,7 +12,7 @@ import {
   Skeleton,
   Text,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList, useDashboardList, useNewRows } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -76,7 +76,7 @@ export default function JobsDashboard() {
           description={
             next ? (
               <>
-                Next execution <Mono>{next.function}</Mono>, <RelativeTime value={next.at} scheduled />
+                Next execution <Mono>{next.function}</Mono>, <Timestamp value={next.at} scheduled />
               </>
             ) : undefined
           }
@@ -366,7 +366,7 @@ function NextRecurringRuns({ list, total, next }: ReturnType<typeof useNextRecur
           name={<Link to={`/jobs/cron-jobs/${encodeURIComponent(cronJob.id)}`}>{cronJob.function}</Link>}
           meta={cronJob.expression}
           title={`${cronJob.function} ${cronJob.expression}`}
-          value={<RelativeTime value={cronJob.nextDueUtc} scheduled />}
+          value={<Timestamp value={cronJob.nextDueUtc} scheduled />}
         />
       ))}
     </Card>
@@ -426,7 +426,7 @@ function JobsAttention() {
             }
             meta={parts ? parts[1] : undefined}
             title={item.title}
-            value={item.lastSeenAt ? <RelativeTime value={item.lastSeenAt} /> : undefined}
+            value={item.lastSeenAt ? <Timestamp value={item.lastSeenAt} /> : undefined}
           />
         )
       })}

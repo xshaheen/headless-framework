@@ -76,9 +76,6 @@ public sealed record MessagingGuarantee(
 [PublicAPI]
 public static class MessagingGuarantees
 {
-    /// <summary>Tracks the guarantees that still need a test in the fast tier or against a real system.</summary>
-    public const string FillIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1277";
-
     public static IReadOnlyList<MessagingGuarantee> All { get; } =
     [
         // Publish and outbox
@@ -124,7 +121,7 @@ public static class MessagingGuarantees
             realSystem: false,
             "With strict tenancy, a publish takes the tenant from its options, else the ambient tenant, else throws before any effect."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-PUB-08",
             GuaranteeArea.Publish,
             realSystem: false,
@@ -161,19 +158,19 @@ public static class MessagingGuarantees
             realSystem: true,
             "A published row past the persisted retry cap is still claimed, so it can be made terminal instead of stranded."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-RETRY-04",
             GuaranteeArea.DispatchRetry,
             realSystem: false,
             "A failing publish gets (inline + 1) x (persisted + 1) attempts, then ends Failed with no next retry and fires OnTerminal once."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-RETRY-05",
             GuaranteeArea.DispatchRetry,
             realSystem: false,
             "After a crash that already reserved the inline budget, recovery does not send the message again."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-RETRY-06",
             GuaranteeArea.DispatchRetry,
             realSystem: false,
@@ -197,7 +194,7 @@ public static class MessagingGuarantees
             realSystem: true,
             "Revocation wins only before the first attempt is reserved, and a revocation racing that reservation has exactly one winner."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-RETRY-10",
             GuaranteeArea.DispatchRetry,
             realSystem: false,
@@ -522,7 +519,7 @@ public static class MessagingGuarantees
             realSystem: false,
             "A request past its deadline is not handled on any attempt and ends with no reply or breaker failure; OnTerminal fires once as an expired deadline."
         ),
-        _NoTestYet(
+        _Bound(
             "MSG-RR-06",
             GuaranteeArea.RequestReply,
             realSystem: true,
@@ -669,12 +666,4 @@ public static class MessagingGuarantees
         string statement,
         params TransportConformanceScenario[] scenarios
     ) => _Bound(id, area, realSystem: true, statement) with { ManifestScenarios = scenarios };
-
-    private static MessagingGuarantee _NoTestYet(
-        string id,
-        GuaranteeArea area,
-        bool realSystem,
-        string statement,
-        string issueUrl = FillIssueUrl
-    ) => new(id, area, statement, realSystem, GuaranteeStatus.NoTestYet) { IssueUrl = issueUrl };
 }

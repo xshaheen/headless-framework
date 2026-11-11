@@ -13,9 +13,10 @@ import { Flyout, useBelow, useFlyout } from './flyout.tsx'
 import { ProductTabs } from './product-tabs.tsx'
 import { ThemeControl } from './theme.tsx'
 
-function Glyph({ d, fill }: { d: string; fill?: boolean }) {
+/** A bar glyph; `className` overrides the bar's line-icon stroke, which reaches every icon inside the bar. */
+function Glyph({ d, className }: { d: string; className?: string }) {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className={fill ? 'hd-glyph-fill' : undefined}>
+    <svg viewBox="0 0 16 16" aria-hidden="true" className={className}>
       <path d={d} />
     </svg>
   )
@@ -35,7 +36,7 @@ function Clock() {
   }, [])
 
   return (
-    <time className="hd-clock" dateTime={now.toISOString()}>
+    <time className="type-mono text-muted-foreground" dateTime={now.toISOString()}>
       {now.toLocaleTimeString('en-GB', { timeZone, hourCycle: 'h23' })}
     </time>
   )
@@ -57,8 +58,9 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
   }
 
   return (
-    <div className="hd-goto">
-      <label className="hd-goto-field">
+    <div className="relative">
+      {/* Below 1024 px the field shrinks to its search icon, and opens to full width while it has focus. */}
+      <label className="input-box h-(--control-height) w-(--goto-width) cursor-text rounded-md border ps-2 pe-1 max-lg:not-focus-within:w-(--control-height) max-lg:not-focus-within:px-1.5 max-lg:not-focus-within:[&_:is(input,kbd)]:hidden">
         <Glyph d={searchGlyph} />
         <span className="sr-only">Go to id</span>
         <input
@@ -85,18 +87,27 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
         </span>
       </label>
       {resolved ? (
-        <div className="hd-goto-list" role="region" aria-label="Matches">
+        <div
+          className="absolute end-0 top-full mt-1 z-(--z-popover) flex w-(--popover-width) flex-col rounded-xl border bg-card p-1.5 whitespace-normal shadow-lg"
+          role="region"
+          aria-label="Matches"
+        >
           {resolved.failed ? (
-            <p className="hd-hint">Lookup failed. Try again.</p>
+            <p className="hd-hint p-1.5">Lookup failed. Try again.</p>
           ) : resolved.objects.length === 0 ? (
-            <p className="hd-hint">
+            <p className="hd-hint p-1.5">
               {resolved.stale.length > 0
                 ? `No match in the modules that answered (${resolved.stale.join(', ')} did not answer)`
                 : `No object with id ${query.trim()}`}
             </p>
           ) : (
             resolved.objects.map((object) => (
-              <Button key={`${object.target.module}:${object.target.id}`} variant="ghost" onPress={() => open(object)}>
+              <Button
+                key={`${object.target.module}:${object.target.id}`}
+                variant="ghost"
+                className="justify-start"
+                onPress={() => open(object)}
+              >
                 {object.title}
               </Button>
             ))
@@ -125,11 +136,14 @@ function PauseButton({ paused, onToggle, labelled }: { paused: boolean; onToggle
   return (
     <Button
       variant="ghost"
-      className={labelled ? undefined : 'hd-icon'}
+      className={labelled ? 'self-start' : 'hd-icon'}
       aria-label={labelled ? undefined : label}
       onPress={onToggle}
     >
-      <Glyph d={paused ? 'M5 3.5v9l7-4.5z' : 'M4.5 3h2.5v10H4.5zM9 3h2.5v10H9z'} fill />
+      <Glyph
+        d={paused ? 'M5 3.5v9l7-4.5z' : 'M4.5 3h2.5v10H4.5zM9 3h2.5v10H9z'}
+        className="w-3.5! fill-current! stroke-none!"
+      />
       {labelled ? label : null}
     </Button>
   )
@@ -179,21 +193,25 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
   }
 
   return (
-    <header className="hd-topbar">
+    // Only the product tabs give way when the bar is short of room; they scroll in their track instead.
+    <header className="col-span-full flex min-w-0 items-center gap-3 border-b bg-deep ps-3 pe-3.5 whitespace-nowrap line-icons *:shrink-0 max-md:gap-2 max-md:px-2">
       {menu}
-      <span className="hd-logo">
-        <span className="hd-logo-mark" aria-hidden="true">
-          <Glyph d="M4.5 3v10M11.5 3v10M4.5 8h7" />
+      <span className="inline-flex items-center gap-2 font-bold [letter-spacing:-0.01em] max-md:hidden">
+        <span
+          className="inline-grid size-(--mark-size) place-items-center rounded-lg bg-foreground text-deep"
+          aria-hidden="true"
+        >
+          <Glyph d="M4.5 3v10M11.5 3v10M4.5 8h7" className="w-3! stroke-[2.2]!" />
         </span>
         headless
       </span>
       <ProductTabs current={product} attention={sections} />
-      <span className="hd-spacer" />
+      <span className="flex-1" />
       <GoTo input={goTo} onMany={onMany} />
       <Button
         ref={attention.trigger}
         variant="ghost"
-        className={`hd-quiet hd-tone-${role}`}
+        className={`border-border font-normal hd-tone-${role}`}
         aria-expanded={attention.isOpen}
         onPress={attention.toggle}
       >
@@ -223,7 +241,7 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
           <Button
             ref={zone.trigger}
             variant="ghost"
-            className="hd-quiet"
+            className="border-border font-normal"
             aria-label={`Display time zone: ${timeZone}`}
             onPress={zone.toggle}
           >
@@ -240,10 +258,14 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
         </>
       )}
       {medium ? null : <PauseButton paused={paused !== null} onToggle={togglePause} />}
-      {canOperate ? null : <span className="hd-view-only">View only</span>}
+      {canOperate ? null : (
+        <span className="rounded-(--tag-pill-height) border border-edge px-1.5 type-tag text-muted-foreground">
+          View only
+        </span>
+      )}
       <Button
         ref={account.trigger}
-        className="hd-avatar"
+        className="hd-icon rounded-full border-0 bg-avatar type-tag-strong text-on-avatar"
         aria-label={`Account: ${name ?? 'signed in'}`}
         aria-expanded={account.isOpen}
         onPress={account.toggle}
@@ -265,7 +287,12 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
         {medium ? <PauseButton paused={paused !== null} onToggle={togglePause} labelled /> : null}
         {state.authMode === 'none' ? null : (
           <>
-            <Button variant="ghost" isPending={signOutState === 'busy'} onPress={() => void onSignOut()}>
+            <Button
+              variant="ghost"
+              className="self-start"
+              isPending={signOutState === 'busy'}
+              onPress={() => void onSignOut()}
+            >
               Sign out
             </Button>
             {signOutState === 'failed' ? (

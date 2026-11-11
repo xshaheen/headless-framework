@@ -58,6 +58,21 @@ internal interface IInboxTransactionRunner
     );
 }
 
+/// <summary>
+/// A transactional inbox attempt failed before its handler ran: opening the connection, beginning the transaction,
+/// enlisting the unit of work, or the delivery-coordination check. The handler did not run, so the failure does not
+/// spend the consumer's retry budget.
+/// </summary>
+internal sealed class InboxAttemptNotStartedException(Guid storageId, Exception innerException)
+    : InvalidOperationException(
+        $"Inbox attempt '{storageId}' failed before its handler ran: {innerException.Message}",
+        innerException
+    )
+{
+    /// <summary>The fault that stopped the attempt; the same instance as <see cref="Exception.InnerException" />.</summary>
+    public Exception Fault { get; } = innerException;
+}
+
 internal sealed class StaleInboxAttemptException(Guid storageId)
     : InvalidOperationException($"Inbox attempt '{storageId}' lost its generation fence before completion.");
 

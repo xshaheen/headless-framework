@@ -12,7 +12,9 @@ namespace Headless.Sql.PostgreSql;
 /// <summary>The PostgreSQL dialect: snake_case names, <c>"C"</c> key collation, and <c>clock_timestamp()</c>.</summary>
 /// <remarks>
 /// The clock is <c>clock_timestamp()</c> captured once in a <c>MATERIALIZED</c> CTE, never <c>now()</c>: <c>now()</c>
-/// is frozen at transaction start, so inside a long transaction it would keep an expired row looking live. Row locks
+/// is frozen at transaction start, so inside a long transaction it would keep an expired row looking live. A
+/// <see cref="SqlClockedStatement" /> that reads one row and names the clock once calls <c>clock_timestamp()</c> inline
+/// instead, which is the same single instant without the CTE's cost. Row locks
 /// are <c>FOR NO KEY UPDATE</c> (update intent, compatible with foreign-key share locks), and claims skip locked rows.
 /// </remarks>
 [PublicAPI]
@@ -343,6 +345,13 @@ public sealed class PostgreSqlDialect : ISqlDialect
 
     public string Render(SqlClockedStatement statement)
     {
+        // One row and one mention of the clock: the inline call is evaluated once, so it judges the row by the same
+        // single instant the CTE would capture, without materializing a step on every call.
+        if (statement.ReadsOneRow && statement.Sql.AsSpan().Count(SqlDialectTokens.Now) == 1)
+        {
+            return statement.Sql.Replace(SqlDialectTokens.Now, "clock_timestamp()", StringComparison.Ordinal);
+        }
+
         return $"""
             {_Clock}
             {_ClockedSubquery(statement.Sql)}

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Transport;
@@ -18,6 +19,12 @@ public enum BrokerEventKind
 
     /// <summary>A publish reached the broker while its connection was down and failed.</summary>
     PublishRefused,
+
+    /// <summary>A publish failed by script (<see cref="FaultScript.FailPublishes"/>) while the connection was up.</summary>
+    PublishFailed,
+
+    /// <summary>A publish the broker will never confirm by script (<see cref="FaultScript.HangPublishes"/>).</summary>
+    PublishHung,
 
     /// <summary>A consumer client received a delivery.</summary>
     Delivered,
@@ -422,6 +429,24 @@ public sealed class SimulatedBroker
         }
     }
 
+    /// <summary>Takes the scripted fault for this publish, if any, and records it.</summary>
+    internal PublishFaultKind? TakePublishFault(TransportMessage message)
+    {
+        if (Faults.TakePublishFault() is not { } kind)
+        {
+            return null;
+        }
+
+        Record(
+            kind is PublishFaultKind.Fail ? BrokerEventKind.PublishFailed : BrokerEventKind.PublishHung,
+            subscription: null,
+            MessageIdOf(message),
+            deliveryCount: 0
+        );
+
+        return kind;
+    }
+
     internal OperateResult Publish(MessageLane lane, TransportMessage message)
     {
         lock (Gate)
@@ -750,7 +775,24 @@ internal static class SimulatedTransportCore
     {
         cancellationToken.ThrowIfCancellationRequested();
         MessagingRoutingAffinityMapping.RejectUnsupported(message, SimulatedBroker.ProviderName);
-        return Task.FromResult(broker.Publish(lane, message));
+
+        return broker.TakePublishFault(message) switch
+        {
+            PublishFaultKind.Fail => Task.FromResult(
+                OperateResult.Failed(
+                    new SimulatedBrokerException("The simulated broker refused the publish by script.")
+                )
+            ),
+            PublishFaultKind.Hang => _HangAsync(cancellationToken),
+            _ => Task.FromResult(broker.Publish(lane, message)),
+        };
+    }
+
+    // A broker that never confirms: the send ends only through the caller's token, as a real unanswered send does.
+    private static async Task<OperateResult> _HangAsync(CancellationToken cancellationToken)
+    {
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        throw new UnreachableException("An infinite wait ends only by cancellation.");
     }
 }
 

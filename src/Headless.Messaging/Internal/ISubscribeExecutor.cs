@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using Headless.Checks;
 using Headless.Fencing;
 using Headless.Messaging.Persistence;
@@ -444,36 +445,46 @@ internal sealed class SubscribeExecutor(
                     var transactionRunner = attemptServices.GetRequiredService<IInboxTransactionRunner>();
                     renewal = _StartLeaseRenewal(message, cancellationToken);
                     var leaseRenewal = renewal;
-                    await transactionRunner
-                        .ExecuteAsync(
-                            message,
-                            // The transactional tier binds the reply to the unit's commit, so the attempt returns none here.
-                            async (unitOfWork, ct) =>
-                            {
-                                try
+                    try
+                    {
+                        await transactionRunner
+                            .ExecuteAsync(
+                                message,
+                                // The transactional tier binds the reply to the unit's commit, so the attempt returns none here.
+                                async (unitOfWork, ct) =>
                                 {
-                                    _ = await _InvokeConsumerMethodAsync(
-                                            message,
-                                            descriptor,
-                                            attemptServices,
-                                            unitOfWork,
-                                            ct
-                                        )
-                                        .ConfigureAwait(false);
-                                }
-                                finally
-                                {
-                                    // The commit completes the inbox row fenced on the lease identity, which a renewal in
-                                    // flight could still move, so the renewal stops before it.
-                                    await leaseRenewal.StopAsync().ConfigureAwait(false);
-                                }
+                                    try
+                                    {
+                                        _ = await _InvokeConsumerMethodAsync(
+                                                message,
+                                                descriptor,
+                                                attemptServices,
+                                                unitOfWork,
+                                                ct
+                                            )
+                                            .ConfigureAwait(false);
+                                    }
+                                    finally
+                                    {
+                                        // The commit completes the inbox row fenced on the lease identity, which a renewal in
+                                        // flight could still move, so the renewal stops before it.
+                                        await leaseRenewal.StopAsync().ConfigureAwait(false);
+                                    }
 
-                                // Rolls the unit back: another node may own the row now.
-                                leaseRenewal.ThrowIfLost();
-                            },
-                            leaseRenewal.AttemptToken
-                        )
-                        .ConfigureAwait(false);
+                                    // Rolls the unit back: another node may own the row now.
+                                    leaseRenewal.ThrowIfLost();
+                                },
+                                leaseRenewal.AttemptToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    catch (InboxAttemptNotStartedException notStarted) when (!_SparesRetryBudget(message))
+                    {
+                        // Past the pre-entry bound (or a request, whose caller waits on its deadline) the fault is
+                        // counted as it always was, so the consumer's fail rules see the fault itself.
+                        ExceptionDispatchInfo.Throw(notStarted.Fault);
+                    }
+
                     executionState?.RecordLeaseTransition(affected: true, keepLease: false);
                     await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
                 }
@@ -572,6 +583,12 @@ internal sealed class SubscribeExecutor(
                 message.Origin.GetExecutionInstanceId()
             );
             _ReleaseHalfOpenProbe(message);
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
+        }
+        catch (InboxAttemptNotStartedException ex)
+        {
+            // The handler never ran, so the attempt is handed back instead of spent.
+            await _RescheduleNotStartedAttemptAsync(message, ex, executionState).ConfigureAwait(false);
             return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
         catch (Exception ex) when (_HasCause<ResponderNullResponseException>(ex))
@@ -849,6 +866,75 @@ internal sealed class SubscribeExecutor(
 
     // The durable counter counts reserved attempts, the first one included, so the retries already run are one less.
     private static int _InlineRetriesCompleted(MediumMessage message) => Math.Max(0, message.InlineAttempts - 1);
+
+    // A pre-entry fault is usually a pool or connection fault that clears on its own: start at one second and back off
+    // to five minutes, jittered like a consumer's delayed retries so rows that failed together do not return together.
+    private static readonly FailurePolicyDefinition _PreEntryBackoff = new FailurePolicyBuilder()
+        .Delayed(FailurePolicyDefinition.MaxRetriesPerTier, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5))
+        .Build();
+
+    /// <summary>
+    /// Whether an attempt that failed before its handler ran is handed back instead of spent: only while the row is
+    /// under <see cref="RetryPolicyOptions.MaxPreEntryFailures"/>, so a fault that never clears still ends the row, and
+    /// never for a request, whose caller waits only until its deadline and gets its fault from the ordinary path.
+    /// </summary>
+    private bool _SparesRetryBudget(MediumMessage message) =>
+        message.PreEntryFailures < _retryPolicy.MaxPreEntryFailures
+        && !RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers);
+
+    /// <summary>
+    /// Reschedules a transactional attempt whose handler never ran. The reserved attempt goes back (the next pickup
+    /// reserves the same attempt number), <see cref="MediumMessage.Retries"/> stays, and the row's pre-entry count
+    /// advances. It is no consumer failure, so the circuit neither counts it nor stays held by it.
+    /// </summary>
+    private async Task _RescheduleNotStartedAttemptAsync(
+        MediumMessage message,
+        InboxAttemptNotStartedException exception,
+        RetryExecutionState? executionState
+    )
+    {
+        var fault = exception.Fault;
+        var reservedInlineAttempts = message.InlineAttempts;
+        message.PreEntryFailures++;
+        var delay = _PreEntryBackoff.GetDelayedRetryDelay(message.PreEntryFailures);
+        logger.InboxAttemptNotStartedRescheduled(
+            fault,
+            message.StorageId,
+            message.PreEntryFailures,
+            _retryPolicy.MaxPreEntryFailures,
+            delay
+        );
+
+        message.InlineAttempts = Math.Max(0, reservedInlineAttempts - 1);
+        message.Origin.AddOrUpdateException(fault);
+        message.HasUnpersistedOriginChanges = true;
+        message.ExceptionInfo = fault.ExpandMessage();
+        message.FailureFingerprint = MessagingFailureFingerprints.Of(fault);
+        // The transactional branch stamped the success expiry before the attempt; a rescheduled row keeps a failure's.
+        message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
+
+        // Fenced on the reserved attempt like every other attempt write, with the delay added to the store's clock; a
+        // refused write means another node owns the row now, so nothing more is done here.
+        var affected = await dataStorage
+            .ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Scheduled,
+                MessageContentWrite.Refresh,
+                RetryDelay.Exactly(delay),
+                keepLease: false,
+                originalRetries: message.Retries,
+                originalInlineAttempts: reservedInlineAttempts,
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+        executionState?.RecordLeaseTransition(affected, keepLease: false);
+        if (affected)
+        {
+            _stateObservers.Notify(MessageType.Subscribe, message);
+        }
+
+        _ReleaseHalfOpenProbe(message);
+    }
 
     private async Task<MessagingRetryDecision> _SetFailedState(
         MediumMessage message,

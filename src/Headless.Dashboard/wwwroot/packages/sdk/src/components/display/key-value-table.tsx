@@ -2,8 +2,7 @@
 // near their size budget.
 'use no memo'
 
-import { CopyIcon } from '../../icons/index.ts'
-import { Button } from '../button.tsx'
+import { CopyButton } from '../copy-button.tsx'
 
 export interface KeyValueRow {
   name: string
@@ -55,13 +54,7 @@ export function KeyValueTable({ label, rows, emptyValue = 'No value' }: KeyValue
                   ) : (
                     <>
                       <bdi dir="ltr">{row.value}</bdi>
-                      <Button
-                        variant="ghost"
-                        icon={CopyIcon}
-                        aria-label={`Copy ${row.name}`}
-                        tooltip="Copy value"
-                        onPress={() => void navigator.clipboard?.writeText(row.value!)}
-                      />
+                      <CopyButton text={row.value} aria-label={`Copy ${row.name}`} tooltip="Copy value" />
                     </>
                   )}
                 </span>

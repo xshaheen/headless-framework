@@ -10,7 +10,7 @@ import {
   Skeleton,
   StatusMark,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useInfiniteQuery } from '@headless/dashboard-sdk/query'
@@ -199,7 +199,7 @@ export default function OperatorLogView() {
               priority: 2,
               width: '2fr',
             },
-            { id: 'at', header: 'At', cell: (row) => <RelativeTime value={row.createdAt} />, kind: 'time', width: 110 },
+            { id: 'at', header: 'At', cell: (row) => <Timestamp value={row.createdAt} />, kind: 'time', width: 110 },
           ]}
         />
       )}

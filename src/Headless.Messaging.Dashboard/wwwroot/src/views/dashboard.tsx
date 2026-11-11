@@ -11,7 +11,7 @@ import {
   PageHeader,
   Skeleton,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList } from '@headless/dashboard-sdk/data'
 import { AttentionIcon, PublishedIcon, ReceivedIcon } from '@headless/dashboard-sdk/icons'
@@ -155,7 +155,7 @@ function MessagingAttention() {
                   }
                   meta={parts ? `${parts[1]} ${parts[3]}` : undefined}
                   title={item.title}
-                  value={item.lastSeenAt ? <RelativeTime value={item.lastSeenAt} /> : undefined}
+                  value={item.lastSeenAt ? <Timestamp value={item.lastSeenAt} /> : undefined}
                 />
               )
             }),
@@ -218,7 +218,7 @@ function RecentFailures({ kind }: { kind: MessageKind }) {
           name={<Link to={`${listPath}&open=${encodeURIComponent(row.id)}`}>{row.name ?? '(unnamed)'}</Link>}
           meta={kind === 'received' && row.consumer ? <Mono>{row.consumer}</Mono> : row.store}
           title={`${row.name ?? '(unnamed)'} ${(kind === 'received' ? row.consumer : row.store) ?? ''}`.trim()}
-          value={<RelativeTime value={row.changedAt ?? row.added} />}
+          value={<Timestamp value={row.changedAt ?? row.added} />}
         />
       ))}
     </Card>

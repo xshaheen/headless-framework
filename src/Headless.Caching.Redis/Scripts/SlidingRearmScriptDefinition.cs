@@ -17,13 +17,16 @@ internal sealed class SlidingRearmScriptDefinition : RedisScriptDefinition
 
     private SlidingRearmScriptDefinition()
         : base(
-            // Both skip outcomes (ttl <= threshold, and persistent/missing via ttl < 0) return the live PTTL
-            // verbatim, so every reply is the key's resulting TTL in ms and callers need no follow-up probe.
+            // Re-arm only when the new TTL moves the live one out by more than the tolerance; a move within it (or
+            // a negative one from clock skew, so the script never shortens a TTL) is skipped. Both skip outcomes
+            // (within tolerance, and persistent/missing via ttl < 0) return the live PTTL verbatim, so every reply
+            // is the key's resulting TTL in ms and callers need no follow-up probe.
             """
             local ttl = redis.call('PTTL', @key)
-            if ttl < 0 or ttl > tonumber(@rearmThresholdMs) then return ttl end
-            redis.call('PEXPIRE', @key, tonumber(@newTtlMs))
-            return tonumber(@newTtlMs)
+            local newTtl = tonumber(@newTtlMs)
+            if ttl < 0 or newTtl - ttl <= tonumber(@rearmToleranceMs) then return ttl end
+            redis.call('PEXPIRE', @key, newTtl)
+            return newTtl
             """
         ) { }
 }

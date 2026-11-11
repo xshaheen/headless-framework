@@ -5,7 +5,7 @@ import {
   PageHeader,
   Skeleton,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { DataTable } from '@headless/dashboard-sdk/table'
@@ -98,7 +98,7 @@ export default function UnknownLanesView() {
               {
                 id: 'seen',
                 header: 'Last seen',
-                cell: (row) => (row.lastSeenAt ? <RelativeTime value={row.lastSeenAt} /> : ''),
+                cell: (row) => (row.lastSeenAt ? <Timestamp value={row.lastSeenAt} /> : ''),
                 kind: 'time',
                 priority: 2,
                 width: 110,

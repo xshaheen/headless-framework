@@ -25,13 +25,18 @@ function Lead({ entry }: { entry: BootstrapSidebarEntry }) {
   const path = entry.icon ? icons[entry.icon] : undefined
 
   return entry.state ? (
-    <span className={`hd-mark hd-tone-${entry.state}`} aria-hidden="true" />
+    // A dot sits in the 15 px box an icon takes, so labels align whichever an entry leads with.
+    <span className={`hd-mark mx-[calc((var(--icon)-var(--sp-3))/2)] hd-tone-${entry.state}`} aria-hidden="true" />
   ) : (
     <svg viewBox="0 0 16 16" aria-hidden="true">
       {path ? <path d={path} /> : null}
     </svg>
   )
 }
+
+const sideItem = 'flex h-(--field-height) items-center gap-2.5 rounded-md px-2.5 type-nav no-underline hover:bg-accent'
+// Weight and an inline-start accent bar mark the current entry, so the fill is never the only cue.
+const sideLink = `${sideItem} text-muted-foreground hover:text-foreground current:bg-muted current:font-medium current:text-foreground current:accent-bar-start`
 
 function mostSpecificEntry(entries: readonly { to: string }[], search: URLSearchParams, pathname: string) {
   let best
@@ -86,27 +91,31 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
   )
 
   return (
-    <nav className="hd-sidebar" aria-label={product.label}>
+    // Below 768 px the sidebar opens over the view from the Menu button.
+    <nav
+      className="flex flex-col gap-0.5 overflow-y-auto border-e bg-deep px-2 py-2.5 line-icons max-md:fixed max-md:start-0 max-md:top-(--topbar-height) max-md:bottom-0 max-md:z-(--z-popover) max-md:w-(--sidebar-phone-width) max-md:max-w-[85vw] max-md:shadow-lg"
+      aria-label={product.label}
+    >
       {sections.map((section, index) => (
-        <div key={`${section.module}:${index}`} className="hd-side-section">
-          {section.label ? <h2 className="hd-side-head">{section.label}</h2> : null}
+        <div key={`${section.module}:${index}`} className="flex flex-col gap-0.5">
+          {section.label ? <h2 className="px-2.5 pt-4 pb-1.5 type-label text-faint">{section.label}</h2> : null}
           {section.entries.map((entry) => {
             const count = entry.countKey ? counts.data?.counts[entry.countKey] : undefined
             const body = (
               <>
                 <Lead entry={entry} />
-                <span className="hd-side-label" title={entry.label}>
+                <span className="min-w-0 flex-1 truncate" title={entry.label}>
                   {entry.label}
                 </span>
                 {entry.countKey ? (
                   // A partial count's accessible name lists what it leaves out, in one text node that keeps its spaces.
                   count?.unavailable ? (
-                    <span className="hd-side-count">
+                    <span className="type-count">
                       <span aria-hidden="true">{format.count(count)}</span>
                       <span className="sr-only">{`${format.count(count)} · ${count.unavailable.join(', ')} unavailable`}</span>
                     </span>
                   ) : (
-                    <span className="hd-side-count">{count ? format.count(count) : '–'}</span>
+                    <span className="type-count">{count ? format.count(count) : '–'}</span>
                   )
                 ) : null}
               </>
@@ -117,7 +126,7 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
             return locked ? (
               <span
                 key={entry.id}
-                className="hd-side-item"
+                className={`${sideItem} cursor-not-allowed text-faint`}
                 role="link"
                 aria-disabled="true"
                 tabIndex={0}
@@ -129,7 +138,7 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
               <Link
                 key={entry.id}
                 to={entry.to}
-                className="hd-side-item"
+                className={sideLink}
                 aria-current={entry === current ? 'page' : undefined}
                 onClick={onNavigate}
               >

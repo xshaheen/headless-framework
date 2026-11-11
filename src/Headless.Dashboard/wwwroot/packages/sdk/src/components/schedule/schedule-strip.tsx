@@ -4,6 +4,7 @@
 
 import { useState, type KeyboardEvent } from 'react'
 import { useFormat } from '../../locale/locale.tsx'
+import { formatRelativeTime } from '../../locale/relative-time.ts'
 import { useViewKeys } from '../keymap.tsx'
 import type { DashboardStateRole } from '../../define-module.ts'
 
@@ -176,9 +177,9 @@ export function ScheduleStrip({ label, tracks, span, onSpanChange, timeZone, onS
       <div className={`${trackRow} hd-hint`}>
         <span />
         <span className="flex justify-between">
-          <span>{format.relativeTime(start, { now })}</span>
+          <span>{formatRelativeTime(start, now, format.locale, 'long')}</span>
           <span>now</span>
-          <span>{format.relativeTime(now + shown, { now })}</span>
+          <span>{formatRelativeTime(now + shown, now, format.locale, 'long')}</span>
         </span>
       </div>
     </div>

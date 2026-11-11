@@ -227,19 +227,13 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         {
             // Models a metadata-only re-arm: extend the stored entry's logical deadline in place, keeping the
             // value, physical cap, and sliding window. Mirrors the throttle the real stores apply (re-arm only
-            // once at least half the idle window has elapsed) so coordinator throttle behavior is observable.
+            // when the deadline would move by more than the shared tolerance) so coordinator throttle behavior
+            // is observable.
             if (
                 !_entries.TryGetValue(key, out var entry)
                 || entry.SlidingExpiration is null
                 || physicalExpiresAt <= now
             )
-            {
-                return ValueTask.CompletedTask;
-            }
-
-            var remaining = entry.LogicalExpiresAt - now;
-
-            if (remaining > TimeSpan.FromTicks(slidingExpiration.Ticks / 2))
             {
                 return ValueTask.CompletedTask;
             }
@@ -251,7 +245,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 rearmed = physicalExpiresAt;
             }
 
-            if (rearmed <= entry.LogicalExpiresAt)
+            if (!CacheEntryStamps.ShouldRearmSliding(entry.LogicalExpiresAt, rearmed, slidingExpiration))
             {
                 return ValueTask.CompletedTask;
             }

@@ -11,12 +11,14 @@ import { PageFrame, usePageFrame } from '../../src/components/frame/page-frame.t
 import { ToastRegion } from '../../src/components/live.tsx'
 import { DataTable, type DataTableProps } from '../../src/components/table/data-table.tsx'
 import { DateRangeField } from '../../src/components/table/date-range-field.tsx'
+import type { TimeRange } from '../../src/date-range/time-range.ts'
+import { useListRange } from '../../src/date-range/use-time-range.ts'
 import { SearchField } from '../../src/components/table/search-field.tsx'
 import { rowHeights } from '../../src/components/table/density.tsx'
 import { DashboardProvider, ModuleScope } from '../../src/context.tsx'
 import type { ApiRequest } from '../../src/data/api.ts'
 import { createDashboardClient } from '../../src/data/client.tsx'
-import { useDashboardKeysetList, type ListPageRequest, type ListRange, type ListSort } from '../../src/data/keyset.ts'
+import { useDashboardKeysetList, type ListPageRequest, type ListSort } from '../../src/data/keyset.ts'
 import type { DashboardListPage } from '../../src/data/patch.ts'
 import { createFakeStream } from '../../src/testing/fake-stream.ts'
 
@@ -648,13 +650,14 @@ describe('virtualized keyset table', () => {
   function ScopedRuns({ fetchPage, searchMode }: { fetchPage: FetchPage; searchMode?: 'debounce' | 'submit' }) {
     const [sort, setSort] = useState<ListSort>()
     const [search, setSearch] = useState('')
-    const [range, setRange] = useState<ListRange>()
+    const [days, setDays] = useState<TimeRange>()
+    const range = useListRange(days)
     const list = useDashboardKeysetList<Run>({ topic: 'diag.run', params: { status: 'Failed' }, sort, search, range, fetchPage })
 
     return (
       <>
         <SearchField label="Search runs" mode={searchMode} onSearch={setSearch} />
-        <DateRangeField label="Executed" onChange={setRange} />
+        <DateRangeField label="Executed" value={days} onChange={setDays} />
         <DataTable
           label="Runs"
           rows={list.rows}
@@ -810,13 +813,30 @@ describe('virtualized keyset table', () => {
   })
 })
 
+/** The field as a view holds it: the range in state, every change also reported to the test. */
+function HeldRange({ onChange, initial }: { onChange: (range: TimeRange | undefined) => void; initial?: TimeRange }) {
+  const [value, setValue] = useState(initial)
+
+  return (
+    <DateRangeField
+      label="Due between"
+      compact
+      value={value}
+      onChange={(range) => {
+        setValue(range)
+        onChange(range)
+      }}
+    />
+  )
+}
+
 describe('DateRangeField compact', () => {
   it('is a chip that reads its label, opens the calendar, and reads the picked days once set', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.setSystemTime(new Date('2026-11-10T10:00:00Z'))
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(withDashboard(<DateRangeField label="Due between" compact onChange={onChange} />))
+    render(withDashboard(<HeldRange onChange={onChange} />))
 
     const chip = screen.getByRole('button', { name: /Due between/ })
     expect(chip.textContent).toBe('Due between')
@@ -827,7 +847,7 @@ describe('DateRangeField compact', () => {
     await user.click(within(dialog).getByRole('button', { name: /November 1, 2026/ }))
     await user.click(within(dialog).getByRole('button', { name: /November 4, 2026/ }))
 
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ start: '2026-11-01T00:00:00.000Z', end: '2026-11-05T00:00:00.000Z' }))
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ kind: 'custom', start: '2026-11-01', end: '2026-11-04' }))
     await user.click(within(dialog).getByRole('button', { name: 'Clear days' }))
     await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(undefined))
 
@@ -846,7 +866,7 @@ describe('DateRangeField compact', () => {
     vi.setSystemTime(new Date('2026-11-10T10:00:00Z'))
     const user = userEvent.setup()
     const onChange = vi.fn()
-    render(withDashboard(<DateRangeField label="Due between" compact onChange={onChange} />))
+    render(withDashboard(<HeldRange onChange={onChange} />))
 
     screen.getByRole('button', { name: /Due between/ }).focus()
     await user.keyboard('{Enter}')
@@ -864,9 +884,9 @@ describe('DateRangeField compact', () => {
     await user.keyboard('11022026')
     await user.keyboard('11062026')
 
-    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith({ start: '2026-11-02T00:00:00.000Z', end: '2026-11-07T00:00:00.000Z' }))
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith({ kind: 'custom', start: '2026-11-02', end: '2026-11-06' }))
     // While the end year is still being typed the end falls before the start, and no such range is sent.
-    expect(onChange.mock.calls.every(([range]) => range === undefined || range.end > range.start)).toBe(true)
+    expect(onChange.mock.calls.every(([range]) => range === undefined || range.end >= range.start)).toBe(true)
 
     await user.keyboard('{Escape}')
     expect((await screen.findByRole('button', { name: /Due between/ })).textContent).toBe('Due betweenNov 2 – Nov 6')

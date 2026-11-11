@@ -1224,6 +1224,21 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
+        EventId = 133,
+        EventName = "InboxAttemptNotStartedRescheduled",
+        Level = LogLevel.Warning,
+        Message = "Inbox attempt for message {StorageId} failed before its handler ran ({PreEntryFailures} of {MaxPreEntryFailures} such failures); it is rescheduled in {Delay} without spending its retry budget."
+    )]
+    internal static partial void InboxAttemptNotStartedRescheduled(
+        this ILogger logger,
+        Exception exception,
+        Guid storageId,
+        int preEntryFailures,
+        int maxPreEntryFailures,
+        TimeSpan delay
+    );
+
+    [LoggerMessage(
         EventId = 4123,
         EventName = "AdmittedRedeliveryCommitted",
         Level = LogLevel.Information,

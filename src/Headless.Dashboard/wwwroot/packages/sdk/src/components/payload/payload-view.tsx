@@ -6,7 +6,7 @@ import { SugarHigh, tokenize } from 'sugar-high/core'
 import * as jsonSyntax from 'sugar-high/lang/json'
 import { useMemo } from 'react'
 import { useFormat } from '../../locale/locale.tsx'
-import { Button } from '../button.tsx'
+import { CopyButton } from '../copy-button.tsx'
 import { Text } from '../display/text.tsx'
 
 /** The most of a payload the view renders, in UTF-8 bytes; the rest is one `Copy all` away. */
@@ -204,9 +204,7 @@ export function PayloadView({ content, contentType, unsupportedVersion }: Payloa
     <figure className="rounded-md bg-deep">
       <figcaption className="flex items-center justify-between gap-2 ps-3 pe-1 pt-1">
         <Text tone="hint">{truncated ? `${format.size(bytes)}, first 64 KB shown` : format.size(bytes)}</Text>
-        <Button variant="ghost" onPress={() => void navigator.clipboard?.writeText(content)}>
-          {truncated ? 'Copy all' : 'Copy'}
-        </Button>
+        <CopyButton text={content} label={truncated ? 'Copy all' : 'Copy'} />
       </figcaption>
       <pre className="hd-mono max-h-(--payload-max) overflow-auto px-3 pt-2 pb-3 whitespace-pre" dir="ltr">
         {formatted === null ? shown : <JsonTokens text={formatted} />}

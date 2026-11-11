@@ -419,7 +419,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             try
             {
                 // Still-registered here means still held: a released lock has already been removed from
-                // the registry by ReleaseAsync. Signal loss rather than silently pulling the applock.
+                // the registry by ReleaseAsync. Signal loss, and end the session so the applock goes with it.
                 await held.DisposeAsLostAsync().ConfigureAwait(false);
             }
             catch (Exception exception)
@@ -687,7 +687,8 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         /// The clean teardown of <see cref="DisposeAsync()"/>, or, when <paramref name="broken"/> is set, the teardown of
         /// a connection whose session may still hold the application lock after a failed release or acquire cleanup.
         /// A broken connection's pool is cleared first so the driver closes the session instead of reusing it; that also
-        /// drops every idle connection in the pool, an accepted cost on this failure-only path.
+        /// drops every idle connection in the pool, an accepted cost on this failure path and on the provider teardown of
+        /// <see cref="DisposeAsLostAsync"/>.
         /// </summary>
         public ValueTask DisposeAsync(bool broken)
         {
@@ -700,12 +701,18 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         /// still held — the applock goes away without its holder asking, which is exactly what
         /// <c>LostToken</c> exists to report.
         /// </summary>
+        /// <remarks>
+        /// No <c>sp_releaseapplock</c> is issued: the connection may be the one a failed probe just found unresponsive,
+        /// and a release round trip on it could stall teardown for a full command timeout. The session still holds the
+        /// application lock, though, so the pool is cleared as on the broken path: the driver then closes the session
+        /// instead of pooling it, and the server frees the lock.
+        /// </remarks>
         public ValueTask DisposeAsLostAsync()
         {
-            return _DisposeAsync(signalLost: true);
+            return _DisposeAsync(signalLost: true, clearPool: true);
         }
 
-        private async ValueTask _DisposeAsync(bool signalLost, bool clearPool = false)
+        private async ValueTask _DisposeAsync(bool signalLost, bool clearPool)
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
             {

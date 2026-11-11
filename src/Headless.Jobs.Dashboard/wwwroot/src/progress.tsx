@@ -1,5 +1,5 @@
 import { ProgressBar, Text } from '@headless/dashboard-sdk/components'
-import { useFormat, useNow } from '@headless/dashboard-sdk/locale'
+import { useFormat, useRelativeTime } from '@headless/dashboard-sdk/locale'
 import { isFinished, type Run } from './runs.ts'
 
 export type ProgressRun = Pick<Run, 'function' | 'status' | 'progressPercent' | 'progressMessage' | 'progressUpdatedAt'>
@@ -15,8 +15,8 @@ export function RunProgress({ run, compact = false }: { run: ProgressRun; compac
   const format = useFormat()
   const finished = isFinished(run.status)
   const updatedAt = run.progressUpdatedAt
-  // The age counts up every second, so a value the stream stopped refreshing reads as old.
-  const now = useNow(updatedAt !== undefined && !finished ? 1_000 : null)
+  // The age counts up live, so a value the stream stopped refreshing reads as old; a finished run's age is not shown.
+  const ago = useRelativeTime(finished ? '' : (updatedAt ?? ''))
   const percent = run.progressPercent ?? 0
   const percentText = `${format.number(percent, { maximumFractionDigits: 1 })} %`
   const valueText = progressText(run, percentText)
@@ -28,7 +28,6 @@ export function RunProgress({ run, compact = false }: { run: ProgressRun; compac
   }
 
   // A one-line cell has room for the age alone; the full form says what the age measures.
-  const ago = updatedAt ? format.relativeTime(updatedAt, { style: 'short', now }) : undefined
   const age = updatedAt ? (
     <time dateTime={updatedAt} title={format.exactTime(updatedAt)}>
       {compact ? ago : `updated ${ago}`}

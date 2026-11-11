@@ -145,7 +145,7 @@ export function ShellPalette({ isOpen, onOpenChange, initialQuery = '', onOpenAt
 
   return (
     // React events bubble through the palette's portal, so this wrapper hears what the operator types.
-    <div className="hd-palette-host" onInput={onInput}>
+    <div className="contents" onInput={onInput}>
       <CommandPalette
         isOpen={isOpen}
         onOpenChange={(open) => {

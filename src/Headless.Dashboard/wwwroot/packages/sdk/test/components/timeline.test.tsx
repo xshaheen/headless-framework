@@ -45,6 +45,21 @@ describe('Timeline', () => {
     expect(document.activeElement).toBe(rows[1])
   })
 
+  it('stays one tab stop, its times showing the exact moment on a press rather than taking a stop each', async () => {
+    const user = userEvent.setup()
+    render(
+      <View />,
+    )
+
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getAllByRole('row')[0])
+    await user.tab()
+    expect(screen.getByRole('grid').contains(document.activeElement)).toBe(false)
+
+    await user.click(screen.getAllByRole('button', { hidden: false })[0]!)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Nov 5, 2026, 09:50:00 UTC')
+  })
+
   it('shows each event’s actor and detail', () => {
     render(<View />)
 

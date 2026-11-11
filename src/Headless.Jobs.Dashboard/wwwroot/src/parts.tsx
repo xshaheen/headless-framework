@@ -27,7 +27,7 @@ import {
   type HistoryItem,
   type SkeletonShape,
   type TimelineEvent,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardObject, type CappedCount } from '@headless/dashboard-sdk/data'
 import {
@@ -56,7 +56,6 @@ import {
   attemptTones,
   fetchAttempts,
   fetchRun,
-  formatDuration,
   isFinished,
   kindLabel,
   markDone,
@@ -409,10 +408,10 @@ export function RunFields({ run }: { run: Run }) {
             : statusLabel(run.status)}
         </GridField>
         <GridField label={run.status === 'Failed' ? 'Failed at' : 'Executed'} span={2}>
-          <RelativeTime value={run.executedAt} missing={running} />
+          <Timestamp value={run.executedAt} missing={running} />
         </GridField>
         <GridField label="Duration">
-          {run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : (running ?? 'Not run yet')}
+          {run.executedAt ? format.duration(run.elapsedMilliseconds) : (running ?? 'Not run yet')}
         </GridField>
         <GridField label="Attempt">{attemptText(run, format.number)}</GridField>
         <GridField label="Node" span={2}>
@@ -438,10 +437,10 @@ export function RunFields({ run }: { run: Run }) {
         <GridField label="Kind">{kindLabel(run.kind)}</GridField>
         <GridField label="Due" span={2}>
           {/* A chain step has no due time of its own: it runs once its parent ends. */}
-          <RelativeTime value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
+          <Timestamp value={run.executionTime} missing={run.parentId ? 'After its chain parent' : undefined} />
         </GridField>
         <GridField label="Created">
-          <RelativeTime value={run.createdAt} />
+          <Timestamp value={run.createdAt} />
         </GridField>
         <Optional
           label="Retry intervals"
@@ -588,7 +587,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
 
   const items: HistoryItem[] = [...attempts.data].reverse().map((attempt) => ({
     key: String(attempt.number),
-    time: <RelativeTime value={attempt.endedAt ?? attempt.startedAt} />,
+    time: <Timestamp value={attempt.endedAt ?? attempt.startedAt} />,
     tone: attempt.outcome ? attemptTones[attempt.outcome] : 'proc',
     state: attempt.outcome ?? 'Running',
     note: attemptNote(attempt),
@@ -597,10 +596,7 @@ export function RunHistory({ run }: { run: Pick<Run, 'id' | 'version' | 'created
   return (
     <HistoryList
       label="History"
-      items={[
-        ...items,
-        { key: 'created', time: <RelativeTime value={run.createdAt} />, tone: 'sched', state: 'Created' },
-      ]}
+      items={[...items, { key: 'created', time: <Timestamp value={run.createdAt} />, tone: 'sched', state: 'Created' }]}
     />
   )
 }
@@ -769,7 +765,7 @@ function RunExceptionTab({ run }: { run: Run }) {
       />
       <FieldGrid label="Failure">
         <GridField label="Failed at" span={2}>
-          <RelativeTime value={run.executedAt} />
+          <Timestamp value={run.executedAt} />
         </GridField>
         <GridField label="Attempt">{attemptText(run, format.number)}</GridField>
         <GridField label="Node">{run.node ? <Mono>{run.node}</Mono> : 'Not recorded'}</GridField>

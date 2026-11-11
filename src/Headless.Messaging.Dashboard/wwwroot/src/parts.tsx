@@ -23,7 +23,7 @@ import {
   useDelayed,
   type HistoryItem,
   type SkeletonShape,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, refetchTopics, type CappedCount } from '@headless/dashboard-sdk/data'
 import {
@@ -560,16 +560,16 @@ export function MessageFields({ kind, row }: { kind: MessageKind; row: MessageRo
         <Optional
           label="Next retry"
           span={2}
-          value={row.nextRetryAt ? <RelativeTime value={row.nextRetryAt} /> : undefined}
+          value={row.nextRetryAt ? <Timestamp value={row.nextRetryAt} /> : undefined}
         />
-        <Optional label="Changed" span={2} value={row.changedAt ? <RelativeTime value={row.changedAt} /> : undefined} />
-        <Optional label="Expires" span={2} value={row.expiresAt ? <RelativeTime value={row.expiresAt} /> : undefined} />
+        <Optional label="Changed" span={2} value={row.changedAt ? <Timestamp value={row.changedAt} /> : undefined} />
+        <Optional label="Expires" span={2} value={row.expiresAt ? <Timestamp value={row.expiresAt} /> : undefined} />
       </FieldGrid>
       <FieldGrid label="Delivery">
         <GridField label="Lane">{row.lane}</GridField>
         {kind === 'published' ? <GridField label="Store">{row.store}</GridField> : null}
         <GridField label="Added" span={2}>
-          <RelativeTime value={row.added} />
+          <Timestamp value={row.added} />
         </GridField>
         <Optional label="Consumer" span={2} value={row.consumer ? <Mono>{row.consumer}</Mono> : undefined} />
       </FieldGrid>
@@ -675,7 +675,7 @@ function MessageGenerations({ node, row }: { node: string; row: MessageRow }) {
 
     return {
       key: generation.id,
-      time: <RelativeTime value={generation.changedAt ?? generation.added} />,
+      time: <Timestamp value={generation.changedAt ?? generation.added} />,
       tone: mark.tone,
       state: generation.id === row.id ? `${mark.label} (this row)` : mark.label,
       note: [

@@ -108,6 +108,8 @@ internal static class SqlServerMessagingSchemaContribution
                     [IntentType] [smallint] NOT NULL,
                     [Retries] [int] NOT NULL,
                     [InlineAttempts] [int] NOT NULL CONSTRAINT [DF_{receivedPrefix}_InlineAttempts] DEFAULT 0,
+                    -- Attempts that failed before the handler ran; they spend this counter instead of the retry budget.
+                    [PreEntryFailures] [int] NOT NULL CONSTRAINT [DF_{receivedPrefix}_PreEntryFailures] DEFAULT 0,
                     [Added] [datetimeoffset](7) NOT NULL,
                     [ExpiresAt] [datetimeoffset](7) NULL,
                     [NextRetryAt] [datetimeoffset](7) NULL,

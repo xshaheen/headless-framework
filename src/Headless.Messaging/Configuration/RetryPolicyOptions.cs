@@ -88,6 +88,27 @@ public sealed class RetryPolicyOptions
     public int MaxPersistedRetries { get; set; } = 15;
 
     /// <summary>
+    /// Gets or sets how many transactional inbox attempts of one received message may fail before the handler runs
+    /// without spending the consumer's retry budget. Default is 10.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A transactional inbox attempt can fail before its handler runs: opening the connection (a pool timeout under
+    /// load), beginning the transaction, or the delivery-coordination check. The handler did not run, so such a
+    /// failure reschedules the message with a back-off that starts at one second and doubles up to five minutes, with
+    /// jitter, and leaves the message's retry count unchanged.
+    /// </para>
+    /// <para>
+    /// The count is stored on the received row and never resets while the row lives. Once it reaches this value, a
+    /// later pre-entry failure is counted like a handler failure and spends the consumer's failure policy, so a fault
+    /// that never clears (a wrong connection string, a revoked login) still ends the message <c>Failed</c> and fires
+    /// <see cref="OnTerminal"/>. Set to 0 to count every pre-entry failure against the retry budget. A request
+    /// (request/reply) always counts it, because its caller waits only until the request's deadline.
+    /// </para>
+    /// </remarks>
+    public int MaxPreEntryFailures { get; set; } = 10;
+
+    /// <summary>
     /// Gets or sets the delay applied to <c>NextRetryAt</c> when a message is first stored.
     /// Default is 30 seconds.
     /// </summary>
@@ -279,6 +300,10 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
             .GreaterThanOrEqualTo(0)
             .LessThanOrEqualTo(1_000)
             .WithMessage("MaxPersistedRetries must be in the range [0, 1000].");
+        RuleFor(x => x.MaxPreEntryFailures)
+            .GreaterThanOrEqualTo(0)
+            .LessThanOrEqualTo(100)
+            .WithMessage("MaxPreEntryFailures must be in the range [0, 100].");
         RuleFor(x => x.InitialDispatchGrace)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("InitialDispatchGrace must be greater than zero.")
