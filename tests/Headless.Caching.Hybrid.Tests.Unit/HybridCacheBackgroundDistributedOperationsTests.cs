@@ -203,6 +203,38 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
     }
 
     [Fact]
+    public async Task should_replay_failed_background_write_with_the_l1_write_time_so_a_later_clear_still_wins()
+    {
+        // given — background ops AND auto-recovery on; the background L2 upsert parks on a gate
+        var (cache, _, l2) = _CreateGatedCache(
+            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true, EnableAutoRecovery = true }
+        );
+        await using var _ = cache;
+        l2.UpsertGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, "v", TimeSpan.FromMinutes(5), AbortToken);
+        await l2.UpsertStarted.Task.WaitAsync(AbortToken);
+
+        // when — L2 is cleared after the L1 write, and only then does the parked L2 write fail and queue for replay
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        await l2.ClearAsync(AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        l2.UpsertGate.SetException(new InvalidOperationException("L2 write failed"));
+        await _WaitUntilAsync(() => new ValueTask<bool>(cache.RecoveryQueue!.Count == 1));
+
+        // and — the replay runs
+        _timeProvider.Advance(_Delay);
+        await cache.RecoveryQueue!.ProcessAsync(AbortToken);
+
+        // then — the replay is stamped with the L1 write time, not the later enqueue time, so the clear wins
+        cache.RecoveryQueue.Count.Should().Be(0);
+        (await l2.GetAsync<string>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("the clear was issued after the caller's write");
+    }
+
+    [Fact]
     public async Task should_succeed_and_log_when_background_write_fails_and_auto_recovery_off()
     {
         // given — background ops on, auto-recovery OFF; L2 writes fail

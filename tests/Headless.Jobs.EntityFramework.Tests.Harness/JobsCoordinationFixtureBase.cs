@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Headless.Context;
 using Headless.Coordination;
@@ -194,12 +195,12 @@ public static partial class JobsCoordinationFixtureExtensions
     private static readonly TimeSpan _SteadySuspicionThreshold = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan _SteadyDeadThreshold = TimeSpan.FromSeconds(30);
 
-    private static readonly (
+    internal static readonly (
         TimeSpan Heartbeat,
         TimeSpan Suspicion,
         TimeSpan Dead,
         TimeSpan DeadRetention
-    ) _SteadyMembershipTimings = (
+    ) SteadyMembershipTimings = (
         SteadyHeartbeatInterval,
         _SteadySuspicionThreshold,
         _SteadyDeadThreshold,
@@ -237,7 +238,7 @@ public static partial class JobsCoordinationFixtureExtensions
             useNativeClaims,
             interceptor,
             configureJobs,
-            membershipTimings: fastMembership ? null : _SteadyMembershipTimings,
+            membershipTimings: fastMembership ? null : SteadyMembershipTimings,
             runBackgroundServices: runBackgroundServices,
             configureServices: configureServices
         );
@@ -256,7 +257,7 @@ public static partial class JobsCoordinationFixtureExtensions
             schema,
             MembershipLostBehavior.StopMembershipOnly,
             null,
-            membershipTimings: _SteadyMembershipTimings
+            membershipTimings: SteadyMembershipTimings
         );
     }
 
@@ -283,7 +284,7 @@ public static partial class JobsCoordinationFixtureExtensions
             leaseDuration,
             useNativeClaims: false,
             interceptor,
-            membershipTimings: _SteadyMembershipTimings
+            membershipTimings: SteadyMembershipTimings
         );
     }
 
@@ -483,10 +484,10 @@ public static partial class JobsCoordinationFixtureExtensions
                 // second-scale one, a heartbeat stalled past 1.2 s by a loaded run declares the live node Dead, the
                 // store rejects its identity, and the node self-fences and stops the host while it is still starting.
                 options.ClusterName = ClusterName;
-                options.HeartbeatInterval = _SteadyMembershipTimings.Heartbeat;
-                options.SuspicionThreshold = _SteadyMembershipTimings.Suspicion;
-                options.DeadThreshold = _SteadyMembershipTimings.Dead;
-                options.DeadRetentionWindow = _SteadyMembershipTimings.DeadRetention;
+                options.HeartbeatInterval = SteadyMembershipTimings.Heartbeat;
+                options.SuspicionThreshold = SteadyMembershipTimings.Suspicion;
+                options.DeadThreshold = SteadyMembershipTimings.Dead;
+                options.DeadRetentionWindow = SteadyMembershipTimings.DeadRetention;
                 // Fence at DeadThreshold, where these hosts fenced before the margin existed: these hosts exercise
                 // claims and stamping, not the margin.
                 options.SelfFenceMargin = TimeSpan.Zero;
@@ -691,6 +692,28 @@ public static partial class JobsCoordinationFixtureExtensions
     public static async Task CreateJobsSchemaAsync(IHost host, CancellationToken cancellationToken)
     {
         await CreateJobsSchemaAsync<JobsDbContext>(host, cancellationToken);
+    }
+
+    /// <summary>
+    /// Waits until the started host's node holds a stamp owner. A claim returns nothing, without opening a transaction,
+    /// while <see cref="IJobsOwnerIdentity.TryGetStampOwner" /> is false (registration pending, or membership lost to a
+    /// heartbeat stalled past the dead threshold), so a scenario that needs the claim to run must not start before it.
+    /// </summary>
+    public static async Task WaitForStampOwnerAsync(IHost host, CancellationToken cancellationToken)
+    {
+        var ownerIdentity = host.Services.GetRequiredService<IJobsOwnerIdentity>();
+        var timeout = TimeSpan.FromSeconds(30);
+        var stopwatch = Stopwatch.StartNew();
+
+        while (!ownerIdentity.TryGetStampOwner(out _))
+        {
+            if (stopwatch.Elapsed >= timeout)
+            {
+                throw new TimeoutException($"The node did not hold a stamp owner within {timeout}.");
+            }
+
+            await Task.Delay(HeartbeatInterval / 4, cancellationToken);
+        }
     }
 
     /// <summary>Creates tables for a custom mapped Jobs DbContext.</summary>
