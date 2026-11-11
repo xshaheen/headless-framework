@@ -1,4 +1,4 @@
-import { EmptyState } from '@headless/dashboard-sdk/components'
+import { EmptyState, usePageTitle } from '@headless/dashboard-sdk/components'
 import { FunctionIcon } from '@headless/dashboard-sdk/icons'
 import { Link, useParams } from '@headless/dashboard-sdk/router'
 import { QueryState, StaleNotice, useFunctions } from '../parts.tsx'
@@ -7,6 +7,9 @@ import { FunctionPanel } from './functions.tsx'
 export default function FunctionPage() {
   const name = useParams().name ?? ''
   const functions = useFunctions()
+
+  // The route names the function, so the page has its name before the list loads.
+  usePageTitle(`${name} function`)
 
   return (
     <QueryState query={functions} label="Loading the function" rows={4}>

@@ -346,7 +346,7 @@ internal static class PeerEndpoints
             Module = MessagingDashboardOptions.ModuleId,
             CommandId = command.Id,
             Action = OperatorLogAction.OperationChunk,
-            Scope = token.Filter,
+            Scope = token.LogScope,
             Count = CommandRules.ChunkSize,
             Reason = reason,
             Cursor = body.Cursor,

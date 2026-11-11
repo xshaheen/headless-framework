@@ -126,6 +126,14 @@ public sealed record DashboardOperationScope
     /// scope entered the state the command acts on.
     /// </summary>
     public required string HighWaterMark { get; init; }
+
+    /// <summary>
+    /// Gets the filter as the operator log records it, or <see langword="null"/> to record the filter as the list view
+    /// sent it. A module whose filter carries text an operator searched for returns the filter with that text replaced
+    /// by a marker, such as <c>(redacted)</c>: the token every chunk brings back still carries the text, encrypted, but
+    /// the log keeps the scope for as long as the host keeps logs, and must never keep what was searched.
+    /// </summary>
+    public JsonElement? LoggedFilter { get; init; }
 }
 
 /// <summary>A request to run one chunk of an Operation.</summary>

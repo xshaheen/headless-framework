@@ -27,6 +27,16 @@ internal sealed record OperationScopeToken
     /// <summary>The filter as the module's list view sent it, as JSON text.</summary>
     public required string Filter { get; init; }
 
+    /// <summary>
+    /// The filter as the operator log records it, as JSON text, when the module redacted it; <see langword="null"/>
+    /// when the log records <see cref="Filter"/>.
+    /// </summary>
+    public string? LoggedFilter { get; init; }
+
+    /// <summary>The filter every operator-log entry of the Operation records.</summary>
+    [JsonIgnore]
+    public string LogScope => LoggedFilter ?? Filter;
+
     public required string HighWaterMark { get; init; }
 
     public required long Count { get; init; }

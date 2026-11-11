@@ -515,6 +515,19 @@ internal sealed record MessagingListScope
     /// <summary>The exclusive upper bound of the added time.</summary>
     public DateTimeOffset? Before { get; init; }
 
+    /// <summary>
+    /// The text the stored content must contain, as the list's content search sent it. It reaches the server only in
+    /// a POST body and the Operation's encrypted token, never a URL or a log.
+    /// </summary>
+    public string? Content { get; init; }
+
+    /// <summary>The correlation id every row must carry, as the list's correlation search sent it.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Gets a value indicating whether the filter carries a content or correlation id search.</summary>
+    [JsonIgnore]
+    public bool IsSearch => !string.IsNullOrEmpty(Content) || !string.IsNullOrEmpty(CorrelationId);
+
     public MessageListQuery ToQuery(MessageType type) =>
         new()
         {
@@ -528,6 +541,8 @@ internal sealed record MessagingListScope
             MessageId = string.IsNullOrEmpty(MessageId) ? null : MessageId,
             AddedFrom = From,
             AddedBefore = Before,
+            Content = string.IsNullOrEmpty(Content) ? null : Content,
+            CorrelationId = string.IsNullOrEmpty(CorrelationId) ? null : CorrelationId,
         };
 }
 
