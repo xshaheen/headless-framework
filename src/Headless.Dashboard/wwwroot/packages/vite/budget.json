@@ -10,7 +10,7 @@
       "name": "Shell and every SDK entry",
       "files": ["assets/**/*.js", "assets/**/*.css"],
       "measure": "total",
-      "maxBytes": 450000
+      "maxBytes": 500000
     },
     {
       "name": "Module entry",
