@@ -20,7 +20,7 @@ public sealed class RedisStreamWakeTests : TestBase
     private readonly IConnectionMultiplexer _multiplexer = Substitute.For<IConnectionMultiplexer>();
     private readonly IDatabase _database = Substitute.For<IDatabase>();
     private readonly ISubscriber _subscriber = Substitute.For<ISubscriber>();
-    private readonly FakeTimeProvider _timeProvider = new();
+    private readonly TimerWatchingTimeProvider _timeProvider = new();
     private Action<RedisChannel, RedisValue>? _onWake;
 
     public RedisStreamWakeTests()
@@ -176,13 +176,17 @@ public sealed class RedisStreamWakeTests : TestBase
         var readStartedAt = _timeProvider.GetTimestamp();
         _onWake!(_WakeChannel, RedisValue.EmptyString);
 
-        // when
+        // when: the wait arms its hold timer on a pool thread after the test regains control, so advance the clock
+        // only once that timer exists; an advance before it would leave the timer due past the advanced time
+        var holdArmed = _timeProvider.WatchForTimer(RedisStreamWake.MinWokenReadInterval);
         var wait = wake.WaitAsync(_PollDelay, readStartedAt, AbortToken);
-        await Task.Yield();
+        await holdArmed.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         wait.IsCompleted.Should().BeFalse("a wake-up right after a read must not trigger a read at once");
-        _timeProvider.Advance(RedisStreamWake.MinWokenReadInterval);
+        _timeProvider.Advance(RedisStreamWake.MinWokenReadInterval - TimeSpan.FromTicks(1));
+        wait.IsCompleted.Should().BeFalse("the hold lasts the whole woken-read interval");
+        _timeProvider.Advance(TimeSpan.FromTicks(1));
         await wait.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
@@ -314,6 +318,47 @@ public sealed class RedisStreamWakeTests : TestBase
             {
                 Warnings++;
             }
+        }
+    }
+
+    // Reports when a timer with a given due time is armed, so a test advances the clock only after the timer it means
+    // to fire exists, whichever thread arms it.
+    private sealed class TimerWatchingTimeProvider : FakeTimeProvider
+    {
+        private readonly Lock _lock = new();
+        private readonly List<(TimeSpan DueTime, TaskCompletionSource Armed)> _watchers = [];
+
+        // Call before starting the operation that arms the timer, so a timer armed earlier never matches.
+        public Task WatchForTimer(TimeSpan dueTime)
+        {
+            var armed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            lock (_lock)
+            {
+                _watchers.Add((dueTime, armed));
+            }
+
+            return armed.Task;
+        }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            // Signal only after the base clock has scheduled the timer, so an advance the watcher triggers fires it.
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+
+            lock (_lock)
+            {
+                for (var i = _watchers.Count - 1; i >= 0; i--)
+                {
+                    if (_watchers[i].DueTime == dueTime)
+                    {
+                        _watchers[i].Armed.TrySetResult();
+                        _watchers.RemoveAt(i);
+                    }
+                }
+            }
+
+            return timer;
         }
     }
 
