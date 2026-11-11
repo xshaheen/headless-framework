@@ -2,12 +2,12 @@ export {
   createFormatters,
   isTimeZone,
   type Formatters,
-  type RelativeTimeOptions,
   type TimeInput,
 } from './formatters.ts'
 export {
   defaultLocale,
   defaultTimeZone,
+  gregorianLocale,
   LocaleProvider,
   readTimeZone,
   TimeZoneField,
@@ -15,4 +15,14 @@ export {
   useLocale,
   type LocaleProviderProps,
 } from './locale.tsx'
-export { relativeTickOf, useNow } from './now.ts'
+export {
+  createRelativeClock,
+  formatRelativeTime,
+  msUntilRelativeChange,
+  relativeTimeParts,
+  relativeClock,
+  useRelativeTime,
+  type RelativeClockEnv,
+  type RelativeTimeStyle,
+  type RelativeTimeUnit,
+} from './relative-time.ts'

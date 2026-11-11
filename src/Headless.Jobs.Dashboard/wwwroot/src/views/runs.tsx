@@ -20,7 +20,7 @@ import {
   Skeleton,
   StatusMark,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import {
   DashboardApiError,
@@ -33,14 +33,8 @@ import {
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
-import { DateRangeField } from '@headless/dashboard-sdk/date-range'
-import {
-  DataTable,
-  SearchField,
-  type DataTableColumn,
-  type ListRange,
-  type ListSort,
-} from '@headless/dashboard-sdk/table'
+import { DateRangeField, useListRange, type TimeRange } from '@headless/dashboard-sdk/date-range'
+import { DataTable, SearchField, type DataTableColumn, type ListSort } from '@headless/dashboard-sdk/table'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   CellText,
@@ -56,7 +50,6 @@ import {
   fetchRun,
   fetchRuns,
   filterNames,
-  formatDuration,
   kindLabel,
   markDone,
   operationScope,
@@ -114,12 +107,12 @@ export default function RunsView() {
   const { start } = useOperations()
   const [params, setParams] = useSearchParams()
   const filter = readFilter(params)
-  // The search, the custom day range, and the sort are typed here and not kept in the URL: the day picker cannot
-  // show a range it did not pick, so a restored one would filter while the field read empty.
+  // The search, the custom day range, and the sort are this view's own state, not kept in the URL.
   const [search, setSearch] = useState('')
-  const [range, setRange] = useState<ListRange>()
+  const [days, setDays] = useState<TimeRange>()
+  const range = useListRange(days)
   const [sort, setSort] = useState<ListSort>()
-  // Bumped to empty the search box and the day picker, which keep their own text.
+  // Bumped to empty the search box, which keeps its own text.
   const [scopeReset, setScopeReset] = useState(0)
   const scope: RunScope = { search, range }
   const filterKey = [...filterNames.map((name) => filter[name]), search, range?.start, range?.end].join('\n')
@@ -175,7 +168,7 @@ export default function RunsView() {
 
       if (name === 'range') {
         // A preset and a custom range would name two starts; the one chosen last wins.
-        setRange(undefined)
+        setDays(undefined)
         setScopeReset((count) => count + 1)
         const span = rangeSpans[value]
 
@@ -191,13 +184,13 @@ export default function RunsView() {
   // The status is the list itself, chosen in the sidebar; clearing the filters keeps it.
   function clearFilters() {
     setSearch('')
-    setRange(undefined)
+    setDays(undefined)
     setScopeReset((count) => count + 1)
     update((next) => filterNames.filter((name) => name !== 'status').forEach((name) => next.delete(name)))
   }
 
-  function pickRange(picked: ListRange | undefined) {
-    setRange(picked)
+  function pickRange(picked: TimeRange | undefined) {
+    setDays(picked)
 
     if (picked) {
       update((next) => {
@@ -376,9 +369,7 @@ export default function RunsView() {
               }
               // The day range sits behind More filters, so the row stays one line beside the title at 1024 px.
               more={
-                status ? undefined : (
-                  <DateRangeField key={`range-${scopeReset}`} label="Due between" onChange={pickRange} compact />
-                )
+                status ? undefined : <DateRangeField label="Due between" value={days} onChange={pickRange} compact />
               }
             >
               {/* A state list keeps only the search, as the sidebar already chose the state: its other filters
@@ -590,7 +581,7 @@ function RunsTable({
         {
           id: 'duration',
           header: 'Duration',
-          cell: (run) => (run.executedAt ? formatDuration(run.elapsedMilliseconds, format.number) : ''),
+          cell: (run) => (run.executedAt ? format.duration(run.elapsedMilliseconds) : ''),
           kind: 'duration',
           priority: 2,
           width: 100,
@@ -600,7 +591,7 @@ function RunsTable({
           header: failed ? 'Failed at' : 'Due',
           cell: (run) => (
             <CellText>
-              <RelativeTime
+              <Timestamp
                 value={failed ? (run.executedAt ?? run.executionTime) : (run.executionTime ?? run.createdAt)}
               />
             </CellText>

@@ -21,7 +21,7 @@ import {
   Skeleton,
   StatusMark,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import {
   DashboardApiError,
@@ -550,7 +550,7 @@ function MessagesTable({
           header: failed ? 'Failed at' : 'Added',
           cell: (row) => (
             <CellText>
-              <RelativeTime value={failed ? (row.changedAt ?? row.added) : row.added} />
+              <Timestamp value={failed ? (row.changedAt ?? row.added) : row.added} />
             </CellText>
           ),
           kind: 'time',

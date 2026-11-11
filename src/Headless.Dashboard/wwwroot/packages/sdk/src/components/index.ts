@@ -1,5 +1,6 @@
 export { below } from './breakpoints.ts'
 export { Button, type ButtonProps, type ButtonVariant } from './button.tsx'
+export { CopyButton, type CopyButtonProps } from './copy-button.tsx'
 export { Dialog, type OverlayProps } from './dialog.tsx'
 export {
   Banner,
@@ -18,7 +19,7 @@ export { FilterSelect, type FilterSelectProps } from './display/filter-select.ts
 export { FilterToolbar, type FilterToolbarProps } from './display/filter-toolbar.tsx'
 export { KeyValueTable, type KeyValueRow, type KeyValueTableProps } from './display/key-value-table.tsx'
 export { PageHeader, type PageHeaderProps } from './display/page-header.tsx'
-export { RelativeTime, type RelativeTimeProps } from './display/relative-time.tsx'
+export { Timestamp, type TimestampProps } from './display/timestamp.tsx'
 export { Section, type SectionProps } from './display/section.tsx'
 export { SegmentedControl, type SegmentedControlProps } from './display/segmented-control.tsx'
 export { Skeleton, type SkeletonProps, type SkeletonShape } from './display/skeleton.tsx'

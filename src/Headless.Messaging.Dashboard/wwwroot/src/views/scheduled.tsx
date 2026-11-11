@@ -9,7 +9,7 @@ import {
   PageHeader,
   StatusMark,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
@@ -189,7 +189,7 @@ export default function ScheduledView() {
                     header: 'Due',
                     cell: (row) => (
                       <CellText>
-                        <RelativeTime value={row.expectedDueAt} scheduled />
+                        <Timestamp value={row.expectedDueAt} scheduled />
                       </CellText>
                     ),
                     kind: 'time',

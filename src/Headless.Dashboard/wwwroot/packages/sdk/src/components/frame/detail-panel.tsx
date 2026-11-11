@@ -6,8 +6,9 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { Focusable } from 'react-aria-components'
 import { Link, type To } from 'react-router'
 import type { DashboardStateRole } from '../../define-module.ts'
-import { CloseIcon, CopyIcon, ExternalLinkIcon, MoveBelowIcon, MoveSideIcon } from '../../icons/index.ts'
+import { CloseIcon, ExternalLinkIcon, MoveBelowIcon, MoveSideIcon } from '../../icons/index.ts'
 import { Button } from '../button.tsx'
+import { CopyButton } from '../copy-button.tsx'
 import { Tooltip } from '../tooltip.tsx'
 import { useFrame } from './page-frame.tsx'
 
@@ -130,13 +131,7 @@ export function DetailPanel({ label, name, id, status, tabs, defaultTab, childre
               <bdi className="hd-mono hd-faint truncate max-md:whitespace-normal max-md:wrap-anywhere" dir="ltr">
                 {id}
               </bdi>
-              <Button
-                variant="ghost"
-                icon={CopyIcon}
-                aria-label={`Copy id ${id}`}
-                tooltip="Copy id"
-                onPress={() => void navigator.clipboard?.writeText(id)}
-              />
+              <CopyButton text={id} aria-label={`Copy id ${id}`} tooltip="Copy id" />
             </span>
           ) : null}
         </div>

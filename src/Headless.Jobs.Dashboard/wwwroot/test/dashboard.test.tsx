@@ -240,7 +240,7 @@ describe('jobs dashboard', () => {
           id: 'c2',
           function: 'sandbox.progress',
           expression: '*/30 * * * * *',
-          nextDueUtc: '2026-11-05T10:00:06Z',
+          nextDueUtc: '2026-11-05T10:00:06.500Z',
         }),
         cronJob({ id: 'c3', function: 'cleanup.sessions', isPaused: true, nextDueUtc: '2026-11-05T10:00:01Z' }),
       ],
@@ -347,7 +347,7 @@ describe('jobs dashboard', () => {
       extra: (request) =>
         request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
           ? {
-              items: [run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })],
+              items: [run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:30Z' })],
               count: 1,
               countCapped: false,
             }
@@ -366,7 +366,7 @@ describe('jobs dashboard', () => {
   })
 
   it('reads the next time job again once the shown one starts', async () => {
-    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })
+    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:30Z' })
     const waiting = [due]
     const view = open({
       cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-06T01:00:00Z' })],
@@ -387,7 +387,7 @@ describe('jobs dashboard', () => {
   })
 
   it('reads the next time job again on the next visit when the operator leaves before the burst settles', async () => {
-    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })
+    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:30Z' })
     const waiting = [due]
     const view = open({
       cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-06T01:00:00Z' })],
@@ -424,7 +424,7 @@ describe('jobs dashboard', () => {
     await waitFor(() => expect(header.textContent).toContain('reports.nightly'))
 
     // A projection-less change names no kind or time, so it may be a time job now due before the cron fire.
-    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })
+    const due = run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:30Z' })
     waiting.push(due)
     act(() => view.stream.push('change', { ...change(due), projection: null }))
     await act(() => vi.advanceTimersByTimeAsync(1_000))
@@ -486,11 +486,11 @@ describe('jobs dashboard', () => {
 
   it('keeps the next cron fire as the next execution when no time job is due before it', async () => {
     open({
-      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-05T11:00:00Z' })],
+      cronJobs: [cronJob({ function: 'reports.nightly', nextDueUtc: '2026-11-05T11:00:30Z' })],
       extra: (request) =>
         request.path === 'jobs/runs' && request.query?.kind === 'TimeJob'
           ? {
-              items: [run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:00Z' })],
+              items: [run('Idle', { function: 'export.ledger', executionTime: '2026-11-05T12:00:30Z' })],
               count: 1,
               countCapped: false,
             }
@@ -498,7 +498,7 @@ describe('jobs dashboard', () => {
     })
 
     const header = (await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).closest('header')!
-    await waitFor(() => expect(header.textContent).toContain('Next execution reports.nightly, in 60 min.'))
+    await waitFor(() => expect(header.textContent).toContain('Next execution reports.nightly, in 1 hr.'))
   })
 })
 
