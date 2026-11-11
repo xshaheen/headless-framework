@@ -7,6 +7,7 @@ using Headless.LiveQueries;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,6 +19,11 @@ namespace Tests;
 /// </summary>
 internal sealed class LiveTestApp : IAsyncDisposable
 {
+    // Spelled out here, not taken from the package: these names are the wire protocol a client is written against.
+    public const string SessionHeader = "X-Headless-Live-Session";
+    public const string CommandHeader = "X-Headless-Live-Command";
+    public const string AcknowledgementHeader = "X-Headless-Live-Acknowledgement";
+
     private LiveTestApp(WebApplication app, TestUsers users, TestMeterFactory meters)
     {
         App = app;
@@ -105,6 +111,7 @@ internal sealed class LiveTestApp : IAsyncDisposable
         app.UseAuthentication();
         afterAuthentication?.Invoke(app);
         app.UseAuthorization();
+        app.UseHeadlessLiveCommands();
         map(app);
 
         try
@@ -128,7 +135,8 @@ internal sealed class LiveTestApp : IAsyncDisposable
         CancellationToken cancellationToken,
         string? user = null,
         string accept = "text/event-stream",
-        Action<HttpRequestMessage>? configure = null
+        Action<HttpRequestMessage>? configure = null,
+        string? session = null
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -139,10 +147,72 @@ internal sealed class LiveTestApp : IAsyncDisposable
             request.Headers.Add(TestAuthenticationHandler.UserHeader, user);
         }
 
+        if (session is not null)
+        {
+            request.Headers.Add(SessionHeader, session);
+        }
+
         configure?.Invoke(request);
         var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
         return new LiveStreamClient(response, await response.Content.ReadAsStreamAsync(cancellationToken));
+    }
+
+    /// <summary>Posts to <paramref name="url" /> as a client that tags its command.</summary>
+    public async Task<HttpResponseMessage> SendCommandAsync(
+        string url,
+        CancellationToken cancellationToken,
+        string? user = null,
+        string? session = null,
+        string? command = null
+    )
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+
+        if (user is not null)
+        {
+            request.Headers.Add(TestAuthenticationHandler.UserHeader, user);
+        }
+
+        if (session is not null)
+        {
+            request.Headers.Add(SessionHeader, session);
+        }
+
+        if (command is not null)
+        {
+            request.Headers.Add(CommandHeader, command);
+        }
+
+        return await Client.SendAsync(request, cancellationToken);
+    }
+
+    /// <summary>
+    /// Posts to <paramref name="url" /> without an HTTP client in between, so a header can hold what a client
+    /// would refuse to send, such as a line break. Returns the response headers.
+    /// </summary>
+    public async Task<IHeaderDictionary> SendRawCommandAsync(
+        string url,
+        string user,
+        string session,
+        string command,
+        CancellationToken cancellationToken
+    )
+    {
+        var context = await App.GetTestServer()
+            .SendAsync(
+                request =>
+                {
+                    request.Request.Method = HttpMethods.Post;
+                    request.Request.Path = url;
+                    request.Request.Headers[TestAuthenticationHandler.UserHeader] = user;
+                    request.Request.Headers[SessionHeader] = session;
+                    request.Request.Headers[CommandHeader] = command;
+                },
+                cancellationToken
+            );
+
+        return context.Response.Headers;
     }
 
     public ValueTask InvalidateAsync(string key, CancellationToken cancellationToken)

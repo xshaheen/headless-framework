@@ -168,7 +168,7 @@ public sealed class LiveQueryHubTests : TestBase
         await using var host = new LiveQueriesTestHost();
         var runs = new OwnerTodosRun(owner: 3) { AlsoReadsWholeKey = true };
         var gate = new CountingGate();
-        var watch = _Hub(host).WatchAsync(runs.RunAsync, gate.EnterAsync, AbortToken);
+        var watch = _Hub(host).WatchAsync(runs.RunAsync, gate.EnterAsync, subscriber: null, AbortToken);
         await using var updates = watch.GetAsyncEnumerator(AbortToken);
 
         // when
@@ -204,6 +204,7 @@ public sealed class LiveQueryHubTests : TestBase
 
                     return null;
                 },
+                subscriber: null,
                 AbortToken
             );
         await using var updates = watch.GetAsyncEnumerator(AbortToken);

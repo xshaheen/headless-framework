@@ -240,7 +240,8 @@ Startup validation rejects an empty `ApiKeyHeaderName` when the API-key scheme i
                 "properties": {
                   "kind": { "type": "string", "const": "result" },
                   "version": { "type": "string" },
-                  "value": { "$ref": "#/components/schemas/TodoView" }
+                  "value": { "$ref": "#/components/schemas/TodoView" },
+                  "acknowledged": { "type": "array", "items": { "type": "string" } }
                 }
               },
               {
@@ -256,6 +257,14 @@ Startup validation rejects an empty `ApiKeyHeaderName` when the API-key scheme i
                 "type": "object",
                 "required": ["kind"],
                 "properties": { "kind": { "type": "string", "const": "heartbeat" } }
+              },
+              {
+                "type": "object",
+                "required": ["kind", "acknowledged"],
+                "properties": {
+                  "kind": { "type": "string", "const": "acknowledged" },
+                  "acknowledged": { "type": "array", "items": { "type": "string" } }
+                }
               }
             ]
           }
@@ -268,8 +277,8 @@ Startup validation rejects an empty `ApiKeyHeaderName` when the API-key scheme i
 
 - `x-headless-live` is an object so it can gain members; its presence is the marker. `mediaTypes` lists the `Accept` values that open a stream, in the order the server prefers them.
 - The document is OpenAPI 3.1, which has no keyword for the items of a stream, so a stream media type's `schema` describes one item of the stream, not the whole body.
-- For `text/event-stream` the item is the `data` of a `result` event, which is the single response's body, so the schema is the `application/json` one unchanged. The `failure` event, whose `data` is a `HeadlessProblemDetails` body, and the `id` and `retry` fields are not in the schema; [What a client sees](live-queries.md#what-a-client-sees) defines them.
-- For `application/x-ndjson` the item is one line, a `oneOf` over `kind`. A client ignores a `kind` the schema does not list.
+- For `text/event-stream` the item is the `data` of a `result` event, which is the single response's body, so the schema is the `application/json` one unchanged. The `failure` event, whose `data` is a `HeadlessProblemDetails` body, the `acknowledged` event, and the `id` and `retry` fields are not in the schema; [What a client sees](live-queries.md#what-a-client-sees) defines them.
+- For `application/x-ndjson` the item is one line, a `oneOf` over `kind`. A client ignores a `kind` the schema does not list. `acknowledged` holds the ids of the client's own commands, on a result line when that result holds them and as a line of its own otherwise; [Command acknowledgement](live-queries.md#command-acknowledgement) defines it, with the request and response headers, which the document does not list.
 - A success response with no `application/json` body leaves the result untyped: the `text/event-stream` entry has no schema and the result line's `value` has none.
 - A stream media type the endpoint declared itself is kept. A format added through `ILiveTransport` is not documented; declare it on the endpoint with `Produces`.
 - An operation without the metadata gets none of this, and a host with no live endpoint produces the same document as before.
