@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-222 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+223 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -293,7 +293,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 222 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 223 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -677,6 +677,7 @@ Queries بتفضل محدّثة: الـ query اللي معمول لها watch �
 | [Headless.LiveQueries.Abstractions](src/Headless.LiveQueries.Abstractions/README.md) | `ILiveQueries` و`ILiveQueryInvalidator` و`ILiveQueryDependencies` والـ `LiveUpdate` اللي الـ transport بيبعته |
 | [Headless.LiveQueries](src/Headless.LiveQueries/README.md) | الـ registration، والـ subscription hub جوه الـ process، والـ meter بتاعه |
 | [Headless.LiveQueries.Endpoints](src/Headless.LiveQueries.Endpoints/README.md) | `.WithLiveUpdates()` للـ GET endpoints بتاعة الـ Minimal API: streams بالـ server-sent events والـ NDJSON، والـ authorization بيتراجع مع كل re-run، وحدود لعدد الـ streams |
+| [Headless.LiveQueries.EntityFramework](src/Headless.LiveQueries.EntityFramework/README.md) | `UseEntityFramework<TContext>()`: بيسجّل الـ tables اللي الـ live query بتقراها من الـ EF Core context، وبيعلن الـ tables اللي أي write اتعمله commit غيّرها |
 
 ### Unit of Work
 
