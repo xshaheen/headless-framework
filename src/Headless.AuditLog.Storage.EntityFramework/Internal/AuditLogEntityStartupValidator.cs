@@ -3,6 +3,7 @@
 using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog.Internal;
 
@@ -29,6 +30,19 @@ internal sealed class AuditLogEntityStartupValidator<TContext>(IServiceProvider 
             throw new InvalidOperationException(
                 $"Headless.AuditLog: the registered DbContext `{context.GetType().FullName}` has not fully configured `{nameof(AuditLogEntry)}`. "
                     + "Call `modelBuilder.ConfigureHeadlessAuditLog(this)` in your `OnModelCreating`."
+            );
+        }
+
+        // No I/O: the provider name comes from the context's options. Only PostgreSQL has the owner's purge function.
+        var storageOptions = scope.ServiceProvider.GetService<IOptions<AuditLogStorageOptions>>()?.Value;
+
+        if (
+            storageOptions?.PurgeAuthority is AuditLogPurgeAuthority.Owner
+            && EfAuditLogDatabase.Provider(context) is not StorageProvider.PostgreSql
+        )
+        {
+            throw new InvalidOperationException(
+                $"Headless.AuditLog: {nameof(AuditLogStorageOptions.PurgeAuthority)} {nameof(AuditLogPurgeAuthority.Owner)} is supported on PostgreSQL only, and `{context.GetType().FullName}` uses `{context.Database.ProviderName}`."
             );
         }
     }

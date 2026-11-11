@@ -111,7 +111,7 @@ internal static class SqlServerAuditLogSchemaContribution
                 new(
                     AppendOnlyStepVersion,
                     "Make the audit log table append-only.",
-                    _AppendOnlySql(auditLogTable.Schema, tableName, table)
+                    SqlServerAuditLogSql.AppendOnly(auditLogTable.Schema, tableName)
                 )
             );
         }
@@ -175,27 +175,6 @@ internal static class SqlServerAuditLogSchemaContribution
             """,
             Disable: $"EXEC sys.sp_set_session_context @key = N'{AuditLogStorageNames.PurgeSetting}', @value = NULL;"
         );
-    }
-
-    private static string _AppendOnlySql(string schema, string tableName, string table)
-    {
-        var name = $"TR_{tableName}_{AuditLogStorageNames.AppendOnlyTrigger}";
-
-        // AFTER UPDATE, DELETE with THROW rolls the statement back. A DELETE (no inserted rows) passes only while the
-        // purge has the session key set. TRUNCATE fires no trigger on SQL Server, so it stays the job of permissions.
-        // CREATE TRIGGER must start its batch, hence EXEC.
-        var body = $"""
-            CREATE OR ALTER TRIGGER [{schema}].[{name}] ON {table} AFTER UPDATE, DELETE AS
-            BEGIN
-                SET NOCOUNT ON;
-                IF NOT EXISTS (SELECT 1 FROM inserted)
-                    AND CONVERT(int, SESSION_CONTEXT(N'{AuditLogStorageNames.PurgeSetting}')) = 1
-                    RETURN;
-                THROW 50000, N'The audit log table {schema}.{tableName} is append-only: only the retention purge may delete rows.', 1;
-            END
-            """;
-
-        return $"EXEC(N'{body.Replace("'", "''", StringComparison.Ordinal)}');";
     }
 
     /// <summary>The <c>CreatedAt</c> column's type: the configured override, else <c>datetimeoffset(7)</c>.</summary>

@@ -58,5 +58,49 @@ internal sealed class RelationalAuditLogStorageOptionsValidator : AbstractValida
             .MaximumLength(64)
             .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
             .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
+        RuleFor(x => x.PurgeAuthority).IsInEnum();
+        RuleFor(x => x.Partitioning).IsInEnum();
+        RuleFor(x => x.PartitionMonthsAhead).InclusiveBetween(0, PostgreSqlAuditLogSql.MaxMonthsAhead);
+        RuleFor(x => x.MinimumRetention!.Value)
+            .GreaterThanOrEqualTo(TimeSpan.FromSeconds(1))
+            .When(x => x.MinimumRetention.HasValue);
+
+        if (provider is StorageProvider.PostgreSql)
+        {
+            // The owner's purge function is installed beside the trigger it is the only way through.
+            RuleFor(x => x.PurgeAuthority)
+                .Must((options, authority) => authority is not AuditLogPurgeAuthority.Owner || options.AppendOnly)
+                .WithMessage(
+                    $"{nameof(AuditLogStorageOptions.PurgeAuthority)} {nameof(AuditLogPurgeAuthority.Owner)} needs {nameof(AuditLogStorageOptions.AppendOnly)}: without the trigger, any login with DELETE on the table purges it."
+                );
+            RuleFor(x => x.MinimumRetention)
+                .Must(
+                    (options, retention) =>
+                        retention is null
+                        || options.PurgeAuthority is AuditLogPurgeAuthority.Owner
+                        || options.Partitioning is AuditLogPartitioning.Monthly
+                )
+                .WithMessage(
+                    $"{nameof(AuditLogStorageOptions.MinimumRetention)} is enforced by the owner's purge function and the partition drop function, so it needs {nameof(AuditLogStorageOptions.PurgeAuthority)} {nameof(AuditLogPurgeAuthority.Owner)} or {nameof(AuditLogStorageOptions.Partitioning)} {nameof(AuditLogPartitioning.Monthly)}."
+                );
+        }
+        else
+        {
+            RuleFor(x => x.PurgeAuthority)
+                .Equal(AuditLogPurgeAuthority.SessionSetting)
+                .WithMessage(
+                    $"{nameof(AuditLogStorageOptions.PurgeAuthority)} {nameof(AuditLogPurgeAuthority.Owner)} is supported by the PostgreSql audit-log provider only."
+                );
+            RuleFor(x => x.Partitioning)
+                .Equal(AuditLogPartitioning.None)
+                .WithMessage(
+                    $"{nameof(AuditLogStorageOptions.Partitioning)} is supported by the PostgreSql audit-log provider only."
+                );
+            RuleFor(x => x.MinimumRetention)
+                .Null()
+                .WithMessage(
+                    $"{nameof(AuditLogStorageOptions.MinimumRetention)} is supported by the PostgreSql audit-log provider only."
+                );
+        }
     }
 }

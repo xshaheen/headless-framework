@@ -63,6 +63,10 @@ public static class SetupAuditLogEntityFramework
                 typeof(IAuditLogRetention<>).MakeGenericType(dbContextType),
                 typeof(EfAuditLogRetention<>).MakeGenericType(dbContextType)
             );
+            services.TryAddSingleton(
+                typeof(IAuditLogPartitions<>).MakeGenericType(dbContextType),
+                typeof(EfAuditLogPartitions<>).MakeGenericType(dbContextType)
+            );
             services.RequireSingletonService(
                 typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
                 requiredBy: "Headless audit log EF storage",
@@ -91,11 +95,24 @@ public static class SetupAuditLogEntityFramework
                 .MaximumLength(64)
                 .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
                 .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
-            // The application's migrations own this table, so the provider has no schema step to add the trigger in.
+            RuleFor(x => x.PurgeAuthority).IsInEnum();
+            RuleFor(x => x.PartitionMonthsAhead).InclusiveBetween(0, PostgreSqlAuditLogSql.MaxMonthsAhead);
+            // The application's migrations own this table, so the provider has no schema step to create these in. An
+            // option that the provider accepted and then ignored would read as a guarantee it does not give.
             RuleFor(x => x.AppendOnly)
                 .Must(appendOnly => !appendOnly)
                 .WithMessage(
-                    $"{nameof(AuditLogStorageOptions.AppendOnly)} applies to the PostgreSql and SqlServer audit-log providers. With Entity Framework storage, add the append-only trigger in a migration; IAuditLogRetention<TContext> still purges through it."
+                    $"{nameof(AuditLogStorageOptions.AppendOnly)} applies to the PostgreSql and SqlServer audit-log providers. With Entity Framework storage, call migrationBuilder.AddHeadlessAuditLogAppendOnly(...) in a migration; IAuditLogRetention<TContext> still purges through it."
+                );
+            RuleFor(x => x.Partitioning)
+                .Equal(AuditLogPartitioning.None)
+                .WithMessage(
+                    $"{nameof(AuditLogStorageOptions.Partitioning)} applies to the PostgreSql audit-log provider. With Entity Framework storage, create the table partitioned in a migration and call migrationBuilder.AddHeadlessAuditLogPartitions(...); IAuditLogPartitions<TContext> then keeps the partitions."
+                );
+            RuleFor(x => x.MinimumRetention)
+                .Null()
+                .WithMessage(
+                    $"{nameof(AuditLogStorageOptions.MinimumRetention)} applies to the PostgreSql audit-log provider. With Entity Framework storage, pass minimumRetention to the migration helpers."
                 );
         }
     }

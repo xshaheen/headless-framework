@@ -2,10 +2,12 @@
 
 using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Sql;
 using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.AuditLog;
 
@@ -167,6 +169,8 @@ public static class SetupAuditLogPostgreSql
                 ),
                 PostgreSqlAuditLogSchemaContribution.Create
             );
+            services.TryAddSingleton(typeof(IAuditLogPartitions<>), typeof(PostgreSqlAuditLogPartitions<>));
+            services.AddResourceProvisionerSource<PostgreSqlAuditLogPartitionsProvisionerSource>();
         }
     }
 }

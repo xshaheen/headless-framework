@@ -4,7 +4,7 @@ Raw PostgreSQL storage provider for `Headless.AuditLog`. No Entity Framework dep
 
 ## Why use this package
 
-Provides PostgreSQL-native audit log storage without pulling Entity Framework into the dependency graph. Creates and maintains the audit table via self-initializing DDL, stores JSON columns as `jsonb` by default, and can enroll writes atomically in the consumer's active Npgsql transaction.
+Provides PostgreSQL-native audit log storage without pulling Entity Framework into the dependency graph. Creates and maintains the audit table via self-initializing DDL, stores JSON columns as `jsonb` by default, and can enroll writes atomically in the consumer's active Npgsql transaction. Optionally makes the table append-only, gives the purge to the table's owner, and partitions the table by month with retention that drops whole months.
 
 ## Install
 
