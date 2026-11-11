@@ -1,0 +1,13 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Contracts for Headless live queries: the update a subscriber receives, the invalidator a writer calls, and the dependency a query declares, with no ASP.NET Core or Entity Framework Core reference.</Description>
+    <PackageTags>headless;live-queries;realtime;dotnet</PackageTags>
+    <RootNamespace>Headless.LiveQueries</RootNamespace>
+    <!-- Not packable while the package has no behavior, so a release never publishes it empty. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
+</Project>

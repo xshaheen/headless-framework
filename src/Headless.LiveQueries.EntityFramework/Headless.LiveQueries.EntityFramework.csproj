@@ -1,0 +1,24 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Entity Framework Core tracking for Headless live queries: records the tables a query reads and announces the tables a committed write changed, so live queries need no invalidation code.</Description>
+    <PackageTags>headless;live-queries;realtime;entity-framework;ef-core;dotnet</PackageTags>
+    <RootNamespace>Headless.LiveQueries</RootNamespace>
+    <!-- Not packable while the package has no behavior, so a release never publishes it empty. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.LiveQueries.EntityFramework.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.LiveQueries.EntityFramework.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.LiveQueries.Abstractions\Headless.LiveQueries.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.LiveQueries\Headless.LiveQueries.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+  </ItemGroup>
+</Project>
