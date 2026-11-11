@@ -29,6 +29,7 @@ internal sealed class MessagingChangePublisher : IMessageStateObserver, IAsyncDi
     private readonly CancellationTokenSource _stopping = new();
     private readonly Lock _startLock = new();
     private Task? _reader;
+    private int _disposed;
 
     public MessagingChangePublisher(
         MessagingStores stores,
@@ -108,6 +109,13 @@ internal sealed class MessagingChangePublisher : IMessageStateObserver, IAsyncDi
 
     public async ValueTask DisposeAsync()
     {
+        // The container disposes this instance once per registration that returns it: its own, and the
+        // IMessageStateObserver one that forwards to it. A later call must not touch the disposed token source.
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         _queue.Writer.TryComplete();
         await _stopping.CancelAsync().ConfigureAwait(false);
 

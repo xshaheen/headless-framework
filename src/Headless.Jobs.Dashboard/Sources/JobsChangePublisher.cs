@@ -29,6 +29,7 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
     private readonly CancellationTokenSource _stopping = new();
     private readonly Lock _startLock = new();
     private Task? _reader;
+    private int _disposed;
 
     public JobsChangePublisher(
         IJobsDashboardReader backend,
@@ -125,6 +126,13 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // A second call must not touch the disposed token source: the container disposes an instance once per
+        // registration that returns it, so one forwarding registration would otherwise fail the host's shutdown.
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         _queue.Writer.TryComplete();
         await _stopping.CancelAsync().ConfigureAwait(false);
 

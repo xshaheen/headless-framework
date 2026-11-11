@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
+using System.Net.Mime;
+using System.Text;
 using Headless.Dashboard;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -15,12 +18,21 @@ namespace Headless.Messaging.Dashboard;
 /// <remarks>
 /// A node discovery does not list is answered with <c>404</c> before any call leaves this node. A peer that does not
 /// answer is answered with <c>502</c>, its state in <c>X-Headless-Node-State</c> and in the problem's detail; this
-/// node's own rows never stand in for it. A call another node forwarded is always served here.
+/// node's own rows never stand in for it. A call another node forwarded is always served here. A path with a segment
+/// that could leave the module's API on the peer is answered with <c>400</c> before any call leaves this node, and the
+/// peer's answer is always served as JSON.
 /// </remarks>
 internal sealed class NodeRelayFilter(MessagingForwarding forwarding, IOptions<HeadlessDashboardOptions> dashboard)
     : IEndpointFilter
 {
     private const string _NodeParameter = "node";
+
+    /// <summary>The field a refused path names in the <c>400</c> validation problem.</summary>
+    internal const string PathField = "path";
+
+    // A backslash becomes a slash in an http URI, and '?' or '#' would end the path, so none of them can sit inside a
+    // relayed segment.
+    private static readonly SearchValues<char> _RefusedInSegment = SearchValues.Create("\\?#");
 
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
@@ -91,21 +103,23 @@ internal sealed class NodeRelayFilter(MessagingForwarding forwarding, IOptions<H
         var path = http.Request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase, out var rest)
             ? rest.Value ?? "/"
             : http.Request.Path.Value!;
+
+        if (EscapePath(path) is not { } escaped)
+        {
+            return DashboardValidation.Problem(
+                PathField,
+                DashboardValidation.InvalidRule,
+                "The path holds a segment a read relayed to another node cannot carry."
+            );
+        }
+
         var query = QueryString.Create(
             http.Request.Query.Where(static pair => !string.Equals(pair.Key, _NodeParameter, StringComparison.Ordinal))
                 .Select(static pair => new KeyValuePair<string, StringValues>(pair.Key, pair.Value))
         );
 
         var response = await forwarding
-            .Client.SendAsync(
-                peer,
-                HttpMethod.Get,
-                path + query.ToUriComponent(),
-                http.User,
-                operate: false,
-                json: null,
-                http.RequestAborted
-            )
+            .Client.RelayAsync(peer, escaped + query.ToUriComponent(), http.User, http.RequestAborted)
             .ConfigureAwait(false);
 
         if (!response.Answered)
@@ -118,21 +132,62 @@ internal sealed class NodeRelayFilter(MessagingForwarding forwarding, IOptions<H
             );
         }
 
-        return new RelayedResult(response.Status, response.Body, response.ContentType);
+        return new RelayedResult(response.Status, response.Body);
     }
 
-    private sealed class RelayedResult(int status, byte[] body, string? contentType) : IResult
+    /// <summary>
+    /// Escapes each segment of <paramref name="path"/> again, or returns <see langword="null"/> when a segment is a dot
+    /// segment or holds a character no segment of the module's API can.
+    /// </summary>
+    /// <remarks>
+    /// The server hands the path over decoded, so <c>a%5C..%5C..</c> arrives as <c>a\..\..</c>, which an http URI reads
+    /// as two steps up and out of the API. Escaping each decoded segment sends the peer the segments this node routed
+    /// on, and a route value such as an id reads the same on both nodes.
+    /// </remarks>
+    internal static string? EscapePath(string path)
+    {
+        var builder = new StringBuilder(path.Length + 16);
+        var first = true;
+
+        foreach (var segment in path.Split('/'))
+        {
+            if (
+                segment is "." or ".."
+                || segment.AsSpan().ContainsAny(_RefusedInSegment)
+                || segment.AsSpan().ContainsAnyInRange('\u0000', '\u001F')
+                || segment.AsSpan().ContainsAnyInRange('\u007F', '\u009F')
+            )
+            {
+                return null;
+            }
+
+            if (!first)
+            {
+                builder.Append('/');
+            }
+
+            builder.Append(Uri.EscapeDataString(segment));
+            first = false;
+        }
+
+        return builder.ToString();
+    }
+
+    private sealed class RelayedResult(int status, byte[] body) : IResult
     {
         public Task ExecuteAsync(HttpContext httpContext)
         {
-            httpContext.Response.StatusCode = status;
+            var response = httpContext.Response;
+            response.StatusCode = status;
 
-            if (contentType is not null)
-            {
-                httpContext.Response.ContentType = contentType;
-            }
+            // The body is served under the dashboard's origin, so the peer never chooses how the browser reads it: a
+            // peer answering text/html would otherwise run its script in the operator's session.
+            response.ContentType = status is >= 200 and < 300
+                ? MediaTypeNames.Application.Json
+                : MediaTypeNames.Application.ProblemJson;
+            response.Headers.XContentTypeOptions = "nosniff";
 
-            return httpContext.Response.Body.WriteAsync(body).AsTask();
+            return response.Body.WriteAsync(body, httpContext.RequestAborted).AsTask();
         }
     }
 }
