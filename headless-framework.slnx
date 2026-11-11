@@ -404,6 +404,9 @@
     <Folder Name="/LiveQueries/Demo/">
         <Project Path="demo\Headless.LiveQueries.Demo\Headless.LiveQueries.Demo.csproj" />
     </Folder>
+    <Folder Name="/LiveQueries/Tests/">
+        <Project Path="tests\Headless.LiveQueries.Tests.Unit\Headless.LiveQueries.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/MediaIndexing/">
         <Project Path="src\Headless.Media.Indexing.Abstractions\Headless.Media.Indexing.Abstractions.csproj" />
         <Project Path="src\Headless.Media.Indexing\Headless.Media.Indexing.csproj" />
