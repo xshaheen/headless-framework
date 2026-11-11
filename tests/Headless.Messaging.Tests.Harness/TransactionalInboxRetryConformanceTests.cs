@@ -303,12 +303,15 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
             );
         }
 
-        // then: the strategy saw the raw fault and replayed it, and the executor is told the handler never ran
+        // then: the strategy saw the raw fault and replayed it, and the executor is told the handler never ran; EF
+        // reports a fault that outlasts its strategy as RetryLimitExceededException around the last raw fault
         transactionStarts.Should().Be(2);
         handlerEntries.Should().Be(0);
         error
             .Should()
             .BeOfType<InboxAttemptNotStartedException>()
+            .Which.InnerException.Should()
+            .BeOfType<RetryLimitExceededException>()
             .Which.InnerException.Should()
             .BeOfType<RetryableInboxException>();
     }
