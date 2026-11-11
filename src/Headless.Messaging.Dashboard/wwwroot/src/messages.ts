@@ -1,7 +1,12 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
-import type { CappedCount, DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
+import {
+  isNewerVersion,
+  type CappedCount,
+  type DashboardApi,
+  type DashboardListPage,
+} from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import { useState } from 'react'
@@ -329,7 +334,13 @@ export function usePending() {
     labelOf: (row: Pick<MessageRow, 'id' | 'version'>) => {
       const entry = pending.get(row.id)
 
-      return entry && entry.version === (row.version ?? '') ? entry.label : undefined
+      // An entry marked on a row with no version holds `''`, which every version is newer than. A row read back from
+      // the list carries no version again, so it matches only such an entry: a row whose change already arrived must
+      // not read pending once a refetch drops its version.
+      const isWaiting =
+        row.version === undefined ? entry?.version === '' : !isNewerVersion(row.version, entry?.version ?? '')
+
+      return entry && isWaiting ? entry.label : undefined
     },
     mark: (ids: readonly string[], versions: ReadonlyMap<string, string>, label: string) =>
       setPending((current) => {

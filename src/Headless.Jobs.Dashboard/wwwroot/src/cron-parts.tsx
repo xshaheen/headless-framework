@@ -17,13 +17,13 @@ import {
 import { useDashboardKeysetList, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { DeleteIcon, PauseIcon, PlayIcon, RecurringIcon, ResumeIcon } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
+import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useState } from 'react'
 import { cronJobsTopic, cronStatusMark, fetchCronJob, fetchPreview, type CronJob } from './cron.ts'
 import { useRunsPerDay } from './insight.tsx'
-import { firstLine, RunProgress } from './parts.tsx'
+import { firstLine, RunProgress, useSettledRefetch } from './parts.tsx'
 import {
   fetchRuns,
   readRunProjection,
@@ -249,7 +249,7 @@ export function deletedText(outcome: string) {
 /** How many occurrences the store holds for a cron job, which a delete removes with it: one row read for its count. */
 function useStoredOccurrences(cronJobId: string, enabled: boolean) {
   const { api } = useDashboard()
-  const client = useQueryClient()
+  const reread = useSettledRefetch(['jobs', 'stored-occurrences', cronJobId])
   const answer = useQuery({
     queryKey: ['jobs', 'stored-occurrences', cronJobId],
     queryFn: async () => {
@@ -265,12 +265,12 @@ function useStoredOccurrences(cronJobId: string, enabled: boolean) {
   })
 
   // A new occurrence of this cron job changes the count the delete confirmation states. A change with no projection
-  // names no cron job, and may be a removed occurrence, so it is read again too.
+  // names no cron job, and may be a removed occurrence, so it is read again too, once per burst.
   useStreamEvent('change', (change) => {
     const run = readRunProjection(change.projection)
 
     if (change.topic === runsTopic && (!run || run.cronJobId === cronJobId)) {
-      void client.invalidateQueries({ queryKey: ['jobs', 'stored-occurrences', cronJobId] })
+      reread()
     }
   })
 

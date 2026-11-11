@@ -310,10 +310,36 @@ describe('jobs recurring jobs list', () => {
     const added = run('Idle', { kind: 'CronJobOccurrence', cronJobId: job.id })
     runs.push(added)
     act(() => view.stream.push('change', { ...change(added), projection: null }))
+    await act(() => vi.advanceTimersByTimeAsync(1_000))
     await waitFor(() => expect(counted()).toBeGreaterThan(before))
 
     await actor.click(remove)
     expect(within(await screen.findByRole('dialog')).getByText('2 stored occurrences go with it')).toBeTruthy()
+  })
+
+  it('counts the stored occurrences once for a burst of run changes, after it settles', async () => {
+    const job = cronJob()
+    const view = open({ cronJobs: [job], runs: [] }, { path: `cron-jobs/${job.id}` })
+
+    const remove = await screen.findByRole('button', { name: 'Delete' })
+    await waitFor(() => expect(remove.getAttribute('aria-disabled')).toBeNull())
+    const counted = () =>
+      view.requests.filter(
+        (request) =>
+          request.path === 'jobs/runs' && request.query?.cronJobId === job.id && request.query?.limit === '1',
+      ).length
+    const before = counted()
+
+    act(() => {
+      for (let index = 0; index < 5; index++) {
+        view.stream.push('change', change(run('Idle', { kind: 'CronJobOccurrence', cronJobId: job.id })))
+      }
+    })
+    await act(() => vi.advanceTimersByTimeAsync(900))
+    expect(counted()).toBe(before)
+
+    await act(() => vi.advanceTimersByTimeAsync(100))
+    await waitFor(() => expect(counted()).toBe(before + 1))
   })
 
   it('does not count the stored occurrences again for another cron job’s run', async () => {
