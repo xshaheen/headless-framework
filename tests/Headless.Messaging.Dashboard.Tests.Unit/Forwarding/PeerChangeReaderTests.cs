@@ -174,8 +174,7 @@ public sealed class PeerChangeReaderTests : TestBase
         var thirdChange = _publisher.NextAsync(e =>
             string.Equals(e.Change?.Target.Id, "run-3", StringComparison.Ordinal)
         );
-        reader.Watch("node-b");
-        await _AdvanceUntilAsync(firstRead);
+        await _WatchForOneIntervalAsync(reader, firstRead);
 
         // when: the clock stops, so no later interval can read the next pages
         await thirdChange.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -201,8 +200,7 @@ public sealed class PeerChangeReaderTests : TestBase
         var lastAllowed = _publisher.NextAsync(e =>
             string.Equals(e.Change?.Target.Id, $"run-{_MaxReadsPerInterval}", StringComparison.Ordinal)
         );
-        reader.Watch("node-b");
-        await _AdvanceUntilAsync(firstRead);
+        await _WatchForOneIntervalAsync(reader, firstRead);
 
         // when: the clock stops after the interval's first read
         await lastAllowed.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -304,5 +302,19 @@ public sealed class PeerChangeReaderTests : TestBase
         }
 
         awaited.IsCompleted.Should().BeTrue("the reader should get there");
+    }
+
+    // Watches node B and lets exactly one poll interval pass. The start call needs no clock, so it is awaited in real
+    // time; the timer already exists by then, and one advance of the interval queues exactly one tick, which the
+    // reader takes whether or not it is waiting yet. Stepping the clock until the first read is sent instead can pass
+    // a second interval while that read is still on its way, and the extra tick reads again after the drain.
+    private async Task _WatchForOneIntervalAsync(PeerChangeReader reader, Task firstRead)
+    {
+        var started = _network.NextCallAsync(call => _IsStart(call, "node-b"));
+        reader.Watch("node-b");
+        await started.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        _time.Advance(PeerChangeReader.PollInterval);
+        await firstRead.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
     }
 }
