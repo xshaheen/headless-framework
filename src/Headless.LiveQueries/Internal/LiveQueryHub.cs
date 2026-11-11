@@ -15,6 +15,10 @@ namespace Headless.LiveQueries.Internal;
 /// write. It never runs a query itself: a signalled subscription re-runs on the flow of the caller that enumerates
 /// it, which is the flow that carries that caller's ambient state, such as its tenant.
 /// </summary>
+/// <remarks>
+/// A write announced on the flow of a tagged command is also acknowledged: the command's id goes to the
+/// subscriptions its sender holds, and to no other, once their result is known to reflect the write.
+/// </remarks>
 internal sealed partial class LiveQueryHub(
     IOptions<LiveQueriesOptions> options,
     LiveQueriesMetrics metrics,
@@ -25,6 +29,10 @@ internal sealed partial class LiveQueryHub(
 
     // Half a SHA-256 MAC: far more than change detection or token uniqueness within one subscription needs.
     private const int _VersionTokenBytes = 16;
+
+    // What one subscription holds for a client that stopped reading its stream and keeps sending commands. Past it
+    // the oldest id goes, so such a client costs the host a bounded amount of memory.
+    private const int _MaxPendingAcknowledgements = 1024;
 
     private readonly int _maxTrackedKeys = options.Value.MaxTrackedKeys;
     private readonly ILogger _logger = logger ?? NullLogger<LiveQueryHub>.Instance;
@@ -53,6 +61,8 @@ internal sealed partial class LiveQueryHub(
             return;
         }
 
+        // Read on the announcing flow, which is the command's own when the commit happened on its request.
+        var command = LiveCommandContext.Current is { } current && current.TryAnnounce() ? current : null;
         long version;
 
         lock (_writeLock)
@@ -82,15 +92,24 @@ internal sealed partial class LiveQueryHub(
         {
             subscriptions++;
 
-            if (subscription.Dependencies.Overlaps(writes, out var ruledOutRows))
+            var overlaps = subscription.Dependencies.Overlaps(writes, out var ruledOutRows);
+
+            if (overlaps)
             {
                 woken++;
                 metrics.SubscriptionWoken();
-                subscription.Signal();
             }
             else if (ruledOutRows > 0)
             {
                 metrics.RowsRuledOut(ruledOutRows);
+            }
+
+            // Session and user both: a session id that leaked or was guessed tells another user nothing.
+            var acknowledged = command?.Sender.Equals(subscription.Subscriber) is true ? command.CommandId : null;
+
+            if (overlaps || acknowledged is not null)
+            {
+                subscription.Notify(overlaps, acknowledged, version);
             }
         }
 
@@ -113,7 +132,7 @@ internal sealed partial class LiveQueryHub(
         CancellationToken cancellationToken
     )
     {
-        return WatchAsync(run, enterRerun: null, cancellationToken);
+        return WatchAsync(run, enterRerun: null, subscriber: null, cancellationToken);
     }
 
     /// <summary>
@@ -126,15 +145,22 @@ internal sealed partial class LiveQueryHub(
     /// with a turn that is disposed when the run ends, or <see langword="null" /> for nothing to release. A caller
     /// uses it to space the runs of one subscription and to bound the runs in flight across subscriptions.
     /// </param>
+    /// <param name="subscriber">
+    /// Who holds the subscription, or <see langword="null" /> for a subscription that is told of no command. The
+    /// commands this subscriber sends are acknowledged in <see cref="LiveUpdate.AcknowledgedCommands" />: with the
+    /// first result known to reflect the command's write, or alone, as <see cref="LiveUpdateKind.Acknowledged" />,
+    /// when that result equals the last one yielded or the write touched nothing the query read.
+    /// </param>
     /// <param name="cancellationToken">Ends the subscription.</param>
     /// <exception cref="LiveQueryHasNoDependenciesException">A successful run recorded no dependency.</exception>
     public async IAsyncEnumerable<LiveUpdate> WatchAsync(
         Func<CancellationToken, ValueTask<LiveRunResult>> run,
         Func<CancellationToken, ValueTask<IDisposable?>>? enterRerun,
+        LiveSubscriber? subscriber,
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
-        var subscription = new Subscription();
+        var subscription = new Subscription(subscriber);
         _subscriptions.TryAdd(subscription, 0);
         metrics.SubscriptionOpened();
 
@@ -165,9 +191,9 @@ internal sealed partial class LiveQueryHub(
                     // stamps a key above this version, which the staleness check below catches.
                     startVersion = Volatile.Read(ref _version);
 
-                    // A signal already waiting was raised by a write this run will see or the staleness check will
-                    // catch, so acting on it again after the run would only repeat the run.
-                    subscription.ClearSignal();
+                    // A request to run again that is already waiting was raised by a write this run will see or the
+                    // staleness check will catch, so acting on it again after the run would only repeat the run.
+                    subscription.BeginRun();
                     metrics.RunStarted();
                     result = await _RunAsync(run, cancellationToken).ConfigureAwait(false);
                 }
@@ -200,6 +226,15 @@ internal sealed partial class LiveQueryHub(
                     throw new LiveQueryHasNoDependenciesException();
                 }
 
+                // Taken before the staleness check, so the check below speaks for the write of every command taken:
+                // a command is held only after its write's keys were stamped.
+                var held = subscription.TakeAcknowledgements();
+
+                // Checked per key, not per row: a write that raced this run re-runs it even when a row filter would
+                // have ruled it out, which costs one run and can never miss a change.
+                var stale = _IsStale(result.Dependencies, startVersion);
+                var acknowledged = _Acknowledge(subscription, held, stale, startVersion);
+
                 if (lastMac is null || !mac.AsSpan().SequenceEqual(lastMac))
                 {
                     yield return new LiveUpdate
@@ -207,19 +242,29 @@ internal sealed partial class LiveQueryHub(
                         Kind = lastMac is null ? LiveUpdateKind.Initial : LiveUpdateKind.Changed,
                         Payload = result.Payload,
                         Version = token,
+                        AcknowledgedCommands = acknowledged,
                     };
+                }
+                else if (acknowledged.Length > 0)
+                {
+                    yield return _Acknowledgement(token, acknowledged);
                 }
 
                 lastMac = mac;
 
-                // Checked per key, not per row: a write that raced this run re-runs it even when a row filter would
-                // have ruled it out, which costs one run and can never miss a change.
-                if (_IsStale(result.Dependencies, startVersion))
+                if (stale)
                 {
                     continue;
                 }
 
-                await subscription.WaitAsync(cancellationToken).ConfigureAwait(false);
+                // Woken to run again, or only to pass on commands whose writes touched nothing this query read.
+                while (await subscription.WaitAsync(cancellationToken).ConfigureAwait(false) is { } untouched)
+                {
+                    if (untouched.Length > 0)
+                    {
+                        yield return _Acknowledgement(token, untouched);
+                    }
+                }
             }
         }
         finally
@@ -227,6 +272,55 @@ internal sealed partial class LiveQueryHub(
             _subscriptions.TryRemove(subscription, out _);
             metrics.SubscriptionClosed();
         }
+    }
+
+    // A command whose write was published before the run started is in the run's result. When the run is not stale,
+    // no later write touched a key it read, so every other command held left the result as it is and is acknowledged
+    // with it. When the run is stale, those go back and wait for the run that follows.
+    private static string[] _Acknowledge(
+        Subscription subscription,
+        List<(string Command, long Version)>? held,
+        bool stale,
+        long startVersion
+    )
+    {
+        if (held is null)
+        {
+            return [];
+        }
+
+        List<string> commands = new(held.Count);
+        List<(string Command, long Version)>? early = null;
+
+        foreach (var command in held)
+        {
+            if (stale && command.Version > startVersion)
+            {
+                (early ??= []).Add(command);
+            }
+            else
+            {
+                commands.Add(command.Command);
+            }
+        }
+
+        if (early is not null)
+        {
+            subscription.HoldAgain(early);
+        }
+
+        return [.. commands];
+    }
+
+    private static LiveUpdate _Acknowledgement(string lastToken, string[] commands)
+    {
+        return new LiveUpdate
+        {
+            Kind = LiveUpdateKind.Acknowledged,
+            Payload = ReadOnlyMemory<byte>.Empty,
+            Version = lastToken,
+            AcknowledgedCommands = commands,
+        };
     }
 
     private async ValueTask<LiveRunResult> _RunAsync(
@@ -323,14 +417,22 @@ internal sealed partial class LiveQueryHub(
         int subscriptionCount
     );
 
-    private sealed class Subscription
+    private sealed class Subscription(LiveSubscriber? subscriber)
     {
-        // Capacity one: any number of invalidations while the subscription is busy collapse into a single re-run.
-        private readonly Channel<byte> _signal = Channel.CreateBounded<byte>(
+        // Capacity one: any number of notifications while the subscription is busy collapse into a single wake.
+        private readonly Channel<byte> _wake = Channel.CreateBounded<byte>(
             new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite }
         );
 
+        // Guards the two fields below together with the wake, so a command's id and the request to run again that
+        // its write raised are always seen as one.
+        private readonly Lock _lock = new();
+        private List<(string Command, long Version)>? _acknowledgements;
+        private bool _rerun;
+
         private volatile LiveDependencies _dependencies = LiveDependencies.None;
+
+        public LiveSubscriber? Subscriber => subscriber;
 
         // What the last finished run read. Empty until the first run finishes; the staleness check covers that run.
         public LiveDependencies Dependencies
@@ -339,13 +441,129 @@ internal sealed partial class LiveQueryHub(
             set => _dependencies = value;
         }
 
-        public void Signal() => _signal.Writer.TryWrite(0);
-
-        public void ClearSignal() => _signal.Reader.TryRead(out _);
-
-        public async ValueTask WaitAsync(CancellationToken cancellationToken)
+        /// <summary>Wakes the subscription for a write committed as <paramref name="version" />.</summary>
+        /// <param name="rerun">Whether the write could change the result, so the query must run again.</param>
+        /// <param name="command">The id to acknowledge to this subscription, if the write was its client's command.</param>
+        /// <param name="version">The version the write was published as.</param>
+        public void Notify(bool rerun, string? command, long version)
         {
-            await _signal.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            lock (_lock)
+            {
+                _rerun |= rerun;
+
+                if (command is not null)
+                {
+                    _Hold(command, version);
+                }
+
+                _wake.Writer.TryWrite(0);
+            }
+        }
+
+        /// <summary>Forgets a request to run again: the run that is about to start answers it.</summary>
+        public void BeginRun()
+        {
+            lock (_lock)
+            {
+                _rerun = false;
+                _wake.Reader.TryRead(out _);
+            }
+        }
+
+        /// <summary>
+        /// Waits to be woken. Returns <see langword="null" /> when the query must run again; otherwise the commands
+        /// to acknowledge without a run, because their writes touched nothing the query read.
+        /// </summary>
+        public async ValueTask<string[]?> WaitAsync(CancellationToken cancellationToken)
+        {
+            await _wake.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+            lock (_lock)
+            {
+                // Decided and taken in one step: a command whose write does call for a run is then never passed
+                // on ahead of that run.
+                if (_rerun)
+                {
+                    return null;
+                }
+
+                if (_acknowledgements is not { Count: > 0 } held)
+                {
+                    return [];
+                }
+
+                var commands = new string[held.Count];
+
+                for (var index = 0; index < commands.Length; index++)
+                {
+                    commands[index] = held[index].Command;
+                }
+
+                held.Clear();
+
+                return commands;
+            }
+        }
+
+        /// <summary>Removes and returns every command held, oldest first, or <see langword="null" /> when none is.</summary>
+        public List<(string Command, long Version)>? TakeAcknowledgements()
+        {
+            lock (_lock)
+            {
+                if (_acknowledgements is not { Count: > 0 } held)
+                {
+                    return null;
+                }
+
+                _acknowledgements = null;
+
+                return held;
+            }
+        }
+
+        /// <summary>Puts back commands that were taken too early, ahead of the ones held since.</summary>
+        public void HoldAgain(List<(string Command, long Version)> early)
+        {
+            lock (_lock)
+            {
+                if (_acknowledgements is { Count: > 0 } later)
+                {
+                    foreach (var command in later)
+                    {
+                        // Held again since with a later write: that entry stands for both.
+                        early.RemoveAll(taken =>
+                            string.Equals(taken.Command, command.Command, StringComparison.Ordinal)
+                        );
+                        early.Add(command);
+                    }
+                }
+
+                _acknowledgements = early;
+            }
+        }
+
+        private void _Hold(string command, long version)
+        {
+            var held = _acknowledgements ??= [];
+
+            // A command that commits more than once is acknowledged once, with the result that holds its last
+            // write so far.
+            for (var index = 0; index < held.Count; index++)
+            {
+                if (string.Equals(held[index].Command, command, StringComparison.Ordinal))
+                {
+                    held.RemoveAt(index);
+
+                    break;
+                }
+            }
+
+            if (held.Count == _MaxPendingAcknowledgements)
+            {
+                held.RemoveAt(0);
+            }
+
+            held.Add((command, version));
         }
     }
 }

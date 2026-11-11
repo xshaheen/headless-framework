@@ -9,7 +9,7 @@ namespace Tests;
 
 /// <summary>
 /// A transport written against the public contract alone, as an application would write one: it answers
-/// <c>application/x-test-live</c> with one <c>kind|version|payload</c> line for each update.
+/// <c>application/x-test-live</c> with one <c>kind|version|acknowledged commands|payload</c> line for each update.
 /// </summary>
 public sealed class TestLiveTransport : ILiveTransport
 {
@@ -34,7 +34,9 @@ public sealed class TestLiveTransport : ILiveTransport
         await foreach (var update in updates.WithCancellation(cancellationToken))
         {
             var payload = Encoding.UTF8.GetString(update.Payload.Span);
-            await httpContext.Response.WriteAsync($"{update.Kind}|{update.Version}|{payload}\n", cancellationToken);
+            var commands = string.Join(',', update.AcknowledgedCommands);
+            var line = $"{update.Kind}|{update.Version}|{commands}|{payload}\n";
+            await httpContext.Response.WriteAsync(line, cancellationToken);
             await httpContext.Response.Body.FlushAsync(cancellationToken);
         }
     }

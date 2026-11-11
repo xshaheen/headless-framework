@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Net.Http.Headers;
@@ -60,6 +61,34 @@ internal static class LiveStreamResponse
 
             writer.Write(json[..lineBreak]);
             json = json[(lineBreak + 1)..];
+        }
+    }
+
+    /// <summary>
+    /// Writes command ids with a comma between them and, when <paramref name="quoted" />, a double quote around
+    /// each, which makes them the items of a JSON array. An id is a token of ASCII letters, digits and hyphens, so
+    /// it is written as it is.
+    /// </summary>
+    public static void WriteCommands(IBufferWriter<byte> writer, IReadOnlyList<string> commands, bool quoted)
+    {
+        for (var index = 0; index < commands.Count; index++)
+        {
+            if (index > 0)
+            {
+                writer.Write(","u8);
+            }
+
+            if (quoted)
+            {
+                writer.Write("\""u8);
+            }
+
+            Encoding.ASCII.GetBytes(commands[index], writer);
+
+            if (quoted)
+            {
+                writer.Write("\""u8);
+            }
         }
     }
 

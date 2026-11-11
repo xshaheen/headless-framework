@@ -19,7 +19,8 @@ namespace Headless.OpenApi;
 /// reading that later versions of the specification spell <c>itemSchema</c>. For <c>text/event-stream</c> the item is
 /// the data of a <c>result</c> event, which is the body of the single response, so it takes that schema unchanged.
 /// For <c>application/x-ndjson</c> the item is one line: a result carrying the same schema, a failure carrying a
-/// problem-details body, or a heartbeat.
+/// problem-details body, a heartbeat, or the ids of the client's own commands acknowledged without a result. A
+/// result line may name such commands too.
 /// </para>
 /// <para>
 /// The formats are the two every live endpoint answers; a format an application adds with its own transport is not
@@ -105,8 +106,30 @@ internal sealed class LiveUpdatesTransformer : IOpenApiOperationTransformer
     {
         return new OpenApiSchema
         {
-            OneOf = [_Update("result", result), _Update("failure", failure), _Kind("heartbeat")],
+            OneOf =
+            [
+                _Acknowledging(_Update("result", result), required: false),
+                _Update("failure", failure),
+                _Kind("heartbeat"),
+                _Acknowledging(_Kind("acknowledged"), required: true),
+            ],
         };
+    }
+
+    private static OpenApiSchema _Acknowledging(OpenApiSchema line, bool required)
+    {
+        if (required)
+        {
+            line.Required!.Add("acknowledged");
+        }
+
+        line.Properties!["acknowledged"] = new OpenApiSchema
+        {
+            Type = JsonSchemaType.Array,
+            Items = new OpenApiSchema { Type = JsonSchemaType.String },
+        };
+
+        return line;
     }
 
     private static OpenApiSchema _Update(string kind, IOpenApiSchema? value)

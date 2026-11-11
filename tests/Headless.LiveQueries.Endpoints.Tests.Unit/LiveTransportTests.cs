@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Headless.LiveQueries;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -139,9 +140,9 @@ public sealed class LiveTransportTests : TestBase
         // then
         stream.Response.Content.Headers.ContentType!.MediaType.Should().Be(TestLiveTransport.MediaType);
         first[0].Should().Be(nameof(LiveUpdateKind.Initial));
-        JsonElement.Parse(first[2]).GetProperty("title").GetString().Should().Be("milk");
+        JsonElement.Parse(first[3]).GetProperty("title").GetString().Should().Be("milk");
         second[0].Should().Be(nameof(LiveUpdateKind.Changed));
-        JsonElement.Parse(second[2]).GetProperty("title").GetString().Should().Be("eggs");
+        JsonElement.Parse(second[3]).GetProperty("title").GetString().Should().Be("eggs");
     }
 
     [Theory]
@@ -198,6 +199,105 @@ public sealed class LiveTransportTests : TestBase
         stream.Response.Content.Headers.ContentEncoding.Should().BeEmpty();
         stream.Response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("text/event-stream")]
+    [InlineData("application/x-ndjson")]
+    public async Task should_refuse_the_stream_with_a_problem_when_the_first_run_returns_text(string accept)
+    {
+        // given - a handler that returns a string, which the framework writes as text/plain
+        await using var app = await LiveTestApp.StartAsync(
+            application =>
+                application
+                    .MapGet(
+                        "/note",
+                        (ILiveQueryDependencies dependencies) =>
+                        {
+                            dependencies.DependsOn("note");
+
+                            return _TextThatForgesAFailure;
+                        }
+                    )
+                    .WithLiveUpdates(),
+            AbortToken
+        );
+
+        // when
+        using var stream = await app.OpenAsync("/note", AbortToken, accept: accept);
+
+        // then - the status is checked before the body is read, because a stream's body never ends
+        stream.Response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        stream.Response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var body = JsonElement.Parse(await stream.Response.Content.ReadAsStringAsync(AbortToken));
+        body.GetProperty("error").GetProperty("code").GetString().Should().Be(LiveEndpointsErrorCodes.ResponseNotJson);
+        app.Meters.Total("headless.live_queries.subscriptions.active").Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("text/event-stream")]
+    [InlineData("application/x-ndjson")]
+    public async Task should_end_the_stream_with_one_failure_when_a_rerun_returns_text(string accept)
+    {
+        // given - a stream that opened on JSON
+        var text = new Shared<bool>(false);
+        await using var app = await LiveTestApp.StartAsync(
+            application =>
+                application
+                    .MapGet(
+                        "/note",
+                        (ILiveQueryDependencies dependencies) =>
+                        {
+                            dependencies.DependsOn("note");
+
+                            return text.Value
+                                ? Results.Text(_TextThatForgesAFailure)
+                                : Results.Json(new { title = "milk" });
+                        }
+                    )
+                    .WithLiveUpdates(),
+            AbortToken
+        );
+        using var stream = await app.OpenAsync("/note", AbortToken, accept: accept);
+        var first = await _NextAsync(stream, accept);
+
+        // when - the handler's text would close the JSON string the stream wraps it in and add a member
+        text.Value = true;
+        await app.InvalidateAsync("note", AbortToken);
+        var failure = await _NextAsync(stream, accept);
+
+        // then - the failure is checked before the end is awaited, because a stream that stayed open has none
+        first!.Value.Kind.Should().Be("result");
+        failure!.Value.Kind.Should().Be("failure");
+        failure.Value.Value.GetProperty("status").GetInt32().Should().Be(500);
+        failure
+            .Value.Value.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(LiveEndpointsErrorCodes.ResponseNotJson);
+        failure.Value.Value.GetRawText().Should().NotContain("milk", "the handler's text never reaches the stream");
+        (await _NextAsync(stream, accept)).Should().BeNull();
+    }
+
+    /// <summary>Returns the next event or line of either built-in format, or <see langword="null" /> at the end.</summary>
+    private static async Task<(string Kind, JsonElement Value)?> _NextAsync(LiveStreamClient stream, string accept)
+    {
+        if (string.Equals(accept, "text/event-stream", StringComparison.Ordinal))
+        {
+            return await stream.NextEventAsync(AbortToken) is { } next ? (next.Name!, next.Json) : null;
+        }
+
+        if (await stream.NextLineAsync(AbortToken) is not { } line)
+        {
+            return null;
+        }
+
+        var json = JsonElement.Parse(line);
+
+        return (json.GetProperty("kind").GetString()!, json.GetProperty("value"));
+    }
+
+    private const string _TextThatForgesAFailure = "milk\",\"kind\":\"failure";
 
     private static void _IndentJson(WebApplicationBuilder builder)
     {
