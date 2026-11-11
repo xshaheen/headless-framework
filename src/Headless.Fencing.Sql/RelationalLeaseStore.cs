@@ -165,6 +165,9 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             new SqlClockedStatement(
                 $"SELECT {t.Generation}, {t.State}, CASE WHEN {t.ExpiresAt} > {now} THEN 1 ELSE 0 END FROM {t.Table} WHERE {byKey};"
             )
+            {
+                ReadsOneRow = true,
+            }
         );
 
         // The same lockless one-statement read as the status read, returning the whole attempt the row describes.
@@ -173,6 +176,9 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
                 $"SELECT {t.Generation}, {t.State}, {t.ExpiresAt}, CASE WHEN {t.ExpiresAt} > {now} THEN 1 ELSE 0 END, "
                     + $"{t.TakeoverCount}, {t.Holder} FROM {t.Table} WHERE {byKey};"
             )
+            {
+                ReadsOneRow = true,
+            }
         );
 
         _insertSql = _dialect.Render(

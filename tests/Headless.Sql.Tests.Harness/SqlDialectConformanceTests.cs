@@ -240,6 +240,47 @@ public abstract class SqlDialectConformanceTests : TestBase
         (await _ReadValueAsync(table, "future")).Should().Be(0);
     }
 
+    /// <summary>
+    /// A one-row read may read the clock inline, so it must still read the clock when the statement runs, not when the
+    /// transaction began: inside one transaction a row stamped by an earlier statement is already in the past.
+    /// </summary>
+    public virtual async Task should_read_one_row_by_the_clock_at_the_statement_not_at_the_transaction_start()
+    {
+        var table = await _CreateTableAsync();
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText = Dialect.Render(
+                new SqlClockedStatement(
+                    $"INSERT INTO {table} ({_Column("Key")}, {_Column("Value")}, {_Column("Stamp")}) VALUES ('stamped', 0, {SqlDialectTokens.Now})"
+                )
+            );
+            await insert.ExecuteNonQueryAsync(AbortToken);
+        }
+
+        // Far beyond every engine's timestamp precision, so the clock has moved past the stamp by the next statement.
+        await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+
+        await using var read = connection.CreateCommand();
+        read.Transaction = transaction;
+        read.CommandText = Dialect.Render(
+            new SqlClockedStatement(
+                $"SELECT CASE WHEN {_Column("Stamp")} < {SqlDialectTokens.Now} THEN 1 ELSE 0 END FROM {table} WHERE {_Column("Key")} = 'stamped'"
+            )
+            {
+                ReadsOneRow = true,
+            }
+        );
+
+        Convert
+            .ToInt32(await read.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture)
+            .Should()
+            .Be(1, "a clock frozen at the transaction start would still see the stamp as now");
+    }
+
     public virtual async Task should_insert_and_report_the_values_it_wrote()
     {
         var table = await _CreateTableAsync();
