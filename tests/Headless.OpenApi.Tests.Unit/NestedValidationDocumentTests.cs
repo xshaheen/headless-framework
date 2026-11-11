@@ -289,6 +289,107 @@ public sealed class NestedValidationDocumentTests : TestBase
         applied.Should().Equal("first", "family");
     }
 
+    [Fact]
+    public async Task should_publish_a_nested_rule_for_each_on_the_items_of_the_use_site_overlay()
+    {
+        var document = await _GetCollectionDocumentAsync();
+
+        document.ShouldBeValidOpenApi("nested RuleForEach rules");
+        var address = document.Schema("LinesCustomer")["properties"]!["address"]!;
+        address["allOf"]![0]!.ShouldBeJson("""{"$ref":"#/components/schemas/PostalAddress"}""");
+        address["allOf"]![1]!.ShouldBeJson(
+            """
+            {"properties":{
+              "lines":{"type":"array","items":{"type":"string","maxLength":50}},
+              "notes":{"type":["null","array"],"items":{"type":"string","maxLength":200}}
+            }}
+            """
+        );
+        var lines = document.Schema("PostalAddress")["properties"]!["lines"]!;
+        lines["items"]!.ShouldBeJson("""{"type":"string"}""");
+    }
+
+    [Fact]
+    public async Task should_constrain_the_items_without_requiring_the_collection_for_a_nested_rule_for_each_not_empty()
+    {
+        var document = await _GetCollectionDocumentAsync();
+
+        document.ShouldBeValidOpenApi("nested RuleForEach NotEmpty rules");
+        var overlay = document.Schema("NotEmptyLinesCustomer")["properties"]!["address"]!["allOf"]![1]!;
+        overlay.Required().Should().BeEmpty();
+        overlay["properties"]!["lines"]!.ShouldBeJson("""{"type":"array","items":{"type":"string","minLength":1}}""");
+    }
+
+    [Fact]
+    public async Task should_combine_a_nested_collection_rule_with_item_rules_on_the_same_overlay()
+    {
+        var document = await _GetCollectionDocumentAsync();
+
+        var overlay = document.Schema("MixedLinesCustomer")["properties"]!["address"]!["allOf"]![1]!;
+        // RuleFor bounds the array itself and requires it; RuleForEach bounds each line.
+        overlay.Required().Should().Equal("lines");
+        overlay["properties"]!["lines"]!.ShouldBeJson(
+            """{"type":"array","minItems":1,"items":{"type":"string","maxLength":50}}"""
+        );
+    }
+
+    [Fact]
+    public async Task should_keep_a_nullable_parent_outside_a_nested_rule_for_each_overlay()
+    {
+        var document = await _GetCollectionDocumentAsync();
+
+        document.ShouldBeValidOpenApi("nested RuleForEach under a nullable parent");
+        var alternatives = document.Schema("NullableLinesCustomer")["properties"]!["address"]!["oneOf"]!.AsArray();
+        alternatives.Should().HaveCount(2);
+        alternatives[1]!.ShouldBeJson("""{"type":"null"}""");
+        alternatives[0]!["allOf"]![0]!.ShouldBeJson("""{"$ref":"#/components/schemas/PostalAddress"}""");
+        ((int)alternatives[0]!["allOf"]![1]!["properties"]!["lines"]!["items"]!["maxLength"]!).Should().Be(50);
+        document.Schema("NullableLinesCustomer").Required().Should().NotContain("address");
+    }
+
+    [Fact]
+    public async Task should_skip_a_nested_rule_for_each_over_a_collection_published_without_items()
+    {
+        var document = await _GetCollectionDocumentAsync();
+
+        // A dictionary publishes as an object, so a per-entry rule has no items schema to land on.
+        document.Schema("TagsCustomer")["properties"]!["address"]!.ShouldBeJson(
+            """{"$ref":"#/components/schemas/PostalAddress"}"""
+        );
+    }
+
+    private static Task<JsonNode> _GetCollectionDocumentAsync()
+    {
+        return OpenApiTestHost.GetDocumentAsync(
+            builder =>
+            {
+                builder.Services.AddScoped<IValidator<LinesCustomer>, LinesCustomerValidator>();
+                builder.Services.AddScoped<IValidator<NotEmptyLinesCustomer>, NotEmptyLinesCustomerValidator>();
+                builder.Services.AddScoped<IValidator<MixedLinesCustomer>, MixedLinesCustomerValidator>();
+                builder.Services.AddScoped<IValidator<NullableLinesCustomer>, NullableLinesCustomerValidator>();
+                builder.Services.AddScoped<IValidator<TagsCustomer>, TagsCustomerValidator>();
+                builder.Services.AddHeadlessOpenApi();
+            },
+            app =>
+            {
+                app.MapPost("/lines", ([FromBody] LinesCustomer customer) => TypedResults.Ok(customer))
+                    .AllowAnonymous();
+                app.MapPost(
+                        "/lines/not-empty",
+                        ([FromBody] NotEmptyLinesCustomer customer) => TypedResults.Ok(customer)
+                    )
+                    .AllowAnonymous();
+                app.MapPost("/lines/mixed", ([FromBody] MixedLinesCustomer customer) => TypedResults.Ok(customer))
+                    .AllowAnonymous();
+                app.MapPost("/lines/nullable", ([FromBody] NullableLinesCustomer customer) => TypedResults.Ok(customer))
+                    .AllowAnonymous();
+                app.MapPost("/tags", ([FromBody] TagsCustomer customer) => TypedResults.Ok(customer)).AllowAnonymous();
+            },
+            "v1",
+            AbortToken
+        );
+    }
+
     private static Task<JsonNode> _GetDocumentAsync(Action<OpenApiOptions>? configure = null)
     {
         return OpenApiTestHost.GetDocumentAsync(
@@ -420,5 +521,81 @@ public sealed class OptionalLeafCustomerValidator : AbstractValidator<OptionalLe
     {
         RuleFor(x => x.Address.Name).NotNull();
         RuleFor(x => x.Address.Secret).MaximumLength(5);
+    }
+}
+
+public sealed class PostalAddress
+{
+    public List<string> Lines { get; set; } = [];
+
+    public Dictionary<string, string> Tags { get; set; } = [];
+
+    public List<string?>? Notes { get; set; }
+}
+
+public sealed class LinesCustomer
+{
+    public PostalAddress Address { get; set; } = new();
+}
+
+public sealed class NotEmptyLinesCustomer
+{
+    public PostalAddress Address { get; set; } = new();
+}
+
+public sealed class MixedLinesCustomer
+{
+    public PostalAddress Address { get; set; } = new();
+}
+
+public sealed class NullableLinesCustomer
+{
+    public PostalAddress? Address { get; set; }
+}
+
+public sealed class TagsCustomer
+{
+    public PostalAddress Address { get; set; } = new();
+}
+
+public sealed class LinesCustomerValidator : AbstractValidator<LinesCustomer>
+{
+    public LinesCustomerValidator()
+    {
+        RuleForEach(x => x.Address.Lines).MaximumLength(50);
+        RuleForEach(x => x.Address.Notes).NotNull().MaximumLength(200);
+    }
+}
+
+public sealed class NotEmptyLinesCustomerValidator : AbstractValidator<NotEmptyLinesCustomer>
+{
+    public NotEmptyLinesCustomerValidator()
+    {
+        RuleForEach(x => x.Address.Lines).NotEmpty();
+    }
+}
+
+public sealed class MixedLinesCustomerValidator : AbstractValidator<MixedLinesCustomer>
+{
+    public MixedLinesCustomerValidator()
+    {
+        RuleFor(x => x.Address.Lines).NotEmpty();
+        RuleForEach(x => x.Address.Lines).MaximumLength(50);
+    }
+}
+
+public sealed class NullableLinesCustomerValidator : AbstractValidator<NullableLinesCustomer>
+{
+    public NullableLinesCustomerValidator()
+    {
+        RuleForEach(x => x.Address!.Lines).MaximumLength(50);
+    }
+}
+
+public sealed class TagsCustomerValidator : AbstractValidator<TagsCustomer>
+{
+    public TagsCustomerValidator()
+    {
+        RuleForEach(x => x.Address.Tags).NotNull();
     }
 }
