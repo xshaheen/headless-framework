@@ -18,6 +18,7 @@
     "./router": "./src/router/index.ts",
     "./query": "./src/query/index.ts",
     "./testing": "./src/testing/render-module.tsx",
+    "./testing/axe": "./src/testing/axe.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
@@ -38,6 +39,7 @@
   "peerDependencies": {
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
+    "axe-core": "4.14.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -46,6 +48,9 @@
       "optional": true
     },
     "@testing-library/react": {
+      "optional": true
+    },
+    "axe-core": {
       "optional": true
     }
   }

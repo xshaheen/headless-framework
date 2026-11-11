@@ -1,6 +1,7 @@
+import { fileURLToPath } from 'node:url'
 import { build, type Plugin } from 'vite'
 import { describe, expect, it } from 'vitest'
-import { englishOnlyReactAriaPlugin } from '../src/shell.ts'
+import { englishOnlyReactAriaPlugin, sdkSpecifiers } from '../src/shell.ts'
 
 const entryId = '\0react-aria-table-entry'
 
@@ -47,4 +48,13 @@ describe('shell build', () => {
     expect(englishOnly).not.toContain('aufsteigend')
     expect(englishOnly).not.toContain('sortiert nach Spalte')
   }, 60_000)
+})
+
+describe('SDK import map', () => {
+  it('maps every browser entry and leaves out the test-only ones, so no test tool ships in the shell', () => {
+    const specifiers = sdkSpecifiers(fileURLToPath(new URL('../../../apps/shell', import.meta.url)))
+
+    expect(specifiers).toContain('@headless/dashboard-sdk/components')
+    expect(specifiers.filter((specifier) => specifier.includes('/testing'))).toEqual([])
+  })
 })

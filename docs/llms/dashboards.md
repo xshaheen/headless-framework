@@ -395,6 +395,7 @@ Sidebar entries and client commands take `requires: 'view' | 'operate'`. Each ro
 | `/router` | React Router, re-exported so every module uses the shell's one router |
 | `/query` | TanStack Query, re-exported so every module reads the shell's one data client |
 | `/testing` | `renderModule` |
+| `/testing/axe` | `axeViolations`, axe-core's WCAG 2.2 A and AA checks over the rendered page for a test; the module's test workspace adds `axe-core` |
 
 #### List views
 
@@ -432,7 +433,7 @@ export default defineConfig(
 
 The workspace build then holds the output to the size budgets in `packages/vite/budget.json`, measured as gzip at maximum compression: the shell's first load at most 350,000 bytes, the shell and every SDK entry together at most 500,000 bytes, each module entry at most 20,000 bytes, each view chunk at most 150,000 bytes, and the fonts at most 60,000 bytes. A budget overrun fails the build. The dashboard ships in English, so the shell build keeps only React Aria's `en-US` strings (its labels and screen-reader announcements); React Aria falls back to them for any other locale.
 
-`renderModule(definition, options)` from `@headless/dashboard-sdk/testing` mounts a module in a test shell, as the dashboard would: its routes, a session, its permissions (`canView` and `canOperate`, both `true` by default), the data client, an Operation host, toasts, and a fake stream. The `api` handler answers the module's API calls; throw a `DashboardApiError` to answer with a status. The result adds `stream` (push events as the server would), `requests` (every API call in order), and `navigate(path)`.
+`renderModule(definition, options)` from `@headless/dashboard-sdk/testing` mounts a module in a test shell, as the dashboard would: its routes, a session, its permissions (`canView` and `canOperate`, both `true` by default), the data client, an Operation host, toasts, and a fake stream. The `api` handler answers the module's API calls; throw a `DashboardApiError` to answer with a status. The result adds `stream` (push events as the server would), `requests` (every API call in order), and `navigate(path)`. `axeViolations()` from `@headless/dashboard-sdk/testing/axe` lists every WCAG A and AA violation axe-core finds in the rendered page as `rule: element`, so `expect(await axeViolations()).toEqual([])` fails with what broke; contrast is not checked, because jsdom lays nothing out.
 
 ### Jobs module
 

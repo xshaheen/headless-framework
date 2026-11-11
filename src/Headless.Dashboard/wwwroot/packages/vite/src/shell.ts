@@ -23,15 +23,15 @@ function entryName(specifier: string) {
 }
 
 /**
- * The SDK's import-map specifiers: its root and each subpath export. `/testing` is left out, because it mounts a
- * module in tests and never loads in the browser.
+ * The SDK's import-map specifiers: its root and each subpath export. `/testing` and its subpaths, such as
+ * `/testing/axe`, are left out, because they run only in tests and never load in the browser.
  */
 export function sdkSpecifiers(root: string): string[] {
   const require = createRequire(resolve(root, 'package.json'))
   const manifest = require(`${sdkPackage}/package.json`) as { exports?: Record<string, unknown> }
 
   return Object.keys(manifest.exports ?? { '.': null })
-    .filter((key) => key !== './package.json' && key !== './testing')
+    .filter((key) => key !== './package.json' && key !== './testing' && !key.startsWith('./testing/'))
     .map((key) => (key === '.' ? sdkPackage : `${sdkPackage}/${key.slice(2)}`))
 }
 
