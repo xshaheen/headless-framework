@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode, type SyntheticEvent } from 'react'
 import {
   Cell,
   Column,
@@ -74,14 +74,30 @@ function ends(column: { kind?: DataTableCellKind; align?: 'start' | 'end' }) {
 }
 
 /**
- * Pins the checkbox column and the first data column (state and name) while the rest scroll sideways inside the
- * table, so a wide list never scrolls the page.
+ * Pins the checkbox column and the first data column (state and name) to the start, and the row actions to the end,
+ * while the rest scroll sideways inside the table, so a wide list never scrolls the page and a row's actions never
+ * need a sideways scroll to come into view.
  */
 class PinnedLayout<T> extends TableLayout<T> {
   pinned = 1
+  pinsEnd = false
 
   protected override isStickyColumn(node: { index: number }) {
-    return node.index < this.pinned
+    return node.index < this.pinned || (this.pinsEnd && node.index === this.collection.columns.length - 1)
+  }
+
+  // A sticky cell sticks to its nearest clipping ancestor. React Aria clips the header and the body, so without these
+  // a pinned cell would hold still inside a box that scrolls away with the rest.
+  protected override buildTableHeader() {
+    const node = super.buildTableHeader()
+    node.layoutInfo.allowOverflow = true
+    return node
+  }
+
+  protected override buildRowGroup(...args: Parameters<TableLayout<T>['buildRowGroup']>) {
+    const node = super.buildRowGroup(...args)
+    node.layoutInfo.allowOverflow = true
+    return node
   }
 }
 
@@ -96,12 +112,16 @@ const isolated = { onPointerDown: isolate, onClick: isolate, onKeyDown: isolate 
 
 // A cell fills its row's height, so its text centres on the row and the row header's lines up with the rest. The
 // virtualizer wraps each cell and the header in an inline block, sticky for the header and the pinned columns, which
-// the table marks `data-pinned`: a sticky wrapper paints its row's fill, so the cells that scroll sideways under it
-// stay hidden, and aligns to the top so it stays on its row.
+// the table marks `data-pinned`, and aligns to the top so it stays on its row. A pinned wrapper must be opaque, so the
+// cells that scroll sideways under it stay hidden: in a body row it paints the card and its cell paints the row's
+// fill over it, since the failure tone is translucent; elsewhere it paints its parent's fill.
+// The virtualizer places a sticky wrapper in flow after the ones before it, so a row with an end pin lays its wrappers
+// out as a flex row and pushes that one to the inline end, where it sticks; its inline `left`/`right` gives way to it.
+// While content scrolls under the end pin (`data-overflows-end`), a hairline marks its inline-start edge.
 // A row's first cell pads to the page gutter (16 px), so the first column's text lines up with the page title and the
 // header's controls above it; the rest keep the 10 px cell inset.
 const tableClass =
-  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_:has(>[data-pinned])]:bg-inherit [&_:has(>[data-pinned])]:align-top [&_[role=row]>:first-child>*]:ps-4'
+  'relative max-h-[max(16rem,calc(100dvh-18rem))] w-full overflow-auto [overflow-anchor:none] outline-none [&_:has(>[data-pinned])]:bg-inherit [&_[data-row-id]>:has(>[data-pinned])]:bg-card [&_[data-row-id]>*>[data-pinned]]:bg-(--row-fill) [&_[data-row-id]>*>[data-pinned]]:transition-fast [&_:has(>[data-pinned])]:align-top [&_[role=row]:has(>*>[data-pinned=end])]:flex [&_:has(>[data-pinned=end])]:ms-auto [&_:has(>[data-pinned=end])]:start-auto! [&_:has(>[data-pinned=end])]:end-0 [&[data-overflows-end]_[data-pinned=end]]:shadow-[inset_1px_0_0_var(--color-edge)] rtl:[&[data-overflows-end]_[data-pinned=end]]:shadow-[inset_-1px_0_0_var(--color-edge)] [&_[role=row]>:first-child>*]:ps-4'
 const headClass = 'flex h-full items-center border-b border-border bg-card px-2.5 type-label whitespace-nowrap text-faint'
 // The sort button fills its header, so the whole header is its target; the sorted column reads in the foreground.
 const sortClass =
@@ -112,10 +132,12 @@ const cellClass =
 const endClass = 'justify-end text-end tabular-nums'
 // Checked state lives on the checkbox alone, never on the row's fill; the margin makes a 24 px target.
 const checkClass = 'flex h-full items-center ps-4 [&_input]:m-1 [&_input]:size-4 [&_input]:accent-primary'
-// Tailwind orders same-specificity variants by name, not by this list, so each row state owns a property no other
-// state sets: the focus ring is an outline, and hover and selection yield to the highlighted failure tone.
+// Tailwind orders same-specificity variants by name, not by this list, so no two row states that can hold together set
+// the same property: the focus ring is an outline, and each fill excludes the states it yields to (hover yields to
+// selection, both to the highlighted failure tone). The fill is a variable so a pinned cell can paint the same one
+// over its opaque wrapper.
 const rowClass =
-  'group/row cursor-pointer border-b border-border bg-card outline-none transition-fast data-hovered:not-data-highlighted:bg-accent data-selected:not-data-highlighted:bg-primary-soft data-selected:not-data-highlighted:shadow-[inset_2px_0_0_var(--accent)] rtl:data-selected:not-data-highlighted:shadow-[inset_-2px_0_0_var(--accent)] data-focus-visible:outline-solid data-focus-visible:outline-2 data-focus-visible:-outline-offset-2 data-focus-visible:outline-ring data-highlighted:bg-destructive-soft data-highlighted:shadow-[inset_2px_0_0_var(--fail)] rtl:data-highlighted:shadow-[inset_-2px_0_0_var(--fail)] data-no-longer-matches:text-muted-foreground'
+  'group/row cursor-pointer border-b border-border [--row-fill:var(--color-card)] bg-(--row-fill) outline-none transition-fast data-hovered:not-data-highlighted:not-data-selected:[--row-fill:var(--color-accent)] data-selected:not-data-highlighted:[--row-fill:var(--color-primary-soft)] data-selected:not-data-highlighted:shadow-[inset_2px_0_0_var(--accent)] rtl:data-selected:not-data-highlighted:shadow-[inset_-2px_0_0_var(--accent)] data-focus-visible:outline-solid data-focus-visible:outline-2 data-focus-visible:-outline-offset-2 data-focus-visible:outline-ring data-highlighted:[--row-fill:var(--color-destructive-soft)] data-highlighted:shadow-[inset_2px_0_0_var(--fail)] rtl:data-highlighted:shadow-[inset_-2px_0_0_var(--fail)] data-no-longer-matches:text-muted-foreground'
 // Opacity, not visibility, hides the row actions, so they stay in the tab order; a coarse pointer has no hover, so
 // it always sees them.
 const actionsClass =
@@ -262,6 +284,33 @@ export function DataTable<T extends { id: string }>({
   const rowHeaderId = columns[headerIndex]?.id
   const lastPinned = shown.findIndex((column) => column.id === rowHeaderId)
   layout.pinned = lastPinned + (checks ? 2 : 1)
+  const pinsEnd = rowActions !== undefined
+  layout.pinsEnd = pinsEnd
+  const isEmpty = listed.length === 0 && !hasMore
+
+  // Whether content scrolls under the end pin depends on the table's width and its scroll, which no style can read in
+  // every browser; the mark goes on the element itself so a scroll costs no render.
+  useEffect(() => {
+    const table = scroller.current
+
+    if (!pinsEnd || !table) {
+      return
+    }
+
+    const mark = () =>
+      table.toggleAttribute('data-overflows-end', table.scrollWidth - table.clientWidth - Math.abs(table.scrollLeft) > 1)
+
+    mark()
+    // Outside a browser (jsdom) nothing lays out, so nothing can overflow.
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(mark)
+    observer?.observe(table)
+    table.addEventListener('scroll', mark, { passive: true })
+
+    return () => {
+      observer?.disconnect()
+      table.removeEventListener('scroll', mark)
+    }
+  }, [pinsEnd, isEmpty])
   // React Aria sorts by column id; the server by the column's sort key.
   const sortedColumn = sort ? columns.find((column) => column.sortKey === sort.key) : undefined
   const sortDescriptor: SortDescriptor | undefined = sort && sortedColumn ? { column: sortedColumn.id, direction: sort.direction } : undefined
@@ -449,7 +498,7 @@ export function DataTable<T extends { id: string }>({
       ) : null}
       {/* The empty state sits outside the grid: inside it the virtualizer gives it no height, so its next step
           (`Clear filters`) could not be seen or clicked. */}
-      {listed.length === 0 && !hasMore ? (
+      {isEmpty ? (
         // On the table's own gutter, start-aligned as a list's empty state is; only an empty page centres one.
         <div className="px-0.5">
           <EmptyState>{emptyState}</EmptyState>
@@ -515,7 +564,7 @@ export function DataTable<T extends { id: string }>({
                 )
               })}
               {rowActions ? (
-                <Column id="hd-actions" width={96} className={headClass}>
+                <Column id="hd-actions" width={96} className={headClass} data-pinned="end">
                   <span className="sr-only">Actions</span>
                 </Column>
               ) : null}
@@ -578,7 +627,7 @@ export function DataTable<T extends { id: string }>({
                       </Cell>
                     ))}
                     {rowActions ? (
-                      <Cell className={actionsClass}>
+                      <Cell className={actionsClass} data-pinned="end">
                         <span {...isolated}>{rowActions(row)}</span>
                       </Cell>
                     ) : null}
