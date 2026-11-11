@@ -91,13 +91,79 @@ public abstract class CompletionSweepRaceTestsBase(IS3TestBackend backend) : Tes
         var (_, error) = await completion;
 
         // then - the completion fails with the untranslated stale write, which tusdotnet answers with a 500, and
-        // records nothing, so no client is told the upload finished
+        // records nothing, so no client is told the upload finished, and deletes the finished object its write
+        // created after the sweep had already deleted that key
         removed.Should().Be(1);
         var staleWrite = error.Should().BeOfType<AmazonS3Exception>().Subject;
         TusS3StateStore.IsStaleWrite(staleWrite).Should().BeTrue();
         await _AssertNoRecordWithoutObjectAsync(fileId);
         (await _raw.ReadCompletedRecordAsync(fileId, AbortToken)).Should().BeNull();
+        (await _raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().BeNull();
+        (await _raw.ReadStateAsync(fileId, AbortToken)).Should().BeNull();
         (await _store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
+    }
+
+    public virtual async Task should_keep_the_finished_object_when_a_committing_completion_won()
+    {
+        // given - an upload below one part whose first final PATCH is held at the write of its finished object
+        var content = Faker.Random.Bytes(1000);
+        var fileId = await _CreateExpiringUploadAsync(content, 300);
+        _client.Gate.Arm(S3Operation.PutObject, _raw.Keys.FinishedObject(fileId));
+        var loser = _Settle(_AppendAsync(fileId, content[300..]));
+        await _client.Gate.WaitForArrivalAsync(AbortToken);
+        _client.Gate.Disarm();
+
+        // and a re-sent final PATCH that writes the finished object, marks the upload committing, then fails its record
+        var recordKey = _raw.Keys.CompletedRecord(fileId);
+        _client.Gate.FailWhen(request =>
+            string.Equals(S3Operation.Of(request), S3Operation.PutObject, StringComparison.Ordinal)
+            && (request.RequestUri?.AbsolutePath ?? "").EndsWith(recordKey, StringComparison.Ordinal)
+        );
+        var (_, recordError) = await _Settle(_AppendAsync(fileId, content[300..]));
+        recordError.Should().BeAssignableTo<AmazonS3Exception>();
+        _client.Gate.FailWhen(null);
+
+        // when - the first completion goes on and loses its committing write
+        _client.Gate.ReleaseOne();
+        var (_, error) = await loser;
+
+        // then - it fails as stale but leaves the committing upload's finished object in place
+        TusS3StateStore.IsStaleWrite(error.Should().BeOfType<AmazonS3Exception>().Subject).Should().BeTrue();
+        (await _raw.ReadStateAsync(fileId, AbortToken))!.Status.Should().Be(TusS3UploadStatus.Committing);
+        (await _raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
+
+        // and the client's next final PATCH records it
+        (await _AppendAsync(fileId, content[300..]))
+            .Should()
+            .Be(700);
+        (await _raw.ReadCompletedRecordAsync(fileId, AbortToken))!.UploadLength.Should().Be(content.Length);
+        (await _raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
+    }
+
+    public virtual async Task should_keep_the_finished_object_when_another_completion_recorded_it()
+    {
+        // given - an upload below one part whose first final PATCH is held at the write of its finished object
+        var content = Faker.Random.Bytes(1000);
+        var fileId = await _CreateExpiringUploadAsync(content, 300);
+        _client.Gate.Arm(S3Operation.PutObject, _raw.Keys.FinishedObject(fileId));
+        var loser = _Settle(_AppendAsync(fileId, content[300..]));
+        await _client.Gate.WaitForArrivalAsync(AbortToken);
+        _client.Gate.Disarm();
+
+        // and a re-sent final PATCH that finishes and records the upload
+        (await _AppendAsync(fileId, content[300..]))
+            .Should()
+            .Be(700);
+
+        // when - the first completion goes on and finds the state it read deleted
+        _client.Gate.ReleaseOne();
+        var (_, error) = await loser;
+
+        // then - it fails as stale but leaves the completed upload's finished object and record in place
+        TusS3StateStore.IsStaleWrite(error.Should().BeOfType<AmazonS3Exception>().Subject).Should().BeTrue();
+        (await _raw.ReadCompletedRecordAsync(fileId, AbortToken))!.UploadLength.Should().Be(content.Length);
+        (await _raw.ReadFinishedObjectAsync(fileId, AbortToken)).Should().Equal(content);
+        (await _store.FileExistAsync(fileId, AbortToken)).Should().BeTrue();
     }
 
     public virtual async Task should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace()
@@ -276,6 +342,14 @@ public sealed class MinioCompletionSweepRaceTests(TusS3MinioFixture fixture) : C
         base.should_record_nothing_when_the_sweep_claimed_the_upload_first();
 
     [Fact]
+    public override Task should_keep_the_finished_object_when_a_committing_completion_won() =>
+        base.should_keep_the_finished_object_when_a_committing_completion_won();
+
+    [Fact]
+    public override Task should_keep_the_finished_object_when_another_completion_recorded_it() =>
+        base.should_keep_the_finished_object_when_another_completion_recorded_it();
+
+    [Fact]
     public override Task should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace() =>
         base.should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace();
 
@@ -299,6 +373,14 @@ public sealed class LocalStackCompletionSweepRaceTests(TusS3LocalStackFixture fi
     [Fact]
     public override Task should_record_nothing_when_the_sweep_claimed_the_upload_first() =>
         base.should_record_nothing_when_the_sweep_claimed_the_upload_first();
+
+    [Fact]
+    public override Task should_keep_the_finished_object_when_a_committing_completion_won() =>
+        base.should_keep_the_finished_object_when_a_committing_completion_won();
+
+    [Fact]
+    public override Task should_keep_the_finished_object_when_another_completion_recorded_it() =>
+        base.should_keep_the_finished_object_when_another_completion_recorded_it();
 
     [Fact]
     public override Task should_finish_a_committing_upload_on_the_resent_final_patch_within_the_grace() =>
