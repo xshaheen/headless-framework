@@ -23,7 +23,8 @@ internal sealed class JobsFallbackBackgroundService(
     ILogger<JobsFallbackBackgroundService> logger,
     INodeMembership? membership = null,
     JobsDeadOwnerReclaimer? deadOwnerReclaimer = null,
-    IOptions<CoordinationOptions>? coordinationOptions = null
+    IOptions<CoordinationOptions>? coordinationOptions = null,
+    JobsFallbackWake? wake = null
 ) : BackgroundService
 {
     private int _started;
@@ -90,7 +91,9 @@ internal sealed class JobsFallbackBackgroundService(
                 // skip queuing fallback work to avoid throwing and stopping the host.
                 if (jobsTaskScheduler.IsFrozen || jobsTaskScheduler.IsDisposed)
                 {
-                    await timeProvider.Delay(_fallbackJobPeriod, loopToken).ConfigureAwait(false);
+                    // Waits on the wake too: a manual start resumes the pool mid-wait, and the scheduler's first late
+                    // poll must not then wait out the rest of this period.
+                    await _WaitForNextPassAsync(loopToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -156,7 +159,7 @@ internal sealed class JobsFallbackBackgroundService(
                 }
                 else
                 {
-                    await timeProvider.Delay(_fallbackJobPeriod, loopToken).ConfigureAwait(false);
+                    await _WaitForNextPassAsync(loopToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (loopToken.IsCancellationRequested)
@@ -173,6 +176,15 @@ internal sealed class JobsFallbackBackgroundService(
         }
 
         _LogMembershipLossIfLost(stoppingToken);
+    }
+
+    // The idle wait between passes: one period, or less when the scheduler's poll lands too late for its own peek and
+    // requests a pass for the rows that aged out of it.
+    private Task _WaitForNextPassAsync(CancellationToken cancellationToken)
+    {
+        return wake is null
+            ? timeProvider.Delay(_fallbackJobPeriod, cancellationToken)
+            : wake.WaitAsync(_fallbackJobPeriod, timeProvider, cancellationToken);
     }
 
     // Shared by the loop tail and the activation wait so neither path can exit membership-lost without a diagnostic.
