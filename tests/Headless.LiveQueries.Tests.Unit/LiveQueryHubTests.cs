@@ -126,6 +126,55 @@ public sealed class LiveQueryHubTests : TestBase
         update.Kind.Should().Be(LiveUpdateKind.Changed);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_report_a_narrowed_reader_for_a_key_while_a_finished_run_read_it_through_row_filters_only(
+        bool alsoReadsWholeKey
+    )
+    {
+        // given - a subscription that has not run yet
+        await using var host = new LiveQueriesTestHost();
+        var hub = _Hub(host);
+        var runs = new OwnerTodosRun(owner: 3) { AlsoReadsWholeKey = alsoReadsWholeKey };
+        var updates = hub.WatchAsync(runs.RunAsync, AbortToken).GetAsyncEnumerator(AbortToken);
+        hub.HasNarrowedReader("todos").Should().BeFalse();
+
+        // when - its first run has finished
+        await _NextAsync(updates);
+
+        // then - a writer is asked for rows of the key only when rows could spare this subscription a run
+        hub.HasNarrowedReader("todos").Should().Be(!alsoReadsWholeKey);
+        hub.HasNarrowedReader("counters").Should().BeFalse();
+
+        // when - the subscription ends
+        await updates.DisposeAsync();
+
+        // then
+        hub.HasNarrowedReader("todos").Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_fold_every_row_into_its_key_when_a_write_set_is_taken_as_whole_keys()
+    {
+        // given
+        var writes = new LiveWriteSet(
+            ["counters"],
+            [
+                new LiveRowChange("todos", Old: null, New: new Todo(3)),
+                new LiveRowChange("todos", Old: new Todo(4), New: null),
+                new LiveRowChange("counters", Old: null, New: new Todo(5)),
+            ]
+        );
+
+        // when
+        var whole = writes.AsWholeKeys();
+
+        // then
+        whole.Keys.Should().BeEquivalentTo("counters", "todos");
+        whole.Rows.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task should_send_one_failed_update_and_end_when_a_run_reports_a_failure()
     {

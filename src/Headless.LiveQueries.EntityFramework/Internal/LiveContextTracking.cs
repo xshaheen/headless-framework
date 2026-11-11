@@ -19,9 +19,13 @@ internal sealed class LiveContextTracking<TContext>
 
         Interceptors =
         [
-            new LiveCommandInterceptor(catalog, tracker),
+            new LiveCommandInterceptor(catalog, tracker, options.RowLevelMatching),
             new LiveTransactionInterceptor(tracker),
-            new LiveSaveInterceptor(catalog, tracker),
+            new LiveSaveInterceptor(catalog, tracker, options.RowLevelMatching),
+            // Stateless and shared by every tracked context, in this host and any other in the process.
+            .. options.RowLevelMatching
+                ? (IInterceptor[])[LiveQueryShapeInterceptor.Instance, LiveMaterializationInterceptor.Instance]
+                : [],
         ];
     }
 

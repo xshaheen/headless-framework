@@ -92,12 +92,9 @@ internal sealed class LiveTransactionInterceptor(LiveWriteTracker tracker) : DbT
 
     private void _Failed(DbTransaction transaction, TransactionErrorEventData eventData)
     {
-        // A commit that threw may still have reached the database, so its writes are announced. A rollback that
-        // threw stored nothing either way.
-        tracker.TransactionEnded(
-            eventData.Context,
-            transaction,
-            mayBeDurable: string.Equals(eventData.Action, _CommitAction, StringComparison.Ordinal)
-        );
+        // A commit that threw may still have reached the database, so its writes are announced, as whole tables
+        // because what it stored is not known. A rollback that threw stored nothing either way.
+        var commit = string.Equals(eventData.Action, _CommitAction, StringComparison.Ordinal);
+        tracker.TransactionEnded(eventData.Context, transaction, mayBeDurable: commit, inDoubt: commit);
     }
 }

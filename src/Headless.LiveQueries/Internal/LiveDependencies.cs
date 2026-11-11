@@ -17,6 +17,9 @@ internal sealed class LiveDependencies(IReadOnlyDictionary<string, Func<object, 
 
     public IEnumerable<string> Keys => reads.Keys;
 
+    /// <summary>Returns whether <paramref name="key" /> was read through row filters only, never whole.</summary>
+    public bool IsNarrowed(string key) => reads.TryGetValue(key, out var filters) && filters is not null;
+
     /// <summary>Returns whether <paramref name="writes" /> could change the result.</summary>
     /// <param name="writes">What a commit changed.</param>
     /// <param name="ruledOutRows">

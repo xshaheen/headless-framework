@@ -231,6 +231,74 @@ public abstract class LiveTrackingProviderTests(ILiveDatabase database) : TestBa
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_re_run_the_watches_of_the_rows_the_database_removed_or_cleared_with_a_deleted_order(
+        bool setBased
+    )
+    {
+        // given - an order with a line the database deletes with it and a shipment the database detaches from it
+        await using var host = new LiveIntegrationHost(database);
+        var orderId = Guid.NewGuid();
+
+        await host.WriteAsync(async db =>
+        {
+            db.Orders.Add(_Order(orderId));
+            db.OrderLines.Add(
+                new OrderLine
+                {
+                    Id = Guid.NewGuid(),
+                    Test = _test,
+                    OrderId = orderId,
+                }
+            );
+            db.Shipments.Add(
+                new Shipment
+                {
+                    Id = Guid.NewGuid(),
+                    Test = _test,
+                    OrderId = orderId,
+                }
+            );
+            await db.SaveChangesAsync(AbortToken);
+        });
+
+        await using var lines = host.Watch(
+            (db, cancellationToken) => db.OrderLines.CountAsync(x => x.Test == _test, cancellationToken),
+            AbortToken
+        );
+        await using var shipped = host.Watch(
+            (db, cancellationToken) =>
+                db.Shipments.CountAsync(x => x.Test == _test && x.OrderId != null, cancellationToken),
+            AbortToken
+        );
+        await using var items = _WatchItems(host);
+        (await lines.NextAsync()).Should().Be(1);
+        (await shipped.NextAsync()).Should().Be(1);
+        (await items.NextAsync()).Should().Be(0);
+
+        // when - the order is deleted alone, by a save that never loaded the other rows or by ExecuteDelete
+        await host.WriteAsync(async db =>
+        {
+            if (setBased)
+            {
+                await db.Orders.Where(x => x.Id == orderId).ExecuteDeleteAsync(AbortToken);
+            }
+            else
+            {
+                db.Orders.Remove(_Order(orderId));
+                await db.SaveChangesAsync(AbortToken);
+            }
+        });
+
+        // then - no command named the two tables; the server changed them
+        host.Wakes.Should().Be(2);
+        (await lines.NextAsync()).Should().Be(0);
+        (await shipped.NextAsync()).Should().Be(0);
+        items.Runs.Should().Be(1);
+    }
+
     /// <summary>Quotes one identifier the provider's way.</summary>
     protected abstract string QuoteIdentifier(string name);
 
@@ -243,6 +311,16 @@ public abstract class LiveTrackingProviderTests(ILiveDatabase database) : TestBa
             Id = Guid.NewGuid(),
             Test = _test,
             Name = name,
+        };
+    }
+
+    private Order _Order(Guid id)
+    {
+        return new Order
+        {
+            Id = id,
+            Test = _test,
+            Reference = "A-1",
         };
     }
 
@@ -267,6 +345,68 @@ public abstract class LiveTrackingProviderTests(ILiveDatabase database) : TestBa
 public sealed class PostgreSqlLiveTrackingTests(PostgreSqlLiveFixture fixture) : LiveTrackingProviderTests(fixture)
 {
     protected override string QuoteIdentifier(string name) => $"\"{name}\"";
+
+    // PostgreSQL only: SQL Server refuses to truncate a table a foreign key refers to.
+    [Fact]
+    public async Task should_re_run_the_watches_of_the_rows_the_database_removed_with_a_truncated_table()
+    {
+        // given - an order with a line and a shipment that refer to it
+        await using var host = new LiveIntegrationHost(fixture);
+        var test = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+
+        await host.WriteAsync(async db =>
+        {
+            db.Orders.Add(
+                new Order
+                {
+                    Id = orderId,
+                    Test = test,
+                    Reference = "A-1",
+                }
+            );
+            db.OrderLines.Add(
+                new OrderLine
+                {
+                    Id = Guid.NewGuid(),
+                    Test = test,
+                    OrderId = orderId,
+                }
+            );
+            db.Shipments.Add(
+                new Shipment
+                {
+                    Id = Guid.NewGuid(),
+                    Test = test,
+                    OrderId = orderId,
+                }
+            );
+            await db.SaveChangesAsync(AbortToken);
+        });
+
+        await using var lines = host.Watch(
+            (db, cancellationToken) => db.OrderLines.CountAsync(x => x.Test == test, cancellationToken),
+            AbortToken
+        );
+        await using var shipments = host.Watch(
+            (db, cancellationToken) => db.Shipments.CountAsync(x => x.Test == test, cancellationToken),
+            AbortToken
+        );
+        (await lines.NextAsync()).Should().Be(1);
+        (await shipments.NextAsync()).Should().Be(1);
+
+        // when - the statement names the orders alone, and the server empties every table that refers to them
+#pragma warning disable EF1002 // The table name is this fixture's own constant.
+        await host.WriteAsync(async db =>
+            await db.Database.ExecuteSqlRawAsync($"TRUNCATE TABLE {fixture.OrdersTableSql} CASCADE", AbortToken)
+        );
+#pragma warning restore EF1002
+
+        // then
+        host.Wakes.Should().Be(2);
+        (await lines.NextAsync()).Should().Be(0);
+        (await shipments.NextAsync()).Should().Be(0);
+    }
 }
 
 [Collection<SqlServerLiveFixture>]
