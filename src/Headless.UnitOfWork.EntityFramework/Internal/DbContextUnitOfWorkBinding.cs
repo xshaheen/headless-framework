@@ -126,6 +126,28 @@ internal static class DbContextUnitOfWorkBinding
     }
 
     /// <summary>
+    /// Whether a context that joined <paramref name="unit" /> through the shared connection still tracks an
+    /// entity. The unit's rollback undoes such a context's rows but not its tracker, and the replay guard resets
+    /// only the context the block was run on, so a replayed block would read the failed attempt's edits back from
+    /// that tracker: a relative update would apply twice and an absolute one would be skipped as already saved.
+    /// A sibling that tracked nothing (a no-tracking read, a set-based update) leaves nothing to replay over.
+    /// </summary>
+    public static bool HasJoinedContextWithTrackedEntities(IUnitOfWork unit)
+    {
+        // A unit the block already ended accepts no state lookup, and is never replayed.
+        if (
+            unit.State is not UnitOfWorkState.Active
+            || unit.Resource is not EfUnitOfWorkResource { IsTransactionCompleted: false } resource
+        )
+        {
+            return false;
+        }
+
+        return unit.GetOrAdd(resource.Transaction, static (_, transaction) => new SharedConnectionContexts(transaction))
+            .AnyTracksEntities();
+    }
+
+    /// <summary>
     /// Throws the catalogued refusal when <paramref name="db" />, or the connection beneath it, already carries
     /// a live unit: two units cannot own one transaction, and the callee is meant to join or be handed it. The
     /// cases carry different remedies, because only an EF unit can be joined from EF. Never adopts a transaction:
@@ -229,6 +251,33 @@ internal static class DbContextUnitOfWorkBinding
             {
                 _contexts.Add(db);
             }
+        }
+
+        public bool AnyTracksEntities()
+        {
+            DbContext[] contexts;
+
+            lock (_gate)
+            {
+                contexts = [.. _contexts];
+            }
+
+            foreach (var db in contexts)
+            {
+                try
+                {
+                    if (db.ChangeTracker.Entries().Any())
+                    {
+                        return true;
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // A context disposed inside the attempt cannot serve the replay, which builds its own.
+                }
+            }
+
+            return false;
         }
 
         public void Dispose()

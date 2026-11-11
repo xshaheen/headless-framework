@@ -122,10 +122,30 @@ internal sealed class ProbeDbContext(DbContextOptions<ProbeDbContext> options) :
 {
     public DbSet<ProbeRow> Probes => Set<ProbeRow>();
 
+    public DbSet<VersionedRow> Counters => Set<VersionedRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<ProbeRow>().HasKey(x => x.Id);
+        modelBuilder.Entity<VersionedRow>(row =>
+        {
+            row.HasKey(x => x.Id);
+            row.Property(x => x.Version).IsConcurrencyToken();
+        });
     }
+}
+
+/// <summary>
+/// A counter guarded by an optimistic concurrency token the writer bumps itself, so a save that read a stale
+/// <see cref="Version" /> updates no row and EF Core reports the lost check on any provider.
+/// </summary>
+internal sealed class VersionedRow
+{
+    public int Id { get; set; }
+
+    public int Counter { get; set; }
+
+    public int Version { get; set; }
 }
 
 internal sealed class ProbeRow
