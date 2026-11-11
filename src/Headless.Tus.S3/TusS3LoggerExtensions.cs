@@ -198,6 +198,26 @@ internal static partial class TusS3LoggerExtensions
     internal static partial void LogS3FinishedObjectAlreadyWritten(this ILogger logger, string fileId);
 
     [LoggerMessage(
+        EventId = 3267,
+        EventName = "S3UnownedFinishedObjectRemoved",
+        Level = LogLevel.Information,
+        Message = "Deleted the finished object of file {FileId}: its completion lost to a request that removed the upload"
+    )]
+    internal static partial void LogS3UnownedFinishedObjectRemoved(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3268,
+        EventName = "S3UnownedFinishedObjectRemoveFailed",
+        Level = LogLevel.Warning,
+        Message = "Failed to delete the finished object of file {FileId} after its completion lost to a request that removed the upload; it remains in the bucket"
+    )]
+    internal static partial void LogS3UnownedFinishedObjectRemoveFailed(
+        this ILogger logger,
+        Exception e,
+        string fileId
+    );
+
+    [LoggerMessage(
         EventId = 3291,
         EventName = "S3FailedToGetContent",
         Level = LogLevel.Error,

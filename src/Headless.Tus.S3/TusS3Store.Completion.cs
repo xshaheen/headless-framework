@@ -22,7 +22,8 @@ public sealed partial class TusS3Store
     /// abandoned completing upload with <c>If-Match</c> on the same state, so at most one of the two writes lands: a
     /// sweep that claimed first makes this write fail and nothing is recorded, and a sweep that comes later leaves a
     /// committing upload alone until it is old enough that its completion must have died. A completion that finds the
-    /// upload already committing only records it.
+    /// upload already committing only records it. A completion whose write fails because the upload is gone deletes
+    /// the finished object again, since its own object write may have landed after the sweep deleted that key.
     /// </para>
     /// <para>
     /// Storage calls take no request token. The bytes are durable before this starts, and a client that disconnects
@@ -57,7 +58,17 @@ public sealed partial class TusS3Store
 
             state.Status = TusS3UploadStatus.Committing;
             state.CommittingAt = _timeProvider.GetUtcNow();
-            await _stateStore.UpdateAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
+
+            try
+            {
+                await _stateStore.UpdateAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (AmazonS3Exception e) when (TusS3StateStore.IsStaleWrite(e))
+            {
+                await _RemoveUnownedFinishedObjectAsync(fileId).ConfigureAwait(false);
+
+                throw;
+            }
         }
 
         var record = new TusS3CompletedRecord
@@ -312,6 +323,46 @@ public sealed partial class TusS3Store
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Deletes the finished object a completion that lost its committing write may have left behind, unless another
+    /// request still owns it.
+    /// </summary>
+    /// <remarks>
+    /// The loser's object write can land after the winner already removed the upload: the sweep deletes the finished
+    /// key right after claiming the upload, so a single-object write still in flight then creates an object no state,
+    /// record, or later pass refers to. Who won decides whether the object may go. An upload marked gone, or one with
+    /// neither state nor completed record, owns nothing, and no request can make it own a finished object again. Any
+    /// other state, or a completed record, belongs to a completion that moved the upload on (a second completion
+    /// writes the same bytes under the same key), so its object stays. A failure here is logged and leaves the object
+    /// to storage cost only: the caller rethrows the stale write either way.
+    /// </remarks>
+    private async Task _RemoveUnownedFinishedObjectAsync(string fileId)
+    {
+        try
+        {
+            var current = await _stateStore.LoadAsync(fileId, CancellationToken.None).ConfigureAwait(false);
+
+            if (current is { Completed: not null } || current?.State is { Status: not TusS3UploadStatus.Gone })
+            {
+                return;
+            }
+
+            await _s3.DeleteObjectAsync(
+                    new DeleteObjectRequest { BucketName = _options.Bucket, Key = _keys.FinishedObject(fileId) },
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
+
+            _logger.LogS3UnownedFinishedObjectRemoved(fileId);
+        }
+#pragma warning disable CA1031 // The stale write is what the caller reports; a failed cleanup only leaves storage cost.
+        catch (Exception e)
+#pragma warning restore CA1031
+        {
+            _logger.LogS3UnownedFinishedObjectRemoveFailed(e, fileId);
         }
     }
 
