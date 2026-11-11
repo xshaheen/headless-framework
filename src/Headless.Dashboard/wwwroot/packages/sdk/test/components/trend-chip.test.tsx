@@ -12,15 +12,13 @@ describe('TrendChip', () => {
   it('reads a falling failure rate as good news, and a rising one as bad, whatever the sign', () => {
     const { container } = renderChip(
       <>
-        <TrendChip value={-0.12} goodDirection="down" />
-        <TrendChip value={0.12} goodDirection="down" />
+        <TrendChip value={-0.07} goodDirection="down" />
+        <TrendChip value={0.07} goodDirection="down" />
       </>,
     )
 
-    const [fell, rose] = [...container.querySelectorAll<HTMLElement>('[data-sentiment]')]
-    expect(fell!.dataset.sentiment).toBe('good')
+    const [fell, rose] = [...container.querySelectorAll('bdi')].map((bdi) => bdi.parentElement!)
     expect(fell!.classList.contains('hd-tone-ok')).toBe(true)
-    expect(rose!.dataset.sentiment).toBe('bad')
     expect(rose!.classList.contains('hd-tone-fail')).toBe(true)
   })
 

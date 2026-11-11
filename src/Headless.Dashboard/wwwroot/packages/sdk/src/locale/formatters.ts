@@ -144,15 +144,14 @@ export function createFormatters(locale: string, timeZone: string): Formatters {
         return unitFormat('second', 1).format(sign * tenths)
       }
 
+      // Below an hour the pair is minutes and seconds, from whole seconds; above, hours and minutes, from whole minutes.
       const seconds = Math.round(value / 1_000)
-      const [major, minor, majorUnit, minorUnit] =
-        seconds < 3_600
-          ? [Math.floor(seconds / 60), seconds % 60, 'minute', 'second']
-          : [Math.floor(Math.round(value / 60_000) / 60), Math.round(value / 60_000) % 60, 'hour', 'minute']
-      const parts = [unitFormat(majorUnit).format(sign * major)]
+      const isHours = seconds >= 3_600
+      const whole = isHours ? Math.round(value / 60_000) : seconds
+      const parts = [unitFormat(isHours ? 'hour' : 'minute').format(sign * Math.floor(whole / 60))]
 
-      if (minor > 0) {
-        parts.push(unitFormat(minorUnit).format(minor))
+      if (whole % 60 > 0) {
+        parts.push(unitFormat(isHours ? 'minute' : 'second').format(whole % 60))
       }
 
       return (lists ??= new Intl.ListFormat(locale, { style: 'narrow', type: 'unit' })).format(parts)

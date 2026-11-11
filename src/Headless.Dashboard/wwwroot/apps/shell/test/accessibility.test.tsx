@@ -170,15 +170,31 @@ describe('shell accessibility', () => {
     expect(menu.getAttribute('aria-controls')).toBe(sidebar.id)
     expect(sidebar.contains(document.activeElement)).toBe(true)
 
-    // Tab from the last entry wraps to the first: focus never leaves for the view behind the scrim.
+    // Tab from the last entry wraps to the sheet's Close: focus never leaves for the view behind the scrim.
     const links = within(sidebar).getAllByRole('link')
     links.at(-1)!.focus()
     await user.tab()
-    expect(sheet.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).toBe(within(sheet).getByRole('button', { name: 'Close Jobs menu' }))
 
+    links[0]!.focus()
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('navigation', { name: 'Jobs' })).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(menu))
+  })
+
+  it('closes the phone menu from its Close button and hands focus back to Menu', async () => {
+    atWidth(400)
+    const user = userEvent.setup()
+    renderJobs()
+    const menu = await screen.findByRole('button', { name: 'Menu' })
+
+    await user.click(menu)
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Jobs menu' })).getByRole('button', { name: 'Close Jobs menu' }),
+    )
+
+    expect(screen.queryByRole('dialog', { name: 'Jobs menu' })).toBeNull()
     await waitFor(() => expect(document.activeElement).toBe(menu))
   })
 

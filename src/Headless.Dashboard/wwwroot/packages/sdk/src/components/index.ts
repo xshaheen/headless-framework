@@ -27,7 +27,7 @@ export { Skeleton, type SkeletonProps, type SkeletonShape } from './display/skel
 export { StatCard, StatStrip, type StatCardProps } from './display/stat-strip.tsx'
 export { Tag, type TagProps, type TagVariant } from './display/tag.tsx'
 export { Text, type TextProps, type TextTone } from './display/text.tsx'
-export { TrendChip, type TrendChipProps, type TrendGoodDirection } from './display/trend-chip.tsx'
+export { TrendChip, type TrendChipProps, type GoodDirection } from './display/trend-chip.tsx'
 export { DetailPanel, type DetailPanelProps, type DetailTab } from './frame/detail-panel.tsx'
 export { ExceptionBlock, type ExceptionBlockProps } from './frame/exception-block.tsx'
 export { FieldGrid, GridField, type FieldEdit, type FieldGridProps, type GridFieldProps } from './frame/field-grid.tsx'

@@ -7,50 +7,49 @@ import type { DashboardStateRole } from '../../define-module.ts'
 import { FallIcon, NoChangeIcon, RiseIcon } from '../../icons/index.ts'
 import { useFormat } from '../../locale/locale.tsx'
 
-/** Which way a change is good news: `up` for a success rate, `down` for a failure rate, `neutral` when neither is. */
-export type TrendGoodDirection = 'up' | 'down' | 'neutral'
+/** The direction of change that is good news: `up` for throughput, `down` for an error rate, `neutral` for neither. */
+export type GoodDirection = 'up' | 'down' | 'neutral'
 
 export interface TrendChipProps {
   /**
-   * The change the server served, as a ratio: `0.18` for +18 %. The SDK never computes one from two figures, because
-   * only the server knows whether the periods it compared are complete.
+   * The served change as a fraction: `0.18` reads `+18%`. Pass only a change the server sends; the chip never derives
+   * one, because only the server knows whether both periods it compared were complete.
    */
   value: number
-  /** Which way is good news; it sets the tone, so a falling failure rate reads as good. `up` by default. */
-  goodDirection?: TrendGoodDirection
-  /** The change in another unit, such as `−1.1 pt` or `+6`; the arrow and the tone still follow `value`. */
+  /** The direction that is good news; the colour follows it, not the sign. `up` by default. */
+  goodDirection?: GoodDirection
+  /** Text that replaces the percentage, for a change served in another unit: `−1.1 pt`, `+6 runs`. */
   children?: ReactNode
 }
 
-const icons = { up: RiseIcon, down: FallIcon, flat: NoChangeIcon } as const
+const arrows = { up: RiseIcon, down: FallIcon, flat: NoChangeIcon } as const
+const roles = { good: 'ok', bad: 'fail', neutral: 'off' } as const satisfies Record<string, DashboardStateRole>
 
-// Good reads in the success role, bad in the failure role, and anything that is neither in the off role.
-const tones = { good: 'ok', bad: 'fail', neutral: 'off' } as const satisfies Record<string, DashboardStateRole>
+/** Whether a change is good, bad, or neither, given the direction that counts as good. No change is never either. */
+export function trendSentiment(value: number, goodDirection: GoodDirection = 'up'): keyof typeof roles {
+  if (value === 0 || goodDirection === 'neutral') {
+    return 'neutral'
+  }
 
-/** The tone of a change: whether it moved the way that is good news. A change of zero is neither. */
-export function trendSentiment(value: number, goodDirection: TrendGoodDirection = 'up') {
-  const direction = value > 0 ? 'up' : value < 0 ? 'down' : 'flat'
-
-  return direction === 'flat' || goodDirection === 'neutral' ? 'neutral' : direction === goodDirection ? 'good' : 'bad'
+  return (value > 0) === (goodDirection === 'up') ? 'good' : 'bad'
 }
 
 /**
- * A served change beside a figure: an arrow and the signed change on a soft fill in the tone of its meaning. The sign
- * and the arrow say the direction, so the tone is never the only cue; the text keeps the foreground tone, because most
- * roles are under 4.5:1 as text. Both sit in one `<bdi>`, so in a right-to-left line the sign stays with its number.
+ * A small pill after a figure with the served change: an arrow, then the signed amount, on a tint of the colour role
+ * its meaning takes. The sign and the arrow carry the direction on their own, so a reader who cannot tell the colours
+ * apart loses nothing; the text stays in the foreground colour, because most role colours fail 4.5:1 as text. The
+ * arrow and the amount share one `<bdi>`, so in Arabic text the sign is not reordered away from its digits.
  */
 export function TrendChip({ value, goodDirection = 'up', children }: TrendChipProps) {
   const format = useFormat()
-  const sentiment = trendSentiment(value, goodDirection)
-  const Icon = icons[value > 0 ? 'up' : value < 0 ? 'down' : 'flat']
+  const Arrow = arrows[value > 0 ? 'up' : value < 0 ? 'down' : 'flat']
 
   return (
     <span
-      className={`hd-tone-${tones[sentiment]} inline-flex h-(--tag-height) flex-none items-center rounded-full bg-role/15 px-1.5 type-tag whitespace-nowrap text-foreground tabular-nums`}
-      data-sentiment={sentiment}
+      className={`hd-tone-${roles[trendSentiment(value, goodDirection)]} inline-flex h-(--tag-height) flex-none items-center rounded-full bg-role/15 px-1.5 type-tag whitespace-nowrap text-foreground tabular-nums`}
     >
       <bdi className="inline-flex items-center gap-0.5 [&>svg]:size-3">
-        <Icon className="text-role" />
+        <Arrow className="text-role" />
         {children ?? format.number(value, { style: 'percent', signDisplay: 'exceptZero', maximumFractionDigits: 1 })}
       </bdi>
     </span>

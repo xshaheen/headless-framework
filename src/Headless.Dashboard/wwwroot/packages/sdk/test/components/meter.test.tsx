@@ -8,20 +8,20 @@ const thresholds = [
 ]
 
 describe('Meter', () => {
-  it('is a meter named by its label that reads and shows its value label', () => {
-    render(<Meter label="Queue depth" value={9_400} max={12_000} valueLabel="9,400 of 12,000 messages, near the limit" />)
+  it('takes its accessible name from label and announces the served reading in words', () => {
+    render(<Meter label="Queue depth" value={4_812} max={5_000} valueLabel="4,812 of 5,000 messages, over the warning level" />)
 
     const meter = screen.getByRole('meter', { name: 'Queue depth' })
-    expect(meter.getAttribute('aria-valuenow')).toBe('9400')
-    expect(meter.getAttribute('aria-valuetext')).toBe('9,400 of 12,000 messages, near the limit')
-    expect(meter.textContent).toContain('9,400 of 12,000 messages, near the limit')
+    expect(meter.getAttribute('aria-valuenow')).toBe('4812')
+    expect(meter.getAttribute('aria-valuetext')).toBe('4,812 of 5,000 messages, over the warning level')
+    expect(meter.textContent).toContain('4,812 of 5,000 messages, over the warning level')
   })
 
   it.each([
     [4_000, 'proc'],
     [8_000, 'sched'],
     [11_000, 'fail'],
-  ] as const)('fills %d in the %s tone of the highest threshold it reached', (value, tone) => {
+  ] as const)('colours a reading of %d in the %s role of the last threshold it passed', (value, tone) => {
     const { container } = render(
       <Meter label="Queue depth" value={value} max={12_000} valueLabel={`${value} messages`} thresholds={thresholds} />,
     )
@@ -30,7 +30,7 @@ describe('Meter', () => {
     expect(meterTone(value, 'proc', thresholds)).toBe(tone)
   })
 
-  it('marks each threshold inside the range on the track, from its inline start', () => {
+  it('ticks only the thresholds strictly inside the scale, measured from the inline start', () => {
     const { container } = render(
       <Meter
         label="Queue depth"

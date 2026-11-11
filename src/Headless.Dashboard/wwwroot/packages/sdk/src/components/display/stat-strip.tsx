@@ -21,8 +21,8 @@ export interface StatCardProps {
   /** What the value is about, from `@headless/dashboard-sdk/icons`, at the label's inline end; never its state. */
   icon?: IconComponent
   /**
-   * The change the server serves with the value, as a `TrendChip` after it: `<TrendChip value={-0.12}
-   * goodDirection="down" />` on a failure rate. Nothing otherwise: the card never computes a change.
+   * A `TrendChip` with the change the server serves beside the value, such as `<TrendChip value={-0.031}
+   * goodDirection="down" />` under a failure rate. Leave it out when nothing is served; the card derives none.
    */
   trend?: ReactNode
 }
