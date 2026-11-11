@@ -25,6 +25,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     private readonly IJobsOwnerIdentity _ownerIdentity;
     private readonly SchedulerOptionsBuilder _schedulerOptions;
     private readonly JobsActivationBarrier _activationBarrier;
+    private readonly JobsFallbackWake? _fallbackWake;
     private readonly ILogger<JobsSchedulerBackgroundService> _logger;
     private readonly CancellationTokenRegistration _hostStoppingRegistration;
     private int _started;
@@ -38,6 +39,17 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
     // The part of the stop budget kept, on the real clock, for jobs the stop cancels to write their release: the
     // coordination heartbeat's leave budget, capped at half the stop budget so a short budget still lets jobs finish.
     private static readonly TimeSpan _ReleaseWindow = TimeSpan.FromSeconds(5);
+
+    // How far back the providers' time-job and stored-occurrence peeks reach: a row due earlier than one second before
+    // the poll is left to the fallback sweep, whose claim starts exactly there.
+    private static readonly TimeSpan _PeekWindow = TimeSpan.FromSeconds(1);
+
+    // The sleep the loop last started, on the scheduling clock: its start timestamp and its planned length, or null
+    // before the first. Measured as a duration so a poll's lateness needs no store instant, which a poll may not report
+    // or may have read before its time-job peek. Kept on the instance, not in the loop, because a restart that cuts a
+    // late sleep short starts a new loop whose first poll must still see that sleep. Only the loop touches them.
+    private long _sleepStartedAt;
+    private TimeSpan? _plannedSleep;
 
     // Store clock minus node clock, as observed on the last poll that reached the store. Zero until the first such
     // poll, which is exactly the assumption the loop made unconditionally before. Written by the loop, read by
@@ -73,7 +85,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         SchedulerOptionsBuilder schedulerOptions,
         JobsActivationBarrier activationBarrier,
         ILogger<JobsSchedulerBackgroundService> logger,
-        IHostApplicationLifetime? hostLifetime = null
+        IHostApplicationLifetime? hostLifetime = null,
+        JobsFallbackWake? fallbackWake = null
     )
     {
         _executionContext = Argument.IsNotNull(executionContext);
@@ -86,6 +99,7 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
         _ownerIdentity = Argument.IsNotNull(ownerIdentity);
         _schedulerOptions = Argument.IsNotNull(schedulerOptions);
         _activationBarrier = Argument.IsNotNull(activationBarrier);
+        _fallbackWake = fallbackWake;
         _logger = Argument.IsNotNull(logger);
         _restartThrottle = new RestartThrottleManager(
             () => Volatile.Read(ref _schedulerLoopCancellationTokenSource)?.Cancel(),
@@ -331,6 +345,19 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                 );
             }
 
+            // A poll that returns more than the peek window after the end of the sleep this loop planned (a late
+            // timer, a starved thread pool, a dispatch that waited for a worker, a slow poll) may have missed what that
+            // sleep was for: those rows are now older than the peek reaches, and only the fallback sweep claims them.
+            // Start its pass now rather than leave them waiting up to a whole fallback period. A sleep a restart cut
+            // short is never late.
+            if (
+                _plannedSleep is { } plannedSleep
+                && _timeProvider.GetElapsedTime(_sleepStartedAt) - plannedSleep > _PeekWindow
+            )
+            {
+                _fallbackWake?.Request();
+            }
+
             var timeRemaining = wake.Remaining;
 
             TimeSpan sleepDuration;
@@ -355,6 +382,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                 CoreNotifyActionType.NotifyNextOccurence
             );
 
+            _plannedSleep = sleepDuration;
+            _sleepStartedAt = _timeProvider.GetTimestamp();
             await _timeProvider.Delay(sleepDuration, cancellationToken).ConfigureAwait(false);
         }
     }
