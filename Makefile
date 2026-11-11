@@ -155,9 +155,12 @@ FAST_BUILD_ARGS ?= -p:RunAnalyzers=false -p:MinVerSkip=true
 # Base ref for the affected-scope targets: the branch's upstream when it is another branch (a stacked
 # branch tracking its parent), else origin/main. A branch's own pushed copy is never the base: once the
 # branch is pushed, diffing against it selects nothing, and every affected gate then passes with zero
-# tests. Resolved once per make invocation (a recursive `?=` would re-run git on every reference).
+# tests. An upstream whose remote ref is gone (the parent merged and its branch was deleted) falls back too:
+# git then prints the literal `@{upstream}`, which names no commit. Resolved once per make invocation (a
+# recursive `?=` would re-run git on every reference).
 ifeq ($(origin AFFECTED_BASE),undefined)
-AFFECTED_UPSTREAM := $(shell git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)
+AFFECTED_UPSTREAM := $(shell up=$$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null) \
+	&& git rev-parse --quiet --verify "$$up^{commit}" >/dev/null && echo "$$up")
 AFFECTED_OWN_COPY := origin/$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 AFFECTED_BASE := $(or $(filter-out $(AFFECTED_OWN_COPY),$(AFFECTED_UPSTREAM)),origin/main)
 endif
