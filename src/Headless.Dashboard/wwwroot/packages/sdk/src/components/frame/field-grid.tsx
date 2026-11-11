@@ -2,7 +2,7 @@
 // shell's assets sit near their size budget.
 'use no memo'
 
-import { useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { inputClass } from '../form.tsx'
 
 /** An editable field's value, how it commits, and what it shows while the operator types. */
@@ -112,26 +112,39 @@ export function EditableValue({ id, edit }: { id: string; edit: FieldEdit }) {
 }
 
 export interface FieldGridProps {
-  /** Fields per row: 4 by default, 3 or 2 where values run long. A phone shows two. */
-  columns?: number
+  /**
+   * The most fields per row: 4 by default, 3 or 2 where values run long. The grid shows two on a narrow column and
+   * widens to this many as the column it sits in allows, so the same grid reads in a side panel and across a wide one.
+   */
+  columns?: 2 | 3 | 4
+  /** A heading over the group, such as `Outcome` or `Identity`, which also names it for assistive technology. */
+  label?: string
   /** Prose under the grid, such as how a figure is counted. */
   footnote?: ReactNode
   /** `GridField`s. */
   children: ReactNode
 }
 
-/** A detail panel's facts: a grid of labels over mono values, some editable, with an optional footnote. */
-export function FieldGrid({ columns = 4, footnote, children }: FieldGridProps) {
+// Container queries, not the viewport: a grid in a side panel is narrow on a wide screen.
+const columnClasses: Record<NonNullable<FieldGridProps['columns']>, string> = {
+  2: 'grid-cols-2',
+  3: 'grid-cols-2 @md:grid-cols-3',
+  4: 'grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4',
+}
+
+/**
+ * A detail panel's facts: a grid of labels over mono values in aligned columns, some editable, under an optional
+ * heading, with an optional footnote. Several grids in one column read as groups, each after a hairline.
+ */
+export function FieldGrid({ columns = 4, label, footnote, children }: FieldGridProps) {
+  const Element = label ? 'section' : 'div'
+
   return (
-    <>
-      <dl
-        className="m-0 grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-3 type-mono wrap-anywhere max-md:grid-cols-2"
-        style={{ '--cols': columns } as CSSProperties}
-      >
-        {children}
-      </dl>
+    <Element aria-label={label} className="@container not-first:border-t not-first:border-border not-first:pt-3.5">
+      {label ? <h3 className="hd-label mb-2">{label}</h3> : null}
+      <dl className={`m-0 grid ${columnClasses[columns]} gap-x-4 gap-y-3 type-mono wrap-anywhere`}>{children}</dl>
       {footnote ? <p className="hd-footnote">{footnote}</p> : null}
-    </>
+    </Element>
   )
 }
 

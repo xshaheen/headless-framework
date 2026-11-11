@@ -9,6 +9,7 @@ import { useSelectionCommand, useViewKeys } from '../components/keymap.tsx'
 import { Announcer } from '../components/live.tsx'
 import { Mono } from '../components/marks.tsx'
 import { useDashboard } from '../context.tsx'
+import type { IconComponent } from '../icons/index.ts'
 import { DashboardApiError } from '../data/api.ts'
 import { ActionConfirm, problemsClass, type ConfirmedAction } from './action-confirm.tsx'
 import { createCommandsApi, effectiveConfirmation, type CommandDefinition, type RowResult } from './api.ts'
@@ -37,6 +38,14 @@ export interface CommandActionProps {
   /** The module's other commands, to find the inverse that Undo calls. */
   commands?: readonly CommandDefinition[]
   variant?: 'primary' | 'secondary' | 'danger'
+  /** The verb's icon, from `@headless/dashboard-sdk/icons`, before the label or, as `icon` appearance, alone. */
+  icon?: IconComponent
+  /**
+   * `icon` draws the button as its icon alone, named by the command's label, with the label and any refusal in its
+   * tooltip, as a panel's title row and a table's row actions draw their actions; `button`, the default, shows the
+   * label.
+   */
+  appearance?: 'button' | 'icon'
   /** This is the selection's recommended recovery command: `R` runs it, or announces why the server refuses it. */
   recovery?: boolean
   /** What the command reaches beyond the rows, stated in its confirmation: `12 stored occurrences go with it`. */
@@ -118,6 +127,8 @@ export function CommandAction({
   onViewRefused,
   commands,
   variant,
+  icon,
+  appearance = 'button',
   recovery,
   reach,
   onDone,
@@ -256,14 +267,20 @@ export function CommandAction({
 
   return (
     <>
-      <Button
-        variant={variant}
-        disabledReason={refusal}
-        isPending={busy && !pressed}
-        onPress={press}
-      >
-        {label}
-      </Button>
+      {appearance === 'icon' && icon ? (
+        <Button
+          variant={variant}
+          icon={icon}
+          aria-label={label}
+          disabledReason={refusal}
+          isPending={busy && !pressed}
+          onPress={press}
+        />
+      ) : (
+        <Button variant={variant} icon={icon} disabledReason={refusal} isPending={busy && !pressed} onPress={press}>
+          {label}
+        </Button>
+      )}
       {recovery ? <Announcer message={announced} /> : null}
       {error && !pressed ? (
         <Text tone="error" role="alert">

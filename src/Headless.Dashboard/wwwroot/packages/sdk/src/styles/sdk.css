@@ -303,18 +303,6 @@
     grid-column: span 2;
   }
 
-  .hd-kv {
-    @apply m-0 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1.5;
-  }
-
-  .hd-kv dt {
-    @apply type-label text-faint;
-  }
-
-  .hd-kv dd {
-    @apply m-0 min-w-0 wrap-anywhere;
-  }
-
   /*
    * A state role sets --role on the element that carries it; the dot, a strip tick, or a bar paints with it. The label
    * beside a dot keeps its text tone, because the light roles other than fail are under 4.5:1 as text.
@@ -343,13 +331,9 @@
     --role: var(--off);
   }
 
+  /* The dot is the mark on its own: a halo around it was clipped by the table cell it sits in. */
   .hd-mark {
     @apply size-2 flex-none rounded-full bg-role;
-  }
-
-  /* Running and failed states need the eye now, so their dot carries the halo; a resting state has none. */
-  :is(.hd-tone-proc, .hd-tone-fail) .hd-mark {
-    box-shadow: 0 0 var(--glow) var(--role);
   }
 
   /*
