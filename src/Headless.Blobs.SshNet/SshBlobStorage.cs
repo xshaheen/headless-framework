@@ -807,6 +807,37 @@ internal sealed partial class SshBlobStorage(
         {
             return false;
         }
+        catch (SftpException)
+        {
+            // OpenSSH refuses to remove a directory with a generic SSH_FX_FAILURE (Linux unlink answers EISDIR), the
+            // same status a real failure on a file carries. A directory is not a blob, so a delete of its key reports
+            // not-found as ExistsAsync and the other providers do; any other refusal keeps its exception.
+            if (await _IsDirectoryAsync(client, path, cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            throw;
+        }
+    }
+
+    private static async Task<bool> _IsDirectoryAsync(
+        SftpClient client,
+        string path,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            var file = await client.GetAsync(path, cancellationToken).ConfigureAwait(false);
+
+            return file.IsDirectory;
+        }
+        catch (SftpException)
+        {
+            // The stat failed too: report "not a directory" so the caller rethrows the original delete failure.
+            return false;
+        }
     }
 
     #endregion
