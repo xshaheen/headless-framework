@@ -527,11 +527,14 @@ def summarize(
 def render_markdown(summary: dict) -> str:
     tests = summary["tests"]
     verdict = summary["verdict"].upper()
+    # Plain headings, no <details>: the PR template's Verification block is the one collapsible, and the summary is
+    # pasted under its "### Gates" heading, so the gate heading sits one level below that.
     lines = [
-        f"<details{' open' if verdict == 'FAIL' else ''}><summary><strong>{summary.get('target', 'make verify-affected')}: {verdict}</strong> · "
+        f"#### {summary.get('target', 'make verify-affected')}: {verdict}",
+        "",
         f"Tests: {tests['passed']:,} passed, {tests['failed']:,} failed, {tests['skipped']:,} skipped · "
         f"Compiler diagnostics: {len(summary['compiler_diagnostics']):,} · "
-        f"Analyzer findings: {len(summary['analyzer_findings']):,}{render_gate_summary(summary.get('coverage_gate'))}</summary>",
+        f"Analyzer findings: {len(summary['analyzer_findings']):,}{render_gate_summary(summary.get('coverage_gate'))}",
         "",
         f"Commit `{summary['commit'][:12]}`{' with uncommitted changes' if summary['dirty'] else ''}, base `{summary['base']}`.",
         "",
@@ -567,13 +570,13 @@ def render_markdown(summary: dict) -> str:
     noteworthy = [m for m in tests["modules"] if m["failed"] or m["skipped"]]
     clean = len(tests["modules"]) - len(noteworthy)
     if noteworthy:
-        lines += ["", "### Test modules with failures or skips", "", "| Module | Passed | Failed | Skipped |", "| --- | --- | --- | --- |"]
+        lines += ["", "##### Test modules with failures or skips", "", "| Module | Passed | Failed | Skipped |", "| --- | --- | --- | --- |"]
         lines += [f"| {m['module']} | {m['passed']} | {m['failed']} | {m['skipped']} |" for m in noteworthy]
         if clean:
             lines += ["", f"{clean} other module{'s' if clean != 1 else ''} passed with no skips."]
     failures = [(m["module"], f) for m in tests["modules"] for f in m["failures"]]
     if failures:
-        lines += ["", "#### Failed tests", ""]
+        lines += ["", "###### Failed tests", ""]
         for module, failure in failures[:MAX_LISTED]:
             lines.append(f"- `{module}` `{failure['test']}`: {failure['message']}")
 
@@ -581,7 +584,7 @@ def render_markdown(summary: dict) -> str:
         items = summary[key]
         if not items:
             continue
-        lines += ["", f"### {title} ({len(items)})", ""]
+        lines += ["", f"##### {title} ({len(items)})", ""]
         by_id: dict[str, int] = {}
         for item in items:
             by_id[item["id"]] = by_id.get(item["id"], 0) + 1
@@ -595,10 +598,9 @@ def render_markdown(summary: dict) -> str:
 
     if summary["coverage"]:
         source = "unit and integration tests" if summary.get("integration_ran") else "unit tests"
-        lines += ["", f"### Coverage of changed assemblies ({source})", "", "| Assembly | Line % | Branch % |", "| --- | --- | --- |"]
+        lines += ["", f"##### Coverage of changed assemblies ({source})", "", "| Assembly | Line % | Branch % |", "| --- | --- | --- |"]
         lines += [f"| {row['assembly']} | {row['line']} | {row['branch']} |" for row in summary["coverage"]]
     lines += render_gate(summary.get("coverage_gate"))
-    lines += ["", "</details>"]
     return "\n".join(lines) + "\n"
 
 
@@ -624,7 +626,7 @@ def render_gate(gate: dict | None) -> list[str]:
         if gate["scope"] == "unit"
         else "packages with an integration project, unit and integration tests merged"
     )
-    lines = ["", f"### Coverage gate: {gate['result'].upper()} ({scope})", ""]
+    lines = ["", f"##### Coverage gate: {gate['result'].upper()} ({scope})", ""]
     if gate["result"] == "skipped":
         return lines + [f"- {reason}" for reason in gate["reasons"]]
     floors = gate["floors"]

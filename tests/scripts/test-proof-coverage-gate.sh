@@ -97,9 +97,9 @@ expect "unit gate warns, and keeps the proof passing, on an uncovered changed li
 
 write_bundle bundle 0.9 1 0 1 0
 expect "unit gate fails the proof on an uncovered changed line when strict" 1 unit "Coverage gate: FAIL" fail
-if ! grep -qF -- '<details open><summary><strong>make verify-affected: FAIL</strong>' bundle/summary.md \
+if ! grep -qxF -- '#### make verify-affected: FAIL' bundle/summary.md \
   || ! grep -qF -- 'Coverage: FAIL' bundle/summary.md; then
-  printf 'FAIL: failed proof is not open with its coverage result visible\n' >&2
+  printf 'FAIL: failed proof does not head its summary with the verdict and coverage result\n' >&2
   cat bundle/summary.md >&2
   exit 1
 fi
@@ -129,7 +129,7 @@ git commit -qm 'Current source becomes the comparison base'
 base=$(git rev-parse HEAD)
 write_bundle bundle 0.9 1 1 1 0
 expect "zero changed lines are not reported as 100 percent coverage" 0 unit "Changed lines: not applicable (0 executable changed lines)"
-if ! grep -qF -- 'Coverage: PASS</summary>' bundle/summary.md; then
+if ! grep -qE -- 'Coverage: PASS$' bundle/summary.md; then
   printf 'FAIL: zero changed lines or branches are reported as measured coverage in the summary line\n' >&2
   cat bundle/summary.md >&2
   exit 1
@@ -138,9 +138,12 @@ fi
 write_bundle bundle 0.9 1 1 0 0
 expect "no gate without --coverage-gate" 0 none
 
-expected_summary='<details><summary><strong>make verify-affected: PASS</strong> · Tests: 0 passed, 0 failed, 0 skipped · Compiler diagnostics: 0 · Analyzer findings: 0</summary>'
-if ! grep -qF -- "$expected_summary" bundle/summary.md; then
-  printf 'FAIL: summary line is not compact or scan-friendly\n' >&2
+expected_summary='Tests: 0 passed, 0 failed, 0 skipped · Compiler diagnostics: 0 · Analyzer findings: 0'
+# The PR template's Verification block is the only collapsible, so the pasted summary must not nest another one.
+if [[ "$(head -1 bundle/summary.md)" != '#### make verify-affected: PASS' ]] \
+  || ! grep -qxF -- "$expected_summary" bundle/summary.md \
+  || grep -qF -- '<details' bundle/summary.md; then
+  printf 'FAIL: summary is not a plain verdict heading and one result line\n' >&2
   cat bundle/summary.md >&2
   exit 1
 fi
@@ -155,11 +158,13 @@ if grep -qE '^### (Tests:|Compiler diagnostics|Analyzer findings)' bundle/summar
   cat bundle/summary.md >&2
   exit 1
 fi
-if ! grep -qE '^## Verification$' "$repo_root/.github/PULL_REQUEST_TEMPLATE.md"; then
-  printf 'FAIL: the PR template does not expose Verification as a normal heading\n' >&2
+# Verification is one collapsible with sections inside; a nested <details> hides results behind a second click.
+verification=$(sed -n '/^<details><summary><h2>Verification<\/h2><\/summary>$/,/^<\/details>$/p' "$repo_root/.github/PULL_REQUEST_TEMPLATE.md")
+if [[ -z "$verification" ]]; then
+  printf 'FAIL: the PR template does not collapse Verification into one block\n' >&2
   exit 1
 fi
-if grep -qF -- '<summary><h2>Verification</h2></summary>' "$repo_root/.github/PULL_REQUEST_TEMPLATE.md"; then
-  printf 'FAIL: the PR template hides Verification behind an outer disclosure\n' >&2
+if [[ "$(grep -c '<details' <<<"$verification")" -ne 1 ]]; then
+  printf 'FAIL: the PR template nests a collapsible inside Verification\n' >&2
   exit 1
 fi

@@ -70,16 +70,22 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 
 </details>
 
-## Verification
+<details><summary><h2>Verification</h2></summary>
 
-<!-- Keep this section visible. Every result describes the head commit against the same base. An earlier commit does
-     not prove the head, and an unchanged gate reuses its earlier pass in seconds. -->
+<!-- One collapsed block: nest no other collapsible inside it. When any gate failed, add `open` to the tag above so
+     the failure shows without a click. Every result describes the head commit against the same base: an earlier commit does not
+     prove the head, and an unchanged gate reuses its earlier pass in seconds. Delete a section that does not apply. -->
 
 `<head commit>` against `<base: origin/main, or the parent branch of a stack>`.
 
-<!-- Paste each artifacts/proof/<run>/summary.md here as it is. Its collapsed summary line already reports the
-     command, verdict, test counts, findings, and coverage result. Do not repeat those results in another table, and
-     do not wrap the generated block in another <details>. -->
+### Gates
+
+<!-- Paste each artifacts/proof/<run>/summary.md here as it is. Its heading reports the command and verdict, and the
+     line under it the test counts, findings, and coverage result. Do not repeat those results in another table.
+     A failed proof stays failed. Under it, record `make test-failed` on `<head commit>` as PASS, naming the modules it
+     reran. Then paste the summary from the final full-gate run. -->
+
+### Evidence
 
 - **Regression proof:** <!-- one sentence: the behavior the new tests hold that fails or does not compile on the base.
   For new behavior with no base to fail, state the one behavior that matters most. Name behavior, not test files. -->
@@ -87,19 +93,24 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
   it did not run when applicable. CI runs no integration suites. Delete if the change has no integration project. -->
 - **Also checked:** <!-- evidence no gate shows, at most three items: a parity corpus, an EXPLAIN plan, a benchmark, or
   a run against a real service. Delete if none. -->
-- **Not verified:** <!-- each claim in Solution or Contract changes that no check exercised, and what would prove it.
-  Delete if none. -->
-- **Coverage below floor:** <!-- only warnings from the proof's coverage gate. Delete if none. For each warning, give
-  the package, files and lines, figure against the floor, accepted reason from AGENTS.md, and one-sentence rationale.
-  For integration-only behavior, name the integration test. For a whole-assembly warning on unchanged code, give this
-  PR's changed-line figure and say the shortfall predates it. -->
-- **Unrelated failures:** <!-- one sub-bullet per failed test: its first error line, why this PR cannot reach it, and
-  the issue tracking the flake. A passing rerun establishes a flake, not that this PR is innocent. Delete if none. -->
 
-<!-- A failed proof stays failed. Under it, record `make test-failed` on `<head commit>` as PASS, naming the
-     modules it reran. Then paste the summary from the final full-gate run. -->
+### Not verified
 
-<details><summary>Branch history</summary>
+<!-- Each claim in Solution or Contract changes that no check exercised, and what would prove it. -->
+
+### Coverage below floor
+
+<!-- Only warnings from the proof's coverage gate. For each warning, give the package, files and lines, figure against
+     the floor, accepted reason from AGENTS.md, and one-sentence rationale. For integration-only behavior, name the
+     integration test. For a whole-assembly warning on unchanged code, give this PR's changed-line figure and say the
+     shortfall predates it. -->
+
+### Unrelated failures
+
+<!-- One bullet per failed test: its first error line, why this PR cannot reach it, and the issue tracking the flake.
+     A passing rerun establishes a flake, not that this PR is innocent. -->
+
+### Branch history
 
 <!-- Delete if the branch has one commit worth describing. What each later commit added, and the checks run on it. -->
 
