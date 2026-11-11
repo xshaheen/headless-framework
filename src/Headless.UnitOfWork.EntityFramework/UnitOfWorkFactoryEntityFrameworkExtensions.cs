@@ -6,6 +6,7 @@ using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Polly.Retry;
 
 namespace Headless.UnitOfWork;
 
@@ -163,6 +164,69 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
             CancellationToken cancellationToken = default
         )
         {
+            return factory.RunAsync(db, operation, isolation, retry: null, cancellationToken);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as a unit of work inside <paramref name="db" />'s execution strategy,
+        /// with the replay and join semantics of the overload that takes an <see cref="IsolationLevel" />, and also
+        /// replays the block when <paramref name="retry" /> handles its fault. This is the opt-in for a block that
+        /// reads, decides, and saves under an optimistic concurrency token: pass
+        /// <see cref="EntityFrameworkConflictRetry.Create" /> and a save that lost the check
+        /// (<see cref="DbUpdateConcurrencyException" />) runs the block again on fresh rows.
+        /// </summary>
+        /// <param name="db">The context to operate on.</param>
+        /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
+        /// <param name="isolation">
+        /// Transaction isolation level for a unit this call begins. Ignored when the call joins an already-bound
+        /// unit: the block runs at the owner's isolation level.
+        /// </param>
+        /// <param name="retry">
+        /// This call's replay policy, applied on top of the context's execution strategy; <see langword="null" />
+        /// replays under the execution strategy alone. No host default applies.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, the operation, and replay delays.</param>
+        /// <remarks>
+        /// <para>
+        /// A replay rolls the attempt back, waits the policy's delay, clears the context's change tracker, and runs
+        /// the block again with a fresh transaction and unit, so the block re-reads its rows. Load and edit what the
+        /// block changes inside the block, and keep every effect in the unit's transaction (<c>unit.Outbox</c>,
+        /// <c>unit.Jobs</c>): anything else the block does repeats on every attempt.
+        /// </para>
+        /// <para>
+        /// The policy never replays a block whose commit started (it may be durable, or in doubt), one that called
+        /// <see cref="IUnitOfWork.PreventRetry" />, one that ended its own unit, one that joined a live unit (its
+        /// owner decides), one whose context tracked entities before the call, or one in which a second context
+        /// that joined the unit over the same connection still tracks an entity (its tracker keeps the failed
+        /// attempt's edits). Those faults surface to the caller.
+        /// </para>
+        /// <para>
+        /// The unit learns of a second context only when that context joins it: on its first
+        /// <c>RunAsync(second, …)</c>, <c>second.UnitOfWork()</c>, or <c>HeadlessDbContext</c> save in the attempt.
+        /// An entity the block adds to or edits on a second context before that is not seen when a replay is
+        /// decided, so the block replays, the second context still holds the failed attempt's change, and its
+        /// later save applies both attempts' changes. Read and edit through a second context only after it joined
+        /// the unit, inside the block, or keep its changes out of a block that can replay.
+        /// </para>
+        /// <para>
+        /// <see cref="RetryStrategyOptions{TResult}.MaxRetryAttempts" /> bounds the replays this policy starts for the
+        /// whole call. Under a retrying execution strategy the two budgets add and never multiply: the block runs
+        /// at most one time, plus the policy's replays, plus the strategy's retries.
+        /// </para>
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">
+        /// The context's connection is owned by a raw-ADO unit (begin the EF unit first and join it from the ADO
+        /// side), the context uses a transaction other than the unit's on that connection, or a joined block
+        /// completed, rolled back, or disposed the owner's unit.
+        /// </exception>
+        public Task RunAsync(
+            DbContext db,
+            Func<IUnitOfWork, CancellationToken, Task> operation,
+            IsolationLevel isolation,
+            RetryStrategyOptions? retry,
+            CancellationToken cancellationToken = default
+        )
+        {
             Argument.IsNotNull(operation);
 
             return _RunCoreAsync(
@@ -175,6 +239,7 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
                     return true;
                 },
                 isolation,
+                retry,
                 cancellationToken
             );
         }
@@ -228,9 +293,43 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
             CancellationToken cancellationToken = default
         )
         {
+            return factory.RunAsync(db, operation, isolation, retry: null, cancellationToken);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as a unit of work inside <paramref name="db" />'s execution strategy
+        /// and returns its result, with the same replay semantics as the result-less
+        /// <c>RunAsync(db, operation, isolation, retry, …)</c> overload.
+        /// </summary>
+        /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
+        /// <param name="db">The context to operate on.</param>
+        /// <param name="operation">The block receiving the unit and the caller's cancellation token, returning a result.</param>
+        /// <param name="isolation">
+        /// Transaction isolation level for a unit this call begins. Ignored when the call joins an already-bound
+        /// unit: the block runs at the owner's isolation level.
+        /// </param>
+        /// <param name="retry">
+        /// This call's replay policy, applied on top of the context's execution strategy; <see langword="null" />
+        /// replays under the execution strategy alone. No host default applies.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, the operation, and replay delays.</param>
+        /// <returns>The result produced by the attempt that committed.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// The context's connection is owned by a raw-ADO unit (begin the EF unit first and join it from the ADO
+        /// side), the context uses a transaction other than the unit's on that connection, or a joined block
+        /// completed, rolled back, or disposed the owner's unit.
+        /// </exception>
+        public Task<TResult> RunAsync<TResult>(
+            DbContext db,
+            Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
+            IsolationLevel isolation,
+            RetryStrategyOptions? retry,
+            CancellationToken cancellationToken = default
+        )
+        {
             Argument.IsNotNull(operation);
 
-            return _RunCoreAsync(factory, db, operation, isolation, cancellationToken);
+            return _RunCoreAsync(factory, db, operation, isolation, retry, cancellationToken);
         }
     }
 
@@ -290,13 +389,20 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         DbContext db,
         Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
         IsolationLevel isolation,
+        RetryStrategyOptions? retry,
         CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(db);
 
         var strategy = db.Database.CreateExecutionStrategy();
-        var replayGuard = new DbContextReplayGuard(db, strategy.RetriesOnFailure);
+
+        // A call that passed a policy can replay under a strategy that never retries, so the tracker reset
+        // follows either source of replay.
+        var replayGuard = new DbContextReplayGuard(db, strategy.RetriesOnFailure || retry is not null);
+        IUnitOfWorkExecutionStrategy replayLoop = retry is null
+            ? new EfUnitOfWorkExecutionStrategy(strategy)
+            : new EfConflictReplayExecutionStrategy(strategy, retry);
 
         return UnitOfWorkRunner.RunAsync(
             async () =>
@@ -325,7 +431,7 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
                 return _BeginAsync(factory, db, isolation, rejectRetryingStrategy: false, ct);
             },
             (unitOfWork, ct) => replayGuard.RunAsync(unitOfWork, operation, ct),
-            new EfUnitOfWorkExecutionStrategy(strategy),
+            replayLoop,
             UnitOfWorkRunner.LoggerFor(factory),
             cancellationToken
         );
