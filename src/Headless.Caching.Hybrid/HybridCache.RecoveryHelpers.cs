@@ -5,20 +5,25 @@ namespace Headless.Caching;
 public sealed partial class HybridCache
 {
     /// <summary>
-    /// Reads back the L1 physical-expiry stamp for a key just written by a scalar upsert, so a queued recovery
-    /// item can verify (at replay time) that the L1 entry it captured is still the one in the store. Returns
-    /// <see langword="null"/> when L1 does not expose the entry store (the replay then falls back to a
-    /// presence-only check) — symmetric with how <see cref="_QueueSetEntryRecovery{T}"/> consumes its stamp.
+    /// Reads back the L1 stamps for a key just written by a scalar upsert. The physical-expiry stamp lets a queued
+    /// recovery item verify (at replay time) that the L1 entry it captured is still the one in the store; the birth
+    /// time (<c>CreatedAt</c>) is the original write instant the replay carries to L2, so a tag or clear invalidation
+    /// issued between the write and its replay still outranks the replayed entry. Both are <see langword="null"/>
+    /// when L1 does not expose the entry store (the replay then falls back to a presence-only check and the enqueue
+    /// time) — symmetric with how <see cref="_QueueSetEntryRecovery{T}"/> consumes its stamp.
     /// </summary>
-    private async ValueTask<DateTime?> _CaptureLocalPhysicalStampAsync<T>(string key, CancellationToken ct)
+    private async ValueTask<(DateTime? PhysicalExpiresAt, DateTime? CreatedAt)> _CaptureLocalStampsAsync<T>(
+        string key,
+        CancellationToken ct
+    )
     {
         if (LocalCache is not IFactoryCacheStore l1Store)
         {
-            return null;
+            return (null, null);
         }
 
         var current = await l1Store.TryGetEntryAsync<T>(key, cancellationToken: ct).ConfigureAwait(false);
-        return current.Found ? current.PhysicalExpiresAt : null;
+        return current.Found ? (current.PhysicalExpiresAt, current.CreatedAt) : (null, null);
     }
 
     /// <summary>
@@ -33,9 +38,9 @@ public sealed partial class HybridCache
     /// <param name="l1PhysicalStamp">The physical expiry the write left on the L1 entry.</param>
     /// <param name="requireLogicallyLive">
     /// Also require that the L1 entry has not been logically invalidated since (a tag or clear marker, local or from a
-    /// peer). A scalar upsert replays through a plain L2 write that is born at replay time, so an invalidation issued
-    /// during the outage can only win here; a framed set-entry replay carries its original birth time and lets the L2
-    /// markers decide instead.
+    /// peer). A scalar upsert replays with its original birth time when L2 exposes <see cref="IFactoryCacheStore"/>,
+    /// so the L2 markers outrank it there too; against any other L2 it falls back to a plain write born at replay
+    /// time, where only this guard keeps an invalidation this node has seen from losing to the replay.
     /// </param>
     private Func<CancellationToken, ValueTask<bool>> _BuildL1StampGuard<T>(
         string key,
@@ -89,14 +94,23 @@ public sealed partial class HybridCache
         };
     }
 
-    private void _QueueScalarUpsertRecovery<T>(string key, T? value, TimeSpan? expiration, DateTime? l1PhysicalStamp)
+    private void _QueueScalarUpsertRecovery<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        (DateTime? PhysicalExpiresAt, DateTime? CreatedAt) l1Stamps
+    )
     {
         var queue = RecoveryQueue!;
         var now = _timeProvider.GetUtcNow();
 
+        // The write instant is the L1 entry's birth time, not the enqueue time: on the background path the L2 write
+        // (and so this enqueue) runs after the L1 write, and an invalidation in between must still win.
+        var writtenAt = l1Stamps.CreatedAt ?? now.UtcDateTime;
+
         // Values without a TTL have no natural item expiry; bound them by the generous fixed window.
-        var deadline = expiration.HasValue ? now + expiration.Value : now + queue.DefaultRetention;
-        var l1Guard = _BuildL1StampGuard<T>(key, l1PhysicalStamp, requireLogicallyLive: true);
+        var deadline = expiration.HasValue ? now.SafeAdd(expiration.Value) : now.SafeAdd(queue.DefaultRetention);
+        var l1Guard = _BuildL1StampGuard<T>(key, l1Stamps.PhysicalExpiresAt, requireLogicallyLive: true);
 
         queue.Enqueue(
             key,
@@ -112,14 +126,34 @@ public sealed partial class HybridCache
                     return HybridCacheRecoveryReplayOutcome.Obsolete;
                 }
 
-                TimeSpan? remaining = expiration.HasValue ? deadline - _timeProvider.GetUtcNow() : null;
-
-                if (remaining is { Ticks: <= 0 })
+                if (expiration.HasValue && deadline <= _timeProvider.GetUtcNow())
                 {
                     return HybridCacheRecoveryReplayOutcome.Obsolete;
                 }
 
-                await l2Cache.UpsertAsync(key, value, remaining, ct).ConfigureAwait(false);
+                if (l2Cache is IFactoryCacheStore l2Store)
+                {
+                    // Replay the write as it was made: its original birth time and absolute expiry. A plain upsert
+                    // would stamp the entry with the replay time, so a tag or clear invalidation issued on another
+                    // node between the write and this replay would read as older than the entry and lose to it.
+                    var expiresAt = expiration.HasValue ? deadline.UtcDateTime : DateTime.MaxValue;
+                    var entry = new CacheStoreEntryWrite<T>
+                    {
+                        Value = value,
+                        IsNull = value is null,
+                        LogicalExpiresAt = expiresAt,
+                        PhysicalExpiresAt = expiresAt,
+                        CreatedAt = writtenAt,
+                    };
+
+                    await l2Store.SetEntryAsync(key, entry, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    TimeSpan? remaining = expiration.HasValue ? deadline - _timeProvider.GetUtcNow() : null;
+                    await l2Cache.UpsertAsync(key, value, remaining, ct).ConfigureAwait(false);
+                }
+
                 await _PublishReplayedInvalidationAsync(key, now, ct).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;
             }

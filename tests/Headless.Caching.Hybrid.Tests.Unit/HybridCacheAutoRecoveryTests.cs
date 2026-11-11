@@ -645,6 +645,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Random.Int();
         var attemptsBefore = l2.UpsertAttempts;
+        var setEntryAttemptsBefore = l2.SetEntryAttempts;
 
         // when — a scalar upsert runs while the circuit is open
         var updated = await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
@@ -666,7 +667,72 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         // then — the queued write replayed the value into L2 (a single upsert attempt) and the queue drained
         cache.RecoveryQueue.Count.Should().Be(0);
         (await l2.GetAsync<int>(key, AbortToken)).Value.Should().Be(value);
-        l2.UpsertAttempts.Should().Be(attemptsBefore + 1, "the replay performed exactly one L2 upsert");
+        l2.UpsertAttempts.Should().Be(attemptsBefore, "the replay writes through SetEntry, not the plain upsert");
+        l2.SetEntryAttempts.Should()
+            .Be(setEntryAttemptsBefore + 1, "the replay performed exactly one L2 write carrying the original stamps");
+    }
+
+    [Fact]
+    public async Task should_replay_scalar_upsert_without_expiration_as_a_non_expiring_entry()
+    {
+        // given — auto-recovery on and L2 writes failing; the value is written with no expiration
+        var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        await using var _ = cache;
+        l2.FailWrites = true;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, "v", expiration: null, AbortToken);
+        cache.RecoveryQueue!.Count.Should().Be(1);
+
+        // when — L2 recovers and the recovery pass runs
+        l2.FailWrites = false;
+        _timeProvider.Advance(_Delay);
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the replayed entry carries no expiry, matching the write the caller made
+        cache.RecoveryQueue.Count.Should().Be(0);
+        var entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
+        entry.Found.Should().BeTrue();
+        entry.Value.Should().Be("v");
+        entry.PhysicalExpiresAt.Should().Be(DateTime.MaxValue);
+    }
+
+    [Fact]
+    public async Task should_replay_scalar_upsert_with_remaining_ttl_when_l2_is_not_an_entry_store()
+    {
+        // given — an L2 without the IFactoryCacheStore primitive, whose first upsert fails
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = Substitute.For<IRemoteCache>();
+        var publisher = Substitute.For<IHybridCacheBackplane>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var ttl = TimeSpan.FromMinutes(5);
+        l2.UpsertAsync(key, "v", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("L2 write failed"), _ => ValueTask.FromResult(true));
+
+        await using var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions { EnableAutoRecovery = true },
+            timeProvider: _timeProvider
+        );
+
+        await cache.UpsertAsync(key, "v", ttl, AbortToken);
+        cache.RecoveryQueue!.Count.Should().Be(1);
+
+        // when — a minute passes and the recovery pass runs
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the replay falls back to a plain upsert that keeps the original deadline: only the remaining
+        // four minutes of the five-minute TTL are written
+        cache.RecoveryQueue.Count.Should().Be(0);
+        await l2.Received(2).UpsertAsync(key, "v", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await l2.Received(1).UpsertAsync(key, "v", ttl - TimeSpan.FromMinutes(1), Arg.Any<CancellationToken>());
     }
 
     [Fact]
