@@ -97,6 +97,40 @@ public sealed class DialectStatementTests : TestBase
                 $"DELETE FROM {dialect.Qualify("s", "t")} WHERE {dialect.Quote("v")} < {SqlDialectTokens.Now}"
             )
         );
+        yield return dialect.Render(
+            new SqlClockedStatement(
+                $"SELECT {dialect.Quote("v")} FROM {dialect.Qualify("s", "t")} WHERE {dialect.Quote("v")} < {SqlDialectTokens.Now}"
+            )
+            {
+                ReadsOneRow = true,
+            }
+        );
+    }
+
+    [Fact]
+    public void should_read_the_clock_inline_only_for_a_one_row_read_that_names_it_once_on_postgresql()
+    {
+        var dialect = PostgreSqlDialect.Instance;
+        var read =
+            $"SELECT CASE WHEN \"v\" > {SqlDialectTokens.Now} THEN 1 ELSE 0 END FROM \"s\".\"t\" WHERE \"k\" = @k;";
+        var twice =
+            $"SELECT {SqlDialectTokens.Now}, CASE WHEN \"v\" > {SqlDialectTokens.Now} THEN 1 ELSE 0 END FROM \"s\".\"t\";";
+
+        dialect
+            .Render(new SqlClockedStatement(read) { ReadsOneRow = true })
+            .Should()
+            .Be("SELECT CASE WHEN \"v\" > clock_timestamp() THEN 1 ELSE 0 END FROM \"s\".\"t\" WHERE \"k\" = @k;");
+        dialect
+            .Render(new SqlClockedStatement(read))
+            .Should()
+            .StartWith(
+                "WITH clock AS MATERIALIZED",
+                "a statement that may touch several rows keeps one instant for all"
+            );
+        dialect
+            .Render(new SqlClockedStatement(twice) { ReadsOneRow = true })
+            .Should()
+            .StartWith("WITH clock AS MATERIALIZED", "two inline calls would each read their own instant");
     }
 
     [Fact]

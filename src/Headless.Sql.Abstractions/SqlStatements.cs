@@ -198,7 +198,19 @@ public enum SqlUpsertOutcome
 /// Exactly one statement, which does not itself start with <c>WITH</c>, over <see cref="SqlDialectTokens.Now" />.
 /// </param>
 [PublicAPI]
-public sealed record SqlClockedStatement(string Sql);
+public sealed record SqlClockedStatement(string Sql)
+{
+    /// <summary>
+    /// Gets whether the statement reads at most one row, such as a lookup by primary key. A dialect may then read the
+    /// clock inline instead of capturing it first, which costs PostgreSQL a materialized step on every call.
+    /// </summary>
+    /// <remarks>
+    /// A dialect inlines the clock only when <see cref="Sql" /> names <see cref="SqlDialectTokens.Now" /> once, so the
+    /// row is judged by one instant either way. Leave it unset for a statement that can touch several rows: an inline
+    /// clock would give each row its own instant and keep a clock comparison in a filter from using an index.
+    /// </remarks>
+    public bool ReadsOneRow { get; init; }
+}
 
 /// <summary>
 /// Inserts one row and reports the values it wrote, such as the database clock it stamped. Its result set is one row

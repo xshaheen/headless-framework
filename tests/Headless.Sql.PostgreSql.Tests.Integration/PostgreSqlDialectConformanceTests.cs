@@ -85,6 +85,12 @@ public sealed class PostgreSqlDialectConformanceTests(NpgsqlTestFixture fixture)
     }
 
     [Fact]
+    public override Task should_read_one_row_by_the_clock_at_the_statement_not_at_the_transaction_start()
+    {
+        return base.should_read_one_row_by_the_clock_at_the_statement_not_at_the_transaction_start();
+    }
+
+    [Fact]
     public override Task should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction()
     {
         return base.should_fail_loudly_once_the_engine_has_doomed_the_callers_transaction();
