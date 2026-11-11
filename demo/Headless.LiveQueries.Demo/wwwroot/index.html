@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live queries bench</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ground: #f3f5f2;
+        --surface: #ffffff;
+        --ink: #17211c;
+        --ink-soft: #4d5a53;
+        --rule: #7f8c85;
+        --rule-soft: #cfd6d1;
+        --accent: #0b6b55;
+        --accent-ink: #ffffff;
+        --pending: #8a5a00;
+        --pending-ground: #fbefd2;
+        --bad: #a3271f;
+        --good: #0b6b55;
+        --sans: "Avenir Next", "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 16px/1.5 var(--sans);
+      }
+
+      .page {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 28px 20px 56px;
+        display: grid;
+        gap: 28px;
+      }
+
+      header h1 {
+        margin: 0 0 6px;
+        font-size: 2rem;
+        line-height: 1.15;
+        font-weight: 650;
+        text-wrap: balance;
+      }
+
+      header p {
+        margin: 0;
+        max-width: 70ch;
+        color: var(--ink-soft);
+        text-wrap: pretty;
+      }
+
+      .bench {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 36px;
+        align-items: start;
+      }
+
+      .controls {
+        display: grid;
+        gap: 32px;
+      }
+
+      section {
+        border-top: 3px solid var(--ink);
+        padding-top: 12px;
+        display: grid;
+        gap: 12px;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 1.3rem;
+        font-weight: 650;
+      }
+
+      .note {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 0.9rem;
+        max-width: 60ch;
+      }
+
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        align-items: center;
+      }
+
+      label {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      input[type="text"],
+      input[type="number"],
+      select {
+        font: inherit;
+        padding: 7px 10px;
+        border: 1px solid var(--rule);
+        border-radius: 4px;
+        background: var(--surface);
+        color: var(--ink);
+        min-width: 0;
+      }
+
+      input[type="text"] {
+        flex: 1 1 180px;
+      }
+
+      input[type="number"] {
+        width: 92px;
+      }
+
+      button {
+        font: inherit;
+        font-weight: 600;
+        padding: 7px 14px;
+        border: 1px solid var(--accent);
+        border-radius: 4px;
+        background: var(--accent);
+        color: var(--accent-ink);
+        cursor: pointer;
+      }
+
+      button.plain {
+        background: var(--surface);
+        color: var(--accent);
+      }
+
+      button.quiet {
+        padding: 2px 9px;
+        border-color: var(--rule-soft);
+        background: var(--surface);
+        color: var(--ink-soft);
+        font-weight: 500;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: progress;
+      }
+
+      :focus-visible {
+        outline: 3px solid #f0a500;
+        outline-offset: 2px;
+      }
+
+      .todos {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        background: var(--surface);
+        border: 1px solid var(--rule-soft);
+        border-radius: 4px;
+      }
+
+      .todos li {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--rule-soft);
+      }
+
+      .todos li:last-child {
+        border-bottom: 0;
+      }
+
+      .todos li.done .title {
+        color: var(--ink-soft);
+        text-decoration: line-through;
+      }
+
+      .todos .title {
+        flex: 1;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .chip {
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: var(--pending-ground);
+        color: var(--pending);
+        border: 1px dashed var(--pending);
+        white-space: nowrap;
+      }
+
+      .figure {
+        font-size: 2.4rem;
+        font-weight: 650;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .result {
+        margin: 0;
+        font-size: 0.95rem;
+        min-height: 1.5em;
+      }
+
+      .result .bad {
+        color: var(--bad);
+        font-weight: 600;
+      }
+
+      .result .good {
+        color: var(--good);
+        font-weight: 600;
+      }
+
+      .tape-wrap {
+        position: sticky;
+        top: 16px;
+      }
+
+      .tape {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        background: var(--surface);
+        border: 1px solid var(--rule-soft);
+        border-radius: 4px;
+        max-height: 72vh;
+        overflow-y: auto;
+        font: 13px/1.45 var(--mono);
+      }
+
+      .tape li {
+        display: grid;
+        grid-template-columns: 74px 78px minmax(0, 1fr);
+        gap: 10px;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--rule-soft);
+      }
+
+      .tape li.command {
+        background: #eaf3ef;
+      }
+
+      .tape li.error {
+        background: #fbe9e7;
+      }
+
+      .tape .v {
+        font-weight: 700;
+      }
+
+      .meter {
+        margin: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 22px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .meter div {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+
+      .meter dt {
+        color: var(--ink-soft);
+        font-size: 0.9rem;
+      }
+
+      .meter dd {
+        margin: 0;
+        font-weight: 650;
+      }
+
+      .tape .what {
+        overflow-wrap: anywhere;
+      }
+
+      .tape .empty {
+        display: block;
+        color: var(--ink-soft);
+        font-family: var(--sans);
+        font-size: 0.95rem;
+      }
+
+      footer {
+        color: var(--ink-soft);
+        font-size: 0.85rem;
+        border-top: 1px solid var(--rule-soft);
+        padding-top: 12px;
+      }
+
+      @media (max-width: 820px) {
+        .bench {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .tape-wrap {
+          position: static;
+        }
+
+        .tape {
+          max-height: 50vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <h1>Live queries bench</h1>
+        <p>
+          Three queries on this page are open streams. Every command you send commits on the server, and the server
+          re-sends only the queries that read what the commit wrote. Open this page in a second window to watch one
+          window's commands update the other, then switch one window to another owner.
+        </p>
+      </header>
+
+      <div class="bench">
+        <div class="controls">
+          <section aria-labelledby="h-settings">
+            <h2 id="h-settings">Bench settings</h2>
+            <div class="row">
+              <label><input type="checkbox" id="optimistic" checked /> Optimistic updates</label>
+              <label>Added latency <input type="number" id="latency" value="900" min="0" step="100" /> ms</label>
+            </div>
+            <p class="note">
+              With latency on, turn optimistic updates off and on to compare. An optimistic row carries a "saving" chip
+              until this window's own stream reports the command's id.
+            </p>
+          </section>
+
+          <section aria-labelledby="h-todos">
+            <h2 id="h-todos">Todos</h2>
+            <div class="row">
+              <label>
+                Owner
+                <select id="owner">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                </select>
+              </label>
+              <p class="result" id="stats">Waiting for the first result.</p>
+            </div>
+            <ul class="todos" id="todos"></ul>
+            <form class="row" id="add">
+              <input type="text" id="title" placeholder="A new todo" aria-label="Todo title" autocomplete="off" />
+              <button type="submit">Add todo</button>
+            </form>
+            <p class="result" id="todo-result"></p>
+            <p class="note">
+              The list reads one owner's rows, and the owner of a todo never changes. A write for another owner
+              therefore does not run this list again; the count above reads every todo and always runs.
+            </p>
+          </section>
+
+          <section aria-labelledby="h-counter">
+            <h2 id="h-counter">Counter under conflict</h2>
+            <div class="figure" id="counter">–</div>
+            <p class="note">
+              Each increment reads the counter, waits 150 ms, then saves with a version check, so ten at once collide.
+              With retry, the handler's unit of work runs the losing block again on a fresh read.
+            </p>
+            <div class="row">
+              <button type="button" id="inc-retry">Send 10 with retry</button>
+              <button type="button" class="plain" id="inc-once">Send 10 without retry</button>
+            </div>
+            <p class="result" id="counter-result"></p>
+          </section>
+
+          <section aria-labelledby="h-action">
+            <h2 id="h-action">An action</h2>
+            <p class="note">
+              Summarize calls a slow outside service and commits nothing, so the server answers that no stream will
+              report it and no stream moves.
+            </p>
+            <div class="row">
+              <button type="button" class="plain" id="summarize">Summarize open todos</button>
+            </div>
+            <p class="result" id="summary"></p>
+          </section>
+
+          <section aria-labelledby="h-meter">
+            <h2 id="h-meter">Server meter</h2>
+            <dl class="meter" id="meter">
+              <div><dt>Open streams</dt><dd id="m-streams">–</dd></div>
+              <div><dt>Query runs</dt><dd id="m-runs">–</dd></div>
+              <div><dt>Wakes</dt><dd id="m-wakes">–</dd></div>
+              <div><dt>Rows ruled out</dt><dd id="m-ruled">–</dd></div>
+            </dl>
+            <p class="note" id="meter-note">
+              Totals since the server started, across every window. A row is ruled out when a stream's owner filter
+              shows the saved row cannot be in its result.
+            </p>
+          </section>
+        </div>
+
+        <section class="tape-wrap" aria-labelledby="h-tape">
+          <h2 id="h-tape">Tape</h2>
+          <p class="note">
+            Newest first. A command (shaded rows) and the stream updates that hold it carry the same short id.
+          </p>
+          <ul class="tape" id="tape" aria-live="polite">
+            <li><span class="empty">Nothing received yet.</span></li>
+          </ul>
+        </section>
+      </div>
+
+      <footer>
+        Demo for Headless.LiveQueries. Data resets when the server restarts. Over plain HTTP a browser allows six
+        connections to one server and each open stream holds one, so run two windows over HTTPS, where streams share
+        a connection, or in two browsers.
+      </footer>
+    </div>
+
+    <script type="module">
+      import { connect } from "./headless-live.js";
+
+      const $ = id => document.getElementById(id);
+      const tape = $("tape");
+      let draftSequence = 0;
+
+      function record(kind, commands, text) {
+        tape.querySelector(".empty")?.parentElement.remove();
+        const row = document.createElement("li");
+        row.className = kind;
+        const time = document.createElement("span");
+        time.textContent = new Date().toLocaleTimeString([], { hour12: false });
+        const v = document.createElement("span");
+        v.className = "v";
+        v.dir = "ltr";
+        v.textContent = commands.map(command => command.slice(0, 8)).join(" ");
+        const what = document.createElement("span");
+        what.className = "what";
+        what.textContent = text;
+        row.append(time, v, what);
+        tape.prepend(row);
+        refreshMeter();
+      }
+
+      function settings() {
+        return { optimistic: $("optimistic").checked, delayMs: Number($("latency").value) || 0 };
+      }
+
+      function show(target, tone, text) {
+        const span = document.createElement("span");
+        span.className = tone;
+        span.textContent = text;
+        target.replaceChildren(span);
+      }
+
+      // The only route this page states: the demo's own meter totals. Everything else comes from the OpenAPI document.
+      let meterTimer;
+
+      function refreshMeter() {
+        clearTimeout(meterTimer);
+        meterTimer = setTimeout(async () => {
+          const response = await fetch("/demo/meter").catch(() => undefined);
+
+          if (!response?.ok) {
+            return;
+          }
+
+          const { rowLevelMatching, totals } = await response.json();
+          $("m-streams").textContent = totals["headless.live_queries.subscriptions.active"] ?? 0;
+          $("m-runs").textContent = totals["headless.live_queries.runs"] ?? 0;
+          $("m-wakes").textContent = totals["headless.live_queries.wakes"] ?? 0;
+          $("m-ruled").textContent = rowLevelMatching ? (totals["headless.live_queries.rows.ruled_out"] ?? 0) : "off";
+        }, 250);
+      }
+
+      const client = await connect();
+      const { api } = client;
+
+      function watch(query) {
+        query.onEvent(event => {
+          const detail =
+            event.kind === "acknowledged"
+              ? "command acknowledged, result unchanged"
+              : event.kind === "failure"
+                ? `stream failed: ${event.value?.title ?? "error"}`
+                : event.kind === "reconnecting"
+                  ? "connection lost, reconnecting"
+                  : summarize(event.value);
+          const tone = event.kind === "failure" || event.kind === "reconnecting" ? "error" : "stream";
+          record(tone, event.acknowledged, `${event.query}: ${detail}`);
+        });
+
+        return query;
+      }
+
+      function summarize(value) {
+        if (Array.isArray(value)) {
+          return `${value.length} todos, ${value.filter(todo => todo.done).length} done`;
+        }
+
+        return JSON.stringify(value);
+      }
+
+      // Live queries. The operations and their routes come from the OpenAPI document.
+      const stats = watch(client.live(api.getTodoStats));
+      const counter = watch(client.live(api.getCounter));
+      let todos;
+
+      function openTodos() {
+        todos?.close();
+        $("todos").replaceChildren();
+        todos = watch(client.live(api.listOwnerTodos, { ownerId: Number($("owner").value) }));
+        todos.subscribe(renderTodos);
+      }
+
+      async function run(operation, args, optimistic, resultTarget) {
+        const started = performance.now();
+        const { delayMs } = settings();
+
+        try {
+          const { value, command, acknowledgement } = await client.send(operation, args, { optimistic, delayMs });
+          const took = Math.round(performance.now() - started);
+          // Only a tagged command is told whether it wrote: an untagged one always answers "none".
+          const outcome = !command ? "" : acknowledgement === "pending" ? ", committed" : ", committed nothing a stream reads";
+          record("command", command ? [command] : [], `${operation.name} answered in ${took} ms${outcome}`);
+
+          return value;
+        } catch (error) {
+          record("error", [], `${operation.name} failed: ${error.status ?? ""} ${error.message}`);
+
+          if (resultTarget) {
+            show(resultTarget, "bad", `${operation.name} failed (${error.status ?? "network"}). The optimistic result was rolled back.`);
+          }
+
+          return undefined;
+        }
+      }
+
+      stats.subscribe(value => {
+        $("stats").textContent = `${value.done} of ${value.total} done, all owners`;
+      });
+
+      function renderTodos(list) {
+        const items = list.map(todo => {
+          const item = document.createElement("li");
+          item.className = todo.done ? "done" : "";
+
+          const box = document.createElement("input");
+          box.type = "checkbox";
+          box.checked = todo.done;
+          box.disabled = Boolean(todo.draft);
+          box.setAttribute("aria-label", `Done: ${todo.title}`);
+          box.addEventListener("change", () => toggle(todo));
+
+          const title = document.createElement("span");
+          title.className = "title";
+          title.dir = "auto";
+          title.textContent = todo.title;
+          item.append(box, title);
+
+          if (todo.saving) {
+            const chip = document.createElement("span");
+            chip.className = "chip";
+            chip.textContent = "saving";
+            item.append(chip);
+          }
+
+          if (!todo.draft) {
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "quiet";
+            remove.textContent = "Remove";
+            remove.setAttribute("aria-label", `Remove: ${todo.title}`);
+            remove.addEventListener("click", () => removeTodo(todo));
+            item.append(remove);
+          }
+
+          return item;
+        });
+
+        $("todos").replaceChildren(...items);
+      }
+
+      function toggle(todo) {
+        const optimistic = settings().optimistic
+          ? [
+              [todos, list => list.map(item => (item.id === todo.id ? { ...item, done: !todo.done, saving: true } : item))],
+              [stats, value => ({ ...value, done: value.done + (todo.done ? -1 : 1) })],
+            ]
+          : [];
+
+        $("todo-result").textContent = "";
+        run(api.toggleTodo, { id: todo.id }, optimistic, $("todo-result"));
+      }
+
+      function removeTodo(todo) {
+        const optimistic = settings().optimistic
+          ? [
+              [todos, list => list.filter(item => item.id !== todo.id)],
+              [stats, value => ({ total: value.total - 1, done: value.done - (todo.done ? 1 : 0) })],
+            ]
+          : [];
+
+        $("todo-result").textContent = "";
+        run(api.removeTodo, { id: todo.id }, optimistic, $("todo-result"));
+      }
+
+      $("add").addEventListener("submit", event => {
+        event.preventDefault();
+        const title = $("title").value.trim();
+        $("title").value = "";
+        const draft = { id: `draft-${++draftSequence}`, title: title || "(empty title)", done: false, saving: true, draft: true };
+
+        const optimistic = settings().optimistic
+          ? [
+              [todos, list => [...list, draft]],
+              [stats, value => ({ ...value, total: value.total + 1 })],
+            ]
+          : [];
+
+        $("todo-result").textContent = "";
+
+        // An empty title is sent on purpose: the server rejects it, which shows an optimistic rollback.
+        run(api.addTodo, { title, ownerId: Number($("owner").value) }, optimistic, $("todo-result"));
+      });
+
+      $("owner").addEventListener("change", openTodos);
+
+      async function burst(retry, button) {
+        button.disabled = true;
+        const before = counter.serverValue?.value ?? 0;
+
+        const outcomes = await Promise.all(
+          Array.from({ length: 10 }, () =>
+            client.send(api.incrementCounter, { holdMilliseconds: 150, retry }).then(
+              () => "ok",
+              error => error.status ?? "error"
+            )
+          )
+        );
+
+        const ok = outcomes.filter(outcome => outcome === "ok").length;
+        const conflicts = outcomes.filter(outcome => outcome === 409).length;
+        const label = retry ? "with retry" : "without retry";
+        record(ok === 10 ? "command" : "error", [], `IncrementCounter x10 ${label}: ${ok} succeeded, ${conflicts} answered 409 Conflict`);
+
+        show(
+          $("counter-result"),
+          ok === 10 ? "good" : "bad",
+          `${ok} of 10 succeeded${conflicts ? `, ${conflicts} lost a conflict (409)` : ""}. Counter went from ${before} to ${before + ok}.`
+        );
+
+        button.disabled = false;
+      }
+
+      $("inc-retry").addEventListener("click", event => burst(true, event.currentTarget));
+      $("inc-once").addEventListener("click", event => burst(false, event.currentTarget));
+
+      $("summarize").addEventListener("click", async event => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        $("summary").textContent = "Asking the outside service.";
+        const value = await run(api.summarizeTodos, {}, [], $("summary"));
+
+        if (value) {
+          $("summary").textContent = value.text;
+        }
+
+        button.disabled = false;
+      });
+
+      counter.subscribe(value => {
+        $("counter").textContent = value.value;
+      });
+
+      openTodos();
+      refreshMeter();
+    </script>
+  </body>
+</html>
