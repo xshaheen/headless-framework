@@ -631,6 +631,15 @@ Durable, tenant-scoped idempotent admission: admit a key once across processes a
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | SQL Server idempotency records |
 | [Headless.Idempotency.Sqlite](src/Headless.Idempotency.Sqlite/README.md) | SQLite idempotency records; admission commits on its own |
 
+### Live Queries
+
+Queries that stay current: a watched query runs again when a dependency it recorded is announced as changed, and its caller receives each new result. Invalidation reaches subscriptions in the same process only.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.LiveQueries.Abstractions](src/Headless.LiveQueries.Abstractions/README.md) | `ILiveQueries`, `ILiveQueryInvalidator`, `ILiveQueryDependencies`, and the `LiveUpdate` a transport forwards |
+| [Headless.LiveQueries](src/Headless.LiveQueries/README.md) | Registration, the in-process subscription hub, and its meter |
+
 ### Unit of Work
 
 Explicit unit of work: begin it on the line you choose from a singleton factory, do business work, and complete it. Messages published through `unit.Outbox` and durable jobs scheduled inside it commit with the transaction, dispatch after it commits, and are discarded on rollback.

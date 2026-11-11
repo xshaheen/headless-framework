@@ -670,6 +670,15 @@ Idempotent admission دائم ومتقسّم حسب الـ tenant: اقبل ال
 | [Headless.Idempotency.SqlServer](src/Headless.Idempotency.SqlServer/README.md) | Records الـ idempotency في SQL Server |
 | [Headless.Idempotency.Sqlite](src/Headless.Idempotency.Sqlite/README.md) | Records الـ idempotency في SQLite، والـ admission بيعمل commit لوحده |
 
+### Live Queries
+
+Queries بتفضل محدّثة: الـ query اللي معمول لها watch بتشتغل تاني لما dependency هي سجّلتها يتعلن إنها اتغيّرت، والـ caller بيستلم كل result جديدة. الـ invalidation بيوصل للـ subscriptions اللي في نفس الـ process بس.
+
+| Package | الوصف |
+|---------|-------|
+| [Headless.LiveQueries.Abstractions](src/Headless.LiveQueries.Abstractions/README.md) | `ILiveQueries` و`ILiveQueryInvalidator` و`ILiveQueryDependencies` والـ `LiveUpdate` اللي الـ transport بيبعته |
+| [Headless.LiveQueries](src/Headless.LiveQueries/README.md) | الـ registration، والـ subscription hub جوه الـ process، والـ meter بتاعه |
+
 ### Unit of Work
 
 Unit of work صريح: تبدأه من singleton factory في السطر اللي تختاره، وتعمل شغل الـ business، وتكمّله. الرسايل اللي بتتنشر عن طريق `unit.Outbox` والـ durable jobs اللي بتتجدول جواه بيتعملهم commit مع الـ transaction، ويتبعتوا بعد الـ commit، ويتلغوا عند الـ rollback.
