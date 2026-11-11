@@ -244,6 +244,7 @@ public static class SetupHeadlessOpenApi
         options.AddOperationTransformer(new RateLimitingResponseTransformer());
         options.AddOperationTransformer(new EntityTagResponseTransformer());
         options.AddOperationTransformer(new HttpContractTransformer());
+        options.AddOperationTransformer(new LiveUpdatesTransformer());
         // After the feature contracts, so a feature's own description of a 400 or 413 wins over the generic one.
         options.AddOperationTransformer(new RequestReadingResponseTransformer());
         // Before the file rules, which write a part's encoding only into the multipart body.
