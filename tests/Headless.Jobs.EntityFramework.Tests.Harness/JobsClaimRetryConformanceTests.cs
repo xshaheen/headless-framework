@@ -52,6 +52,9 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
                 ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
             };
             await persistence.AddTimeJobsAsync([job], ct);
+            // The claim yields nothing, and never opens the transaction the fault fails, until the node holds a
+            // stamp owner, which the host does not guarantee by the time StartAsync returns.
+            await JobsCoordinationFixtureExtensions.WaitForStampOwnerAsync(host, ct);
             fault.Arm();
 
             var claimed = await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
@@ -97,6 +100,9 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
                 ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
             };
             await persistence.AddTimeJobsAsync([job], ct);
+            // The claim yields nothing, and never opens the transaction the fault fails, until the node holds a
+            // stamp owner, which the host does not guarantee by the time StartAsync returns.
+            await JobsCoordinationFixtureExtensions.WaitForStampOwnerAsync(host, ct);
             fault.Arm();
 
             var claim = async () => await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
@@ -140,6 +146,9 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
                 ExecutionTime = DateTime.UtcNow.AddMinutes(-1),
             };
             await persistence.AddTimeJobsAsync([job], ct);
+            // The claim yields nothing, and never opens the transaction the fault fails, until the node holds a
+            // stamp owner, which the host does not guarantee by the time StartAsync returns.
+            await JobsCoordinationFixtureExtensions.WaitForStampOwnerAsync(host, ct);
             fault.Arm();
 
             var claim = async () => await persistence.QueueTimedOutTimeJobsAsync(ct).ToArrayAsync(ct);
@@ -178,14 +187,16 @@ public abstract class JobsClaimRetryConformanceTests<TFixture>(TFixture fixture)
             fixture.ConfigureCoordination(setup);
             setup.Configure(options =>
             {
+                // No scenario here waits for a node to die, so these hosts run the steady profile: on the
+                // second-scale one, a heartbeat a loaded database stalls past 1.2 s drops the node's membership, and
+                // the claim under test then yields nothing without opening the transaction the fault fails.
                 options.ClusterName = JobsCoordinationFixtureExtensions.ClusterName;
-                options.HeartbeatInterval = JobsCoordinationFixtureExtensions.HeartbeatInterval;
-                options.SuspicionThreshold = JobsCoordinationFixtureExtensions.SuspicionThreshold;
-                options.DeadThreshold = JobsCoordinationFixtureExtensions.DeadThreshold;
-                options.DeadRetentionWindow = JobsCoordinationFixtureExtensions.DeadRetentionWindow;
-                // Fence at DeadThreshold, where these hosts fenced before the margin existed: their 200ms beats against
-                // a loaded database container can stall past the derived 1s fence and stop stamping mid-test, and
-                // these hosts exercise claims and stamping, not the margin.
+                options.HeartbeatInterval = JobsCoordinationFixtureExtensions.SteadyMembershipTimings.Heartbeat;
+                options.SuspicionThreshold = JobsCoordinationFixtureExtensions.SteadyMembershipTimings.Suspicion;
+                options.DeadThreshold = JobsCoordinationFixtureExtensions.SteadyMembershipTimings.Dead;
+                options.DeadRetentionWindow = JobsCoordinationFixtureExtensions.SteadyMembershipTimings.DeadRetention;
+                // Fence at DeadThreshold, where these hosts fenced before the margin existed: these hosts exercise
+                // claims and stamping, not the margin.
                 options.SelfFenceMargin = TimeSpan.Zero;
                 options.MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly;
             });
