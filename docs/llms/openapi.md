@@ -107,7 +107,7 @@ Headless document, operation, and schema transformers for the native ASP.NET Cor
 - `HeadlessOpenApiOptions.StandardProblemResponses` (default `true`) — documents 404, 409, and 422 on every operation; `false` turns them off API-wide.
 - `HeadlessOpenApiOptions.ProblemResponseRanges` (default `true`) — documents the `4XX` and `5XX` range responses on every operation; `false` turns them off API-wide, for a client generator that mishandles range keys.
 - `StandardProblemResponsesAttribute` (`[StandardProblemResponses]`, `[StandardProblemResponses(false)]`) on a controller or action, and `WithStandardProblemResponses()` / `WithoutStandardProblemResponses()` on a Minimal API endpoint, route group, `MapControllers()`, or `MapApiSurface(...)`, from `Headless.Api` — turn the standard problem responses on or off for that endpoint; `ApiSurfaceOpenApiOptions.StandardProblemResponses` (`bool?`, `null` inherits) sets a surface default.
-- Contracts it reads, so a feature describes itself without a reference to this package: from `Headless.Api.Abstractions`, `HttpContractMetadata` (endpoint headers and responses), `IEnvironmentRestrictionMetadata` (environment-restricted endpoints), `IHttpCredentialSchemeOptions` (credentials an authentication scheme reads), `StandardProblemResponsesAttribute` (standard problem responses on or off), and `TenantCatalogResolutionDescription` (tenant catalog resolution); from `Headless.FluentValidation`, `IFileSizeValidator` / `IFileContentTypeValidator` (file rules).
+- Contracts it reads, so a feature describes itself without a reference to this package: from `Headless.Api.Abstractions`, `HttpContractMetadata` (endpoint headers and responses), `LiveUpdatesMetadata` (live endpoints), `IEnvironmentRestrictionMetadata` (environment-restricted endpoints), `IHttpCredentialSchemeOptions` (credentials an authentication scheme reads), `StandardProblemResponsesAttribute` (standard problem responses on or off), and `TenantCatalogResolutionDescription` (tenant catalog resolution); from `Headless.FluentValidation`, `IFileSizeValidator` / `IFileContentTypeValidator` (file rules).
 - Problem-details schema types: `HeadlessProblemDetails`, `BadRequestProblemDetails`, `BadRequestValidationProblemDetails`, `UnauthorizedProblemDetails`, `ForbiddenProblemDetails`, `EntityNotFoundProblemDetails`, `RequestTimeoutProblemDetails`, `ConflictProblemDetails`, `PayloadTooLargeProblemDetails`, `UnprocessableEntityProblemDetails`, `PreconditionRequiredProblemDetails`, `TooManyRequestsProblemDetails`, `InternalServerErrorProblemDetails`, `NotImplementedProblemDetails`, `ServiceUnavailableProblemDetails`.
 
 ### Install
@@ -220,6 +220,59 @@ Startup validation rejects an empty `ApiKeyHeaderName` when the API-key scheme i
 **Rate-limit and entity-tag responses follow metadata and options.** A limiter applies when the endpoint carries `EnableRateLimitingAttribute` (`RequireRateLimiting(...)`, `[EnableRateLimiting]`) or `RateLimiterOptions.GlobalLimiter` is set; `DisableRateLimiting` anywhere in the metadata removes it, as in the middleware. The documented status is `RateLimiterOptions.RejectionStatusCode`: 429 after `UseHeadlessProblemDetails()`, the native 503 otherwise. The document cannot see whether `UseRateLimiter()` runs. A 2xx response whose body type implements `IHasEntityTag` documents an optional `ETag` header: the body type decides, because the document cannot see whether the entity-tag profile (`AddHeadlessMvcEntityTagConcurrency()`, or `AddHeadlessMinimalApiEntityTagConcurrency()` with `.WithEntityTag()`) is on.
 
 **Feature contracts render without feature references.** An endpoint's `HttpContractMetadata` (`Headless.Api.Abstractions`) becomes header parameters, responses, and response headers: each request header a `header` parameter with a `string` schema, each response an operation response whose error statuses then get their typed problem-details schema and example, and each response header a `string` header on every documented response whose status falls in its range. An entry the operation already has keeps its own description: a header the handler binds is reused and only becomes required when the metadata requires it, and a declared response or response header is not replaced. `.RequireIdempotencyKey()` and `.WithIdempotency(...)` attach it, so an idempotent endpoint documents its key header and rejections; see [Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay). A controller action renders the metadata a `MapControllers()` convention attaches (`MapControllers().WithMetadata(...)`, `.RequireIdempotencyKey()`) as well as its attributes.
+
+**A live operation carries `x-headless-live` and its stream media types.** An endpoint with `LiveUpdatesMetadata` (`Headless.Api.Abstractions`), which `.WithLiveUpdates()` attaches, is a [live endpoint](live-queries.md#headlesslivequeriesendpoints): the same URL answers a single response or, when `Accept` names a stream format, a stream of results. The operation gets the extension, and its success response (the lowest documented 2xx) gets one media type per format beside `application/json`:
+
+```json
+{
+  "x-headless-live": { "mediaTypes": ["text/event-stream", "application/x-ndjson"] },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": { "schema": { "$ref": "#/components/schemas/TodoView" } },
+        "text/event-stream": { "schema": { "$ref": "#/components/schemas/TodoView" } },
+        "application/x-ndjson": {
+          "schema": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["kind", "version", "value"],
+                "properties": {
+                  "kind": { "type": "string", "const": "result" },
+                  "version": { "type": "string" },
+                  "value": { "$ref": "#/components/schemas/TodoView" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["kind", "version", "value"],
+                "properties": {
+                  "kind": { "type": "string", "const": "failure" },
+                  "version": { "type": "string" },
+                  "value": { "$ref": "#/components/schemas/HeadlessProblemDetails" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["kind"],
+                "properties": { "kind": { "type": "string", "const": "heartbeat" } }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+- `x-headless-live` is an object so it can gain members; its presence is the marker. `mediaTypes` lists the `Accept` values that open a stream, in the order the server prefers them.
+- The document is OpenAPI 3.1, which has no keyword for the items of a stream, so a stream media type's `schema` describes one item of the stream, not the whole body.
+- For `text/event-stream` the item is the `data` of a `result` event, which is the single response's body, so the schema is the `application/json` one unchanged. The `failure` event, whose `data` is a `HeadlessProblemDetails` body, and the `id` and `retry` fields are not in the schema; [What a client sees](live-queries.md#what-a-client-sees) defines them.
+- For `application/x-ndjson` the item is one line, a `oneOf` over `kind`. A client ignores a `kind` the schema does not list.
+- A success response with no `application/json` body leaves the result untyped: the `text/event-stream` entry has no schema and the result line's `value` has none.
+- A stream media type the endpoint declared itself is kept. A format added through `ILiveTransport` is not documented; declare it on the endpoint with `Produces`.
+- An operation without the metadata gets none of this, and a host with no live endpoint produces the same document as before.
 
 **`ApiResult` result types publish only their success response.** An MVC action declared as `ApiActionResult<T>` or `ApiActionResult` (what `ApiResult.ToActionResult(...)` returns in `Headless.Api.Mvc`, with `ApiCreatedActionResult<T>` and `ApiAcceptedActionResult<T>` / `ApiAcceptedActionResult` for 201 and 202) and a Minimal API endpoint returning `ApiResultHttpResult<T>`, `ApiResultHttpResult`, `ApiResultCreatedHttpResult<T>`, or `ApiResultAcceptedHttpResult<T>` / `ApiResultAcceptedHttpResult` publish 200 with `T`, 201, 202 with `T` or without a body, or a bodyless 204. Their error responses come from the transformers like any other operation's, so an anonymous action lists no 401 or 403.
 
