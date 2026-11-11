@@ -16,6 +16,7 @@ public sealed class MergedListCursorTests : TestBase
         Substitute.For<IDataStorage>(),
         HoldsReceived: true
     );
+
     private static readonly MessagingStore _Billing = new(
         "billing",
         Substitute.For<IDataStorage>(),
