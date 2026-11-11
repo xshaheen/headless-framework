@@ -38,6 +38,22 @@ describe('Card', () => {
     expect(within(first!).getByText('in 9 sec.').className).toBe(within(second!).getByText('in 6 hr.').className)
   })
 
+  it('wraps a name or fact too wide for a phone instead of cutting it short, and keeps the ellipsis above it', () => {
+    render(
+      <Card title="Needs attention">
+        <CardRow tone="fail" name="Billing.Orders.OrderPlacedConsumer" meta="37 messages failed for good" value="41 sec. ago" />
+        <CardRow tone="off" prose name="Not answering: archive. Items from these may be missing." />
+      </Card>,
+    )
+
+    // jsdom applies no media query, so the test reads the rule each part carries: one line with an ellipsis from the
+    // phone breakpoint up, wrapped lines that break anywhere (an identifier has no spaces) below it.
+    const phoneWraps = ['truncate', 'max-md:whitespace-normal', 'max-md:wrap-anywhere']
+    for (const text of ['Billing.Orders.OrderPlacedConsumer', '37 messages failed for good', 'Not answering: archive. Items from these may be missing.']) {
+      expect(phoneWraps.filter((rule) => screen.getByText(text).classList.contains(rule))).toEqual(phoneWraps)
+    }
+  })
+
   it('lets an empty card keep its own height while cards with rows share the row’s', () => {
     render(
       <Cards>
