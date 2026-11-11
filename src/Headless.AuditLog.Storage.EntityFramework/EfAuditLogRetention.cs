@@ -1,15 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.AuditLog.Internal;
 using Headless.Checks;
 using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog;
 
-// The EF table comes from the application's migrations, so it carries an append-only trigger only when the application
-// added one. The purge sets the same session setting the raw providers' trigger checks, so it keeps working when it did.
-internal sealed class EfAuditLogRetention<TContext>(IDbContextFactory<TContext> dbFactory, TimeProvider timeProvider)
-    : IAuditLogRetention<TContext>
+// The EF table comes from the application's migrations, so it carries an append-only trigger only when a migration
+// added one. The purge sets the same session setting the raw providers' trigger checks, or calls the same owner's
+// function, so it keeps working when one did.
+internal sealed class EfAuditLogRetention<TContext>(
+    IDbContextFactory<TContext> dbFactory,
+    IOptions<AuditLogStorageOptions> storageOptions,
+    TimeProvider timeProvider
+) : IAuditLogRetention<TContext>
     where TContext : DbContext
 {
     public async Task<int> PurgeAsync(TimeSpan olderThan, int limit, CancellationToken cancellationToken = default)
@@ -20,11 +26,42 @@ internal sealed class EfAuditLogRetention<TContext>(IDbContextFactory<TContext> 
         var cutoff = (timeProvider.GetUtcNow() - olderThan).UtcDateTime;
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var provider = EfAuditLogDatabase.Provider(context);
+
+        if (storageOptions.Value.PurgeAuthority is AuditLogPurgeAuthority.Owner)
+        {
+            EfAuditLogDatabase.EnsurePostgreSql(provider, nameof(AuditLogPurgeAuthority.Owner) + " purge authority");
+
+            // One statement, so EF runs it through the context's execution strategy by itself.
+            return await EfAuditLogDatabase
+                .CallAsync(context, PostgreSqlAuditLogSql.PurgeFunction, [cutoff, limit], cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // A retrying execution strategy refuses a transaction it did not start, so the whole purge is one retriable
+        // unit that opens its own. A retry after a commit whose acknowledgement was lost deletes the next batch and
+        // returns only that batch's count; the purge is repeated until nothing is left either way.
+        return await context
+            .Database.CreateExecutionStrategy()
+            .ExecuteAsync(
+                (context, provider, cutoff, limit),
+                static (state, ct) => _PurgeAsync(state.context, state.provider, state.cutoff, state.limit, ct),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> _PurgeAsync(
+        TContext context,
+        StorageProvider? provider,
+        DateTime cutoff,
+        int limit,
+        CancellationToken cancellationToken
+    )
+    {
         await using var transaction = await context
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        var provider = _Provider(context.Database.ProviderName);
 
         if (provider is StorageProvider.PostgreSql)
         {
@@ -68,15 +105,5 @@ internal sealed class EfAuditLogRetention<TContext>(IDbContextFactory<TContext> 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return deleted;
-    }
-
-    private static StorageProvider? _Provider(string? providerName)
-    {
-        return providerName switch
-        {
-            HeadlessStorageNaming.NpgsqlEfProviderName => StorageProvider.PostgreSql,
-            "Microsoft.EntityFrameworkCore.SqlServer" => StorageProvider.SqlServer,
-            _ => null,
-        };
     }
 }

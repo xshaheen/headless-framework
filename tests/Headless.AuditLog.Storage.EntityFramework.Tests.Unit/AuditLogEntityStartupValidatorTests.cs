@@ -57,6 +57,27 @@ public sealed class AuditLogEntityStartupValidatorTests : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task should_reject_the_owner_purge_authority_on_a_database_other_than_postgresql()
+    {
+        // given - only PostgreSQL has the owner's purge function, so the retention could never purge
+        await using var services = new ServiceCollection()
+            .AddSingleton<IDbContextFactory<ConfiguredAuditLogDbContext>>(
+                new TestDbContextFactory<ConfiguredAuditLogDbContext>(() =>
+                    new ConfiguredAuditLogDbContext(_Options<ConfiguredAuditLogDbContext>())
+                )
+            )
+            .Configure<AuditLogStorageOptions>(options => options.PurgeAuthority = AuditLogPurgeAuthority.Owner)
+            .BuildServiceProvider();
+        var validator = new AuditLogEntityStartupValidator<ConfiguredAuditLogDbContext>(services);
+
+        // when
+        var act = () => validator.ValidateAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*PurgeAuthority*PostgreSQL only*");
+    }
+
     private static ServiceProvider _Services<TContext>(Func<TContext> createContext)
         where TContext : DbContext
     {
