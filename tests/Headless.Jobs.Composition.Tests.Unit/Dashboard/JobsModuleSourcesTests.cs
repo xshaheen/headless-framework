@@ -368,6 +368,22 @@ public sealed class JobsModuleSourcesTests : TestBase
         counted.Select(query => query.Statuses?.Count).Should().HaveCount(8).And.OnlyContain(count => count == 1);
     }
 
+    [Fact]
+    public async Task should_dispose_the_change_publisher_twice_without_throwing_after_its_reader_started()
+    {
+        // given
+        await using var node = JobsModuleNode.Create(_time);
+        var publisher = node.Services.GetRequiredService<JobsChangePublisher>();
+        await _DrainPublisherAsync(node);
+        await publisher.DisposeAsync();
+
+        // when
+        var again = async () => await publisher.DisposeAsync();
+
+        // then
+        await again.Should().NotThrowAsync();
+    }
+
     /// <summary>
     /// Queues a change for a new sentinel run behind everything this node already queued, and waits until it is
     /// published: every change queued before it has then been published or dropped.

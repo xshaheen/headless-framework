@@ -3,6 +3,7 @@
 using Headless.Dashboard;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -273,6 +274,52 @@ public sealed class MessagingModuleSourcesTests : TestBase
             .ContainSingle()
             .Subject;
         change.Version.Should().Be(stored.ChangedAt!.Value.UtcTicks.ToString("D19", CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task should_dispose_the_host_without_throwing_after_a_pipeline_reported_a_state_write()
+    {
+        // given: a host whose pipelines reach the publisher through the observer registration
+        var events = new RecordingEventPublisher();
+        var app = await MessagingModuleTestHost.StartAsync(
+            _time,
+            AbortToken,
+            configure: services => services.AddSingleton<IDashboardEventPublisher>(events)
+        );
+        var storage = app.Services.GetRequiredService<IDataStorage>();
+        var failed = await MessagingRows.ReceivedFailureAsync(storage, "r-8", cancellationToken: AbortToken);
+        var observer = app.Services.GetServices<IMessageStateObserver>().Should().ContainSingle().Subject;
+        observer.OnStateWritten(MessageType.Subscribe, failed);
+        await _WaitForAsync(events, failed.StorageId);
+
+        // when: the container disposes the publisher once per registration that returned it
+        var dispose = async () => await app.DisposeAsync();
+
+        // then
+        await dispose.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_dispose_the_change_publisher_twice_without_throwing_after_its_reader_started()
+    {
+        // given
+        await using var services = _MainStore(out var primary);
+        var failed = await MessagingRows.ReceivedFailureAsync(primary, "r-9", cancellationToken: AbortToken);
+        var events = new RecordingEventPublisher();
+        await using var publisher = new MessagingChangePublisher(
+            _Stores(primary),
+            events,
+            NullLogger<MessagingChangePublisher>.Instance
+        );
+        publisher.OnStateWritten(MessageType.Subscribe, failed);
+        await _WaitForAsync(events, failed.StorageId);
+        await publisher.DisposeAsync();
+
+        // when
+        var again = async () => await publisher.DisposeAsync();
+
+        // then
+        await again.Should().NotThrowAsync();
     }
 
     private static async Task<DashboardChange> _WaitForAsync(RecordingEventPublisher events, Guid storageId)
