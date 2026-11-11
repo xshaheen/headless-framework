@@ -52,7 +52,7 @@ internal sealed class FluentValidationNestedRules(
     {
         var names = validators
             .SelectMany(validator => validator as IEnumerable<IValidationRule> ?? [])
-            .Where(rule => rule.HasNoCondition() && !rule.IsCollectionRule())
+            .Where(rule => rule.HasNoCondition())
             .Select(rule => rule.PropertyName)
             .OfType<string>()
             .Where(name => name.Contains('.', StringComparison.Ordinal))
@@ -62,12 +62,25 @@ internal sealed class FluentValidationNestedRules(
 
         foreach (var name in names)
         {
+            if (_ResolvePath(schema, typeInfo, name) is not { } path)
+            {
+                continue;
+            }
+
             var rules = validators
                 .SelectMany(validator => validator.GetValidatorsByPropertyNameIgnoreCase(name))
-                .Where(rule => !rule.IsCollectionRule)
                 .ToList();
+            // ASP.NET Core inlines a collection property's array schema, so its items sit on the leaf itself.
+            var items = path[^1].Schema.Items;
 
-            if (rules.Count == 0 || _ResolvePath(schema, typeInfo, name) is not { } path)
+            if (items is null)
+            {
+                // A RuleForEach over a collection JSON does not publish as an array (a dictionary) has no items
+                // schema to carry its constraints, and on the leaf itself they would describe the wrong value.
+                rules.RemoveAll(rule => rule.IsCollectionRule);
+            }
+
+            if (rules.Count == 0)
             {
                 continue;
             }
@@ -90,7 +103,16 @@ internal sealed class FluentValidationNestedRules(
                 {
                     // The type lets NotNull/NotEmpty exclude a nullable leaf and distinguish an array from a string.
                     // Bounds, descriptions, and object members stay in the base schema rather than being duplicated.
-                    ((OpenApiSchema)child).Type ??= _ConstraintType(path[i].Schema);
+                    var leaf = (OpenApiSchema)child;
+                    leaf.Type ??= _ConstraintType(path[i].Schema);
+
+                    if (items is not null && rules.Exists(rule => rule.IsCollectionRule))
+                    {
+                        // RuleContext redirects a RuleForEach constraint to the leaf's items; the item type lets
+                        // NotNull/NotEmpty exclude a nullable element and pick minLength over minItems.
+                        leaf.Items ??= new OpenApiSchema { Type = _ConstraintType(items) };
+                    }
+
                     applier.ApplyToProperty(overlay, path[i].Key, rules, typeInfo.Type.Name);
                 }
                 else
