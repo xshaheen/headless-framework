@@ -11,7 +11,7 @@ import {
   Tag,
   Text,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -142,7 +142,7 @@ export default function CronJobsView() {
                     </Tag>
                   ) : (
                     <CellText>
-                      <RelativeTime value={row.nextDueUtc} scheduled />
+                      <Timestamp value={row.nextDueUtc} scheduled />
                     </CellText>
                   ),
                 kind: 'time',

@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from 'react'
 import { Button } from '../button.tsx'
+import { CopyButton } from '../copy-button.tsx'
 import { stackTokenClass, tokenizeStackLine, type StackToken } from '../payload/stack-tokens.ts'
 
 export interface ExceptionBlockProps {
@@ -54,13 +55,7 @@ export function ExceptionBlock({ type, message, stack, expanded = false }: Excep
             Full stack
           </Button>
         ) : null}
-        <Button
-          variant="ghost"
-          aria-label="Copy exception"
-          onPress={() => void navigator.clipboard?.writeText(copyText(type, message, stack))}
-        >
-          Copy
-        </Button>
+        <CopyButton text={copyText(type, message, stack)} label="Copy" aria-label="Copy exception" />
       </div>
     </div>
   )

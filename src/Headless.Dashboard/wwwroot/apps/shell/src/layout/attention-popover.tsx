@@ -2,7 +2,7 @@
 // sit near their size budget.
 'use no memo'
 
-import { Button, RelativeTime, useDelayed } from '@headless/dashboard-sdk/components'
+import { Button, Timestamp, useDelayed } from '@headless/dashboard-sdk/components'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import type { RefObject } from 'react'
@@ -81,7 +81,7 @@ function Item({ item, onOpen }: { item: AttentionItem; onOpen: () => void }) {
           {item.since ? (
             <>
               {' · since '}
-              <RelativeTime value={item.since} />
+              <Timestamp value={item.since} />
             </>
           ) : null}
         </span>

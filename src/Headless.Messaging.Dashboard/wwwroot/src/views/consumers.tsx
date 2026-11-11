@@ -13,7 +13,7 @@ import {
   Tag,
   Text,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { OpenCircuitIcon, RefreshIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -234,7 +234,7 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
         {
           id: 'opened',
           header: 'Opened',
-          cell: (row) => (row.openedAt ? <RelativeTime value={row.openedAt} /> : ''),
+          cell: (row) => (row.openedAt ? <Timestamp value={row.openedAt} /> : ''),
           kind: 'time',
           priority: 2,
           width: 110,

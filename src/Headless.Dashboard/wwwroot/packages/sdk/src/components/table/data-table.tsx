@@ -32,7 +32,7 @@ export interface DataTableColumn<T> {
   header: string
   cell: (row: T) => ReactNode
   /**
-   * What the cells hold, which sets their face and alignment: `time` (a `RelativeTime`), `number`, and `duration`
+   * What the cells hold, which sets their face and alignment: `time` (a `Timestamp`), `number`, and `duration`
    * read in mono with tabular figures, the last two at the inline end; `id` is a mono identifier kept left to right;
    * `status` is a dot and a word; `prose`, the default, is sans text such as a reason or a kind.
    */

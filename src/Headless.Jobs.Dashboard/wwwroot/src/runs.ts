@@ -488,18 +488,3 @@ export function useModuleNavigate() {
 export function tracePath(correlationId: string) {
   return `runs?correlationId=${encodeURIComponent(correlationId)}`
 }
-
-/** A duration with its unit: `340 ms`, `1.2 s`, `3 min 4 s`. */
-export function formatDuration(ms: number, number: (value: number, options?: Intl.NumberFormatOptions) => string) {
-  if (ms < 1_000) {
-    return `${number(ms)} ms`
-  }
-
-  if (ms < 60_000) {
-    return `${number(ms / 1_000, { maximumFractionDigits: 1 })} s`
-  }
-
-  const minutes = Math.floor(ms / 60_000)
-
-  return `${number(minutes)} min ${number(Math.round((ms % 60_000) / 1_000))} s`
-}

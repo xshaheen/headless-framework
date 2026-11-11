@@ -6,7 +6,6 @@ import { DateRangeField } from '@headless/dashboard-sdk/date-range'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useStreamEvent, useTopics } from '@headless/dashboard-sdk/stream'
-import type { ListRange } from '@headless/dashboard-sdk/table'
 import { useState, type ReactNode } from 'react'
 import { useSettledRefetch } from './parts.tsx'
 import { runsTopic, statusLabel, type RunStatus } from './runs.ts'
@@ -85,11 +84,6 @@ function presetRange(preset: Exclude<Preset, 'custom'>, today: string): DayRange
   }
 }
 
-/** The picker's instants as the days they cover: its end is the midnight after the last day. */
-function pickedDays(range: ListRange, zone: string): DayRange {
-  return { from: localDate(Date.parse(range.start), zone), to: localDate(Date.parse(range.end) - 1, zone) }
-}
-
 const daySeries = [
   { name: statusLabel('Succeeded'), tone: 'ok', statuses: ['Succeeded', 'DueDone'] },
   { name: statusLabel('Failed'), tone: 'fail', statuses: ['Failed'] },
@@ -154,7 +148,11 @@ export function useRunsPerDay({ cronJobId, unit, unitOne }: { cronJobId?: string
   const control = <SegmentedControl label="Days shown" options={presets} value={preset} onChange={setPreset} />
   const picker =
     preset === 'custom' ? (
-      <DateRangeField label="Days" onChange={(picked) => setCustom(picked ? pickedDays(picked, zone) : undefined)} />
+      <DateRangeField
+        label="Days"
+        value={custom ? { kind: 'custom', start: custom.from, end: custom.to } : undefined}
+        onChange={(picked) => setCustom(picked?.kind === 'custom' ? { from: picked.start, to: picked.end } : undefined)}
+      />
     ) : null
   const data = series.data
 

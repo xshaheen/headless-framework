@@ -15,7 +15,7 @@ import {
   Tag,
   Text,
   usePageFrame,
-  RelativeTime,
+  Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
 import { AddIcon, RecurringIcon, RunsIcon } from '@headless/dashboard-sdk/icons'
@@ -200,7 +200,7 @@ function FunctionFields({ item }: { item: JobFunction }) {
       </FieldGrid>
       <FieldGrid label="Activity">
         <GridField label="Last run" span={2}>
-          <RelativeTime value={item.lastExecutedAt} />
+          <Timestamp value={item.lastExecutedAt} />
         </GridField>
         <GridField label="Waiting">{format.number(item.waiting)}</GridField>
         <GridField label="Succeeded, 24 h">{format.number(item.succeeded)}</GridField>
@@ -292,7 +292,7 @@ function FunctionRuns({ name }: { name: string }) {
           label="Latest runs"
           items={runs.rows.map((run) => ({
             key: run.id,
-            time: <RelativeTime value={run.executionTime ?? run.createdAt} />,
+            time: <Timestamp value={run.executionTime ?? run.createdAt} />,
             tone: runStatusMark(run).tone,
             state: statusLabel(run.status),
             note: run.node,

@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { LocaleProvider, TimeZoneField, useFormat, useLocale } from '../../src/locale/locale.tsx'
+import { createFormatters } from '../../src/locale/formatters.ts'
+import { gregorianLocale, LocaleProvider, TimeZoneField, useFormat, useLocale } from '../../src/locale/locale.tsx'
 
 // 15:40 UTC on 5 Nov 2026 is 17:40 in Cairo (UTC+2) and 10:40 in New York (UTC−5).
 const failedAt = '2026-11-05T15:40:00Z'
@@ -88,5 +89,42 @@ describe('display time zone', () => {
     renderPage()
 
     expect(screen.getByTestId('chip').textContent).toBe('UTC')
+  })
+})
+
+describe('Gregorian calendar', () => {
+  it('pins a locale whose own calendar is another one to Gregorian, keeping its language', () => {
+    expect(gregorianLocale('ar-SA-u-ca-islamic')).toBe('ar-SA-u-ca-gregory')
+    expect(gregorianLocale('fa-IR')).toBe('fa-IR-u-ca-gregory')
+    expect(gregorianLocale('ar-EG')).toBe('ar-EG')
+    expect(gregorianLocale('en')).toBe('en')
+    expect(gregorianLocale('not a locale')).toBe('not a locale')
+  })
+
+  it('formats an Arabic page’s times in the Gregorian year the server stored', () => {
+    function Year() {
+      const { locale } = useLocale()
+
+      return <span data-testid="year">{new Intl.DateTimeFormat(locale, { year: 'numeric', numberingSystem: 'latn' }).format(Date.parse(failedAt))}</span>
+    }
+
+    render(
+      <LocaleProvider locale="ar-SA-u-ca-islamic">
+        <Year />
+      </LocaleProvider>,
+    )
+
+    expect(screen.getByTestId('year').textContent).toBe('2026')
+  })
+})
+
+describe('duration formatter', () => {
+  it('reads milliseconds, seconds, then whole minutes and seconds, never 60 seconds', () => {
+    const format = createFormatters('en', 'UTC')
+
+    expect(format.duration(340)).toBe('340 ms')
+    expect(format.duration(1_240)).toBe('1.2 s')
+    expect(format.duration(184_000)).toBe('3 min 4 s')
+    expect(format.duration(239_600)).toBe('4 min 0 s')
   })
 })
