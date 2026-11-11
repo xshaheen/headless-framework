@@ -232,6 +232,73 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_entities_tracked_before_the_block_when_the_begin_faults_transiently()
+    {
+        var beginFailure = new BeginFailureInterceptor();
+        await using var host = await EfUnitOfWorkHost.CreateAsync(
+            configureServices: services => services.AddSingleton<IInterceptor>(beginFailure),
+            configureOptions: options =>
+                options.ReplaceService<IExecutionStrategyFactory, RetryExecutionStrategyFactory>()
+        );
+        await using var session = host.CreateSession();
+        var pending = new ProbeRow { Name = "tracked-before-the-block" };
+        session.Db.Probes.Add(pending);
+        beginFailure.Arm();
+        var operationCalls = 0;
+
+        await session.Factory.RunAsync(
+            session.Db,
+            async (_, ct) =>
+            {
+                operationCalls++;
+                await session.Db.SaveChangesAsync(ct);
+            },
+            cancellationToken: AbortToken
+        );
+
+        // The block never ran in the faulted attempt, so the tracker is still exactly what the caller handed over.
+        beginFailure.Thrown.Should().Be(1, "the first begin faulted and the strategy retried it");
+        operationCalls.Should().Be(1, "only the attempt whose begin succeeded ran the block");
+        session
+            .Db.Entry(pending)
+            .State.Should()
+            .Be(EntityState.Unchanged, "the caller's entity was saved, not dropped");
+        (await host.CountProbeRowsAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_replay_a_block_fault_on_a_tracker_that_survived_a_faulted_begin()
+    {
+        var beginFailure = new BeginFailureInterceptor();
+        await using var host = await EfUnitOfWorkHost.CreateAsync(
+            configureServices: services => services.AddSingleton<IInterceptor>(beginFailure),
+            configureOptions: options =>
+                options.ReplaceService<IExecutionStrategyFactory, RetryExecutionStrategyFactory>()
+        );
+        await using var session = host.CreateSession();
+        session.Db.Probes.Add(new ProbeRow { Name = "tracked-before-the-block" });
+        beginFailure.Arm();
+        var operationCalls = 0;
+
+        var act = () =>
+            session.Factory.RunAsync(
+                session.Db,
+                async (_, ct) =>
+                {
+                    operationCalls++;
+                    await session.Db.SaveChangesAsync(ct);
+
+                    throw new TransientMarkerException();
+                },
+                cancellationToken: AbortToken
+            );
+
+        await act.Should().ThrowAsync<TransientMarkerException>();
+        operationCalls.Should().Be(1, "the tracker held the caller's entity before the block, so it cannot replay");
+        (await host.CountProbeRowsAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_return_the_result_of_the_block()
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
@@ -324,6 +391,35 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
             }
 
             return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Throws a retryable marker from the first armed transaction begin, before any block ran.</summary>
+    private sealed class BeginFailureInterceptor : DbTransactionInterceptor
+    {
+        private int _armed;
+        private int _thrown;
+
+        public int Thrown => Volatile.Read(ref _thrown);
+
+        public void Arm()
+        {
+            Volatile.Write(ref _armed, 1);
+        }
+
+        public override ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
+            DbConnection connection,
+            TransactionStartingEventData eventData,
+            InterceptionResult<DbTransaction> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Volatile.Read(ref _armed) != 0 && Interlocked.Exchange(ref _thrown, 1) == 0)
+            {
+                throw new TransientMarkerException();
+            }
+
+            return ValueTask.FromResult(result);
         }
     }
 }
