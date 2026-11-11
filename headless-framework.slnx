@@ -406,6 +406,7 @@
     </Folder>
     <Folder Name="/LiveQueries/Tests/">
         <Project Path="tests\Headless.LiveQueries.Tests.Unit\Headless.LiveQueries.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.LiveQueries.Endpoints.Tests.Unit\Headless.LiveQueries.Endpoints.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/MediaIndexing/">
         <Project Path="src\Headless.Media.Indexing.Abstractions\Headless.Media.Indexing.Abstractions.csproj" />
