@@ -3,15 +3,19 @@
 'use no memo'
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Focusable } from 'react-aria-components'
 import { Link, type To } from 'react-router'
 import type { DashboardStateRole } from '../../define-module.ts'
+import { CloseIcon, CopyIcon, ExternalLinkIcon, MoveBelowIcon, MoveSideIcon } from '../../icons/index.ts'
 import { Button } from '../button.tsx'
+import { Tooltip } from '../tooltip.tsx'
 import { useFrame } from './page-frame.tsx'
 
 /** One tab of a detail panel; only the selected tab's content renders. */
 export interface DetailTab {
   id: string
   label: string
+  /** The tab's body. A tab with nothing to show (`null`) is left out, so a run without a chain has no Chain tab. */
   content: ReactNode
 }
 
@@ -25,6 +29,11 @@ export interface DetailPanelProps {
   status?: { tone: DashboardStateRole; label: string }
   /** The panel's tabs; the selected one is view state, never in the URL. Without tabs, `children` is the body. */
   tabs?: readonly DetailTab[]
+  /**
+   * The tab that opens first, by id, such as a failed run's Exception; the first tab when it is left out or has no
+   * content. A tab the operator picked stays picked from one object to the next.
+   */
+  defaultTab?: string
   children?: ReactNode
   /** The actions the server allows now: primary, secondary, then destructive. */
   actions?: ReactNode
@@ -32,29 +41,23 @@ export interface DetailPanelProps {
   detachTo?: To
 }
 
-function Glyph({ d }: { d: string }) {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d={d} />
-    </svg>
-  )
-}
-
 const focusable = 'a[href], button:not([disabled]), input, select, textarea, [tabindex="0"]'
 
 /**
- * The open object, docked under its list in a `PageFrame`: a title row (state dot, name, id with copy, tabs, actions,
- * then Open in its own page, Move to the side, and Close) over a body in two columns that each scroll. Tabs are a
- * tablist with roving focus. Below 768 px the panel is a full-screen modal that holds focus until it closes.
+ * The open object, docked under its list in a `PageFrame`: one title row (state dot, name, id with copy, tabs,
+ * actions, then Open in its own page, Move to the side, and Close) over a body in two columns that each scroll. Tabs
+ * are a tablist with roving focus. Below 768 px the panel is a full-screen modal that holds focus until it closes.
  */
-export function DetailPanel({ label, name, id, status, tabs, children, actions, detachTo }: DetailPanelProps) {
+export function DetailPanel({ label, name, id, status, tabs, defaultTab, children, actions, detachTo }: DetailPanelProps) {
   // Outside a frame the panel is the object's own page: nothing to close, move, or trap focus in.
   const { close, stale, form, modal, side, setSide } = useFrame() ?? { stale: false, form: false, modal: false, side: null }
   const ref = useRef<HTMLDivElement>(null)
   const base = useId()
   const [picked, setPicked] = useState<string>()
-  const index = Math.max(0, tabs?.findIndex((tab) => tab.id === picked) ?? 0)
-  const tab = tabs?.[index]
+  const shown = tabs?.filter((item) => item.content != null && item.content !== false)
+  const wanted = picked ?? defaultTab
+  const index = Math.max(0, shown?.findIndex((item) => item.id === wanted) ?? 0)
+  const tab = shown?.[index]
 
   useEffect(() => {
     if (modal) {
@@ -63,17 +66,17 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
   }, [modal])
 
   function onTabKey(event: KeyboardEvent<HTMLDivElement>) {
-    const count = tabs?.length ?? 0
+    const count = shown?.length ?? 0
     const step = getComputedStyle(event.currentTarget).direction === 'rtl' ? -1 : 1
     const next = { ArrowRight: index + step, ArrowLeft: index - step, Home: 0, End: count - 1 }[event.key]
 
-    if (next === undefined || !tabs) {
+    if (next === undefined || !shown) {
       return
     }
 
     event.preventDefault()
     const target = (next + count) % count
-    setPicked(tabs[target]!.id)
+    setPicked(shown[target]!.id)
     event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[target]?.focus()
   }
 
@@ -106,74 +109,78 @@ export function DetailPanel({ label, name, id, status, tabs, children, actions, 
       tabIndex={modal ? -1 : undefined}
       onKeyDown={onKeyDown}
     >
-      {/* On a phone the title, tabs, and actions wrap into rows, so the window controls leave the flow and keep the
-          top end corner, where a sheet's close sits; the title row pads past them so the name never runs under. */}
-      <div className="flex flex-wrap items-center gap-2.5 ps-4 pe-3 pt-2 max-md:pe-20">
-        {status ? (
-          <span className={`hd-tone-${status.tone} inline-flex items-center`}>
-            <span className="hd-mark" aria-hidden="true" />
-            <span className="sr-only">{status.label}</span>
+      {/* The title row: the name and id first, then the tabs, actions, and window controls as one cluster that fills
+          the rest of the row. The cluster grows from its content width (`flex-auto`, never a zero basis), so where
+          the row is too narrow for both it drops to a second row whole instead of squeezing beside the title, and
+          the window controls never land on a row of their own. On a phone the window controls leave the flow and keep
+          the top end corner, where a sheet's close sits; the row pads past them so the name never runs under. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 ps-4 pe-3 pt-2 max-md:pe-20">
+        <div className="flex min-w-0 max-w-full items-center gap-2.5">
+          {status ? (
+            <span className={`hd-tone-${status.tone} inline-flex items-center`}>
+              <span className="hd-mark" aria-hidden="true" />
+              <span className="sr-only">{status.label}</span>
+            </span>
+          ) : null}
+          <h2 className={`whitespace-nowrap ${form ? 'type-detail' : 'type-detail-mono'}`}>{name}</h2>
+          {id ? (
+            // One group, so the copy button never wraps onto a line of its own away from the id it copies.
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <bdi className="hd-mono hd-faint truncate" dir="ltr">
+                {id}
+              </bdi>
+              <Button
+                variant="ghost"
+                icon={CopyIcon}
+                aria-label={`Copy id ${id}`}
+                tooltip="Copy id"
+                onPress={() => void navigator.clipboard?.writeText(id)}
+              />
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-auto flex-wrap items-center gap-x-3 gap-y-1">
+          {shown ? (
+            <div role="tablist" aria-label={label} className="flex" onKeyDown={onTabKey}>
+              {shown.map((item, at) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  className="h-(--row-height) cursor-pointer border-b-2 border-transparent px-3 type-tab text-faint transition-fast hover:text-foreground aria-selected:border-primary aria-selected:text-foreground"
+                  id={`${base}${at}`}
+                  aria-selected={at === index}
+                  aria-controls={`${base}p`}
+                  tabIndex={at === index ? 0 : -1}
+                  onClick={() => setPicked(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <span className="ms-auto flex flex-wrap items-center gap-1.5">{actions}</span>
+          <span className="flex max-md:absolute max-md:top-2 max-md:end-3">
+            {detachTo !== undefined ? (
+              <Tooltip content="Open in its own page">
+                <Focusable>
+                  <Link to={detachTo} className="hd-btn hd-btn-ghost hd-icon" aria-label="Open in its own page">
+                    <ExternalLinkIcon className="text-current" />
+                  </Link>
+                </Focusable>
+              </Tooltip>
+            ) : null}
+            {side != null ? (
+              <Button
+                variant="ghost"
+                icon={side ? MoveBelowIcon : MoveSideIcon}
+                aria-label={side ? 'Move details below' : 'Move details to the side'}
+                onPress={() => setSide?.(!side)}
+              />
+            ) : null}
+            {close ? <Button variant="ghost" icon={CloseIcon} aria-label="Close details" onPress={close} /> : null}
           </span>
-        ) : null}
-        <h2 className={form ? 'type-detail' : 'type-detail-mono'}>{name}</h2>
-        {id ? (
-          // One group, so the copy button never wraps onto a line of its own away from the id it copies.
-          <span className="inline-flex min-w-0 items-center gap-1">
-            <bdi className="hd-mono hd-faint truncate" dir="ltr">
-              {id}
-            </bdi>
-            <Button
-              variant="ghost"
-              className="hd-icon"
-              aria-label={`Copy id ${id}`}
-              onPress={() => void navigator.clipboard?.writeText(id)}
-            >
-              <Glyph d="M5.5 5.5h8v8h-8zM2.5 10.5v-8h8" />
-            </Button>
-          </span>
-        ) : null}
-        {tabs ? (
-          <div role="tablist" aria-label={label} className="ms-3 flex" onKeyDown={onTabKey}>
-            {tabs.map((item, at) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                className="h-(--row-height) cursor-pointer border-b-2 border-transparent px-3 type-tab text-faint transition-fast hover:text-foreground aria-selected:border-primary aria-selected:text-foreground"
-                id={`${base}${at}`}
-                aria-selected={at === index}
-                aria-controls={`${base}p`}
-                tabIndex={at === index ? 0 : -1}
-                onClick={() => setPicked(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <span className="ms-auto flex flex-wrap gap-2">{actions}</span>
-        <span className="flex max-md:absolute max-md:top-2 max-md:end-3">
-        {detachTo !== undefined ? (
-          <Link to={detachTo} className="hd-btn hd-btn-ghost hd-icon" aria-label="Open in its own page" title="Open in its own page">
-            <Glyph d="M9 3h4v4M13 3L7.5 8.5M12 9.5V13H3V4h3.5" />
-          </Link>
-        ) : null}
-        {side != null ? (
-          <Button
-            variant="ghost"
-            className="hd-icon"
-            aria-label={side ? 'Move details below' : 'Move details to the side'}
-            onPress={() => setSide?.(!side)}
-          >
-            <Glyph d={side ? 'M2.5 2.5h11v11h-11zM2.5 9.5h11' : 'M2.5 2.5h11v11h-11zM9.5 2.5v11'} />
-          </Button>
-        ) : null}
-        {close ? (
-          <Button variant="ghost" className="hd-icon" aria-label="Close details" onPress={close}>
-            <Glyph d="M3.5 3.5l9 9M12.5 3.5l-9 9" />
-          </Button>
-        ) : null}
-        </span>
+        </div>
       </div>
       {stale ? <p className="mx-4 mt-2 type-small text-muted-foreground">No longer matches the filter</p> : null}
       <div

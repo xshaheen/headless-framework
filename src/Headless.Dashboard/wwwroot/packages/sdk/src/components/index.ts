@@ -16,6 +16,7 @@ export { EmptyState, type EmptyStateProps } from './display/empty-state.tsx'
 export { FilterChip, FilterChips, type FilterChipProps } from './display/filter-chips.tsx'
 export { FilterSelect, type FilterSelectProps } from './display/filter-select.tsx'
 export { FilterToolbar, type FilterToolbarProps } from './display/filter-toolbar.tsx'
+export { KeyValueTable, type KeyValueRow, type KeyValueTableProps } from './display/key-value-table.tsx'
 export { PageHeader, type PageHeaderProps } from './display/page-header.tsx'
 export { RelativeTime, type RelativeTimeProps } from './display/relative-time.tsx'
 export { Section, type SectionProps } from './display/section.tsx'
@@ -67,4 +68,5 @@ export { formatJson, payloadDisplayLimit, PayloadView, type PayloadViewProps } f
 // than their code, in import preambles that compress apart from the rest.
 export { ScheduleStrip, type ScheduleStripProps, type ScheduleTick, type ScheduleTrack } from './schedule/schedule-strip.tsx'
 export { Timeline, type TimelineEvent, type TimelineProps } from './timeline/timeline.tsx'
+export { Tooltip, type TooltipProps } from './tooltip.tsx'
 export { useDelayed } from './use-delayed.ts'

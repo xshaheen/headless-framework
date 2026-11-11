@@ -8,6 +8,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Ban,
   Calendar,
+  CirclePlay,
   CalendarClock,
   ChevronDown,
   ChevronLeft,
@@ -15,6 +16,7 @@ import {
   ChartLine,
   Copy,
   CopyPlus,
+  Eraser,
   ExternalLink,
   Funnel,
   Inbox,
@@ -22,6 +24,8 @@ import {
   List,
   Lock,
   LockOpen,
+  PanelBottom,
+  PanelRight,
   Pause,
   Pencil,
   Play,
@@ -38,8 +42,10 @@ import {
   SquareFunction,
   Trash2,
   TriangleAlert,
+  Unplug,
   Users,
   X,
+  Zap,
 } from 'lucide-react'
 import { createElement } from 'react'
 import { cn } from '../components/cn.ts'
@@ -57,14 +63,14 @@ export type IconComponent = (props: IconProps) => React.ReactElement
  * `currentColor`, and hidden from assistive technology. An icon never carries a state, which stays a dot and a word,
  * so it is never the only thing that names something: a button that shows only an icon names itself in `aria-label`.
  */
-function curate(glyph: LucideIcon): IconComponent {
+function curate(glyph: LucideIcon, fixed?: string): IconComponent {
   return ({ className }) =>
     createElement(glyph, {
       'aria-hidden': true,
       focusable: false,
       strokeWidth: 1.5,
       // A caller's own text colour replaces the muted tone rather than racing it in the stylesheet's order.
-      className: cn('size-(--icon) shrink-0', !className?.includes('text-') && 'text-muted-foreground', className),
+      className: cn('size-(--icon) shrink-0', !className?.includes('text-') && 'text-muted-foreground', fixed, className),
     })
 }
 
@@ -100,11 +106,22 @@ export const NextIcon = curate(ChevronRight)
 /** Opens a list of choices under a chip or a menu button. */
 export const DropdownIcon = curate(ChevronDown)
 export const DeleteIcon = curate(Trash2)
+/** Remove a stored object whatever its state, such as a run a worker still holds. */
+export const ForceDeleteIcon = curate(Eraser)
 /** Retry a run, or requeue a message. */
 export const RetryIcon = curate(RotateCcw)
 export const HoldIcon = curate(Lock)
 export const ReleaseIcon = curate(LockOpen)
 export const PingIcon = curate(Radio)
+/** Resume a paused schedule; `PlayIcon` stays for running something now. */
+export const ResumeIcon = curate(CirclePlay)
+/** Send a stored message now, ahead of its schedule. */
+export const DispatchIcon = curate(Zap)
+/** Force a consumer's circuit breaker open, which stops it consuming. */
+export const OpenCircuitIcon = curate(Unplug)
+/** The detail panel's window controls; the side one points at the inline end, so a right-to-left page mirrors it. */
+export const MoveSideIcon = curate(PanelRight, 'rtl:-scale-x-100')
+export const MoveBelowIcon = curate(PanelBottom)
 
 export const ChartIcon = curate(ChartLine)
 export const ListIcon = curate(List)
