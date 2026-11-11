@@ -176,6 +176,37 @@ public readonly record struct CacheEntryStamps(
         }
     }
 
+    /// <summary>
+    /// Returns the sliding re-arm tolerance for an idle window: <c>min(1 s, 10% of <paramref name="slidingExpiration"/>)</c>.
+    /// A store re-arms a sliding entry only when the re-armed deadline would move the current deadline out by
+    /// more than this, so a hot key writes at most once per tolerance while an idle entry still lives at least
+    /// its window minus the tolerance (at least 90% of it) after its last value read.
+    /// </summary>
+    /// <param name="slidingExpiration">The positive idle window.</param>
+    /// <returns>The largest deadline move a store may skip.</returns>
+    public static TimeSpan GetSlidingRearmTolerance(TimeSpan slidingExpiration)
+    {
+        // Integer tick math: a tenth of the window, capped at one second.
+        return TimeSpan.FromTicks(Math.Min(TimeSpan.TicksPerSecond, slidingExpiration.Ticks / 10));
+    }
+
+    /// <summary>
+    /// Decides whether a sliding re-arm is worth writing: <see langword="true"/> only when
+    /// <paramref name="rearmedLogicalExpiresAt"/> moves <paramref name="currentLogicalExpiresAt"/> out by more
+    /// than <see cref="GetSlidingRearmTolerance"/>. A move that would shorten the deadline is never a re-arm.
+    /// </summary>
+    /// <param name="currentLogicalExpiresAt">The entry's live idle deadline (UTC).</param>
+    /// <param name="rearmedLogicalExpiresAt">The candidate deadline, <c>min(now + slidingExpiration, physicalExpiresAt)</c> (UTC).</param>
+    /// <param name="slidingExpiration">The entry's idle window.</param>
+    public static bool ShouldRearmSliding(
+        DateTime currentLogicalExpiresAt,
+        DateTime rearmedLogicalExpiresAt,
+        TimeSpan slidingExpiration
+    )
+    {
+        return rearmedLogicalExpiresAt - currentLogicalExpiresAt > GetSlidingRearmTolerance(slidingExpiration);
+    }
+
     private static void _ValidateOptionalTimeout(TimeSpan timeout, string paramName)
     {
         if (timeout == Timeout.InfiniteTimeSpan)
