@@ -251,6 +251,7 @@
         <Project Path="src\Headless.Fencing.SqlServer\Headless.Fencing.SqlServer.csproj" />
         <Project Path="src\Headless.Fencing.Sqlite\Headless.Fencing.Sqlite.csproj" />
         <Project Path="src\Headless.Fencing.EntityFramework\Headless.Fencing.EntityFramework.csproj" />
+        <Project Path="benchmarks\Headless.Fencing.Benchmarks\Headless.Fencing.Benchmarks.csproj" />
     </Folder>
     <Folder Name="/Fencing/Tests/">
         <Project Path="tests\Headless.Fencing.Tests.Unit\Headless.Fencing.Tests.Unit.csproj" />
