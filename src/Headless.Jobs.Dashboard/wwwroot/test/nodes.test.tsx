@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { node, now, open, user } from './fake-server.ts'
 
@@ -35,6 +35,17 @@ describe('jobs servers', () => {
       lastHeartbeatAt: null,
     }),
   ]
+
+  it('reads the servers again on a stream reset, since no change carries them', async () => {
+    const view = open({ nodes }, { path: 'nodes' })
+    await screen.findByRole('grid', { name: 'Servers' })
+    const reads = () => view.requests.filter((request) => request.path === 'jobs/nodes').length
+    const before = reads()
+
+    act(() => view.stream.push('reset', {}))
+
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
 
   it('lists each server’s role, state, concurrency, running count, last beat, and claimed functions', async () => {
     open({ nodes }, { path: 'nodes' })

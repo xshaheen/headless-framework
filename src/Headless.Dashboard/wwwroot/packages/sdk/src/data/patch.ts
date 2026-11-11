@@ -26,20 +26,24 @@ export interface DashboardListPage<T extends ListItem = ListItem> {
 export type ChangeOutcome = 'ignored' | 'patched' | 'refetch' | 'new'
 
 /**
- * Orders two versions. The server's versions are opaque strings a module stamps from a sequence or the store's
- * clock, so digits compare as numbers of any length and anything else in natural order.
+ * Orders two versions as the server's event publisher does, so the page never applies a change the server would
+ * drop or drops one it sent: digits compare as numbers of any length, so a sequence that gains a digit stays ordered,
+ * and anything else ordinally, which orders fixed-width timestamps.
  */
 export function compareVersions(left: string, right: string) {
-  if (/^\d+$/.test(left) && /^\d+$/.test(right)) {
-    const a = BigInt(left)
-    const b = BigInt(right)
+  const digits = /^\d+$/
+  const [a, b] = digits.test(left) && digits.test(right) ? [BigInt(left), BigInt(right)] : [left, right]
 
-    return a === b ? 0 : a < b ? -1 : 1
-  }
+  return a === b ? 0 : a < b ? -1 : 1
+}
 
-  // A fixed collation, not the operator's locale: every browser must order the same two versions the same way, or
-  // one would drop a change another applies.
-  return left.localeCompare(right, 'en', { numeric: true })
+/**
+ * Whether `candidate` is a later version than `held`, the one rule every merge of fetched data and live changes
+ * uses. A holder with no version (`undefined`), such as a list row the server serves without one, is older than any
+ * version; no version is never newer than anything.
+ */
+export function isNewerVersion(candidate: string | undefined, held: string | undefined) {
+  return candidate !== undefined && (held === undefined || compareVersions(candidate, held) > 0)
 }
 
 function isListPage(value: unknown): value is DashboardListPage {
@@ -88,8 +92,14 @@ function versionOf(value: unknown): string | undefined {
     : undefined
 }
 
-function isNewer(change: StreamChange, held: string | undefined) {
-  return held === undefined || compareVersions(change.version, held) > 0
+/**
+ * Whether a fetched value is older than `held`. A fetched value with no version is the server's answer now, so
+ * nothing the cache learned overrides it.
+ */
+function isOlderFetch(fetched: unknown, held: string | undefined) {
+  const version = versionOf(fetched)
+
+  return version !== undefined && isNewerVersion(held, version)
 }
 
 /** An object that changed while no loaded view held it: its change's version and projection. */
@@ -100,8 +110,16 @@ interface ArrivedRow {
   hasRefetched?: boolean
 }
 
-/** Per topic, each arrived object by id. */
+/**
+ * How many arrived objects one topic keeps. A busy topic on a page left open would otherwise grow without end; past
+ * the cap the oldest arrival goes, and the notice reads `500+ new`, since Show reads the list again anyway.
+ */
+export const maxNewRows = 500
+
+/** Per topic, each arrived object by id, oldest first. */
 const newRows = new WeakMap<QueryClient, Map<string, Map<string, ArrivedRow>>>()
+/** The topics that dropped an arrival at the cap since the operator last showed them. */
+const cappedTopics = new WeakMap<QueryClient, Set<string>>()
 const newRowListeners = new WeakMap<QueryClient, Set<() => void>>()
 
 function notifyNewRows(client: QueryClient) {
@@ -115,6 +133,11 @@ export function getNewRows(client: QueryClient, topic: string): ReadonlyMap<stri
   const arrived = newRows.get(client)?.get(topic)
 
   return new Map(arrived ? [...arrived].map(([id, row]) => [id, row.projection]) : [])
+}
+
+/** Whether `topic` dropped an arrival at the cap, so its new rows count is a floor. */
+export function isNewRowsCapped(client: QueryClient, topic: string) {
+  return cappedTopics.get(client)?.has(topic) === true
 }
 
 export function onNewRowsChange(client: QueryClient, listener: () => void) {
@@ -135,6 +158,7 @@ export function onNewRowsChange(client: QueryClient, listener: () => void) {
 /** Clears the new rows notice of `topic` and refetches its lists, when the operator asks to see them. */
 export async function showNewRows(client: QueryClient, topic: string) {
   newRows.get(client)?.delete(topic)
+  cappedTopics.get(client)?.delete(topic)
   notifyNewRows(client)
   await client.invalidateQueries({ queryKey: listKey(topic) })
 }
@@ -163,22 +187,26 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
 
     // A later change of the same object replaces its projection, so a list's filter reads where the row is now; an
     // older one arriving late does not.
-    if (!arrived || isNewer(change, arrived.version)) {
-      topicRows.set(
-        change.topic,
-        new Map(topicRows.get(change.topic)).set(change.id, {
-          version: change.version,
-          projection: change.projection ?? null,
-        }),
-      )
+    if (!arrived || isNewerVersion(change.version, arrived.version)) {
+      const rows = new Map(topicRows.get(change.topic)).set(change.id, {
+        version: change.version,
+        projection: change.projection ?? null,
+      })
+
+      if (rows.size > maxNewRows) {
+        rows.delete(rows.keys().next().value!)
+        cappedTopics.set(client, (cappedTopics.get(client) ?? new Set()).add(change.topic))
+      }
+
+      topicRows.set(change.topic, rows)
       notifyNewRows(client)
     }
 
     return 'new'
   }
 
-  const objectIsOlder = cached !== undefined && isNewer(change, versionOf(cached))
-  const isOlderRow = (item: ListItem) => item.id === change.id && isNewer(change, item.version)
+  const objectIsOlder = cached !== undefined && isNewerVersion(change.version, versionOf(cached))
+  const isOlderRow = (item: ListItem) => item.id === change.id && isNewerVersion(change.version, item.version)
 
   if (!objectIsOlder && !rows.some(isOlderRow)) {
     return 'ignored'
@@ -217,35 +245,17 @@ export function applyChange(client: QueryClient, change: StreamChange): ChangeOu
 
 /** The newer of a cached row and a fetched one; the fetched one on a tie or when either has no version. */
 function newerRow<T>(fetched: T, cached: unknown): T {
-  const fetchedVersion = versionOf(fetched)
-  const cachedVersion = versionOf(cached)
-
-  return fetchedVersion !== undefined && cachedVersion !== undefined && compareVersions(cachedVersion, fetchedVersion) > 0
-    ? (cached as T)
-    : fetched
+  return isOlderFetch(fetched, versionOf(cached)) ? (cached as T) : fetched
 }
 
 /** Whether an arrived change is newer than the fetched row and carries no projection to apply to it. */
 function needsRefetch(fetched: unknown, arrived: ArrivedRow | undefined) {
-  const version = versionOf(fetched)
-
-  return (
-    arrived !== undefined &&
-    !arrived.projection &&
-    version !== undefined &&
-    compareVersions(arrived.version, version) > 0
-  )
+  return arrived !== undefined && !arrived.projection && isOlderFetch(fetched, arrived.version)
 }
 
 /** The fetched row with an arrived change applied, when the change is newer than the row. */
 function withArrived<T>(fetched: T, arrived: ArrivedRow | undefined): T {
-  if (!arrived?.projection || typeof fetched !== 'object' || fetched === null) {
-    return fetched
-  }
-
-  const version = versionOf(fetched)
-
-  return version !== undefined && compareVersions(arrived.version, version) > 0
+  return arrived?.projection && isOlderFetch(fetched, arrived.version)
     ? { ...fetched, ...arrived.projection, version: arrived.version }
     : fetched
 }
@@ -262,11 +272,7 @@ function refetchOlderHolders(client: QueryClient, topic: string, id: string, arr
   }
 
   newRows.get(client)?.get(topic)?.set(id, { ...arrived, hasRefetched: true })
-  const isOlder = (held: unknown) => {
-    const version = versionOf(held)
-
-    return version === undefined || compareVersions(arrived.version, version) > 0
-  }
+  const isOlder = (held: unknown) => isNewerVersion(arrived.version, versionOf(held))
 
   setTimeout(() => {
     void client.invalidateQueries({

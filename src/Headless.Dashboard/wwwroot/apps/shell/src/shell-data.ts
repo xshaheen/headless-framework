@@ -217,8 +217,8 @@ export function useProductCounts(product: string | undefined, topics: readonly s
   }, [live, refetch])
 
   useEffect(() => () => clearTimeout(timer.current), [])
+  // A stream reset reads every query again, these counts included, through the data client's own binding.
   useStreamEvent('change', onChange)
-  useStreamEvent('reset', refetch)
   useStreamEvent('subscribed', onSubscribed)
 
   return useQuery({

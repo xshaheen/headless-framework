@@ -204,6 +204,17 @@ describe('messaging stale views', () => {
 })
 
 describe('messaging nodes', () => {
+  it('reads the nodes again on a stream reset, since no change carries them', async () => {
+    const view = open({ nodes: twoNodes }, { path: 'nodes' })
+    await screen.findByRole('row', { name: /node-b/ })
+    const reads = () => view.requests.filter((request) => request.path === 'messaging/nodes').length
+    const before = reads()
+
+    act(() => view.stream.push('reset', {}))
+
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
+
   it('cannot read a peer without forwarding', async () => {
     const actor = user()
     open({ nodes: { ...twoNodes, discovery: null } }, { path: 'nodes' })

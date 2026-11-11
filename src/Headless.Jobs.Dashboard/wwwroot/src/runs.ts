@@ -1,7 +1,7 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
-import type { DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
+import { isNewerVersion, type DashboardApi, type DashboardListPage } from '@headless/dashboard-sdk/data'
 import type { ListPageRequest, ListRange } from '@headless/dashboard-sdk/table'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
@@ -441,7 +441,7 @@ export function usePending() {
     labelOf: (run: Pick<Run, 'id' | 'version'>) => {
       const entry = pending.get(run.id)
 
-      return entry && entry.version === run.version ? entry.label : undefined
+      return entry && !isNewerVersion(run.version, entry.version) ? entry.label : undefined
     },
     mark: (ids: readonly string[], versions: ReadonlyMap<string, string>, label: string) =>
       setPending((current) => {

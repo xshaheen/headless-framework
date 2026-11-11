@@ -75,8 +75,8 @@ async function renderShell(state: BootstrapState, root: HTMLElement) {
     url: state.streamUrl,
     scope: await streamScope(state),
     sessionChannel: sessionChannel(state),
-    // Another tab signed out: this one follows, to the same page.
-    onSignedOut: () => toSignIn('signed-out'),
+    // Another tab signed out, or the stream's reconnect found the session expired: this tab follows, to the same page.
+    onSignedOut: toSignIn,
   })
   // A closed tab must leave the stream: its topics stay subscribed, and keep their readers polling, until the leader
   // hears `bye`. `pagehide` fires on every way a tab goes away, where `visibilitychange` also fires for a tab that is

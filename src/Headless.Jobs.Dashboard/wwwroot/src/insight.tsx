@@ -4,10 +4,11 @@ import { LoadError, SegmentedControl, Skeleton, Text } from '@headless/dashboard
 import type { CappedCount, DashboardApi } from '@headless/dashboard-sdk/data'
 import { DateRangeField } from '@headless/dashboard-sdk/date-range'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
+import { useQuery } from '@headless/dashboard-sdk/query'
 import { useStreamEvent, useTopics } from '@headless/dashboard-sdk/stream'
 import type { ListRange } from '@headless/dashboard-sdk/table'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { useSettledRefetch } from './parts.tsx'
 import { runsTopic, statusLabel, type RunStatus } from './runs.ts'
 
 /** One local day of the series; `counts` is `null` when the store could not read that day. */
@@ -63,12 +64,6 @@ export function addDays(date: string, days: number) {
 }
 
 type Preset = 'around' | 'last-30' | 'last-90' | 'custom'
-
-// A finishing chain or a bulk requeue sends many run changes at once; one read after they settle covers them all.
-const SERIES_REREAD_DELAY_MS = 1000
-// A running job reports progress every few seconds, so with several running the changes never settle; the burst's first
-// change bounds how long the series may go unread.
-const SERIES_REREAD_MAX_WAIT_MS = 5000
 
 const presets: readonly { value: Preset; label: string }[] = [
   // Short enough for the four to sit on one line in a phone-width card; "±" reads as "plus or minus" aloud.
@@ -145,37 +140,16 @@ export function useRunsPerDay({ cronJobId, unit, unitOne }: { cronJobId?: string
     queryFn: () => fetchDailySeries(api, range!, zone, cronJobId),
     enabled: range !== undefined,
   })
-  const client = useQueryClient()
-  const settle = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const deadline = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const reread = useSettledRefetch(['jobs', 'series', 'daily'])
 
   // A run change can move any day's counts, and the change carries no day to patch, so the series is read again once
-  // a burst of changes settles rather than once per change, and at the latest a few seconds into a burst that does not.
+  // a burst of changes settles rather than once per change.
   useTopics([runsTopic])
   useStreamEvent('change', (change) => {
-    if (change.topic !== runsTopic) {
-      return
+    if (change.topic === runsTopic) {
+      reread()
     }
-
-    const reread = () => {
-      clearTimeout(settle.current)
-      clearTimeout(deadline.current)
-      settle.current = undefined
-      deadline.current = undefined
-      void client.invalidateQueries({ queryKey: ['jobs', 'series', 'daily'] })
-    }
-
-    clearTimeout(settle.current)
-    settle.current = setTimeout(reread, SERIES_REREAD_DELAY_MS)
-    deadline.current ??= setTimeout(reread, SERIES_REREAD_MAX_WAIT_MS)
   })
-  useEffect(
-    () => () => {
-      clearTimeout(settle.current)
-      clearTimeout(deadline.current)
-    },
-    [],
-  )
 
   const control = <SegmentedControl label="Days shown" options={presets} value={preset} onChange={setPreset} />
   const picker =

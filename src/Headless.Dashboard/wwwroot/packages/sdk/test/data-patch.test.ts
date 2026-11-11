@@ -3,7 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindStreamToClient } from '../src/data/bind.ts'
 import { createDashboardClient, listKey, objectKey } from '../src/data/client.tsx'
 import { capCount, formatCount } from '../src/data/counts.ts'
-import { applyChange, compareVersions, getNewRows, showNewRows, type DashboardListPage } from '../src/data/patch.ts'
+import {
+  applyChange,
+  compareVersions,
+  getNewRows,
+  isNewerVersion,
+  isNewRowsCapped,
+  maxNewRows,
+  mergeFetchedPage,
+  showNewRows,
+  type DashboardListPage,
+} from '../src/data/patch.ts'
 import { createFakeStream } from '../src/testing/fake-stream.ts'
 
 interface Run {
@@ -98,6 +108,38 @@ describe('data patching', () => {
     expect(compareVersions('2026-11-05T10:00:00.5Z', '2026-11-05T10:00:00.4Z')).toBe(1)
   })
 
+  it('orders other versions ordinally, as the server does, never by locale or natural order', () => {
+    // Natural order would put `v10` after `v9`, and a locale would put `a` before `B`; the server orders neither way.
+    expect(compareVersions('v10', 'v9')).toBe(-1)
+    expect(compareVersions('B', 'a')).toBe(-1)
+    expect(compareVersions('m1:7', 'm1:7')).toBe(0)
+  })
+
+  it('treats a holder with no version as older than any version, and no version as newer than nothing', () => {
+    expect(isNewerVersion('1', undefined)).toBe(true)
+    expect(isNewerVersion(undefined, '1')).toBe(false)
+    expect(isNewerVersion(undefined, undefined)).toBe(false)
+    expect(isNewerVersion('2', '2')).toBe(false)
+  })
+
+  it('keeps a fetched row with no version over a cached patched one, since the server answered it now', async () => {
+    const stream = createFakeStream()
+    stops.push(bindStreamToClient(stream, client))
+    let status = 'Queued'
+    const fetchList = vi.fn(async (): Promise<DashboardListPage<Run>> => ({ items: [{ id: 'r1', status }] }))
+    await watch(listKey('diag.run'), async () => mergeFetchedPage(client, 'diag.run', await fetchList()))
+
+    stream.push('change', change('r1', '5', { status: 'Failed' }))
+    expect(client.getQueryData<DashboardListPage<Run>>(listKey('diag.run'))?.items[0]).toMatchObject({ version: '5' })
+
+    status = 'Succeeded'
+    stream.push('reset', {})
+
+    await vi.waitFor(() =>
+      expect(client.getQueryData<DashboardListPage<Run>>(listKey('diag.run'))?.items[0]?.status).toBe('Succeeded'),
+    )
+  })
+
   it('refetches the object when a change carries no projection', async () => {
     const fetchObject = vi.fn(async () => ({ id: 'r1', version: '1', status: 'Queued' }))
     await watch(objectKey('diag.run', 'r1'), fetchObject)
@@ -132,6 +174,38 @@ describe('data patching', () => {
 
     await vi.waitFor(() => expect(nodes).toHaveBeenCalledTimes(2))
     expect(runs).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps at most 500 new rows per topic, dropping the oldest and reading as capped until shown', async () => {
+    await watch(listKey('diag.run'), async () => ({ items: [] }))
+
+    for (let index = 0; index <= maxNewRows; index++) {
+      applyChange(client, change(`r${index}`, '1', { status: 'Failed' }))
+    }
+
+    const rows = getNewRows(client, 'diag.run')
+    expect(rows.size).toBe(maxNewRows)
+    expect(rows.has('r0')).toBe(false)
+    expect(rows.has(`r${maxNewRows}`)).toBe(true)
+    expect(isNewRowsCapped(client, 'diag.run')).toBe(true)
+
+    await showNewRows(client, 'diag.run')
+
+    expect(isNewRowsCapped(client, 'diag.run')).toBe(false)
+  })
+
+  it('refetches on reset the reads no change patches, such as a node list or a series', async () => {
+    const stream = createFakeStream()
+    stops.push(bindStreamToClient(stream, client))
+    const nodes = vi.fn(async () => [{ name: 'node-a' }])
+    const series = vi.fn(async () => ({ days: [] }))
+    await watch(['jobs', 'nodes'], nodes)
+    await watch(['jobs', 'series', 'daily'], series)
+
+    stream.push('reset', {})
+
+    await vi.waitFor(() => expect(nodes).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(series).toHaveBeenCalledTimes(2))
   })
 
   it('refetches every subscribed query on reset', async () => {
