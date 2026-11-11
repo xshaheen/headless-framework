@@ -20,6 +20,7 @@ public sealed class MessagingHostManifestTests : TestBase
     private const string _Orders = "orders";
     private const string _OrderPlaced = "orders.order-placed";
     private const string _OrderCancelled = "orders.order-cancelled";
+    private const string _QuoteDesk = "sales.quote-desk";
 
     [Fact]
     public void should_print_concurrency_bound_from_configuration_without_tune()
@@ -98,6 +99,38 @@ public sealed class MessagingHostManifestTests : TestBase
             .Select(x => (x.GetProperty("name").GetString(), x.GetProperty("contractVersion").GetString()))
             .Should()
             .Equal((_OrderCancelled, "1"), (_OrderPlaced, "2"));
+    }
+
+    [Fact]
+    public void should_name_the_consumer_type_and_handler_method_of_each_message()
+    {
+        using var provider = _BuildProvider(setup => setup.AddModule<DescribedOrdersModule>());
+
+        var section = _Describe(provider);
+
+        _Consumer(section, _Orders, "bus")
+            .GetProperty("messages")
+            .EnumerateArray()
+            .Select(x => (x.GetProperty("consumerType").GetString(), x.GetProperty("handlerMethod").GetString()))
+            .Should()
+            .Equal(
+                (typeof(DescribedOrdersProjection).FullName, "ConsumeAsync"),
+                (typeof(DescribedOrdersProjection).FullName, "ConsumeAsync")
+            );
+        var shipping = _Consumer(section, _Orders, "queue").GetProperty("messages")[0];
+        shipping.GetProperty("consumerType").GetString().Should().Be(typeof(DescribedShipOrderHandler).FullName);
+        shipping.GetProperty("handlerMethod").GetString().Should().Be("ConsumeAsync");
+    }
+
+    [Fact]
+    public void should_name_respond_async_as_the_handler_method_of_a_responder()
+    {
+        using var provider = _BuildProvider(setup => setup.AddModule<QuoteDeskModule>());
+
+        var quote = _Consumer(_Describe(provider), _QuoteDesk, "queue").GetProperty("messages")[0];
+
+        quote.GetProperty("consumerType").GetString().Should().Be(typeof(DescribedQuoteDesk).FullName);
+        quote.GetProperty("handlerMethod").GetString().Should().Be("RespondAsync");
     }
 
     [Fact]
@@ -372,6 +405,30 @@ public sealed class MessagingHostManifestTests : TestBase
             catalog.AddQueueConsumer<DescribedShipOrderHandler, DescribedShipOrder>(
                 _Orders,
                 TestConsumers.Dispatch<DescribedShipOrderHandler, DescribedShipOrder>()
+            );
+        }
+    }
+
+    public sealed record DescribedQuoteRequest(string Sku);
+
+    public sealed record DescribedQuote(decimal Price);
+
+    public sealed class DescribedQuoteDesk : IRespond<DescribedQuoteRequest, DescribedQuote>
+    {
+        public ValueTask<DescribedQuote> RespondAsync(
+            ConsumeContext<DescribedQuoteRequest> context,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(new DescribedQuote(1m));
+    }
+
+    /// <summary>One Queue responder, which answers through <c>RespondAsync</c> rather than <c>ConsumeAsync</c>.</summary>
+    public sealed class QuoteDeskModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog)
+        {
+            catalog.AddQueueResponder<DescribedQuoteDesk, DescribedQuoteRequest, DescribedQuote>(
+                _QuoteDesk,
+                static (_, _, _) => ValueTask.CompletedTask
             );
         }
     }

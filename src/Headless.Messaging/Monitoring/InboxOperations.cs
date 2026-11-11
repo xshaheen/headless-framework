@@ -11,6 +11,9 @@ public sealed class InboxGenerationQuery
 {
     public Guid? IncarnationId { get; set; }
 
+    /// <summary>Gets or sets the message identifier every generation must carry, compared ordinally.</summary>
+    public string? MessageId { get; set; }
+
     public string? ConsumerIdentity { get; set; }
 
     public MessageLane? Lane { get; set; }
