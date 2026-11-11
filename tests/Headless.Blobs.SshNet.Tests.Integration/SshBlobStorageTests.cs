@@ -214,6 +214,70 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
+    public async Task should_return_false_when_deleting_a_directory_key()
+    {
+        // given: a blob whose key puts it under the "docs" directory
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var nested = new BlobLocation(ContainerName, "docs/a.txt");
+
+        await using (var body = new MemoryStream("content"u8.ToArray()))
+        {
+            await storage.UploadAsync(nested, body, cancellationToken: AbortToken);
+        }
+
+        // when
+        var deleted = await storage.DeleteAsync(new BlobLocation(ContainerName, "docs"), AbortToken);
+
+        // then: no blob lives at the directory key, so the delete reports not-found like every other provider, and
+        // the directory and the blob under it are left alone
+        deleted.Should().BeFalse();
+        (await storage.ExistsAsync(nested, AbortToken)).Should().BeTrue();
+
+        var results = await storage.BulkDeleteAsync(ContainerName, ["docs"], AbortToken);
+        var result = results.Should().ContainSingle().Subject.Result;
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData((short)555)] // 0555: the file can still be stat'ed, so the delete failure is known to be about a file
+    [InlineData((short)0)] // 0000: the stat fails too
+    public async Task should_throw_when_the_server_refuses_to_delete_a_blob(short parentDirectoryMode)
+    {
+        // given: a blob in a directory the login user may no longer write to
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var location = new BlobLocation(ContainerName, "locked/a.txt");
+
+        await using (var body = new MemoryStream("content"u8.ToArray()))
+        {
+            await storage.UploadAsync(location, body, cancellationToken: AbortToken);
+        }
+
+        var parentDirectory = $"{ContainerName}/locked";
+        var client = await fixture.Pool.AcquireAsync(AbortToken);
+
+        try
+        {
+            client.ChangePermissions(parentDirectory, parentDirectoryMode);
+
+            // when
+            var act = async () => await storage.DeleteAsync(location, AbortToken);
+
+            // then: only a directory key reads as not-found; a refused delete of a real blob keeps its exception
+            await act.Should().ThrowAsync<SftpPermissionDeniedException>();
+        }
+        finally
+        {
+            client.ChangePermissions(parentDirectory, 755); // SSH.NET reads the mode as octal digits
+            await fixture.Pool.ReleaseAsync(client);
+        }
+
+        (await storage.ExistsAsync(location, AbortToken)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_drop_the_destination_metadata_when_copying_a_blob_without_a_sidecar()
     {
         // given: a source written out-of-band (no sidecar) and a destination that carries metadata
