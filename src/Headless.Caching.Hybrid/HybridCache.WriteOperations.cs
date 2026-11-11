@@ -89,7 +89,7 @@ public sealed partial class HybridCache
             if (queueScalarRecovery)
             {
                 // Capture the just-written L1 physical stamp so the replay guard can detect a newer local write.
-                var stamp = await _CaptureLocalPhysicalStampAsync<T>(key, cancellationToken).ConfigureAwait(false);
+                var stamp = await _CaptureLocalStampsAsync<T>(key, cancellationToken).ConfigureAwait(false);
                 _QueueScalarUpsertRecovery(key, value, expiration, stamp);
             }
         }
@@ -128,7 +128,7 @@ public sealed partial class HybridCache
         {
             if (RecoveryQueue is not null)
             {
-                var stamp = await _CaptureLocalPhysicalStampAsync<T>(key, CancellationToken.None).ConfigureAwait(false);
+                var stamp = await _CaptureLocalStampsAsync<T>(key, CancellationToken.None).ConfigureAwait(false);
                 _QueueScalarUpsertRecovery(key, value, expiration, stamp);
             }
         }
@@ -148,8 +148,7 @@ public sealed partial class HybridCache
                 if (RecoveryQueue is not null)
                 {
                     // Same capture the synchronous degraded path uses: queue the failed L2 write for replay.
-                    var stamp = await _CaptureLocalPhysicalStampAsync<T>(key, CancellationToken.None)
-                        .ConfigureAwait(false);
+                    var stamp = await _CaptureLocalStampsAsync<T>(key, CancellationToken.None).ConfigureAwait(false);
                     _QueueScalarUpsertRecovery(key, value, expiration, stamp);
                 }
 

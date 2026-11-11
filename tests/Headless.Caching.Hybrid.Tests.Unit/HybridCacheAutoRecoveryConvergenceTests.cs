@@ -68,8 +68,10 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         // republished (newer) invalidation clears A's L1, so every tier converges on v-b.
         a.Cache.RecoveryQueue.Count.Should().Be(0);
         b.Cache.RecoveryQueue.Count.Should().Be(0);
-        a.L2.UpsertAttempts.Should().Be(2, "the initial failed write plus the successful replay");
-        b.L2.UpsertAttempts.Should().Be(2, "the initial failed write plus the successful replay");
+        a.L2.UpsertAttempts.Should().Be(1, "only the initial live write goes through the plain upsert");
+        b.L2.UpsertAttempts.Should().Be(1, "only the initial live write goes through the plain upsert");
+        a.L2.SetEntryAttempts.Should().Be(1, "the replay carries the original write stamps through SetEntry");
+        b.L2.SetEntryAttempts.Should().Be(1, "the replay carries the original write stamps through SetEntry");
         (await a.L1.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse("B's republish cleared A's L1");
         (await a.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
         (await b.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
@@ -107,6 +109,7 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         // then — the winner is the same as in the oldest-first ordering: convergence is replay-order
         // independent, and v-a is never resurrected against L2.
         a.L2.UpsertAttempts.Should().Be(1, "the conflict-dropped write must never be replayed");
+        a.L2.SetEntryAttempts.Should().Be(0, "the conflict-dropped write must never be replayed");
         (await a.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
         (await b.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
         (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
@@ -143,16 +146,16 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         // so nothing is republished and each node keeps serving its own value.
         a.Cache.RecoveryQueue.Count.Should().Be(1);
         b.Cache.RecoveryQueue.Count.Should().Be(1);
-        a.L2.UpsertAttempts.Should().Be(2, "exactly one failed replay attempt ran");
-        b.L2.UpsertAttempts.Should().Be(2, "exactly one failed replay attempt ran");
+        a.L2.SetEntryAttempts.Should().Be(1, "exactly one failed replay attempt ran");
+        b.L2.SetEntryAttempts.Should().Be(1, "exactly one failed replay attempt ran");
         (await a.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-a");
         (await b.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
 
         // and — the failure barrier is honored: another pass before the cadence elapses attempts nothing
         await a.Cache.RecoveryQueue.ProcessAsync(AbortToken);
         await b.Cache.RecoveryQueue.ProcessAsync(AbortToken);
-        a.L2.UpsertAttempts.Should().Be(2, "no replay attempt is allowed before the barrier elapses");
-        b.L2.UpsertAttempts.Should().Be(2, "no replay attempt is allowed before the barrier elapses");
+        a.L2.SetEntryAttempts.Should().Be(1, "no replay attempt is allowed before the barrier elapses");
+        b.L2.SetEntryAttempts.Should().Be(1, "no replay attempt is allowed before the barrier elapses");
 
         // when — A's L2 connection recovers first and a cadence elapses
         a.L2.FailWrites = false;
@@ -166,7 +169,7 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
             .Be("v-a");
         a.Cache.RecoveryQueue.Count.Should().Be(0);
         b.Cache.RecoveryQueue.Count.Should().Be(1);
-        b.L2.UpsertAttempts.Should().Be(3);
+        b.L2.SetEntryAttempts.Should().Be(2);
         (await b.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
 
         // when — B's L2 connection recovers last
@@ -245,9 +248,68 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
 
         // then — the write the clear superseded is not replayed, so the clear holds on every node
         a.L2.UpsertAttempts.Should().Be(1, "the cleared write must not be replayed");
+        a.L2.SetEntryAttempts.Should().Be(0, "the cleared write must not be replayed");
         (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
         (await a.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
         (await b.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_a_clear_this_node_never_saw_winning_over_a_replayed_upsert_written_before_it()
+    {
+        // given — only A's L2 connection is down; A writes a value that queues for replay
+        await using var harness = new TwoNodeConvergenceHarness();
+        var (a, b) = (harness.A, harness.B);
+        a.L2.FailWrites = true;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await a.Cache.UpsertAsync(key, "v-a", _Ttl, AbortToken);
+        a.Cache.RecoveryQueue!.Count.Should().Be(1);
+
+        // when — the shared L2 is cleared after A's write by a node whose broadcast A never received (the clear
+        // lands on the shared tier directly), so A's L1 still holds the entry and its replay guard lets it through
+        harness.Time.Advance(TimeSpan.FromSeconds(1));
+        await harness.SharedL2Backend.ClearAsync(AbortToken);
+        harness.Time.Advance(TimeSpan.FromSeconds(1));
+
+        // and — A's L2 recovers and the replay runs after the clear
+        a.L2.FailWrites = false;
+        harness.Time.Advance(_Delay);
+        await a.Cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the replay carried A's original write time, which predates the clear marker, so the clear still
+        // wins on the shared tier and on the peer that reads through it
+        a.Cache.RecoveryQueue.Count.Should().Be(0);
+        a.L2.SetEntryAttempts.Should().Be(1, "the queued write replayed once, through SetEntry");
+        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("the clear was issued after the original write");
+        (await b.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_a_replayed_upsert_written_after_a_clear_visible()
+    {
+        // given — the shared L2 was cleared before A writes; A's L2 connection is down for the write
+        await using var harness = new TwoNodeConvergenceHarness();
+        var (a, b) = (harness.A, harness.B);
+        await harness.SharedL2Backend.ClearAsync(AbortToken);
+        harness.Time.Advance(TimeSpan.FromSeconds(1));
+        a.L2.FailWrites = true;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await a.Cache.UpsertAsync(key, "v-a", _Ttl, AbortToken);
+        a.Cache.RecoveryQueue!.Count.Should().Be(1);
+
+        // when — A's L2 recovers and the replay runs
+        a.L2.FailWrites = false;
+        harness.Time.Advance(_Delay);
+        await a.Cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the original write time is newer than the clear, so the replayed value is visible everywhere
+        a.Cache.RecoveryQueue.Count.Should().Be(0);
+        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-a");
+        (await b.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-a");
     }
 
     [Fact]
@@ -290,14 +352,14 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
 
         // when — the first replay pass fails, the item survives (one retry left)
         harness.Time.Advance(_Delay);
-        a.L2.UpsertAttempts.Should().Be(2);
+        a.L2.SetEntryAttempts.Should().Be(1);
         a.Cache.RecoveryQueue.Count.Should().Be(1);
 
         // and — the second failed pass exhausts the budget
         harness.Time.Advance(_Delay);
 
         // then — the item is dropped loudly (warning log event) instead of retrying forever
-        a.L2.UpsertAttempts.Should().Be(3);
+        a.L2.SetEntryAttempts.Should().Be(2);
         a.Cache.RecoveryQueue.Count.Should().Be(0);
         a.Logger.Entries.Should()
             .ContainSingle(e => e.Level == LogLevel.Warning && e.Event.Name == "AutoRecoveryItemDroppedAfterRetries");
@@ -305,7 +367,8 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         // and — further cadences attempt nothing: the total L2 attempts stay bounded at initial + MaxRetries
         harness.Time.Advance(_Delay);
         harness.Time.Advance(_Delay);
-        a.L2.UpsertAttempts.Should().Be(3, "auto-recovery gave up; no further replay attempts are made");
+        a.L2.UpsertAttempts.Should().Be(1, "only the initial live write goes through the plain upsert");
+        a.L2.SetEntryAttempts.Should().Be(2, "auto-recovery gave up; no further replay attempts are made");
 
         // and — the divergence is permanent: A serves its local copy while B and L2 never see the value
         (await a.Cache.GetAsync<string>(key, AbortToken))
