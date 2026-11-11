@@ -330,8 +330,8 @@ public sealed class ForwardingCommandTests : TestBase
     [InlineData(
         "POST",
         "/peer/operations/messaging.re-execute/chunk",
-        """{"filter":{},"highWaterMark":"not-a-mark","chunkSize":1}""",
-        "highWaterMark",
+        """{"token":"not-a-token","reason":"incident 42"}""",
+        "token",
         "invalid"
     )]
     public async Task should_answer_a_validation_problem_naming_the_field_when_a_peer_call_lacks_valid_input(
