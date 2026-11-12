@@ -20,11 +20,13 @@ import {
   Mono,
   PageFrame,
   PageHeader,
+  shortTypeName,
   Skeleton,
   splitFailure,
   StatusMark,
   usePageFrame,
   Timestamp,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { FilterCombobox } from '@headless/dashboard-sdk/combobox'
 import {
@@ -51,7 +53,6 @@ import {
   MessagePanel,
   MessagingStats,
   NodeSwitch,
-  QueryState,
   StaleNotice,
   offers,
   rowCommands,
@@ -884,7 +885,7 @@ function causeOf(fingerprint: string, rows: readonly MessageRow[]) {
     .flatMap((row) => (row.failureFingerprint === fingerprint ? [failureOf(row)?.type] : []))
     .find(Boolean)
 
-  return type ? type.slice(type.lastIndexOf('.') + 1) : shortFingerprint(fingerprint)
+  return type ? shortTypeName(type) : shortFingerprint(fingerprint)
 }
 
 function CheckedActions({

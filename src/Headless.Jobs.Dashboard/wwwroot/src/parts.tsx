@@ -22,10 +22,8 @@ import {
   StatStrip,
   Text,
   Timeline,
-  useDelayed,
   useViewKeys,
   type HistoryItem,
-  type SkeletonShape,
   type TimelineEvent,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
@@ -79,53 +77,6 @@ export { RunProgress }
  */
 export function CellText({ title, children }: { title?: string; children: ReactNode }) {
   return <span title={title}>{children}</span>
-}
-
-type LoadState<T> =
-  | { isPending: true; isError: false }
-  | { isPending: false; isError: true; error: Error; data?: T; refetch: () => Promise<unknown> }
-  | { isPending: false; isError: false; data: T }
-
-/**
- * A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. A
- * refresh that fails keeps the data on screen under the error. The skeleton takes the `shape` of what loads: `table`
- * for a list region, `rows` by default.
- */
-export function QueryState<T>({
-  query,
-  label,
-  rows,
-  shape,
-  children,
-}: {
-  query: LoadState<T>
-  label: string
-  rows: number
-  shape?: SkeletonShape
-  children: (data: T) => ReactNode
-}) {
-  const showLoading = useDelayed(query.isPending)
-
-  if (query.isPending) {
-    return showLoading ? <Skeleton label={label} rows={rows} shape={shape} /> : null
-  }
-
-  if (query.isError) {
-    // A refresh that failed still holds the last good read: the rows stay under the error, as stale data does.
-    const kept = query.data !== undefined
-    const error = <LoadError message={query.error.message} kept={kept} onRetry={() => void query.refetch()} />
-
-    return query.data === undefined ? (
-      error
-    ) : (
-      <>
-        {error}
-        {children(query.data)}
-      </>
-    )
-  }
-
-  return children(query.data)
 }
 
 // A finishing chain or a bulk requeue sends many run changes at once; one read after they settle covers them all.
@@ -515,26 +466,36 @@ export function RunFields({ run }: { run: Run }) {
   )
 }
 
+type Attempted = Pick<Run, 'status' | 'retryCount' | 'retries' | 'executedAt'>
+
 /**
  * The attempt a run is on or last made, out of the first attempt and its retries: the store counts the retries a run
- * consumed, so the attempt is one past that. A run no node has picked up yet has made no attempt. The panel's field
- * and the list's cell both read this, so the two cannot disagree.
+ * consumed, so the attempt is one past that. A run made no attempt while no node has picked it up, and none at all
+ * when it was skipped or cancelled before it started. The panel's field and the list's cell both read this, so the
+ * two cannot disagree.
  */
-function attemptsOf(run: Pick<Run, 'status' | 'retryCount' | 'retries'>) {
-  const isWaiting = run.retryCount === 0 && (run.status === 'Idle' || run.status === 'Queued')
+function attemptsOf(run: Attempted) {
+  const isWaiting = run.status === 'Idle' || run.status === 'Queued'
+  // A skipped run's handler never ran, and a cancelled run with no execution time was cancelled before it started.
+  const neverRan = run.status === 'Skipped' || (run.status === 'Cancelled' && !run.executedAt)
+  const made = run.retryCount === 0 && (isWaiting || neverRan) ? undefined : run.retryCount + 1
 
-  return { made: isWaiting ? undefined : run.retryCount + 1, allowed: run.retries + 1 }
+  return { made, allowed: run.retries + 1, isWaiting }
 }
 
-/** `Attempt 2 of 4`, or `Not run yet, up to 4` for a run that has made no attempt. */
-function attemptText(run: Pick<Run, 'status' | 'retryCount' | 'retries'>, number: (value: number) => string) {
-  const { made, allowed } = attemptsOf(run)
+/** `Attempt 2 of 4`, `Not run yet, up to 4` for a run still waiting, or `Did not run` for one that never will. */
+function attemptText(run: Attempted, number: (value: number) => string) {
+  const { made, allowed, isWaiting } = attemptsOf(run)
 
-  return made === undefined ? `Not run yet, up to ${number(allowed)}` : `Attempt ${number(made)} of ${number(allowed)}`
+  if (made === undefined) {
+    return isWaiting ? `Not run yet, up to ${number(allowed)}` : 'Did not run'
+  }
+
+  return `Attempt ${number(made)} of ${number(allowed)}`
 }
 
 /** `2 of 4` for a list cell, and nothing for a run that has made no attempt, which the cell shows as its dash. */
-export function attemptsCell(run: Pick<Run, 'status' | 'retryCount' | 'retries'>, number: (value: number) => string) {
+export function attemptsCell(run: Attempted, number: (value: number) => string) {
   const { made, allowed } = attemptsOf(run)
 
   return made === undefined ? undefined : `${number(made)} of ${number(allowed)}`

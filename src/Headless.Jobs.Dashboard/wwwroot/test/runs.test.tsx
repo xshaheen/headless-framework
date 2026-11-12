@@ -183,6 +183,18 @@ describe('jobs runs list', () => {
     expect(field(panel(failed.id), 'Attempt')).toBe('Attempt 2 of 4')
   })
 
+  it('counts no attempt for a run that was skipped, in its row and in its panel', async () => {
+    const skipped = run('Skipped', { function: 'a.skipped', executedAt: '2026-11-05T09:52:00Z' })
+    list({ runs: [skipped] })
+
+    const row = await screen.findByRole('row', { name: /a\.skipped/ })
+    expect(within(row).queryByText(/\d of \d/)).toBeNull()
+
+    await user().click(row)
+    await user().click(within(panel(skipped.id)).getByRole('tab', { name: 'Overview' }))
+    expect(field(panel(skipped.id), 'Attempt')).toBe('Did not run')
+  })
+
   it('opens a run in the docked panel, in the URL as open, with its exception and its attempts newest first', async () => {
     const failed = run('Failed', {
       function: 'a.failed',
@@ -818,6 +830,32 @@ describe('jobs failed list', () => {
     // A reason the store wrote without a type reads as the message alone, in the cell's own tone.
     const plain = within(screen.getByRole('row', { name: /a\.plain/ })).getByText('Lost by its node')
     expect(plain.getAttribute('title')).toBe('Lost by its node')
+  })
+
+  it('names a cause chip by the exception type of a loaded run of its group', async () => {
+    const timedOut = run('Failed', {
+      function: 'export.ledger',
+      failureFingerprint: 'v1:io',
+      exceptionType: 'System.TimeoutException',
+      exceptionMessage: 'Blob unreachable',
+    })
+    list(
+      {
+        runs: [timedOut],
+        // The second group has no run among the loaded ones, so its chip keeps the function alone.
+        attention: [attention('export.ledger', 'v1:io', 1), attention('export.ledger', 'v1:disk', 4)],
+      },
+      '?status=Failed',
+    )
+
+    const chips = await screen.findByRole('group', { name: 'Filter by cause' })
+    await waitFor(() =>
+      expect(
+        within(chips)
+          .getAllByRole('button')
+          .map((chip) => chip.textContent),
+      ).toEqual(['All1', 'export.ledger · TimeoutException1', 'export.ledger4']),
+    )
   })
 
   it('presses only the chip of the function and fingerprint set, when two functions fail the same way', async () => {

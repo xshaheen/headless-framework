@@ -12,6 +12,7 @@ import {
   StatusMark,
   Tag,
   usePageFrame,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { NodeIcon, PingIcon } from '@headless/dashboard-sdk/icons'
@@ -21,14 +22,7 @@ import { DataTable } from '@headless/dashboard-sdk/table'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { useState } from 'react'
 import { nodeMark, useMessagingCommands, viewOnlyReason } from '../messages.ts'
-import {
-  CellText,
-  QueryState,
-  StaleNotice,
-  useNode,
-  type MessagingNode,
-  type MessagingNodeInstance,
-} from '../parts.tsx'
+import { CellText, StaleNotice, useNode, type MessagingNode, type MessagingNodeInstance } from '../parts.tsx'
 
 /** A node's row id is its name, which the server's node commands take as their id. */
 type NodeRow = MessagingNode & { id: string }

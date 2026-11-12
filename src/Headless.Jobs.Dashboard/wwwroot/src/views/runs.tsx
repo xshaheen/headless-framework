@@ -22,6 +22,8 @@ import {
   StatusMark,
   usePageFrame,
   Timestamp,
+  QueryState,
+  shortTypeName,
 } from '@headless/dashboard-sdk/components'
 import {
   DashboardApiError,
@@ -49,7 +51,6 @@ import {
   CellText,
   firstLine,
   JobsStats,
-  QueryState,
   RunPanel,
   StaleNotice,
   useFunctions,
@@ -347,7 +348,12 @@ export default function RunsView() {
               chips={
                 <>
                   {status === 'Failed' ? (
-                    <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} />
+                    <FailureChips
+                      filter={filter}
+                      rows={items}
+                      count={count ? format.count(count) : undefined}
+                      onPick={setFilter}
+                    />
                   ) : null}
                   {setFilters.length > 0 || (status && timeRange) ? (
                     <FilterChips label="Set filters">
@@ -631,15 +637,18 @@ function RunsTable({
 }
 
 /**
- * The Failed list's causes: `All`, then one chip per failure group the server counts, labelled by its function; the
- * server does not serve a group's exception type, and the chip's title names its fingerprint.
+ * The Failed list's causes: `All`, then one chip per failure group the server counts, labelled by its function and
+ * its cause; the chip's title names its fingerprint.
  */
 function FailureChips({
   filter,
+  rows,
   count,
   onPick,
 }: {
   filter: RunFilter
+  /** The loaded runs, which name a group's cause by its exception type once one of the group's runs is among them. */
+  rows: readonly Run[]
   count?: string
   onPick: (name: keyof RunFilter, value: string, also?: Partial<RunFilter>) => void
 }) {
@@ -669,7 +678,7 @@ function FailureChips({
         return (
           <FilterChip
             key={group.id}
-            label={group.fn}
+            label={causeLabel(group.fn, group.fingerprint, rows)}
             title={`${group.fn}, fingerprint ${group.fingerprint}`}
             count={format.count(group.count)}
             failing
@@ -682,6 +691,18 @@ function FailureChips({
       })}
     </FilterChips>
   )
+}
+
+/**
+ * A group's chip label. One function can fail several ways, and a failure group serves only its fingerprint, so the
+ * label adds the exception type of a loaded run of the group; until one is loaded it is the function alone.
+ */
+function causeLabel(fn: string, fingerprint: string, rows: readonly Run[]) {
+  const type = rows.find(
+    (run) => run.function === fn && run.failureFingerprint === fingerprint && run.exceptionType,
+  )?.exceptionType
+
+  return type ? `${fn} · ${shortTypeName(type)}` : fn
 }
 
 function CheckedActions({

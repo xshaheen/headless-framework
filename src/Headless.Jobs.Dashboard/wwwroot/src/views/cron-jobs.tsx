@@ -12,6 +12,7 @@ import {
   Text,
   usePageFrame,
   Timestamp,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -21,7 +22,7 @@ import { DataTable } from '@headless/dashboard-sdk/table'
 import { RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { CronPanel, useCronJob } from '../cron-parts.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, QueryState, StaleNotice, useFunctions } from '../parts.tsx'
+import { CellText, JobsStats, StaleNotice, useFunctions } from '../parts.tsx'
 import { viewOnlyReason } from '../runs.ts'
 import { CronJobForm } from './create.tsx'
 

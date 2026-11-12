@@ -1,10 +1,10 @@
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { Link, useParams } from '@headless/dashboard-sdk/router'
-import { EmptyState, usePageTitle } from '@headless/dashboard-sdk/components'
+import { EmptyState, usePageTitle, QueryState } from '@headless/dashboard-sdk/components'
 import { RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { useState } from 'react'
 import { CronPanel, deletedText, useCronJob } from '../cron-parts.tsx'
-import { QueryState, StaleNotice } from '../parts.tsx'
+import { StaleNotice } from '../parts.tsx'
 
 export default function CronJobPage() {
   const cronJobId = useParams().cronJobId ?? ''

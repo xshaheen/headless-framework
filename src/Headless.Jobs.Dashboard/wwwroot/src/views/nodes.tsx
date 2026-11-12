@@ -13,13 +13,14 @@ import {
   Text,
   usePageFrame,
   Timestamp,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { NodeIcon } from '@headless/dashboard-sdk/icons'
 import { nodeStatusMark, type JobNode } from '../cron.ts'
-import { CellText, firstLine, JobsStats, QueryState, StaleNotice, useNodes } from '../parts.tsx'
+import { CellText, firstLine, JobsStats, StaleNotice, useNodes } from '../parts.tsx'
 
 export default function NodesView() {
   const format = useFormat()

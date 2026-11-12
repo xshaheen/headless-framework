@@ -54,7 +54,7 @@ export function Mono({ children }: { children: ReactNode }) {
  * The class name of a .NET type without its namespace: `System.TimeoutException` reads `TimeoutException`. A generic
  * type's arguments carry dots of their own, so the name is read from what precedes them.
  */
-function shortTypeName(type: string) {
+export function shortTypeName(type: string) {
   const argumentsAt = type.indexOf('[')
   const name = argumentsAt < 0 ? type : type.slice(0, argumentsAt)
 

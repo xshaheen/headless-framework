@@ -25,6 +25,7 @@ export { PageHeader, type PageHeaderProps } from './display/page-header.tsx'
 export { Timestamp, type TimestampProps } from './display/timestamp.tsx'
 export { Section, type SectionProps } from './display/section.tsx'
 export { SegmentedControl, type SegmentedControlProps } from './display/segmented-control.tsx'
+export { QueryState, type LoadState } from './display/query-state.tsx'
 export { Skeleton, type SkeletonProps, type SkeletonShape } from './display/skeleton.tsx'
 export { StatCard, StatStrip, type StatCardProps } from './display/stat-strip.tsx'
 export { Tag, type TagProps, type TagVariant } from './display/tag.tsx'
@@ -58,6 +59,7 @@ export {
   Kbd,
   Mono,
   NodeChip,
+  shortTypeName,
   splitFailure,
   StatusMark,
   TenantChip,

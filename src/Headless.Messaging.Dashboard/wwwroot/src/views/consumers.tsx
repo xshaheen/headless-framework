@@ -14,6 +14,7 @@ import {
   Text,
   usePageFrame,
   Timestamp,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { FilterCombobox } from '@headless/dashboard-sdk/combobox'
 import { ConsumerIcon, OpenCircuitIcon, RefreshIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
@@ -34,7 +35,6 @@ import {
   MessagingStats,
   NodeLink,
   NodeSwitch,
-  QueryState,
   StaleNotice,
   useCircuits,
   useConsumers,

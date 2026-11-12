@@ -16,6 +16,7 @@ import {
   Text,
   usePageFrame,
   Timestamp,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
 import { AddIcon, FunctionIcon, RecurringIcon, RunsIcon } from '@headless/dashboard-sdk/icons'
@@ -23,7 +24,7 @@ import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { cronJobsTopic, cronStatusMark, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, QueryState, StaleNotice, useFunctions } from '../parts.tsx'
+import { CellText, JobsStats, StaleNotice, useFunctions } from '../parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
 
 /** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */

@@ -1,7 +1,7 @@
-import { EmptyState, usePageTitle } from '@headless/dashboard-sdk/components'
+import { EmptyState, usePageTitle, QueryState } from '@headless/dashboard-sdk/components'
 import { FunctionIcon } from '@headless/dashboard-sdk/icons'
 import { Link, useParams } from '@headless/dashboard-sdk/router'
-import { QueryState, StaleNotice, useFunctions } from '../parts.tsx'
+import { StaleNotice, useFunctions } from '../parts.tsx'
 import { FunctionPanel } from './functions.tsx'
 
 export default function FunctionPage() {

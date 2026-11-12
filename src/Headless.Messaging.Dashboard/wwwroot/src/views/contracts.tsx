@@ -1,8 +1,16 @@
-import { FilterToolbar, Mono, PageFrame, PageHeader, Tag, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  FilterToolbar,
+  Mono,
+  PageFrame,
+  PageHeader,
+  Tag,
+  usePageFrame,
+  QueryState,
+} from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { RunsIcon } from '@headless/dashboard-sdk/icons'
-import { CellText, MessagingStats, NodeLink, NodeSwitch, QueryState, StaleNotice, useContracts } from '../parts.tsx'
+import { CellText, MessagingStats, NodeLink, NodeSwitch, StaleNotice, useContracts } from '../parts.tsx'
 
 export default function ContractsView() {
   const format = useFormat()
