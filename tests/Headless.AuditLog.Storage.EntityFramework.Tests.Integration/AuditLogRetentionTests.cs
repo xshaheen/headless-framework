@@ -103,9 +103,9 @@ public sealed class AuditLogRetentionTests : TestBase
     }
 
     [Fact]
-    public async Task should_refuse_the_owners_purge_and_partition_calls_on_a_database_other_than_postgresql()
+    public async Task should_refuse_the_owners_purge_and_offer_no_partitions_without_a_database_package()
     {
-        // given
+        // given - the provider-neutral registration: the owner's purge and the partitions belong to PostgreSQL's package
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
             configure: null,
             configureServices: services =>
@@ -116,19 +116,13 @@ public sealed class AuditLogRetentionTests : TestBase
         await using var _ = conn;
         await using var __ = sp;
         var retention = sp.GetRequiredService<IAuditLogRetention<AuditTestDbContext>>();
-        var partitions = sp.GetRequiredService<IAuditLogPartitions<AuditTestDbContext>>();
 
         // when
         var purge = () => retention.PurgeAsync(TimeSpan.FromDays(30), limit: 1, AbortToken);
-        var ensure = () => partitions.EnsureAsync(AbortToken);
-        var drop = () => partitions.DropExpiredAsync(TimeSpan.FromDays(30), AbortToken);
-        var dropNothing = () => partitions.DropExpiredAsync(TimeSpan.Zero, AbortToken);
 
         // then
         await purge.Should().ThrowAsync<NotSupportedException>().WithMessage("*PostgreSQL only*");
-        await ensure.Should().ThrowAsync<NotSupportedException>().WithMessage("*PostgreSQL only*");
-        await drop.Should().ThrowAsync<NotSupportedException>().WithMessage("*PostgreSQL only*");
-        await dropNothing.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        sp.GetService<IAuditLogPartitions<AuditTestDbContext>>().Should().BeNull();
     }
 
     private static async Task _AddAsync(IServiceProvider sp, params (string Action, DateTime CreatedAt)[] entries)

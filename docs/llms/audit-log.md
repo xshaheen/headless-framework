@@ -1,6 +1,6 @@
 ---
 domain: Audit Log
-packages: AuditLog.Abstractions, AuditLog, AuditLog.Storage.EntityFramework, AuditLog.Storage.PostgreSql, AuditLog.Storage.SqlServer
+packages: AuditLog.Abstractions, AuditLog, AuditLog.Storage.EntityFramework, AuditLog.Storage.PostgreSql, AuditLog.Storage.PostgreSql.EntityFramework, AuditLog.Storage.SqlServer, AuditLog.Storage.SqlServer.EntityFramework
 ---
 
 # Audit Log
@@ -15,7 +15,9 @@ Install `Headless.AuditLog` plus exactly one storage provider:
 |---|---|
 | `Headless.AuditLog.Abstractions` | Contract package pulled by Core and providers; reference directly only when you need contracts without DI setup. |
 | `Headless.AuditLog` | DI setup, options validation, storage options, setup builders, and the exactly-one-provider registration pipeline. |
-| `Headless.AuditLog.Storage.EntityFramework` | You already use EF Core and want audit rows to commit atomically in the same `SaveChanges` transaction. |
+| `Headless.AuditLog.Storage.EntityFramework` | You already use EF Core, on a database other than PostgreSQL and SQL Server, and want audit rows to commit atomically in the same `SaveChanges` transaction. |
+| `Headless.AuditLog.Storage.PostgreSql.EntityFramework` | The same through EF Core on PostgreSQL. It adds the migration helpers for an append-only, partitioned table and the retention and partition services that work with it. |
+| `Headless.AuditLog.Storage.SqlServer.EntityFramework` | The same through EF Core on SQL Server. It adds the migration helper for an append-only table and the retention purge that passes its trigger. |
 | `Headless.AuditLog.Storage.PostgreSql` | You want zero EF dependency and are on PostgreSQL. |
 | `Headless.AuditLog.Storage.SqlServer` | You want zero EF dependency and are on SQL Server. |
 
@@ -29,7 +31,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
 - Test audit coverage with `db.Model.GetAuditPolicies(options)` (or `entityType.GetAuditPolicy(options)`), passing the `AuditLogOptions` the host resolves. It applies the same rules as capture, so assert on `IsAudited`, `ConfiguredIsAudited`, `IsSensitive`, and `IsCaptured` instead of reading model annotations. See [Testing audit coverage](#testing-audit-coverage).
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
-- For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) for read-back, and call `modelBuilder.ConfigureHeadlessAuditLog(this)` inside `OnModelCreating`, which reads the storage options from the context's services and names every object in the database's convention (snake_case on PostgreSQL, PascalCase elsewhere). A startup gate validates this at boot and throws if it is missing. The factory must be a singleton (the default lifetime of all four registrations): the EF reader and startup gate are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
+- For EF storage, call the registration of the database the context runs on (`setup.UsePostgreSqlEntityFramework<TContext>()`, `setup.UseSqlServerEntityFramework<TContext>()`, or `setup.UseEntityFramework<TContext>()` for any other database; startup refuses a registration that does not match the database), register the same context with EF Core, register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) for read-back, and call `modelBuilder.ConfigureHeadlessAuditLog(this)` inside `OnModelCreating`, which reads the storage options from the context's services and names every object in the database's convention (snake_case on PostgreSQL, PascalCase elsewhere). A startup gate validates this at boot and throws if it is missing. The factory must be a singleton (the default lifetime of all four registrations): the EF reader and startup gate are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
 - For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`, or the parameterless `UsePostgreSql()` / `UseSqlServer()` to reuse the connection registered by `AddPostgreSqlSql` / `AddSqlServerSql`; `resources provision` creates the audit table, a host start only verifies it, and the provider writes over its own connection.
 - Raw PostgreSQL and SQL Server packages provide storage only. Automatic change capture and the fluent metadata policy are EF-specific; there is no parallel provider-neutral policy registry.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type parameter.
@@ -39,7 +41,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Soft-delete transitions are detected automatically and emit `entity.soft_deleted` / `entity.restored` actions instead of `entity.updated`.
 - `EntityFilter` and `PropertyFilter` predicates are cached after first evaluation per `(Type, propertyName)`. Keep them pure and deterministic.
 - `IpAddress` and `UserAgent` come from the registered `IAuditClientInfoProvider` whenever the writer leaves them `null`: on every EF change-capture entry, and on `IAuditLog<TContext>.LogAsync` and `IAuditLogWriter<TContext>.WriteAsync` when `AuditLogWriteRequest.IpAddress` / `UserAgent` are unset. `AddHeadless()` (`Headless.Api.ServiceDefaults`) registers one that reads the current request (`IRequestContext.WebClient`); a host without it, such as a worker, records `null` unless the request sets the values. Both are truncated to their column limits.
-- Delete audit rows only through `IAuditLogRetention<TContext>.PurgeAsync(olderThan, limit)`, called from a scheduled job until it returns less than `limit`. To make the raw PostgreSQL or SQL Server table append-only, set `AuditLogStorageOptions.AppendOnly = true` before `resources provision`; with Entity Framework storage, call `migrationBuilder.AddHeadlessAuditLogAppendOnly(...)` in a migration and never hand-write the trigger. The purge keeps working either way. See [Retention and append-only storage](#retention-and-append-only-storage).
+- Delete audit rows only through `IAuditLogRetention<TContext>.PurgeAsync(olderThan, limit)`, called from a scheduled job until it returns less than `limit`. To make the raw PostgreSQL or SQL Server table append-only, set `AuditLogStorageOptions.AppendOnly = true` before `resources provision`; with Entity Framework storage, call `migrationBuilder.AddHeadlessAuditLogAppendOnly(...)` from the PostgreSQL or SQL Server Entity Framework audit package in a migration and never hand-write the trigger. The purge keeps working either way. See [Retention and append-only storage](#retention-and-append-only-storage).
 - On PostgreSQL, when the application's login must not be able to delete audit rows by itself, set `PurgeAuthority = AuditLogPurgeAuthority.Owner` and grant that login `EXECUTE` on `{table}_purge` only. See [Who may purge](#who-may-purge).
 - A partitioned audit table has no default partition: schedule `IAuditLogPartitions<TContext>.EnsureAsync` at least monthly, or audited writes fail once the last partition's month ends. See [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql).
 - On SQLite, override the default composite primary key `(CreatedAt, Id)` with a single-column key on `Id` — SQLite cannot autoincrement composite keys.
@@ -208,9 +210,9 @@ How the trigger gets there depends on the storage:
 | Storage | Switch | Applied by |
 | --- | --- | --- |
 | `UsePostgreSql`, `UseSqlServer` | `AuditLogStorageOptions.AppendOnly = true` (default `false`) | `resources provision`, as schema step `AuditLog/3` |
-| `UseEntityFramework` | `migrationBuilder.AddHeadlessAuditLogAppendOnly(...)` in a migration | the application's migrations |
+| `UsePostgreSqlEntityFramework`, `UseSqlServerEntityFramework` | `migrationBuilder.AddHeadlessAuditLogAppendOnly(...)` in a migration | the application's migrations |
 
-Both paths emit the same SQL, so do not copy the trigger into a migration by hand. Entity Framework storage rejects `AppendOnly`, `Partitioning`, and `MinimumRetention` at startup, because its table comes from the migrations and an option the provider accepted and then ignored would read as a guarantee it does not give. Turning `AppendOnly` on later adds the trigger at the next `resources provision`; turning it off leaves the trigger until you drop it (`{table}_append_only` and `{table}_append_only_truncate` with function `{schema}.{table}_append_only` on PostgreSQL, `TR_{Table}_AppendOnly` on SQL Server). In a migration, `DropHeadlessAuditLogAppendOnly(...)` removes them.
+Both paths emit the same SQL, which each database's raw provider package owns, so do not copy the trigger into a migration by hand. The helpers come from `Headless.AuditLog.Storage.PostgreSql.EntityFramework` and `Headless.AuditLog.Storage.SqlServer.EntityFramework`, under the same names; each refuses a migration for another database, and an application that references both packages calls a helper through its class (`HeadlessPostgreSqlAuditLogMigrationBuilderExtensions` or `HeadlessSqlServerAuditLogMigrationBuilderExtensions`). Entity Framework storage rejects `AppendOnly`, `Partitioning`, and `MinimumRetention` at startup, because its table comes from the migrations and an option the provider accepted and then ignored would read as a guarantee it does not give. Turning `AppendOnly` on later adds the trigger at the next `resources provision`; turning it off leaves the trigger until you drop it (`{table}_append_only` and `{table}_append_only_truncate` with function `{schema}.{table}_append_only` on PostgreSQL, `TR_{Table}_AppendOnly` on SQL Server). In a migration, `DropHeadlessAuditLogAppendOnly(...)` removes them.
 
 ```csharp
 // Entity Framework storage: in the migration, after the table exists.
@@ -274,7 +276,7 @@ A partitioned audit table keeps one range partition per calendar month of `creat
 | Storage | Switch | Creates |
 | --- | --- | --- |
 | `UsePostgreSql` | `AuditLogStorageOptions.Partitioning = AuditLogPartitioning.Monthly` | the table as `PARTITION BY RANGE (created_at)` (step `AuditLog/1`), the partition functions (step `AuditLog/5`), and the partitions (the `AuditLogPartitions` resource) |
-| `UseEntityFramework` | the application's migration creates the table with `PARTITION BY RANGE ("created_at")`, then calls `migrationBuilder.AddHeadlessAuditLogPartitions(...)` | the same functions, and the partitions from the current month through `monthsAhead` months ahead (default 3). The helper never creates or replaces the table. |
+| `UsePostgreSqlEntityFramework` | the application's migration creates the table with `PARTITION BY RANGE ("created_at")`, then calls `migrationBuilder.AddHeadlessAuditLogPartitions(...)` | the same functions, and the partitions from the current month through `monthsAhead` months ahead (default 3). The helper never creates or replaces the table. |
 
 ```csharp
 // Raw PostgreSQL storage
@@ -468,7 +470,7 @@ services.AddHeadlessAuditLog(setup =>
 
 ### Configuration
 
-Configure audit behavior through `setup.ConfigureOptions(...)` and storage shape through `setup.ConfigureStorage(...)`. Then select exactly one storage provider by calling the provider extension, such as `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`, from the installed storage package. `ConfigureStorage` also accepts the `Headless:AuditLog:Storage` configuration section.
+Configure audit behavior through `setup.ConfigureOptions(...)` and storage shape through `setup.ConfigureStorage(...)`. Then select exactly one storage provider by calling the provider extension, such as `UsePostgreSqlEntityFramework<TContext>()`, `UseSqlServerEntityFramework<TContext>()`, `UseEntityFramework<TContext>()`, `UsePostgreSql(...)`, or `UseSqlServer(...)`, from the installed storage package. `ConfigureStorage` also accepts the `Headless:AuditLog:Storage` configuration section.
 
 Storage options (`AuditLogStorageOptions`):
 
@@ -478,10 +480,10 @@ Storage options (`AuditLogStorageOptions`):
 | `TableName` | `null` (database convention) | Table name. `null` uses `audit_log_entries` on PostgreSQL and `AuditLogEntries` elsewhere; a configured name is used verbatim, at most 40 characters. The primary key and index names derive from it in the database's casing (`pk_{TableName}` and `ix_{TableName}_tenant_account_time` on PostgreSQL, `PK_{TableName}` and `IX_{TableName}_TenantAccountTime` on SQL Server, and siblings), so two audit tables can share one schema. The longest derived PostgreSQL name must fit the 63-byte identifier limit, so startup validation rejects a longer name on every provider. |
 | `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
 | `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
-| `AppendOnly` | `false` | PostgreSQL and SQL Server only: add a trigger that refuses `UPDATE` and `DELETE` (and `TRUNCATE` on PostgreSQL) except the retention purge. Entity Framework storage rejects it and uses `migrationBuilder.AddHeadlessAuditLogAppendOnly(...)`. See [Retention and append-only storage](#retention-and-append-only-storage). |
+| `AppendOnly` | `false` | PostgreSQL and SQL Server only: add a trigger that refuses `UPDATE` and `DELETE` (and `TRUNCATE` on PostgreSQL) except the retention purge. Entity Framework storage rejects it and uses `migrationBuilder.AddHeadlessAuditLogAppendOnly(...)` from the database's Entity Framework audit package. See [Retention and append-only storage](#retention-and-append-only-storage). |
 | `PurgeAuthority` | `SessionSetting` | Who may delete from an append-only table. `Owner` (PostgreSQL only) lets only a role with the table owner's rights delete, through the `{table}_purge` function. On Entity Framework storage it tells the retention to call the function a migration installed. See [Who may purge](#who-may-purge). |
 | `MinimumRetention` | `null` | PostgreSQL provider only, with `PurgeAuthority.Owner` or `Partitioning.Monthly`: the retention the database enforces whatever period a caller asks for. At least one second. Entity Framework storage rejects it; pass `minimumRetention:` to the migration helpers. |
-| `Partitioning` | `None` | PostgreSQL provider only: `Monthly` creates the table partitioned by month. Entity Framework storage rejects it and uses `migrationBuilder.AddHeadlessAuditLogPartitions(...)`. See [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql). |
+| `Partitioning` | `None` | PostgreSQL provider only: `Monthly` creates the table partitioned by month. Entity Framework storage rejects it and uses `migrationBuilder.AddHeadlessAuditLogPartitions(...)` from `Headless.AuditLog.Storage.PostgreSql.EntityFramework`. See [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql). |
 | `PartitionMonthsAhead` | `3` | How many months after the current one `IAuditLogPartitions<TContext>.EnsureAsync` and `resources provision` keep a partition for. Range 0 to 120. |
 
 ### Runtime behavior
@@ -502,14 +504,13 @@ EF Core storage provider for automatic audit entries and explicit event logging.
 - `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging; resolves `ICurrentUser`, `ICurrentTenant`, `ICorrelationIdProvider`, and `TimeProvider` from DI.
 - `EfAuditLogWriter<TContext>` — implements `IAuditLogWriter<TContext>`; saves each entry through a new context from `IDbContextFactory<TContext>`.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
-- `EfAuditLogRetention<TContext>` — implements `IAuditLogRetention<TContext>` with `ExecuteDeleteAsync` over the oldest expired rows, in a transaction on a context from `IDbContextFactory<TContext>`. The transaction is opened inside the context's execution strategy, so it works with `EnableRetryOnFailure`; a retry runs the whole purge again. On PostgreSQL and SQL Server it sets the `headless.audit_log_purge` session setting first, so it passes an append-only trigger a migration added. With `PurgeAuthority.Owner` it calls the `{table}_purge` function instead; the startup gate refuses that authority on a database other than PostgreSQL.
-- `EfAuditLogPartitions<TContext>` — implements `IAuditLogPartitions<TContext>` by calling the partition functions `AddHeadlessAuditLogPartitions` installed, named from the table the model maps `AuditLogEntry` to. It throws `NotSupportedException` on a database other than PostgreSQL.
-- `HeadlessAuditLogMigrationBuilderExtensions` (namespace `Microsoft.EntityFrameworkCore.Migrations`) — `AddHeadlessAuditLogAppendOnly`, `DropHeadlessAuditLogAppendOnly`, and `AddHeadlessAuditLogPartitions`; see [Retention and append-only storage](#retention-and-append-only-storage). `AuditLogStorageOptions.AppendOnly`, `Partitioning`, and `MinimumRetention` are rejected at startup.
+- `EfAuditLogRetention<TContext>` — implements `IAuditLogRetention<TContext>` with `ExecuteDeleteAsync` over the oldest expired rows, in a transaction on a context from `IDbContextFactory<TContext>`. The transaction is opened inside the context's execution strategy, so it works with `EnableRetryOnFailure`; a retry runs the whole purge again. It knows nothing about the database, so it passes no append-only trigger and throws `NotSupportedException` for `PurgeAuthority.Owner`; the PostgreSQL and SQL Server packages replace it.
+- No migration helper and no `IAuditLogPartitions<TContext>`: both belong to the database-specific packages. `AuditLogStorageOptions.AppendOnly`, `Partitioning`, and `MinimumRetention` are rejected at startup.
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
 - `HeadlessAuditLogModelBuilderExtensions.ConfigureHeadlessAuditLog(DbContext)` — registers and configures the `AuditLogEntry` entity type, resolving `AuditLogStorageOptions` from the context's services and the naming style from `Database.ProviderName`; idempotent. The `(AuditLogStorageOptions, StorageNamingStyle)` overload takes both explicitly; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` so the mapping matches the raw providers.
 - Object names follow the database: on PostgreSQL the table is `audit_log_entries` with snake_case columns (`created_at`, `tenant_id`, …), key `pk_audit_log_entries`, and indexes `ix_audit_log_entries_tenant_time` and siblings; elsewhere the table is `AuditLogEntries` with PascalCase columns, key `PK_AuditLogEntries`, and indexes `IX_AuditLogEntries_TenantTime` and siblings.
 - Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, and correlation ID, each ending in `(CreatedAt, Id)` for keyset paging.
-- A startup validator (`AuditLogEntityStartupValidator`) checks that `AuditLogEntry` was fully configured through `modelBuilder.ConfigureHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
+- A startup validator (`AuditLogEntityStartupValidator`) checks that `AuditLogEntry` was fully configured through `modelBuilder.ConfigureHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered. It also checks, from the context's provider name and with no I/O, that the registration matches the database: `UseEntityFramework<TContext>()` on PostgreSQL or SQL Server, or a database-specific registration on another database, fails the start and names the registration to use.
 
 ### Design constraints
 
@@ -542,11 +543,13 @@ services.AddHeadlessAuditLog(setup =>
     {
         options.JsonColumnType = AuditLogJsonColumnType.Jsonb; // for PostgreSQL
     });
-    setup.UseEntityFramework<AppDbContext>();
+    setup.UsePostgreSqlEntityFramework<AppDbContext>(); // Headless.AuditLog.Storage.PostgreSql.EntityFramework
+    // setup.UseSqlServerEntityFramework<AppDbContext>(); // Headless.AuditLog.Storage.SqlServer.EntityFramework
+    // setup.UseEntityFramework<AppDbContext>();          // any other database
 });
 ```
 
-`UseEntityFramework<TContext>()` requires the same context to be registered with EF Core. Register a singleton `IDbContextFactory<TContext>` too (`AddDbContextFactory` / `AddPooledDbContextFactory` for a plain `DbContext`, `AddHeadlessDbContext` / `AddHeadlessDbContextPool` for a `HeadlessDbContext`): the startup gate and `IReadAuditLog<TContext>` read through it, so host startup fails without one.
+Every one of these registrations requires the same context to be registered with EF Core. Register a singleton `IDbContextFactory<TContext>` too (`AddDbContextFactory` / `AddPooledDbContextFactory` for a plain `DbContext`, `AddHeadlessDbContext` / `AddHeadlessDbContextPool` for a `HeadlessDbContext`): the startup gate and `IReadAuditLog<TContext>` read through it, so host startup fails without one.
 
 #### DbContext setup
 
@@ -641,9 +644,100 @@ modelBuilder.Entity<AuditLogEntry>().HasKey(e => e.Id); // single-column PK for 
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`).
 - Registers `IAuditLogWriter<TContext>` as scoped (`EfAuditLogWriter<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
-- Registers `IAuditLogRetention<TContext>` and `IAuditLogPartitions<TContext>` as singletons.
-- Registers `AuditLogEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator` (validates the model at startup).
+- Registers `IAuditLogRetention<TContext>` as a singleton (`EfAuditLogRetention<TContext>`), unless a database-specific package registered its own.
+- Registers `AuditLogEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator` (validates the model and the registration's database at startup).
 - Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.EntityFramework`; this package only selects EF-backed audit storage.
+
+---
+
+## Headless.AuditLog.Storage.PostgreSql.EntityFramework
+
+Entity Framework audit log storage for PostgreSQL: everything `Headless.AuditLog.Storage.EntityFramework` registers, plus what only PostgreSQL has.
+
+### API and behavior
+
+- `SetupAuditLogPostgreSqlEntityFramework.UsePostgreSqlEntityFramework<TContext>()` — the registration for a context on PostgreSQL. It registers the storage of `UseEntityFramework<TContext>()` with the two services below in place of the provider-neutral retention.
+- `HeadlessPostgreSqlAuditLogMigrationBuilderExtensions` (namespace `Microsoft.EntityFrameworkCore.Migrations`) — `AddHeadlessAuditLogAppendOnly`, `DropHeadlessAuditLogAppendOnly`, and `AddHeadlessAuditLogPartitions`; see [Retention and append-only storage](#retention-and-append-only-storage) and [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql). Each throws `NotSupportedException` in a migration for another database.
+- `IAuditLogRetention<TContext>` — sets the `headless.audit_log_purge` session setting inside the purge's transaction, so the delete passes an append-only trigger a migration added. With `PurgeAuthority.Owner` it calls the `{table}_purge` function instead.
+- `IAuditLogPartitions<TContext>` — calls the partition functions `AddHeadlessAuditLogPartitions` installed, named from the table the model maps `AuditLogEntry` to.
+
+### Design constraints
+
+The SQL belongs to `Headless.AuditLog.Storage.PostgreSql`, which this package references, so a table an application's migration prepared carries the same objects as one the raw provider provisioned. Referencing that package registers nothing: raw storage is selected only by `UsePostgreSql(...)`.
+
+### Install
+
+```bash
+dotnet add package Headless.AuditLog.Storage.PostgreSql.EntityFramework
+```
+
+### Setup and use
+
+```csharp
+services.AddHeadlessAuditLog(setup =>
+{
+    setup.ConfigureStorage(options => options.JsonColumnType = AuditLogJsonColumnType.Jsonb);
+    setup.UsePostgreSqlEntityFramework<AppDbContext>();
+});
+
+// In a migration, after the audit table exists.
+migrationBuilder.AddHeadlessAuditLogAppendOnly();
+```
+
+The `DbContext` setup, explicit logging, and queries are those of [Headless.AuditLog.Storage.EntityFramework](#headlessauditlogstorageentityframework).
+
+### Configuration
+
+`AuditLogStorageOptions`, as in [Headless.AuditLog](#headlessauditlog). `PurgeAuthority` and `PartitionMonthsAhead` apply here; `AppendOnly`, `Partitioning`, and `MinimumRetention` are rejected, because the migration helpers take their place.
+
+### Runtime behavior
+
+- Registers everything `UseEntityFramework<TContext>()` registers.
+- Registers `IAuditLogRetention<TContext>` and `IAuditLogPartitions<TContext>` as singletons.
+- The startup validator refuses a context that does not run on PostgreSQL.
+
+---
+
+## Headless.AuditLog.Storage.SqlServer.EntityFramework
+
+Entity Framework audit log storage for SQL Server: everything `Headless.AuditLog.Storage.EntityFramework` registers, plus what only SQL Server has.
+
+### API and behavior
+
+- `SetupAuditLogSqlServerEntityFramework.UseSqlServerEntityFramework<TContext>()` — the registration for a context on SQL Server. It registers the storage of `UseEntityFramework<TContext>()` with the retention below in place of the provider-neutral one.
+- `HeadlessSqlServerAuditLogMigrationBuilderExtensions` (namespace `Microsoft.EntityFrameworkCore.Migrations`) — `AddHeadlessAuditLogAppendOnly` and `DropHeadlessAuditLogAppendOnly`; see [Retention and append-only storage](#retention-and-append-only-storage). Each throws `NotSupportedException` in a migration for another database.
+- `IAuditLogRetention<TContext>` — sets the `headless.audit_log_purge` session context key inside the purge's transaction, so the delete passes an append-only trigger a migration added, and clears it before the connection returns to the pool.
+
+### Design constraints
+
+The trigger's SQL belongs to `Headless.AuditLog.Storage.SqlServer`, which this package references. SQL Server has no owner-held purge and no partitioning here: the startup validator refuses `PurgeAuthority.Owner`, and no `IAuditLogPartitions<TContext>` is registered.
+
+### Install
+
+```bash
+dotnet add package Headless.AuditLog.Storage.SqlServer.EntityFramework
+```
+
+### Setup and use
+
+```csharp
+services.AddHeadlessAuditLog(setup => setup.UseSqlServerEntityFramework<AppDbContext>());
+
+// In a migration, after the audit table exists.
+migrationBuilder.AddHeadlessAuditLogAppendOnly();
+```
+
+The `DbContext` setup, explicit logging, and queries are those of [Headless.AuditLog.Storage.EntityFramework](#headlessauditlogstorageentityframework).
+
+### Configuration
+
+`AuditLogStorageOptions`, as in [Headless.AuditLog](#headlessauditlog). `AppendOnly`, `Partitioning`, and `MinimumRetention` are rejected, because the migration helper takes their place.
+
+### Runtime behavior
+
+- Registers everything `UseEntityFramework<TContext>()` registers.
+- Registers `IAuditLogRetention<TContext>` as a singleton.
+- The startup validator refuses a context that does not run on SQL Server.
 
 ---
 

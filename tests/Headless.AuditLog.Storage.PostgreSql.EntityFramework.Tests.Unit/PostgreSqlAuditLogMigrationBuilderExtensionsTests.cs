@@ -6,10 +6,9 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace Tests;
 
-public sealed class AuditLogMigrationBuilderExtensionsTests
+public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
 {
     private const string _Npgsql = "Npgsql.EntityFrameworkCore.PostgreSQL";
-    private const string _SqlServer = "Microsoft.EntityFrameworkCore.SqlServer";
 
     [Fact]
     public void should_emit_the_postgresql_providers_append_only_step_for_the_conventional_table()
@@ -31,23 +30,6 @@ public sealed class AuditLogMigrationBuilderExtensionsTests
                 """CREATE TRIGGER "audit_log_entries_append_only_truncate" BEFORE TRUNCATE ON "headless"."audit_log_entries" FOR EACH STATEMENT"""
             );
         sql.Should().NotContain("SECURITY DEFINER");
-    }
-
-    [Fact]
-    public void should_emit_the_sql_server_providers_append_only_step_for_the_conventional_table()
-    {
-        // given
-        var migrationBuilder = new MigrationBuilder(_SqlServer);
-
-        // when
-        migrationBuilder.AddHeadlessAuditLogAppendOnly();
-
-        // then
-        _Sql(migrationBuilder)
-            .Should()
-            .StartWith(
-                "EXEC(N'CREATE OR ALTER TRIGGER [headless].[TR_AuditLogEntries_AppendOnly] ON [headless].[AuditLogEntries] AFTER UPDATE, DELETE AS"
-            );
     }
 
     [Fact]
@@ -89,19 +71,6 @@ public sealed class AuditLogMigrationBuilderExtensionsTests
     }
 
     [Fact]
-    public void should_drop_the_sql_server_trigger_in_down()
-    {
-        // given
-        var migrationBuilder = new MigrationBuilder(_SqlServer);
-
-        // when
-        migrationBuilder.DropHeadlessAuditLogAppendOnly();
-
-        // then
-        _Sql(migrationBuilder).Should().Be("DROP TRIGGER IF EXISTS [headless].[TR_AuditLogEntries_AppendOnly];");
-    }
-
-    [Fact]
     public void should_require_a_partitioned_table_install_the_functions_and_create_the_months_ahead()
     {
         // given
@@ -118,40 +87,6 @@ public sealed class AuditLogMigrationBuilderExtensionsTests
         sql.Should().Contain("""CREATE OR REPLACE FUNCTION "headless"."audit_log_entries_drop_partitions"(""");
         sql.Should().Contain("make_interval(secs => 2592000)");
         sql.Should().EndWith("""SELECT "headless"."audit_log_entries_ensure_partitions"(pg_catalog.now(), 6);""");
-    }
-
-    [Fact]
-    public void should_refuse_what_only_postgresql_supports_on_sql_server()
-    {
-        // given
-        var migrationBuilder = new MigrationBuilder(_SqlServer);
-
-        // when
-        var ownerPurge = () =>
-            migrationBuilder.AddHeadlessAuditLogAppendOnly(purgeAuthority: AuditLogPurgeAuthority.Owner);
-        var partitions = () => migrationBuilder.AddHeadlessAuditLogPartitions();
-
-        // then
-        ownerPurge.Should().Throw<NotSupportedException>().WithMessage("*PostgreSQL only*");
-        partitions.Should().Throw<NotSupportedException>().WithMessage("*PostgreSQL only*");
-        migrationBuilder.Operations.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void should_refuse_a_database_that_is_neither_postgresql_nor_sql_server()
-    {
-        // given
-        var migrationBuilder = new MigrationBuilder("Microsoft.EntityFrameworkCore.Sqlite");
-
-        // when
-        var add = () => migrationBuilder.AddHeadlessAuditLogAppendOnly();
-        var drop = () => migrationBuilder.DropHeadlessAuditLogAppendOnly();
-        var partitions = () => migrationBuilder.AddHeadlessAuditLogPartitions();
-
-        // then
-        add.Should().Throw<NotSupportedException>().WithMessage("*Sqlite*");
-        drop.Should().Throw<NotSupportedException>();
-        partitions.Should().Throw<NotSupportedException>();
     }
 
     [Theory]
@@ -192,6 +127,26 @@ public sealed class AuditLogMigrationBuilderExtensionsTests
         subSecondRetention.Should().Throw<ArgumentException>();
         tooManyMonths.Should().Throw<ArgumentOutOfRangeException>();
         missingBuilder.Should().Throw<ArgumentNullException>();
+    }
+
+    [Theory]
+    [InlineData("Microsoft.EntityFrameworkCore.SqlServer")]
+    [InlineData("Microsoft.EntityFrameworkCore.Sqlite")]
+    public void should_refuse_a_migration_for_another_database(string activeProvider)
+    {
+        // given - the SQL is PostgreSQL's, so it must not reach another database's migration
+        var migrationBuilder = new MigrationBuilder(activeProvider);
+
+        // when
+        var add = () => migrationBuilder.AddHeadlessAuditLogAppendOnly();
+        var drop = () => migrationBuilder.DropHeadlessAuditLogAppendOnly();
+        var partitions = () => migrationBuilder.AddHeadlessAuditLogPartitions();
+
+        // then
+        add.Should().Throw<NotSupportedException>().WithMessage($"*PostgreSql*'{activeProvider}'*");
+        drop.Should().Throw<NotSupportedException>();
+        partitions.Should().Throw<NotSupportedException>();
+        migrationBuilder.Operations.Should().BeEmpty();
     }
 
     private static string _Sql(MigrationBuilder migrationBuilder)

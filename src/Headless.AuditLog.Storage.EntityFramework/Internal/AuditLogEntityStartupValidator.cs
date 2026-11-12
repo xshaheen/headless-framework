@@ -33,16 +33,27 @@ internal sealed class AuditLogEntityStartupValidator<TContext>(IServiceProvider 
             );
         }
 
-        // No I/O: the provider name comes from the context's options. Only PostgreSQL has the owner's purge function.
-        var storageOptions = scope.ServiceProvider.GetService<IOptions<AuditLogStorageOptions>>()?.Value;
+        // No I/O: the provider name comes from the context's options. A registration made for another database
+        // would purge without passing that database's append-only trigger, and would offer no partition service.
+        var registered = scope.ServiceProvider.GetService<EfAuditLogDatabase>()?.Registered;
+        var actual = EfAuditLogDatabase.Provider(context);
 
-        if (
-            storageOptions?.PurgeAuthority is AuditLogPurgeAuthority.Owner
-            && EfAuditLogDatabase.Provider(context) is not StorageProvider.PostgreSql
-        )
+        if (registered != actual)
         {
             throw new InvalidOperationException(
-                $"Headless.AuditLog: {nameof(AuditLogStorageOptions.PurgeAuthority)} {nameof(AuditLogPurgeAuthority.Owner)} is supported on PostgreSQL only, and `{context.GetType().FullName}` uses `{context.Database.ProviderName}`."
+                $"Headless.AuditLog: the registered DbContext `{context.GetType().FullName}` runs on `{context.Database.ProviderName}`, "
+                    + $"but the audit log storage was registered with {EfAuditLogDatabase.RegistrationOf(registered)}. "
+                    + $"Register it with {EfAuditLogDatabase.RegistrationOf(actual)} instead."
+            );
+        }
+
+        // Only PostgreSQL has the owner's purge function.
+        var storageOptions = scope.ServiceProvider.GetService<IOptions<AuditLogStorageOptions>>()?.Value;
+
+        if (storageOptions?.PurgeAuthority is AuditLogPurgeAuthority.Owner && actual is not StorageProvider.PostgreSql)
+        {
+            throw new InvalidOperationException(
+                $"Headless.AuditLog: {nameof(AuditLogStorageOptions.PurgeAuthority)} {nameof(AuditLogPurgeAuthority.Owner)} is supported on PostgreSQL only, and `{context.GetType().FullName}` runs on `{context.Database.ProviderName}`."
             );
         }
     }

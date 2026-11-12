@@ -2,11 +2,11 @@
 
 using System.Globalization;
 
-namespace Headless.AuditLog;
+namespace Headless.AuditLog.PostgreSql;
 
 /// <summary>
-/// The PostgreSQL DDL behind an append-only or partitioned audit log table. The PostgreSQL provider's schema steps and
-/// the Entity Framework migration helpers both emit it, so a table created by either carries the same objects.
+/// The PostgreSQL DDL behind an append-only or partitioned audit log table. This provider's schema steps and the
+/// PostgreSQL Entity Framework migration helpers both emit it, so a table created by either carries the same objects.
 /// </summary>
 /// <remarks>
 /// Every name is spliced into the SQL, so callers pass only identifiers that already passed the storage identifier
@@ -16,7 +16,7 @@ namespace Headless.AuditLog;
 internal static class PostgreSqlAuditLogSql
 {
     /// <summary>The most months ahead a caller may ask the partition function to create.</summary>
-    public const int MaxMonthsAhead = 120;
+    public const int MaxMonthsAhead = AuditLogStorageOptions.MaxPartitionMonthsAhead;
 
     // Every suffix below is shorter than the longest index suffix, so the option validators' derived-name check
     // (FitsDerivedPostgreSqlNames over the index names) already keeps these names inside PostgreSQL's 63 bytes.

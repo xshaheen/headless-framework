@@ -6,6 +6,8 @@
     <RootNamespace>Headless.AuditLog</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.PostgreSql.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.SqlServer.EntityFramework" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework.Tests.Integration" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />

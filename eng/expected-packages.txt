@@ -12,7 +12,9 @@ Headless.AuditLog
 Headless.AuditLog.Abstractions
 Headless.AuditLog.Storage.EntityFramework
 Headless.AuditLog.Storage.PostgreSql
+Headless.AuditLog.Storage.PostgreSql.EntityFramework
 Headless.AuditLog.Storage.SqlServer
+Headless.AuditLog.Storage.SqlServer.EntityFramework
 Headless.Blobs
 Headless.Blobs.Abstractions
 Headless.Blobs.Aws

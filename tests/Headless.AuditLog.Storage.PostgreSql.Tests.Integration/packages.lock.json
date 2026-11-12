@@ -772,6 +772,14 @@
           "Headless.Sql.PostgreSql": "[1.0.0, )"
         }
       },
+      "headless.auditlog.storage.postgresql.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.AuditLog.Storage.EntityFramework": "[1.0.0, )",
+          "Headless.AuditLog.Storage.PostgreSql": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.13, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },

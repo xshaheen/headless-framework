@@ -6,6 +6,10 @@
     <RootNamespace>Headless.AuditLog.SqlServer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.SqlServer.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.SqlServer.EntityFramework.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
   <ItemGroup>
