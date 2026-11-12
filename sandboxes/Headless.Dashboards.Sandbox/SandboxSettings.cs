@@ -12,6 +12,22 @@ public enum SandboxStore
     Postgres = 1,
 }
 
+/// <summary>How a person signs in to the sandbox's Headless dashboard.</summary>
+public enum SandboxAuth
+{
+    /// <summary>
+    /// The dashboard's own sign-in page with the fixed user name and password <c>admin</c>/<c>admin</c>. One operator,
+    /// so every action is allowed; the quickest way to drive the dashboard on loopback.
+    /// </summary>
+    Basic = 0,
+
+    /// <summary>
+    /// The stand-in for an application's own sign-in (<see cref="SandboxHostAuthentication"/>): a secret signs in an
+    /// operator and <c>viewer-</c> plus the secret a viewer, so the view-only states can be walked.
+    /// </summary>
+    Host = 1,
+}
+
 /// <summary>
 /// The <c>Sandbox</c> configuration section. The project CLI sets it through <c>Sandbox__*</c> environment variables;
 /// nothing here is a production default.
@@ -20,6 +36,9 @@ public sealed class SandboxSettings
 {
     /// <summary>Jobs and Messaging storage. The messaging transport stays in memory either way.</summary>
     public SandboxStore Store { get; set; } = SandboxStore.Memory;
+
+    /// <summary>How the Headless dashboard signs people in; <see cref="SandboxAuth.Basic"/> unless set.</summary>
+    public SandboxAuth Auth { get; set; } = SandboxAuth.Basic;
 
     /// <summary>PostgreSQL connection string, required when <see cref="Store"/> is <see cref="SandboxStore.Postgres"/>.</summary>
     public string? PostgresConnectionString { get; set; }

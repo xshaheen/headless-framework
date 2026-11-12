@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-219 packages &bull; One setup grammar &bull; Swap any provider in one line
+221 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across seven transports.
 
-**You install three packages, not 217.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 221.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -170,7 +170,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Field encryption | `AddHeadlessEncryption` | Key store: `UsePostgreSql`, `UseSqlServer`. Key-encryption key: `UseLocalKey`, `UseAzureKeyVault` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
-| Audit log | `AddHeadlessAuditLog` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
+| Audit log | `AddHeadlessAuditLog` | `UsePostgreSqlEntityFramework<TContext>`, `UseSqlServerEntityFramework<TContext>`, `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | CAPTCHA | `AddHeadlessCaptcha` | `UseReCaptchaV2`, `UseReCaptchaV3`, `UseTurnstile` |
 | Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`, `UseKafka`, `UseAws`, `UseAzureServiceBus`, `UseNats`, `UseRedis`, `UseInMemory`. Storage: `UsePostgreSql`, `UseSqlServer`, `UseInMemoryStorage` |
 | Background jobs | `AddHeadlessJobs` | EF Core persistence with PostgreSQL or SQL Server atomic claims |
@@ -254,7 +254,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 219 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 221 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -303,7 +303,9 @@ Property-level audit logging for entity mutations and explicit business events. 
 | [Headless.AuditLog](src/Headless.AuditLog/README.md) | Audit log DI setup, options validation, and provider setup pipeline |
 | [Headless.AuditLog.Storage.EntityFramework](src/Headless.AuditLog.Storage.EntityFramework/README.md) | EF Core audit log persistence |
 | [Headless.AuditLog.Storage.PostgreSql](src/Headless.AuditLog.Storage.PostgreSql/README.md) | PostgreSQL raw audit log storage |
+| [Headless.AuditLog.Storage.PostgreSql.EntityFramework](src/Headless.AuditLog.Storage.PostgreSql.EntityFramework/README.md) | EF Core audit log persistence on PostgreSQL: append-only and partition migration helpers |
 | [Headless.AuditLog.Storage.SqlServer](src/Headless.AuditLog.Storage.SqlServer/README.md) | SQL Server raw audit log storage |
+| [Headless.AuditLog.Storage.SqlServer.EntityFramework](src/Headless.AuditLog.Storage.SqlServer.EntityFramework/README.md) | EF Core audit log persistence on SQL Server: append-only migration helper |
 
 ### Blob Storage
 

@@ -1,17 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.AuditLog.Internal;
 using Headless.Checks;
-using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog;
 
 // The EF table comes from the application's migrations, so it carries an append-only trigger only when a migration
-// added one. The purge sets the same session setting the raw providers' trigger checks, or calls the same owner's
-// function, so it keeps working when one did.
-internal sealed class EfAuditLogRetention<TContext>(
+// added one. This class knows nothing about the database: it deletes the expired rows and nothing else. The
+// database-specific packages derive from it to let that delete through their trigger, or to call the owner's function.
+internal class EfAuditLogRetention<TContext>(
     IDbContextFactory<TContext> dbFactory,
     IOptions<AuditLogStorageOptions> storageOptions,
     TimeProvider timeProvider
@@ -26,16 +24,10 @@ internal sealed class EfAuditLogRetention<TContext>(
         var cutoff = (timeProvider.GetUtcNow() - olderThan).UtcDateTime;
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        var provider = EfAuditLogDatabase.Provider(context);
 
         if (storageOptions.Value.PurgeAuthority is AuditLogPurgeAuthority.Owner)
         {
-            EfAuditLogDatabase.EnsurePostgreSql(provider, nameof(AuditLogPurgeAuthority.Owner) + " purge authority");
-
-            // One statement, so EF runs it through the context's execution strategy by itself.
-            return await EfAuditLogDatabase
-                .CallAsync(context, PostgreSqlAuditLogSql.PurgeFunction, [cutoff, limit], cancellationToken)
-                .ConfigureAwait(false);
+            return await PurgeAsOwnerAsync(context, cutoff, limit, cancellationToken).ConfigureAwait(false);
         }
 
         // A retrying execution strategy refuses a transaction it did not start, so the whole purge is one retriable
@@ -44,16 +36,43 @@ internal sealed class EfAuditLogRetention<TContext>(
         return await context
             .Database.CreateExecutionStrategy()
             .ExecuteAsync(
-                (context, provider, cutoff, limit),
-                static (state, ct) => _PurgeAsync(state.context, state.provider, state.cutoff, state.limit, ct),
+                (retention: this, context, cutoff, limit),
+                static (state, ct) => state.retention._PurgeAsync(state.context, state.cutoff, state.limit, ct),
                 cancellationToken
             )
             .ConfigureAwait(false);
     }
 
-    private static async Task<int> _PurgeAsync(
+    /// <summary>Purges through the function that runs with the table owner's rights.</summary>
+    /// <exception cref="NotSupportedException">The database has no owner-held purge.</exception>
+    protected virtual Task<int> PurgeAsOwnerAsync(
         TContext context,
-        StorageProvider? provider,
+        DateTime cutoff,
+        int limit,
+        CancellationToken cancellationToken
+    )
+    {
+        throw new NotSupportedException(
+            $"{nameof(AuditLogPurgeAuthority.Owner)} purge authority is supported on PostgreSQL only."
+        );
+    }
+
+    /// <summary>
+    /// Runs inside the purge's transaction, before the delete: lets the delete through an append-only trigger.
+    /// </summary>
+    protected virtual Task OpenPurgeWindowAsync(TContext context, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Runs inside the purge's transaction, after the delete: undoes what opening the window left behind.</summary>
+    protected virtual Task ClosePurgeWindowAsync(TContext context, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    private async Task<int> _PurgeAsync(
+        TContext context,
         DateTime cutoff,
         int limit,
         CancellationToken cancellationToken
@@ -63,24 +82,7 @@ internal sealed class EfAuditLogRetention<TContext>(
             .Database.BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (provider is StorageProvider.PostgreSql)
-        {
-            await context
-                .Database.ExecuteSqlRawAsync(
-                    $"SELECT pg_catalog.set_config('{AuditLogStorageNames.PurgeSetting}', 'on', true);",
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        else if (provider is StorageProvider.SqlServer)
-        {
-            await context
-                .Database.ExecuteSqlRawAsync(
-                    $"EXEC sys.sp_set_session_context @key = N'{AuditLogStorageNames.PurgeSetting}', @value = 1;",
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
+        await OpenPurgeWindowAsync(context, cancellationToken).ConfigureAwait(false);
 
         var deleted = await context
             .Set<AuditLogEntry>()
@@ -91,17 +93,7 @@ internal sealed class EfAuditLogRetention<TContext>(
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (provider is StorageProvider.SqlServer)
-        {
-            // SESSION_CONTEXT outlives the transaction, so clear it before the connection returns to the pool.
-            await context
-                .Database.ExecuteSqlRawAsync(
-                    $"EXEC sys.sp_set_session_context @key = N'{AuditLogStorageNames.PurgeSetting}', @value = NULL;",
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-
+        await ClosePurgeWindowAsync(context, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return deleted;

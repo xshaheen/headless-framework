@@ -21,12 +21,15 @@ and `down` take the same override.
 
 | Dashboard | URL | Auth |
 | --- | --- | --- |
-| Headless, with the Jobs and Messaging modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`) | Host: sign in at `/sandbox/headless-sign-in` (below) |
+| Headless, with the Jobs and Messaging modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`) | `admin` / `admin` on the dashboard's sign-in page; `make up AUTH=host` for the host sign-in (below) |
 
-Both modules sit behind the same host sign-in, so inbox and scheduled operations record the signed-in operator's name.
+Both modules sit behind the same sign-in, so inbox and scheduled operations record the signed-in operator's name.
 `GET /sandbox/usable` answers once the Messaging store does, with its published and received counts.
 
-The Headless dashboard always runs in host mode, through a fake host scheme that stands in for an application that
+By default the dashboard signs in with its own Basic mode and the fixed credential `admin` / `admin`, as one operator who
+may run every action. The fixed credential is safe only because the sandbox binds to loopback and holds no real data.
+
+`make up AUTH=host` instead runs the dashboard in host mode, through a fake host scheme that stands in for an application that
 signs its users in with a bearer token and has no sign-in redirect. Open
 `http://127.0.0.1:5300/sandbox/headless-sign-in` and enter the secret `Sandbox__MessagingDashboardPassword` from `sandbox.env` under the checkout's `.local/cli/` folder
 (generated on the first `make up`) to sign in as

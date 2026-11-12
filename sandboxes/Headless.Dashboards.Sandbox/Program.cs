@@ -29,16 +29,27 @@ if (postgres is not null)
     builder.Services.AddHeadlessCoordination(setup => setup.UsePostgreSql(postgres));
 }
 
-// The Headless dashboard always runs in host mode, so the sandbox host sign-in is always registered.
-SandboxHostAuthentication.Add(builder.Services, sandbox.ResolveHostSecret());
+if (sandbox.Auth == SandboxAuth.Host)
+{
+    SandboxHostAuthentication.Add(builder.Services, sandbox.ResolveHostSecret());
+}
 
 builder.Services.AddHeadlessDashboard(dashboard =>
 {
-    dashboard.WithHostAuthentication(host =>
+    if (sandbox.Auth == SandboxAuth.Host)
     {
-        host.ViewPolicy = SandboxHostAuthentication.ViewPolicy;
-        host.OperatePolicy = SandboxHostAuthentication.OperatePolicy;
-    });
+        dashboard.WithHostAuthentication(host =>
+        {
+            host.ViewPolicy = SandboxHostAuthentication.ViewPolicy;
+            host.OperatePolicy = SandboxHostAuthentication.OperatePolicy;
+        });
+    }
+    else
+    {
+        // A fixed credential is safe here only because the sandbox binds to loopback and holds no real data.
+        dashboard.WithBasicAuth("admin", "admin");
+    }
+
     // The Jobs module reads the store AddHeadlessJobs configures below, and inherits the host policies above.
     dashboard.AddJobs();
     // The Messaging module reads the stores AddHeadlessMessaging configures below, and inherits the host policies
@@ -162,7 +173,10 @@ app.MapPost(
     }
 );
 
-SandboxHostAuthentication.MapSignInPage(app, "/sandbox/headless-sign-in", "/headless", "Headless dashboard");
+if (sandbox.Auth == SandboxAuth.Host)
+{
+    SandboxHostAuthentication.MapSignInPage(app, "/sandbox/headless-sign-in", "/headless", "Headless dashboard");
+}
 
 app.MapHeadlessDashboard();
 

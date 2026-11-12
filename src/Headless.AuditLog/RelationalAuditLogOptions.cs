@@ -60,7 +60,7 @@ internal sealed class RelationalAuditLogStorageOptionsValidator : AbstractValida
             .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
         RuleFor(x => x.PurgeAuthority).IsInEnum();
         RuleFor(x => x.Partitioning).IsInEnum();
-        RuleFor(x => x.PartitionMonthsAhead).InclusiveBetween(0, PostgreSqlAuditLogSql.MaxMonthsAhead);
+        RuleFor(x => x.PartitionMonthsAhead).InclusiveBetween(0, AuditLogStorageOptions.MaxPartitionMonthsAhead);
         RuleFor(x => x.MinimumRetention!.Value)
             .GreaterThanOrEqualTo(TimeSpan.FromSeconds(1))
             .When(x => x.MinimumRetention.HasValue);

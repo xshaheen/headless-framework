@@ -1,0 +1,15 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Entity Framework storage for Headless audit logging on SQL Server: migration helpers for an append-only audit table, and the retention purge that works with it.</Description>
+    <PackageTags>headless;audit;log;storage;sqlserver;entity-framework;dotnet</PackageTags>
+    <RootNamespace>Headless.AuditLog.SqlServer.EntityFramework</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.AuditLog.Storage.EntityFramework\Headless.AuditLog.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.AuditLog.Storage.SqlServer\Headless.AuditLog.Storage.SqlServer.csproj" />
+  </ItemGroup>
+</Project>

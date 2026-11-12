@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-219 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+221 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 7 transports.
 
-**هتركّب 3 packages، مش 217.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 221.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -199,7 +199,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Field encryption | `AddHeadlessEncryption` | Key store: `UsePostgreSql`، `UseSqlServer`. Key-encryption key: `UseLocalKey`، `UseAzureKeyVault` |
 | Dynamic settings | `AddHeadlessSettings` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
-| Audit log | `AddHeadlessAuditLog` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
+| Audit log | `AddHeadlessAuditLog` | `UsePostgreSqlEntityFramework<TContext>`، `UseSqlServerEntityFramework<TContext>`، `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | CAPTCHA | `AddHeadlessCaptcha` | `UseReCaptchaV2`، `UseReCaptchaV3`، `UseTurnstile` |
 | Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`، `UseKafka`، `UseAws`، `UseAzureServiceBus`، `UseNats`، `UseRedis`، `UseInMemory`. Storage: `UsePostgreSql`، `UseSqlServer`، `UseInMemoryStorage` |
 | Background jobs | `AddHeadlessJobs` | Storage على EF Core مع atomic claims في PostgreSQL أو SQL Server |
@@ -293,7 +293,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 219 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 221 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -342,7 +342,9 @@ Audit logging على مستوى الـ property لتتبّع تغييرات ال
 | [Headless.AuditLog](src/Headless.AuditLog/README.md) | الـ DI setup، وvalidation للـ options، وpipeline الـ providers |
 | [Headless.AuditLog.Storage.EntityFramework](src/Headless.AuditLog.Storage.EntityFramework/README.md) | تخزين الـ audit log على EF Core |
 | [Headless.AuditLog.Storage.PostgreSql](src/Headless.AuditLog.Storage.PostgreSql/README.md) | تخزين الـ audit log في PostgreSQL |
+| [Headless.AuditLog.Storage.PostgreSql.EntityFramework](src/Headless.AuditLog.Storage.PostgreSql.EntityFramework/README.md) | تخزين الـ audit log على EF Core في PostgreSQL، مع migration helpers للـ append-only والـ partitions |
 | [Headless.AuditLog.Storage.SqlServer](src/Headless.AuditLog.Storage.SqlServer/README.md) | تخزين الـ audit log في SQL Server |
+| [Headless.AuditLog.Storage.SqlServer.EntityFramework](src/Headless.AuditLog.Storage.SqlServer.EntityFramework/README.md) | تخزين الـ audit log على EF Core في SQL Server، مع migration helper للـ append-only |
 
 ### Blob Storage
 

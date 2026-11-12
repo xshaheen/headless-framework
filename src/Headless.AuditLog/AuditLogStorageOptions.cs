@@ -122,6 +122,9 @@ public sealed class AuditLogStorageOptions
     /// </summary>
     public int PartitionMonthsAhead { get; set; } = 3;
 
+    /// <summary>The most months ahead <see cref="PartitionMonthsAhead"/> accepts.</summary>
+    internal const int MaxPartitionMonthsAhead = 120;
+
     /// <summary>Returns the audit log table name to use on a database with <paramref name="style"/>.</summary>
     /// <param name="style">The naming style of the target database.</param>
     /// <returns>The configured name, or the conventional default for <paramref name="style"/>.</returns>

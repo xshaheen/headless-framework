@@ -8,7 +8,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.PostgreSql.EntityFramework" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.SqlServer" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.SqlServer.EntityFramework" />
     <InternalsVisibleTo Include="Headless.AuditLog.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
