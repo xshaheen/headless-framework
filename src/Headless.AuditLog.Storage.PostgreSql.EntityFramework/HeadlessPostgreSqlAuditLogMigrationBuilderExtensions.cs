@@ -142,8 +142,9 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// <c>CreateTable</c>: it creates the scaffolded columns as a plain table named <c>{table}_template</c>, has
     /// PostgreSQL create the audit log table from it with <c>PARTITION BY RANGE ("created_at")</c>, drops the
     /// template, and adds the scaffolded primary key, unique constraints, and foreign keys to the partitioned table.
-    /// Columns the application added to the entity are carried over like the rest. It needs PostgreSQL 17 or later,
-    /// the first version with identity columns on a partitioned table.
+    /// Columns the application added to the entity are carried over like the rest. A partition carries the table's
+    /// identity only from PostgreSQL 17: on PostgreSQL 16 a row inserted through the audit log table, as the store
+    /// inserts it, still gets its <c>id</c>, and only an insert aimed at one partition has to supply it.
     /// </para>
     /// <para>
     /// In a later migration the table exists already, and PostgreSQL cannot partition a table in place: the migration
