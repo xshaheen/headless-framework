@@ -33,7 +33,13 @@ import {
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
-import { DateRangeField, useListRange, type TimeRange } from '@headless/dashboard-sdk/date-range'
+import {
+  DateRangeField,
+  timeRangePresets,
+  useListRange,
+  useTimeRangeSearch,
+  type TimeRange,
+} from '@headless/dashboard-sdk/date-range'
 import { DataTable, SearchField, type DataTableColumn, type ListSort } from '@headless/dashboard-sdk/table'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
@@ -53,8 +59,9 @@ import {
   kindLabel,
   markDone,
   operationScope,
-  rangeSpans,
   readFilter,
+  readSearch,
+  readSort,
   runMatches,
   runsNoun,
   runStatusMark,
@@ -74,11 +81,6 @@ import { TimeJobForm } from './create.tsx'
 const kindOptions = [
   { value: 'TimeJob', label: 'Time jobs' },
   { value: 'CronJobOccurrence', label: 'Occurrences' },
-]
-const rangeOptions = [
-  { value: '1h', label: 'Last hour' },
-  { value: '24h', label: 'Last 24 h' },
-  { value: '7d', label: 'Last 7 days' },
 ]
 
 const states: Readonly<Record<RunStatus, { title: string; description: string }>> = {
@@ -107,18 +109,29 @@ export default function RunsView() {
   const { start } = useOperations()
   const [params, setParams] = useSearchParams()
   const filter = readFilter(params)
-  // The search, the custom day range, and the sort are this view's own state, not kept in the URL.
-  const [search, setSearch] = useState('')
-  const [days, setDays] = useState<TimeRange>()
-  const range = useListRange(days)
-  const [sort, setSort] = useState<ListSort>()
-  // Bumped to empty the search box, which keeps its own text.
+  // The whole view is in the URL, so a link or a reload shows the same runs. A preset range is kept by name and worked
+  // out when the view opens, so a shared `Last 24 h` link stays relative. The search reads function names, ids, business
+  // keys, and descriptions, never a payload, so it may sit in a link.
+  const [timeRange, setTimeRange] = useTimeRangeSearch({ presets: timeRangePresets })
+  const range = useListRange(timeRange)
+  const search = readSearch(params)
+  const sort = readSort(params)
+  // Bumped to restart the search box, which keeps its own text, when the URL's search changes under it.
   const [scopeReset, setScopeReset] = useState(0)
+  // The search this view last wrote, so only a search a link or Back changed restarts the box the operator types in.
+  const written = useRef(search)
   const scope: RunScope = { search, range }
   const filterKey = [...filterNames.map((name) => filter[name]), search, range?.start, range?.end].join('\n')
   const creating = params.get('create')
   // The Failed list's date column shows when a run failed, so a due-time order chosen on another list does not apply.
   const listSort = filter.status === 'Failed' && sort?.key === 'executionTime' ? undefined : sort
+
+  useEffect(() => {
+    if (search !== written.current) {
+      written.current = search
+      setScopeReset((count) => count + 1)
+    }
+  }, [search])
   const runs = useDashboardKeysetList<Run>({
     topic: runsTopic,
     params: filter,
@@ -165,39 +178,31 @@ export default function RunsView() {
           next.delete(key)
         }
       }
-
-      if (name === 'range') {
-        // A preset and a custom range would name two starts; the one chosen last wins.
-        setDays(undefined)
-        setScopeReset((count) => count + 1)
-        const span = rangeSpans[value]
-
-        if (span) {
-          next.set('from', new Date(Date.now() - span).toISOString())
-        } else {
-          next.delete('from')
-        }
-      }
     })
   }
 
-  // The status is the list itself, chosen in the sidebar; clearing the filters keeps it.
-  function clearFilters() {
-    setSearch('')
-    setDays(undefined)
-    setScopeReset((count) => count + 1)
-    update((next) => filterNames.filter((name) => name !== 'status').forEach((name) => next.delete(name)))
+  function searchFor(text: string) {
+    written.current = text
+    update((next) => (text ? next.set('q', text) : next.delete('q')))
   }
 
-  function pickRange(picked: TimeRange | undefined) {
-    setDays(picked)
+  function sortBy(picked: ListSort) {
+    update((next) => {
+      next.set('sort', picked.key)
+      next.set('direction', picked.direction)
+    })
+  }
 
-    if (picked) {
-      update((next) => {
-        next.delete('range')
-        next.delete('from')
-      })
-    }
+  // The status is the list itself, chosen in the sidebar; clearing the filters keeps it, and the sort, which narrows
+  // nothing.
+  function clearFilters() {
+    written.current = ''
+    setScopeReset((count) => count + 1)
+    update((next) => {
+      for (const name of [...filterNames.filter((name) => name !== 'status'), 'q', 'range', 'from', 'to']) {
+        next.delete(name)
+      }
+    })
   }
 
   function openCreate(kind: CreateKind) {
@@ -278,7 +283,7 @@ export default function RunsView() {
 
   const count = runs.count
   const narrowed =
-    filterNames.some((name) => name !== 'status' && filter[name] !== '') || search !== '' || range !== undefined
+    filterNames.some((name) => name !== 'status' && filter[name] !== '') || search !== '' || timeRange !== undefined
   const addReason = module.canOperate ? null : viewOnlyReason
   const functionOptions = [
     ...new Set([...(functions.data ?? []).map((item) => item.name), ...(filter.function ? [filter.function] : [])]),
@@ -287,13 +292,7 @@ export default function RunsView() {
   // The filters a link set that the header shows as chips to clear: on a state list, every one but the status; on All
   // runs, those with no select. On the Failed list a pressed cause chip already shows its fingerprint and function.
   const chipped: readonly { name: keyof RunFilter; label: string }[] = [
-    ...(status
-      ? [
-          { name: 'kind', label: 'kind' } as const,
-          { name: 'function', label: 'function' } as const,
-          { name: 'range', label: 'time' } as const,
-        ]
-      : []),
+    ...(status ? [{ name: 'kind', label: 'kind' } as const, { name: 'function', label: 'function' } as const] : []),
     { name: 'correlationId', label: 'correlation' },
     { name: 'fingerprint', label: 'cause' },
     { name: 'cronJobId', label: 'cron job' },
@@ -341,35 +340,35 @@ export default function RunsView() {
           description={state?.description ?? 'Every time job and cron occurrence, newest first.'}
           toolbar={
             <FilterToolbar
-              active={[filter.kind, filter.function, filter.range, range].filter(Boolean).length}
+              active={[filter.kind, filter.function, timeRange].filter(Boolean).length}
               chips={
                 <>
                   {status === 'Failed' ? (
                     <FailureChips filter={filter} count={count ? format.count(count) : undefined} onPick={setFilter} />
                   ) : null}
-                  {setFilters.length > 0 ? (
+                  {setFilters.length > 0 || (status && timeRange) ? (
                     <FilterChips label="Set filters">
                       {setFilters.map(({ name, label }) => (
                         <FilterChip key={name} label={label} value={filter[name]} onClear={() => setFilter(name, '')} />
                       ))}
+                      {/* A state list has no range control, so a range a link set shows here to clear. */}
+                      {status && timeRange ? (
+                        <FilterChip label="due" value={rangeText(timeRange)} onClear={() => setTimeRange(undefined)} />
+                      ) : null}
                     </FilterChips>
                   ) : null}
                 </>
               }
               search={
-                // Restarted with the current text, so emptying the day picker never empties a search still applied.
+                // Restarted with the URL's text when a link, Back, or Clear filters changes it.
                 <SearchField
                   key={`search-${scopeReset}`}
                   label="Search runs"
                   placeholder="Function, id, key, description"
                   compact
                   defaultValue={search}
-                  onSearch={setSearch}
+                  onSearch={searchFor}
                 />
-              }
-              // The day range sits behind More filters, so the row stays one line beside the title at 1024 px.
-              more={
-                status ? undefined : <DateRangeField label="Due between" value={days} onChange={pickRange} compact />
               }
             >
               {/* A state list keeps only the search, as the sidebar already chose the state: its other filters
@@ -390,12 +389,13 @@ export default function RunsView() {
                     onChange={(value) => setFilter('function', value)}
                     options={functionOptions}
                   />
-                  <FilterSelect
-                    label="Time range"
-                    emptyLabel="Any time"
-                    value={filter.range}
-                    onChange={(value) => setFilter('range', value)}
-                    options={rangeOptions}
+                  {/* The server filters every list's range by when each run is due. */}
+                  <DateRangeField
+                    label="Due"
+                    value={timeRange}
+                    onChange={setTimeRange}
+                    presets={timeRangePresets}
+                    compact
                   />
                 </>
               )}
@@ -447,7 +447,7 @@ export default function RunsView() {
             failed={status === 'Failed'}
             pending={pending}
             sort={listSort}
-            onSortChange={setSort}
+            onSortChange={sortBy}
             onSelectAllMatching={() => setAllMatching(true)}
             emptyState={
               narrowed ? (
@@ -468,6 +468,11 @@ export default function RunsView() {
       </QueryState>
     </PageFrame>
   )
+}
+
+/** A range as a chip reads it: the preset's name, such as `24h`, or its first and last days. */
+function rangeText(range: TimeRange) {
+  return range.kind === 'preset' ? range.preset : `${range.start} – ${range.end}`
 }
 
 interface RunsTableProps {

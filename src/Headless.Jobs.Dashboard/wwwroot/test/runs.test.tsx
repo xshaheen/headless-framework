@@ -88,10 +88,10 @@ describe('jobs runs list', () => {
 
     await screen.findByRole('row', { name: /billing\.charge/ })
     const filters = within(screen.getByRole('group', { name: 'Filters' }))
-    const unset = ['Kind', 'Function', 'Time range'].map(
+    const unset = ['Kind', 'Function', 'Due'].map(
       (name) => filters.getByRole('button', { name: new RegExp(name) }).textContent,
     )
-    expect(unset).toEqual(['Any kind', 'Any function', 'Any time'])
+    expect(unset).toEqual(['Any kind', 'Any function', 'Due'])
   })
 
   it('counts only arrived runs that match the filter in N new', async () => {
@@ -692,10 +692,11 @@ describe('jobs runs list', () => {
     expect(await screen.findByRole('row', { name: /a\.done/ })).toBeTruthy()
     expect(view.requests.find((request) => request.path === 'jobs/runs')?.query?.status).toBeUndefined()
     const filters = within(screen.getByRole('group', { name: 'Filters' }))
-    for (const name of ['Kind', 'Function', 'Time range']) {
+    for (const name of ['Kind', 'Function', 'Due']) {
       expect(filters.getByRole('button', { name: new RegExp(name) })).toBeTruthy()
     }
-    expect(filters.getByRole('button', { name: 'More filters' })).toBeTruthy()
+    // One time control sits in the row, so nothing waits behind More filters.
+    expect(filters.queryByRole('button', { name: /More filters/ })).toBeNull()
   })
 
   it('opens a run the loaded page does not hold, reading it once by its id', async () => {
@@ -865,6 +866,20 @@ describe('jobs run page', () => {
 
 describe('jobs runs list reads', () => {
   /** The last runs list request the view sent. */
+  function filters() {
+    return screen.getByRole('group', { name: 'Filters' })
+  }
+
+  /** The span a list read covers, from its `from` to its `before`. */
+  function span(query: Readonly<Record<string, unknown>>) {
+    return Date.parse(String(query.before)) - Date.parse(String(query.from))
+  }
+
+  /** Whether a preset's window ends at `at`, give or take the clock the test lets run. */
+  function endsNear(query: Readonly<Record<string, unknown>>, at: number) {
+    return Math.abs(Date.parse(String(query.before)) - at) < 5_000
+  }
+
   function lastList(view: ReturnType<typeof list>) {
     return view.requests.filter((request) => request.path === 'jobs/runs').at(-1)?.query ?? {}
   }
@@ -1003,41 +1018,144 @@ describe('jobs runs list reads', () => {
     )
   })
 
-  it('sends a picked day range as the due bounds in place of the time-range preset', async () => {
-    localStorage.setItem('headless-dashboard:time-zone', 'UTC')
+  it('keeps the due range, the search, and the sort in the URL, so a reload shows the same list', async () => {
     const actor = user()
-    const view = list(
-      { runs: [run('Succeeded', { function: 'a.done' })] },
-      '?range=24h&from=2026-11-04T10%3A00%3A00.000Z',
-    )
-    await screen.findByRole('row', { name: /a\.done/ })
-
-    // The day range sits behind More filters, as a chip that opens the calendar.
-    await actor.click(screen.getByRole('button', { name: 'More filters 1' }))
-    await actor.click(await screen.findByRole('button', { name: /Due between/ }))
-    await actor.click(await screen.findByRole('button', { name: /November 1, 2026/ }))
-    await actor.click(screen.getByRole('button', { name: /November 4, 2026/ }))
-
-    await waitFor(() =>
-      expect(lastList(view)).toMatchObject({ from: '2026-11-01T00:00:00.000Z', before: '2026-11-05T00:00:00.000Z' }),
-    )
-    expect(new URLSearchParams(view.location().search).get('range')).toBeNull()
-  })
-
-  it('keeps the search applied and shown when a time-range preset empties the day picker', async () => {
-    const actor = user()
-    const view = list({ runs: [run('Failed', { function: 'billing.refund' })] })
+    const fake = { runs: [run('Failed', { function: 'billing.refund' })] }
+    const view = list(fake)
     await screen.findByRole('row', { name: /billing\.refund/ })
 
     await actor.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'refund')
     await act(() => vi.advanceTimersByTimeAsync(300))
-    await waitFor(() => expect(lastList(view).search).toBe('refund'))
-    await actor.click(screen.getByRole('button', { name: /Time range/ }))
-    await actor.click(await screen.findByRole('option', { name: 'Last 24 h' }))
+    await actor.click(
+      within(screen.getByRole('columnheader', { name: 'Function' })).getByRole('button', { name: 'Function' }),
+    )
+    await actor.click(within(filters()).getByRole('button', { name: /Due/ }))
+    await actor.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '7 days' }))
 
-    await waitFor(() => expect(lastList(view).from).toBeDefined())
-    expect(lastList(view).search).toBe('refund')
+    const search = view.location().search
+    expect(Object.fromEntries(new URLSearchParams(search))).toEqual({
+      q: 'refund',
+      sort: 'function',
+      direction: 'ascending',
+      range: '7d',
+    })
+
+    view.unmount()
+    const reloaded = list(fake, search)
+    await screen.findByRole('row', { name: /billing\.refund/ })
+
     expect((screen.getByRole('searchbox', { name: 'Search runs' }) as HTMLInputElement).value).toBe('refund')
+    expect(screen.getByRole('columnheader', { name: 'Function' }).getAttribute('aria-sort')).toBe('ascending')
+    expect(within(filters()).getByRole('button', { name: /Due/ }).textContent).toBe('Due7 days')
+    expect(lastList(reloaded)).toMatchObject({ search: 'refund', sort: 'function', direction: 'ascending' })
+    expect(span(lastList(reloaded))).toEqual(7 * 86_400_000)
+  })
+
+  it('works a preset link out when the view opens, so a shared link stays relative', async () => {
+    // A link from before the range was kept by name still carries the instant it was picked at; the name wins.
+    const link = '?range=24h&from=2026-10-01T00%3A00%3A00.000Z'
+    const first = list({ runs: [] }, link)
+    await waitFor(() => expect(lastList(first)).toHaveProperty('before'))
+    expect(span(lastList(first))).toBe(86_400_000)
+    expect(endsNear(lastList(first), now.getTime())).toBe(true)
+
+    first.unmount()
+    const later = now.getTime() + 3 * 3_600_000
+    vi.setSystemTime(later)
+    const reopened = list({ runs: [] }, link)
+    await waitFor(() => expect(lastList(reopened)).toHaveProperty('before'))
+
+    expect(span(lastList(reopened))).toBe(86_400_000)
+    expect(endsNear(lastList(reopened), later)).toBe(true)
+  })
+
+  it('writes picked days as days, sent as the due bounds in the display zone', async () => {
+    localStorage.setItem('headless-dashboard:time-zone', 'UTC')
+    const actor = user()
+    const view = list({ runs: [run('Succeeded', { function: 'a.done' })] })
+    await screen.findByRole('row', { name: /a\.done/ })
+
+    await actor.click(within(filters()).getByRole('button', { name: /Due/ }))
+    const dialog = await screen.findByRole('dialog')
+    await actor.click(within(dialog).getByRole('button', { name: 'Custom' }))
+    await actor.click(within(dialog).getByRole('button', { name: /November 1, 2026/ }))
+    await actor.click(within(dialog).getByRole('button', { name: /November 4, 2026/ }))
+
+    await waitFor(() =>
+      expect(lastList(view)).toMatchObject({ from: '2026-11-01T00:00:00.000Z', before: '2026-11-05T00:00:00.000Z' }),
+    )
+    expect(Object.fromEntries(new URLSearchParams(view.location().search))).toEqual({
+      from: '2026-11-01',
+      to: '2026-11-04',
+    })
+  })
+
+  it('reads a range, sort, or direction it cannot read as the default', async () => {
+    const view = list(
+      { runs: [run('Succeeded', { function: 'a.done' })] },
+      '?range=1y&from=2026-11-09&to=2026-11-01&sort=payload&direction=sideways',
+    )
+    await screen.findByRole('row', { name: /a\.done/ })
+
+    expect(within(filters()).getByRole('button', { name: /Due/ }).textContent).toBe('Due')
+    expect(lastList(view)).not.toHaveProperty('from')
+    expect(lastList(view)).not.toHaveProperty('before')
+    expect(lastList(view)).not.toHaveProperty('sort')
+
+    await view.navigate('runs?sort=status&direction=sideways')
+    await waitFor(() => expect(lastList(view)).toMatchObject({ sort: 'status', direction: 'ascending' }))
+  })
+
+  it('swaps custom days for a picked preset, and a preset for its days on Custom, keeping the search', async () => {
+    localStorage.setItem('headless-dashboard:time-zone', 'UTC')
+    const actor = user()
+    const view = list({ runs: [] }, '?q=done&from=2026-11-01&to=2026-11-02')
+    await waitFor(() =>
+      expect(lastList(view)).toMatchObject({ from: '2026-11-01T00:00:00.000Z', before: '2026-11-03T00:00:00.000Z' }),
+    )
+
+    await actor.click(within(filters()).getByRole('button', { name: /Due/ }))
+    const dialog = await screen.findByRole('dialog')
+    await actor.click(within(dialog).getByRole('button', { name: '24 hr' }))
+
+    expect(Object.fromEntries(new URLSearchParams(view.location().search))).toEqual({ q: 'done', range: '24h' })
+    await waitFor(() => expect(span(lastList(view))).toBe(86_400_000))
+
+    await actor.click(within(dialog).getByRole('button', { name: 'Custom' }))
+
+    expect(Object.fromEntries(new URLSearchParams(view.location().search))).toEqual({
+      q: 'done',
+      from: '2026-11-04',
+      to: '2026-11-05',
+    })
+    expect(lastList(view).search).toBe('done')
+    expect((screen.getByRole('searchbox', { name: 'Search runs', hidden: true }) as HTMLInputElement).value).toBe(
+      'done',
+    )
+  })
+
+  it('shows the search a link or Back sets in the search box', async () => {
+    const view = list({ runs: [run('Succeeded', { function: 'first.second' })] }, '?q=first')
+    await screen.findByRole('row', { name: /first\.second/ })
+    expect((screen.getByRole('searchbox', { name: 'Search runs' }) as HTMLInputElement).value).toBe('first')
+
+    await view.navigate('runs?q=second')
+
+    await waitFor(() =>
+      expect((screen.getByRole('searchbox', { name: 'Search runs' }) as HTMLInputElement).value).toBe('second'),
+    )
+    expect(lastList(view).search).toBe('second')
+  })
+
+  it('shows a due range a link set on a state list as a chip that clears it, and Clear filters drops it', async () => {
+    const actor = user()
+    const view = list({ runs: [run('Failed', { function: 'a.failed' })] }, '?status=Failed&range=7d&q=a.')
+    await screen.findByRole('row', { name: /a\.failed/ })
+
+    await actor.click(screen.getByRole('button', { name: 'Clear due filter' }))
+
+    expect(Object.fromEntries(new URLSearchParams(view.location().search))).toEqual({ status: 'Failed', q: 'a.' })
+    await waitFor(() => expect(lastList(view)).not.toHaveProperty('from'))
   })
 
   it('reads a run’s attempt out of its first try and retries, and its retry intervals', async () => {
