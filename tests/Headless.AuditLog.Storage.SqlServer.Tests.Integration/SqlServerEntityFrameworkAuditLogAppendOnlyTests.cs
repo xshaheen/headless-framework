@@ -101,7 +101,7 @@ public sealed class SqlServerEntityFrameworkAuditLogAppendOnlyTests(SqlServerAud
         var factory = provider.GetRequiredService<IDbContextFactory<AuditDbContext>>();
         await using var context = await factory.CreateDbContextAsync(AbortToken);
         var migrationBuilder = new MigrationBuilder(context.Database.ProviderName);
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(schema: _Schema);
+        migrationBuilder.AddHeadlessSqlServerAuditLogAppendOnly(schema: _Schema);
         await _ExecuteAsync(
             $"""
             IF OBJECT_ID(N'[{_Schema}].[AuditLogEntries]') IS NOT NULL DROP TABLE [{_Schema}].[AuditLogEntries];

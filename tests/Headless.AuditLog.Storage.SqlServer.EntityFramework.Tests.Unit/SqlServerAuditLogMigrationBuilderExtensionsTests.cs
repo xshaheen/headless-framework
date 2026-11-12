@@ -16,7 +16,7 @@ public sealed class SqlServerAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_SqlServer);
 
         // when
-        migrationBuilder.AddHeadlessAuditLogAppendOnly();
+        migrationBuilder.AddHeadlessSqlServerAuditLogAppendOnly();
 
         // then
         _Sql(migrationBuilder)
@@ -33,7 +33,7 @@ public sealed class SqlServerAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_SqlServer);
 
         // when
-        migrationBuilder.DropHeadlessAuditLogAppendOnly();
+        migrationBuilder.DropHeadlessSqlServerAuditLogAppendOnly();
 
         // then
         _Sql(migrationBuilder).Should().Be("DROP TRIGGER IF EXISTS [headless].[TR_AuditLogEntries_AppendOnly];");
@@ -46,13 +46,29 @@ public sealed class SqlServerAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_SqlServer);
 
         // when
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(table: "Audit", schema: "compliance");
-        migrationBuilder.DropHeadlessAuditLogAppendOnly(table: "Audit", schema: "compliance");
+        migrationBuilder.AddHeadlessSqlServerAuditLogAppendOnly(table: "Audit", schema: "compliance");
+        migrationBuilder.DropHeadlessSqlServerAuditLogAppendOnly(table: "Audit", schema: "compliance");
 
         // then
         var operations = migrationBuilder.Operations.Cast<SqlOperation>().ToList();
         operations[0].Sql.Should().Contain("[compliance].[TR_Audit_AppendOnly] ON [compliance].[Audit]");
         operations[1].Sql.Should().Be("DROP TRIGGER IF EXISTS [compliance].[TR_Audit_AppendOnly];");
+    }
+
+    [Fact]
+    public void should_resolve_each_databases_helper_when_one_project_references_both_packages()
+    {
+        // given - this project references the PostgreSQL package too; helpers that shared one name across the two
+        // packages would make both calls below ambiguous and stop the build
+        var migrationBuilder = new MigrationBuilder(_SqlServer);
+
+        // when
+        migrationBuilder.AddHeadlessSqlServerAuditLogAppendOnly();
+        var postgreSql = () => migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly();
+
+        // then
+        migrationBuilder.Operations.Should().ContainSingle();
+        postgreSql.Should().Throw<NotSupportedException>().WithMessage($"*PostgreSql*'{_SqlServer}'*");
     }
 
     [Theory]
@@ -64,8 +80,8 @@ public sealed class SqlServerAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(activeProvider);
 
         // when
-        var add = () => migrationBuilder.AddHeadlessAuditLogAppendOnly();
-        var drop = () => migrationBuilder.DropHeadlessAuditLogAppendOnly();
+        var add = () => migrationBuilder.AddHeadlessSqlServerAuditLogAppendOnly();
+        var drop = () => migrationBuilder.DropHeadlessSqlServerAuditLogAppendOnly();
 
         // then
         add.Should().Throw<NotSupportedException>().WithMessage($"*SqlServer*'{activeProvider}'*");
@@ -83,9 +99,9 @@ public sealed class SqlServerAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_SqlServer);
 
         // when
-        var add = () => migrationBuilder.AddHeadlessAuditLogAppendOnly(table, schema);
-        var drop = () => migrationBuilder.DropHeadlessAuditLogAppendOnly(table, schema);
-        var missingBuilder = () => ((MigrationBuilder)null!).AddHeadlessAuditLogAppendOnly();
+        var add = () => migrationBuilder.AddHeadlessSqlServerAuditLogAppendOnly(table, schema);
+        var drop = () => migrationBuilder.DropHeadlessSqlServerAuditLogAppendOnly(table, schema);
+        var missingBuilder = () => ((MigrationBuilder)null!).AddHeadlessSqlServerAuditLogAppendOnly();
 
         // then
         add.Should().Throw<ArgumentException>();

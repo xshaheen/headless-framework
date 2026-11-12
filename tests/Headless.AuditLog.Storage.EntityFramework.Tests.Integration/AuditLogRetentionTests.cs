@@ -98,7 +98,7 @@ public sealed class AuditLogRetentionTests : TestBase
         // then
         (await act.Should().ThrowAsync<OptionsValidationException>())
             .Which.Failures.Should()
-            .Contain(failure => failure.Contains("AddHeadlessAuditLogPartitions"))
+            .Contain(failure => failure.Contains("AddHeadlessPostgreSqlAuditLogPartitions"))
             .And.Contain(failure => failure.Contains("minimumRetention"));
     }
 

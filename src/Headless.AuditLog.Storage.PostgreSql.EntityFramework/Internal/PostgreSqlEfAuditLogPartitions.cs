@@ -6,8 +6,8 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog.PostgreSql.EntityFramework;
 
-// The partition functions come from the application's migration (AddHeadlessAuditLogPartitions). Each call is one
-// statement, so EF runs it through the context's execution strategy by itself.
+// The partition functions come from the application's migration (AddHeadlessPostgreSqlAuditLogPartitions). Each call
+// is one statement, so EF runs it through the context's execution strategy by itself.
 internal sealed class PostgreSqlEfAuditLogPartitions<TContext>(
     IDbContextFactory<TContext> dbFactory,
     IOptions<AuditLogStorageOptions> storageOptions,

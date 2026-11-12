@@ -46,7 +46,7 @@ public static class HeadlessSqlServerAuditLogMigrationBuilderExtensions
     /// <exception cref="ArgumentNullException"><paramref name="migrationBuilder"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A name is not a valid SQL Server identifier.</exception>
     /// <exception cref="NotSupportedException">The migration's database is not SQL Server.</exception>
-    public static OperationBuilder<SqlOperation> AddHeadlessAuditLogAppendOnly(
+    public static OperationBuilder<SqlOperation> AddHeadlessSqlServerAuditLogAppendOnly(
         this MigrationBuilder migrationBuilder,
         string? table = null,
         string schema = HeadlessStorageDefaults.Schema
@@ -60,7 +60,9 @@ public static class HeadlessSqlServerAuditLogMigrationBuilderExtensions
         return migrationBuilder.Sql(SqlServerAuditLogSql.AppendOnly(schema, tableName));
     }
 
-    /// <summary>Removes the trigger <see cref="AddHeadlessAuditLogAppendOnly"/> created. Use it in <c>Down</c>.</summary>
+    /// <summary>
+    /// Removes the trigger <see cref="AddHeadlessSqlServerAuditLogAppendOnly"/> created. Use it in <c>Down</c>.
+    /// </summary>
     /// <param name="migrationBuilder">The migration builder.</param>
     /// <param name="table">The audit log table; <see langword="null"/> for <c>AuditLogEntries</c>.</param>
     /// <param name="schema">The table's schema. The default is <see cref="HeadlessStorageDefaults.Schema"/>.</param>
@@ -68,7 +70,7 @@ public static class HeadlessSqlServerAuditLogMigrationBuilderExtensions
     /// <exception cref="ArgumentNullException"><paramref name="migrationBuilder"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A name is not a valid SQL Server identifier.</exception>
     /// <exception cref="NotSupportedException">The migration's database is not SQL Server.</exception>
-    public static OperationBuilder<SqlOperation> DropHeadlessAuditLogAppendOnly(
+    public static OperationBuilder<SqlOperation> DropHeadlessSqlServerAuditLogAppendOnly(
         this MigrationBuilder migrationBuilder,
         string? table = null,
         string schema = HeadlessStorageDefaults.Schema

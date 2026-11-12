@@ -25,8 +25,8 @@ public static class SetupAuditLogSqlServerEntityFramework
         /// <returns>The setup builder for chaining.</returns>
         /// <remarks>
         /// The application's migrations own the table: make it append-only with
-        /// <c>migrationBuilder.AddHeadlessAuditLogAppendOnly(...)</c>. A startup gate refuses a context that runs on
-        /// another database.
+        /// <c>migrationBuilder.AddHeadlessSqlServerAuditLogAppendOnly(...)</c>. A startup gate refuses a context that
+        /// runs on another database.
         /// </remarks>
         public HeadlessAuditLogSetupBuilder UseSqlServerEntityFramework<TContext>()
             where TContext : DbContext

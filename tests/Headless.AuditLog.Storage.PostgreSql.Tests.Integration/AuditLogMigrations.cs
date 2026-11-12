@@ -28,7 +28,8 @@ internal static class AuditLogMigrationScripts
 
     /// <summary>
     /// The same script with the audit table created partitioned by hand, for an application that writes the table's
-    /// SQL itself instead of letting <c>AddHeadlessAuditLogPartitions</c> change the scaffolded table creation.
+    /// SQL itself instead of letting <c>AddHeadlessPostgreSqlAuditLogPartitions</c> change the scaffolded table
+    /// creation.
     /// </summary>
     public static string PartitionedCreateScript<TContext>(Func<DbContextOptions<TContext>, TContext> create)
         where TContext : DbContext
@@ -85,12 +86,12 @@ public sealed class CreateAppendOnlyAuditLog : Migration
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.Sql(AuditLogMigrationScripts.CreateScript<AppendOnlyAuditDbContext>(o => new(o)));
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(schema: AppendOnlyAuditDbContext.Schema);
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(schema: AppendOnlyAuditDbContext.Schema);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropHeadlessAuditLogAppendOnly(schema: AppendOnlyAuditDbContext.Schema);
+        migrationBuilder.DropHeadlessPostgreSqlAuditLogAppendOnly(schema: AppendOnlyAuditDbContext.Schema);
         migrationBuilder.DropTable("audit_log_entries", AppendOnlyAuditDbContext.Schema);
     }
 }
@@ -115,7 +116,7 @@ public sealed class CreateOwnerPurgeAuditLog : Migration
         const string schema = OwnerPurgeAuditDbContext.Schema;
 
         migrationBuilder.Sql(AuditLogMigrationScripts.CreateScript<OwnerPurgeAuditDbContext>(o => new(o)));
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(
             schema: schema,
             purgeAuthority: AuditLogPurgeAuthority.Owner,
             minimumRetention: TimeSpan.FromDays(30)
@@ -150,8 +151,8 @@ public sealed class CreatePartitionedAuditLog : Migration
         const string schema = PartitionedAuditDbContext.Schema;
 
         migrationBuilder.Sql(AuditLogMigrationScripts.PartitionedCreateScript<PartitionedAuditDbContext>(o => new(o)));
-        migrationBuilder.AddHeadlessAuditLogPartitions(schema: schema, monthsAhead: 1);
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(schema: schema);
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(schema: schema, monthsAhead: 1);
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(schema: schema);
         migrationBuilder.Sql(
             $"""
             GRANT USAGE ON SCHEMA "{schema}" TO "{PostgreSqlAuditLogRolesFixture.App}";
@@ -202,8 +203,8 @@ public sealed class CreateScaffoldedPartitionedAuditLog : Migration
         migrationBuilder.Operations.AddRange(
             AuditLogMigrationScripts.ScaffoldedOperations<ScaffoldedPartitionedAuditDbContext>(o => new(o))
         );
-        migrationBuilder.AddHeadlessAuditLogPartitions(schema: schema, monthsAhead: 1);
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(schema: schema);
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(schema: schema, monthsAhead: 1);
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(schema: schema);
         migrationBuilder.Sql(
             $"""
             GRANT USAGE ON SCHEMA "{schema}" TO "{PostgreSqlAuditLogRolesFixture.App}";
@@ -222,8 +223,8 @@ public sealed class CreateScaffoldedPartitionedAuditLog : Migration
     {
         const string schema = ScaffoldedPartitionedAuditDbContext.Schema;
 
-        migrationBuilder.DropHeadlessAuditLogAppendOnly(schema: schema);
-        migrationBuilder.DropHeadlessAuditLogPartitions(schema: schema);
+        migrationBuilder.DropHeadlessPostgreSqlAuditLogAppendOnly(schema: schema);
+        migrationBuilder.DropHeadlessPostgreSqlAuditLogPartitions(schema: schema);
         migrationBuilder.DropTable("audit_log_entries", schema);
     }
 }
