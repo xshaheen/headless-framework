@@ -13,7 +13,7 @@ import {
 } from '../src/messages.ts'
 import messaging from '../src/module.ts'
 import { lastMinuteRate } from '../src/parts.tsx'
-import { spanSeconds } from '../src/views/consumers.tsx'
+import { spanSeconds } from '../src/messages.ts'
 import { parseUnknownLane } from '../src/views/unknown-lanes.tsx'
 
 describe('messaging pending labels', () => {

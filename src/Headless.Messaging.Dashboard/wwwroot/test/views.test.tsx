@@ -53,6 +53,149 @@ describe('messaging dashboard', () => {
   })
 })
 
+/** The row of a card that carries `text`, so a figure is read beside the name it belongs to. */
+function cardRow(card: HTMLElement, text: string) {
+  const row = within(card)
+    .getAllByRole('listitem')
+    .find((item) => item.textContent?.includes(text))
+
+  if (!row) {
+    throw new Error(`No row of the card reads "${text}"`)
+  }
+
+  return row
+}
+
+describe('messaging dashboard health cards', () => {
+  it('shows each store’s backlog with its oldest wait, and names a store that did not answer', async () => {
+    open(
+      {
+        backlog: {
+          asOf: now.toISOString(),
+          stores: [
+            {
+              store: 'primary',
+              publishedPending: 128,
+              oldestPublishedSeconds: 42,
+              receivedPending: 0,
+            },
+          ],
+          unavailable: ['billing'],
+        },
+      },
+      { path: '' },
+    )
+
+    const card = await screen.findByRole('region', { name: 'Backlog' })
+    await within(card).findByText('Waiting to be sent')
+    const sending = cardRow(card, 'Waiting to be sent')
+    expect(within(sending).getByText('128')).toBeTruthy()
+    expect(within(sending).getByText(/oldest for 42 sec/)).toBeTruthy()
+    // Nothing waits to be handled, so that row has a count and no oldest wait.
+    const handling = cardRow(card, 'Waiting to be handled')
+    expect(within(handling).getByText('0')).toBeTruthy()
+    expect(within(handling).queryByText(/oldest/)).toBeNull()
+    // A store that did not answer may hold more, so the card gives no total.
+    expect(within(card).getByRole('status').textContent).toContain('Not answering: billing')
+    expect(within(card).queryByText(/128 waiting/)).toBeNull()
+  })
+
+  it('totals the backlog when every store answered, and leaves an outbox without received rows', async () => {
+    open(
+      {
+        backlog: {
+          asOf: now.toISOString(),
+          stores: [
+            { store: 'primary', publishedPending: 3, oldestPublishedSeconds: 5, receivedPending: 2 },
+            { store: 'billing', publishedPending: 4, oldestPublishedSeconds: 90 },
+          ],
+          unavailable: [],
+        },
+      },
+      { path: '' },
+    )
+
+    const card = await screen.findByRole('region', { name: 'Backlog' })
+    expect(await within(card).findByText('9 waiting')).toBeTruthy()
+    expect(within(card).getAllByText('Waiting to be sent')).toHaveLength(2)
+    expect(within(card).getAllByText('Waiting to be handled')).toHaveLength(1)
+  })
+
+  it('lists only the circuits that are not closed, each opening its consumer', async () => {
+    open(
+      {
+        circuits: [
+          circuit({ state: 'Closed' }),
+          circuit({
+            id: 'node-a~Orders.ShipConsumer',
+            consumer: 'Orders.ShipConsumer',
+            state: 'Open',
+            consecutiveFailures: 5,
+            failureThreshold: 5,
+            estimatedRemainingOpenDuration: '00:00:18',
+          }),
+        ],
+      },
+      { path: '' },
+    )
+
+    const card = await screen.findByRole('region', { name: 'Circuits' })
+    const link = await within(card).findByRole('link', { name: 'Orders.ShipConsumer' })
+    expect(link.getAttribute('href')).toContain('consumers?open=node-a~Orders.ShipConsumer')
+    expect(within(card).getByText('1 open')).toBeTruthy()
+    expect(within(card).getByText('Open · 5 of 5 failures')).toBeTruthy()
+    expect(within(card).getByText('retries in 18 s')).toBeTruthy()
+    expect(within(card).queryByText('Billing.OrderPlacedConsumer')).toBeNull()
+  })
+
+  it('says no circuit is open when every one is closed, and counts them', async () => {
+    open({ circuits: [circuit({ state: 'Closed' })] }, { path: '' })
+
+    const card = await screen.findByRole('region', { name: 'Circuits' })
+    expect(await within(card).findByText('No circuit is open.')).toBeTruthy()
+    expect(within(card).getByText('1 closed')).toBeTruthy()
+  })
+
+  it('names the broker of each lane and the storage of each outbox', async () => {
+    open(
+      {
+        providers: {
+          transports: { bus: 'nats', queue: 'rabbitmq' },
+          outboxes: [{ name: 'primary', storage: 'PostgreSql' }],
+        },
+      },
+      { path: '' },
+    )
+
+    const card = await screen.findByRole('region', { name: 'Providers' })
+    await within(card).findByText('Bus lane')
+    expect(within(cardRow(card, 'Bus lane')).getByText('nats')).toBeTruthy()
+    expect(within(cardRow(card, 'Queue lane')).getByText('rabbitmq')).toBeTruthy()
+    const outbox = cardRow(card, 'Outbox')
+    expect(within(outbox).getByText('primary')).toBeTruthy()
+    expect(within(outbox).getByText('PostgreSql')).toBeTruthy()
+  })
+
+  it('shows Retry on a card whose read failed, never an empty card', async () => {
+    open(
+      {
+        extra: (request) => {
+          if (request.path === 'messaging/backlog') {
+            throw new DashboardApiError(503, 'The store is down')
+          }
+
+          return undefined
+        },
+      },
+      { path: '' },
+    )
+
+    const card = await screen.findByRole('region', { name: 'Backlog' })
+    expect((await within(card).findByRole('alert')).textContent).toContain('The store is down')
+    expect(within(card).getByRole('button', { name: 'Retry' })).toBeTruthy()
+  })
+})
+
 describe('messaging node persistence', () => {
   const nodeOf = (view: ReturnType<typeof open>) => new URLSearchParams(view.location().search).get('node')
 
@@ -281,7 +424,7 @@ describe('messaging operator log', () => {
     const actor = user()
     const view = open({}, { path: 'operator-log' })
 
-    expect(await screen.findByText('No operator has acted on a stored message yet.')).toBeTruthy()
+    expect(await screen.findByText(/No operator has acted on a stored message yet\./)).toBeTruthy()
     await actor.click(screen.getByRole('button', { name: /Target/ }))
     await actor.click(await screen.findByRole('option', { name: 'Received' }))
 

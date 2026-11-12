@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button } from '../../src/components/button.tsx'
 import { Dialog } from '../../src/components/dialog.tsx'
 import { LiveIndicator, ToastRegion } from '../../src/components/live.tsx'
-import { StatusMark } from '../../src/components/marks.tsx'
+import { FailureReason, splitFailure, StatusMark } from '../../src/components/marks.tsx'
 import { CommandPalette } from '../../src/components/palette/command-palette.tsx'
 import { DashboardProvider, useDashboard } from '../../src/context.tsx'
 import { createDashboardClient } from '../../src/data/client.tsx'
@@ -165,5 +165,39 @@ describe('command palette', () => {
     await user.keyboard('{Enter}')
     expect(openRuns).toHaveBeenCalledTimes(1)
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('failure reason', () => {
+  it('leads with the type without its namespace and keeps the whole text as the title', () => {
+    render(<FailureReason type="System.TimeoutException" message="The consumer did not acknowledge." />)
+
+    const reason = screen.getByTitle('System.TimeoutException: The consumer did not acknowledge.')
+    expect(reason.textContent).toBe('TimeoutException: The consumer did not acknowledge.')
+  })
+
+  it('reads a generic type by its own name, not by the last dot of its arguments', () => {
+    render(<FailureReason type="Billing.Refused`1[[System.String, System.Private.CoreLib]]" message="No." />)
+
+    expect(screen.getByText('Refused`1')).toBeTruthy()
+  })
+
+  it('reads a plain reason as its message alone, and draws nothing without either part', () => {
+    const { container, rerender } = render(<FailureReason message="The lease lapsed." />)
+    expect(screen.getByTitle('The lease lapsed.').textContent).toBe('The lease lapsed.')
+
+    rerender(<FailureReason type={null} message="" />)
+    expect(container.textContent).toBe('')
+  })
+
+  it('splits a stored line at its type, and keeps a line that opens with no type whole', () => {
+    expect(splitFailure('IOException: The disk is full: /var')).toEqual({
+      type: 'IOException',
+      message: 'The disk is full: /var',
+    })
+    expect(splitFailure('Billing.CardError: declined')).toEqual({ type: 'Billing.CardError', message: 'declined' })
+    expect(splitFailure('Lease lapsed: the node is not alive')).toEqual({
+      message: 'Lease lapsed: the node is not alive',
+    })
   })
 })

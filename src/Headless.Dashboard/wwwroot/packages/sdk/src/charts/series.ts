@@ -27,6 +27,8 @@ interface ChartBase {
 }
 
 export interface TimeSeriesChartProps extends ChartBase {
+  /** What the chart says when no bucket holds a value above zero; `No <unit> in this range` by default. */
+  empty?: string
   /** `stacked-bar` stacks the series in order, the first at the bottom; `line` and `area` overlay them. */
   kind: 'line' | 'area' | 'stacked-bar'
   series: readonly ChartSeries[]

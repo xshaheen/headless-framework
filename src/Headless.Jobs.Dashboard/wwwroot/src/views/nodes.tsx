@@ -1,10 +1,10 @@
-import { useDashboard } from '@headless/dashboard-sdk'
 import {
   Banner,
   DetailPanel,
   ExceptionBlock,
   FieldGrid,
   GridField,
+  Meter,
   Mono,
   PageFrame,
   PageHeader,
@@ -15,16 +15,15 @@ import {
   Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
-import { fetchNodes, nodeStatusMark, type JobNode } from '../cron.ts'
-import { CellText, firstLine, JobsStats, QueryState, StaleNotice } from '../parts.tsx'
+import { NodeIcon } from '@headless/dashboard-sdk/icons'
+import { nodeStatusMark, type JobNode } from '../cron.ts'
+import { CellText, firstLine, JobsStats, QueryState, StaleNotice, useNodes } from '../parts.tsx'
 
 export default function NodesView() {
-  const { api } = useDashboard()
   const format = useFormat()
-  const nodes = useQuery({ queryKey: ['jobs', 'nodes'], queryFn: () => fetchNodes(api) })
+  const nodes = useNodes()
   const rows = (nodes.data ?? []).map((node) => ({ ...node, id: node.identity }))
   const frame = usePageFrame({ viewId: 'jobs.nodes', rows })
   const open = rows.find((row) => row.id === frame.openId)
@@ -46,16 +45,17 @@ export default function NodesView() {
       }
       panel={open ? <NodePanel node={open} /> : undefined}
     >
-      <StaleNotice what="these servers" onRefresh={() => void nodes.refetch()} />
+      <StaleNotice what="these servers" onRefresh={() => void nodes.refetch()} failed={nodes.isError} />
       {serving ? <HostExceptionAlert node={serving} /> : null}
       <QueryState query={nodes} label="Loading servers" rows={3} shape="table">
         {() => (
           <DataTable
             label="Servers"
-            viewId="jobs.nodes"
             frame={frame}
             rows={rows}
-            emptyState="No live servers."
+            emptyIcon={NodeIcon}
+            emptyTitle="No live servers"
+            emptyState="A server appears here once a host that runs Jobs starts."
             columns={[
               {
                 id: 'identity',
@@ -89,27 +89,10 @@ export default function NodesView() {
                 width: 120,
               },
               {
-                id: 'maxConcurrency',
-                header: 'Max concurrency',
-                cell: (row) => (
-                  <CellText>
-                    {row.maxConcurrency == null ? (
-                      <Text tone="faint">Not published</Text>
-                    ) : (
-                      format.number(row.maxConcurrency)
-                    )}
-                  </CellText>
-                ),
-                kind: 'number',
-                priority: 2,
-                width: 130,
-              },
-              {
-                id: 'running',
-                header: 'Running',
-                cell: (row) => <CellText>{format.count({ value: row.running, capped: row.runningCapped })}</CellText>,
-                kind: 'number',
-                width: 90,
+                id: 'workers',
+                header: 'Workers',
+                cell: (row) => <Workers node={row} />,
+                width: 150,
               },
               {
                 id: 'lastBeat',
@@ -140,6 +123,32 @@ export default function NodesView() {
         )}
       </QueryState>
     </PageFrame>
+  )
+}
+
+/**
+ * The node's busy workers against its max concurrency. A node that published none gives the meter no scale, so its
+ * running count reads as text.
+ */
+function Workers({ node }: { node: JobNode }) {
+  const format = useFormat()
+  const running = format.count({ value: node.running, capped: node.runningCapped })
+
+  if (node.maxConcurrency == null) {
+    return (
+      <CellText title="This node published no max concurrency.">
+        {`${running} busy`} <Text tone="faint">· Not published</Text>
+      </CellText>
+    )
+  }
+
+  return (
+    <Meter
+      label={`Workers of ${node.identity}`}
+      value={node.running}
+      max={node.maxConcurrency}
+      valueLabel={`${running} of ${format.number(node.maxConcurrency)} busy`}
+    />
   )
 }
 

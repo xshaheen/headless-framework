@@ -2,7 +2,7 @@
 // changed identity could re-trigger), and the shell's assets sit near their size budget.
 'use no memo'
 
-import type { ReactNode } from 'react'
+import { isValidElement, type ReactNode } from 'react'
 import type { DashboardStateRole } from '../../define-module.ts'
 import type { IconComponent } from '../../icons/index.ts'
 import { LoadError } from './banner.tsx'
@@ -47,12 +47,12 @@ export interface CardProps {
 export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, children, wide = false, state }: CardProps) {
   const rows = !state && (Array.isArray(children) ? children.length > 0 : children != null && children !== false)
 
-  // Cards that share a row and hold rows end at one line, however many rows each holds: the rows stay at the top and
-  // the surface takes the rest. A card with no row is only its heading and its empty state, so it never stretches
-  // into a tall box around one sentence. Two columns of `Cards` need 2 × 22rem and the gap.
+  // Cards that share a row end at one line, however much each holds: rows stay at the top and the surface takes the
+  // rest, and a card with no row centres its empty state in that room, so it never floats as a short box beside a
+  // full card. Two columns of `Cards` need 2 × 22rem and the gap.
   return (
     <section
-      className={`flex min-w-0 flex-col rounded-lg border border-border bg-card text-card-foreground${rows ? '' : ' self-start'}${wide ? ' @min-[44.75rem]:col-span-2' : ''}`}
+      className={`flex min-w-0 flex-col rounded-lg border border-border bg-card text-card-foreground${wide ? ' @min-[44.75rem]:col-span-2' : ''}`}
       aria-label={title}
       aria-busy={state?.status === 'loading' || undefined}
     >
@@ -69,6 +69,10 @@ export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, chi
         <CardStateBody state={state} />
       ) : rows ? (
         <ul className="flex-1 [&>li:last-child]:border-0">{children}</ul>
+      ) : isValidElement(empty) ? (
+        // A block in the empty place, such as a skeleton or a load error with Retry, is not an empty state: it reads
+        // from the top of the card, at the card's own measure.
+        <div className="p-3.5">{empty}</div>
       ) : (
         <EmptyState icon={emptyIcon}>{empty}</EmptyState>
       )}

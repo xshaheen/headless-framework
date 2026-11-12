@@ -7,12 +7,14 @@ export {
   LoadError,
   StaleNotice,
   type BannerProps,
+  type BannerTone,
   type LoadErrorProps,
   type StaleNoticeProps,
 } from './display/banner.tsx'
 export { BarChart, type BarChartProps, type BarColumn, type BarSeries } from './display/bar-chart.tsx'
 export { Card, CardRow, Cards, type CardProps, type CardRowProps, type CardState } from './display/card.tsx'
 export { Actions, Fields, type FieldsProps } from './display/fields.tsx'
+export { DensityControl, useDensity, type Density } from './density.tsx'
 export { EmptyState, type EmptyStateProps } from './display/empty-state.tsx'
 export { FilterChip, FilterChips, type FilterChipProps } from './display/filter-chips.tsx'
 export { FilterSelect, type FilterSelectProps } from './display/filter-select.tsx'
@@ -50,7 +52,17 @@ export {
   type TextInputFieldProps,
 } from './form.tsx'
 export { Announcer, LiveIndicator, NewRowsNotice, ProgressBar, ToastRegion } from './live.tsx'
-export { Chip, Kbd, Mono, NodeChip, StatusMark, TenantChip } from './marks.tsx'
+export {
+  Chip,
+  FailureReason,
+  Kbd,
+  Mono,
+  NodeChip,
+  splitFailure,
+  StatusMark,
+  TenantChip,
+  type FailureReasonProps,
+} from './marks.tsx'
 export {
   shellShortcuts,
   useModuleShortcuts,

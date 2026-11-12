@@ -1,7 +1,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import type { Run } from '../src/runs.ts'
-import { change, cronJob, now, open, run, user } from './fake-server.ts'
+import { change, cronJob, node, now, open, run, user } from './fake-server.ts'
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -65,10 +66,9 @@ describe('jobs dashboard', () => {
     )
     expect(within(strip).getByRole('link', { name: 'Idle 37' }).getAttribute('href')).toBe('/jobs/runs?status=Idle')
     expect(screen.queryByText(/Throughput|History|Workers busy|Queue lag/)).toBeNull()
-    // The only chart is the served runs-per-day series.
-    expect(screen.getAllByRole('img').map((image) => image.getAttribute('aria-label'))).toEqual([
-      expect.stringMatching(/^Runs per day by status/),
-    ])
+    // The only chart is the served runs-per-day series, which holds no run here and says so rather than draw axes.
+    expect(within(screen.getByRole('region', { name: 'Runs per day' })).getByText('No runs in this range')).toBeTruthy()
+    expect(screen.queryAllByRole('img')).toEqual([])
   })
 
   it('reads a count it has not got as an en dash, never 0', async () => {
@@ -166,6 +166,60 @@ describe('jobs dashboard', () => {
     expect(within(card).getByText('1 running')).toBeTruthy()
   })
 
+  it('adds the alive nodes’ workers to Processing now when every one of them published its max concurrency', async () => {
+    open({
+      runs: [run('InProgress', { function: 'a.first' }), run('InProgress', { function: 'a.second' })],
+      nodes: [
+        node({ maxConcurrency: 8 }),
+        node({ identity: 'node-b', maxConcurrency: 6 }),
+        // A node that is not alive offers no worker, so what it published, or did not, is left out.
+        node({ identity: 'node-c', state: 'Dead', maxConcurrency: null }),
+      ],
+    })
+
+    const card = await screen.findByRole('region', { name: 'Processing now' })
+    expect(await within(card).findByText('2 running · 14 workers')).toBeTruthy()
+    // The strip keeps its cells: the workers are no figure of their own.
+    expect(screen.queryByText(/Workers busy/)).toBeNull()
+  })
+
+  it('keeps Processing now to the running count when an alive node published no max concurrency', async () => {
+    const view = open({
+      runs: [run('InProgress', { function: 'a.first' })],
+      nodes: [node({ maxConcurrency: 8 }), node({ identity: 'node-b', maxConcurrency: null })],
+    })
+
+    const card = await screen.findByRole('region', { name: 'Processing now' })
+    await within(card).findByText('a.first')
+    await waitFor(() => expect(view.requests.some((request) => request.path === 'jobs/nodes')).toBe(true))
+    await act(() => vi.advanceTimersByTimeAsync(50))
+
+    expect(within(card).getByText('1 running')).toBeTruthy()
+    expect(within(card).queryByText(/worker/)).toBeNull()
+  })
+
+  it('keeps Processing now as it is when the nodes do not answer, with no error in the card', async () => {
+    const view = open({
+      runs: [run('InProgress', { function: 'a.first' })],
+      extra: (request) => {
+        if (request.path === 'jobs/nodes') {
+          throw new DashboardApiError(503, 'The Jobs store did not answer. Try again.')
+        }
+
+        return undefined
+      },
+    })
+
+    const card = await screen.findByRole('region', { name: 'Processing now' })
+    await within(card).findByText('a.first')
+    await waitFor(() => expect(view.requests.some((request) => request.path === 'jobs/nodes')).toBe(true))
+    await act(() => vi.advanceTimersByTimeAsync(50))
+
+    expect(within(card).getByText('1 running')).toBeTruthy()
+    expect(within(card).queryByText(/worker/)).toBeNull()
+    expect(within(card).queryByRole('alert')).toBeNull()
+  })
+
   it('cancels the in-progress run its Cancel sits beside, after the confirm', async () => {
     const actor = user()
     const first = run('InProgress', { function: 'a.first' })
@@ -221,7 +275,7 @@ describe('jobs dashboard', () => {
 
   it('refreshes every section from Refresh while live updates are stopped', async () => {
     const view = open({ runs: [run('InProgress')], cronJobs: [cronJob()], counts: { InProgress: 1 }, figures })
-    const paths = ['counts', 'overview', 'needs-you', 'jobs/runs', 'jobs/cron-jobs']
+    const paths = ['counts', 'overview', 'needs-you', 'jobs/runs', 'jobs/cron-jobs', 'jobs/nodes']
     const reads = () => paths.map((path) => view.requests.filter((request) => request.path === path).length)
 
     await waitFor(() => expect(reads().every((count) => count > 0)).toBe(true))
@@ -635,8 +689,7 @@ describe('jobs dashboard runs per day', () => {
     const view = open({})
 
     const card = await screen.findByRole('region', { name: 'Runs per day' })
-    await within(card).findByRole('img', { name: /^Runs per day by status/ })
-    await actor.click(within(card).getByRole('button', { name: '30 days' }))
+    await actor.click(await within(card).findByRole('button', { name: '30 days' }))
 
     await waitFor(() =>
       expect(view.requests.filter((request) => request.path === 'jobs/series/daily').at(-1)?.query).toEqual({

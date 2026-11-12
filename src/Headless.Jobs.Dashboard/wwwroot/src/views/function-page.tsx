@@ -34,7 +34,7 @@ export default function FunctionPage() {
 
         return (
           <>
-            <StaleNotice what="this function" onRefresh={() => void functions.refetch()} />
+            <StaleNotice what="this function" onRefresh={() => void functions.refetch()} failed={functions.isError} />
             <FunctionPanel item={item} page />
           </>
         )

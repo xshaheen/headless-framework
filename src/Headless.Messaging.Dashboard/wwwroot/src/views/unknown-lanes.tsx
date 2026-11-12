@@ -9,6 +9,7 @@ import {
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { DataTable } from '@headless/dashboard-sdk/table'
+import { ReceivedIcon } from '@headless/dashboard-sdk/icons'
 import { AttentionGaps, CellText, MessagingStats, useMessagingAttention } from '../parts.tsx'
 
 /** `[{node}:]unknown-lane:{store}:{kind}`; the store and kind are read from the end, as a node name may hold a colon. */
@@ -62,10 +63,11 @@ export default function UnknownLanesView() {
           <AttentionGaps stale={false} unavailable={unavailable} onRetry={() => void answer.refetch()} />
           <DataTable
             label="Unknown lanes"
-            viewId="messaging.unknown-lanes"
             frame={frame}
             rows={rows}
             // Only an answer from every source shows that no row sits on an unknown lane.
+            emptyIcon={ReceivedIcon}
+            emptyTitle="No unknown lanes"
             emptyState={
               complete
                 ? 'Every stored row is on a lane some consumer registers.'

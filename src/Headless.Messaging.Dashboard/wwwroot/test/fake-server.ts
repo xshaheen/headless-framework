@@ -6,10 +6,12 @@ import { vi } from 'vitest'
 import type { MessageKind, MessageRow } from '../src/messages.ts'
 import messaging from '../src/module.ts'
 import type {
+  MessagingBacklog,
   MessagingCircuit,
   MessagingConsumer,
   MessagingContract,
   MessagingNodeList,
+  MessagingProviders,
   RealtimeMetrics,
 } from '../src/parts.tsx'
 import type { HourlyHistory } from '../src/insight.tsx'
@@ -146,6 +148,8 @@ export interface FakeServer {
   consumers?: MessagingConsumer[]
   contracts?: MessagingContract[]
   circuits?: MessagingCircuit[]
+  backlog?: MessagingBacklog
+  providers?: MessagingProviders
   scheduled?: ScheduledList
   realtime?: RealtimeMetrics
   hourly?: HourlyHistory
@@ -178,6 +182,8 @@ export function server({
   consumers = [consumer],
   contracts = [],
   circuits = [],
+  backlog = { asOf: now.toISOString(), stores: [], unavailable: [] },
+  providers = { transports: {}, outboxes: [] },
   scheduled = { store: 'primary', supported: true, items: [], totalCount: 0 },
   realtime = { seconds: [], publishedPerSecond: [], consumedPerSecond: [], consumeElapsedMs: [] },
   hourly = { interval: 'PT1H', zone: 'UTC', asOf: now.toISOString(), hourStarts: [], stores: [], unavailable: [] },
@@ -239,6 +245,10 @@ export function server({
         return { items: contracts }
       case 'messaging/circuits':
         return { items: circuits }
+      case 'messaging/backlog':
+        return backlog
+      case 'messaging/providers':
+        return providers
       case 'messaging/scheduled':
         return scheduled
       case 'messaging/metrics/realtime':

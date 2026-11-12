@@ -14,7 +14,7 @@ import { DateRangeField } from '../../src/components/table/date-range-field.tsx'
 import type { TimeRange } from '../../src/date-range/time-range.ts'
 import { useListRange } from '../../src/date-range/use-time-range.ts'
 import { SearchField } from '../../src/components/table/search-field.tsx'
-import { rowHeights } from '../../src/components/table/density.tsx'
+import { DensityControl, rowHeights } from '../../src/components/density.tsx'
 import { DashboardProvider, ModuleScope } from '../../src/context.tsx'
 import type { ApiRequest } from '../../src/data/api.ts'
 import { createDashboardClient } from '../../src/data/client.tsx'
@@ -149,7 +149,7 @@ describe('data table', () => {
     const user = userEvent.setup()
     render(withDashboard(<ListView selectionMode="multiple" />))
 
-    // The filter, then the grid's one tab stop: a list with no view id offers no density toggle between them.
+    // The filter, then the grid's one tab stop: the list puts no control of its own between them.
     await user.click(screen.getByRole('textbox', { name: 'Filter' }))
     await user.tab()
     expect(document.activeElement).toBe(row(/#1/))
@@ -621,19 +621,30 @@ describe('virtualized keyset table', () => {
     }
   })
 
-  it('remembers compact density for the view across a reload', async () => {
+  it('lays its rows out at the density the account menu chose, and remembers the choice', async () => {
     const user = userEvent.setup()
-    const table = () => <DataTable label="Runs" viewId="diag.runs" rows={runs(5)} columns={runColumns} emptyState="No runs yet." />
-    const first = render(withDashboard(table()))
 
-    await user.click(screen.getByRole('button', { name: 'Compact' }))
+    async function choose(density: 'Comfortable' | 'Compact') {
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Row density' }), density)
+    }
+
+    render(
+      withDashboard(
+        <>
+          <DensityControl />
+          <DataTable label="Runs" rows={runs(5)} columns={runColumns} emptyState="No runs yet." />
+        </>,
+      ),
+    )
+    expect(row(/^r1\b/).parentElement?.style.height).toBe('34px')
+
+    await choose('Compact')
     expect(row(/^r1\b/).parentElement?.style.height).toBe('28px')
-    first.unmount()
+    expect(localStorage.getItem('headless-dashboard:density')).toBe('compact')
 
-    render(withDashboard(table()))
-
-    expect(screen.getByRole('button', { name: 'Compact' }).getAttribute('aria-pressed')).toBe('true')
-    expect(row(/^r1\b/).parentElement?.style.height).toBe('28px')
+    // The choice is one for every list, so it is put back for the tests that follow.
+    await choose('Comfortable')
+    expect(row(/^r1\b/).parentElement?.style.height).toBe('34px')
   })
 
   /** A page that resolves when the test says so, as a slow server answers. */

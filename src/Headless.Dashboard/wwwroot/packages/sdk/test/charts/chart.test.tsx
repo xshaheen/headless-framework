@@ -279,12 +279,28 @@ describe('Chart', () => {
     )
   })
 
-  it('labels an empty range on the scale its grid is drawn at, not zero on every line', () => {
+  it('says a range of zeros is empty in words, and draws no axes over nothing', () => {
     renderChart({ ...days, series: days.series.map((item) => ({ ...item, points: item.points.map(() => 0) })) })
 
-    expect(screen.getByText('2')).toBeTruthy()
-    expect(screen.getByText('1')).toBeTruthy()
-    expect(screen.getAllByText('0')).toHaveLength(1)
+    expect(screen.getByText('No runs in this range')).toBeTruthy()
+    expect(screen.queryByRole('img')).toBeNull()
+  })
+
+  it('draws a measurement with no measured neighbour as a dot, since no line reaches it', () => {
+    const { container } = renderChart({
+      ...rate,
+      series: [{ name: 'Consume time', tone: 'proc', points: [null, null, 40, null, null, 12, 14, null] }],
+    })
+
+    // The lone 40 is a dot; 12 and 14 are joined by a line and need none.
+    expect(container.querySelectorAll('circle')).toHaveLength(1)
+  })
+
+  it('says a range the server measured nothing in is empty too', () => {
+    renderChart({ ...days, series: days.series.map((item) => ({ ...item, points: item.points.map(() => null) })) })
+
+    expect(screen.getByText('No runs in this range')).toBeTruthy()
+    expect(screen.queryByRole('img')).toBeNull()
   })
 
   it('keeps every axis label a whole count when the series holds counts', () => {

@@ -47,7 +47,7 @@ describe('jobs servers', () => {
     await waitFor(() => expect(reads()).toBe(before + 1))
   })
 
-  it('lists each server’s role, state, concurrency, running count, last beat, and claimed functions', async () => {
+  it('lists each server’s role, state, busy workers, last beat, and claimed functions', async () => {
     open({ nodes }, { path: 'nodes' })
 
     const row = await screen.findByRole('row', { name: /node-a/ })
@@ -55,24 +55,48 @@ describe('jobs servers', () => {
       'Server',
       'Role',
       'State',
-      'Max concurrency',
-      'Running',
+      'Workers',
       'Last beat',
       'Claimed functions',
     ])
     const cells = [...row.children].map((cell) => cell.textContent)
-    expect(cells).toEqual(['node-aThis node', 'api', 'Alive', '16', '2', '10 sec. ago', 'billing.chargebilling.refund'])
+    expect(cells).toEqual([
+      'node-aThis node',
+      'api',
+      'Alive',
+      '2 of 16 busy',
+      '10 sec. ago',
+      'billing.chargebilling.refund',
+    ])
 
     const peer = screen.getByRole('row', { name: /node-b/ })
     expect([...peer.children].map((cell) => cell.textContent)).toEqual([
       'node-b',
       '',
       'Suspected',
-      'Not published',
-      '500+',
+      '500+ busy · Not published',
       'Not tracked',
       'No run filter published',
     ])
+  })
+
+  it('meters a server’s busy workers against its max concurrency, and draws none for a server that published none', async () => {
+    const capped = node({ identity: 'node-c', maxConcurrency: 14, running: 200, runningCapped: true })
+    open({ nodes: [...nodes, capped] }, { path: 'nodes' })
+
+    const meter = within(await screen.findByRole('row', { name: /node-a/ })).getByRole('meter', {
+      name: 'Workers of node-a',
+    })
+    expect(meter.getAttribute('aria-valuenow')).toBe('2')
+    expect(meter.getAttribute('aria-valuemax')).toBe('16')
+    expect(meter.getAttribute('aria-valuetext')).toBe('2 of 16 busy')
+
+    // A capped count keeps its plus, and a server with no published limit has no scale to draw.
+    const busiest = within(screen.getByRole('row', { name: /node-c/ })).getByRole('meter', {
+      name: 'Workers of node-c',
+    })
+    expect(busiest.getAttribute('aria-valuetext')).toBe('200+ of 14 busy')
+    expect(within(screen.getByRole('row', { name: /node-b/ })).queryByRole('meter')).toBeNull()
   })
 
   it('alerts the serving node’s last host exception on the page', async () => {

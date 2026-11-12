@@ -36,7 +36,7 @@ export default function RunPage() {
     <QueryState query={run} label="Loading the run" rows={4}>
       {(data) => (
         <>
-          <StaleNotice what="this run" onRefresh={() => void run.refetch()} />
+          <StaleNotice what="this run" onRefresh={() => void run.refetch()} failed={run.isError} />
           <RunPanel run={data} pending={pending} page />
         </>
       )}

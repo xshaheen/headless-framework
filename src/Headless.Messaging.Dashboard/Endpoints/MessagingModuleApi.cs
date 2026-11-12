@@ -16,8 +16,9 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// The Messaging module's own API at <c>{base}/api/messaging</c>: published and received lists over every store,
-/// message detail, the generations of a received message, scheduled deliveries, the operator ledger, consumers and contracts from the host
-/// manifest, circuit breakers, nodes, and this node's real-time throughput. Every call is a read, so a viewer without
+/// message detail, the generations of a received message, scheduled deliveries, the operator ledger, consumers, contracts,
+/// and providers from the host manifest, circuit breakers, each store's backlog, nodes, and this node's real-time
+/// throughput. Every call is a read, so a viewer without
 /// a named operator can make it.
 /// </summary>
 /// <remarks>
@@ -68,6 +69,8 @@ internal sealed class MessagingModuleApi(
         routes.MapGet("/consumers", _Consumers);
         routes.MapGet("/contracts", _Contracts);
         routes.MapGet("/circuits", _Circuits);
+        routes.MapGet("/backlog", _BacklogAsync);
+        routes.MapGet("/providers", _Providers);
         local.MapGet("/nodes", _NodesAsync);
         // Ping changes nothing, yet it makes this node call others, so a viewer may not start one.
         endpoints.RequireOperate(local.MapPost("/nodes/ping", _PingAsync));
@@ -301,6 +304,7 @@ internal sealed class MessagingModuleApi(
         var (rows, taken) = MergedListCursor.Merge(pages, query, take);
         var next = cursor.Advance(query, targets, pages, taken);
         var incomplete = search is not null && answers.TimedOut.Count > 0;
+        var reasons = await _ReadReasonsAsync(type, rows, cancellationToken).ConfigureAwait(false);
 
         return TypedResults.Json(
             new MessagingRowList(
@@ -310,7 +314,10 @@ internal sealed class MessagingModuleApi(
                             MessagingRowView.From(
                                 new MessagingObjectId(_stores.NodeName, row.Store.Name, row.View.StorageId),
                                 row.View
-                            )
+                            ) with
+                            {
+                                Reason = reasons.GetValueOrDefault((row.Store.Name, row.View.StorageId)),
+                            }
                         ),
                 ],
                 answers.Answered.Sum(static answer => answer.Value.count.Count),
@@ -323,6 +330,51 @@ internal sealed class MessagingModuleApi(
             ),
             MessagingDashboardJsonContext.Default.MessagingRowList
         );
+    }
+
+    // A list row carries no failure text, so the page's failed rows are read once more by id, one read per store. The
+    // read is an extra: a store that fails or runs out of time here leaves its rows without a reason, never the list
+    // without its rows.
+    private async Task<IReadOnlyDictionary<(string Store, Guid StorageId), string>> _ReadReasonsAsync(
+        MessageType type,
+        IReadOnlyList<(MessagingStore Store, MessageView View)> rows,
+        CancellationToken cancellationToken
+    )
+    {
+        var failed = rows.Where(static row => row.View.StatusName == StatusName.Failed)
+            .GroupBy(static row => row.Store, static row => row.View.StorageId)
+            .ToDictionary(static group => group.Key, static group => (IReadOnlyList<Guid>)[.. group]);
+        var reasons = new Dictionary<(string Store, Guid StorageId), string>();
+
+        if (failed.Count == 0)
+        {
+            return reasons;
+        }
+
+        var answers = await _stores
+            .ReadEachAsync(
+                failed.Keys,
+                async (store, token) =>
+                    type == MessageType.Publish
+                        ? await store.Monitoring.GetPublishedMessagesAsync(failed[store], token).ConfigureAwait(false)
+                        : await store.Monitoring.GetReceivedMessagesAsync(failed[store], token).ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        foreach (var (store, messages) in answers.Answered)
+        {
+            foreach (var message in messages)
+            {
+                // The row failed when the list read it; one that has moved on since has no failure to name.
+                if (MessagingViews.ReasonOf(StatusName.Failed, message.ExceptionInfo) is { } reason)
+                {
+                    reasons[(store.Name, message.StorageId)] = reason;
+                }
+            }
+        }
+
+        return reasons;
     }
 
     private async Task<Results<JsonHttpResult<MessagingMessageDetail>, NotFound>> _GetMessageAsync(
@@ -354,7 +406,10 @@ internal sealed class MessagingModuleApi(
             new MessagingMessageDetail(
                 view is null
                     ? MessagingRowView.From(found.Id, type, found.Message)
-                    : MessagingRowView.From(found.Id, view),
+                    : MessagingRowView.From(found.Id, view) with
+                    {
+                        Reason = MessagingViews.ReasonOf(view.StatusName, found.Message.ExceptionInfo),
+                    },
                 new Dictionary<string, string?>(found.Message.Origin.Headers, StringComparer.Ordinal),
                 found.Message.Content,
                 found.Message.ExceptionInfo
@@ -610,9 +665,9 @@ internal sealed class MessagingModuleApi(
     private static MessagingScheduledList _Unsupported(MessagingStore store, NotSupportedException exception) =>
         new(store.Name, Supported: false, [], TotalCount: 0, exception.Message);
 
-    private IResult _Consumers() => _ManifestPart("consumers");
+    private FileContentHttpResult _Consumers() => _ManifestPart("consumers");
 
-    private IResult _Contracts() => _ManifestPart("messages");
+    private FileContentHttpResult _Contracts() => _ManifestPart("messages");
 
     private JsonHttpResult<MessagingCircuitList> _Circuits()
     {
@@ -640,6 +695,37 @@ internal sealed class MessagingModuleApi(
         return TypedResults.Json(
             new MessagingCircuitList(items),
             MessagingDashboardJsonContext.Default.MessagingCircuitList
+        );
+    }
+
+    // Every store's backlog, read at once. A store that fails or does not answer in time is named, so a missing store
+    // never reads as an empty backlog.
+    private async Task<JsonHttpResult<MessagingBacklog>> _BacklogAsync(CancellationToken cancellationToken)
+    {
+        var asOf = (_services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        var answers = await _stores
+            .ReadEachAsync(
+                _stores.All,
+                static async (store, token) => await store.Monitoring.GetBacklogAsync(token).ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return TypedResults.Json(
+            new MessagingBacklog(
+                asOf,
+                [
+                    .. answers.Answered.Select(static answer => new MessagingStoreBacklog(
+                        answer.Store.Name,
+                        answer.Value.PublishedPending,
+                        answer.Value.OldestPublishedPendingAge?.TotalSeconds,
+                        answer.Store.HoldsReceived ? answer.Value.ReceivedPending : null,
+                        answer.Store.HoldsReceived ? answer.Value.OldestReceivedPendingAge?.TotalSeconds : null
+                    )),
+                ],
+                answers.Unavailable
+            ),
+            MessagingDashboardJsonContext.Default.MessagingBacklog
         );
     }
 
@@ -853,27 +939,11 @@ internal sealed class MessagingModuleApi(
         );
     }
 
-    // The host manifest's messaging section is the authority on what this host registered, so the consumer and
-    // contract views read it rather than a second projection of the registry.
-    private IResult _ManifestPart(string property)
+    // The host manifest's messaging section is the authority on what this host registered, so the consumer, contract,
+    // and provider views read it rather than a second projection of the registry.
+    private FileContentHttpResult _ManifestPart(string property)
     {
-        var section = _services
-            .GetServices<IHostManifestSection>()
-            .FirstOrDefault(static section => string.Equals(section.Name, "messaging", StringComparison.Ordinal));
-
-        if (section is null)
-        {
-            return TypedResults.Content("{\"items\":[]}", "application/json");
-        }
-
-        var buffer = new ArrayBufferWriter<byte>();
-
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            section.Write(writer);
-        }
-
-        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        using var manifest = _ReadManifest();
         var output = new ArrayBufferWriter<byte>();
 
         using (var writer = new Utf8JsonWriter(output))
@@ -881,7 +951,7 @@ internal sealed class MessagingModuleApi(
             writer.WriteStartObject();
             writer.WritePropertyName("items");
 
-            if (document.RootElement.TryGetProperty(property, out var part))
+            if (manifest?.RootElement.TryGetProperty(property, out var part) == true)
             {
                 part.WriteTo(writer);
             }
@@ -895,5 +965,66 @@ internal sealed class MessagingModuleApi(
         }
 
         return TypedResults.Bytes(output.WrittenMemory.ToArray(), "application/json");
+    }
+
+    // What this host publishes through: the broker of each lane and the storage provider of each outbox, by name only,
+    // as the manifest writes them. A host without a transport or storage has an empty part, never a missing one.
+    private FileContentHttpResult _Providers()
+    {
+        using var manifest = _ReadManifest();
+        var output = new ArrayBufferWriter<byte>();
+
+        using (var writer = new Utf8JsonWriter(output))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("transports");
+
+            if (manifest?.RootElement.TryGetProperty("transports", out var transports) == true)
+            {
+                transports.WriteTo(writer);
+            }
+            else
+            {
+                writer.WriteStartObject();
+                writer.WriteEndObject();
+            }
+
+            writer.WritePropertyName("outboxes");
+
+            if (manifest?.RootElement.TryGetProperty("outboxes", out var outboxes) == true)
+            {
+                outboxes.WriteTo(writer);
+            }
+            else
+            {
+                writer.WriteStartArray();
+                writer.WriteEndArray();
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return TypedResults.Bytes(output.WrittenMemory.ToArray(), "application/json");
+    }
+
+    private JsonDocument? _ReadManifest()
+    {
+        var section = _services
+            .GetServices<IHostManifestSection>()
+            .FirstOrDefault(static section => string.Equals(section.Name, "messaging", StringComparison.Ordinal));
+
+        if (section is null)
+        {
+            return null;
+        }
+
+        var buffer = new ArrayBufferWriter<byte>();
+
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            section.Write(writer);
+        }
+
+        return JsonDocument.Parse(buffer.WrittenMemory);
     }
 }

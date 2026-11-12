@@ -15,7 +15,7 @@ namespace Tests.Module;
 
 /// <summary>
 /// The Messaging module's history reads: the hourly series of every store, the inbox generations of one received
-/// message, and the consumers of the host manifest with their implementation.
+/// message, the consumers of the host manifest with their implementation, each store's backlog, and the providers.
 /// </summary>
 public sealed class MessagingHistoryApiTests : TestBase
 {
@@ -216,6 +216,120 @@ public sealed class MessagingHistoryApiTests : TestBase
         var message = consumer.GetProperty("messages")[0];
         message.GetProperty("consumerType").GetString().Should().Be(typeof(OrderPlacedConsumer).FullName);
         message.GetProperty("handlerMethod").GetString().Should().Be("ConsumeAsync");
+    }
+
+    [Fact]
+    public async Task should_serve_each_stores_backlog_and_name_a_store_that_fails()
+    {
+        // given: the main store holds one published and one received row still waiting, and the additional outbox
+        // fails every read. The clock stays put: moving it would fire the host's own dispatch of the waiting rows.
+        await using var app = await MessagingModuleTestHost.StartAsync(
+            _time,
+            AbortToken,
+            configure: services =>
+                services.AddSingleton(provider =>
+                    _Stores(provider.GetRequiredService<IDataStorage>(), _FailingOutbox())
+                )
+        );
+        var storage = app.Services.GetRequiredService<IDataStorage>();
+        await MessagingRows.PublishedAsync(storage, "order-1", StatusName.Scheduled, AbortToken);
+        await storage.StoreReceivedMessageAsync(
+            MessagingRows.Name,
+            MessagingRows.Consumer,
+            MessagingRows.Medium("order-2"),
+            AbortToken
+        );
+        using var client = app.GetTestClient();
+
+        // when
+        var backlog = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + "/backlog",
+            AbortToken
+        );
+
+        // then: the main store is counted with the age of its oldest row; the outbox is named, never shown as empty
+        backlog.GetProperty("asOf").GetDateTimeOffset().Should().Be(_time.GetUtcNow());
+        var primary = backlog.GetProperty("stores").EnumerateArray().Should().ContainSingle().Subject;
+        primary.GetProperty("store").GetString().Should().Be("primary");
+        primary.GetProperty("publishedPending").GetInt64().Should().Be(1);
+        primary.GetProperty("oldestPublishedSeconds").GetDouble().Should().Be(0);
+        primary.GetProperty("receivedPending").GetInt64().Should().Be(1);
+        primary.GetProperty("oldestReceivedSeconds").GetDouble().Should().Be(0);
+        backlog
+            .GetProperty("unavailable")
+            .EnumerateArray()
+            .Select(static store => store.GetString())
+            .Should()
+            .Equal(_Outbox);
+    }
+
+    [Fact]
+    public async Task should_serve_no_received_backlog_for_an_additional_outbox()
+    {
+        // given: an additional outbox with four published rows waiting, the oldest for 90 seconds
+        var outbox = _QuietStore();
+        outbox
+            .GetMonitoringApi()
+            .GetBacklogAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new BacklogView
+                {
+                    PublishedPending = 4,
+                    ReceivedPending = 0,
+                    OldestPublishedPendingAge = TimeSpan.FromSeconds(90),
+                }
+            );
+        await using var app = await MessagingModuleTestHost.StartAsync(
+            _time,
+            AbortToken,
+            configure: services =>
+                services.AddSingleton(provider => _Stores(provider.GetRequiredService<IDataStorage>(), outbox))
+        );
+        using var client = app.GetTestClient();
+
+        // when
+        var backlog = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + "/backlog",
+            AbortToken
+        );
+
+        // then: an outbox holds no received rows, so it serves no received figures; an empty main store has no oldest
+        var stores = backlog.GetProperty("stores");
+        stores.GetArrayLength().Should().Be(2);
+        stores[0].GetProperty("publishedPending").GetInt64().Should().Be(0);
+        stores[0].GetProperty("receivedPending").GetInt64().Should().Be(0);
+        stores[0].TryGetProperty("oldestPublishedSeconds", out _).Should().BeFalse();
+        stores[1].GetProperty("store").GetString().Should().Be(_Outbox);
+        stores[1].GetProperty("publishedPending").GetInt64().Should().Be(4);
+        stores[1].GetProperty("oldestPublishedSeconds").GetDouble().Should().Be(90);
+        stores[1].TryGetProperty("receivedPending", out _).Should().BeFalse();
+        stores[1].TryGetProperty("oldestReceivedSeconds", out _).Should().BeFalse();
+        backlog.GetProperty("unavailable").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_serve_the_broker_of_each_lane_and_the_storage_of_each_outbox()
+    {
+        // given: a host on the in-memory transport and the in-memory store
+        await using var app = await MessagingModuleTestHost.StartAsync(_time, AbortToken);
+        using var client = app.GetTestClient();
+
+        // when
+        var providers = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + "/providers",
+            AbortToken
+        );
+
+        // then: each lane names its broker, and the main outbox its storage provider, by name only
+        var transports = providers.GetProperty("transports");
+        transports.GetProperty("bus").GetString().Should().Be("in_memory");
+        transports.GetProperty("queue").GetString().Should().Be("in_memory");
+        var outbox = providers.GetProperty("outboxes").EnumerateArray().Should().ContainSingle().Subject;
+        outbox.GetProperty("name").GetString().Should().Be("primary");
+        outbox.GetProperty("storage").GetString().Should().NotBeNullOrEmpty();
     }
 
     private static int?[] _Series(System.Text.Json.JsonElement series, string status) =>

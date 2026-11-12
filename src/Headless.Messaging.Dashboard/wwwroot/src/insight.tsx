@@ -60,6 +60,7 @@ export function LiveThroughput() {
                 label="Message rate"
                 unit="messages/s"
                 unitOne="message/s"
+                empty="No messages in the last five minutes"
                 asOf={(last + 1) * 1_000}
                 zone={format.timeZone}
                 start={first * 1_000}
@@ -76,6 +77,7 @@ export function LiveThroughput() {
                 kind="line"
                 label="Consume latency"
                 unit="ms"
+                empty="No message was consumed in the last five minutes"
                 asOf={(last + 1) * 1_000}
                 zone={format.timeZone}
                 start={first * 1_000}

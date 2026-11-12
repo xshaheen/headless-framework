@@ -49,3 +49,53 @@ export function Mono({ children }: { children: ReactNode }) {
     </bdi>
   )
 }
+
+/**
+ * The class name of a .NET type without its namespace: `System.TimeoutException` reads `TimeoutException`. A generic
+ * type's arguments carry dots of their own, so the name is read from what precedes them.
+ */
+function shortTypeName(type: string) {
+  const argumentsAt = type.indexOf('[')
+  const name = argumentsAt < 0 ? type : type.slice(0, argumentsAt)
+
+  return name.slice(name.lastIndexOf('.') + 1) || type
+}
+
+export interface FailureReasonProps {
+  /** The exception type, with or without its namespace; without one, the reason is the message alone. */
+  type?: string | null
+  message?: string | null
+}
+
+/**
+ * A failure in one line for a list cell: the exception type in the failure colour, without its namespace, then its
+ * message. The whole text, namespace included, is the title, for a cell that had to shorten. It draws nothing without
+ * a type and a message, so pass a row with neither `undefined` and let the table draw its blank.
+ */
+export function FailureReason({ type, message }: FailureReasonProps) {
+  if (!type && !message) {
+    return null
+  }
+
+  return (
+    <span title={[type, message].filter(Boolean).join(': ')}>
+      {type ? (
+        <bdi className="hd-mono text-destructive" dir="ltr">
+          {shortTypeName(type)}
+        </bdi>
+      ) : null}
+      {type && message ? ': ' : null}
+      {message}
+    </span>
+  )
+}
+
+/**
+ * Splits a stored failure line, `Type: message`, into its parts. A line that does not open with a type name, such as
+ * a reason the store wrote itself, is all message.
+ */
+export function splitFailure(line: string): { type?: string; message: string } {
+  const match = /^([A-Za-z_][\w.`+]*(?:Exception|Error)): ?(.*)$/s.exec(line)
+
+  return match ? { type: match[1], message: match[2] ?? '' } : { message: line }
+}

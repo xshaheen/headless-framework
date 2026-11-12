@@ -109,7 +109,8 @@ describe('jobs runs list', () => {
     const actor = user()
     list({ runs: [run('Failed', { function: 'a.failed' })] }, '?status=Failed&function=a.none')
 
-    expect(await screen.findByText(/No runs match\. Clear filters or widen the time range\./)).toBeTruthy()
+    expect(await screen.findByText('No runs match')).toBeTruthy()
+    expect(screen.getByText('Clear the filters or widen the time range.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Clear function filter' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Kind/ })).toBeNull()
 
@@ -122,7 +123,7 @@ describe('jobs runs list', () => {
   it('says a state list with no runs is empty in its own words', async () => {
     list({ runs: [run('Succeeded')] }, '?status=Cancelled')
 
-    expect(await screen.findByText('No cancelled runs.')).toBeTruthy()
+    expect(await screen.findByText('No cancelled runs')).toBeTruthy()
   })
 
   it('shows a failed load with Retry, never an empty list', async () => {
@@ -165,6 +166,21 @@ describe('jobs runs list', () => {
     const row = await screen.findByRole('row', { name: /sandbox\.chain-step-charge-card-and-notify/ })
     const name = within(row).getByText('sandbox.chain-step-charge-card-and-notify')
     expect(name.closest('[title]')?.getAttribute('title')).toBe('sandbox.chain-step-charge-card-and-notify')
+  })
+
+  it('counts a run’s attempts out of those it may make, as its panel does, and leaves a run not picked up yet blank', async () => {
+    const failed = run('Failed', { function: 'a.failed', retryCount: 1, retries: 3 })
+    list({ runs: [failed, run('Queued', { function: 'a.queued', retries: 3 })] })
+
+    const row = await screen.findByRole('row', { name: /a\.failed/ })
+    expect(screen.getByRole('columnheader', { name: 'Attempts' })).toBeTruthy()
+    expect(screen.queryByRole('columnheader', { name: 'Retries' })).toBeNull()
+    expect(within(row).getByText('2 of 4')).toBeTruthy()
+    expect(within(screen.getByRole('row', { name: /a\.queued/ })).queryByText(/\d of \d/)).toBeNull()
+
+    await user().click(row)
+    await user().click(within(panel(failed.id)).getByRole('tab', { name: 'Overview' }))
+    expect(field(panel(failed.id), 'Attempt')).toBe('Attempt 2 of 4')
   })
 
   it('opens a run in the docked panel, in the URL as open, with its exception and its attempts newest first', async () => {
@@ -783,6 +799,25 @@ describe('jobs failed list', () => {
         .getByRole('button', { name: /export\.ledger/ })
         .getAttribute('aria-pressed'),
     ).toBe('true')
+  })
+
+  it('leads a reason with the exception’s short type name, and keeps the full text on hover', async () => {
+    const typed = run('Failed', {
+      function: 'a.typed',
+      exceptionType: 'System.TimeoutException',
+      exceptionMessage: 'Gateway timeout\n   at Billing.Charge()',
+    })
+    const stored = run('Failed', { function: 'a.plain', exceptionMessage: 'Lost by its node' })
+    list({ runs: [typed, stored] }, '?status=Failed')
+
+    const type = within(await screen.findByRole('row', { name: /a\.typed/ })).getByText('TimeoutException')
+    const reason = type.closest('[title]')
+    expect(reason?.textContent).toBe('TimeoutException: Gateway timeout')
+    expect(reason?.getAttribute('title')).toBe('System.TimeoutException: Gateway timeout')
+
+    // A reason the store wrote without a type reads as the message alone, in the cell's own tone.
+    const plain = within(screen.getByRole('row', { name: /a\.plain/ })).getByText('Lost by its node')
+    expect(plain.getAttribute('title')).toBe('Lost by its node')
   })
 
   it('presses only the chip of the function and fingerprint set, when two functions fail the same way', async () => {

@@ -11,6 +11,7 @@ import {
   Button,
   DetailPanel,
   EmptyState,
+  FailureReason,
   FilterChip,
   FilterChips,
   FilterSelect,
@@ -20,6 +21,7 @@ import {
   PageFrame,
   PageHeader,
   Skeleton,
+  splitFailure,
   StatusMark,
   usePageFrame,
   Timestamp,
@@ -42,6 +44,7 @@ import {
   type ListRange,
   type ListSort,
 } from '@headless/dashboard-sdk/table'
+import { PublishedIcon, ReceivedIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   CellText,
@@ -351,6 +354,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
                       kind={kind}
                       node={node}
                       filter={filter}
+                      rows={items}
                       count={count ? format.count(count) : undefined}
                       onPick={setFilter}
                     />
@@ -455,7 +459,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
       }
       panel={panel}
     >
-      <StaleNotice what={`these ${kind} messages`} onRefresh={() => void list.refetch()} />
+      <StaleNotice what={`these ${kind} messages`} onRefresh={() => void list.refetch()} failed={list.isError} />
       {/* Said from a region that stays in the page: a banner that brought its own live region could go unheard. */}
       <Announcer
         message={[
@@ -482,7 +486,6 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
             // A new filter is a new list: the held rows and the scroll start again.
             key={filterKey}
             kind={kind}
-            viewId={viewId}
             frame={frame}
             messages={messages}
             matches={matches}
@@ -493,23 +496,27 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
             onSortChange={setSort}
             // An Operation's scope cannot say retrying or held, so those lists act on the checked rows only.
             onSelectAllMatching={scoped ? () => setAllMatching(true) : undefined}
-            emptyState={
-              incomplete ? (
-                // A search out of time that found nothing yet is not the same as no match.
-                'The search ran out of time before it found a match; results may be missing.'
-              ) : narrowed ? (
-                <span>
-                  {`No ${kind} messages match. `}
-                  <Button variant="ghost" onPress={clearFilters}>
-                    Clear filters
-                  </Button>
-                </span>
-              ) : all ? (
-                `No ${kind} messages yet. A row appears once a host ${kind === 'published' ? 'publishes' : 'receives'} a message.`
-              ) : (
-                `No ${state.title.toLowerCase()} ${kind} messages.`
-              )
+            emptyIcon={kind === 'published' ? PublishedIcon : ReceivedIcon}
+            emptyTitle={
+              incomplete
+                ? 'No match found in time'
+                : narrowed
+                  ? `No ${kind} messages match`
+                  : all
+                    ? `No ${kind} messages yet`
+                    : `No ${state.title.toLowerCase()} ${kind} messages`
             }
+            emptyState={
+              incomplete
+                ? // A search out of time that found nothing yet is not the same as no match.
+                  'The search ran out of time before it found a match; results may be missing.'
+                : narrowed
+                  ? 'Clear the filters to see every row.'
+                  : all
+                    ? `A row appears once a host ${kind === 'published' ? 'publishes' : 'receives'} a message.`
+                    : 'Nothing is in this state right now.'
+            }
+            emptyAction={narrowed && !incomplete ? <Button onPress={clearFilters}>Clear filters</Button> : undefined}
           />
         )}
       </QueryState>
@@ -594,7 +601,6 @@ function ListFilters({
 
 interface MessagesTableProps {
   kind: MessageKind
-  viewId: string
   frame: ReturnType<typeof usePageFrame>
   messages: ReturnType<typeof useDashboardKeysetList<MessageRow>>
   matches: (row: MessageRow) => boolean
@@ -605,11 +611,13 @@ interface MessagesTableProps {
   onSortChange: (sort: ListSort) => void
   onSelectAllMatching?: () => void
   emptyState: ReactNode
+  emptyIcon: IconComponent
+  emptyTitle: ReactNode
+  emptyAction?: ReactNode
 }
 
 function MessagesTable({
   kind,
-  viewId,
   frame,
   messages,
   matches,
@@ -620,20 +628,31 @@ function MessagesTable({
   onSortChange,
   onSelectAllMatching,
   emptyState,
+  emptyIcon,
+  emptyTitle,
+  emptyAction,
 }: MessagesTableProps) {
   const format = useFormat()
-  // The server serves a failure's fingerprint, not its exception, on a list row.
-  const causeColumn: DataTableColumn<MessageRow> = {
-    id: 'cause',
-    header: 'Cause',
-    cell: (row) => (
-      <CellText title={row.failureFingerprint}>
-        <Mono>{row.failureFingerprint ?? ''}</Mono>
-      </CellText>
-    ),
-    kind: 'id',
+  // A failed row reads by what it failed with. The fingerprint that groups its cause stands in for a row whose
+  // stored failure the server could not read, so the cell still tells two causes apart.
+  const reasonColumn: DataTableColumn<MessageRow> = {
+    id: 'reason',
+    header: 'Reason',
+    cell: (row) => {
+      const reason = failureOf(row)
+
+      if (reason) {
+        return <FailureReason {...reason} />
+      }
+
+      return row.failureFingerprint ? (
+        <CellText title={row.failureFingerprint}>
+          <Mono>{row.failureFingerprint}</Mono>
+        </CellText>
+      ) : undefined
+    },
     priority: 2,
-    width: '1.5fr',
+    width: '4fr',
   }
   const consumerColumn: DataTableColumn<MessageRow> = {
     id: 'consumer',
@@ -658,7 +677,6 @@ function MessagesTable({
   return (
     <DataTable
       label={kind === 'published' ? 'Published messages' : 'Received messages'}
-      viewId={viewId}
       frame={frame}
       rows={messages.rows}
       matches={matches}
@@ -670,6 +688,9 @@ function MessagesTable({
       matchingCount={onSelectAllMatching ? messages.count?.value : undefined}
       onSelectAllMatching={onSelectAllMatching}
       emptyState={emptyState}
+      emptyIcon={emptyIcon}
+      emptyTitle={emptyTitle}
+      emptyAction={emptyAction}
       sort={sort}
       onSortChange={onSortChange}
       columns={[
@@ -692,7 +713,7 @@ function MessagesTable({
           header: 'Message id',
           cell: (row) => (
             <CellText title={row.messageId}>
-              <Mono>{row.messageId ?? ''}</Mono>
+              <Mono>{idTail(row.messageId)}</Mono>
             </CellText>
           ),
           kind: 'id',
@@ -710,7 +731,7 @@ function MessagesTable({
           width: 130,
         },
         ...(kind === 'received' ? [consumerColumn] : [storeColumn]),
-        ...(failed ? [causeColumn] : []),
+        ...(failed ? [reasonColumn] : []),
         {
           id: 'retries',
           header: 'Retries',
@@ -732,25 +753,48 @@ function MessagesTable({
           // The Failed list shows when each row failed, while the server sorts by when it was added.
           ...(failed ? {} : { sortKey: 'added' }),
         },
-        {
-          id: 'exact',
-          header: failed ? 'Failed at, exact' : 'Added at',
-          cell: (row) => {
-            const at = failed ? (row.changedAt ?? row.added) : row.added
-
-            return (
-              <CellText title={format.exactTime(at)}>
-                <Mono>{format.exactTime(at)}</Mono>
-              </CellText>
-            )
-          },
-          kind: 'time',
-          priority: 2,
-          width: 250,
-        },
+        // The Failed list gives this column's width to the reason: the row's relative time already shows the exact
+        // one on hover, focus, and press, and what failed is what tells two failed rows apart.
+        ...(failed
+          ? []
+          : [
+              {
+                id: 'exact',
+                header: 'Added at',
+                cell: (row: MessageRow) => (
+                  <CellText title={format.exactTime(row.added)}>
+                    <Mono>{format.exactTime(row.added)}</Mono>
+                  </CellText>
+                ),
+                kind: 'time' as const,
+                priority: 2 as const,
+                width: 250,
+              },
+            ]),
       ]}
     />
   )
+}
+
+/**
+ * The end of a message id, which is where two ids differ: a time-ordered id shares its start with every message of
+ * the same second, so a cell cut at its end showed one prefix down the whole column. The full id is the cell's title.
+ */
+function idTail(id: string | undefined): string {
+  if (!id) {
+    return ''
+  }
+
+  // A short id, such as an application's own `order-8452`, fits the cell and reads whole.
+  return id.length > 20 ? `…${id.slice(-8)}` : id
+}
+
+/**
+ * What a row failed with, as its type and message. A live change can leave an earlier reason on a row that has moved
+ * on, so only a failed row has one.
+ */
+function failureOf(row: Pick<MessageRow, 'status' | 'reason'>) {
+  return row.status === 'Failed' && row.reason ? splitFailure(row.reason) : undefined
 }
 
 /** The part of a `v{n}:{token}` fingerprint a chip shows: a 16-character hash shortened to 6, a fixed cause whole. */
@@ -762,18 +806,21 @@ function shortFingerprint(fingerprint: string): string {
 
 /**
  * The Failed list's causes: `All`, then one chip per failure group the server counts on this node, labelled by its
- * consumer or store and its fingerprint; the chip's title names the whole fingerprint.
+ * consumer or store and its cause; the chip's title names the whole fingerprint.
  */
 function FailureChips({
   kind,
   node,
   filter,
+  rows,
   count,
   onPick,
 }: {
   kind: MessageKind
   node: string
   filter: MessageFilter
+  /** The loaded rows, which name a group's cause by its exception type once one of the group's rows is among them. */
+  rows: readonly MessageRow[]
   count?: string
   onPick: (values: Partial<MessageFilter>) => void
 }) {
@@ -784,14 +831,15 @@ function FailureChips({
     // The local node's groups carry no node; a peer's carry its name, which may also be this node's own.
     const groupNode = group && local && group.node === local.name ? '' : group?.node
 
-    // A failure group carries no readable cause, and one consumer can fail several ways, so each chip also names its
-    // fingerprint: the first characters of a computed hash, or a fixed cause such as `expired` whole.
+    // One consumer can fail several ways, so each chip also names its cause. A failure group serves only the
+    // fingerprint, so the cause reads as the exception type of a loaded row with that fingerprint, and until one is
+    // loaded as the fingerprint itself: the first characters of a computed hash, or a fixed cause such as `expired`.
     return group && group.kind === kind && groupNode === node && group.fingerprint
       ? [
           {
             id: item.id,
             group,
-            label: `${(kind === 'received' ? group.consumer : group.store) || 'unknown'} · ${shortFingerprint(group.fingerprint)}`,
+            label: `${(kind === 'received' ? group.consumer : group.store) || 'unknown'} · ${causeOf(group.fingerprint, rows)}`,
             count: { value: item.count, capped: item.capped },
           },
         ]
@@ -828,6 +876,15 @@ function FailureChips({
       })}
     </FilterChips>
   )
+}
+
+/** A fingerprint's cause in words: the exception type a loaded row failed with, else the short fingerprint. */
+function causeOf(fingerprint: string, rows: readonly MessageRow[]) {
+  const type = rows
+    .flatMap((row) => (row.failureFingerprint === fingerprint ? [failureOf(row)?.type] : []))
+    .find(Boolean)
+
+  return type ? type.slice(type.lastIndexOf('.') + 1) : shortFingerprint(fingerprint)
 }
 
 function CheckedActions({

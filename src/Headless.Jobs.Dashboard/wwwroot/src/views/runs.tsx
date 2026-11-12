@@ -14,6 +14,7 @@ import {
   FilterSelect,
   FilterToolbar,
   LoadError,
+  FailureReason,
   Mono,
   PageFrame,
   PageHeader,
@@ -41,8 +42,10 @@ import {
   type TimeRange,
 } from '@headless/dashboard-sdk/date-range'
 import { DataTable, SearchField, type DataTableColumn, type ListSort } from '@headless/dashboard-sdk/table'
+import { RunsIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
+  attemptsCell,
   CellText,
   firstLine,
   JobsStats,
@@ -434,7 +437,7 @@ export default function RunsView() {
       }
       panel={panel}
     >
-      <StaleNotice what="these runs" onRefresh={() => void list.refetch()} />
+      <StaleNotice what="these runs" onRefresh={() => void list.refetch()} failed={list.isError} />
       <QueryState query={list} label="Loading runs" rows={6} shape="table">
         {() => (
           <RunsTable
@@ -449,18 +452,22 @@ export default function RunsView() {
             sort={listSort}
             onSortChange={sortBy}
             onSelectAllMatching={() => setAllMatching(true)}
+            emptyIcon={RunsIcon}
+            emptyTitle={narrowed ? 'No runs match' : state ? `No ${state.title.toLowerCase()} runs` : 'No runs yet'}
             emptyState={
+              narrowed
+                ? 'Clear the filters or widen the time range.'
+                : state
+                  ? 'Nothing is in this state right now.'
+                  : 'A run appears when a host schedules a time job or a cron job fires.'
+            }
+            emptyAction={
               narrowed ? (
-                <span>
-                  No runs match. Clear filters or widen the time range.{' '}
-                  <Button variant="ghost" onPress={clearFilters}>
-                    Clear filters
-                  </Button>
-                </span>
-              ) : state ? (
-                `No ${state.title.toLowerCase()} runs.`
+                <Button onPress={clearFilters}>Clear filters</Button>
               ) : (
-                'No runs yet. A run appears when a host schedules a time job or a cron job fires; add a time job here.'
+                <Button disabledReason={addReason} onPress={() => openCreate('time-job')}>
+                  Add time job
+                </Button>
               )
             }
           />
@@ -486,6 +493,9 @@ interface RunsTableProps {
   onSortChange: (sort: ListSort) => void
   onSelectAllMatching: () => void
   emptyState: ReactNode
+  emptyIcon: IconComponent
+  emptyTitle: ReactNode
+  emptyAction?: ReactNode
 }
 
 function RunsTable({
@@ -499,25 +509,46 @@ function RunsTable({
   onSortChange,
   onSelectAllMatching,
   emptyState,
+  emptyIcon,
+  emptyTitle,
+  emptyAction,
 }: RunsTableProps) {
   const format = useFormat()
-  // The Failed list says why each run failed; the server serves the message, not the exception's type.
+  // The Failed list says why each run failed: the exception's short type name in the failure tone, then its message.
+  // A reason the store wrote without a type reads as the message alone.
   const reasonColumn: DataTableColumn<Run> = {
     id: 'reason',
     header: 'Reason',
     cell: (run) => {
-      const reason = firstLine(run.exceptionMessage)
+      const message = firstLine(run.exceptionMessage)
 
-      return <CellText title={reason}>{reason}</CellText>
+      return run.exceptionType || message ? <FailureReason type={run.exceptionType} message={message} /> : undefined
     },
     priority: 2,
     width: '3fr',
   }
 
+  const progressColumn: DataTableColumn<Run> = {
+    id: 'progress',
+    header: 'Progress',
+    cell: (run) =>
+      run.progressPercent !== undefined ? (
+        <CellText title={progressText(run, `${format.number(run.progressPercent, { maximumFractionDigits: 1 })} %`)}>
+          <RunProgress run={run} compact />
+        </CellText>
+      ) : (
+        ''
+      ),
+    priority: 2,
+    width: 240,
+  }
+  // On the Failed list the reason is what the operator reads, and the progress column's fixed width is what cut it
+  // short; a failed run's last progress is in its panel.
+  const showsProgress = !failed
+
   return (
     <DataTable
       label="Runs"
-      viewId="jobs.runs"
       frame={frame}
       rows={runs.rows}
       matches={matches}
@@ -531,6 +562,9 @@ function RunsTable({
       onSortChange={onSortChange}
       onSelectAllMatching={onSelectAllMatching}
       emptyState={emptyState}
+      emptyIcon={emptyIcon}
+      emptyTitle={emptyTitle}
+      emptyAction={emptyAction}
       columns={[
         {
           id: 'function',
@@ -558,30 +592,15 @@ function RunsTable({
           sortKey: 'status',
         },
         ...(failed ? [reasonColumn] : []),
-        {
-          id: 'progress',
-          header: 'Progress',
-          cell: (run) =>
-            run.progressPercent !== undefined ? (
-              <CellText
-                title={progressText(run, `${format.number(run.progressPercent, { maximumFractionDigits: 1 })} %`)}
-              >
-                <RunProgress run={run} compact />
-              </CellText>
-            ) : (
-              ''
-            ),
-          priority: 2,
-          width: 240,
-        },
+        ...(showsProgress ? [progressColumn] : []),
         { id: 'kind', header: 'Kind', cell: (run) => kindLabel(run.kind), priority: 2, width: 110 },
         {
-          id: 'retries',
-          header: 'Retries',
-          cell: (run) => format.number(run.retryCount),
+          id: 'attempts',
+          header: 'Attempts',
+          cell: (run) => attemptsCell(run, format.number),
           kind: 'number',
           priority: 2,
-          width: 80,
+          width: 90,
         },
         {
           id: 'duration',

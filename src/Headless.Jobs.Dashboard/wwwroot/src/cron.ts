@@ -85,6 +85,25 @@ export function nodeStatusMark(node: Pick<JobNode, 'state'>): { tone: DashboardS
   return { tone: nodeTones[node.state] ?? 'off', label: node.state }
 }
 
+/**
+ * The workers the alive nodes offer together: the sum of their max concurrency. `undefined` when no node is alive, or
+ * when an alive node published none, because a sum that leaves a node out would read as the whole capacity.
+ */
+export function workerCapacity(nodes: readonly Pick<JobNode, 'state' | 'maxConcurrency'>[]) {
+  const alive = nodes.filter((node) => node.state === 'Alive')
+  let total = 0
+
+  for (const node of alive) {
+    if (node.maxConcurrency == null) {
+      return undefined
+    }
+
+    total += node.maxConcurrency
+  }
+
+  return alive.length > 0 ? total : undefined
+}
+
 /** The cron job's display name: its description, or its function and expression. */
 export function cronJobTitle(cronJob: Pick<CronJob, 'description' | 'function' | 'expression'>) {
   return cronJob.description || `${cronJob.function} (${cronJob.expression})`

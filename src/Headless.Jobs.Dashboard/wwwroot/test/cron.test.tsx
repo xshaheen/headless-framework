@@ -1,7 +1,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import type { CronJob } from '../src/cron.ts'
-import { change, cronJob, now, open, run, user } from './fake-server.ts'
+import { change, cronJob, jobFunction, now, open, run, user } from './fake-server.ts'
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -153,9 +154,8 @@ describe('jobs recurring jobs list', () => {
   it('says how recurring jobs get there when there are none', async () => {
     open({}, { path: 'cron-jobs' })
 
-    expect(
-      await screen.findByText('No recurring jobs. Declare one with a [Job] cron attribute, or add one here.'),
-    ).toBeTruthy()
+    expect(await screen.findByText('No recurring jobs')).toBeTruthy()
+    expect(screen.getByText('Declare one with a [Job] cron attribute, or add one here.')).toBeTruthy()
   })
 
   it('lists each job’s function, schedule with its reading, and next run, and tags a paused one', async () => {
@@ -174,6 +174,74 @@ describe('jobs recurring jobs list', () => {
     expect(active.textContent).toContain('in 15 hr.')
     expect(screen.getByRole('row', { name: /export\.ledger/ }).textContent).toContain('Paused')
     expect(screen.queryByRole('columnheader', { name: 'Last run' })).toBeNull()
+  })
+
+  it('shows how each job’s function ran in the last 24 hours, its failed runs opening that function’s failed list', async () => {
+    const actor = user()
+    const view = open(
+      {
+        cronJobs: [
+          cronJob(),
+          cronJob({ id: 'c0000000-0000-0000-0000-000000000002', function: 'mail.send' }),
+          cronJob({ id: 'c0000000-0000-0000-0000-000000000003', function: 'export.ledger' }),
+          // No live node registers this one's function, so the server serves no counts for it.
+          cronJob({ id: 'c0000000-0000-0000-0000-000000000004', function: 'legacy.sweep' }),
+        ],
+        functions: [
+          jobFunction({ name: 'reports.nightly', succeeded: 1234, failed: 2 }),
+          jobFunction({ name: 'mail.send', failed: 3 }),
+          jobFunction({ name: 'export.ledger' }),
+        ],
+      },
+      { path: 'cron-jobs' },
+    )
+
+    // The counts cover every run of the function, so the header names the function, never this recurring job.
+    expect(await screen.findByRole('columnheader', { name: 'Function runs, 24 h' })).toBeTruthy()
+    const nightly = screen.getByRole('row', { name: /reports\.nightly/ })
+    const failed = await within(nightly).findByRole('link', { name: '2 failed runs of reports.nightly' })
+    expect(failed.closest('[title]')?.textContent).toBe('1,234 succeeded · 2 failed')
+    expect(failed.getAttribute('href')).toBe('/jobs/runs?status=Failed&function=reports.nightly')
+
+    // A zero part is left out, and a function with no run in the window, or no served counts, shows nothing.
+    const mail = within(screen.getByRole('row', { name: /mail\.send/ })).getByRole('link', {
+      name: '3 failed runs of mail.send',
+    })
+    expect(mail.closest('[title]')?.textContent).toBe('3 failed')
+    expect(screen.getByRole('row', { name: /export\.ledger/ }).textContent).not.toMatch(/succeeded|failed/)
+    expect(screen.getByRole('row', { name: /legacy\.sweep/ }).textContent).not.toMatch(/succeeded|failed/)
+
+    await actor.click(failed)
+
+    await waitFor(() =>
+      expect(`${view.location().pathname}${view.location().search}`).toBe(
+        '/jobs/runs?status=Failed&function=reports.nightly',
+      ),
+    )
+  })
+
+  it('leaves the function runs blank when the functions do not answer, with no error in the list', async () => {
+    const view = open(
+      {
+        cronJobs: [cronJob()],
+        extra: (request) => {
+          if (request.path === 'jobs/functions') {
+            throw new DashboardApiError(503, 'The Jobs store did not answer. Try again.')
+          }
+
+          return undefined
+        },
+      },
+      { path: 'cron-jobs' },
+    )
+
+    const row = await screen.findByRole('row', { name: /reports\.nightly/ })
+    await waitFor(() => expect(view.requests.some((request) => request.path === 'jobs/functions')).toBe(true))
+    await act(() => vi.advanceTimersByTimeAsync(50))
+
+    expect(screen.getByRole('columnheader', { name: 'Function runs, 24 h' })).toBeTruthy()
+    expect(row.textContent).not.toMatch(/succeeded|failed/)
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('opens a job in the docked panel, with Run now on a paused job disabled with the server’s reason', async () => {
@@ -209,7 +277,8 @@ describe('jobs recurring jobs list', () => {
     await actor.click(await screen.findByRole('tab', { name: 'Occurrences' }))
     const panel = screen.getByRole('region', { name: `Cron job ${job.id}` })
 
-    expect(await within(panel).findByRole('img', { name: /^Occurrences per day by status/ })).toBeTruthy()
+    // The fake server counts no occurrence in the range, so the chart says so instead of drawing empty axes.
+    expect(await within(panel).findByText('No occurrences in this range')).toBeTruthy()
     expect(view.requests.find((request) => request.path === 'jobs/series/daily')?.query).toEqual({
       from: '2026-10-30',
       to: '2026-11-12',

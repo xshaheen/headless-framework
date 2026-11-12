@@ -50,7 +50,7 @@ import { useQuery, useQueryClient, type QueryClient } from '@headless/dashboard-
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useModuleStale, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef, type ReactNode } from 'react'
-import { fetchFunctions } from './cron.ts'
+import { fetchFunctions, fetchNodes } from './cron.ts'
 import { RunProgress } from './progress.tsx'
 import {
   attemptTones,
@@ -83,12 +83,13 @@ export function CellText({ title, children }: { title?: string; children: ReactN
 
 type LoadState<T> =
   | { isPending: true; isError: false }
-  | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
+  | { isPending: false; isError: true; error: Error; data?: T; refetch: () => Promise<unknown> }
   | { isPending: false; isError: false; data: T }
 
 /**
- * A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. The
- * skeleton takes the `shape` of what loads: `table` for a list region, `rows` by default.
+ * A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. A
+ * refresh that fails keeps the data on screen under the error. The skeleton takes the `shape` of what loads: `table`
+ * for a list region, `rows` by default.
  */
 export function QueryState<T>({
   query,
@@ -110,7 +111,18 @@ export function QueryState<T>({
   }
 
   if (query.isError) {
-    return <LoadError message={query.error.message} onRetry={() => void query.refetch()} />
+    // A refresh that failed still holds the last good read: the rows stay under the error, as stale data does.
+    const kept = query.data !== undefined
+    const error = <LoadError message={query.error.message} kept={kept} onRetry={() => void query.refetch()} />
+
+    return query.data === undefined ? (
+      error
+    ) : (
+      <>
+        {error}
+        {children(query.data)}
+      </>
+    )
   }
 
   return children(query.data)
@@ -173,9 +185,16 @@ export function useFunctions() {
   return useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
 }
 
+/** The live nodes, one cached answer for the Servers view and the dashboard's worker total. */
+export function useNodes() {
+  const { api } = useDashboard()
+
+  return useQuery({ queryKey: ['jobs', 'nodes'], queryFn: () => fetchNodes(api) })
+}
+
 /** `Stale` while the stream is down or the server reports the Jobs changes stopped; the data on screen is kept. */
-export function StaleNotice({ what, onRefresh }: { what: string; onRefresh: () => void }) {
-  return <SdkStaleNotice stale={useStale()} what={what} onRefresh={onRefresh} />
+export function StaleNotice({ what, onRefresh, failed }: { what: string; onRefresh: () => void; failed?: boolean }) {
+  return <SdkStaleNotice stale={useStale()} what={what} onRefresh={onRefresh} failed={failed} />
 }
 
 /** Whether what the view shows may be out of date: the stream is down, or this module's changes stopped. */
@@ -497,17 +516,28 @@ export function RunFields({ run }: { run: Run }) {
 }
 
 /**
- * `Attempt 2 of 4`: the store counts the retries a run consumed, so the attempt running or last run is one past that,
- * out of the first attempt and its retries. A run no node has picked up yet has made no attempt.
+ * The attempt a run is on or last made, out of the first attempt and its retries: the store counts the retries a run
+ * consumed, so the attempt is one past that. A run no node has picked up yet has made no attempt. The panel's field
+ * and the list's cell both read this, so the two cannot disagree.
  */
+function attemptsOf(run: Pick<Run, 'status' | 'retryCount' | 'retries'>) {
+  const isWaiting = run.retryCount === 0 && (run.status === 'Idle' || run.status === 'Queued')
+
+  return { made: isWaiting ? undefined : run.retryCount + 1, allowed: run.retries + 1 }
+}
+
+/** `Attempt 2 of 4`, or `Not run yet, up to 4` for a run that has made no attempt. */
 function attemptText(run: Pick<Run, 'status' | 'retryCount' | 'retries'>, number: (value: number) => string) {
-  const max = number(run.retries + 1)
+  const { made, allowed } = attemptsOf(run)
 
-  if (run.retryCount === 0 && (run.status === 'Idle' || run.status === 'Queued')) {
-    return `Not run yet, up to ${max}`
-  }
+  return made === undefined ? `Not run yet, up to ${number(allowed)}` : `Attempt ${number(made)} of ${number(allowed)}`
+}
 
-  return `Attempt ${number(run.retryCount + 1)} of ${max}`
+/** `2 of 4` for a list cell, and nothing for a run that has made no attempt, which the cell shows as its dash. */
+export function attemptsCell(run: Pick<Run, 'status' | 'retryCount' | 'retries'>, number: (value: number) => string) {
+  const { made, allowed } = attemptsOf(run)
+
+  return made === undefined ? undefined : `${number(made)} of ${number(allowed)}`
 }
 
 /** A run's attempts, read again whenever the run's version moves, since a live change carries no attempts. */

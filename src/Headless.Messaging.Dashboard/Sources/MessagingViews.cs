@@ -126,6 +126,73 @@ internal static class MessagingViews
     /// </summary>
     public static bool AffectsAttention(StatusName? status) => status is StatusName.Failed or StatusName.Succeeded;
 
+    /// <summary>The most characters of a failure a list row carries; the message's detail serves the whole text.</summary>
+    public const int MaxReasonLength = 240;
+
+    /// <summary>
+    /// The line of a stored failure that names its cause, <c>Type: message</c>, for a list row, cut at
+    /// <see cref="MaxReasonLength"/>. Returns <see langword="null"/> for a row that is not failed, whose stored text
+    /// may be an earlier attempt's.
+    /// </summary>
+    /// <remarks>
+    /// The stored text is each exception of the chain as its <c>Type: message</c> line over its frames. A consumer's
+    /// failure is stored inside <see cref="SubscriberExecutionFailedException"/>, which repeats the message and hides
+    /// the type an operator tells causes apart by, so the line after it that names an exception is the reason; the
+    /// wrapper's own line stands only when no such line follows. Blank lines, stack frames, and the <c>###</c> frame
+    /// an aggregate is written in never name a failure.
+    /// </remarks>
+    public static string? ReasonOf(StatusName? status, string? exceptionInfo)
+    {
+        if (status != StatusName.Failed || string.IsNullOrWhiteSpace(exceptionInfo))
+        {
+            return null;
+        }
+
+        string? wrapper = null;
+
+        foreach (var line in exceptionInfo.AsSpan().EnumerateLines())
+        {
+            var text = line.Trim();
+
+            if (
+                text.IsEmpty
+                || text.StartsWith("###", StringComparison.Ordinal)
+                || text.StartsWith("at ", StringComparison.Ordinal)
+                || text.StartsWith("---", StringComparison.Ordinal)
+            )
+            {
+                continue;
+            }
+
+            if (wrapper is null)
+            {
+                if (!text.StartsWith(_WrapperPrefix, StringComparison.Ordinal))
+                {
+                    return _Cut(text);
+                }
+
+                wrapper = _Cut(text);
+
+                continue;
+            }
+
+            // A later line of the wrapper's own message names no exception; the wrapped one opens with its type.
+            var colon = text.IndexOf(": ", StringComparison.Ordinal);
+
+            if (colon > 0 && !text[..colon].Contains(' '))
+            {
+                return _Cut(text);
+            }
+        }
+
+        return wrapper;
+    }
+
+    private const string _WrapperPrefix = nameof(SubscriberExecutionFailedException) + ":";
+
+    private static string _Cut(ReadOnlySpan<char> text) =>
+        text.Length > MaxReasonLength ? text[..MaxReasonLength].ToString() : text.ToString();
+
     internal static string? MessageNameOf(MediumMessage message) =>
         message.Origin.Headers.TryGetValue(Headers.MessageName, out var name) ? name : null;
 
@@ -249,6 +316,12 @@ internal sealed record MessagingRowView
 
     public string? TenantId { get; init; }
 
+    /// <summary>
+    /// What a failed row failed with, as <see cref="MessagingViews.ReasonOf"/> reads it; <see langword="null"/> for a
+    /// row that is not failed, and for a read that did not fetch the stored failure.
+    /// </summary>
+    public string? Reason { get; init; }
+
     /// <summary>Whether a received row is held; <see langword="null"/> when the read did not say.</summary>
     public bool? IsHeld { get; init; }
 
@@ -309,6 +382,7 @@ internal sealed record MessagingRowView
             ChangedAt = changedAt,
             FailureFingerprint = message.FailureFingerprint,
             TenantId = message.InboxKey?.TenantId,
+            Reason = MessagingViews.ReasonOf(message.StatusName ?? status, message.ExceptionInfo),
         };
 }
 
@@ -407,6 +481,33 @@ internal sealed record MessagingCircuitView(
 );
 
 internal sealed record MessagingCircuitList(IReadOnlyList<MessagingCircuitView> Items);
+
+/// <summary>
+/// The stored work each store still holds waiting, as <see cref="IMonitoringApi.GetBacklogAsync"/> counts it.
+/// </summary>
+/// <param name="AsOf">When this node read the stores.</param>
+/// <param name="Stores">Every store that answered, in its configured order.</param>
+/// <param name="Unavailable">The stores that failed or did not answer in time; none of them reads as an empty backlog.</param>
+internal sealed record MessagingBacklog(
+    DateTimeOffset AsOf,
+    IReadOnlyList<MessagingStoreBacklog> Stores,
+    IReadOnlyList<string> Unavailable
+);
+
+/// <summary>One store's backlog.</summary>
+/// <param name="PublishedPending">The published rows still waiting to reach the broker.</param>
+/// <param name="OldestPublishedSeconds">How long the oldest of them has waited; null when none is pending.</param>
+/// <param name="ReceivedPending">
+/// The received rows still waiting to be handled; null for an additional outbox, which holds none.
+/// </param>
+/// <param name="OldestReceivedSeconds">How long the oldest of them has waited; null when none is pending.</param>
+internal sealed record MessagingStoreBacklog(
+    string Store,
+    long PublishedPending,
+    double? OldestPublishedSeconds,
+    long? ReceivedPending,
+    double? OldestReceivedSeconds
+);
 
 /// <summary>A node serving the module: this node, or one discovery lists.</summary>
 /// <param name="Stores">The stores the node reads; empty for another node, which names its own.</param>
@@ -558,6 +659,7 @@ internal sealed record MessagingListScope
 [JsonSerializable(typeof(MessagingScheduledList))]
 [JsonSerializable(typeof(MessagingReceiptList))]
 [JsonSerializable(typeof(MessagingCircuitList))]
+[JsonSerializable(typeof(MessagingBacklog))]
 [JsonSerializable(typeof(MessagingNodeList))]
 [JsonSerializable(typeof(MessagingRealtimeMetrics))]
 [JsonSerializable(typeof(MessagingHourlyHistory))]

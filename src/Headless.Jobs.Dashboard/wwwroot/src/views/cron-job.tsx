@@ -44,7 +44,7 @@ export default function CronJobPage() {
     <QueryState query={cronJob} label="Loading the recurring job" rows={3}>
       {(data) => (
         <>
-          <StaleNotice what="this recurring job" onRefresh={() => void cronJob.refetch()} />
+          <StaleNotice what="this recurring job" onRefresh={() => void cronJob.refetch()} failed={cronJob.isError} />
           <CronPanel cronJob={data} fires={data.nextFires} page onDeleted={setDeleted} />
         </>
       )}

@@ -384,8 +384,26 @@
     @apply flex flex-wrap gap-2;
   }
 
+  /* One line of text, its icon, and its action. The action sits right after the text, where the eye already is,
+     rather than at the far end of a wide page. */
   .hd-banner {
-    @apply flex flex-wrap items-center gap-2.5 rounded-md bg-primary-soft px-3 py-2;
+    @apply flex flex-wrap items-center gap-2.5 rounded-md border border-transparent bg-primary-soft px-3 py-1.5 type-small;
+  }
+
+  /* A cell whose wrapper holds no text reads as a faint dash, as a cell with no content at all does, so a column of
+     absent values looks deliberate. The wrapper is a list cell's only child: a span, or a mono run inside one. */
+  .hd-cell > span:only-child:empty::before,
+  .hd-cell > span:only-child > bdi:only-child:empty::before {
+    content: '\2013';
+    color: var(--faint);
+  }
+
+  .hd-banner[data-tone='warn'] {
+    background-color: var(--proc-soft);
+  }
+
+  .hd-banner[data-tone='error'] {
+    @apply border-destructive-edge bg-destructive-soft;
   }
 
   .hd-span-2 {

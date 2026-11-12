@@ -9,6 +9,8 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Tests.Module;
 
@@ -194,6 +196,149 @@ public sealed class MessagingModuleHostTests : TestBase
         published[..^measurable].Should().AllSatisfy(value => value.ValueKind.Should().Be(JsonValueKind.Null));
         consumed[..^measurable].Should().AllSatisfy(value => value.ValueKind.Should().Be(JsonValueKind.Null));
     }
+
+    [Fact]
+    public async Task should_serve_what_a_failed_row_failed_with_and_no_reason_for_a_row_that_did_not_fail()
+    {
+        // given: a received row that failed with a stored exception, and one still waiting
+        await using var app = await MessagingModuleTestHost.StartAsync(_time, AbortToken);
+        var storage = app.Services.GetRequiredService<IDataStorage>();
+        var failed = await storage.StoreReceivedMessageAsync(
+            MessagingRows.Name,
+            MessagingRows.Consumer,
+            MessagingRows.Medium("order-1"),
+            AbortToken
+        );
+        failed.ExceptionInfo =
+            "TimeoutException: The consumer did not acknowledge within 30 s.\n   at Billing.ChargeConsumer.ConsumeAsync()";
+        (await storage.ChangeReceiveStateAsync(failed, StatusName.Failed, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+        var waiting = await storage.StoreReceivedMessageAsync(
+            MessagingRows.Name,
+            MessagingRows.Consumer,
+            MessagingRows.Medium("order-2"),
+            AbortToken
+        );
+        using var client = app.GetTestClient();
+
+        // when
+        var list = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + "/received",
+            AbortToken
+        );
+        var detail = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            $"{MessagingModuleTestHost.Api}/messages/received/node-a~primary~{failed.StorageId:D}",
+            AbortToken
+        );
+
+        // then: the reason is the line that names the failure, without its stack, on the list row and the detail's row
+        var rows = list.GetProperty("items").EnumerateArray().ToArray();
+        _Row(rows, failed.StorageId)
+            .GetProperty("reason")
+            .GetString()
+            .Should()
+            .Be("TimeoutException: The consumer did not acknowledge within 30 s.");
+        _Row(rows, waiting.StorageId).TryGetProperty("reason", out _).Should().BeFalse();
+        detail
+            .GetProperty("row")
+            .GetProperty("reason")
+            .GetString()
+            .Should()
+            .Be("TimeoutException: The consumer did not acknowledge within 30 s.");
+    }
+
+    [Fact]
+    public async Task should_list_a_failed_row_without_a_reason_when_the_store_cannot_read_its_failure()
+    {
+        // given: a store that lists one failed row and fails the by-id read the reason comes from
+        var row = new MessageView
+        {
+            StorageId = Guid.NewGuid(),
+            MessageId = "order-1",
+            Version = "v1",
+            Name = MessagingRows.Name,
+            ConsumerIdentity = MessagingRows.Consumer,
+            StatusName = StatusName.Failed,
+            Added = _time.GetUtcNow(),
+        };
+        var monitoring = Substitute.For<IMonitoringApi>();
+        monitoring
+            .ListMessagesAsync(
+                Arg.Any<MessageListQuery>(),
+                Arg.Any<MessageListPosition?>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new MessageListPage { Items = [row] });
+        monitoring
+            .CountMessagesAsync(Arg.Any<MessageListQuery>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new MessageCount(1, Capped: false));
+        monitoring
+            .GetReceivedMessagesAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("The by-id read is down."));
+        var store = Substitute.For<IDataStorage>();
+        store.GetMonitoringApi().Returns(monitoring);
+        store
+            .GetMessageChangeStartCursorAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("No change feed here."));
+        await using var app = await MessagingModuleTestHost.StartAsync(
+            _time,
+            AbortToken,
+            configure: services =>
+                services.AddSingleton(
+                    new MessagingStores("node-a", [new("primary", store, HoldsReceived: true)], TimeSpan.FromSeconds(5))
+                )
+        );
+        using var client = app.GetTestClient();
+
+        // when
+        var list = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + "/received",
+            AbortToken
+        );
+
+        // then: the reason is an extra, so its failed read costs the row only its reason
+        var item = list.GetProperty("items").EnumerateArray().Should().ContainSingle().Subject;
+        item.GetProperty("storageId").GetGuid().Should().Be(row.StorageId);
+        item.TryGetProperty("reason", out _).Should().BeFalse();
+        list.GetProperty("unavailable").GetArrayLength().Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("TimeoutException: timed out\n   at Consumer.ConsumeAsync()", "TimeoutException: timed out")]
+    [InlineData("### AggregateException:\nIOException: disk full\n###", "IOException: disk full")]
+    [InlineData("\n  InvalidOperationException: late  \n", "InvalidOperationException: late")]
+    [InlineData(
+        "SubscriberExecutionFailedException: timed out\n   at Consumer.ConsumeAsync()\nTimeoutException: timed out\n   at Consumer.ConsumeAsync()",
+        "TimeoutException: timed out"
+    )]
+    [InlineData(
+        "SubscriberExecutionFailedException: first line\nsecond line of the same message\n   at Consumer.ConsumeAsync()",
+        "SubscriberExecutionFailedException: first line"
+    )]
+    public void should_read_the_line_that_names_a_stored_failure(string stored, string expected)
+    {
+        MessagingViews.ReasonOf(StatusName.Failed, stored).Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_read_no_reason_for_a_row_that_is_not_failed_and_cut_a_long_one()
+    {
+        // a succeeded row may still hold an earlier attempt's text, and a list row carries a bounded line
+        MessagingViews.ReasonOf(StatusName.Succeeded, "TimeoutException: timed out").Should().BeNull();
+        MessagingViews.ReasonOf(StatusName.Failed, "   ").Should().BeNull();
+        MessagingViews
+            .ReasonOf(StatusName.Failed, new string('x', MessagingViews.MaxReasonLength + 50))
+            .Should()
+            .HaveLength(MessagingViews.MaxReasonLength);
+    }
+
+    private static JsonElement _Row(JsonElement[] rows, Guid storageId) =>
+        rows.Should().ContainSingle(row => row.GetProperty("storageId").GetGuid() == storageId).Subject;
 
     private static IEnumerable<string?> _Ids(JsonElement resolved) =>
         resolved

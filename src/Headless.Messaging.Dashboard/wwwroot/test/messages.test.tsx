@@ -106,6 +106,51 @@ describe('messaging lists', () => {
     ).toBe(true)
   })
 
+  it('reads a failed row by what it failed with, and names a cause chip by that exception type', async () => {
+    list(
+      {
+        received: [
+          message('received', 'Failed', {
+            name: 'a.timed-out',
+            reason: 'System.TimeoutException: The consumer did not acknowledge within 30 s.',
+          }),
+          // The server could not read this row's stored failure, so its fingerprint stands in.
+          message('received', 'Failed', { name: 'a.unread', failureFingerprint: 'v1:deserialization' }),
+        ],
+        attention: [
+          {
+            id: 'failed:received:v1:9f2c41:Billing.OrderPlacedConsumer:primary',
+            title: '1 failed',
+            severity: 'critical',
+            count: 1,
+            capped: false,
+          },
+        ],
+      },
+      'received?status=Failed&terminal=true',
+    )
+
+    const timedOut = await screen.findByRole('row', { name: /a\.timed-out/ })
+    const reason = within(timedOut).getByTitle('System.TimeoutException: The consumer did not acknowledge within 30 s.')
+    expect(reason.textContent).toBe('TimeoutException: The consumer did not acknowledge within 30 s.')
+    expect(within(screen.getByRole('row', { name: /a\.unread/ })).getByText('v1:deserialization')).toBeTruthy()
+
+    const chips = await screen.findByRole('group', { name: 'Filter by cause' })
+    expect(
+      await within(chips).findByRole('button', { name: /Billing\.OrderPlacedConsumer · TimeoutException/ }),
+    ).toBeTruthy()
+  })
+
+  it('shows no reason on a row that has moved on from its failure', async () => {
+    list(
+      { received: [message('received', 'Succeeded', { name: 'a.recovered', reason: 'TimeoutException: timed out' })] },
+      'received',
+    )
+
+    const row = await screen.findByRole('row', { name: /a\.recovered/ })
+    expect(within(row).queryByText(/TimeoutException/)).toBeNull()
+  })
+
   it('selects every matching row past the loaded page and confirms it as an Operation on the shown store', async () => {
     const actor = user()
     const failed = [

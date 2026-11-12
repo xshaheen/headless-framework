@@ -1,4 +1,4 @@
-import { useDashboard, useModule } from '@headless/dashboard-sdk'
+import { useModule } from '@headless/dashboard-sdk'
 import { CommandAction, useAllowedActions } from '@headless/dashboard-sdk/commands'
 import {
   DetailPanel,
@@ -16,12 +16,19 @@ import {
   Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { FilterCombobox } from '@headless/dashboard-sdk/combobox'
-import { OpenCircuitIcon, RefreshIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
+import { ConsumerIcon, OpenCircuitIcon, RefreshIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
+import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { useState } from 'react'
-import { circuitTones, formatSeconds, nodeQuery, useMessagingCommands, type MessageCommandName } from '../messages.ts'
+import {
+  circuitLabels,
+  circuitTones,
+  formatSeconds,
+  spanSeconds,
+  useMessagingCommands,
+  type MessageCommandName,
+} from '../messages.ts'
 import {
   CellText,
   MessagingStats,
@@ -29,49 +36,12 @@ import {
   NodeSwitch,
   QueryState,
   StaleNotice,
+  useCircuits,
   useConsumers,
   useNode,
   type MessagingCircuit,
   type MessagingConsumer,
 } from '../parts.tsx'
-
-const circuitLabels: Readonly<Record<MessagingCircuit['state'], string>> = {
-  Closed: 'Closed',
-  Open: 'Open',
-  HalfOpen: 'Half open',
-}
-
-/** A consumer's circuits on the node the views read; the breaker keeps its state in memory, so it is polled. */
-function useCircuits() {
-  const { api } = useDashboard()
-  const { node } = useNode()
-
-  return useQuery({
-    queryKey: ['messaging', 'circuits', node],
-    queryFn: async () =>
-      (
-        await api.request<{ items: MessagingCircuit[] }>({
-          method: 'GET',
-          path: 'messaging/circuits',
-          query: nodeQuery(node),
-        })
-      ).items,
-    refetchInterval: 5_000,
-  })
-}
-
-/** A .NET time span, `[d.]hh:mm:ss[.fffffff]`, in seconds; `undefined` when it is not one. */
-export function spanSeconds(span: string) {
-  const match = /^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(span)
-
-  if (!match) {
-    return undefined
-  }
-
-  const [, days = '0', hours = '0', minutes = '0', seconds = '0'] = match
-
-  return Number(days) * 86_400 + Number(hours) * 3_600 + Number(minutes) * 60 + Number(seconds)
-}
 
 /**
  * The types that implement a consumer, short: the class name without its namespace, as the list has room for. A
@@ -142,14 +112,15 @@ export default function ConsumersView() {
         ) : undefined
       }
     >
-      <StaleNotice what="these consumers" onRefresh={() => void consumers.refetch()} />
+      <StaleNotice what="these consumers" onRefresh={() => void consumers.refetch()} failed={consumers.isError} />
       <QueryState query={consumers} label="Loading consumers" rows={4} shape="table">
         {() => (
           <DataTable
             label="Consumers"
-            viewId="messaging.consumers"
             frame={frame}
             rows={rows}
+            emptyIcon={ConsumerIcon}
+            emptyTitle="No consumers"
             emptyState={message ? `No consumer on this node consumes ${message}.` : 'This node registers no consumers.'}
             columns={[
               {
