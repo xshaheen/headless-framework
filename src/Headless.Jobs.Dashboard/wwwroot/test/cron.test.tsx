@@ -173,7 +173,106 @@ describe('jobs recurring jobs list', () => {
     expect(active.textContent).toContain('At 02:00')
     expect(active.textContent).toContain('in 15 hr.')
     expect(screen.getByRole('row', { name: /export\.ledger/ }).textContent).toContain('Paused')
-    expect(screen.queryByRole('columnheader', { name: 'Last run' })).toBeNull()
+  })
+
+  it('shows each job’s last run as its status and when it ended, the status opening that run', async () => {
+    const actor = user()
+    const ended = run('Succeeded', { kind: 'CronJobOccurrence', cronJobId: 'c0000000-0000-0000-0000-000000000001' })
+    const view = open(
+      {
+        runs: [ended],
+        cronJobs: [
+          // Half a minute past the whole minute, so the floored age reads the same however long the render takes.
+          cronJob({ lastRun: { id: ended.id, status: 'Succeeded', executedAt: '2026-11-05T09:47:30Z' } }),
+          cronJob({
+            id: 'c0000000-0000-0000-0000-000000000002',
+            function: 'export.ledger',
+            isPaused: true,
+            lastRun: {
+              id: '0c000000-0000-0000-0000-000000000002',
+              status: 'Failed',
+              executedAt: '2026-11-05T07:30:00Z',
+            },
+          }),
+          // A run in progress has no end yet, so its status shows alone.
+          cronJob({
+            id: 'c0000000-0000-0000-0000-000000000003',
+            function: 'mail.send',
+            lastRun: { id: '0c000000-0000-0000-0000-000000000003', status: 'InProgress' },
+          }),
+        ],
+      },
+      { path: 'cron-jobs' },
+    )
+
+    expect(await screen.findByRole('columnheader', { name: 'Last run' })).toBeTruthy()
+    const nightly = screen.getByRole('row', { name: /reports\.nightly/ })
+    const succeeded = within(nightly).getByRole('link', { name: 'Last run of reports.nightly: Succeeded' })
+    expect(succeeded.closest('[role="gridcell"]')?.textContent).toBe('Succeeded · 12 min. ago')
+    expect(succeeded.getAttribute('href')).toBe(`/jobs/runs/${ended.id}`)
+
+    // A paused job keeps its last run.
+    const failed = within(screen.getByRole('row', { name: /export\.ledger/ })).getByRole('link', {
+      name: 'Last run of export.ledger: Failed',
+    })
+    expect(failed.closest('[role="gridcell"]')?.textContent).toBe('Failed · 2 hr. ago')
+    const running = within(screen.getByRole('row', { name: /mail\.send/ })).getByRole('link', {
+      name: 'Last run of mail.send: In progress',
+    })
+    expect(running.closest('[role="gridcell"]')?.textContent).toBe('In progress')
+
+    await actor.click(succeeded)
+
+    await waitFor(() => expect(view.location().pathname).toBe(`/jobs/runs/${ended.id}`))
+  })
+
+  it('leaves the last run blank for a job that never ran', async () => {
+    open({ cronJobs: [cronJob()] }, { path: 'cron-jobs' })
+
+    const row = await screen.findByRole('row', { name: /reports\.nightly/ })
+    expect(screen.getByRole('columnheader', { name: 'Last run' })).toBeTruthy()
+    expect(within(row).queryByRole('link', { name: /^Last run of/ })).toBeNull()
+    expect(row.textContent).not.toMatch(/Succeeded|Failed|In progress|ago/)
+  })
+
+  it('reads the list again once an occurrence ends, and shows the new last run', async () => {
+    const job = cronJob()
+    const running = run('InProgress', { kind: 'CronJobOccurrence', cronJobId: job.id })
+    const cronJobs: CronJob[] = [{ ...job, lastRun: { id: running.id, status: 'InProgress' } }]
+    const view = open({ cronJobs }, { path: 'cron-jobs' })
+
+    const row = await screen.findByRole('row', { name: /reports\.nightly/ })
+    expect(within(row).getByRole('link', { name: 'Last run of reports.nightly: In progress' })).toBeTruthy()
+
+    cronJobs[0] = { ...job, lastRun: { id: running.id, status: 'Succeeded', executedAt: '2026-11-05T09:47:30Z' } }
+    act(() => view.stream.push('change', change({ ...running, status: 'Succeeded', version: '2' })))
+    await act(() => vi.advanceTimersByTimeAsync(1_000))
+
+    const succeeded = await within(row).findByRole('link', { name: 'Last run of reports.nightly: Succeeded' })
+    expect(succeeded.closest('[role="gridcell"]')?.textContent).toBe('Succeeded · 12 min. ago')
+  })
+
+  it('does not read the list again for a run change that moves no last run', async () => {
+    const job = cronJob()
+    const running = run('InProgress', { kind: 'CronJobOccurrence', cronJobId: job.id })
+    const view = open(
+      { cronJobs: [{ ...job, lastRun: { id: running.id, status: 'InProgress' } }] },
+      { path: 'cron-jobs' },
+    )
+
+    await screen.findByRole('row', { name: /reports\.nightly/ })
+    const listed = () => view.requests.filter((request) => request.path === 'jobs/cron-jobs').length
+    const before = listed()
+
+    act(() => {
+      // The shown occurrence reporting progress, an occurrence still waiting, and a time job.
+      view.stream.push('change', change({ ...running, progressPercent: 40, version: '2' }))
+      view.stream.push('change', change(run('Idle', { kind: 'CronJobOccurrence', cronJobId: job.id })))
+      view.stream.push('change', change(run('Succeeded')))
+    })
+    await act(() => vi.advanceTimersByTimeAsync(1_100))
+
+    expect(listed()).toBe(before)
   })
 
   it('shows how each job’s function ran in the last 24 hours, its failed runs opening that function’s failed list', async () => {

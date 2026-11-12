@@ -184,6 +184,11 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
         return await Store.GetCronJobsAsync(predicate: null, cancellationToken).ConfigureAwait(false);
     }
 
+    public Task<IReadOnlyDictionary<Guid, CronJobLastRun>> GetCronJobLastRunsAsync(CancellationToken cancellationToken)
+    {
+        return Store.GetCronJobLastRunsAsync(cancellationToken);
+    }
+
     public CronSchedulePreview Preview(string expression, string? timeZoneId, DateTime fromUtc, int count)
     {
         return Cron.Preview(expression, timeZoneId, fromUtc, count);

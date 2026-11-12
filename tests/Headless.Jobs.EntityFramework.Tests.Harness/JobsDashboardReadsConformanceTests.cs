@@ -12,8 +12,8 @@ namespace Tests;
 /// <summary>
 /// The dashboard's reads on a relational store: one keyset run list over time jobs and cron occurrences, capped counts,
 /// failure groups that apply the requeue rules and the cron exit rule in the query, Operation scopes frozen per command
-/// with their compare-and-set writes, the Overview figures, and per-function stats. The in-memory store runs the same
-/// scenarios in its own tests.
+/// with their compare-and-set writes, the Overview figures, per-function stats, and each cron job's last run. The
+/// in-memory store runs the same scenarios in its own tests.
 /// </summary>
 public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
@@ -482,6 +482,194 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                 charge.LastExecutedAt.Should().Be(latest);
             }
         );
+    }
+
+    public virtual async Task should_return_no_last_run_when_a_cron_job_has_no_started_occurrence()
+    {
+        await _RunAsync(
+            "reads-last-run-none",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                await _SeedCronAsync(ct);
+                var waiting = await _SeedCronAsync(ct);
+                await _AddOccurrenceAsync(store, waiting, JobStatus.Idle, at, ct);
+                await _AddOccurrenceAsync(store, waiting, JobStatus.Queued, at.AddMinutes(1), ct);
+
+                var lastRuns = await store.GetCronJobLastRunsAsync(ct);
+
+                lastRuns.Should().BeEmpty();
+            }
+        );
+    }
+
+    public virtual async Task should_return_the_occurrence_latest_by_execution_time_when_a_cron_job_ran_several_times()
+    {
+        await _RunAsync(
+            "reads-last-run-latest",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var endedLast = new DateTimeOffset(_Minute(-1));
+                var endedFirst = new DateTimeOffset(_Minute(-50));
+                var cron = await _SeedCronAsync(ct);
+                // The earliest occurrence ended last, as a requeued one does: the execution time decides, not the end.
+                await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at, ct, executedAt: endedLast);
+                await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at.AddMinutes(10), ct);
+                var latest = await _AddOccurrenceAsync(
+                    store,
+                    cron,
+                    JobStatus.Failed,
+                    at.AddMinutes(20),
+                    ct,
+                    executedAt: endedFirst
+                );
+
+                var lastRuns = await store.GetCronJobLastRunsAsync(ct);
+
+                var lastRun = lastRuns.Should().ContainSingle().Subject;
+                lastRun.Key.Should().Be(cron);
+                lastRun.Value.CronJobId.Should().Be(cron);
+                lastRun.Value.OccurrenceId.Should().Be(latest);
+                lastRun.Value.Status.Should().Be(JobStatus.Failed);
+                lastRun.Value.ExecutedAt.Should().Be(endedFirst);
+            }
+        );
+    }
+
+    public virtual async Task should_keep_a_finished_last_run_when_a_later_occurrence_is_idle_or_queued()
+    {
+        await _RunAsync(
+            "reads-last-run-waiting",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var cron = await _SeedCronAsync(ct);
+                var finished = await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at, ct);
+                await _AddOccurrenceAsync(store, cron, JobStatus.Queued, at.AddMinutes(10), ct);
+                await _AddOccurrenceAsync(store, cron, JobStatus.Idle, at.AddMinutes(120), ct);
+
+                var lastRuns = await store.GetCronJobLastRunsAsync(ct);
+
+                var lastRun = lastRuns.Should().ContainSingle().Subject.Value;
+                lastRun.OccurrenceId.Should().Be(finished);
+                lastRun.Status.Should().Be(JobStatus.Succeeded);
+            }
+        );
+    }
+
+    public virtual async Task should_return_a_running_last_run_without_an_end_time_when_the_latest_occurrence_is_in_progress()
+    {
+        await _RunAsync(
+            "reads-last-run-running",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var cron = await _SeedCronAsync(ct);
+                await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at, ct);
+                var running = await _AddOccurrenceAsync(store, cron, JobStatus.InProgress, at.AddMinutes(10), ct);
+
+                var lastRuns = await store.GetCronJobLastRunsAsync(ct);
+
+                var lastRun = lastRuns.Should().ContainSingle().Subject.Value;
+                lastRun.OccurrenceId.Should().Be(running);
+                lastRun.Status.Should().Be(JobStatus.InProgress);
+                lastRun.ExecutedAt.Should().BeNull();
+            }
+        );
+    }
+
+    public virtual async Task should_return_each_cron_job_its_own_last_run_when_two_cron_jobs_ran()
+    {
+        await _RunAsync(
+            "reads-last-run-two",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var first = await _SeedCronAsync(ct);
+                var second = await _SeedCronAsync(ct, function: _Function);
+                await _AddOccurrenceAsync(store, first, JobStatus.Succeeded, at, ct);
+                var firstLatest = await _AddOccurrenceAsync(store, first, JobStatus.Failed, at.AddMinutes(5), ct);
+                // The other cron job's occurrence is the latest of all, and must not become the first one's last run.
+                var secondLatest = await _AddOccurrenceAsync(store, second, JobStatus.Succeeded, at.AddMinutes(30), ct);
+
+                var lastRuns = await store.GetCronJobLastRunsAsync(ct);
+
+                lastRuns.Should().HaveCount(2);
+                lastRuns[first].OccurrenceId.Should().Be(firstLatest);
+                lastRuns[first].Status.Should().Be(JobStatus.Failed);
+                lastRuns[second].OccurrenceId.Should().Be(secondLatest);
+                lastRuns[second].Status.Should().Be(JobStatus.Succeeded);
+            }
+        );
+    }
+
+    public virtual async Task should_return_the_run_lists_newest_occurrence_when_two_share_an_execution_time()
+    {
+        await _RunAsync(
+            "reads-last-run-tie",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var cron = await _SeedCronAsync(ct);
+                await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at.AddMinutes(-10), ct);
+
+                for (var index = 0; index < 6; index++)
+                {
+                    await _AddOccurrenceAsync(store, cron, JobStatus.Skipped, at, ct);
+                }
+
+                var lastRuns = await store.GetCronJobLastRunsAsync(ct);
+                var newestFirst = await store.ListJobRunsAsync(
+                    new JobRunQuery { CronJobId = cron, SortDirection = ListSortDirection.Descending },
+                    after: null,
+                    pageSize: 1,
+                    ct
+                );
+
+                lastRuns[cron].OccurrenceId.Should().Be(newestFirst.Runs.Should().ContainSingle().Subject.Id);
+            }
+        );
+    }
+
+    public virtual async Task should_read_every_last_run_in_one_query_when_several_cron_jobs_ran()
+    {
+        var ct = AbortToken;
+        var capture = new DashboardSqlCapture();
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildInterceptedHost("reads-last-run-sql", capture);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var at = _Minute(-60);
+
+            for (var index = 0; index < 4; index++)
+            {
+                var cron = await _SeedCronAsync(ct);
+                await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, at, ct);
+                await _AddOccurrenceAsync(store, cron, JobStatus.Failed, at.AddMinutes(index + 1), ct);
+            }
+
+            capture.Clear();
+            var lastRuns = await store.GetCronJobLastRunsAsync(ct);
+
+            lastRuns.Should().HaveCount(4);
+            lastRuns.Values.Should().OnlyContain(lastRun => lastRun.Status == JobStatus.Failed);
+            // Scoped to the occurrences table: the host's own services may read other tables in the meantime.
+            capture
+                .Statements.Where(sql =>
+                    sql.Contains(fixture.JobsTable("CronJobOccurrences"), StringComparison.Ordinal)
+                )
+                .Should()
+                .ContainSingle("the read is one query, never one per cron job");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
     }
 
     public virtual async Task bucketed_counts_place_each_run_by_execution_time_and_count_an_empty_bucket_as_zero()

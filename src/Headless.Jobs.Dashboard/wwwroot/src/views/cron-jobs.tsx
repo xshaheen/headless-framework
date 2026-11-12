@@ -8,6 +8,7 @@ import {
   PageFrame,
   PageHeader,
   Skeleton,
+  StatusMark,
   Tag,
   Text,
   usePageFrame,
@@ -18,13 +19,33 @@ import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboar
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
+import { useStreamEvent, useTopics } from '@headless/dashboard-sdk/stream'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { CronPanel, useCronJob } from '../cron-parts.tsx'
 import { cronJobsTopic, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, StaleNotice, useFunctions } from '../parts.tsx'
-import { viewOnlyReason } from '../runs.ts'
+import { CellText, JobsStats, StaleNotice, useFunctions, useSettledRefetch } from '../parts.tsx'
+import { readRunProjection, runStatusMark, runsTopic, viewOnlyReason, type RunProjectionFacts } from '../runs.ts'
 import { CronJobForm } from './create.tsx'
+
+/**
+ * Whether a run change can move the last run a row shows. A change with no projection names no occurrence, and may be
+ * a removed one, so it can. The occurrence a row already shows moves it only by changing status, which leaves out the
+ * progress it reports while it runs; any other occurrence moves it once it has started.
+ */
+function movesLastRun(rows: readonly CronJob[], id: string, run: RunProjectionFacts | undefined) {
+  if (!run) {
+    return true
+  }
+
+  if (run.kind !== 'CronJobOccurrence') {
+    return false
+  }
+
+  const shown = rows.find((row) => row.id === run.cronJobId)?.lastRun
+
+  return shown?.id === id ? shown.status !== run.status : run.status !== 'Idle' && run.status !== 'Queued'
+}
 
 export default function CronJobsView() {
   const { api } = useDashboard()
@@ -41,6 +62,44 @@ export default function CronJobsView() {
   // pending or failed one leaves it blank rather than putting an error in this list.
   const functions = useFunctions()
   const functionsByName = new Map((functions.isSuccess ? functions.data : []).map((item) => [item.name, item]))
+  const reread = useSettledRefetch(listKey(cronJobsTopic))
+
+  // Only the list read serves a cron job's last run, so the list is read again once a burst of occurrence changes that
+  // can move one settles.
+  useTopics([runsTopic])
+  useStreamEvent('change', (change) => {
+    if (change.topic === runsTopic && movesLastRun(rows, change.id, readRunProjection(change.projection))) {
+      reread()
+    }
+  })
+
+  /**
+   * `Succeeded · 12 min. ago`: how the latest occurrence stands, opening its run, then when it ended. One in progress
+   * has no end yet, so it shows its status alone.
+   */
+  function lastRun(row: CronJob) {
+    const run = row.lastRun
+
+    if (!run) {
+      return undefined
+    }
+
+    const mark = runStatusMark(run)
+
+    return (
+      <CellText>
+        <Link to={`/jobs/runs/${encodeURIComponent(run.id)}`} aria-label={`Last run of ${row.function}: ${mark.label}`}>
+          <StatusMark {...mark} />
+        </Link>
+        {run.executedAt ? (
+          <>
+            {' · '}
+            <Timestamp value={run.executedAt} />
+          </>
+        ) : null}
+      </CellText>
+    )
+  }
 
   /** `10 succeeded · 2 failed`, a zero part left out, the failed part opening the function's failed runs. */
   function functionRuns(item: JobFunction | undefined) {
@@ -168,6 +227,15 @@ export default function CronJobsView() {
                   </CellText>
                 ),
                 width: '2fr',
+              },
+              {
+                id: 'last-run',
+                header: 'Last run',
+                cell: lastRun,
+                kind: 'status',
+                priority: 2,
+                // Wide enough for a status and the age of its end, `Succeeded · 12 min. ago`.
+                width: 210,
               },
               {
                 id: 'function-runs',

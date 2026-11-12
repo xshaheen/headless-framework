@@ -1,5 +1,15 @@
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import type { DashboardApi } from '@headless/dashboard-sdk/data'
+import type { RunStatus } from './runs.ts'
+
+/** A cron job's latest occurrence that started or ended, as the server picks it by due time. */
+export interface CronLastRun {
+  /** The occurrence, which opens as a run. */
+  id: string
+  status: RunStatus
+  /** When its last execution ended; absent while it is in progress. */
+  executedAt?: string
+}
 
 /** A cron job as its list row, its page, and a live change carry it; `nextFires` is filled on its page only. */
 export interface CronJob {
@@ -18,6 +28,11 @@ export interface CronJob {
   nextDueUtc: string
   validationMessage?: string
   nextFires: string[]
+  /**
+   * Absent for a cron job that never ran. A live change carries none, so the row keeps the one it was read with until
+   * the list is read again.
+   */
+  lastRun?: CronLastRun
   version: string
 }
 

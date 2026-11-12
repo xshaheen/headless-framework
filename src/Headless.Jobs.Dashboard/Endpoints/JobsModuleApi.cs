@@ -10,8 +10,9 @@ using Microsoft.AspNetCore.Http.HttpResults;
 namespace Headless.Jobs;
 
 /// <summary>
-/// The Jobs module's own read API at <c>{base}/api/jobs</c>: runs, attempts, cron jobs with their next fires, a draft
-/// schedule preview, functions, nodes, and runs per day. <see cref="JobsCreateEndpoints"/> maps the create calls.
+/// The Jobs module's own read API at <c>{base}/api/jobs</c>: runs, attempts, cron jobs with their next fires and last
+/// run, a draft schedule preview, functions, nodes, and runs per day. <see cref="JobsCreateEndpoints"/> maps the
+/// create calls.
 /// </summary>
 internal sealed class JobsModuleApi(
     IJobsDashboardReader reader,
@@ -167,6 +168,8 @@ internal sealed class JobsModuleApi(
         // Computing next fires costs a cron parse per job, so a list caller gets them only when it asks for them.
         var count = fires is null ? 1 : Math.Clamp(fires.Value, 1, MaxFires);
         var cronJobs = await _reader.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
+        // One read for every row's last run, never one per cron job.
+        var lastRuns = await _reader.GetCronJobLastRunsAsync(cancellationToken).ConfigureAwait(false);
         var now = _Now();
 
         return TypedResults.Json(
@@ -184,7 +187,8 @@ internal sealed class JobsModuleApi(
                         return JobsCronJobView.From(
                             cronJob,
                             preview,
-                            fires is null || cronJob.IsPaused ? [] : preview.NextFiresUtc
+                            fires is null || cronJob.IsPaused ? [] : preview.NextFiresUtc,
+                            lastRuns.GetValueOrDefault(cronJob.Id)
                         );
                     }),
             ]),
@@ -214,8 +218,15 @@ internal sealed class JobsModuleApi(
             Math.Clamp(fires ?? _DefaultFires, 1, MaxFires)
         );
 
+        var lastRuns = await _reader.GetCronJobLastRunsAsync(cancellationToken).ConfigureAwait(false);
+
         return TypedResults.Json(
-            JobsCronJobView.From(cronJob, preview, cronJob.IsPaused ? [] : preview.NextFiresUtc),
+            JobsCronJobView.From(
+                cronJob,
+                preview,
+                cronJob.IsPaused ? [] : preview.NextFiresUtc,
+                lastRuns.GetValueOrDefault(cronJob.Id)
+            ),
             JobsDashboardJsonContext.Default.JobsCronJobView
         );
     }

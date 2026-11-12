@@ -64,7 +64,9 @@ internal static class JobsViews
             Target = Ref(moduleId, CronJobKind, cronJob.Id.ToString()),
             Version = cronJob.ChangedAt.Ticks.ToString(CultureInfo.InvariantCulture),
             Projection = JsonSerializer.SerializeToElement(
-                JobsCronJobView.From(cronJob, preview, nextFires: []),
+                // No last run: a change of the definition says nothing about its occurrences, and leaving the field
+                // out keeps the one a view already holds.
+                JobsCronJobView.From(cronJob, preview, nextFires: [], lastRun: null),
                 JobsDashboardJsonContext.Default.JobsCronJobView
             ),
             // A paused cron job and a resumed one change what Needs you shows about its function.
@@ -313,7 +315,14 @@ internal sealed record JobsAttemptView(
 
 internal sealed record JobsAttemptList(IReadOnlyList<JobsAttemptView> Items);
 
-/// <summary>A cron job as its list row and page show it; the next fires are filled on the page only.</summary>
+/// <summary>
+/// A cron job as its list row and page show it; the next fires are filled on the page only, and the last run on the
+/// list and the page, never in a stream change.
+/// </summary>
+/// <param name="LastRun">
+/// The latest occurrence that started or ended; <see langword="null"/>, and left out of the JSON, for a cron job that
+/// never ran and in a stream change, so a change leaves the last run a view already holds.
+/// </param>
 internal sealed record JobsCronJobView(
     Guid Id,
     string Function,
@@ -328,13 +337,15 @@ internal sealed record JobsCronJobView(
     DateTime NextDueUtc,
     string? ValidationMessage,
     IReadOnlyList<DateTime> NextFires,
+    JobsCronLastRunView? LastRun,
     string Version
 )
 {
     public static JobsCronJobView From(
         CronJobEntity cronJob,
         CronSchedulePreview? preview,
-        IReadOnlyList<DateTime> nextFires
+        IReadOnlyList<DateTime> nextFires,
+        CronJobLastRun? lastRun
     ) =>
         new(
             cronJob.Id,
@@ -350,9 +361,15 @@ internal sealed record JobsCronJobView(
             cronJob.NextDueUtc,
             preview?.ValidationMessage,
             nextFires,
+            lastRun is null ? null : new JobsCronLastRunView(lastRun.OccurrenceId, lastRun.Status, lastRun.ExecutedAt),
             cronJob.ChangedAt.Ticks.ToString(CultureInfo.InvariantCulture)
         );
 }
+
+/// <summary>A cron job's last run: the occurrence, how it stands, and when it ended.</summary>
+/// <param name="Id">The occurrence, which opens as a run.</param>
+/// <param name="ExecutedAt">When its last execution ended; left out while it is in progress.</param>
+internal sealed record JobsCronLastRunView(Guid Id, JobStatus Status, DateTimeOffset? ExecutedAt);
 
 internal sealed record JobsCronJobList(IReadOnlyList<JobsCronJobView> Items);
 

@@ -376,6 +376,50 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(stats);
     }
 
+    public Task<IReadOnlyList<CronJobLastRun>> ReadCronJobLastRunRowsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // One pass: each cron job keeps the occurrence the run list's descending order puts first, execution time
+        // and then identifier, among those that left Idle and Queued.
+        var latest = new Dictionary<Guid, CronJobOccurrenceEntity<TCronJob>>();
+
+        foreach (var occurrence in _cronOccurrences.Values)
+        {
+            if (occurrence.Status is JobStatus.Idle or JobStatus.Queued || !_cronJobs.ContainsKey(occurrence.CronJobId))
+            {
+                continue;
+            }
+
+            if (latest.TryGetValue(occurrence.CronJobId, out var held))
+            {
+                var order = occurrence.ExecutionTime.CompareTo(held.ExecutionTime);
+
+                if (order < 0 || (order == 0 && occurrence.Id.CompareTo(held.Id) < 0))
+                {
+                    continue;
+                }
+            }
+
+            latest[occurrence.CronJobId] = occurrence;
+        }
+
+        IReadOnlyList<CronJobLastRun> rows =
+        [
+            .. latest.Values.Select(static occurrence => new CronJobLastRun
+            {
+                CronJobId = occurrence.CronJobId,
+                OccurrenceId = occurrence.Id,
+                Status = occurrence.Status,
+                ExecutedAt = occurrence.ExecutedAt,
+            }),
+        ];
+
+        return Task.FromResult(rows);
+    }
+
     private JobRunSummary[] _RunsOf(JobRunKind kind, JobRunQuery query)
     {
         return kind switch

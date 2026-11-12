@@ -90,4 +90,46 @@ public sealed class PostgreSqlDashboardReadsTests(PostgreSqlJobsCoordinationFixt
     {
         return base.in_progress_runs_are_counted_per_claim_owner();
     }
+
+    [Fact]
+    public override Task should_return_no_last_run_when_a_cron_job_has_no_started_occurrence()
+    {
+        return base.should_return_no_last_run_when_a_cron_job_has_no_started_occurrence();
+    }
+
+    [Fact]
+    public override Task should_return_the_occurrence_latest_by_execution_time_when_a_cron_job_ran_several_times()
+    {
+        return base.should_return_the_occurrence_latest_by_execution_time_when_a_cron_job_ran_several_times();
+    }
+
+    [Fact]
+    public override Task should_keep_a_finished_last_run_when_a_later_occurrence_is_idle_or_queued()
+    {
+        return base.should_keep_a_finished_last_run_when_a_later_occurrence_is_idle_or_queued();
+    }
+
+    [Fact]
+    public override Task should_return_a_running_last_run_without_an_end_time_when_the_latest_occurrence_is_in_progress()
+    {
+        return base.should_return_a_running_last_run_without_an_end_time_when_the_latest_occurrence_is_in_progress();
+    }
+
+    [Fact]
+    public override Task should_return_each_cron_job_its_own_last_run_when_two_cron_jobs_ran()
+    {
+        return base.should_return_each_cron_job_its_own_last_run_when_two_cron_jobs_ran();
+    }
+
+    [Fact]
+    public override Task should_return_the_run_lists_newest_occurrence_when_two_share_an_execution_time()
+    {
+        return base.should_return_the_run_lists_newest_occurrence_when_two_share_an_execution_time();
+    }
+
+    [Fact]
+    public override Task should_read_every_last_run_in_one_query_when_several_cron_jobs_ran()
+    {
+        return base.should_read_every_last_run_in_one_query_when_several_cron_jobs_ran();
+    }
 }

@@ -5,8 +5,9 @@ using Headless.Checks;
 namespace Headless.Jobs;
 
 // The reads a dashboard needs: one keyset list over time jobs and cron occurrences, capped counts, failure groups,
-// Operation scopes with their compare-and-set writes, Overview figures, and per-function stats. A provider implements
-// the per-table members; the members that span both tables are default methods built on them.
+// Operation scopes with their compare-and-set writes, Overview figures, per-function stats, and each cron job's last
+// run. A provider implements the per-table members; the members that span both tables are default methods built on
+// them.
 public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -726,6 +727,48 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
         }
 
         return [.. stats.Values.OrderBy(static row => row.Function, StringComparer.Ordinal)];
+    }
+
+    /// <summary>Returns the last run of each cron job: its latest occurrence that started or ended.</summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// One entry per cron job with at least one occurrence that started or ended, in no particular order.
+    /// </returns>
+    /// <remarks>
+    /// An occurrence started or ended once its status is neither <see cref="JobStatus.Idle"/> nor
+    /// <see cref="JobStatus.Queued"/>, so a waiting occurrence is never a last run, however late it is due. The latest
+    /// is the one with the greatest <see cref="CronJobOccurrenceEntity{TCronJob}.ExecutionTime"/>, the time the run
+    /// list orders by, because a run in progress has no <see cref="CronJobOccurrenceEntity{TCronJob}.ExecutedAt"/>
+    /// yet; among occurrences of one execution time it is the one the store's identifier order puts last. A store
+    /// answers with one query, never one per cron job. The member <see cref="GetCronJobLastRunsAsync"/> is built on.
+    /// The default throws.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<IReadOnlyList<CronJobLastRun>> ReadCronJobLastRunRowsAsync(CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support Jobs dashboard reads.");
+    }
+
+    /// <summary>
+    /// Returns, for each cron job that ran at least once, its last run: the latest occurrence that started or ended,
+    /// by execution time.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The last run per cron job identifier; a cron job that never ran has no entry.</returns>
+    /// <remarks>
+    /// A paused cron job keeps its last run. Default method built on <see cref="ReadCronJobLastRunRowsAsync"/>, one
+    /// read however many cron jobs there are.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IReadOnlyDictionary<Guid, CronJobLastRun>> GetCronJobLastRunsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        var rows = await ReadCronJobLastRunRowsAsync(cancellationToken).ConfigureAwait(false);
+
+        return rows.ToDictionary(static row => row.CronJobId);
     }
 
     private async Task<JobRunWindowFigures> _CountWindowAsync(
