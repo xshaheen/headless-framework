@@ -53,7 +53,7 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// <returns>The operation builder.</returns>
     /// <remarks>
     /// It is safe to run again in a later migration, for example to change <paramref name="purgeAuthority"/>. On a
-    /// partitioned table, call it after <see cref="AddHeadlessAuditLogPartitions"/>.
+    /// partitioned table, call it after <see cref="AddHeadlessPostgreSqlAuditLogPartitions"/>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="migrationBuilder"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
@@ -61,7 +61,7 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// <see cref="AuditLogPurgeAuthority.Owner"/>, or it is shorter than one second.
     /// </exception>
     /// <exception cref="NotSupportedException">The migration's database is not PostgreSQL.</exception>
-    public static OperationBuilder<SqlOperation> AddHeadlessAuditLogAppendOnly(
+    public static OperationBuilder<SqlOperation> AddHeadlessPostgreSqlAuditLogAppendOnly(
         this MigrationBuilder migrationBuilder,
         string? table = null,
         string schema = HeadlessStorageDefaults.Schema,
@@ -97,8 +97,8 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     }
 
     /// <summary>
-    /// Removes what <see cref="AddHeadlessAuditLogAppendOnly"/> created: the triggers, their function, and the owner's
-    /// purge function. Use it in <c>Down</c>.
+    /// Removes what <see cref="AddHeadlessPostgreSqlAuditLogAppendOnly"/> created: the triggers, their function, and
+    /// the owner's purge function. Use it in <c>Down</c>.
     /// </summary>
     /// <param name="migrationBuilder">The migration builder.</param>
     /// <param name="table">The audit log table; <see langword="null"/> for <c>audit_log_entries</c>.</param>
@@ -107,7 +107,7 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// <exception cref="ArgumentNullException"><paramref name="migrationBuilder"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A name is not a valid PostgreSQL identifier.</exception>
     /// <exception cref="NotSupportedException">The migration's database is not PostgreSQL.</exception>
-    public static OperationBuilder<SqlOperation> DropHeadlessAuditLogAppendOnly(
+    public static OperationBuilder<SqlOperation> DropHeadlessPostgreSqlAuditLogAppendOnly(
         this MigrationBuilder migrationBuilder,
         string? table = null,
         string schema = HeadlessStorageDefaults.Schema
@@ -138,8 +138,8 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// <remarks>
     /// <para>
     /// Call it in the migration that creates the table, after the scaffolded <c>CreateTable</c> of the audit log, and
-    /// before <see cref="AddHeadlessAuditLogAppendOnly"/>. EF Core has no partitioning API, so this changes that
-    /// <c>CreateTable</c>: it creates the scaffolded columns as a plain table named <c>{table}_template</c>, has
+    /// before <see cref="AddHeadlessPostgreSqlAuditLogAppendOnly"/>. EF Core has no partitioning API, so this changes
+    /// that <c>CreateTable</c>: it creates the scaffolded columns as a plain table named <c>{table}_template</c>, has
     /// PostgreSQL create the audit log table from it with <c>PARTITION BY RANGE ("created_at")</c>, drops the
     /// template, and adds the scaffolded primary key, unique constraints, and foreign keys to the partitioned table.
     /// Columns the application added to the entity are carried over like the rest. A partition carries the table's
@@ -154,8 +154,8 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// Both functions run with their owner's rights and are closed to <c>PUBLIC</c>: grant <c>EXECUTE</c> on them to
     /// the application's login with <see cref="PostgreSqlAuditLogPartitionFunctions.GrantExecuteStatement"/>. A row
     /// whose <c>created_at</c> falls in no partition fails its insert, so schedule
-    /// <see cref="IAuditLogPartitions{TContext}.EnsureAsync"/>. Use <see cref="DropHeadlessAuditLogPartitions"/> in
-    /// <c>Down</c>.
+    /// <see cref="IAuditLogPartitions{TContext}.EnsureAsync"/>. Use
+    /// <see cref="DropHeadlessPostgreSqlAuditLogPartitions"/> in <c>Down</c>.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="migrationBuilder"/> is <see langword="null"/>.</exception>
@@ -165,7 +165,7 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="monthsAhead"/> is outside 0 to 120.</exception>
     /// <exception cref="NotSupportedException">The migration's database is not PostgreSQL.</exception>
-    public static OperationBuilder<SqlOperation> AddHeadlessAuditLogPartitions(
+    public static OperationBuilder<SqlOperation> AddHeadlessPostgreSqlAuditLogPartitions(
         this MigrationBuilder migrationBuilder,
         string? table = null,
         string schema = HeadlessStorageDefaults.Schema,
@@ -193,7 +193,7 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     }
 
     /// <summary>
-    /// Removes the functions <see cref="AddHeadlessAuditLogPartitions"/> created. Use it in
+    /// Removes the functions <see cref="AddHeadlessPostgreSqlAuditLogPartitions"/> created. Use it in
     /// <c>Down</c>; the partitions go with the table when the migration drops it.
     /// </summary>
     /// <param name="migrationBuilder">The migration builder.</param>
@@ -203,7 +203,7 @@ public static class HeadlessPostgreSqlAuditLogMigrationBuilderExtensions
     /// <exception cref="ArgumentNullException"><paramref name="migrationBuilder"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A name is not a valid PostgreSQL identifier.</exception>
     /// <exception cref="NotSupportedException">The migration's database is not PostgreSQL.</exception>
-    public static OperationBuilder<SqlOperation> DropHeadlessAuditLogPartitions(
+    public static OperationBuilder<SqlOperation> DropHeadlessPostgreSqlAuditLogPartitions(
         this MigrationBuilder migrationBuilder,
         string? table = null,
         string schema = HeadlessStorageDefaults.Schema

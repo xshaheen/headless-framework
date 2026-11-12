@@ -17,7 +17,7 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_Npgsql);
 
         // when
-        migrationBuilder.AddHeadlessAuditLogAppendOnly();
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly();
 
         // then
         var sql = _Sql(migrationBuilder);
@@ -39,8 +39,8 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_Npgsql);
 
         // when
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(table: "audit", schema: "compliance");
-        migrationBuilder.DropHeadlessAuditLogAppendOnly(table: "audit", schema: "compliance");
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(table: "audit", schema: "compliance");
+        migrationBuilder.DropHeadlessPostgreSqlAuditLogAppendOnly(table: "audit", schema: "compliance");
 
         // then
         var operations = migrationBuilder.Operations.Cast<SqlOperation>().ToList();
@@ -57,7 +57,7 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_Npgsql);
 
         // when
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(
             purgeAuthority: AuditLogPurgeAuthority.Owner,
             minimumRetention: TimeSpan.FromDays(30)
         );
@@ -77,7 +77,10 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_Npgsql);
 
         // when
-        migrationBuilder.AddHeadlessAuditLogPartitions(monthsAhead: 6, minimumRetention: TimeSpan.FromDays(30));
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(
+            monthsAhead: 6,
+            minimumRetention: TimeSpan.FromDays(30)
+        );
 
         // then
         var sql = _Sql(migrationBuilder);
@@ -100,8 +103,8 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_Npgsql);
 
         // when
-        var add = () => migrationBuilder.AddHeadlessAuditLogAppendOnly(table, schema);
-        var partitions = () => migrationBuilder.AddHeadlessAuditLogPartitions(table, schema);
+        var add = () => migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(table, schema);
+        var partitions = () => migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(table, schema);
 
         // then
         add.Should().Throw<ArgumentException>();
@@ -117,11 +120,11 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
 
         // when
         var retentionWithoutOwner = () =>
-            migrationBuilder.AddHeadlessAuditLogAppendOnly(minimumRetention: TimeSpan.FromDays(1));
+            migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(minimumRetention: TimeSpan.FromDays(1));
         var subSecondRetention = () =>
-            migrationBuilder.AddHeadlessAuditLogPartitions(minimumRetention: TimeSpan.FromMilliseconds(1));
-        var tooManyMonths = () => migrationBuilder.AddHeadlessAuditLogPartitions(monthsAhead: 121);
-        var missingBuilder = () => ((MigrationBuilder)null!).AddHeadlessAuditLogAppendOnly();
+            migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(minimumRetention: TimeSpan.FromMilliseconds(1));
+        var tooManyMonths = () => migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(monthsAhead: 121);
+        var missingBuilder = () => ((MigrationBuilder)null!).AddHeadlessPostgreSqlAuditLogAppendOnly();
 
         // then
         retentionWithoutOwner.Should().Throw<ArgumentException>().WithMessage("*Owner*");
@@ -139,7 +142,7 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         migrationBuilder.CreateIndex("ix_audit_tenant_time", "audit", ["tenant_id", "created_at", "id"], "compliance");
 
         // when
-        migrationBuilder.AddHeadlessAuditLogPartitions(table: "audit", schema: "compliance");
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(table: "audit", schema: "compliance");
 
         // then - the scaffolded columns become a template, and the key and constraints move to the partitioned table
         var operations = migrationBuilder.Operations;
@@ -189,7 +192,7 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         _ScaffoldAuditTable(migrationBuilder, "audit_log_entries", "other");
 
         // when
-        migrationBuilder.AddHeadlessAuditLogPartitions();
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions();
 
         // then - only the functions are added; the database refuses a table that is not partitioned
         migrationBuilder.Operations.Should().HaveCount(3);
@@ -208,7 +211,7 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         _ScaffoldAuditTable(migrationBuilder, table, "headless");
 
         // when
-        var act = () => migrationBuilder.AddHeadlessAuditLogPartitions(table);
+        var act = () => migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(table);
 
         // then
         act.Should().Throw<ArgumentException>().WithMessage("*template*");
@@ -228,7 +231,7 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(_Npgsql);
 
         // when
-        migrationBuilder.DropHeadlessAuditLogPartitions(table: "audit", schema: "compliance");
+        migrationBuilder.DropHeadlessPostgreSqlAuditLogPartitions(table: "audit", schema: "compliance");
 
         // then
         _Sql(migrationBuilder)
@@ -250,10 +253,10 @@ public sealed class PostgreSqlAuditLogMigrationBuilderExtensionsTests
         var migrationBuilder = new MigrationBuilder(activeProvider);
 
         // when
-        var add = () => migrationBuilder.AddHeadlessAuditLogAppendOnly();
-        var drop = () => migrationBuilder.DropHeadlessAuditLogAppendOnly();
-        var partitions = () => migrationBuilder.AddHeadlessAuditLogPartitions();
-        var dropPartitions = () => migrationBuilder.DropHeadlessAuditLogPartitions();
+        var add = () => migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly();
+        var drop = () => migrationBuilder.DropHeadlessPostgreSqlAuditLogAppendOnly();
+        var partitions = () => migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions();
+        var dropPartitions = () => migrationBuilder.DropHeadlessPostgreSqlAuditLogPartitions();
 
         // then
         add.Should().Throw<NotSupportedException>().WithMessage($"*PostgreSql*'{activeProvider}'*");

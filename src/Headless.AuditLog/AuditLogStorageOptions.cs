@@ -61,8 +61,9 @@ public sealed class AuditLogStorageOptions
     /// with <c>ALTER</c> on the table can still <c>TRUNCATE</c> it. <see cref="PurgeAuthority"/> closes the first gap on
     /// PostgreSQL. Turning it on later adds the trigger at the next <c>resources provision</c>; turning it off later
     /// leaves the trigger in place until it is dropped by hand. The Entity Framework provider rejects it, because its
-    /// table comes from the application's migrations: call <c>migrationBuilder.AddHeadlessAuditLogAppendOnly(...)</c>
-    /// in a migration instead.
+    /// table comes from the application's migrations: call
+    /// <c>migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(...)</c> or
+    /// <c>migrationBuilder.AddHeadlessSqlServerAuditLogAppendOnly(...)</c> in a migration instead.
     /// </remarks>
     public bool AppendOnly { get; set; }
 
@@ -81,8 +82,8 @@ public sealed class AuditLogStorageOptions
     /// </para>
     /// <para>
     /// With Entity Framework storage the migration installs the same objects
-    /// (<c>migrationBuilder.AddHeadlessAuditLogAppendOnly(purgeAuthority: AuditLogPurgeAuthority.Owner)</c>), and this
-    /// option tells <see cref="IAuditLogRetention{TContext}"/> to call the function.
+    /// (<c>migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(purgeAuthority: AuditLogPurgeAuthority.Owner)</c>),
+    /// and this option tells <see cref="IAuditLogRetention{TContext}"/> to call the function.
     /// </para>
     /// </remarks>
     public AuditLogPurgeAuthority PurgeAuthority { get; set; }
@@ -111,8 +112,8 @@ public sealed class AuditLogStorageOptions
     /// from then on. A row whose <c>CreatedAt</c> falls in no partition fails its insert: there is no default
     /// partition. PostgreSQL cannot partition a table in place, so turning this on for a table that already exists
     /// fails verification with a checksum mismatch. With Entity Framework storage,
-    /// call <c>migrationBuilder.AddHeadlessAuditLogPartitions(...)</c> in the migration that creates the table
-    /// instead.
+    /// call <c>migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(...)</c> in the migration that creates the
+    /// table instead.
     /// </remarks>
     public AuditLogPartitioning Partitioning { get; set; }
 

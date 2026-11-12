@@ -9,6 +9,8 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The PostgreSQL package is referenced so the tests compile with both packages' migration helpers in scope. -->
+    <ProjectReference Include="..\..\src\Headless.AuditLog.Storage.PostgreSql.EntityFramework\Headless.AuditLog.Storage.PostgreSql.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.AuditLog.Storage.SqlServer.EntityFramework\Headless.AuditLog.Storage.SqlServer.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>

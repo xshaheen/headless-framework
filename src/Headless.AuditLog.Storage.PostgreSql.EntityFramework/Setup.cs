@@ -27,9 +27,9 @@ public static class SetupAuditLogPostgreSqlEntityFramework
         /// <returns>The setup builder for chaining.</returns>
         /// <remarks>
         /// The application's migrations own the table: make it append-only or partitioned with
-        /// <c>migrationBuilder.AddHeadlessAuditLogAppendOnly(...)</c> and
-        /// <c>migrationBuilder.AddHeadlessAuditLogPartitions(...)</c>. A startup gate refuses a context that runs on
-        /// another database.
+        /// <c>migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(...)</c> and
+        /// <c>migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(...)</c>. A startup gate refuses a context that
+        /// runs on another database.
         /// </remarks>
         public HeadlessAuditLogSetupBuilder UsePostgreSqlEntityFramework<TContext>()
             where TContext : DbContext

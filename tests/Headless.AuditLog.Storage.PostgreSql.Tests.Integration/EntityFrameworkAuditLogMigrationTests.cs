@@ -154,7 +154,7 @@ public sealed class EntityFrameworkAuditLogAppendOnlyMigrationTests(PostgreSqlAu
         // given - a later migration that calls the helper again, as one changing the purge authority would
         await using var services = await _MigrateAsync(retryOnFailure: false);
         var migrationBuilder = new MigrationBuilder(HeadlessStorageNaming.NpgsqlEfProviderName);
-        migrationBuilder.AddHeadlessAuditLogAppendOnly(schema: _Schema);
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogAppendOnly(schema: _Schema);
         var sql = ((SqlOperation)migrationBuilder.Operations[0]).Sql;
 
         // when
@@ -622,7 +622,7 @@ public sealed class EntityFrameworkAuditLogLeastPrivilegeTests(PostgreSqlAuditLo
             AbortToken
         );
         var migrationBuilder = new MigrationBuilder(HeadlessStorageNaming.NpgsqlEfProviderName);
-        migrationBuilder.AddHeadlessAuditLogPartitions(schema: schema);
+        migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(schema: schema);
         var sql = ((SqlOperation)migrationBuilder.Operations[0]).Sql;
 
         // when
