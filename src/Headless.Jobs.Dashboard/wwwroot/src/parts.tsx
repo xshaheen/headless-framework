@@ -466,18 +466,19 @@ export function RunFields({ run }: { run: Run }) {
   )
 }
 
-type Attempted = Pick<Run, 'status' | 'retryCount' | 'retries' | 'executedAt'>
+type Attempted = Pick<Run, 'status' | 'retryCount' | 'retries' | 'node'>
 
 /**
  * The attempt a run is on or last made, out of the first attempt and its retries: the store counts the retries a run
  * consumed, so the attempt is one past that. A run made no attempt while no node has picked it up, and none at all
- * when it was skipped or cancelled before it started. The panel's field and the list's cell both read this, so the
+ * when it was skipped or cancelled before a node picked it up. The panel's field and the list's cell both read this, so the
  * two cannot disagree.
  */
 function attemptsOf(run: Attempted) {
   const isWaiting = run.status === 'Idle' || run.status === 'Queued'
-  // A skipped run's handler never ran, and a cancelled run with no execution time was cancelled before it started.
-  const neverRan = run.status === 'Skipped' || (run.status === 'Cancelled' && !run.executedAt)
+  // A skipped run's handler never ran, and a cancelled run no node holds was cancelled before one picked it up: the
+  // store stamps the cancel time as its execution time, so only the missing node tells it from a run that started.
+  const neverRan = run.status === 'Skipped' || (run.status === 'Cancelled' && !run.node)
   const made = run.retryCount === 0 && (isWaiting || neverRan) ? undefined : run.retryCount + 1
 
   return { made, allowed: run.retries + 1, isWaiting }

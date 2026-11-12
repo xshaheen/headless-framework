@@ -337,6 +337,15 @@ public sealed class MessagingModuleHostTests : TestBase
             .HaveLength(MessagingViews.MaxReasonLength);
     }
 
+    [Fact]
+    public void should_read_a_circuit_key_as_its_consumer_and_lane_and_keep_another_shape_whole()
+    {
+        MessagingViews.ReadCircuitKey("0:billing.charge").Should().Be(("billing.charge", MessageLane.Bus));
+        MessagingViews.ReadCircuitKey("1:orders:billing").Should().Be(("orders:billing", MessageLane.Queue));
+        MessagingViews.ReadCircuitKey("billing.charge").Should().Be(("billing.charge", (MessageLane?)null));
+        MessagingViews.ReadCircuitKey("9:billing.charge").Should().Be(("9:billing.charge", (MessageLane?)null));
+    }
+
     private static JsonElement _Row(JsonElement[] rows, Guid storageId) =>
         rows.Should().ContainSingle(row => row.GetProperty("storageId").GetGuid() == storageId).Subject;
 

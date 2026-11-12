@@ -396,7 +396,9 @@ function CircuitsCard() {
                 <Mono>{circuit.consumer}</Mono>
               </NodeLink>
             }
-            meta={`${circuitLabels[circuit.state]} · ${failures}`}
+            meta={[circuitLabels[circuit.state], circuit.lane ? `${circuit.lane} lane` : '', failures]
+              .filter(Boolean)
+              .join(' · ')}
             title={`${circuit.consumer} ${circuitLabels[circuit.state]}, ${failures}`}
             value={seconds === undefined ? undefined : `retries in ${formatSeconds(Math.ceil(seconds), format.number)}`}
           />

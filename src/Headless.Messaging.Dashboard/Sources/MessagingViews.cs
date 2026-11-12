@@ -57,6 +57,28 @@ internal static class MessagingViews
         return true;
     }
 
+    /// <summary>
+    /// Reads a circuit key, <c>{lane number}:{consumer identity}</c>, apart: a circuit belongs to one consumer on
+    /// one lane. A key in another shape is the consumer whole, with no lane.
+    /// </summary>
+    public static (string Consumer, MessageLane? Lane) ReadCircuitKey(string circuitKey)
+    {
+        var separator = circuitKey.IndexOf(':', StringComparison.Ordinal);
+
+        return
+            separator > 0
+            && separator < circuitKey.Length - 1
+            && short.TryParse(
+                circuitKey.AsSpan(0, separator),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var lane
+            )
+            && Enum.IsDefined((MessageLane)lane)
+            ? (circuitKey[(separator + 1)..], (MessageLane)lane)
+            : (circuitKey, null);
+    }
+
     public static string KindOf(MessageType type) => type == MessageType.Publish ? PublishedKind : ReceivedKind;
 
     public static string KindOf(Persistence.MessageChangeKind kind) =>
@@ -468,11 +490,14 @@ internal sealed record MessagingScheduledList(
 /// <summary>One page of the operator ledger, newest first, and the cursor of the next page.</summary>
 internal sealed record MessagingReceiptList(IReadOnlyList<MessagingOperationReceiptView> Items, string? NextCursor);
 
-/// <summary>One consumer's circuit breaker, as the circuits view lists it.</summary>
+/// <summary>One consumer's circuit breaker on one lane, as the circuits view lists it.</summary>
 /// <param name="Id">The circuit's object id, <c>{node}~{circuit key}</c>, which its commands act on.</param>
+/// <param name="Consumer">The consumer identity, as the consumers read names it, without the key's lane.</param>
+/// <param name="Lane">The lane the circuit guards; null for a key that names none.</param>
 internal sealed record MessagingCircuitView(
     string Id,
     string Consumer,
+    MessageLane? Lane,
     CircuitBreakerState State,
     int ConsecutiveFailures,
     int FailureThreshold,

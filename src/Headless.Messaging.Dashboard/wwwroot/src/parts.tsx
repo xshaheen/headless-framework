@@ -899,9 +899,12 @@ export interface MessagingContract {
 }
 
 export interface MessagingCircuit {
-  /** `{node}~{consumer}`. */
+  /** `{node}~{circuit key}`, which the circuit's commands act on. */
   id: string
+  /** The consumer identity, as the consumers read names it. */
   consumer: string
+  /** The lane the circuit guards: an identity may consume on both, each with a circuit of its own. */
+  lane?: 'Bus' | 'Queue'
   state: 'Closed' | 'Open' | 'HalfOpen'
   consecutiveFailures: number
   failureThreshold: number

@@ -678,10 +678,13 @@ internal sealed class MessagingModuleApi(
         {
             if (monitor!.GetSnapshot(consumer) is { } snapshot)
             {
+                var (identity, lane) = MessagingViews.ReadCircuitKey(consumer);
+
                 items.Add(
                     new MessagingCircuitView(
                         MessagingViews.CircuitId(_stores.NodeName, consumer),
-                        consumer,
+                        identity,
+                        lane,
                         snapshot.State,
                         snapshot.ConsecutiveFailures,
                         snapshot.FailureThreshold,

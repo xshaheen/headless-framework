@@ -51,6 +51,14 @@ function implementations(consumer: MessagingConsumer) {
   return [...new Set(consumer.messages.flatMap((message) => (message.consumerType ? [message.consumerType] : [])))]
 }
 
+/** Whether a circuit is this consumer's: the same identity on the same lane, when the circuit names one. */
+function circuitOf(circuit: MessagingCircuit, consumer: Pick<MessagingConsumer, 'identity' | 'lane'>) {
+  return (
+    circuit.consumer === consumer.identity &&
+    (!circuit.lane || circuit.lane.toLowerCase() === consumer.lane.toLowerCase())
+  )
+}
+
 function shortType(type: string) {
   // A nested or generic type keeps its outer name: `Billing.OrderConsumer+Inner` reads `OrderConsumer+Inner`.
   const generic = type.indexOf('`')
@@ -106,7 +114,7 @@ export default function ConsumersView() {
         open ? (
           <ConsumerPanel
             consumer={open}
-            circuit={circuitRows.find((circuit) => circuit.consumer === open.identity)}
+            circuit={circuitRows.find((circuit) => circuitOf(circuit, open))}
             nodeName={nodeName}
           />
         ) : undefined

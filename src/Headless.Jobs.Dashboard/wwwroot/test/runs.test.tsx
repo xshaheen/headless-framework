@@ -183,12 +183,17 @@ describe('jobs runs list', () => {
     expect(field(panel(failed.id), 'Attempt')).toBe('Attempt 2 of 4')
   })
 
-  it('counts no attempt for a run that was skipped, in its row and in its panel', async () => {
+  it('counts no attempt for a run that was skipped or cancelled before a node picked it up', async () => {
     const skipped = run('Skipped', { function: 'a.skipped', executedAt: '2026-11-05T09:52:00Z' })
-    list({ runs: [skipped] })
+    // The store stamps the cancel time as the execution time, so only the missing node says it never started.
+    const unstarted = run('Cancelled', { function: 'a.unstarted', executedAt: '2026-11-05T09:52:00Z', node: undefined })
+    const stopped = run('Cancelled', { function: 'a.stopped', executedAt: '2026-11-05T09:52:00Z', node: 'node-a' })
+    list({ runs: [skipped, unstarted, stopped] })
 
     const row = await screen.findByRole('row', { name: /a\.skipped/ })
     expect(within(row).queryByText(/\d of \d/)).toBeNull()
+    expect(within(screen.getByRole('row', { name: /a\.unstarted/ })).queryByText(/\d of \d/)).toBeNull()
+    expect(within(screen.getByRole('row', { name: /a\.stopped/ })).getByText('1 of 1')).toBeTruthy()
 
     await user().click(row)
     await user().click(within(panel(skipped.id)).getByRole('tab', { name: 'Overview' }))
