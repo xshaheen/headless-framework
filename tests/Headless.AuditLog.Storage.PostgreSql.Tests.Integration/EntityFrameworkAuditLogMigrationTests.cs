@@ -399,6 +399,215 @@ public sealed class EntityFrameworkAuditLogLeastPrivilegeTests(PostgreSqlAuditLo
     }
 
     [Fact]
+    public async Task should_create_the_scaffolded_table_partitioned_with_the_columns_keys_and_indexes_the_model_maps()
+    {
+        // given, when - the migration holds only what EF Core scaffolds, then the helpers
+        const string schema = ScaffoldedPartitionedAuditDbContext.Schema;
+        await using var owner = await _MigrateAsOwnerAsync<ScaffoldedPartitionedAuditDbContext>(schema);
+        var factory = owner.GetRequiredService<IDbContextFactory<ScaffoldedPartitionedAuditDbContext>>();
+        await using var context = await factory.CreateDbContextAsync(AbortToken);
+        var entity = context.Model.FindEntityType(typeof(AuditLogEntry))!;
+        var table = StoreObjectIdentifier.Table(_Table, schema);
+        var mappedIndexes = entity
+            .GetIndexes()
+            .Select(index => index.GetDatabaseName()!)
+            .Append(entity.FindPrimaryKey()!.GetName()!)
+            .ToList();
+        var mappedColumns = entity.GetProperties().Select(property => property.GetColumnName(table)!).ToList();
+
+        // then - partitioned, and nothing of the template is left
+        (
+            await PostgreSqlTestDatabase.ScalarAsync<char>(
+                fixture.ConnectionString,
+                $"""SELECT relkind FROM pg_class WHERE oid = '"{schema}"."{_Table}"'::regclass;""",
+                AbortToken
+            )
+        )
+            .Should()
+            .Be('p');
+        (
+            await PostgreSqlTestDatabase.ListAsync(
+                fixture.ConnectionString,
+                $"""
+                SELECT c.relname::text FROM pg_class AS c JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                WHERE n.nspname = '{schema}' AND c.relname LIKE '%template%'
+                UNION ALL
+                SELECT conname::text FROM pg_constraint
+                WHERE conrelid = '"{schema}"."{_Table}"'::regclass AND conname LIKE '%template%';
+                """,
+                AbortToken
+            )
+        ).Should().BeEmpty();
+
+        // and the model's columns, key, indexes, check constraint, identity, default, and comment are all there
+        (
+            await PostgreSqlTestDatabase.ListAsync(
+                fixture.ConnectionString,
+                $"""
+                SELECT attname::text FROM pg_attribute
+                WHERE attrelid = '"{schema}"."{_Table}"'::regclass AND attnum > 0 AND NOT attisdropped;
+                """,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeEquivalentTo(mappedColumns);
+        (
+            await PostgreSqlTestDatabase.ListAsync(
+                fixture.ConnectionString,
+                $"SELECT indexname::text FROM pg_indexes WHERE schemaname = '{schema}' AND tablename = '{_Table}';",
+                AbortToken
+            )
+        )
+            .Should()
+            .BeEquivalentTo(mappedIndexes);
+        (
+            await PostgreSqlTestDatabase.ListAsync(
+                fixture.ConnectionString,
+                $"""
+                SELECT conname::text FROM pg_constraint
+                WHERE conrelid = '"{schema}"."{_Table}"'::regclass AND contype = 'c';
+                """,
+                AbortToken
+            )
+        ).Should().Equal(ScaffoldedPartitionedAuditDbContext.CategoryCheck);
+        (
+            await PostgreSqlTestDatabase.ScalarAsync<string>(
+                fixture.ConnectionString,
+                $"""SELECT obj_description('"{schema}"."{_Table}"'::regclass, 'pg_class');""",
+                AbortToken
+            )
+        )
+            .Should()
+            .Be(ScaffoldedPartitionedAuditDbContext.TableComment);
+        (await PostgreSqlTestDatabase.PartitionsAsync(fixture.ConnectionString, schema, _Table, AbortToken))
+            .Should()
+            .HaveCount(2);
+
+        // and a row saved through EF Core gets its id from the copied identity and the copied column default
+        await EntityFrameworkAuditLogServices.AddAsync<ScaffoldedPartitionedAuditDbContext>(
+            owner,
+            AbortToken,
+            ("first", DateTime.UtcNow),
+            ("second", DateTime.UtcNow)
+        );
+        (
+            await PostgreSqlTestDatabase.ListAsync(
+                fixture.ConnectionString,
+                $"""SELECT "id"::text || ':' || "category" FROM "{schema}"."{_Table}" ORDER BY "id";""",
+                AbortToken
+            )
+        )
+            .Should()
+            .Equal("1:data", "2:data");
+    }
+
+    [Fact]
+    public async Task should_let_the_granted_login_keep_the_partitions_of_the_scaffolded_table()
+    {
+        // given - the migration granted the partition functions with the statement the framework builds
+        const string schema = ScaffoldedPartitionedAuditDbContext.Schema;
+        await using var owner = await _MigrateAsOwnerAsync<ScaffoldedPartitionedAuditDbContext>(schema);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2031, 5, 10, 0, 0, 0, TimeSpan.Zero));
+        await using var app = EntityFrameworkAuditLogServices.Create<ScaffoldedPartitionedAuditDbContext>(
+            fixture.AppConnectionString,
+            schema,
+            retryOnFailure: true,
+            options => options.PartitionMonthsAhead = 1,
+            clock
+        );
+        var partitions = app.GetRequiredService<IAuditLogPartitions<ScaffoldedPartitionedAuditDbContext>>();
+
+        // when
+        var created = await partitions.EnsureAsync(AbortToken);
+        var dropped = await partitions.DropExpiredAsync(TimeSpan.FromDays(365), AbortToken);
+
+        // then
+        created.Should().Be(2);
+        dropped.Should().Be(2);
+        (await PostgreSqlTestDatabase.PartitionsAsync(fixture.ConnectionString, schema, _Table, AbortToken))
+            .Should()
+            .Equal("audit_log_entries_2031_05", "audit_log_entries_2031_06");
+    }
+
+    [Fact]
+    public async Task should_remove_the_partitioned_table_and_its_functions_when_the_migration_is_reverted()
+    {
+        // given
+        const string schema = ScaffoldedPartitionedAuditDbContext.Schema;
+        await using var owner = await _MigrateAsOwnerAsync<ScaffoldedPartitionedAuditDbContext>(schema);
+
+        // when
+        await EntityFrameworkAuditLogServices.MigrateAsync<ScaffoldedPartitionedAuditDbContext>(
+            owner,
+            Migration.InitialDatabase,
+            AbortToken
+        );
+
+        // then - only the migrations history table is left in the schema
+        (
+            await PostgreSqlTestDatabase.ScalarAsync<long>(
+                fixture.ConnectionString,
+                $"""
+                SELECT count(*) FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
+                WHERE n.nspname = '{schema}';
+                """,
+                AbortToken
+            )
+        )
+            .Should()
+            .Be(0);
+        (
+            await PostgreSqlTestDatabase.ListAsync(
+                fixture.ConnectionString,
+                $"""
+                SELECT c.relname::text FROM pg_class AS c JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                WHERE n.nspname = '{schema}' AND c.relkind IN ('r', 'p', 'S');
+                """,
+                AbortToken
+            )
+        ).Should().Equal(AuditLogMigrationScripts.HistoryTable);
+    }
+
+    [Fact]
+    public async Task should_create_the_scaffolded_table_partitioned_from_an_idempotent_script()
+    {
+        // given - the script a deployment reviews and applies instead of running the migrator
+        const string schema = ScaffoldedPartitionedAuditDbContext.Schema;
+        await PostgreSqlTestDatabase.ExecuteAsync(
+            fixture.ConnectionString,
+            $"""DROP SCHEMA IF EXISTS "{schema}" CASCADE;""",
+            AbortToken
+        );
+        await using var owner = EntityFrameworkAuditLogServices.Create<ScaffoldedPartitionedAuditDbContext>(
+            fixture.OwnerConnectionString,
+            schema,
+            retryOnFailure: true
+        );
+        var factory = owner.GetRequiredService<IDbContextFactory<ScaffoldedPartitionedAuditDbContext>>();
+        await using var context = await factory.CreateDbContextAsync(AbortToken);
+        var script = context.GetService<IMigrator>().GenerateScript(options: MigrationsSqlGenerationOptions.Idempotent);
+
+        // when - applied twice, as a deployment that re-runs the script would
+        await PostgreSqlTestDatabase.ExecuteAsync(fixture.OwnerConnectionString, script, AbortToken);
+        await PostgreSqlTestDatabase.ExecuteAsync(fixture.OwnerConnectionString, script, AbortToken);
+
+        // then
+        (
+            await PostgreSqlTestDatabase.ScalarAsync<char>(
+                fixture.ConnectionString,
+                $"""SELECT relkind FROM pg_class WHERE oid = '"{schema}"."{_Table}"'::regclass;""",
+                AbortToken
+            )
+        )
+            .Should()
+            .Be('p');
+        (await PostgreSqlTestDatabase.PartitionsAsync(fixture.ConnectionString, schema, _Table, AbortToken))
+            .Should()
+            .HaveCount(2);
+    }
+
+    [Fact]
     public async Task should_refuse_a_table_that_was_not_created_partitioned()
     {
         // given - the plain table EF Core scaffolds, without the PARTITION BY edit

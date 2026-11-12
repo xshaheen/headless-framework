@@ -276,7 +276,7 @@ A partitioned audit table keeps one range partition per calendar month of `creat
 | Storage | Switch | Creates |
 | --- | --- | --- |
 | `UsePostgreSql` | `AuditLogStorageOptions.Partitioning = AuditLogPartitioning.Monthly` | the table as `PARTITION BY RANGE (created_at)` (step `AuditLog/1`), the partition functions (step `AuditLog/5`), and the partitions (the `AuditLogPartitions` resource) |
-| `UsePostgreSqlEntityFramework` | the application's migration creates the table with `PARTITION BY RANGE ("created_at")`, then calls `migrationBuilder.AddHeadlessAuditLogPartitions(...)` | the same functions, and the partitions from the current month through `monthsAhead` months ahead (default 3). The helper never creates or replaces the table. |
+| `UsePostgreSqlEntityFramework` | `migrationBuilder.AddHeadlessAuditLogPartitions(...)` in the migration that creates the table | the table as `PARTITION BY RANGE ("created_at")` from the scaffolded `CreateTable`, the same functions, and the partitions from the current month through `monthsAhead` months ahead (default 3) |
 
 ```csharp
 // Raw PostgreSQL storage
@@ -286,18 +286,15 @@ setup.ConfigureStorage(options =>
     options.PartitionMonthsAhead = 6; // default 3, range 0 to 120
 });
 
-// Entity Framework storage. EF Core has no partitioning API, so replace the scaffolded CreateTable of the audit
-// table with its SQL (dotnet ef migrations script prints it) ending in PARTITION BY, and keep the CreateIndex calls.
-migrationBuilder.Sql(
-    """
-    CREATE TABLE "headless"."audit_log_entries" (
-        -- the columns of the scaffolded table, unchanged
-        CONSTRAINT "pk_audit_log_entries" PRIMARY KEY ("created_at", "id")
-    ) PARTITION BY RANGE ("created_at");
-    """
-);
+// Entity Framework storage: in Up, after the scaffolded CreateTable and CreateIndex calls of the audit table, which
+// stay as scaffolded.
 migrationBuilder.AddHeadlessAuditLogPartitions(monthsAhead: 6);
 migrationBuilder.AddHeadlessAuditLogAppendOnly();
+migrationBuilder.Sql(PostgreSqlAuditLogPartitionFunctions.GrantExecuteStatement("app_login"));
+
+// In Down, before the scaffolded DropTable.
+migrationBuilder.DropHeadlessAuditLogAppendOnly();
+migrationBuilder.DropHeadlessAuditLogPartitions();
 ```
 
 `IAuditLogPartitions<TContext>` keeps the partitions at run time. Call both members from one scheduled job, at least once a month; the framework schedules nothing itself, so the storage packages do not depend on a job runner:
@@ -316,10 +313,12 @@ public sealed class AuditLogPartitionsJob(IAuditLogPartitions<AppDbContext> part
 - **No default partition.** A row whose `created_at` falls in no partition fails its insert with `23514`, and with Entity Framework storage that fails the `SaveChanges` that produced it. A default partition would hide the gap and then block creating the month it holds rows for. Keep the horizon at one month or more, and run the job.
 - **`EnsureAsync`** returns the number of partitions it created; a second call returns 0. It measures the current month by the registered `TimeProvider`. When the table is append-only it also adds the `TRUNCATE` guard to every partition that lacks one: PostgreSQL does not clone a statement trigger to partitions, so a `TRUNCATE` aimed at one partition would skip the parent's.
 - **`DropExpiredAsync(olderThan)`** drops every partition whose whole range ended more than `olderThan` ago and returns how many. A month that still holds one day inside the retention period stays whole. `IAuditLogRetention<TContext>.PurgeAsync` still deletes single rows on a partitioned table.
-- **Least privilege.** Both members call `{schema}.{table}_ensure_partitions(from, months_ahead)` and `{schema}.{table}_drop_partitions(cutoff)`: `SECURITY DEFINER`, `search_path` pinned, closed to `PUBLIC`. A login with no DDL rights keeps the partitions once it is granted `EXECUTE` on them; the partitions belong to the functions' owner. `MinimumRetention` (or the helper's `minimumRetention:`) puts the same floor under the drop function as under the purge function.
+- **Least privilege.** Both members call `{schema}.{table}_ensure_partitions(from, months_ahead)` and `{schema}.{table}_drop_partitions(cutoff)`: `SECURITY DEFINER`, `search_path` pinned, closed to `PUBLIC`. A login with no DDL rights keeps the partitions once it is granted `EXECUTE` on them; the partitions belong to the functions' owner. `PostgreSqlAuditLogPartitionFunctions.GrantExecuteStatement(role, table, schema)`, from `Headless.AuditLog.Storage.PostgreSql`, returns that grant for both functions, to run as their owner in a migration or a deploy step; the framework runs it for nobody. `MinimumRetention` (or the helper's `minimumRetention:`) puts the same floor under the drop function as under the purge function.
 - **Locks.** Creating or dropping a partition takes an `ACCESS EXCLUSIVE` lock on the table for an instant. Both functions set `lock_timeout` to 5 seconds, so a call made while a long transaction holds the table fails with `55P03` instead of queueing every writer behind it. Run the job again.
 - **Raw provider.** `resources provision` runs the `AuditLogPartitions/{schema}/{table}` resource after the schema steps on every release, which tops the horizon up as `EnsureAsync` does. A starting host checks with one catalog read that the current month has a partition, and holds the `warmup` readiness check `Unhealthy` until it does. `PartitionMonthsAhead` is not part of any step, so changing it needs no migration. `EnsureAsync` and `DropExpiredAsync` throw `InvalidOperationException` when `Partitioning` is `None`.
-- **Entity Framework.** The application owns the table, so it creates it partitioned: PostgreSQL cannot partition a table in place, and the framework does not rewrite a table a migration created. `AddHeadlessAuditLogPartitions` fails with `55000` when the table is not partitioned, and installs nothing. The default composite key `(created_at, id)` already satisfies PostgreSQL's rule that a partitioned table's key includes the partition column. Call the helper before `AddHeadlessAuditLogAppendOnly`. There is no `Down` helper: drop the table and both functions.
+- **Entity Framework.** EF Core has no partitioning API, so `AddHeadlessAuditLogPartitions` changes the scaffolded `CreateTable` of the audit table in the same migration: the scaffolded columns are created as a plain table named `{table}_template`, PostgreSQL creates the audit table from it with `PARTITION BY RANGE ("created_at")`, the template is dropped, and the scaffolded primary key, unique constraints, and foreign keys are added to the partitioned table under the model's names. The scaffolded `CreateIndex` calls then run against the partitioned table. Columns, defaults, check constraints, and comments the application added to `AuditLogEntry` are carried over. It needs PostgreSQL 17 or later, the first version with identity columns on a partitioned table. The default composite key `(created_at, id)` already satisfies PostgreSQL's rule that a partitioned table's key includes the partition column. Call the helper before `AddHeadlessAuditLogAppendOnly`, and `DropHeadlessAuditLogPartitions` in `Down`. A table name must leave room for the `_template` suffix within 63 characters.
+- **Entity Framework, later migrations.** PostgreSQL cannot partition a table in place, and the framework does not rewrite a table an earlier migration created: in a migration that does not create the table, the helper installs the functions only, and fails with `55000`, installing nothing, when the table is not partitioned. An application that writes the table's `CREATE TABLE ... PARTITION BY RANGE ("created_at")` itself, instead of the scaffolded `CreateTable`, gets the same.
+- **Idempotent scripts.** Every statement the helpers emit also runs inside the PL/pgSQL block that `dotnet ef migrations script --idempotent` wraps a migration in.
 - **Existing tables.** On the raw provider, turning `Partitioning` on for a table that exists changes step `AuditLog/1` and fails verification with a checksum mismatch. Move the rows by hand, or start with a new table name.
 - SQL Server partitioning is not provided: its options validation refuses `Partitioning`, and `IAuditLogPartitions<TContext>` is not registered by `UseSqlServer`.
 
@@ -483,7 +482,7 @@ Storage options (`AuditLogStorageOptions`):
 | `AppendOnly` | `false` | PostgreSQL and SQL Server only: add a trigger that refuses `UPDATE` and `DELETE` (and `TRUNCATE` on PostgreSQL) except the retention purge. Entity Framework storage rejects it and uses `migrationBuilder.AddHeadlessAuditLogAppendOnly(...)` from the database's Entity Framework audit package. See [Retention and append-only storage](#retention-and-append-only-storage). |
 | `PurgeAuthority` | `SessionSetting` | Who may delete from an append-only table. `Owner` (PostgreSQL only) lets only a role with the table owner's rights delete, through the `{table}_purge` function. On Entity Framework storage it tells the retention to call the function a migration installed. See [Who may purge](#who-may-purge). |
 | `MinimumRetention` | `null` | PostgreSQL provider only, with `PurgeAuthority.Owner` or `Partitioning.Monthly`: the retention the database enforces whatever period a caller asks for. At least one second. Entity Framework storage rejects it; pass `minimumRetention:` to the migration helpers. |
-| `Partitioning` | `None` | PostgreSQL provider only: `Monthly` creates the table partitioned by month. Entity Framework storage rejects it and uses `migrationBuilder.AddHeadlessAuditLogPartitions(...)` from `Headless.AuditLog.Storage.PostgreSql.EntityFramework`. See [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql). |
+| `Partitioning` | `None` | PostgreSQL provider only: `Monthly` creates the table partitioned by month. Entity Framework storage rejects it and uses `migrationBuilder.AddHeadlessAuditLogPartitions(...)` from `Headless.AuditLog.Storage.PostgreSql.EntityFramework`, in the migration that creates the table. See [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql). |
 | `PartitionMonthsAhead` | `3` | How many months after the current one `IAuditLogPartitions<TContext>.EnsureAsync` and `resources provision` keep a partition for. Range 0 to 120. |
 
 ### Runtime behavior
@@ -507,6 +506,7 @@ EF Core storage provider for automatic audit entries and explicit event logging.
 - `EfAuditLogRetention<TContext>` — implements `IAuditLogRetention<TContext>` with `ExecuteDeleteAsync` over the oldest expired rows, in a transaction on a context from `IDbContextFactory<TContext>`. The transaction is opened inside the context's execution strategy, so it works with `EnableRetryOnFailure`; a retry runs the whole purge again. It knows nothing about the database, so it passes no append-only trigger and throws `NotSupportedException` for `PurgeAuthority.Owner`; the PostgreSQL and SQL Server packages replace it.
 - No migration helper and no `IAuditLogPartitions<TContext>`: both belong to the database-specific packages. `AuditLogStorageOptions.AppendOnly`, `Partitioning`, and `MinimumRetention` are rejected at startup.
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
+- `IAuditLogEntryEnricher` — `Enrich(EntityEntry<AuditLogEntry>)`, called once for every audit row when it is added to its `DbContext`, to fill columns the application added to the table; see [Adding columns to the audit table](#adding-columns-to-the-audit-table).
 - `HeadlessAuditLogModelBuilderExtensions.ConfigureHeadlessAuditLog(DbContext)` — registers and configures the `AuditLogEntry` entity type, resolving `AuditLogStorageOptions` from the context's services and the naming style from `Database.ProviderName`; idempotent. The `(AuditLogStorageOptions, StorageNamingStyle)` overload takes both explicitly; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` so the mapping matches the raw providers.
 - Object names follow the database: on PostgreSQL the table is `audit_log_entries` with snake_case columns (`created_at`, `tenant_id`, …), key `pk_audit_log_entries`, and indexes `ix_audit_log_entries_tenant_time` and siblings; elsewhere the table is `AuditLogEntries` with PascalCase columns, key `PK_AuditLogEntries`, and indexes `IX_AuditLogEntries_TenantTime` and siblings.
 - Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, and correlation ID, each ending in `(CreatedAt, Id)` for keyset paging.
@@ -582,6 +582,36 @@ public sealed class AppDbContext : DbContext
 
 The fluent audit policy is supplied by `Headless.EntityFramework`. Owned entries inherit eligibility from their root owner; derived types inherit the nearest configured base policy unless overridden.
 
+#### Adding columns to the audit table
+
+The table belongs to the application's model, so a column is a property mapped on `AuditLogEntry` after `ConfigureHeadlessAuditLog`, and an `IAuditLogEntryEnricher` fills it:
+
+```csharp
+// OnModelCreating, after ConfigureHeadlessAuditLog
+modelBuilder.Entity<AuditLogEntry>(entry =>
+{
+    entry.Property<string>("Category").HasMaxLength(32).IsRequired();
+    entry.HasIndex("TenantId", "Category", "CreatedAt", "Id");
+});
+
+public sealed class AuditCategoryEnricher : IAuditLogEntryEnricher
+{
+    public void Enrich(EntityEntry<AuditLogEntry> entry)
+    {
+        entry.Property<string>("Category").CurrentValue = entry.Entity.Action.Split('.')[0];
+    }
+}
+
+services.AddSingleton<IAuditLogEntryEnricher, AuditCategoryEnricher>();
+```
+
+- **When it runs.** Once per row, as the row is added to its `DbContext` and before it is saved: for change-capture rows, for `IAuditLog<TContext>.LogAsync`, and for `IAuditLogWriter<TContext>.WriteAsync`. Enrichers run in registration order, at any lifetime; with none registered nothing changes.
+- **What it can read.** The row's own fields are set. The `EntityId` of an entity whose key the database generates is not known yet: it is patched after the save.
+- **Failure.** An exception fails the write that produced the row, and the row is removed from the context, so a caller that catches the exception and still saves writes no half-filled row.
+- **Reading.** `IReadAuditLog<TContext>` returns `AuditLogEntryData`, which does not carry these columns. Query `DbSet<AuditLogEntry>` and read them with `EF.Property<T>(entry, "Category")`, which also translates in a `Where`.
+- **Every Entity Framework registration.** `UseEntityFramework`, `UsePostgreSqlEntityFramework`, and `UseSqlServerEntityFramework` all call the enrichers.
+- **Raw providers.** `UsePostgreSql` and `UseSqlServer` create a fixed table and call no enricher.
+
 #### Explicit event logging
 
 ```csharp
@@ -645,6 +675,7 @@ modelBuilder.Entity<AuditLogEntry>().HasKey(e => e.Id); // single-column PK for 
 - Registers `IAuditLogWriter<TContext>` as scoped (`EfAuditLogWriter<TContext>`).
 - Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
 - Registers `IAuditLogRetention<TContext>` as a singleton (`EfAuditLogRetention<TContext>`), unless a database-specific package registered its own.
+- Resolves every registered `IAuditLogEntryEnricher`; it registers none.
 - Registers `AuditLogEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator` (validates the model and the registration's database at startup).
 - Automatic `ChangeTracker` capture and the fluent model policy are supplied by `Headless.EntityFramework`; this package only selects EF-backed audit storage.
 
@@ -657,7 +688,7 @@ Entity Framework audit log storage for PostgreSQL: everything `Headless.AuditLog
 ### API and behavior
 
 - `SetupAuditLogPostgreSqlEntityFramework.UsePostgreSqlEntityFramework<TContext>()` — the registration for a context on PostgreSQL. It registers the storage of `UseEntityFramework<TContext>()` with the two services below in place of the provider-neutral retention.
-- `HeadlessPostgreSqlAuditLogMigrationBuilderExtensions` (namespace `Microsoft.EntityFrameworkCore.Migrations`) — `AddHeadlessAuditLogAppendOnly`, `DropHeadlessAuditLogAppendOnly`, and `AddHeadlessAuditLogPartitions`; see [Retention and append-only storage](#retention-and-append-only-storage) and [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql). Each throws `NotSupportedException` in a migration for another database.
+- `HeadlessPostgreSqlAuditLogMigrationBuilderExtensions` (namespace `Microsoft.EntityFrameworkCore.Migrations`) — `AddHeadlessAuditLogAppendOnly`, `DropHeadlessAuditLogAppendOnly`, `AddHeadlessAuditLogPartitions`, and `DropHeadlessAuditLogPartitions`; see [Retention and append-only storage](#retention-and-append-only-storage) and [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql). Each throws `NotSupportedException` in a migration for another database.
 - `IAuditLogRetention<TContext>` — sets the `headless.audit_log_purge` session setting inside the purge's transaction, so the delete passes an append-only trigger a migration added. With `PurgeAuthority.Owner` it calls the `{table}_purge` function instead.
 - `IAuditLogPartitions<TContext>` — calls the partition functions `AddHeadlessAuditLogPartitions` installed, named from the table the model maps `AuditLogEntry` to.
 
@@ -755,6 +786,7 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 - The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts); `AppendOnly` adds `AuditLog/3`, a `BEFORE UPDATE OR DELETE` row trigger and a `BEFORE TRUNCATE` statement trigger over one PL/pgSQL function; `PurgeAuthority.Owner` adds `AuditLog/4` and `Partitioning.Monthly` adds `AuditLog/5`.
 - `IAuditLogRetention<TContext>` (singleton) — deletes expired rows in `(created_at, id)` order on its own connection, after `set_config('headless.audit_log_purge', 'on', true)`, or with `PurgeAuthority.Owner` through one call to `{table}_purge`.
 - `IAuditLogPartitions<TContext>` (singleton) — calls the partition functions on its own connection; see [Monthly partitions (PostgreSQL)](#monthly-partitions-postgresql).
+- `PostgreSqlAuditLogPartitionFunctions.GrantExecuteStatement(role, table, schema)` — the `GRANT EXECUTE` statement for both partition functions of a table, for this provider and for Entity Framework storage on PostgreSQL. The role is quoted, so any role name is accepted; the schema and table must be plain PostgreSQL identifiers.
 - Batched INSERT: up to 100 rows per command, the size SQL Server's parameter limit allows, so both providers share one writer (statement text cached per row count).
 - `jsonb` by default for `OldValues`, `NewValues`, and `ChangedFields`; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation time).
 - `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s, applied to every write and read), inherited from `RelationalAuditLogOptions`.

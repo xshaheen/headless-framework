@@ -18,6 +18,7 @@ internal sealed class EfAuditLogWriter<TContext>(
     ICorrelationIdProvider correlationIdProvider,
     TimeProvider timeProvider,
     IOptions<AuditLogOptions> options,
+    IEnumerable<IAuditLogEntryEnricher> enrichers,
     IAuditClientInfoProvider? clientInfo = null
 ) : IAuditLogWriter<TContext>
     where TContext : DbContext
@@ -42,7 +43,7 @@ internal sealed class EfAuditLogWriter<TContext>(
         );
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        context.Set<AuditLogEntry>().Add(entry);
+        enrichers.Enrich(context.Set<AuditLogEntry>().Add(entry));
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 }
