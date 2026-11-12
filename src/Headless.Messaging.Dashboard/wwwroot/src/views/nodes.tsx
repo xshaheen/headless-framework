@@ -12,23 +12,17 @@ import {
   StatusMark,
   Tag,
   usePageFrame,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
-import { PingIcon } from '@headless/dashboard-sdk/icons'
+import { NodeIcon, PingIcon } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { useState } from 'react'
 import { nodeMark, useMessagingCommands, viewOnlyReason } from '../messages.ts'
-import {
-  CellText,
-  QueryState,
-  StaleNotice,
-  useNode,
-  type MessagingNode,
-  type MessagingNodeInstance,
-} from '../parts.tsx'
+import { CellText, StaleNotice, useNode, type MessagingNode, type MessagingNodeInstance } from '../parts.tsx'
 
 /** A node's row id is its name, which the server's node commands take as their id. */
 type NodeRow = MessagingNode & { id: string }
@@ -223,15 +217,16 @@ export default function NodesView() {
         ) : undefined
       }
     >
-      <StaleNotice what="these nodes" onRefresh={() => void nodes.refetch()} />
+      <StaleNotice what="these nodes" onRefresh={() => void nodes.refetch()} failed={nodes.isError} />
       <Announcer message={said.text} id={said.round} />
       <QueryState query={nodes} label="Loading nodes" rows={3} shape="table">
         {() => (
           <DataTable
             label="Nodes"
-            viewId="messaging.nodes"
             frame={frame}
             rows={rows}
+            emptyIcon={NodeIcon}
+            emptyTitle="No nodes"
             emptyState="No node serves Messaging."
             rowActions={(row) =>
               row.isLocal ? null : (

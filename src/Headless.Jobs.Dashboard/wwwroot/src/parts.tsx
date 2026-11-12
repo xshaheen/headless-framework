@@ -22,10 +22,8 @@ import {
   StatStrip,
   Text,
   Timeline,
-  useDelayed,
   useViewKeys,
   type HistoryItem,
-  type SkeletonShape,
   type TimelineEvent,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
@@ -50,7 +48,7 @@ import { useQuery, useQueryClient, type QueryClient } from '@headless/dashboard-
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useModuleStale, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef, type ReactNode } from 'react'
-import { fetchFunctions } from './cron.ts'
+import { fetchFunctions, fetchNodes } from './cron.ts'
 import { RunProgress } from './progress.tsx'
 import {
   attemptTones,
@@ -79,41 +77,6 @@ export { RunProgress }
  */
 export function CellText({ title, children }: { title?: string; children: ReactNode }) {
   return <span title={title}>{children}</span>
-}
-
-type LoadState<T> =
-  | { isPending: true; isError: false }
-  | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
-  | { isPending: false; isError: false; data: T }
-
-/**
- * A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. The
- * skeleton takes the `shape` of what loads: `table` for a list region, `rows` by default.
- */
-export function QueryState<T>({
-  query,
-  label,
-  rows,
-  shape,
-  children,
-}: {
-  query: LoadState<T>
-  label: string
-  rows: number
-  shape?: SkeletonShape
-  children: (data: T) => ReactNode
-}) {
-  const showLoading = useDelayed(query.isPending)
-
-  if (query.isPending) {
-    return showLoading ? <Skeleton label={label} rows={rows} shape={shape} /> : null
-  }
-
-  if (query.isError) {
-    return <LoadError message={query.error.message} onRetry={() => void query.refetch()} />
-  }
-
-  return children(query.data)
 }
 
 // A finishing chain or a bulk requeue sends many run changes at once; one read after they settle covers them all.
@@ -173,9 +136,16 @@ export function useFunctions() {
   return useQuery({ queryKey: ['jobs', 'functions'], queryFn: () => fetchFunctions(api) })
 }
 
+/** The live nodes, one cached answer for the Servers view and the dashboard's worker total. */
+export function useNodes() {
+  const { api } = useDashboard()
+
+  return useQuery({ queryKey: ['jobs', 'nodes'], queryFn: () => fetchNodes(api) })
+}
+
 /** `Stale` while the stream is down or the server reports the Jobs changes stopped; the data on screen is kept. */
-export function StaleNotice({ what, onRefresh }: { what: string; onRefresh: () => void }) {
-  return <SdkStaleNotice stale={useStale()} what={what} onRefresh={onRefresh} />
+export function StaleNotice({ what, onRefresh, failed }: { what: string; onRefresh: () => void; failed?: boolean }) {
+  return <SdkStaleNotice stale={useStale()} what={what} onRefresh={onRefresh} failed={failed} />
 }
 
 /** Whether what the view shows may be out of date: the stream is down, or this module's changes stopped. */
@@ -496,18 +466,40 @@ export function RunFields({ run }: { run: Run }) {
   )
 }
 
-/**
- * `Attempt 2 of 4`: the store counts the retries a run consumed, so the attempt running or last run is one past that,
- * out of the first attempt and its retries. A run no node has picked up yet has made no attempt.
- */
-function attemptText(run: Pick<Run, 'status' | 'retryCount' | 'retries'>, number: (value: number) => string) {
-  const max = number(run.retries + 1)
+type Attempted = Pick<Run, 'status' | 'retryCount' | 'retries' | 'node'>
 
-  if (run.retryCount === 0 && (run.status === 'Idle' || run.status === 'Queued')) {
-    return `Not run yet, up to ${max}`
+/**
+ * The attempt a run is on or last made, out of the first attempt and its retries: the store counts the retries a run
+ * consumed, so the attempt is one past that. A run made no attempt while no node has picked it up, and none at all
+ * when it was skipped or cancelled before a node picked it up. The panel's field and the list's cell both read this, so the
+ * two cannot disagree.
+ */
+function attemptsOf(run: Attempted) {
+  const isWaiting = run.status === 'Idle' || run.status === 'Queued'
+  // A skipped run's handler never ran, and a cancelled run no node holds was cancelled before one picked it up: the
+  // store stamps the cancel time as its execution time, so only the missing node tells it from a run that started.
+  const neverRan = run.status === 'Skipped' || (run.status === 'Cancelled' && !run.node)
+  const made = run.retryCount === 0 && (isWaiting || neverRan) ? undefined : run.retryCount + 1
+
+  return { made, allowed: run.retries + 1, isWaiting }
+}
+
+/** `Attempt 2 of 4`, `Not run yet, up to 4` for a run still waiting, or `Did not run` for one that never will. */
+function attemptText(run: Attempted, number: (value: number) => string) {
+  const { made, allowed, isWaiting } = attemptsOf(run)
+
+  if (made === undefined) {
+    return isWaiting ? `Not run yet, up to ${number(allowed)}` : 'Did not run'
   }
 
-  return `Attempt ${number(run.retryCount + 1)} of ${max}`
+  return `Attempt ${number(made)} of ${number(allowed)}`
+}
+
+/** `2 of 4` for a list cell, and nothing for a run that has made no attempt, which the cell shows as its dash. */
+export function attemptsCell(run: Attempted, number: (value: number) => string) {
+  const { made, allowed } = attemptsOf(run)
+
+  return made === undefined ? undefined : `${number(made)} of ${number(allowed)}`
 }
 
 /** A run's attempts, read again whenever the run's version moves, since a live change carries no attempts. */

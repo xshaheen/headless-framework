@@ -16,6 +16,7 @@ import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { useInfiniteQuery } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
+import { OperatorLogIcon } from '@headless/dashboard-sdk/icons'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
 import { nodeQuery } from '../messages.ts'
 import { CellText, NodeSwitch, useNode } from '../parts.tsx'
@@ -137,10 +138,11 @@ export default function OperatorLogView() {
       ) : (
         <DataTable
           label="Operator log"
-          viewId="messaging.operator-log"
           frame={frame}
           rows={rows}
-          emptyState="No operator has acted on a stored message yet."
+          emptyIcon={OperatorLogIcon}
+          emptyTitle="No interventions yet"
+          emptyState="No operator has acted on a stored message yet. An entry appears each time one re-executes, holds, releases, purges, dispatches, or revokes a message."
           hasMore={receipts.hasNextPage}
           isLoadingMore={receipts.isFetchingNextPage}
           onLoadMore={() => void receipts.fetchNextPage()}

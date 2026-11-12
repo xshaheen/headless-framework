@@ -54,6 +54,12 @@ function TimeSeriesChart(props: TimeSeriesChartProps) {
   const format = useFormat()
   const rows = bucketRows(props, format)
 
+  // Axes over no value are an empty frame: a range the server measured nothing in, or counted only zeros in, says so
+  // in words, as a donut of zeros does.
+  if (props.series.every((item) => item.points.every((point) => point === null || point === 0))) {
+    return <EmptyState icon={ChartIcon}>{props.empty ?? `No ${props.unit} in this range`}</EmptyState>
+  }
+
   return (
     <ChartFrame
       label={props.label}
@@ -72,7 +78,7 @@ function DonutChart(props: DonutChartProps) {
   const tones = props.parts.map((part) => part.tone)
 
   if (props.parts.every((part) => part.count.value === 0)) {
-    return <EmptyState>{props.empty ?? `No ${props.unit} in this range`}</EmptyState>
+    return <EmptyState icon={ChartIcon}>{props.empty ?? `No ${props.unit} in this range`}</EmptyState>
   }
 
   // Without exact, complete counts a slice's size would claim a share nobody measured, so the counts stand alone.
@@ -268,7 +274,7 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
       <LineChart {...shared}>
         {axes}
         {props.series.map((item, at) => (
-          <Line key={item.name} dataKey={`s${at}`} name={item.name} type="linear" stroke={seriesColour(at)} strokeWidth={1.5} dot={false} activeDot={{ r: 3, stroke: 'none', fill: seriesColour(at) }} isAnimationActive={false} />
+          <Line key={item.name} dataKey={`s${at}`} name={item.name} type="linear" stroke={seriesColour(at)} strokeWidth={1.5} dot={loneDot(item.points, seriesColour(at))} activeDot={{ r: 3, stroke: 'none', fill: seriesColour(at) }} isAnimationActive={false} />
         ))}
       </LineChart>
     ) : props.kind === 'area' ? (
@@ -332,6 +338,22 @@ function TimeSeriesDrawing({ props, rows, format }: { props: TimeSeriesChartProp
       </span>
     </div>
   )
+}
+
+/**
+ * A line's dot renderer. A measured point with no measured neighbour has no line to either side, so it draws as a dot:
+ * without one, a lone measurement (the one second a consumer ran in five minutes) leaves the chart looking empty.
+ */
+function loneDot(points: readonly (number | null)[], colour: string) {
+  return ({ cx, cy, index }: { cx?: number; cy?: number; index?: number }) => {
+    const lone = index !== undefined && points[index] != null && points[index - 1] == null && points[index + 1] == null
+
+    return lone && cx !== undefined && cy !== undefined ? (
+      <circle key={index} cx={cx} cy={cy} r={2} fill={colour} />
+    ) : (
+      <g key={index} />
+    )
+  }
 }
 
 function DonutDrawing({ rows, props }: { rows: readonly PartRow[]; props: DonutChartProps }) {

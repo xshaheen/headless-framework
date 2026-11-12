@@ -159,7 +159,10 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
                     id,
                     view is null
                         ? MessagingRowView.From(id, type, row, change.Status, change.ChangedAt)
-                        : MessagingRowView.From(id, view),
+                        : MessagingRowView.From(id, view) with
+                        {
+                            Reason = MessagingViews.ReasonOf(view.StatusName, row.ExceptionInfo),
+                        },
                     version,
                     // A change read cannot tell whether a row entered or left a Needs-you group, so a failure or a
                     // success refreshes it.

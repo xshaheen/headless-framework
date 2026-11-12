@@ -18,13 +18,14 @@ import type { ListSort } from '../../data/keyset.ts'
 import { below, useBelow } from '../breakpoints.ts'
 import { Button } from '../button.tsx'
 import { Banner } from '../display/banner.tsx'
+import type { IconComponent } from '../../icons/index.ts'
 import { EmptyState } from '../display/empty-state.tsx'
 import { Tag } from '../display/tag.tsx'
 import { Text } from '../display/text.tsx'
 import type { PageFrameState } from '../frame/page-frame.tsx'
 import { useViewKeys } from '../keymap.tsx'
 import { Announcer, newRowsAnnouncement } from '../live.tsx'
-import { DensityToggle, rowHeights, useDensity } from './density.tsx'
+import { rowHeights, useDensity } from '../density.tsx'
 import { loadAheadRows, useHeldRows } from './paging.ts'
 
 export interface DataTableColumn<T> {
@@ -53,6 +54,20 @@ export interface DataTableColumn<T> {
    * order, ascending first and descending on the next press, when the table has `onSortChange`.
    */
   sortKey?: string
+}
+
+/**
+ * A cell with nothing to show reads as a faint dash, so a column of absent values looks deliberate and a row can be
+ * followed across it. The dash is hidden from assistive technology: an empty cell is already announced as blank.
+ */
+function blank(content: ReactNode) {
+  return content === null || content === undefined || content === '' || content === false ? (
+    <span className="text-faint" aria-hidden="true">
+      –
+    </span>
+  ) : (
+    content
+  )
 }
 
 /** What a column's cells hold; see `DataTableColumn.kind`. */
@@ -128,7 +143,7 @@ const sortClass =
   '-mx-1 inline-flex h-full cursor-pointer items-center gap-1 rounded-sm px-1 text-inherit outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring group-data-sort-direction:text-foreground'
 // The face comes from the column's kind (one `type-*` utility per cell, since each is a `font` shorthand).
 const cellClass =
-  'flex h-full items-center gap-2 overflow-hidden px-2.5 text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
+  'hd-cell flex h-full items-center gap-2 overflow-hidden px-2.5 text-ellipsis whitespace-nowrap [&>span:only-child]:min-w-0 [&>span:only-child]:overflow-hidden [&>span:only-child]:text-ellipsis'
 const endClass = 'justify-end text-end tabular-nums'
 // Checked state lives on the checkbox alone, never on the row's fill; the margin makes a 24 px target.
 const checkClass = 'flex h-full items-center ps-4 [&_input]:m-1 [&_input]:size-4 [&_input]:accent-primary'
@@ -159,8 +174,6 @@ export interface DataTableNewRows {
 export interface DataTableProps<T extends { id: string }> {
   /** Names the grid, such as `Failed runs`. */
   label: string
-  /** The view's stable id, such as `diagnostics.runs`; the row density is remembered per browser under it. */
-  viewId?: string
   columns: readonly DataTableColumn<T>[]
   rows: readonly T[]
   selectionMode?: 'single' | 'multiple'
@@ -185,6 +198,12 @@ export interface DataTableProps<T extends { id: string }> {
   newRows?: DataTableNewRows
   /** What the empty list says, and how rows get there. */
   emptyState: ReactNode
+  /** One line over the explanation that names the fact: `No idle runs`. */
+  emptyTitle?: ReactNode
+  /** What is empty, from `@headless/dashboard-sdk/icons`, over the title. */
+  emptyIcon?: IconComponent
+  /** The empty list's next step: `Clear filters`, or the action that creates the first row. */
+  emptyAction?: ReactNode
   /**
    * The list's page frame. The open row is then the frame's (`aria-selected`), and a `multiple` list adds a checkbox
    * column bound to the frame's checked rows, tags the rows a bulk action refused, and scrolls to them on `View`.
@@ -234,7 +253,6 @@ const rowHeaderMinWidth = 192
  */
 export function DataTable<T extends { id: string }>({
   label,
-  viewId,
   columns,
   rows,
   selectionMode = 'single',
@@ -248,13 +266,16 @@ export function DataTable<T extends { id: string }>({
   onLoadMore,
   newRows,
   emptyState,
+  emptyTitle,
+  emptyIcon,
+  emptyAction,
   frame,
   rowActions,
   sort,
   onSortChange,
 }: DataTableProps<T>) {
   const [ownSelection, setOwnSelection] = useState<ReadonlySet<string>>(new Set())
-  const [density, setDensity] = useDensity(viewId)
+  const [density] = useDensity()
   const narrow = useBelow(below.phone)
   const wrap = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
@@ -480,17 +501,13 @@ export function DataTable<T extends { id: string }>({
       onKeyDownCapture={(event: KeyboardEvent) => (moving.current = !event.shiftKey && moveKeys.has(event.key))}
       onKeyDown={() => (moving.current = false)}
     >
-      {/* The table insets its own first column, so its toolbar takes the same gutter rather than meeting the page edge.
-          A table with no view id remembers no density, so it offers no toggle, and a toolbar with nothing in it is
-          left out rather than spacing the table down. */}
-      {viewId || arrived > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-2 [&>[role=group]]:ms-auto">
-          {arrived > 0 ? (
-            <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
-              {arrivedText}
-            </Button>
-          ) : null}
-          {viewId ? <DensityToggle value={density} onChange={setDensity} /> : null}
+      {/* The table insets its own first column, so the `N new` control takes the same gutter rather than meeting the
+          page edge. With nothing arrived the row is left out, so the column headings sit right under the page header. */}
+      {arrived > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 px-4 pt-2">
+          <Button variant="ghost" className="self-center text-primary" onPress={showArrived}>
+            {arrivedText}
+          </Button>
         </div>
       ) : null}
       {/* The same words while the count climbs, so a busy list is announced once rather than on every arrival. */}
@@ -508,9 +525,12 @@ export function DataTable<T extends { id: string }>({
       {/* The empty state sits outside the grid: inside it the virtualizer gives it no height, so its next step
           (`Clear filters`) could not be seen or clicked. */}
       {isEmpty ? (
-        // On the table's own gutter, start-aligned as a list's empty state is; only an empty page centres one.
-        <div className="px-0.5">
-          <EmptyState>{emptyState}</EmptyState>
+        // An empty list is all its region holds, so its state is centred there as an empty page's is: one sentence
+        // at the start of a tall, blank region reads as a list that failed to draw.
+        <div className="flex px-4 py-10">
+          <EmptyState placement="page" icon={emptyIcon} title={emptyTitle} action={emptyAction}>
+            {emptyState}
+          </EmptyState>
         </div>
       ) : (
         <Virtualizer layout={layout} layoutOptions={{ rowHeight, headingHeight, loaderHeight: rowHeight }}>
@@ -619,7 +639,7 @@ export function DataTable<T extends { id: string }>({
                         className={`${cellClass} ${kindClasses[column.kind ?? 'prose']}${ends(column) ? ` ${endClass}` : ''}`}
                         data-pinned={at <= lastPinned || undefined}
                       >
-                        {column.cell(row)}
+                        {blank(column.cell(row))}
                         {/* The space keeps the row's accessible name `r2 No longer matches`, not `r2No longer…`. */}
                         {stale && column.id === rowHeaderId ? (
                           <>

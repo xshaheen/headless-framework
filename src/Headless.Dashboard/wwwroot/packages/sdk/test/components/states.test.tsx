@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EmptyState } from '../../src/components/display/empty-state.tsx'
+import { QueryState } from '../../src/components/display/query-state.tsx'
 import { Section } from '../../src/components/display/section.tsx'
 import { SegmentedControl } from '../../src/components/display/segmented-control.tsx'
 import { Skeleton } from '../../src/components/display/skeleton.tsx'
@@ -30,6 +31,66 @@ describe('EmptyState', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
     expect(screen.getByText('No runs yet.')).toBeTruthy()
+  })
+})
+
+describe('QueryState', () => {
+  const rows = (data: string[]) => (
+    <ul>
+      {data.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  )
+
+  it('draws its data once the read answers', () => {
+    render(
+      <QueryState query={{ isPending: false, isError: false, data: ['a.run'] }} label="Loading runs" rows={2}>
+        {rows}
+      </QueryState>,
+    )
+
+    expect(screen.getByText('a.run')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows only the error and Retry when the first read fails', async () => {
+    const refetch = vi.fn(() => Promise.resolve())
+    render(
+      <QueryState
+        query={{ isPending: false, isError: true, error: new Error('The store is down'), refetch }}
+        label="Loading runs"
+        rows={2}
+      >
+        {rows}
+      </QueryState>,
+    )
+
+    expect(screen.getByRole('alert').textContent).toContain('The store is down')
+    expect(screen.queryByRole('list')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(refetch).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the last rows under the error when a refresh fails, and says they are from the last read', () => {
+    render(
+      <QueryState
+        query={{
+          isPending: false,
+          isError: true,
+          error: new Error('The store is down'),
+          data: ['a.run'],
+          refetch: () => Promise.resolve(),
+        }}
+        label="Loading runs"
+        rows={2}
+      >
+        {rows}
+      </QueryState>,
+    )
+
+    expect(screen.getByText('a.run')).toBeTruthy()
+    expect(screen.getByText(/from the last successful read/)).toBeTruthy()
   })
 })
 

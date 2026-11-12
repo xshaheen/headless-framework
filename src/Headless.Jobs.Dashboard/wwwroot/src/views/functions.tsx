@@ -16,14 +16,15 @@ import {
   Text,
   usePageFrame,
   Timestamp,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { useDashboardKeysetList, useDashboardList } from '@headless/dashboard-sdk/data'
-import { AddIcon, RecurringIcon, RunsIcon } from '@headless/dashboard-sdk/icons'
+import { AddIcon, FunctionIcon, RecurringIcon, RunsIcon } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { cronJobsTopic, cronStatusMark, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
-import { CellText, JobsStats, QueryState, StaleNotice, useFunctions } from '../parts.tsx'
+import { CellText, JobsStats, StaleNotice, useFunctions } from '../parts.tsx'
 import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
 
 /** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */
@@ -87,15 +88,16 @@ export default function FunctionsView() {
       }
       panel={open ? <FunctionPanel item={open} /> : undefined}
     >
-      <StaleNotice what="these functions" onRefresh={() => void functions.refetch()} />
+      <StaleNotice what="these functions" onRefresh={() => void functions.refetch()} failed={functions.isError} />
       <QueryState query={functions} label="Loading functions" rows={4} shape="table">
         {() => (
           <DataTable
             label="Functions"
-            viewId="jobs.functions"
             frame={frame}
             rows={rows}
-            emptyState="No functions registered on any live node."
+            emptyIcon={FunctionIcon}
+            emptyTitle="No functions"
+            emptyState="No live node registers one. A function appears once a host that declares it with [Job] starts."
             columns={[
               {
                 id: 'name',

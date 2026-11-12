@@ -22,13 +22,14 @@ import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { useStreamEvent } from '@headless/dashboard-sdk/stream'
 import { useEffect, useRef } from 'react'
 import { StatusDistribution, useRunsPerDay } from '../insight.tsx'
-import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
+import { cronJobsTopic, fetchCronJobs, workerCapacity, type CronJob } from '../cron.ts'
 import {
   JobsStats,
   RunProgress,
   StaleNotice,
   useJobsAttention,
   useJobsCounts,
+  useNodes,
   useSettledRefetch,
   type AttentionItem,
 } from '../parts.tsx'
@@ -148,6 +149,13 @@ function ProcessingNow() {
   const cancel = commands.cancel
   const refused = allowed.refused(cancel?.id)
   const show = arrived.show
+  // The workers are an extra fact beside the card's subject, so only a read that answered adds them; a pending or
+  // failed one leaves the caption as it is.
+  const nodes = useNodes()
+  const workers = nodes.isSuccess ? workerCapacity(nodes.data) : undefined
+  // The served count answers for the last fetch; while every running run is loaded, the shown rows are newer.
+  const runningCount = runs.hasMore && runs.count ? runs.count : { value: running.length, capped: false }
+  const runningText = `${format.count(runningCount)} running`
 
   useEffect(() => {
     if (arrived.count > 0) {
@@ -160,10 +168,11 @@ function ProcessingNow() {
       title="Processing now"
       icon={PlayIcon}
       emptyIcon={PlayIcon}
-      // The served count answers for the last fetch; while every running run is loaded, the shown rows are newer.
       caption={
         running.length > 0
-          ? `${format.count(runs.hasMore && runs.count ? runs.count : { value: running.length, capped: false })} running`
+          ? workers === undefined
+            ? runningText
+            : `${runningText} · ${format.number(workers)} ${workers === 1 ? 'worker' : 'workers'}`
           : undefined
       }
       action={running.length > 0 ? <Link to="/jobs/runs?status=InProgress">All</Link> : undefined}

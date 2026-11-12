@@ -1,7 +1,16 @@
-import { FilterToolbar, Mono, PageFrame, PageHeader, Tag, usePageFrame } from '@headless/dashboard-sdk/components'
+import {
+  FilterToolbar,
+  Mono,
+  PageFrame,
+  PageHeader,
+  Tag,
+  usePageFrame,
+  QueryState,
+} from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { DataTable } from '@headless/dashboard-sdk/table'
-import { CellText, MessagingStats, NodeLink, NodeSwitch, QueryState, StaleNotice, useContracts } from '../parts.tsx'
+import { RunsIcon } from '@headless/dashboard-sdk/icons'
+import { CellText, MessagingStats, NodeLink, NodeSwitch, StaleNotice, useContracts } from '../parts.tsx'
 
 export default function ContractsView() {
   const format = useFormat()
@@ -29,14 +38,15 @@ export default function ContractsView() {
         />
       }
     >
-      <StaleNotice what="these contracts" onRefresh={() => void contracts.refetch()} />
+      <StaleNotice what="these contracts" onRefresh={() => void contracts.refetch()} failed={contracts.isError} />
       <QueryState query={contracts} label="Loading contracts" rows={4} shape="table">
         {() => (
           <DataTable
             label="Contracts"
-            viewId="messaging.contracts"
             frame={frame}
             rows={rows}
+            emptyIcon={RunsIcon}
+            emptyTitle="No message contracts"
             emptyState="This node registers no message contracts."
             columns={[
               {

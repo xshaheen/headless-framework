@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { Card, CardRow, Cards } from '../../src/components/display/card.tsx'
 import { ExceptionBlock } from '../../src/components/frame/exception-block.tsx'
+import { RunsIcon } from '../../src/icons/index.ts'
 
 describe('Card', () => {
   it('names its region by its heading and lists its rows with dot, name, meta, value, and second line', () => {
@@ -55,20 +56,25 @@ describe('Card', () => {
     }
   })
 
-  it('lets an empty card keep its own height while cards with rows share the row’s', () => {
+  it('says a plain empty message under its icon, and shows a block in the empty place as it is', () => {
     render(
       <Cards>
-        <Card title="Needs attention" empty="Nothing needs attention.">
+        <Card title="Needs attention" emptyIcon={RunsIcon} empty="Nothing needs attention.">
           {[]}
         </Card>
-        <Card title="Processing now">
-          <CardRow name="a" />
+        <Card title="Processing now" emptyIcon={RunsIcon} empty={<p role="alert">The store is down.</p>}>
+          {[]}
         </Card>
       </Cards>,
     )
 
-    expect(screen.getByRole('region', { name: 'Needs attention' }).classList.contains('self-start')).toBe(true)
-    expect(screen.getByRole('region', { name: 'Processing now' }).classList.contains('self-start')).toBe(false)
+    const empty = screen.getByRole('region', { name: 'Needs attention' })
+    expect(within(empty).getByText('Nothing needs attention.')).toBeTruthy()
+    expect(empty.querySelectorAll('svg')).toHaveLength(1)
+    // A failed load in the empty place is not an empty state, so it takes no empty icon.
+    const failed = screen.getByRole('region', { name: 'Processing now' })
+    expect(within(failed).getByRole('alert').textContent).toBe('The store is down.')
+    expect(failed.querySelectorAll('svg')).toHaveLength(0)
   })
 
   it('renders a row with no name as its second line alone', () => {

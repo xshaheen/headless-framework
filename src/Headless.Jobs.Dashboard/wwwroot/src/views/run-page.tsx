@@ -1,9 +1,9 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { EmptyState, usePageTitle } from '@headless/dashboard-sdk/components'
+import { EmptyState, usePageTitle, QueryState } from '@headless/dashboard-sdk/components'
 import { RunsIcon } from '@headless/dashboard-sdk/icons'
 import { DashboardApiError, useDashboardObject } from '@headless/dashboard-sdk/data'
 import { Link, useParams } from '@headless/dashboard-sdk/router'
-import { QueryState, RunPanel, StaleNotice } from '../parts.tsx'
+import { RunPanel, StaleNotice } from '../parts.tsx'
 import { fetchRun, runsTopic, usePending } from '../runs.ts'
 
 export default function RunPage() {
@@ -36,7 +36,7 @@ export default function RunPage() {
     <QueryState query={run} label="Loading the run" rows={4}>
       {(data) => (
         <>
-          <StaleNotice what="this run" onRefresh={() => void run.refetch()} />
+          <StaleNotice what="this run" onRefresh={() => void run.refetch()} failed={run.isError} />
           <RunPanel run={data} pending={pending} page />
         </>
       )}

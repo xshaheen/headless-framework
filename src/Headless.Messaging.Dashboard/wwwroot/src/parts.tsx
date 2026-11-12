@@ -20,9 +20,7 @@ import {
   StatCard,
   StatStrip,
   Text,
-  useDelayed,
   type HistoryItem,
-  type SkeletonShape,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, refetchTopics, type CappedCount } from '@headless/dashboard-sdk/data'
@@ -71,44 +69,9 @@ export function CellText({ title, children }: { title?: string; children: ReactN
   return <span title={title}>{children}</span>
 }
 
-type LoadState<T> =
-  | { isPending: true; isError: false }
-  | { isPending: false; isError: true; error: Error; refetch: () => Promise<unknown> }
-  | { isPending: false; isError: false; data: T }
-
-/**
- * A load's skeleton, once it has taken 150 ms, or its error and Retry, else what `children` draws from its data. The
- * skeleton takes the `shape` of what loads: `table` for a list region, `rows` by default.
- */
-export function QueryState<T>({
-  query,
-  label,
-  rows,
-  shape,
-  children,
-}: {
-  query: LoadState<T>
-  label: string
-  rows: number
-  shape?: SkeletonShape
-  children: (data: T) => ReactNode
-}) {
-  const showLoading = useDelayed(query.isPending)
-
-  if (query.isPending) {
-    return showLoading ? <Skeleton label={label} rows={rows} shape={shape} /> : null
-  }
-
-  if (query.isError) {
-    return <LoadError message={query.error.message} onRetry={() => void query.refetch()} />
-  }
-
-  return children(query.data)
-}
-
 /** `Stale` while the stream is down, or the server reports this node's Messaging changes stopped; the data is kept. */
-export function StaleNotice({ what, onRefresh }: { what: string; onRefresh: () => void }) {
-  return <SdkStaleNotice stale={useStale()} what={what} onRefresh={onRefresh} />
+export function StaleNotice({ what, onRefresh, failed }: { what: string; onRefresh: () => void; failed?: boolean }) {
+  return <SdkStaleNotice stale={useStale()} what={what} onRefresh={onRefresh} failed={failed} />
 }
 
 /**
@@ -936,9 +899,12 @@ export interface MessagingContract {
 }
 
 export interface MessagingCircuit {
-  /** `{node}~{consumer}`. */
+  /** `{node}~{circuit key}`, which the circuit's commands act on. */
   id: string
+  /** The consumer identity, as the consumers read names it. */
   consumer: string
+  /** The lane the circuit guards: an identity may consume on both, each with a circuit of its own. */
+  lane?: 'Bus' | 'Queue'
   state: 'Closed' | 'Open' | 'HalfOpen'
   consecutiveFailures: number
   failureThreshold: number
@@ -962,6 +928,74 @@ export function useConsumers() {
           query: nodeQuery(node),
         })
       ).items,
+    staleTime: Infinity,
+  })
+}
+
+/** A consumer's circuits on the node the views read; the breaker keeps its state in memory, so it is polled. */
+export function useCircuits() {
+  const { api } = useDashboard()
+  const { node } = useNode()
+
+  return useQuery({
+    queryKey: ['messaging', 'circuits', node],
+    queryFn: async () =>
+      (
+        await api.request<{ items: MessagingCircuit[] }>({
+          method: 'GET',
+          path: 'messaging/circuits',
+          query: nodeQuery(node),
+        })
+      ).items,
+    refetchInterval: 5_000,
+  })
+}
+
+/** One store's stored work still waiting. A figure the store does not keep is missing, never zero. */
+export interface StoreBacklog {
+  store: string
+  publishedPending: number
+  /** How long the oldest pending published row has waited; missing when none is pending. */
+  oldestPublishedSeconds?: number
+  /** Missing for an additional outbox, which holds no received rows. */
+  receivedPending?: number
+  oldestReceivedSeconds?: number
+}
+
+export interface MessagingBacklog {
+  asOf: string
+  stores: StoreBacklog[]
+  /** The stores that did not answer; their backlog is unknown, not empty. */
+  unavailable: string[]
+}
+
+/** The backlog of every store the node reads. Rows enter and leave it all the time, so it is polled. */
+export function useBacklog() {
+  const { api } = useDashboard()
+  const { node } = useNode()
+
+  return useQuery({
+    queryKey: ['messaging', 'backlog', node],
+    queryFn: () => api.request<MessagingBacklog>({ method: 'GET', path: 'messaging/backlog', query: nodeQuery(node) }),
+    refetchInterval: 15_000,
+  })
+}
+
+/** What the node publishes through: the broker of each lane and the storage provider of each outbox, by name. */
+export interface MessagingProviders {
+  transports: { bus?: string; queue?: string }
+  outboxes: { name: string; storage: string }[]
+}
+
+/** The node's providers, as its host manifest names them; they change only with a deploy. */
+export function useProviders() {
+  const { api } = useDashboard()
+  const { node } = useNode()
+
+  return useQuery({
+    queryKey: ['messaging', 'providers', node],
+    queryFn: () =>
+      api.request<MessagingProviders>({ method: 'GET', path: 'messaging/providers', query: nodeQuery(node) }),
     staleTime: Infinity,
   })
 }

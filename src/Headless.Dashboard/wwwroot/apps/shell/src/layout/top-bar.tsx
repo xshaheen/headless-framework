@@ -2,7 +2,7 @@
 // sit near their size budget.
 'use no memo'
 
-import { Announcer, Button, Kbd, LiveIndicator } from '@headless/dashboard-sdk/components'
+import { Announcer, Button, DensityControl, Kbd, LiveIndicator } from '@headless/dashboard-sdk/components'
 import { TimeZoneField, useFormat, useLocale } from '@headless/dashboard-sdk/locale'
 import { useEffect, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { BootstrapProduct } from '../bootstrap.ts'
@@ -289,6 +289,7 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
       <Flyout label="Account" isOpen={account.isOpen} onClose={() => account.setOpen(false)} trigger={account.trigger}>
         {name ? <b>{name}</b> : null}
         <ThemeControl />
+        <DensityControl />
         {narrow ? (
           <>
             <TimeZoneField />

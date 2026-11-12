@@ -14,16 +14,27 @@ import {
   Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { listKey, useDashboardKeysetList } from '@headless/dashboard-sdk/data'
-import { AttentionIcon, PublishedIcon, ReceivedIcon } from '@headless/dashboard-sdk/icons'
+import {
+  AttentionIcon,
+  DispatchIcon,
+  ListIcon,
+  OpenCircuitIcon,
+  PublishedIcon,
+  ReceivedIcon,
+} from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { Link } from '@headless/dashboard-sdk/router'
 import {
+  circuitLabels,
+  circuitTones,
   fetchMessages,
   failureGroupPath,
+  formatSeconds,
   parseFailureGroup,
   readFilter,
   rowMark,
+  spanSeconds,
   topicOf,
   type MessageKind,
   type MessageRow,
@@ -31,11 +42,15 @@ import {
 import {
   AttentionGaps,
   MessagingStats,
+  NodeLink,
   NodeSwitch,
   StaleNotice,
+  useBacklog,
+  useCircuits,
   useMessagingAttention,
   useNode,
   useNodeReset,
+  useProviders,
   type AttentionItem,
 } from '../parts.tsx'
 import { HourlyHistoryCard, LiveThroughput, StatusDistributionCard } from '../insight.tsx'
@@ -87,6 +102,9 @@ export default function MessagingDashboard() {
         <LiveThroughput />
         <StatusDistributionCard />
         <HourlyHistoryCard />
+        <BacklogCard />
+        <CircuitsCard />
+        <ProvidersCard />
       </Cards>
     </PageFrame>
   )
@@ -224,6 +242,215 @@ function RecentFailures({ kind }: { kind: MessageKind }) {
           meta={kind === 'received' && row.consumer ? <Mono>{row.consumer}</Mono> : row.store}
           title={`${row.name ?? '(unnamed)'} ${(kind === 'received' ? row.consumer : row.store) ?? ''}`.trim()}
           value={<Timestamp value={row.changedAt ?? row.added} />}
+        />
+      ))}
+    </Card>
+  )
+}
+
+/**
+ * The stored work still waiting in each store the node reads: rows not yet sent to the broker, and rows not yet
+ * handled, each with how long its oldest has waited. A store that did not answer is named, never counted as empty.
+ */
+function BacklogCard() {
+  const format = useFormat()
+  const backlog = useBacklog()
+  const stores = backlog.data?.stores ?? []
+  const unavailable = backlog.data?.unavailable ?? []
+  // One store needs no name on its rows; with several, each row says whose backlog it is.
+  const named = stores.length + unavailable.length > 1
+  const rows = stores.flatMap((store) => [
+    {
+      key: `${store.store}:published`,
+      name: 'Waiting to be sent',
+      store: store.store,
+      pending: store.publishedPending,
+      oldest: store.oldestPublishedSeconds,
+    },
+    ...(store.receivedPending === undefined
+      ? []
+      : [
+          {
+            key: `${store.store}:received`,
+            name: 'Waiting to be handled',
+            store: store.store,
+            pending: store.receivedPending,
+            oldest: store.oldestReceivedSeconds,
+          },
+        ]),
+  ])
+  const total = rows.reduce((sum, row) => sum + row.pending, 0)
+  const retry = () => void backlog.refetch()
+
+  return (
+    <Card
+      title="Backlog"
+      icon={ListIcon}
+      emptyIcon={ListIcon}
+      // A store that did not answer may hold more, so the total is said only when every store answered.
+      caption={rows.length > 0 && unavailable.length === 0 ? `${format.number(total)} waiting` : undefined}
+      empty={
+        backlog.isError ? (
+          <LoadError message={backlog.error.message} onRetry={retry} />
+        ) : backlog.isPending ? (
+          <Skeleton label="Loading the backlog" rows={2} />
+        ) : (
+          'This node reads no store.'
+        )
+      }
+    >
+      {rows.length > 0 || unavailable.length > 0
+        ? [
+            ...rows.map((row) => (
+              <CardRow
+                key={row.key}
+                tone={row.pending > 0 ? 'enq' : 'off'}
+                prose
+                name={row.name}
+                meta={
+                  <>
+                    {named ? <Mono>{row.store}</Mono> : null}
+                    {named && row.oldest !== undefined ? ' · ' : null}
+                    {row.oldest !== undefined ? `oldest for ${format.duration(row.oldest * 1000)}` : null}
+                  </>
+                }
+                value={format.number(row.pending)}
+              />
+            )),
+            ...(unavailable.length > 0
+              ? [
+                  <CardRow
+                    key="unavailable"
+                    tone="off"
+                    name={
+                      <span role="status">{`Not answering: ${unavailable.join(', ')}. Their backlog is unknown.`}</span>
+                    }
+                    actions={
+                      <Button variant="ghost" onPress={retry}>
+                        Retry
+                      </Button>
+                    }
+                  />,
+                ]
+              : []),
+          ]
+        : null}
+    </Card>
+  )
+}
+
+/**
+ * The circuit breakers that are not closed on the node the views read, each opening its consumer. A closed circuit
+ * is the normal state, so the card lists only the ones holding deliveries back.
+ */
+function CircuitsCard() {
+  const format = useFormat()
+  const circuits = useCircuits()
+  const all = circuits.data ?? []
+  const tripped = all.filter((circuit) => circuit.state !== 'Closed')
+  const open = tripped.filter((circuit) => circuit.state === 'Open').length
+  const halfOpen = tripped.length - open
+
+  return (
+    <Card
+      title="Circuits"
+      icon={OpenCircuitIcon}
+      emptyIcon={OpenCircuitIcon}
+      caption={
+        all.length === 0
+          ? undefined
+          : tripped.length === 0
+            ? `${format.number(all.length)} closed`
+            : [
+                open > 0 ? `${format.number(open)} open` : '',
+                halfOpen > 0 ? `${format.number(halfOpen)} half open` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')
+      }
+      action={all.length > 0 ? <NodeLink to="consumers">Consumers</NodeLink> : undefined}
+      empty={
+        circuits.isError ? (
+          <LoadError message={circuits.error.message} onRetry={() => void circuits.refetch()} />
+        ) : circuits.isPending ? (
+          <Skeleton label="Loading the circuit breakers" rows={2} />
+        ) : all.length === 0 ? (
+          'No consumer on this node has a circuit breaker.'
+        ) : (
+          'No circuit is open.'
+        )
+      }
+    >
+      {tripped.map((circuit) => {
+        const seconds = circuit.estimatedRemainingOpenDuration
+          ? spanSeconds(circuit.estimatedRemainingOpenDuration)
+          : undefined
+        const failures = `${format.number(circuit.consecutiveFailures)} of ${format.number(circuit.failureThreshold)} failures`
+
+        return (
+          <CardRow
+            key={circuit.id}
+            tone={circuitTones[circuit.state]}
+            name={
+              <NodeLink to={`consumers?open=${encodeURIComponent(circuit.id)}`}>
+                <Mono>{circuit.consumer}</Mono>
+              </NodeLink>
+            }
+            meta={[circuitLabels[circuit.state], circuit.lane ? `${circuit.lane} lane` : '', failures]
+              .filter(Boolean)
+              .join(' · ')}
+            title={`${circuit.consumer} ${circuitLabels[circuit.state]}, ${failures}`}
+            value={seconds === undefined ? undefined : `retries in ${formatSeconds(Math.ceil(seconds), format.number)}`}
+          />
+        )
+      })}
+    </Card>
+  )
+}
+
+/** What the node publishes through: the broker of each lane, and the storage provider of each outbox. */
+function ProvidersCard() {
+  const providers = useProviders()
+  const data = providers.data
+  const rows = data
+    ? [
+        ...(data.transports.bus
+          ? [{ key: 'bus', name: 'Bus lane', store: undefined, value: data.transports.bus }]
+          : []),
+        ...(data.transports.queue
+          ? [{ key: 'queue', name: 'Queue lane', store: undefined, value: data.transports.queue }]
+          : []),
+        ...data.outboxes.map((outbox) => ({
+          key: `outbox:${outbox.name}`,
+          name: 'Outbox',
+          store: outbox.name,
+          value: outbox.storage,
+        })),
+      ]
+    : []
+
+  return (
+    <Card
+      title="Providers"
+      icon={DispatchIcon}
+      emptyIcon={DispatchIcon}
+      empty={
+        providers.isError ? (
+          <LoadError message={providers.error.message} onRetry={() => void providers.refetch()} />
+        ) : providers.isPending ? (
+          <Skeleton label="Loading the providers" rows={2} />
+        ) : (
+          'This node has no transport and no storage.'
+        )
+      }
+    >
+      {rows.map((row) => (
+        <CardRow
+          key={row.key}
+          prose
+          name={row.name}
+          meta={row.store ? <Mono>{row.store}</Mono> : undefined}
+          value={<Mono>{row.value}</Mono>}
         />
       ))}
     </Card>

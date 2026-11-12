@@ -43,6 +43,11 @@ export interface MessageRow {
   changedAt?: string
   failureFingerprint?: string
   tenantId?: string
+  /**
+   * What a failed row failed with, `Type: message`, cut to one bounded line. A list serves it for failed rows only,
+   * and a live change can leave an earlier one on a row that has moved on, so read it only while the row is failed.
+   */
+  reason?: string
   /** Whether a received row is held; missing when the read did not say. */
   isHeld?: boolean
   /** Failed with no retry pending. */
@@ -608,6 +613,26 @@ export const circuitTones: Readonly<Record<'Closed' | 'Open' | 'HalfOpen', Dashb
   Closed: 'ok',
   Open: 'fail',
   HalfOpen: 'proc',
+}
+
+/** A circuit's state in words. */
+export const circuitLabels: Readonly<Record<'Closed' | 'Open' | 'HalfOpen', string>> = {
+  Closed: 'Closed',
+  Open: 'Open',
+  HalfOpen: 'Half open',
+}
+
+/** A .NET time span, `[d.]hh:mm:ss[.fffffff]`, in seconds; `undefined` when it is not one. */
+export function spanSeconds(span: string) {
+  const match = /^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(span)
+
+  if (!match) {
+    return undefined
+  }
+
+  const [, days = '0', hours = '0', minutes = '0', seconds = '0'] = match
+
+  return Number(days) * 86_400 + Number(hours) * 3_600 + Number(minutes) * 60 + Number(seconds)
 }
 
 /** A duration in seconds with its unit: `45 s`, `3 min`, `2 h`. */

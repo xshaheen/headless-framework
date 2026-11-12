@@ -67,31 +67,26 @@ export function node(overrides: Partial<JobNode> = {}): JobNode {
   }
 }
 
-export const functions: JobFunction[] = [
-  {
+/** A registered function node-a claims, with no run in the last 24 hours. */
+export function jobFunction(overrides: Partial<JobFunction> = {}): JobFunction {
+  return {
     name: 'billing.charge',
     contractVersion: '1',
     priority: 'Normal',
     maxConcurrency: 0,
     claimedBy: ['node-a'],
-    succeeded: 10,
-    failed: 2,
-    running: 0,
-    waiting: 0,
-    cronJobs: [],
-  },
-  {
-    name: 'billing.refund',
-    contractVersion: '1',
-    priority: 'Normal',
-    maxConcurrency: 0,
-    claimedBy: ['node-a'],
-    succeeded: 3,
+    succeeded: 0,
     failed: 0,
     running: 0,
     waiting: 0,
     cronJobs: [],
-  },
+    ...overrides,
+  }
+}
+
+export const functions: JobFunction[] = [
+  jobFunction({ succeeded: 10, failed: 2 }),
+  jobFunction({ name: 'billing.refund', succeeded: 3 }),
 ]
 
 const base = {

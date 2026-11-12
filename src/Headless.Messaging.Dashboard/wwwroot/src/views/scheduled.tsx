@@ -10,23 +10,16 @@ import {
   StatusMark,
   usePageFrame,
   Timestamp,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { FilterCombobox } from '@headless/dashboard-sdk/combobox'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
+import { ScheduledIcon } from '@headless/dashboard-sdk/icons'
 import { nodeQuery } from '../messages.ts'
-import {
-  CellText,
-  MessagingStats,
-  NodeSwitch,
-  QueryState,
-  StaleNotice,
-  useConsumers,
-  useContracts,
-  useNode,
-} from '../parts.tsx'
+import { CellText, MessagingStats, NodeSwitch, StaleNotice, useConsumers, useContracts, useNode } from '../parts.tsx'
 
 export interface ScheduledDelivery {
   storageId: string
@@ -169,16 +162,17 @@ export default function ScheduledView() {
         />
       }
     >
-      <StaleNotice what="these deliveries" onRefresh={() => void scheduled.refetch()} />
+      <StaleNotice what="these deliveries" onRefresh={() => void scheduled.refetch()} failed={scheduled.isError} />
       <QueryState query={scheduled} label="Loading scheduled deliveries" rows={6} shape="table">
         {(data) =>
           data.supported ? (
             <>
               <DataTable
                 label="Scheduled deliveries"
-                viewId="messaging.scheduled"
                 frame={frame}
                 rows={rows}
+                emptyIcon={ScheduledIcon}
+                emptyTitle="No scheduled deliveries"
                 emptyState={
                   name
                     ? `No ${name} delivery is scheduled.`

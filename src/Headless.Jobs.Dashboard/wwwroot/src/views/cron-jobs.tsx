@@ -12,15 +12,17 @@ import {
   Text,
   usePageFrame,
   Timestamp,
+  QueryState,
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, listKey, useDashboardList } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
-import { useSearchParams } from '@headless/dashboard-sdk/router'
+import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
+import { RecurringIcon } from '@headless/dashboard-sdk/icons'
 import { CronPanel, useCronJob } from '../cron-parts.tsx'
-import { cronJobsTopic, fetchCronJobs, type CronJob } from '../cron.ts'
-import { CellText, JobsStats, QueryState, StaleNotice } from '../parts.tsx'
+import { cronJobsTopic, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
+import { CellText, JobsStats, StaleNotice, useFunctions } from '../parts.tsx'
 import { viewOnlyReason } from '../runs.ts'
 import { CronJobForm } from './create.tsx'
 
@@ -35,6 +37,35 @@ export default function CronJobsView() {
   const rows = list.data?.items ?? []
   const frame = usePageFrame({ viewId: 'jobs.cron-jobs', rows })
   const openRow = rows.find((row) => row.id === frame.openId)
+  // The functions' counts are an extra fact beside the schedules, so only a read that answered fills the column; a
+  // pending or failed one leaves it blank rather than putting an error in this list.
+  const functions = useFunctions()
+  const functionsByName = new Map((functions.isSuccess ? functions.data : []).map((item) => [item.name, item]))
+
+  /** `10 succeeded · 2 failed`, a zero part left out, the failed part opening the function's failed runs. */
+  function functionRuns(item: JobFunction | undefined) {
+    if (!item || (item.succeeded === 0 && item.failed === 0)) {
+      return ''
+    }
+
+    const succeeded = item.succeeded > 0 ? `${format.number(item.succeeded)} succeeded` : undefined
+    const failed = item.failed > 0 ? `${format.number(item.failed)} failed` : undefined
+
+    return (
+      <CellText title={`${item.name}, last 24 hours: ${[succeeded, failed].filter(Boolean).join(' · ')}`}>
+        {succeeded}
+        {succeeded && failed ? ' · ' : null}
+        {failed ? (
+          <Link
+            to={`/jobs/runs?status=Failed&function=${encodeURIComponent(item.name)}`}
+            aria-label={`${failed} runs of ${item.name}`}
+          >
+            {failed}
+          </Link>
+        ) : null}
+      </CellText>
+    )
+  }
 
   function setCreate(on: boolean) {
     setParams(
@@ -93,15 +124,21 @@ export default function CronJobsView() {
       }
       panel={panel}
     >
-      <StaleNotice what="these recurring jobs" onRefresh={() => void list.refetch()} />
+      <StaleNotice what="these recurring jobs" onRefresh={() => void list.refetch()} failed={list.isError} />
       <QueryState query={list} label="Loading recurring jobs" rows={4} shape="table">
         {() => (
           <DataTable
             label="Recurring jobs"
-            viewId="jobs.cron-jobs"
             frame={frame}
             rows={rows}
-            emptyState="No recurring jobs. Declare one with a [Job] cron attribute, or add one here."
+            emptyIcon={RecurringIcon}
+            emptyTitle="No recurring jobs"
+            emptyState="Declare one with a [Job] cron attribute, or add one here."
+            emptyAction={
+              <Button disabledReason={module.canOperate ? null : viewOnlyReason} onPress={() => setCreate(true)}>
+                Add recurring job
+              </Button>
+            }
             columns={[
               {
                 id: 'function',
@@ -133,6 +170,15 @@ export default function CronJobsView() {
                 width: '2fr',
               },
               {
+                id: 'function-runs',
+                // Every run of the row's function, a time job or another schedule's included, so the header names
+                // the function and never this recurring job.
+                header: 'Function runs, 24 h',
+                cell: (row) => functionRuns(functionsByName.get(row.function)),
+                priority: 2,
+                width: 200,
+              },
+              {
                 id: 'next',
                 header: 'Next run',
                 cell: (row) =>
@@ -147,7 +193,8 @@ export default function CronJobsView() {
                   ),
                 kind: 'time',
                 align: 'end',
-                width: 120,
+                // Wide enough for a fire that is overdue, `due 42 sec. ago`, the longest text the cell shows.
+                width: 150,
               },
             ]}
           />
