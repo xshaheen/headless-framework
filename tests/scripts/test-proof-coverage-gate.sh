@@ -96,10 +96,10 @@ write_bundle bundle 0.9 1 0 1 0
 expect "unit gate warns, and keeps the proof passing, on an uncovered changed line" 0 unit "uncovered: src/Headless.Core/Core.cs: 3"
 
 write_bundle bundle 0.9 1 0 1 0
-expect "unit gate fails the proof on an uncovered changed line when strict" 1 unit "Coverage gate: FAIL" fail
-if ! grep -qxF -- '#### make verify-affected: FAIL' bundle/summary.md \
-  || ! grep -qF -- 'Coverage: FAIL' bundle/summary.md; then
-  printf 'FAIL: failed proof does not head its summary with the verdict and coverage result\n' >&2
+expect "unit gate fails the proof on an uncovered changed line when strict" 1 unit "| \`coverage-gate\` | FAIL (packages without an integration project" fail
+# shellcheck disable=SC2016 # The backticks are literal Markdown, not command substitution.
+if ! grep -qE -- '^\| `make verify-affected` \| \*\*FAIL\*\* on .*Coverage: FAIL' bundle/summary.md; then
+  printf 'FAIL: failed proof does not open its table with the verdict and coverage result\n' >&2
   cat bundle/summary.md >&2
   exit 1
 fi
@@ -115,21 +115,21 @@ expect "integration gate holds a package with an integration project to its chan
 
 write_bundle bundle 0.9 1 0 1 0
 expect "integration gate passes on covered package lines and leaves the unit-gated package alone" 0 integration "Changed lines: 100.0% (1/1"
-if ! grep -qF -- '| Headless.Provider | 1 | 100.0 | n/a |' bundle/summary.md; then
+if ! grep -qF -- 'Headless.Provider: 1 changed lines, 100.0% line, no changed branches' bundle/summary.md; then
   printf 'FAIL: assembly without changed branches is reported as measured coverage\n' >&2
   cat bundle/summary.md >&2
   exit 1
 fi
 
 write_bundle bundle 0.9 0 0 0 -1
-expect "gate is skipped, not failed, when a test stage did not run" 0 unit "Coverage gate: SKIPPED"
+expect "gate is skipped, not failed, when a test stage did not run" 0 unit "| \`coverage-gate\` | SKIPPED (packages without an integration project"
 
 git add src/Headless.Core/Core.cs src/Headless.Provider/Provider.cs
 git commit -qm 'Current source becomes the comparison base'
 base=$(git rev-parse HEAD)
 write_bundle bundle 0.9 1 1 1 0
 expect "zero changed lines are not reported as 100 percent coverage" 0 unit "Changed lines: not applicable (0 executable changed lines)"
-if ! grep -qE -- 'Coverage: PASS$' bundle/summary.md; then
+if ! grep -qE -- 'Coverage: PASS \|$' bundle/summary.md; then
   printf 'FAIL: zero changed lines or branches are reported as measured coverage in the summary line\n' >&2
   cat bundle/summary.md >&2
   exit 1
@@ -138,23 +138,25 @@ fi
 write_bundle bundle 0.9 1 1 0 0
 expect "no gate without --coverage-gate" 0 none
 
-expected_summary='Tests: 0 passed, 0 failed, 0 skipped · Compiler diagnostics: 0 · Analyzer findings: 0'
-# The PR template's Verification block is the only collapsible, so the pasted summary must not nest another one.
-if [[ "$(head -1 bundle/summary.md)" != '#### make verify-affected: PASS' ]] \
-  || ! grep -qxF -- "$expected_summary" bundle/summary.md \
-  || grep -qF -- '<details' bundle/summary.md; then
-  printf 'FAIL: summary is not a plain verdict heading and one result line\n' >&2
+# The PR template's Verification block is one Check | Result table the author extends, so the summary opens with that
+# table's header and verdict row, and carries no heading or collapsible of its own.
+# shellcheck disable=SC2016 # The backticks are literal Markdown, not command substitution.
+if [[ "$(head -2 bundle/summary.md)" != $'| Check | Result |\n| --- | --- |' ]] \
+  || ! sed -n 3p bundle/summary.md | grep -qE -- '^\| `make verify-affected` \| \*\*PASS\*\* on .* · Tests: 0 passed, 0 failed, 0 skipped · Compiler diagnostics: 0 · Analyzer findings: 0 \|$' \
+  || grep -qF -- '<details' bundle/summary.md \
+  || grep -qE -- '^#' bundle/summary.md; then
+  printf 'FAIL: summary does not open with one Check | Result table and its verdict row\n' >&2
   cat bundle/summary.md >&2
   exit 1
 fi
 # shellcheck disable=SC2016 # The backticks are literal Markdown, not command substitution.
-if ! grep -qF -- '| `unit-tests` | PASS | 1.0s |' bundle/summary.md; then
+if ! grep -qF -- '| `unit-tests` | PASS · 1.0s |' bundle/summary.md; then
   printf 'FAIL: stage results are not formatted consistently\n' >&2
   cat bundle/summary.md >&2
   exit 1
 fi
-if grep -qE '^### (Tests:|Compiler diagnostics|Analyzer findings)' bundle/summary.md; then
-  printf 'FAIL: summary repeats totals or renders empty sections\n' >&2
+if [[ "$(grep -c '^| --- ' bundle/summary.md)" -ne 1 ]] || grep -qE '^(Compiler diagnostics|Analyzer findings)' bundle/summary.md; then
+  printf 'FAIL: summary renders a second table or empty sections\n' >&2
   cat bundle/summary.md >&2
   exit 1
 fi
@@ -166,5 +168,15 @@ if [[ -z "$verification" ]]; then
 fi
 if [[ "$(grep -c '<details' <<<"$verification")" -ne 1 ]]; then
   printf 'FAIL: the PR template nests a collapsible inside Verification\n' >&2
+  exit 1
+fi
+# The pasted summary is the Verification table, and the author extends it with rows rather than adding tables.
+if [[ "$(grep -c '^| --- ' <<<"$verification")" -ne 1 ]] || ! grep -qxF -- '| Check | Result |' <<<"$verification"; then
+  printf 'FAIL: the PR template Verification block is not one Check | Result table\n' >&2
+  exit 1
+fi
+# Each screenshot says what it proves, so a reviewer knows what to check in it.
+if ! grep -qE -- '^\| Screen \| .*\| Look at \|$' "$repo_root/.github/PULL_REQUEST_TEMPLATE.md"; then
+  printf 'FAIL: the PR template Screenshots table has no Look at column\n' >&2
   exit 1
 fi

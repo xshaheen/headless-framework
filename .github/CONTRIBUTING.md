@@ -61,7 +61,7 @@ When multiple providers share a behavior contract, prefer a shared `*.Tests.Harn
 ## Tests And Docs
 
 - Add or update tests with every behavior change.
-- Run the narrowest relevant test while you work. When the work is done, run `make verify-affected` once on the final commit, plus `make test-affected-integration` when the change reaches an integration project: they build, test, and analyze everything the change affects and write the summary for the PR body. The full suites (`make test-unit`, `make test`, `make test-integration`) are not part of the pull request check.
+- Run the narrowest relevant test first. `make verify-affected` builds, tests, and analyzes everything the change affects and writes a summary for the PR body. Widen to `make test-unit` or `make test` when the change warrants it.
 - Run `make format-check` before submitting C# changes.
 - Update XML docs for public API changes.
 - Update the owning `docs/llms/` domain guide when package behavior, options, or setup changes.
@@ -76,7 +76,7 @@ When multiple providers share a behavior contract, prefer a shared `*.Tests.Harn
 - Call out consumer impact and migration steps when the change is breaking.
 - When the change adds, changes, or removes public API, show it in the template's **Contract changes** section: one row per affected surface with its migration, then the declarations as C# (before and after for a changed member) and a short consumer snippet for the main scenario in the collapsed **Full public API** block. A reviewer should understand the API from the PR without reading the diff.
 - Fill the template's **Review guide**: the decisions you want the reviewer to make, each linked to its hunk, and what is safe to skim. Reviewers read the guide and the hunks it points to, not every line.
-- Keep PRs reviewable. Put mechanical changes (package deletions, renames, lockfiles, generated code) in their own PR, stacked under the behavior change.
+- Keep PRs reviewable: one PR per logical change, against `main`. When a large mechanical part (package deletions, renames, lockfiles, generated code) would bury the behavior change, open it as its own PR against `main` and merge it first.
 - Let CI report routine automated checks. Mention manual verification or known validation gaps only when they help the reviewer.
 
 ## Releasing

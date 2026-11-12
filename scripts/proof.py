@@ -524,21 +524,46 @@ def summarize(
     return 1 if failed_stages else 0
 
 
+def cell(text: str) -> str:
+    # A pipe in a stage note or a path would end the table cell early.
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
 def render_markdown(summary: dict) -> str:
+    """One `| Check | Result |` table, so the PR adds its own rows to it instead of starting another table.
+
+    The PR template's Verification block pastes this as it is and appends rows for the checks no stage runs (another
+    gate's rows, the regression, extra evidence), so it carries no heading or <details> of its own. The first row is
+    the target's verdict and totals; each stage follows it, and lists that would not fit a cell sit under the table.
+    """
     tests = summary["tests"]
-    verdict = summary["verdict"].upper()
-    # Plain headings, no <details>: the PR template's Verification block is the one collapsible, and the summary is
-    # pasted under its "### Gates" heading, so the gate heading sits one level below that.
-    lines = [
-        f"#### {summary.get('target', 'make verify-affected')}: {verdict}",
-        "",
+    gate = summary.get("coverage_gate")
+    target = summary.get("target", "make verify-affected")
+    dirty = " with uncommitted changes" if summary["dirty"] else ""
+    verdict = (
+        f"**{summary['verdict'].upper()}** on `{summary['commit'][:12]}`{dirty} against `{summary['base']}` · "
         f"Tests: {tests['passed']:,} passed, {tests['failed']:,} failed, {tests['skipped']:,} skipped · "
         f"Compiler diagnostics: {len(summary['compiler_diagnostics']):,} · "
-        f"Analyzer findings: {len(summary['analyzer_findings']):,}{render_gate_summary(summary.get('coverage_gate'))}",
-        "",
-        f"Commit `{summary['commit'][:12]}`{' with uncommitted changes' if summary['dirty'] else ''}, base `{summary['base']}`.",
-        "",
-    ]
+        f"Analyzer findings: {len(summary['analyzer_findings']):,}{render_gate_summary(gate)}"
+    )
+    lines = ["| Check | Result |", "| --- | --- |", f"| `{target}` | {verdict} |"]
+    for stage in summary["stages"]:
+        exit_code = stage["exit_code"]
+        if stage["name"] == "coverage-gate" and gate:
+            result = render_gate_result(gate)
+        elif exit_code < 0:
+            result = f"SKIPPED: {stage.get('note', '')}"
+        else:
+            result = "PASS" if exit_code == 0 else f"FAIL ({exit_code})"
+        # A computed or skipped stage takes no time, so a "0.0s" would only add noise to its row.
+        seconds = f" · {stage['seconds']}s" if stage["seconds"] else ""
+        lines.append(f"| `{stage['name']}` | {cell(result)}{seconds} |")
+    if summary["coverage"]:
+        source = "unit and integration tests" if summary.get("integration_ran") else "unit tests"
+        rows = "; ".join(f"{row['assembly']} {row['line']}% line, {row['branch']}% branch" for row in summary["coverage"])
+        lines.append(f"| Coverage of changed assemblies ({source}) | {cell(rows)} |")
+
+    lines.append("")
     reused = summary.get("reused_from")
     if reused:
         lines += [
@@ -546,37 +571,27 @@ def render_markdown(summary: dict) -> str:
             f"(input key `{summary['input_key'][:12]}`), so no stage ran again for this commit.",
             "",
         ]
-    lines += [
-        "| Stage | Result | Time |",
-        "| --- | --- | --- |",
-    ]
-    for stage in summary["stages"]:
-        exit_code = stage["exit_code"]
-        result = "PASS" if exit_code == 0 else f"SKIPPED: {stage.get('note', '')}" if exit_code < 0 else f"FAIL ({exit_code})"
-        lines.append(f"| `{stage['name']}` | {result} | {stage['seconds']}s |")
-
     affected = summary["affected"]
-    lines += [
-        "",
+    lines.append(
         f"Changed projects: {len(affected['changed_projects'])}. "
         f"Unit-test projects: {len(affected['unit_tests'])}. "
-        f"Integration-test projects{'' if summary.get('integration_ran') else ' (not run here)'}: {len(affected['integration_tests'])}.",
-    ]
+        f"Integration-test projects{'' if summary.get('integration_ran') else ' (not run here)'}: {len(affected['integration_tests'])}."
+    )
     if affected["global_triggers"]:
         lines.append(f"Build-wide files changed: {', '.join(f'`{f}`' for f in affected['global_triggers'])}.")
     for file, packages in affected.get("package_version_changes", {}).items():
         lines.append(f"Package versions changed in `{file}`; selected by lock file: {', '.join(f'`{p}`' for p in packages)}.")
 
     noteworthy = [m for m in tests["modules"] if m["failed"] or m["skipped"]]
-    clean = len(tests["modules"]) - len(noteworthy)
     if noteworthy:
-        lines += ["", "##### Test modules with failures or skips", "", "| Module | Passed | Failed | Skipped |", "| --- | --- | --- | --- |"]
-        lines += [f"| {m['module']} | {m['passed']} | {m['failed']} | {m['skipped']} |" for m in noteworthy]
+        clean = len(tests["modules"]) - len(noteworthy)
+        lines += ["", "Test modules with failures or skips:", ""]
+        lines += [f"- `{m['module']}`: {m['passed']} passed, {m['failed']} failed, {m['skipped']} skipped" for m in noteworthy]
         if clean:
-            lines += ["", f"{clean} other module{'s' if clean != 1 else ''} passed with no skips."]
+            lines.append(f"- {clean} other module{'s' if clean != 1 else ''} passed with no skips.")
     failures = [(m["module"], f) for m in tests["modules"] for f in m["failures"]]
     if failures:
-        lines += ["", "###### Failed tests", ""]
+        lines += ["", "Failed tests:", ""]
         for module, failure in failures[:MAX_LISTED]:
             lines.append(f"- `{module}` `{failure['test']}`: {failure['message']}")
 
@@ -584,23 +599,17 @@ def render_markdown(summary: dict) -> str:
         items = summary[key]
         if not items:
             continue
-        lines += ["", f"##### {title} ({len(items)})", ""]
         by_id: dict[str, int] = {}
         for item in items:
             by_id[item["id"]] = by_id.get(item["id"], 0) + 1
-        if by_id:
-            lines.append(", ".join(f"`{rule}` x{count}" for rule, count in sorted(by_id.items(), key=lambda kv: -kv[1])))
-            lines.append("")
+        rules = ", ".join(f"`{rule}` x{count}" for rule, count in sorted(by_id.items(), key=lambda kv: -kv[1]))
+        lines += ["", f"{title} ({len(items)}): {rules}", ""]
         for item in items[:MAX_LISTED]:
             lines.append(f"- {item['severity']} `{item['id']}` {item['file']}:{item['line']} {item['message']}")
         if len(items) > MAX_LISTED:
             lines.append(f"- ... {len(items) - MAX_LISTED} more in summary.json")
 
-    if summary["coverage"]:
-        source = "unit and integration tests" if summary.get("integration_ran") else "unit tests"
-        lines += ["", f"##### Coverage of changed assemblies ({source})", "", "| Assembly | Line % | Branch % |", "| --- | --- | --- |"]
-        lines += [f"| {row['assembly']} | {row['line']} | {row['branch']} |" for row in summary["coverage"]]
-    lines += render_gate(summary.get("coverage_gate"))
+    lines += render_gate(gate)
     return "\n".join(lines) + "\n"
 
 
@@ -618,52 +627,58 @@ def render_gate_summary(gate: dict | None) -> str:
     return f" · Coverage: {gate['result'].upper()}{suffix}"
 
 
-def render_gate(gate: dict | None) -> list[str]:
-    if not gate:
-        return []
+def render_gate_result(gate: dict) -> str:
+    """The coverage-gate row: its verdict, the changed-line and changed-branch figures, and each assembly's share."""
     scope = (
         "packages without an integration project, unit tests"
         if gate["scope"] == "unit"
         else "packages with an integration project, unit and integration tests merged"
     )
-    lines = ["", f"##### Coverage gate: {gate['result'].upper()} ({scope})", ""]
     if gate["result"] == "skipped":
-        return lines + [f"- {reason}" for reason in gate["reasons"]]
+        return f"SKIPPED ({scope}): {'; '.join(gate['reasons'])}"
     floors = gate["floors"]
     changed, branches = gate["changed_lines"], gate["changed_branches"]
     changed_text = (
-        f"Changed lines: {changed['line']}% ({changed['covered']}/{changed['total']}, floor {floors['line']:g}%)."
+        f"Changed lines: {changed['line']}% ({changed['covered']}/{changed['total']}, floor {floors['line']:g}%)"
         if changed["total"]
-        else "Changed lines: not applicable (0 executable changed lines)."
+        else "Changed lines: not applicable (0 executable changed lines)"
     )
     branch_text = (
-        f"Changed branches: {branches['branch']}% ({branches['covered']}/{branches['total']}, floor {floors['branch']:g}%)."
+        f"Changed branches: {branches['branch']}% ({branches['covered']}/{branches['total']}, floor {floors['branch']:g}%)"
         if branches["total"]
-        else "Changed branches: not applicable (0 changed branches)."
+        else "Changed branches: not applicable (0 changed branches)"
     )
-    lines.append(f"{changed_text} {branch_text}")
-    if gate["by_assembly"]:
-        lines += ["", "| Assembly | Changed lines | Line % | Branch % |", "| --- | --- | --- | --- |"]
-        lines += [
-            f"| {row['assembly']} | {row['lines']} | {row['line']} | {row['branch'] if row.get('branches') else 'n/a'} |"
-            for row in gate["by_assembly"]
-        ]
+    parts = [f"{gate['result'].upper()} ({scope})", changed_text, branch_text]
+    parts += [
+        f"{row['assembly']}: {row['lines']} changed lines, {row['line']}% line, "
+        f"{str(row['branch']) + '% branch' if row.get('branches') else 'no changed branches'}"
+        for row in gate["by_assembly"]
+    ]
+    return " · ".join(parts)
+
+
+def render_gate(gate: dict | None) -> list[str]:
+    """What the coverage-gate row cannot hold: the unit floor, deferred packages, reasons, and uncovered lines."""
+    if not gate or gate["result"] == "skipped":
+        return []
+    lines: list[str] = []
+    floors = gate["floors"]
     if gate["unit_floor"]:
-        lines += ["", f"Unit floor ({floors['unit']:g}% line, packages without an integration project):"]
+        lines += ["", f"Unit floor ({floors['unit']:g}% line, packages without an integration project):", ""]
         lines += [f"- {row['assembly']}: {row['line'] if row['line'] is not None else 'not loaded'}% {'PASS' if row['pass'] else 'FAIL'}" for row in gate["unit_floor"]]
     if gate["deferred_to_integration"]:
         lines += ["", "Held to the changed-line floor by `make test-affected-integration`, not here: " + ", ".join(f"`{name}`" for name in gate["deferred_to_integration"]) + "."]
-    for reason in gate["reasons"]:
-        lines.append(f"- **{reason}**")
+    detail = [f"- **{reason}**" for reason in gate["reasons"]]
     if gate["result"] == "warn":
-        lines.append(
-            "- Add the tests, or explain each miss under Coverage below floor in the PR's Verification section "
+        detail.append(
+            "- Add the tests, or explain each miss in a Coverage below floor row of the PR's Verification table "
             "(AGENTS.md: glue code, integration-only behavior, an unreachable branch, or test cost above the risk)."
         )
-    for entry in gate["uncovered"][:MAX_LISTED]:
-        lines.append(f"- uncovered: {entry}")
+    detail += [f"- uncovered: {entry}" for entry in gate["uncovered"][:MAX_LISTED]]
     if len(gate["uncovered"]) > MAX_LISTED:
-        lines.append(f"- ... {len(gate['uncovered']) - MAX_LISTED} more files in summary.json")
+        detail.append(f"- ... {len(gate['uncovered']) - MAX_LISTED} more files in summary.json")
+    if detail:
+        lines += ["", f"Coverage gate: {gate['result'].upper()}", ""] + detail
     return lines
 
 
