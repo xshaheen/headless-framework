@@ -73,8 +73,9 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 <details><summary><h2>Verification</h2></summary>
 
 <!-- One collapsed block: nest no other collapsible inside it. When any gate failed, add `open` to the tag above so
-     the failure shows without a click. Every result describes the head commit against the same base: an earlier commit does not
-     prove the head, and an unchanged gate reuses its earlier pass in seconds. Delete a section that does not apply. -->
+     the failure shows without a click. Every result describes the head commit against the same base. The gate runs once,
+     on the final head (AGENTS.md, "Gates"). A result from an earlier commit proves the head only when the code is unchanged:
+     same tree, or edits to docs or comments alone. Then name that commit beside the result. Delete a section that does not apply. -->
 
 `<head commit>` against `<base: origin/main, or the parent branch of a stack>`.
 
@@ -83,7 +84,8 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 <!-- Paste each artifacts/proof/<run>/summary.md here as it is. Its heading reports the command and verdict, and the
      line under it the test counts, findings, and coverage result. Do not repeat those results in another table.
      A failed proof stays failed. Under it, record `make test-failed` on `<head commit>` as PASS, naming the modules it
-     reran. Then paste the summary from the final full-gate run. -->
+     reran. Then paste the summary from the final full-gate run. A reused result says "reused from `<commit>`" and why
+     the code is unchanged; a lower layer of a stack cites the top branch's run and its commit. -->
 
 ### Evidence
 

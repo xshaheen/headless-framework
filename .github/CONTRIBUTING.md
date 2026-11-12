@@ -27,7 +27,7 @@ Useful scoped commands:
 make format-check
 make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj
 make test-class CLASS='*ClockTests'
-make test-integration
+make test-affected-integration
 ```
 
 Integration tests use Testcontainers and require Docker. Unit tests should stay isolated and must not depend on external services.
@@ -61,7 +61,7 @@ When multiple providers share a behavior contract, prefer a shared `*.Tests.Harn
 ## Tests And Docs
 
 - Add or update tests with every behavior change.
-- Run the narrowest relevant test first. `make verify-affected` builds, tests, and analyzes everything the change affects and writes a summary for the PR body. Widen to `make test-unit` or `make test` when the change warrants it.
+- Run the narrowest relevant test while you work. When the work is done, run `make verify-affected` once on the final commit, plus `make test-affected-integration` when the change reaches an integration project: they build, test, and analyze everything the change affects and write the summary for the PR body. The full suites (`make test-unit`, `make test`, `make test-integration`) are not part of the pull request check.
 - Run `make format-check` before submitting C# changes.
 - Update XML docs for public API changes.
 - Update the owning `docs/llms/` domain guide when package behavior, options, or setup changes.
