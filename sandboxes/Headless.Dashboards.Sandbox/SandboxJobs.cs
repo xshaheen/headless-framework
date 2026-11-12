@@ -56,6 +56,19 @@ public sealed class AlwaysFailsJob : IJob
     }
 }
 
+/// <summary>
+/// Fails at once with a <see cref="TimeoutException"/>, so the Failed list shows a second exception type beside the
+/// <see cref="InvalidOperationException"/> every other failing sandbox job throws.
+/// </summary>
+[Job(SandboxJobIds.TimesOut)]
+public sealed class TimesOutJob : IJob
+{
+    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken)
+    {
+        throw new TimeoutException("The warehouse API did not answer within 30 seconds.");
+    }
+}
+
 /// <summary>The order a <see cref="OrderSyncJob"/> run syncs; only this id differs between the runs of one scenario.</summary>
 /// <param name="OrderId">The order the run fails to sync.</param>
 public sealed record OrderSyncArgs(int OrderId);
@@ -152,6 +165,7 @@ public static class SandboxJobIds
     public const string Progress = "sandbox.progress";
     public const string Quiet = "sandbox.quiet";
     public const string AlwaysFails = "sandbox.always-fails";
+    public const string TimesOut = "sandbox.times-out";
     public const string OrderSync = "sandbox.order-sync";
     public const string ChainStep = "sandbox.chain-step";
     public const string OverlapFails = "sandbox.overlap-fails";
