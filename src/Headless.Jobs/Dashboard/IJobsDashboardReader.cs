@@ -72,6 +72,11 @@ internal interface IJobsDashboardReader
 
     Task<IReadOnlyList<CronJobEntity>> GetCronJobsAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Returns each cron job's last run by cron job id, in one store read; a cron job that never ran has no entry.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, CronJobLastRun>> GetCronJobLastRunsAsync(CancellationToken cancellationToken);
+
     /// <summary>Previews a stored or draft schedule in the zone the scheduler would use for it.</summary>
     CronSchedulePreview Preview(string expression, string? timeZoneId, DateTime fromUtc, int count);
 

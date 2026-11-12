@@ -373,6 +373,39 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<CronJobLastRun>> ReadCronJobLastRunRowsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AsNoTracking();
+
+        // One query: each cron job takes the first of its started or ended occurrences in the run list's descending
+        // order, execution time and then identifier, so a cron job with none yields no row.
+        return await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .SelectMany(cronJob =>
+                occurrences
+                    .Where(x => x.CronJobId == cronJob.Id && x.Status != JobStatus.Idle && x.Status != JobStatus.Queued)
+                    .OrderByDescending(x => x.ExecutionTime)
+                    .ThenByDescending(x => x.Id)
+                    .Take(1)
+            )
+            .Select(x => new CronJobLastRun
+            {
+                CronJobId = x.CronJobId,
+                OccurrenceId = x.Id,
+                Status = x.Status,
+                ExecutedAt = x.ExecutedAt,
+            })
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static IQueryable<TTimeJob> _TimeJobRuns(TDbContext dbContext, JobRunQuery query)
     {
         var jobs = dbContext.Set<TTimeJob>();

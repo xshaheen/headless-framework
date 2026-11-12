@@ -14,7 +14,11 @@ afterEach(() => {
 })
 
 const failed = run('Failed', { function: 'billing.refund' })
-const fake = { runs: [failed, run('Succeeded')], cronJobs: [cronJob()], nodes: [node()] }
+const fake = {
+  runs: [failed, run('Succeeded')],
+  cronJobs: [cronJob({ lastRun: { id: failed.id, status: 'Failed', executedAt: '2026-11-05T09:47:30Z' } })],
+  nodes: [node()],
+}
 
 describe('jobs accessibility', () => {
   it.each([

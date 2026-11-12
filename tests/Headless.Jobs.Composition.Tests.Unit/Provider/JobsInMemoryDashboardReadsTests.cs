@@ -541,6 +541,140 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_no_last_run_when_a_cron_job_has_no_started_occurrence()
+    {
+        // given
+        var store = _Create();
+        await _AddCronJobAsync(store, "report.build");
+        var waiting = await _AddCronJobAsync(store, "report.build");
+        await _AddOccurrenceAsync(store, waiting, JobStatus.Idle, _Base);
+        await _AddOccurrenceAsync(store, waiting, JobStatus.Queued, _Base.AddMinutes(1));
+
+        // when
+        var lastRuns = await _Store(store).GetCronJobLastRunsAsync(AbortToken);
+
+        // then
+        lastRuns.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_return_the_occurrence_latest_by_execution_time_when_a_cron_job_ran_several_times()
+    {
+        // given
+        var store = _Create();
+        var cron = await _AddCronJobAsync(store, "report.build");
+        // The earliest occurrence ended last, as a requeued one does: the execution time decides, not the end.
+        await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, _Base, executedAt: _Now.AddMinutes(-1));
+        await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, _Base.AddMinutes(10));
+        var latest = await _AddOccurrenceAsync(
+            store,
+            cron,
+            JobStatus.Failed,
+            _Base.AddMinutes(20),
+            executedAt: _Now.AddMinutes(-50)
+        );
+
+        // when
+        var lastRuns = await _Store(store).GetCronJobLastRunsAsync(AbortToken);
+
+        // then
+        var lastRun = lastRuns.Should().ContainSingle().Subject;
+        lastRun.Key.Should().Be(cron.Id);
+        lastRun.Value.CronJobId.Should().Be(cron.Id);
+        lastRun.Value.OccurrenceId.Should().Be(latest);
+        lastRun.Value.Status.Should().Be(JobStatus.Failed);
+        lastRun.Value.ExecutedAt.Should().Be(_Now.AddMinutes(-50));
+    }
+
+    [Fact]
+    public async Task should_keep_a_finished_last_run_when_a_later_occurrence_is_idle_or_queued()
+    {
+        // given
+        var store = _Create();
+        var cron = await _AddCronJobAsync(store, "report.build");
+        var finished = await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, _Base);
+        await _AddOccurrenceAsync(store, cron, JobStatus.Queued, _Base.AddMinutes(10));
+        await _AddOccurrenceAsync(store, cron, JobStatus.Idle, _Base.AddHours(2));
+
+        // when
+        var lastRuns = await _Store(store).GetCronJobLastRunsAsync(AbortToken);
+
+        // then
+        var lastRun = lastRuns.Should().ContainSingle().Subject.Value;
+        lastRun.OccurrenceId.Should().Be(finished);
+        lastRun.Status.Should().Be(JobStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task should_return_a_running_last_run_without_an_end_time_when_the_latest_occurrence_is_in_progress()
+    {
+        // given
+        var store = _Create();
+        var cron = await _AddCronJobAsync(store, "report.build");
+        await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, _Base);
+        var running = await _AddOccurrenceAsync(store, cron, JobStatus.InProgress, _Base.AddMinutes(10));
+
+        // when
+        var lastRuns = await _Store(store).GetCronJobLastRunsAsync(AbortToken);
+
+        // then
+        var lastRun = lastRuns.Should().ContainSingle().Subject.Value;
+        lastRun.OccurrenceId.Should().Be(running);
+        lastRun.Status.Should().Be(JobStatus.InProgress);
+        lastRun.ExecutedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_return_each_cron_job_its_own_last_run_when_two_cron_jobs_ran()
+    {
+        // given
+        var store = _Create();
+        var first = await _AddCronJobAsync(store, "report.build");
+        var second = await _AddCronJobAsync(store, "billing.charge");
+        await _AddOccurrenceAsync(store, first, JobStatus.Succeeded, _Base);
+        var firstLatest = await _AddOccurrenceAsync(store, first, JobStatus.Failed, _Base.AddMinutes(5));
+        // The other cron job's occurrence is the latest of all, and must not become the first one's last run.
+        var secondLatest = await _AddOccurrenceAsync(store, second, JobStatus.Succeeded, _Base.AddMinutes(30));
+
+        // when
+        var lastRuns = await _Store(store).GetCronJobLastRunsAsync(AbortToken);
+
+        // then
+        lastRuns.Should().HaveCount(2);
+        lastRuns[first.Id].OccurrenceId.Should().Be(firstLatest);
+        lastRuns[first.Id].Status.Should().Be(JobStatus.Failed);
+        lastRuns[second.Id].OccurrenceId.Should().Be(secondLatest);
+        lastRuns[second.Id].Status.Should().Be(JobStatus.Succeeded);
+    }
+
+    [Fact]
+    public async Task should_return_the_run_lists_newest_occurrence_when_two_share_an_execution_time()
+    {
+        // given
+        var store = _Create();
+        var cron = await _AddCronJobAsync(store, "report.build");
+        await _AddOccurrenceAsync(store, cron, JobStatus.Succeeded, _Base.AddMinutes(-10));
+
+        for (var index = 0; index < 6; index++)
+        {
+            await _AddOccurrenceAsync(store, cron, JobStatus.Skipped, _Base);
+        }
+
+        // when
+        var lastRuns = await _Store(store).GetCronJobLastRunsAsync(AbortToken);
+
+        // then
+        var newestFirst = await _Store(store)
+            .ListJobRunsAsync(
+                new JobRunQuery { CronJobId = cron.Id, SortDirection = ListSortDirection.Descending },
+                after: null,
+                pageSize: 1,
+                AbortToken
+            );
+        lastRuns[cron.Id].OccurrenceId.Should().Be(newestFirst.Runs.Should().ContainSingle().Subject.Id);
+    }
+
+    [Fact]
     public async Task should_count_runs_per_status_in_each_bucket_by_execution_time_and_an_empty_bucket_as_zero()
     {
         // given

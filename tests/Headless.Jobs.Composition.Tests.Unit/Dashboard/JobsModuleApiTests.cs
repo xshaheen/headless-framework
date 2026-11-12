@@ -400,6 +400,162 @@ public sealed class JobsModuleApiTests : TestBase
     }
 
     [Fact]
+    public async Task should_serve_a_cron_jobs_last_run_with_its_id_status_and_end_time_when_it_ran()
+    {
+        // given: the latest started occurrence of each, the paused one's included, with a later one still waiting
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var now = _time.GetUtcNow();
+        var active = JobsModuleNode.CronJob();
+        var paused = JobsModuleNode.CronJob(paused: true);
+        await _Store(app).InsertCronJobsAsync([active, paused], AbortToken);
+        var earlier = _Occurrence(active, JobStatus.Failed, now.AddMinutes(-90), now.AddMinutes(-89));
+        var latest = _Occurrence(active, JobStatus.Succeeded, now.AddMinutes(-30), now.AddMinutes(-29));
+        var waiting = _Occurrence(active, JobStatus.Idle, now.AddMinutes(30), executedAt: null);
+        var beforePause = _Occurrence(paused, JobStatus.Failed, now.AddHours(-5), now.AddHours(-4));
+        await _Store(app).InsertCronJobOccurrencesAsync([earlier, latest, waiting, beforePause], AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var list = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/cron-jobs",
+            cookie,
+            AbortToken
+        );
+        using var one = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/cron-jobs/" + active.Id,
+            cookie,
+            AbortToken
+        );
+
+        // then
+        var lastRuns = (await JobsDashboardHttpHost.ReadAsync(list, AbortToken))
+            .GetProperty("items")
+            .EnumerateArray()
+            .ToDictionary(item => item.GetProperty("id").GetGuid(), item => item.GetProperty("lastRun").Clone());
+        lastRuns.Keys.Should().BeEquivalentTo([active.Id, paused.Id]);
+        lastRuns[active.Id].GetProperty("id").GetGuid().Should().Be(latest.Id);
+        lastRuns[active.Id].GetProperty("status").GetString().Should().Be("Succeeded");
+        lastRuns[active.Id].GetProperty("executedAt").GetDateTimeOffset().Should().Be(now.AddMinutes(-29));
+        lastRuns[paused.Id].GetProperty("id").GetGuid().Should().Be(beforePause.Id);
+        lastRuns[paused.Id].GetProperty("status").GetString().Should().Be("Failed");
+        lastRuns[paused.Id].GetProperty("executedAt").GetDateTimeOffset().Should().Be(now.AddHours(-4));
+        one.StatusCode.Should().Be(HttpStatusCode.OK);
+        var lastRun = (await JobsDashboardHttpHost.ReadAsync(one, AbortToken)).GetProperty("lastRun");
+        lastRun.GetProperty("id").GetGuid().Should().Be(latest.Id);
+        lastRun.GetProperty("status").GetString().Should().Be("Succeeded");
+        lastRun.GetProperty("executedAt").GetDateTimeOffset().Should().Be(now.AddMinutes(-29));
+    }
+
+    [Fact]
+    public async Task should_omit_the_last_run_when_a_cron_job_never_ran()
+    {
+        // given: one cron job with no occurrence, one whose only occurrence still waits
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var now = _time.GetUtcNow();
+        var fresh = JobsModuleNode.CronJob();
+        var due = JobsModuleNode.CronJob();
+        await _Store(app).InsertCronJobsAsync([fresh, due], AbortToken);
+        await _Store(app)
+            .InsertCronJobOccurrencesAsync(
+                [_Occurrence(due, JobStatus.Idle, now.AddMinutes(-1), executedAt: null)],
+                AbortToken
+            );
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var list = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/cron-jobs",
+            cookie,
+            AbortToken
+        );
+        using var one = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/cron-jobs/" + fresh.Id,
+            cookie,
+            AbortToken
+        );
+
+        // then
+        var items = (await JobsDashboardHttpHost.ReadAsync(list, AbortToken))
+            .GetProperty("items")
+            .EnumerateArray()
+            .ToList();
+        items.Select(_HasLastRun).Should().Equal(false, false);
+        _HasLastRun(await JobsDashboardHttpHost.ReadAsync(one, AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_read_every_last_run_in_one_store_call_when_it_lists_several_cron_jobs()
+    {
+        // given
+        var lastRunReads = 0;
+        await using var app = await JobsDashboardHttpHost.StartAsync(
+            _time,
+            _log,
+            AbortToken,
+            configure: services =>
+                InterceptedJobsDashboardBackend.Replace(
+                    services,
+                    inner =>
+                        InterceptedJobsDashboardBackend.Wrap(
+                            inner,
+                            (method, _, proceed) =>
+                            {
+                                if (
+                                    string.Equals(
+                                        method,
+                                        nameof(IJobsDashboardReader.GetCronJobLastRunsAsync),
+                                        StringComparison.Ordinal
+                                    )
+                                )
+                                {
+                                    Interlocked.Increment(ref lastRunReads);
+                                }
+
+                                return proceed();
+                            }
+                        )
+                )
+        );
+        var now = _time.GetUtcNow();
+        CronJobEntity[] cronJobs = [JobsModuleNode.CronJob(), JobsModuleNode.CronJob(), JobsModuleNode.CronJob()];
+        await _Store(app).InsertCronJobsAsync(cronJobs, AbortToken);
+        await _Store(app)
+            .InsertCronJobOccurrencesAsync(
+                [
+                    .. cronJobs.Select(cronJob =>
+                        _Occurrence(cronJob, JobStatus.Succeeded, now.AddMinutes(-30), now.AddMinutes(-29))
+                    ),
+                ],
+                AbortToken
+            );
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var list = await JobsDashboardHttpHost.GetAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/cron-jobs",
+            cookie,
+            AbortToken
+        );
+
+        // then
+        (await JobsDashboardHttpHost.ReadAsync(list, AbortToken))
+            .GetProperty("items")
+            .EnumerateArray()
+            .Select(_HasLastRun)
+            .Should()
+            .Equal(true, true, true);
+        Volatile.Read(ref lastRunReads).Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_answer_400_for_a_preview_with_no_expression_and_clamp_its_fires_to_50()
     {
         // given
@@ -520,6 +676,27 @@ public sealed class JobsModuleApiTests : TestBase
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store(WebApplication app) =>
         app.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+    private static bool _HasLastRun(JsonElement cronJob) => cronJob.TryGetProperty("lastRun", out _);
+
+    private static CronJobOccurrenceEntity<CronJobEntity> _Occurrence(
+        CronJobEntity cronJob,
+        JobStatus status,
+        DateTimeOffset executionTime,
+        DateTimeOffset? executedAt
+    ) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = cronJob.Id,
+            Function = cronJob.Function,
+            Status = status,
+            ExecutionTime = executionTime.UtcDateTime,
+            ExecutedAt = executedAt,
+            ExceptionMessage = status == JobStatus.Failed ? "boom" : null,
+            CreatedAt = executionTime.AddMinutes(-1),
+            UpdatedAt = executedAt ?? executionTime.AddMinutes(-1),
+        };
 
     [Fact]
     public async Task should_serve_one_bucket_per_cairo_day_with_the_23_hour_spring_forward_day_included()
