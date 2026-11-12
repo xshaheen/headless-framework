@@ -82,6 +82,22 @@ builder.Services.AddHeadlessMessaging(setup =>
     // as Force reprocess act on; one still waiting for a retry is refused as Active. RetryPolicy would not do this:
     // it governs publishing, not consuming.
     setup.DefaultFailurePolicy(policy => policy.FailOn<InvalidOperationException>());
+    // Two timeouts open the payments circuit, and it stays open for 30 minutes, long enough to find it and reset it
+    // by hand. A consumer's open duration is capped at the host's MaxOpenDuration, so that cap rises with it.
+    setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromHours(1);
+    setup.Tune(
+        SandboxConsumerIds.Payments,
+        consumer =>
+            consumer.CircuitBreaker(breaker =>
+            {
+                breaker.FailureThreshold = 2;
+                breaker.OpenDuration = TimeSpan.FromMinutes(30);
+            })
+    );
+    // The stock counts are slow on purpose, and their rows are the backlog a tester reads. A row is stored when its
+    // delivery starts, so one delivery at a time would leave the rest of a burst in the transport, where no backlog
+    // counts it; the concurrency stores the whole burst at once.
+    setup.Tune(SandboxConsumerIds.StockCounts, consumer => consumer.Concurrency(8));
     setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     // Messages stay on the in-memory transport; their storage follows the sandbox store, so with STORE=postgres the
     // published and received rows survive a restart and `make db-q` can read them.
@@ -95,6 +111,16 @@ builder.Services.AddHeadlessMessaging(setup =>
     }
 
     setup.UseInMemory();
+});
+
+// The Contracts view lists declared contracts only. Each keeps the name its type already publishes under by
+// convention, so declaring it renames no stored row.
+builder.Services.ConfigureMessaging(messaging =>
+{
+    messaging.Message<SandboxOrderPlaced>(nameof(SandboxOrderPlaced));
+    messaging.Message<SandboxPaymentCaptured>(nameof(SandboxPaymentCaptured));
+    messaging.Message<SandboxShipmentRequested>(nameof(SandboxShipmentRequested));
+    messaging.Message<SandboxStockCounted>(nameof(SandboxStockCounted));
 });
 
 // The host start only verifies its tables and queues, so this demo creates them as it starts; a deployed app runs
@@ -153,13 +179,7 @@ app.MapGet("/sandbox/scenarios", () => Results.Json(SandboxScenarios.Description
 
 app.MapPost(
     "/sandbox/scenarios/{name}",
-    async (
-        string name,
-        IJobScheduler jobs,
-        ICronJobManager<CronJobEntity> cronJobs,
-        IBus bus,
-        CancellationToken cancellationToken
-    ) =>
+    async (string name, [AsParameters] SandboxScenarioServices services, CancellationToken cancellationToken) =>
     {
         if (!string.Equals(name, "all", StringComparison.Ordinal) && !SandboxScenarios.Descriptions.ContainsKey(name))
         {
@@ -168,7 +188,7 @@ app.MapPost(
             );
         }
 
-        var created = await SandboxScenarios.RunAsync(name, jobs, cronJobs, bus, cancellationToken);
+        var created = await SandboxScenarios.RunAsync(name, services, cancellationToken);
         return Results.Json(new { scenario = name, created });
     }
 );

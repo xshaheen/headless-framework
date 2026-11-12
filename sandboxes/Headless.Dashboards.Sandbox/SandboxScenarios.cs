@@ -1,9 +1,28 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Claims;
+using Headless.Checks;
 using Headless.Jobs;
 using Headless.Messaging;
+using Headless.Messaging.Persistence;
 
 namespace Headless.Dashboards.Sandbox;
+
+/// <summary>The services a scenario drives; the scenario endpoint binds each one from the container.</summary>
+/// <param name="Jobs">Schedules and cancels the Jobs fixtures.</param>
+/// <param name="CronJobs">Stores a cron definition with settings the scheduler's recurring API does not take.</param>
+/// <param name="Bus">Publishes the Bus-lane messages.</param>
+/// <param name="Queue">Enqueues the Queue-lane messages.</param>
+/// <param name="Storage">The Messaging store, for the operator actions a scenario applies to a received row.</param>
+/// <param name="Clock">Times the wait for a consumer to finish.</param>
+public sealed record SandboxScenarioServices(
+    IJobScheduler Jobs,
+    ICronJobManager<CronJobEntity> CronJobs,
+    IBus Bus,
+    IQueue Queue,
+    IDataStorage Storage,
+    TimeProvider Clock
+);
 
 /// <summary>
 /// Named fixtures that put the dashboards into the states a tester needs, each one call away:
@@ -13,6 +32,15 @@ namespace Headless.Dashboards.Sandbox;
 public static class SandboxScenarios
 {
     private static readonly JobOptions _NoRetries = new() { Retries = 0 };
+
+    // In-process consumption finishes in milliseconds; the bound only keeps a stuck consumer from hanging the call.
+    private static readonly TimeSpan _ConsumeTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan _ConsumePollInterval = TimeSpan.FromMilliseconds(50);
+
+    // The store records who acted on a row, so the scenarios act as one fixed, recognizable operator.
+    private static readonly OperatorAuthorizationContext _SeedOperator = new(
+        new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "sandbox-seed")], "SandboxSeed"))
+    );
 
     /// <summary>Every scenario name with what it creates, in the order <c>all</c> runs them.</summary>
     public static readonly IReadOnlyDictionary<string, string> Descriptions = new Dictionary<string, string>(
@@ -34,20 +62,38 @@ public static class SandboxScenarios
         ["cron-paused"] = "Cron definition every 5 minutes, paused as soon as it is created.",
         ["cancel-stubborn"] =
             "Time job that reports progress for 5 minutes and ignores its cancellation token: Cancel requests a stop it never honors.",
+        ["cancelled-before-start"] =
+            "Time job scheduled an hour ahead and cancelled at once: a Cancelled row that never ran.",
+        ["failing-timeout"] =
+            "Time job that fails at once with a TimeoutException, with no retries: a second exception type on the Failed list.",
         ["messages"] = "Ten published messages: eight consumed, two failing in the consumer.",
         ["message-failures-by-cause"] =
             "Seven received messages that fail with two causes and a different order id in each: two Needs you groups.",
         ["scheduled-message"] = "One message published with a 10 minute delay: a row on the Scheduled view.",
+        ["message-contracts"] =
+            "One consumed message of each of the four declared contracts, two on the Bus lane and two on the Queue lane.",
+        ["message-retrying"] =
+            "Three Queue-lane messages that fail in sandbox.shipments with a retry pending: retried after a minute, then at doubling delays for over an hour.",
+        ["message-held"] = "One consumed message that the operator sandbox-seed holds: a held row to release.",
+        ["message-operator-log"] =
+            "One failed message re-executed, and one consumed message held then released, by sandbox-seed: three kinds of entry in the operator log.",
+        ["message-circuit-open"] =
+            "Two messages that time out in sandbox.payments, whose circuit opens after two failures and stays open for 30 minutes.",
+        ["message-backlog"] =
+            "Five Queue-lane messages that sandbox.stock-counts takes 45 s to 165 s to handle: a received backlog that drains one row every 30 s.",
+        ["message-publish-failed"] =
+            "One message published with a delivery deadline that has passed by the time it is sent: a published row that failed for good.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
         string name,
-        IJobScheduler jobs,
-        ICronJobManager<CronJobEntity> cronJobs,
-        IBus bus,
+        SandboxScenarioServices services,
         CancellationToken cancellationToken
     )
     {
+        Argument.IsNotNull(services);
+        var (jobs, cronJobs, bus, queue, _, _) = services;
+
         return name switch
         {
             "progress-running" =>
@@ -91,6 +137,8 @@ public static class SandboxScenarios
             "cron-no-overlap-failing" => [_Id(await _AddNoOverlapFailingCronAsync(cronJobs, cancellationToken))],
             "cron-paused" => [_Id(await _AddPausedCronAsync(jobs, cancellationToken))],
             "cancel-stubborn" => [_Id(await jobs.EnqueueAsync<StubbornJob>(_NoRetries, cancellationToken))],
+            "cancelled-before-start" => [_Id(await _ScheduleThenCancelAsync(jobs, cancellationToken))],
+            "failing-timeout" => [_Id(await jobs.EnqueueAsync<TimesOutJob>(_NoRetries, cancellationToken))],
             "messages" => await _PublishOrdersAsync(bus, cancellationToken),
             "message-failures-by-cause" => await _PublishFailuresByCauseAsync(bus, cancellationToken),
             "scheduled-message" =>
@@ -103,7 +151,25 @@ public static class SandboxScenarios
                     )
                 ),
             ],
-            "all" => await _RunAllAsync(jobs, cronJobs, bus, cancellationToken),
+            "message-contracts" => await _PublishEachContractAsync(bus, queue, cancellationToken),
+            "message-retrying" => await _EnqueueFailingShipmentsAsync(queue, cancellationToken),
+            "message-held" => [await _HoldConsumedOrderAsync(services, cancellationToken)],
+            "message-operator-log" => await _RecordOperatorActionsAsync(services, cancellationToken),
+            "message-circuit-open" => await _TripPaymentsCircuitAsync(bus, cancellationToken),
+            "message-backlog" => await _EnqueueStockCountsAsync(queue, cancellationToken),
+            "message-publish-failed" =>
+            [
+                _Id(
+                    await bus.PublishAsync(
+                        new SandboxOrderPlaced(OrderId: 9404, ShouldFail: false),
+                        // The shortest deadline there is: it has passed by the time the stored row is dispatched, so
+                        // the row ends Failed without a send. The in-memory transport never fails a send on its own.
+                        new PublishOptions { DeliverWithin = TimeSpan.FromTicks(1) },
+                        cancellationToken
+                    )
+                ),
+            ],
+            "all" => await _RunAllAsync(services, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."
             ),
@@ -111,19 +177,26 @@ public static class SandboxScenarios
     }
 
     private static async Task<IReadOnlyList<string>> _RunAllAsync(
-        IJobScheduler jobs,
-        ICronJobManager<CronJobEntity> cronJobs,
-        IBus bus,
+        SandboxScenarioServices services,
         CancellationToken cancellationToken
     )
     {
         var created = new List<string>();
         foreach (var scenario in Descriptions.Keys)
         {
-            created.AddRange(await RunAsync(scenario, jobs, cronJobs, bus, cancellationToken));
+            created.AddRange(await RunAsync(scenario, services, cancellationToken));
         }
 
         return created;
+    }
+
+    // An hour ahead, so the job is still waiting when the cancel lands whatever the scheduler is doing.
+    private static async Task<Guid> _ScheduleThenCancelAsync(IJobScheduler jobs, CancellationToken cancellationToken)
+    {
+        var id = await jobs.ScheduleAfterAsync<QuietJob>(TimeSpan.FromHours(1), _NoRetries, cancellationToken);
+        await jobs.CancelAsync(id, cancellationToken);
+
+        return id;
     }
 
     private static async Task<IReadOnlyList<string>> _EnqueueOrderSyncFailuresAsync(
@@ -225,6 +298,206 @@ public static class SandboxScenarios
         }
 
         return receipts;
+    }
+
+    private static async Task<IReadOnlyList<string>> _PublishEachContractAsync(
+        IBus bus,
+        IQueue queue,
+        CancellationToken cancellationToken
+    )
+    {
+        return
+        [
+            _Id(await bus.PublishAsync(new SandboxOrderPlaced(OrderId: 2001, ShouldFail: false), cancellationToken)),
+            _Id(
+                await bus.PublishAsync(
+                    new SandboxPaymentCaptured(PaymentId: 2002, ShouldFail: false),
+                    cancellationToken
+                )
+            ),
+            _Id(
+                await queue.EnqueueAsync(
+                    new SandboxShipmentRequested(ShipmentId: 2003, ShouldFail: false),
+                    cancellationToken
+                )
+            ),
+            _Id(await queue.EnqueueAsync(new SandboxStockCounted(Sku: 2004, CountSeconds: 0), cancellationToken)),
+        ];
+    }
+
+    private static async Task<IReadOnlyList<string>> _EnqueueFailingShipmentsAsync(
+        IQueue queue,
+        CancellationToken cancellationToken
+    )
+    {
+        var receipts = new List<string>();
+        foreach (var shipmentId in new[] { 3101, 3102, 3107 })
+        {
+            var message = new SandboxShipmentRequested(shipmentId, ShouldFail: true);
+            receipts.Add(_Id(await queue.EnqueueAsync(message, cancellationToken)));
+        }
+
+        return receipts;
+    }
+
+    private static async Task<string> _HoldConsumedOrderAsync(
+        SandboxScenarioServices services,
+        CancellationToken cancellationToken
+    )
+    {
+        var order = new SandboxOrderPlaced(OrderId: 6001, ShouldFail: false);
+        var receipt = await services.Bus.PublishAsync(order, cancellationToken);
+        var generation = await _WaitUntilConsumedAsync(services, receipt, cancellationToken);
+        var inbox = services.Storage.GetInboxOperationsApi();
+        await _ApplyAsync(
+            inbox.HoldAsync,
+            generation,
+            "Kept as evidence for the audit of order 6001.",
+            cancellationToken
+        );
+
+        return _Id(receipt);
+    }
+
+    // The held row's scenario writes one kind of receipt. A re-execution and a release add two more, so the operator
+    // log has operation types to tell apart and filter by.
+    private static async Task<IReadOnlyList<string>> _RecordOperatorActionsAsync(
+        SandboxScenarioServices services,
+        CancellationToken cancellationToken
+    )
+    {
+        var inbox = services.Storage.GetInboxOperationsApi();
+
+        var failing = new SandboxOrderPlaced(OrderId: 6101, ShouldFail: true, "was rejected by the fraud check");
+        var failed = await services.Bus.PublishAsync(failing, cancellationToken);
+        var failedGeneration = await _WaitUntilConsumedAsync(services, failed, cancellationToken);
+        await _ApplyAsync(
+            inbox.ForceReprocessAsync,
+            failedGeneration,
+            "Fraud check rule fixed; running order 6101 again.",
+            cancellationToken
+        );
+
+        var consumed = await services.Bus.PublishAsync(
+            new SandboxOrderPlaced(OrderId: 6102, ShouldFail: false),
+            cancellationToken
+        );
+        var consumedGeneration = await _WaitUntilConsumedAsync(services, consumed, cancellationToken);
+        await _ApplyAsync(
+            inbox.HoldAsync,
+            consumedGeneration,
+            "Kept while the refund of order 6102 is open.",
+            cancellationToken
+        );
+        await _ApplyAsync(
+            inbox.ReleaseHoldAsync,
+            consumedGeneration,
+            "Refund of order 6102 closed.",
+            cancellationToken
+        );
+
+        return [_Id(failed), _Id(consumed)];
+    }
+
+    // Exactly the consumer's failure threshold, so every run stores the same two failed rows: a third message would
+    // race the pause and be stored on some runs only.
+    private static async Task<IReadOnlyList<string>> _TripPaymentsCircuitAsync(
+        IBus bus,
+        CancellationToken cancellationToken
+    )
+    {
+        var receipts = new List<string>();
+        foreach (var paymentId in new[] { 5201, 5202 })
+        {
+            var message = new SandboxPaymentCaptured(paymentId, ShouldFail: true);
+            receipts.Add(_Id(await bus.PublishAsync(message, cancellationToken)));
+        }
+
+        return receipts;
+    }
+
+    // Staggered durations, so the backlog count steps down while a tester watches instead of emptying at once.
+    private static async Task<IReadOnlyList<string>> _EnqueueStockCountsAsync(
+        IQueue queue,
+        CancellationToken cancellationToken
+    )
+    {
+        var receipts = new List<string>();
+        for (var index = 0; index < 5; index++)
+        {
+            var message = new SandboxStockCounted(Sku: 4001 + index, CountSeconds: 45 + (30 * index));
+            receipts.Add(_Id(await queue.EnqueueAsync(message, cancellationToken)));
+        }
+
+        return receipts;
+    }
+
+    /// <summary>
+    /// Waits until <see cref="SandboxOrderPlacedConsumer"/> has finished the published order, because an operator
+    /// action is refused on a row that is still being processed.
+    /// </summary>
+    /// <exception cref="TimeoutException">The consumer did not finish the message in time.</exception>
+    private static async Task<InboxGenerationView> _WaitUntilConsumedAsync(
+        SandboxScenarioServices services,
+        PublishReceipt receipt,
+        CancellationToken cancellationToken
+    )
+    {
+        var inbox = services.Storage.GetInboxOperationsApi();
+        var query = new InboxGenerationQuery
+        {
+            MessageId = Ensure.NotNull(receipt.MessageId),
+            ConsumerIdentity = SandboxConsumerIds.Orders,
+        };
+        var started = services.Clock.GetTimestamp();
+
+        while (true)
+        {
+            var generations = await inbox.QueryAsync(query, _SeedOperator, cancellationToken);
+            var finished = generations.Items.FirstOrDefault(static generation =>
+                generation is { IsCurrentGeneration: true, TerminalAt: not null }
+            );
+
+            if (finished is not null)
+            {
+                return finished;
+            }
+
+            if (services.Clock.GetElapsedTime(started) > _ConsumeTimeout)
+            {
+                throw new TimeoutException(
+                    $"{SandboxConsumerIds.Orders} did not finish message {query.MessageId} within {_ConsumeTimeout}."
+                );
+            }
+
+            await Task.Delay(_ConsumePollInterval, services.Clock, cancellationToken);
+        }
+    }
+
+    /// <summary>Applies one inbox operation as the seed operator, the way the dashboard's command applies it.</summary>
+    /// <exception cref="InvalidOperationException">The store refused the operation.</exception>
+    private static async Task _ApplyAsync(
+        Func<InboxOperationRequest, CancellationToken, ValueTask<InboxOperationResult>> operation,
+        InboxGenerationView generation,
+        string reason,
+        CancellationToken cancellationToken
+    )
+    {
+        var request = new InboxOperationRequest(
+            Guid.CreateVersion7(),
+            generation.IncarnationId,
+            generation.Status,
+            reason,
+            _SeedOperator
+        );
+        var result = await operation(request, cancellationToken);
+
+        if (result.Outcome != InboxOperationOutcome.Applied)
+        {
+            throw new InvalidOperationException(
+                $"The store refused {result.OperationType} on message {generation.MessageId}: {result.Outcome}."
+            );
+        }
     }
 
     private static string _Id(Guid id) => id.ToString("D");
