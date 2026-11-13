@@ -1,22 +1,17 @@
 # Headless.Tus
 
-Base package for the Headless TUS (resumable upload) stack: the shared `tusdotnet` dependency plus
-the protocol-level pieces every tus deployment needs regardless of storage provider — CORS defaults
-for browser clients and the expired-uploads cleanup job.
+Root package of the Headless TUS (resumable upload) stack: the `AddHeadlessTus` registration, upload endpoints over `tusdotnet` that isolate, validate, and hand off each upload, CORS defaults for browser clients, and the expired-uploads cleanup job.
 
 ## Why use this package
 
-Two gaps every tus deployment hits regardless of which store it uses:
+`tusdotnet` serves the tus protocol and a store keeps the bytes. An application that accepts uploads from signed-in users still needs four things on top:
 
-- **Browsers hide tus response headers cross-origin.** Without the right
-  `Access-Control-Expose-Headers`, clients like `tus-js-client` and Uppy cannot read
-  `Location`/`Upload-Offset`, so every cross-origin upload fails on the first request. The exact
-  header list is protocol lore that otherwise gets copy-pasted from blog posts.
-- **Nothing removes expired uploads.** tusdotnet only reports `Upload-Expires`; unfinished uploads
-  accumulate forever unless the application runs a cleanup job.
+- **Isolation.** Each upload is bound to the endpoint, owner, and tenant that created it, and is "not found" for anyone else.
+- **Validation.** A size limit, content-type and extension allow-lists checked against the upload's real first bytes, required metadata, and the application's own checks.
+- **A completion handler.** The application's handler receives each finished upload, and receives it again when it failed.
+- **Housekeeping.** Expired incomplete uploads are removed, and browsers get the CORS headers that tus clients need to read `Location` and `Upload-Offset`.
 
-The package also pins the shared `tusdotnet` + `Headless.Hosting` references so every TUS provider
-package aligns on one version.
+Pair it with one store package (`Headless.Tus.Azure` or `Headless.Tus.S3`) or any other `ITusStore`, and add `Headless.Tus.DistributedLocks` when more than one node serves uploads.
 
 ## Install
 

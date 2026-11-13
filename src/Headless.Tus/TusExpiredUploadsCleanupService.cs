@@ -137,8 +137,9 @@ public sealed class TusExpiredUploadsCleanupOptions
     /// Defaults to 5 minutes. Each pass calls
     /// <see cref="ITusExpirationStore.RemoveExpiredFilesAsync"/>, which typically scans the
     /// store's uploads (a prefix listing for the Azure store) — prefer a coarser interval on
-    /// containers with many uploads; the expiration window itself is configured on
-    /// <c>DefaultTusConfiguration.Expiration</c>. In multi-node deployments every node runs its
+    /// containers with many uploads; the expiration window itself is the upload endpoint's
+    /// <see cref="TusUploadEndpointOptions.Expiration"/>, or <c>DefaultTusConfiguration.Expiration</c>
+    /// on an endpoint mapped with tusdotnet's <c>MapTus</c>. In multi-node deployments every node runs its
     /// own loop against the same store. With <c>UseDistributedLocks</c> selected,
     /// the node that takes the cleanup lease runs the pass and holds the lease for 90% of the
     /// interval, so the store is swept about once per interval across the cluster. Without it,

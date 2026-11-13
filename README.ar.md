@@ -186,6 +186,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 |------------|------------|---------------------|
 | Caching | `AddHeadlessCaching` | `UseInMemory`، `UseRedis`، `UseHybrid` (L1+L2، مع `UseRedisBackplane` أو `UseMessagingBackplane` أو `UseSingleInstanceBackplane`) |
 | Blob storage | `AddHeadlessBlobs` | `UseAws`، `UseAzure`، `UseCloudflareR2`، `UseFileSystem`، `UseRedis`، `UseSsh` |
+| Resumable uploads (TUS) | `AddHeadlessTus` | `UseAzure`، `UseS3`، `UseStore` (لأي `ITusStore` تاني) |
 | Emails | `AddHeadlessEmails` | `UseAwsSes`، `UseAzure`، `UseMailkit`، `UseDevelopment`، `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`، `UseAwsSns`، `UseInfobip`، `UseCequens`، `UseConnekio`، `UseVictoryLink`، `UseVodafone`، `UseDevelopment` |
 | Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`، `UseNoop` |
@@ -758,11 +759,11 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 
 ### TUS (Resumable Uploads)
 
-دعم [بروتوكول TUS](https://tus.io) للـ resumable uploads، مع Azure Blob Storage، وstorage متوافق مع S3 (Cloudflare R2، وAmazon S3، وMinIO)، وdistributed locking.
+دعم [بروتوكول TUS](https://tus.io) للـ resumable uploads: upload endpoints بتعزل كل upload على الـ owner والـ tenant بتوعه، وبتعمله validation، وبتسلّم الملف بعد ما يكمل لـ completion handler، مع Azure Blob Storage، وstorage متوافق مع S3 (Cloudflare R2، وAmazon S3، وMinIO)، وdistributed locking.
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.Tus](src/Headless.Tus/README.md) | أدوات بروتوكول TUS |
+| [Headless.Tus](src/Headless.Tus/README.md) | Setup الـ TUS والـ upload endpoints: isolation، وvalidation، وcompletion handler، وCORS defaults، وتنظيف الـ uploads المنتهية |
 | [Headless.Tus.Azure](src/Headless.Tus.Azure/README.md) | TUS store على Azure Blob |
 | [Headless.Tus.S3](src/Headless.Tus.S3/README.md) | TUS store على Cloudflare R2 وAmazon S3 وأي storage متوافق مع S3 |
 | [Headless.Tus.DistributedLocks](src/Headless.Tus.DistributedLocks/README.md) | Locking لملفات الـ TUS |
