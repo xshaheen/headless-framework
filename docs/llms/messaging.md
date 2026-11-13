@@ -2527,6 +2527,9 @@ The `Degraded` defaults are defaults only: `ConfigureHeadlessHealthCheck("messag
 A host whose writes go through the outbox keeps serving while the broker is down: the outbox holds each message until the broker is back. To report a broker outage as `Degraded` while a host that has not started, or is shutting down, still fails readiness, grade the broker checks and leave `messaging` alone:
 
 ```csharp
+using Headless.Hosting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+
 builder.Services.ConfigureHeadlessHealthCheck("messaging-broker", o => o.FailureStatus = HealthStatus.Degraded);
 builder.Services.ConfigureHeadlessHealthCheck("messaging-nats", o => o.FailureStatus = HealthStatus.Degraded); // UseNats only
 ```
