@@ -15,7 +15,8 @@ namespace Headless.Messaging.Dashboard;
 /// <remarks>
 /// <para>
 /// Its object kinds are <c>published</c> and <c>received</c>, so its stream topics are <c>messaging.published</c> and
-/// <c>messaging.received</c>, plus <c>circuit</c> and <c>node</c>, which only commands target. An object id is
+/// <c>messaging.received</c>, plus <c>circuit</c>, whose changes go out on <c>messaging.circuit</c> from the node that
+/// holds the circuit, and <c>node</c>, which only commands target. An object id is
 /// <c>{node}~{store}~{storage id}</c> (see <see cref="MessagingViews"/>). Commands are listed on
 /// <see cref="MessagingCommands"/>.
 /// The module reads the main store and every additional outbox; a store that fails or is slow is named in the
@@ -55,7 +56,8 @@ internal sealed class MessagingModule
         MessagingDashboardOptions options,
         IServiceProvider services,
         MessagingForwarding? forwarding = null,
-        PeerChangeReader? peerChanges = null
+        PeerChangeReader? peerChanges = null,
+        MessagingCircuitChanges? circuitChanges = null
     )
     {
         Argument.IsNotNull(stores);
@@ -66,6 +68,7 @@ internal sealed class MessagingModule
         LocalCounts = new MessagingCounts(stores);
         LocalSources = new MessagingSources(stores, LocalCounts, metrics);
         LocalChanges = new MessagingChangeSource(stores, options.ChangePageSize, options.ChangeOverlapWindow);
+        PeerChanges = new PeerChangeFeed(LocalChanges, circuitChanges);
         _api = new MessagingModuleApi(stores, LocalSources, metrics, services, options.SearchTimeout, forwarding);
         LocalCommands = new MessagingCommands(stores, LocalSources, services, options.SearchTimeout);
         _options = options;
@@ -84,6 +87,9 @@ internal sealed class MessagingModule
     internal MessagingCounts LocalCounts { get; }
 
     internal MessagingChangeSource LocalChanges { get; }
+
+    /// <summary>What a node relaying this one reads: <see cref="LocalChanges"/> and this node's circuit changes.</summary>
+    internal PeerChangeFeed PeerChanges { get; }
 
     internal MessagingCommands LocalCommands { get; }
 

@@ -3,6 +3,7 @@
 using System.Diagnostics.Metrics;
 using System.Reflection;
 using Headless.Messaging;
+using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -28,7 +29,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         TimeSpan? maxOpenDuration = null,
         int successfulCyclesToResetEscalation = 3,
         ConsumerCircuitBreakerRegistry? registry = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        ICircuitStateObserver? observer = null
     )
     {
         var opts = new CircuitBreakerOptions
@@ -47,8 +49,42 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             registry ?? new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
             new CircuitBreakerMetrics(meterFactory),
-            timeProvider ?? (_timeProvider = new FakeTimeProvider())
+            timeProvider ?? (_timeProvider = new FakeTimeProvider()),
+            observer is null ? null : new CircuitStateObservers(new ObserverServices(observer))
         );
+    }
+
+    /// <summary>Records each circuit the breaker reported, in order.</summary>
+    private sealed class RecordingCircuitObserver : ICircuitStateObserver
+    {
+        private readonly Lock _lock = new();
+        private readonly List<string> _changes = [];
+
+        public IReadOnlyList<string> Changes
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _changes];
+                }
+            }
+        }
+
+        public void OnCircuitChanged(string circuitKey)
+        {
+            lock (_lock)
+            {
+                _changes.Add(circuitKey);
+            }
+        }
+    }
+
+    /// <summary>A container that holds one observer, as a host that registered it would.</summary>
+    private sealed class ObserverServices(ICircuitStateObserver observer) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(IEnumerable<ICircuitStateObserver>) ? new[] { observer } : null;
     }
 
     /// <summary>Takes the HalfOpen probe slot the way an admitted probe does and returns its epoch.</summary>
@@ -79,6 +115,72 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     // -------------------------------------------------------------------------
     // Tests
     // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task should_tell_observers_each_counted_failure_and_the_trip_when_failures_are_transient()
+    {
+        // given
+        var observer = new RecordingCircuitObserver();
+        await using var sut = _Create(failureThreshold: 2, observer: observer);
+
+        // when: a failure the breaker ignores, then two it counts, the second of which opens the circuit
+        await sut.ReportFailureAsync(_Group, 0, new ArgumentException("bad arg"), AbortToken);
+        await _ReportTransientFailuresAsync(sut, _Group, 2);
+
+        // then
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.Open);
+        observer.Changes.Should().Equal(_Group, _Group);
+    }
+
+    [Fact]
+    public async Task should_tell_observers_each_transition_when_a_circuit_opens_half_opens_and_closes()
+    {
+        // given
+        var observer = new RecordingCircuitObserver();
+        await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30), observer: observer);
+        await _ReportTransientFailuresAsync(sut, _Group, 1);
+
+        // when: the open timer half-opens the circuit, with no delivery behind it
+        _timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        // then
+        sut.GetState(_Group).Should().Be(CircuitBreakerState.HalfOpen);
+        observer.Changes.Should().HaveCount(2);
+
+        // when: the probe succeeds, an operator forces the circuit open, then resets it
+        await sut.ReportSuccessAsync(_Group, _AcquireProbe(sut, _Group), AbortToken);
+        await sut.ForceOpenAsync(_Group, AbortToken);
+        await sut.ResetAsync(_Group, AbortToken);
+
+        // then: one report per change, and none for the reset of a circuit already closed
+        (await sut.ResetAsync(_Group, AbortToken))
+            .Should()
+            .BeFalse();
+        observer.Changes.Should().HaveCount(5).And.OnlyContain(key => key == _Group);
+    }
+
+    [Fact]
+    public async Task should_tell_observers_when_a_success_clears_the_failure_count_or_the_circuit_is_removed()
+    {
+        // given
+        var observer = new RecordingCircuitObserver();
+        await using var sut = _Create(failureThreshold: 5, observer: observer);
+        await _ReportTransientFailuresAsync(sut, _Group, 1);
+
+        // when: the first success clears the count, the second has nothing to clear
+        await sut.ReportSuccessAsync(_Group, 0, AbortToken);
+        await sut.ReportSuccessAsync(_Group, 0, AbortToken);
+
+        // then
+        observer.Changes.Should().HaveCount(2);
+
+        // when
+        await sut.RemoveConsumerAsync(_Group);
+
+        // then
+        sut.GetSnapshot(_Group).Should().BeNull();
+        observer.Changes.Should().HaveCount(3);
+    }
 
     [Fact]
     public async Task should_remain_closed_when_failures_below_threshold()

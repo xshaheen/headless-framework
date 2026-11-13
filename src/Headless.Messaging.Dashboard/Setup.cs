@@ -196,13 +196,20 @@ public static class SetupMessagingDashboard
             provider.GetRequiredService<IDashboardEventPublisher>(),
             provider.GetRequiredService<ILogger<MessagingChangePublisher>>()
         ));
+        services.TryAddSingleton(provider => new MessagingCircuitChanges(
+            provider.GetRequiredService<IOptions<MessagingDashboardOptions>>().Value.NodeName,
+            provider.GetRequiredService<IDashboardEventPublisher>(),
+            provider.GetRequiredService<TimeProvider>(),
+            provider
+        ));
         services.TryAddSingleton(provider => new MessagingModule(
             provider.GetRequiredService<MessagingStores>(),
             provider.GetRequiredService<MessagingMetricsEventListener>(),
             provider.GetRequiredService<IOptions<MessagingDashboardOptions>>().Value,
             provider,
             provider.GetRequiredService<MessagingForwarding>(),
-            provider.GetRequiredService<PeerChangeReader>()
+            provider.GetRequiredService<PeerChangeReader>(),
+            provider.GetRequiredService<MessagingCircuitChanges>()
         ));
 
         // Added first, so a second AddMessaging throws before it registers a second observer.
@@ -214,6 +221,11 @@ public static class SetupMessagingDashboard
         // nodes' writes arrive through the change reader.
         services.AddSingleton<IMessageStateObserver>(provider =>
             provider.GetRequiredService<MessagingChangePublisher>()
+        );
+
+        // A circuit lives in this node's memory, so the breaker reports each change here instead of a view polling it.
+        services.AddSingleton<ICircuitStateObserver>(provider =>
+            provider.GetRequiredService<MessagingCircuitChanges>()
         );
 
         return result;

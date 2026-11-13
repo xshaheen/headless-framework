@@ -346,7 +346,7 @@ function BacklogCard() {
 function CircuitsCard() {
   const format = useFormat()
   const circuits = useCircuits()
-  const all = circuits.data ?? []
+  const all = circuits.data?.items ?? []
   const tripped = all.filter((circuit) => circuit.state !== 'Closed')
   const open = tripped.filter((circuit) => circuit.state === 'Open').length
   const halfOpen = tripped.length - open

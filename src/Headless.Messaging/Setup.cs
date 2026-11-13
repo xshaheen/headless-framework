@@ -241,6 +241,7 @@ public static class SetupMessaging
         services.AddMetrics();
         services.TryAddSingleton(sp => sp.GetRequiredService<ConsumerRegistry>().CircuitBreakers);
         services.TryAddSingleton<CircuitBreakerMetrics>();
+        services.TryAddSingleton<CircuitStateObservers>();
         services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
         services.TryAddSingleton<ICircuitBreakerMonitor>(sp => sp.GetRequiredService<ICircuitBreakerStateManager>());
 

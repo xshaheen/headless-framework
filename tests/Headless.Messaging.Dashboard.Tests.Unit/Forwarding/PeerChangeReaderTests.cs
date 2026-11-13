@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using Headless.Dashboard;
+using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
@@ -65,6 +66,35 @@ public sealed class PeerChangeReaderTests : TestBase
         relayed.Target.Module.Should().Be(MessagingDashboardOptions.ModuleId);
         relayed.Target.Node.Should().Be("node-b");
         _publisher.Events.Should().NotContain(e => string.Equals(e.Kind, "stale", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task should_relay_node_b_circuit_changes_under_node_b_when_a_stream_watches_a_node_b_topic()
+    {
+        // given: a circuit lives in node B's memory, so no store carries its change to node A
+        await using var nodeB = await _StartPeerAsync("node-b");
+        await using var nodeA = await _StartAAsync();
+        using var reader = _Reader(nodeA);
+        // The first change read carries the cursor node B issued, so its circuit position is taken by then.
+        var reading = _network.NextCallAsync(_IsChangesRead);
+        reader.Watch("node-b");
+        await _AdvanceUntilAsync(reading);
+        var change = _publisher.NextAsync(e =>
+            string.Equals(e.Kind, "change", StringComparison.Ordinal)
+            && string.Equals(e.Change!.Target.Kind, MessagingViews.CircuitKind, StringComparison.Ordinal)
+        );
+
+        // when: node B's breaker counts a failure
+        await nodeB
+            .Services.GetRequiredService<ICircuitBreakerStateManager>()
+            .ReportFailureAsync("1:orders", 0, new TimeoutException("transient"), AbortToken);
+        await _AdvanceUntilAsync(change);
+
+        // then
+        var relayed = (await change).Change!;
+        relayed.Target.Node.Should().Be("node-b");
+        relayed.Target.Id.Should().Be("node-b~1:orders");
+        relayed.Projection!.Value.GetProperty("consecutiveFailures").GetInt32().Should().Be(1);
     }
 
     [Fact]
