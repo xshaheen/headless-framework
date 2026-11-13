@@ -139,13 +139,7 @@ public sealed class NatsRawPayloadTests(NatsFixture fixture) : TestBase
         try
         {
             await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
-            var host = new RawHost(
-                provider,
-                name,
-                subject,
-                streamName,
-                NatsConsumerClient.BuildDurableName(name, name, MessageLane.Queue)
-            );
+            var host = new RawHost(provider, name, subject, streamName, NatsPhysicalAddress.QueueDurable(name));
 
             var js = new NatsJSContext(await fixture.GetConnectionAsync());
             await _WaitUntilAsync(

@@ -172,51 +172,53 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void should_include_consumer_identity_for_bus_intent_when_build_durable_name()
+    public void should_name_one_bus_durable_per_consumer_identity()
     {
-        NatsConsumerClient
-            .BuildDurableName("payments", "orders.created", MessageLane.Bus)
-            .Should()
-            .StartWith("bus-payments-orders-created-");
+        NatsPhysicalAddress.BusDurable("payments").Should().Be("bus-payments");
     }
 
     [Fact]
-    public void should_build_valid_stable_durable_name_when_consumer_identity_contains_dots()
+    public void should_build_valid_stable_bus_durable_name_when_consumer_identity_contains_dots()
     {
-        var name = NatsConsumerClient.BuildDurableName("billing.invoice-projection", "orders.created", MessageLane.Bus);
+        var name = NatsPhysicalAddress.BusDurable("billing.invoice-projection");
 
-        name.Should().StartWith("bus-billing-invoice-projection-orders-created-");
-        name.Should().HaveLength("bus-billing-invoice-projection-orders-created-".Length + 12);
+        name.Should().StartWith("bus-billing-invoice-projection-");
+        name.Should().HaveLength("bus-billing-invoice-projection-".Length + 12);
         name.IndexOfAny([' ', '.', '*', '>', '/', '\\']).Should().Be(-1);
-        NatsConsumerClient
-            .BuildDurableName("billing.invoice-projection", "orders.created", MessageLane.Bus)
-            .Should()
-            .Be(name);
-        NatsConsumerClient
-            .BuildDurableName("billing-invoice-projection", "orders.created", MessageLane.Bus)
+        NatsPhysicalAddress.BusDurable("billing.invoice-projection").Should().Be(name);
+        NatsPhysicalAddress
+            .BusDurable("billing-invoice-projection")
             .Should()
             .NotBe(name, "a dotted and a dashed identity must not share one durable consumer");
     }
 
     [Fact]
-    public void should_bound_durable_name_to_nats_limit_when_identity_and_subject_are_long()
+    public void should_bound_bus_durable_name_to_nats_limit_when_identity_is_long()
     {
-        var identity = "billing." + new string('a', 190);
-        var subject = "orders." + new string('x', 60);
-
-        var name = NatsConsumerClient.BuildDurableName(identity, subject, MessageLane.Bus);
+        var name = NatsPhysicalAddress.BusDurable("billing." + new string('a', 260));
 
         name.Should().HaveLength(255);
         name.Should().StartWith("bus-billing-aaa");
     }
 
     [Fact]
+    public void should_keep_the_per_subject_name_of_a_legacy_bus_durable()
+    {
+        // The hand-off finds the durables earlier releases created by these names, so they must not change.
+        NatsPhysicalAddress
+            .LegacyBusDurable("payments", "orders.created")
+            .Should()
+            .StartWith("bus-payments-orders-created-");
+        NatsPhysicalAddress
+            .LegacyBusDurable("billing." + new string('a', 190), "orders." + new string('x', 60))
+            .Should()
+            .HaveLength(255);
+    }
+
+    [Fact]
     public void should_share_destination_for_queue_intent_when_build_durable_name()
     {
-        NatsConsumerClient
-            .BuildDurableName("payments", "orders.created", MessageLane.Queue)
-            .Should()
-            .StartWith("queue-orders_created_");
+        NatsPhysicalAddress.QueueDurable("orders.created").Should().StartWith("queue-orders_created_");
     }
 
     [Fact]
@@ -226,10 +228,62 @@ public sealed class NatsConsumerClientTests : TestBase
             .Stream(MessageLane.Bus, "orders.created")
             .Should()
             .NotBe(NatsPhysicalAddress.Stream(MessageLane.Bus, "orders_created"));
-        NatsPhysicalAddress
-            .Durable(MessageLane.Bus, "sales.east", "orders.created")
+        NatsPhysicalAddress.BusDurable("sales.east").Should().NotBe(NatsPhysicalAddress.BusDurable("sales_east"));
+    }
+
+    [Fact]
+    public async Task should_bind_one_bus_durable_per_stream_that_filters_on_every_subject_of_the_identity()
+    {
+        // given - orders.* share the derived "orders" stream, payments.settled has its own
+        await using var client = new NatsConsumerClient("billing.projection", 1, _options, _serviceProvider);
+
+        // when
+        var orders = client.ConsumerBindings(["orders.created", "orders.updated"]);
+        var payments = client.ConsumerBindings(["payments.settled"]);
+
+        // then
+        var binding = orders.Should().ContainSingle().Subject;
+        binding.Durable.Should().Be(NatsPhysicalAddress.BusDurable("billing.projection"));
+        binding.Filters.Should().Equal("headless.bus.orders.created", "headless.bus.orders.updated");
+        binding
+            .LegacyDurables.Should()
+            .Equal(
+                NatsPhysicalAddress.LegacyBusDurable("billing.projection", "orders.created"),
+                NatsPhysicalAddress.LegacyBusDurable("billing.projection", "orders.updated")
+            );
+        payments.Should().ContainSingle().Which.Durable.Should().Be(binding.Durable);
+    }
+
+    [Fact]
+    public async Task should_keep_one_durable_per_subject_on_the_queue_lane()
+    {
+        // given
+        await using var client = new NatsConsumerClient(
+            "billing.projection",
+            1,
+            _options,
+            _serviceProvider,
+            lane: MessageLane.Queue
+        );
+
+        // when
+        var bindings = client.ConsumerBindings(["orders.created", "orders.updated"]);
+
+        // then
+        bindings
             .Should()
-            .NotBe(NatsPhysicalAddress.Durable(MessageLane.Bus, "sales_east", "orders_created"));
+            .BeEquivalentTo([
+                new NatsDurableBinding(
+                    NatsPhysicalAddress.QueueDurable("orders.created"),
+                    ["headless.queue.orders.created"],
+                    []
+                ),
+                new NatsDurableBinding(
+                    NatsPhysicalAddress.QueueDurable("orders.updated"),
+                    ["headless.queue.orders.updated"],
+                    []
+                ),
+            ]);
     }
 
     // NextBackoff tests
@@ -960,7 +1014,9 @@ public sealed class NatsConsumerClientTests : TestBase
                         : siblingConsumer
                 )
         );
-        await client.SubscribeAsync(["orders.created", "orders.updated"], AbortToken);
+
+        // Two streams, so two durables and two loops.
+        await client.SubscribeAsync(["orders.created", "payments.settled"], AbortToken);
 
         var connectError = new TaskCompletionSource<LogMessageEventArgs>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -1133,7 +1189,9 @@ public sealed class NatsConsumerClientTests : TestBase
 
         var consumer = Substitute.For<INatsJSConsumer>();
         _OnConsume(consumer, (_, token) => _Deliver(token));
-        var filters = new ConcurrentQueue<string>();
+        var bound = new TaskCompletionSource<NATS.Client.JetStream.Models.ConsumerConfig>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -1142,7 +1200,7 @@ public sealed class NatsConsumerClientTests : TestBase
             services,
             (_, config, _) =>
             {
-                filters.Enqueue(config.FilterSubject!);
+                bound.TrySetResult(config);
                 return Task.FromResult(consumer);
             }
         );
@@ -1154,16 +1212,13 @@ public sealed class NatsConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            await _WaitUntilAsync(() => filters.Count >= 3, TimeSpan.FromSeconds(5));
+            var config = await bound.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-            // then: the sharded message is filtered on its exact subject and every shard beneath it
-            filters
-                .Should()
-                .BeEquivalentTo(
-                    "headless.bus.orders.created",
-                    "headless.bus.orders.created.>",
-                    "headless.bus.orders.updated"
-                );
+            // then: one durable filters on the sharded message's exact subject, every shard beneath it, and the other message
+            config.FilterSubject.Should().BeNull();
+            config
+                .FilterSubjects.Should()
+                .Equal("headless.bus.orders.created", "headless.bus.orders.created.>", "headless.bus.orders.updated");
         }
         finally
         {
