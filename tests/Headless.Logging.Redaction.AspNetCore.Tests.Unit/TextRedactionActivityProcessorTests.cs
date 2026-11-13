@@ -116,10 +116,8 @@ public sealed class TextRedactionActivityProcessorTests : TestBase
         )
         {
             using var source = new ActivitySource(_SourceName);
-            using (var activity = source.StartActivity("work"))
-            {
-                act(activity!);
-            }
+            using var activity = source.StartActivity("work");
+            act(activity!);
         }
 
         return spans.Should().ContainSingle().Subject;

@@ -35,7 +35,8 @@ public sealed class ServiceDefaultsExceptionRecordingTests : TestBase
 
         using var listener = new ActivityListener
         {
-            ShouldListenTo = static source => source.Name == nameof(ServiceDefaultsExceptionRecordingTests),
+            ShouldListenTo = static source =>
+                string.Equals(source.Name, nameof(ServiceDefaultsExceptionRecordingTests), StringComparison.Ordinal),
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
                 ActivitySamplingResult.AllDataAndRecorded,
         };
