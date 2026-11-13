@@ -5,6 +5,7 @@ using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -180,6 +181,32 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // then
         sut.GetSnapshot(_Group).Should().BeNull();
         observer.Changes.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task should_remove_a_circuit_without_failing_when_the_container_is_disposed_before_its_first_change()
+    {
+        // given: a host that stops disposes its container before the consumers remove their circuits
+        var services = new ServiceCollection().BuildServiceProvider();
+        await services.DisposeAsync();
+        var meterFactory = CircuitBreakerTestHelpers.CreateMeterFactory();
+        _meterFactories.Add(meterFactory);
+        await using var sut = new CircuitBreakerStateManager(
+            Options.Create(new CircuitBreakerOptions()),
+            new ConsumerCircuitBreakerRegistry(),
+            new NullLogger<CircuitBreakerStateManager>(),
+            new CircuitBreakerMetrics(meterFactory),
+            _timeProvider,
+            new CircuitStateObservers(services)
+        );
+        sut.RegisterKnownConsumers([_Group]);
+
+        // when
+        var remove = async () => await sut.RemoveConsumerAsync(_Group);
+
+        // then
+        await remove.Should().NotThrowAsync();
+        sut.GetSnapshot(_Group).Should().BeNull();
     }
 
     [Fact]

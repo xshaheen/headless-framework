@@ -83,6 +83,22 @@ public sealed class MessagingCircuitChangesTests : TestBase
     }
 
     [Fact]
+    public async Task should_publish_no_projection_without_failing_when_the_container_is_disposed()
+    {
+        // given: a circuit removed while the host stops reports after the container was disposed
+        var services = _Services();
+        var sut = _Create(services);
+        await services.DisposeAsync();
+
+        // when
+        var report = () => sut.OnCircuitChanged(_Key);
+
+        // then
+        report.Should().NotThrow();
+        _publisher.Changes.Should().ContainSingle().Which.Projection.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_return_only_the_circuits_changed_after_the_position_when_a_relaying_node_reads()
     {
         // given

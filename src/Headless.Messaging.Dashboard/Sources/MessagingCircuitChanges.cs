@@ -28,7 +28,8 @@ internal sealed class MessagingCircuitChanges : ICircuitStateObserver
     private readonly string _nodeName;
     private readonly IDashboardEventPublisher _publisher;
     private readonly TimeProvider _timeProvider;
-    private readonly Lazy<ICircuitBreakerMonitor?> _monitor;
+    private readonly IServiceProvider _services;
+    private ICircuitBreakerMonitor? _monitor;
     private readonly Dictionary<string, long> _versions = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
     private readonly long _startedAt;
@@ -41,13 +42,10 @@ internal sealed class MessagingCircuitChanges : ICircuitStateObserver
         IServiceProvider services
     )
     {
-        Argument.IsNotNull(services);
-
+        _services = Argument.IsNotNull(services);
         _nodeName = Argument.IsNotNull(nodeName);
         _publisher = Argument.IsNotNull(publisher);
         _timeProvider = Argument.IsNotNull(timeProvider);
-        // Resolved on the first change: the breaker reports here, so resolving it now would loop.
-        _monitor = new Lazy<ICircuitBreakerMonitor?>(services.GetService<ICircuitBreakerMonitor>);
         _startedAt = _last = _timeProvider.GetUtcNow().UtcTicks;
     }
 
@@ -107,7 +105,7 @@ internal sealed class MessagingCircuitChanges : ICircuitStateObserver
                 // A position another process issued: its circuits are gone, so every circuit is sent as it is now.
                 changed =
                 [
-                    .. (_monitor.Value?.KnownConsumers ?? (IEnumerable<string>)[])
+                    .. (_Monitor()?.KnownConsumers ?? (IEnumerable<string>)[])
                         .Union(_versions.Keys, StringComparer.Ordinal)
                         .Select(key => (key, _versions.GetValueOrDefault(key, _startedAt))),
                 ];
@@ -126,8 +124,32 @@ internal sealed class MessagingCircuitChanges : ICircuitStateObserver
         return MessagingViews.CircuitChange(
             _nodeName,
             circuitKey,
-            _monitor.Value?.GetSnapshot(circuitKey),
+            _Monitor()?.GetSnapshot(circuitKey),
             MessagingViews.VersionOf(version)
         );
+    }
+
+    // Resolved on first use, not in the constructor: the breaker reports here, so resolving it there would loop.
+    private ICircuitBreakerMonitor? _Monitor()
+    {
+        if (Volatile.Read(ref _monitor) is { } monitor)
+        {
+            return monitor;
+        }
+
+        try
+        {
+            monitor = _services.GetService<ICircuitBreakerMonitor>();
+        }
+        catch (ObjectDisposedException)
+        {
+            // A change reported while the host stops, after its container was disposed: the circuit goes out with no
+            // projection, to streams that are closing.
+            return null;
+        }
+
+        Volatile.Write(ref _monitor, monitor);
+
+        return monitor;
     }
 }
