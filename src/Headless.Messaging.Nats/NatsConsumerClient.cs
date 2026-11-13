@@ -173,11 +173,6 @@ internal sealed class NatsConsumerClient(
         return [.. names];
     }
 
-    internal static string BuildDurableName(string subscriptionName, string subject, MessageLane lane)
-    {
-        return NatsPhysicalAddress.Durable(lane, subscriptionName, subject);
-    }
-
     internal static IReadOnlyList<string> BuildConsumerSubjects(
         IEnumerable<string> messageNames,
         ISet<string> shardedMessageNames
@@ -305,27 +300,34 @@ internal sealed class NatsConsumerClient(
         foreach (var streamGroup in streamGroups)
         {
             var streamName = streamGroup.Key;
-            var subscriptionName = name;
-            foreach (var (durableKey, subject) in ConsumerFilters(streamGroup))
+            foreach (var binding in ConsumerBindings(streamGroup))
             {
-                var durableName = BuildDurableName(subscriptionName, durableKey, lane);
                 var deliverPolicy =
                     lane == MessageLane.Queue ? ConsumerConfigDeliverPolicy.All : ConsumerConfigDeliverPolicy.New;
 
-                var consumerConfig = new ConsumerConfig(durableName)
+                var consumerConfig = new ConsumerConfig(binding.Durable)
                 {
-                    FilterSubject = subject,
                     DeliverPolicy = deliverPolicy,
                     AckWait = _DefaultAckWait,
                 };
+
+                // One filter keeps FilterSubject, which every server release understands; several need 2.10.
+                if (binding.Filters.Count == 1)
+                {
+                    consumerConfig.FilterSubject = binding.Filters[0];
+                }
+                else
+                {
+                    consumerConfig.FilterSubjects = [.. binding.Filters];
+                }
 
                 // The consumer's own Tune settings are the most specific, so they win over the host-wide callback.
                 _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
                 tunedConsumer?.ApplyTo(consumerConfig);
 
                 if (
-                    !string.Equals(consumerConfig.Name, durableName, StringComparison.Ordinal)
-                    || !string.Equals(consumerConfig.FilterSubject, subject, StringComparison.Ordinal)
+                    !string.Equals(consumerConfig.Name, binding.Durable, StringComparison.Ordinal)
+                    || !_FiltersUnchanged(consumerConfig, binding.Filters)
                     || consumerConfig.DeliverPolicy != deliverPolicy
                 )
                 {
@@ -337,8 +339,16 @@ internal sealed class NatsConsumerClient(
 
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 startupTasks.Add(startupReady.Task);
-#pragma warning disable AsyncFixer04 // Every subject task is joined below, including the startup-failure path.
-                tasks.Add(_ConsumeSubjectAsync(streamName, consumerConfig, startupReady, listeningCts.Token));
+#pragma warning disable AsyncFixer04 // Every durable's task is joined below, including the startup-failure path.
+                tasks.Add(
+                    _ConsumeDurableAsync(
+                        streamName,
+                        consumerConfig,
+                        binding.LegacyDurables,
+                        startupReady,
+                        listeningCts.Token
+                    )
+                );
 #pragma warning restore AsyncFixer04
             }
         }
@@ -381,8 +391,8 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        // A subject loop only completes on shutdown or an unrecoverable failure. Stop its sibling
-        // loops when either happens so Task.WhenAll cannot hide the failure behind still-running subjects.
+        // A durable's loop only completes on shutdown or an unrecoverable failure. Stop its sibling
+        // loops when either happens so Task.WhenAll cannot hide the failure behind still-running durables.
         _ = await Task.WhenAny(tasks).ConfigureAwait(false);
         await listeningCts.CancelAsync().ConfigureAwait(false);
         await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -415,6 +425,50 @@ internal sealed class NatsConsumerClient(
 
         return filters;
     }
+
+    /// <summary>
+    /// The durables a competing client pulls from on one stream. On the Bus lane that is one durable for the consumer
+    /// identity, filtering on every subject it consumes there, so a single pull loop hands the client the stream's
+    /// messages in stream order whatever their type. On the Queue lane every host that consumes a message shares its
+    /// durable, and hosts consume different messages of one stream, so each subject keeps a durable of its own.
+    /// </summary>
+    internal List<NatsDurableBinding> ConsumerBindings(IEnumerable<string> messageNames)
+    {
+        var filters = ConsumerFilters(messageNames);
+
+        if (lane is MessageLane.Bus)
+        {
+            return
+            [
+                new NatsDurableBinding(
+                    NatsPhysicalAddress.BusDurable(name),
+                    NatsDurableBinder.MergeFilters(filters.Select(filter => filter.Subject)),
+                    [
+                        .. filters
+                            .Select(filter => NatsPhysicalAddress.LegacyBusDurable(name, filter.DurableKey))
+                            .Distinct(StringComparer.Ordinal),
+                    ]
+                ),
+            ];
+        }
+
+        return
+        [
+            .. filters.Select(filter => new NatsDurableBinding(
+                NatsPhysicalAddress.QueueDurable(filter.DurableKey),
+                [filter.Subject],
+                []
+            )),
+        ];
+    }
+
+    private static bool _FiltersUnchanged(ConsumerConfig config, IReadOnlyList<string> filters) =>
+        filters.Count == 1
+            ? string.Equals(config.FilterSubject, filters[0], StringComparison.Ordinal)
+                && config.FilterSubjects is null or { Count: 0 }
+            : config.FilterSubject is null
+                && config.FilterSubjects is { } subjects
+                && subjects.SequenceEqual(filters, StringComparer.Ordinal);
 
     private NatsConsumerConfig? _ResolveTunedConsumerConfig()
     {
@@ -467,9 +521,10 @@ internal sealed class NatsConsumerClient(
         return new ValueTask(Ready.Task.WaitAsync(cancellationToken));
     }
 
-    private async Task _ConsumeSubjectAsync(
+    private async Task _ConsumeDurableAsync(
         string streamName,
         ConsumerConfig consumerConfig,
+        IReadOnlyList<string> legacyDurables,
         TaskCompletionSource startupReady,
         CancellationToken cancellationToken
     )
@@ -547,8 +602,15 @@ internal sealed class NatsConsumerClient(
             {
                 var consumer = consumerFactory is not null
                     ? await consumerFactory(streamName, consumerConfig, cancellationToken).ConfigureAwait(false)
-                    : await _jsContext!
-                        .CreateOrUpdateConsumerAsync(streamName, consumerConfig, cancellationToken)
+                    : await NatsDurableBinder
+                        .BindAsync(
+                            _jsContext!,
+                            streamName,
+                            consumerConfig,
+                            legacyDurables,
+                            _LogTransportWarning,
+                            cancellationToken
+                        )
                         .ConfigureAwait(false);
 
                 if (!readyReported)
@@ -812,6 +874,13 @@ internal sealed class NatsConsumerClient(
                 }
             }
         }
+    }
+
+    private void _LogTransportWarning(string reason)
+    {
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs { LogType = MqLogType.TransportConfigurationWarning, Reason = reason }
+        );
     }
 
     private void _LogAckProgressFailure(Exception exception)

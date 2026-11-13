@@ -490,10 +490,12 @@ public sealed class NatsExternalSubjectTests : TestBase
 
         // then
         filters.Should().BeEquivalentTo([(_Name, _Filter), ("orders.placed", "headless.queue.orders.placed")]);
-        NatsConsumerClient
-            .BuildDurableName("group", _Name, MessageLane.Queue)
+        client
+            .ConsumerBindings([_Name])
             .Should()
-            .Be(NatsPhysicalAddress.Durable(MessageLane.Queue, "group", _Name));
+            .ContainSingle()
+            .Which.Durable.Should()
+            .Be(NatsPhysicalAddress.QueueDurable(_Name));
     }
 
     [Fact]
