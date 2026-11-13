@@ -278,7 +278,19 @@ public static class SetupApi
                     {
                         var otel = options.OpenTelemetry;
                         instrumentation.EnableAspNetCoreSignalRSupport = true;
-                        instrumentation.RecordException = otel.RecordException;
+
+                        // The instrumentation would record the raw exception, and an exception event's tags cannot be
+                        // rewritten afterwards, so the event is recorded here from the masked copy instead: same type,
+                        // same stack frames, masked messages. EnrichWithException runs whether or not
+                        // RecordException is set.
+                        instrumentation.RecordException = false;
+
+                        if (otel.RecordException)
+                        {
+                            var masker = serviceProvider.GetService<LogTextMasker>();
+                            instrumentation.EnrichWithException = (activity, exception) =>
+                                activity.AddException(masker?.Mask(exception) ?? exception);
+                        }
 
                         // Capture otel by reference so MapHeadlessEndpoints() can replace
                         // SkipOperationalEndpointFunc with a delegate built from the actual
@@ -346,8 +358,10 @@ public static class SetupApi
                             sp.GetRequiredService<ICurrentTenant>(),
                             sp.GetRequiredService<IOptions<TenantTelemetryOptions>>().Value
                         ))
-                        // Before the user hook and UseOtlpExporter, so no exporter sees a declared credential path.
-                        .AddHeadlessLogPathRedaction();
+                        // Before the user hook and UseOtlpExporter, so no exporter sees a declared credential path
+                        // or a masked shape in a failure's status description or exception tags.
+                        .AddHeadlessLogPathRedaction()
+                        .AddHeadlessTextRedaction();
 
                     options.OpenTelemetry.ConfigureTracing?.Invoke(tracing);
                 });

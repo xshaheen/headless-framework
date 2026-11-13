@@ -116,5 +116,32 @@ public static class SetupLoggingRedactionAspNetCore
                 .. provider.GetServices<ILogPathRedactor>(),
             ]));
         }
+
+        /// <summary>
+        /// Adds a processor that masks, with the app's text redactors, the failure text of every span when it ends: the
+        /// status description and the <c>exception.message</c> and <c>exception.stacktrace</c> tags.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The redactors are the ones <c>AddHeadlessRedaction(setup =&gt; setup.MaskText(…))</c> registers, through
+        /// <see cref="LogTextMasker"/>; without them the processor does nothing. Every redactor applies, whatever its
+        /// log scope.
+        /// </para>
+        /// <para>
+        /// An exception event (<c>Activity.AddException</c>, or an instrumentation's <c>RecordException</c> option)
+        /// cannot be rewritten once recorded, so record events from <see cref="LogTextMasker.Mask(Exception)"/> instead:
+        /// <c>AddHeadless</c> does that for the ASP.NET Core request span. Processors run in the order they are added,
+        /// so add this one before any exporter.
+        /// </para>
+        /// </remarks>
+        /// <returns>The same <see cref="TracerProviderBuilder"/> instance.</returns>
+        public TracerProviderBuilder AddHeadlessTextRedaction()
+        {
+            Argument.IsNotNull(builder);
+
+            return builder.AddProcessor(static provider => new TextRedactionActivityProcessor(
+                provider.GetService<LogTextMasker>()
+            ));
+        }
     }
 }

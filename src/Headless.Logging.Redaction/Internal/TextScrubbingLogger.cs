@@ -2,7 +2,6 @@
 
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Logging.Internal;
@@ -55,6 +54,17 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
         {
             inner.Log(logLevel, eventId, state, exception, formatter);
             return;
+        }
+
+        // Providers read an exception's text from the object itself, so one whose messages matched is swapped for a
+        // masked stand-in before the formatter or any provider sees it.
+        if (exception is not null)
+        {
+            exception = ExceptionMasker.Mask(
+                exception,
+                static (text, scope) => scope.Logger._Scrub(text, scope.Level),
+                (Logger: this, Level: logLevel)
+            );
         }
 
         var rendered = formatter(state, exception);
@@ -141,40 +151,12 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
     }
 
     // Returns the same instance when nothing matched.
-    private object? _ScrubValue(object? value, LogLevel logLevel)
-    {
-        switch (value)
-        {
-            case null:
-                return null;
-            case string text:
-                var masked = _Scrub(text, logLevel);
-                return string.Equals(masked, text, StringComparison.Ordinal) ? text : masked;
-        }
-
-        // These render to text no value shape can hide in, so formatting them would only cost an allocation.
-        // Integers are still scanned: a 14-digit id held as a long renders as that id.
-        if (_HasNoMaskableText(value))
-        {
-            return value;
-        }
-
-        var formatted = Convert.ToString(value, CultureInfo.InvariantCulture);
-
-        if (formatted is null)
-        {
-            return value;
-        }
-
-        var scrubbed = _Scrub(formatted, logLevel);
-
-        return string.Equals(scrubbed, formatted, StringComparison.Ordinal) ? value : scrubbed;
-    }
-
-    private static bool _HasNoMaskableText(object value)
-    {
-        return value is bool or Guid or Enum or DateTime or DateTimeOffset or DateOnly or TimeOnly or TimeSpan;
-    }
+    private object? _ScrubValue(object? value, LogLevel logLevel) =>
+        ValueMasker.Mask(
+            value,
+            static (text, scope) => scope.Logger._Scrub(text, scope.Level),
+            (Logger: this, Level: logLevel)
+        );
 
     private string _ScrubText(object state, LogLevel logLevel) =>
         state.ToString() is { } text ? _Scrub(text, logLevel) : string.Empty;

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Compliance.Classification;
 using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Logging;
@@ -33,7 +34,7 @@ public static class SetupLoggingRedaction
         /// Serilog's factory too, credential paths an <see cref="ILogPathRedactor"/> recognizes are replaced in ASP.NET
         /// Core's request scope and request lines, and text patterns from
         /// <see cref="HeadlessRedactionSetupBuilder.MaskText(string, string, Action{LogTextRedactionScope})"/> are
-        /// masked. A logger factory registered later replaces the wrapped one: <c>AddHeadlessSerilog</c> from
+        /// masked, in a logged exception's messages too. A logger factory registered later replaces the wrapped one: <c>AddHeadlessSerilog</c> from
         /// <c>Headless.Logging.Serilog</c> wraps its own, and after a plain <c>UseSerilog</c> call this method again.
         /// The host logs a warning at startup when the factory in charge is not wrapped.
         /// </para>
@@ -78,6 +79,11 @@ public static class SetupLoggingRedaction
             );
 
             services.AddStartupValidator<LogRedactionStartupValidator>();
+
+            // One masker for every channel outside the logger factory, built from the same redactors the logs use.
+            services.TryAddSingleton(static provider => new LogTextMasker([
+                .. LogTextRedactorRegistration.All(provider).Select(static registration => registration.Redactor),
+            ]));
 
             return services;
         }
