@@ -278,14 +278,14 @@ public sealed partial class LogTextRedactionTests : TestBase
         copy.Message.Should().Be("lookup failed");
         copy.StackTrace.Should().Be(original.StackTrace);
         copy.TargetSite.Should().BeSameAs(original.TargetSite);
-        new StackTrace(copy).FrameCount.Should().BeGreaterThan(0);
+        new StackTrace(copy).FrameCount.Should().BePositive();
         copy.Data["Order"].Should().Be(7);
         copy.ToString().Should().Be(original.ToString().Replace(_NationalId, "***", StringComparison.Ordinal));
 
         var inner = copy.InnerException.Should().BeOfType<FormatException>().Subject;
         inner.Should().NotBeSameAs(original.InnerException);
         inner.Message.Should().Be("no citizen ***");
-        new StackTrace(inner).FrameCount.Should().BeGreaterThan(0);
+        new StackTrace(inner).FrameCount.Should().BePositive();
 
         // the caught exception itself is left as it was
         original.InnerException!.Message.Should().Be($"no citizen {_NationalId}");
