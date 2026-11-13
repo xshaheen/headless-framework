@@ -115,6 +115,21 @@ internal static class TusCreateValidation
         TusUploadEndpointOptions options
     )
     {
+        // tusdotnet takes a key that starts with a tab or another white-space character other than a space as a
+        // key of its own, while the stored metadata is written with each entry trimmed. Such a key would be
+        // checked here under one name and read back later under another, so "\tfiletype" could carry a content
+        // type no rule ever saw.
+        foreach (var key in context.Metadata.Keys)
+        {
+            if (_HasWhiteSpaceOrControl(key))
+            {
+                return (
+                    HttpStatusCode.BadRequest,
+                    "An Upload-Metadata key cannot contain white space or a control character."
+                );
+            }
+        }
+
         foreach (var field in options.RequiredMetadata)
         {
             if (_FirstValue(context.Metadata, field) is null)
@@ -161,6 +176,19 @@ internal static class TusCreateValidation
         }
 
         return null;
+    }
+
+    private static bool _HasWhiteSpaceOrControl(string key)
+    {
+        foreach (var character in key)
+        {
+            if (char.IsWhiteSpace(character) || char.IsControl(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool _IsAllowedExtension(TusUploadEndpointOptions options, string extension)

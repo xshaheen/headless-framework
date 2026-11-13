@@ -230,6 +230,7 @@ A creating request is checked before the store creates anything, in this order. 
 | Rule | Option | Refused with |
 |---|---|---|
 | The declared length is above the maximum size | `MaxSize` | 413 |
+| A metadata key contains white space or a control character | always | 400 |
 | A required metadata field is missing, or sent without a value | `RequiredMetadata` | 400, naming the field |
 | No content type is declared, or the declared one is not in the list | `AllowedContentTypes` (when it has an entry) | 415 |
 | No file name is declared, the name has no extension, or the extension is not in the list | `AllowedFileExtensions` (when it has an entry) | 415 |
@@ -237,6 +238,7 @@ A creating request is checked before the store creates anything, in this order. 
 | An application validator returns a failure | `ValidateWith<TValidator>()` | the failure's status and message; 400 when it names none |
 
 - The client declares the content type in the `filetype` metadata field, or in `type` when it sends no `filetype`; anything after a `;` is ignored. It declares the file name in `filename`, or in `name`. Content types and extensions compare without regard to letter case, an extension with or without its leading dot, and required metadata keys by exact case.
+- A key such as `<tab>filetype` is refused because tusdotnet reads it as a key of its own while the stored metadata is written with each entry trimmed: the rules would check `type`, and the first-bytes check and the completion handler would later read the unchecked `filetype`.
 - An upload whose length is deferred is not empty when it is created, so `AllowEmptyUploads` does not apply to it. `MaxSize` still does: the write that carries the upload past it is refused with 413.
 - Validators run in the order they were declared, after the endpoint's own rules have passed. `ITusUploadValidator.ValidateAsync` receives a `TusUploadRequest` (`Length`, which is `null` for a deferred length, the client's `Metadata`, `TenantId`, `OwnerKey`, and the `HttpContext`) and returns `TusUploadValidationResult.Success`, `Failure(message)` (400), or `Failure(statusCode, message)` with a status from 400 to 599. An exception that leaves a validator fails the request with a server error; return a failure to refuse an upload. Everything in `Metadata` is client input and unverified.
 

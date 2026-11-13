@@ -270,6 +270,39 @@ public sealed class TusValidationTests : TestBase
         refusedFirst.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
 
+    [Theory]
+    // a tab before the key: tusdotnet reads "\tfiletype" as a key of its own, beside the allowed "type"
+    [InlineData("\tfiletype dGV4dC9odG1s")]
+    [InlineData("\tfilename ZXZpbC5leGU=")]
+    // a no-break space before the key
+    [InlineData("\u00A0filetype dGV4dC9odG1s")]
+    // a tab inside the key
+    [InlineData("file\ttype aW1hZ2UvcG5n")]
+    public async Task should_answer_400_when_a_metadata_key_carries_white_space(string oddEntry)
+    {
+        // given - the declared "type" and "name" are allowed, so only the odd key can refuse the upload
+        var metadata = $"type aW1hZ2UvcG5n,name Y2F0LnBuZw==,{oddEntry}";
+        var log = new ValidatorLog();
+        var setup = _Endpoint(
+            static options =>
+            {
+                options.AllowedContentTypes.Add("image/png");
+                options.AllowedFileExtensions.Add("png");
+            },
+            static endpoint => endpoint.ValidateWith<QuotaValidator>(),
+            services => services.AddSingleton(log)
+        );
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+
+        // when
+        using var response = await host.CreateAsync(uploadLength: 10, metadata);
+
+        // then - refused before any rule or validator reads a key the stored metadata would rename
+        await _ShouldBeRefusedAsync(response, HttpStatusCode.BadRequest, "Upload-Metadata key");
+        log.Calls.Should().BeEmpty();
+        Directory.EnumerateFileSystemEntries(host.Directory).Should().BeEmpty();
+    }
+
     [Fact]
     public async Task should_answer_400_to_an_empty_upload_unless_the_endpoint_allows_it()
     {
