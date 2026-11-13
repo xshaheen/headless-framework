@@ -255,10 +255,10 @@ public sealed partial class LogTextRedactionTests : TestBase
         using var sink = new CapturingProvider();
         using var provider = _Build(sink);
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
-        var original = _Thrown(() =>
+        var original = _Thrown<InvalidOperationException>(() =>
             throw new InvalidOperationException(
                 "lookup failed",
-                _Thrown(() => throw new ArgumentException($"no citizen {_NationalId}"))
+                _Thrown<FormatException>(() => throw new FormatException($"no citizen {_NationalId}"))
             )
         );
 
@@ -272,10 +272,11 @@ public sealed partial class LogTextRedactionTests : TestBase
         redacted.Message.Should().Be("lookup failed");
         redacted.StackTrace.Should().Be(original.StackTrace);
         redacted.ToString().Should().Be(original.ToString().Replace(_NationalId, "***", StringComparison.Ordinal));
-        redacted.ToString().Should().Contain(typeof(ArgumentException).FullName!);
+        redacted.ToString().Should().Contain(typeof(FormatException).FullName!);
+        redacted.Data.Should().BeSameAs(original.Data);
 
         var inner = redacted.InnerException.Should().BeOfType<RedactedException>().Subject;
-        inner.OriginalTypeName.Should().Be(typeof(ArgumentException).FullName);
+        inner.OriginalTypeName.Should().Be(typeof(FormatException).FullName);
         inner.Message.Should().Be("no citizen ***");
         redacted.InnerExceptions.Should().Equal(inner);
 
@@ -323,7 +324,7 @@ public sealed partial class LogTextRedactionTests : TestBase
         using var sink = new CapturingProvider();
         using var provider = _Build(sink);
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
-        var original = new InvalidOperationException("lookup failed", new ArgumentException("bad input"));
+        var original = new InvalidOperationException("lookup failed", new FormatException("bad input"));
 
         // when
         LogFailure(logger, original, 7);
@@ -384,12 +385,12 @@ public sealed partial class LogTextRedactionTests : TestBase
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
 
         // when
-        LogFailure(logger, new InvalidOperationException("lookup failed", new ArgumentException(_NationalId)), 7);
+        LogFailure(logger, new InvalidOperationException("lookup failed", new FormatException(_NationalId)), 7);
 
         // then
         var exception = sink.Events.Should().ContainSingle().Which.Exception;
         exception.Should().BeOfType<RedactedException>();
-        exception!.ToString().Should().NotContain(_NationalId).And.Contain("System.ArgumentException: ***");
+        exception!.ToString().Should().NotContain(_NationalId).And.Contain("System.FormatException: ***");
     }
 
     [LoggerMessage(7, LogLevel.Error, "Order {Order} failed")]
@@ -413,19 +414,9 @@ public sealed partial class LogTextRedactionTests : TestBase
     [LoggerMessage(2, LogLevel.Information, "{Text}")]
     private static partial void LogRaw(ILogger logger, string text);
 
-    private static Exception _Thrown(Action action)
-    {
-        try
-        {
-            action();
-        }
-        catch (Exception e)
-        {
-            return e;
-        }
-
-        throw new InvalidOperationException("The action did not throw.");
-    }
+    // A thrown exception carries a stack trace, which the stand-in must keep.
+    private static TException _Thrown<TException>(Action action)
+        where TException : Exception => action.Should().Throw<TException>().Which;
 
     private static Regex _Pattern() => new(@"\b\d{14}\b", RegexOptions.None, TimeSpan.FromMilliseconds(100));
 

@@ -37,7 +37,7 @@ public sealed class RedactedException : Exception
         string redactedText,
         IReadOnlyList<Exception> innerExceptions
     )
-        : base(null, innerExceptions.Count > 0 ? innerExceptions[0] : null)
+        : base(message: null, innerException: innerExceptions.Count > 0 ? innerExceptions[0] : null)
     {
         Argument.IsNotNull(original);
 
