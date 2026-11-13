@@ -354,6 +354,11 @@ internal sealed class JobsExecutionTaskHandler
             await _internalJobsManager.UpdateTickerAsync(context, cancellationToken).ConfigureAwait(false);
         }
 
+        // The start is written now: by the claim for a root run, above for a chain child. Left in the change set, it
+        // would ride on the run's next write, and a write that sets InProgress is a start the store refuses on a row
+        // already running, so an in-process retry would read as a lost lease.
+        context.ResetUpdateProps();
+
         if (!await _VerifyLeaseBeforeExecutionAsync(context, isChild, cancellationToken).ConfigureAwait(false))
         {
             return;

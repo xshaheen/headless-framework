@@ -237,6 +237,45 @@ public sealed class JobsDurableRetryTests : TestBase
     }
 
     [Fact]
+    public async Task should_fail_the_job_once_after_its_last_in_process_retry_fails()
+    {
+        // given: every attempt fails, and both retries wait in process under the run's lease
+        var probe = new RetryProbe(failures: int.MaxValue);
+        var exhausted = 0;
+        var exhaustedOnce = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = _BuildHost(
+            probe,
+            onExhausted: () =>
+            {
+                Interlocked.Increment(ref exhausted);
+                exhaustedOnce.TrySetResult();
+            }
+        );
+        await host.StartAsync(AbortToken);
+        try
+        {
+            var store = _Store(host);
+            var id = await host
+                .Services.GetRequiredService<IJobScheduler>()
+                .EnqueueAsync<RetryJob>(o => o.WithRetries(2).WithRetryIntervals(0), AbortToken);
+
+            // when: the callback follows the stored Failed
+            await exhaustedOnce.Task.WaitAsync(_RunBound, AbortToken);
+            var failed = (await store.GetTimeJobByIdAsync(id, AbortToken))!;
+
+            // then: each retry's write landed on the running row, so every attempt ran before the budget ended it
+            failed.Status.Should().Be(JobStatus.Failed);
+            failed.RetryCount.Should().Be(2);
+            probe.Invocations.Should().Be(3);
+            Volatile.Read(ref exhausted).Should().Be(1);
+        }
+        finally
+        {
+            await host.StopAsync(AbortToken);
+        }
+    }
+
+    [Fact]
     public async Task should_run_a_rescheduled_retry_that_comes_due_while_the_failed_run_still_reports_its_exception()
     {
         // given: two workers, a delay just above the claim slack, and an exception handler that returns only once the

@@ -168,6 +168,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     // so that attempt's late completion is refused.
     private static RowLeaseSnapshot _Revoked(RowLeaseSnapshot lease) => RowLeaseRules.Revoke(lease).Next;
 
+    // A write that sets the row InProgress is a start, and a start must find the row still Queued, as the relational
+    // stores' claimed write requires: a duplicate start of the same claim cannot restart a running row.
+    private static bool _RestartsRunningRow(JobExecutionState context, JobStatus storedStatus) =>
+        context.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
+        && context.Status == JobStatus.InProgress
+        && storedStatus != JobStatus.Queued;
+
     // How a claimed run's own write moves its lease, judged on the row as the write would leave it: a terminal status
     // settles the attempt, a hand-back to Idle or an explicit lock release releases it, and any other write keeps the
     // lease and needs the generation to be current. Null when the generation may no longer write; a retried settlement
@@ -751,7 +758,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         {
             // Completion fence: only the claimed generation may write a non-terminal row, so a swept, reclaimed, or
             // revoked attempt's late completion does not clobber the row.
-            if (!_IsNonTerminal(job.Status))
+            if (!_IsNonTerminal(job.Status) || _RestartsRunningRow(functionContext, job.Status))
             {
                 return Task.FromResult(0);
             }
@@ -3596,7 +3603,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // cancellation request) is not a lost lease, and only the lease fence below may answer 0.
         while (_cronOccurrences.TryGetValue(row.Key, out var occurrence))
         {
-            if (!_IsNonTerminal(occurrence.Status))
+            if (!_IsNonTerminal(occurrence.Status) || _RestartsRunningRow(functionContext, occurrence.Status))
             {
                 return Task.FromResult(0);
             }
