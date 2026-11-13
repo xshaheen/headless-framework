@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Tus.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using tusdotnet.Interfaces;
@@ -9,8 +10,8 @@ namespace Headless.Tus;
 
 /// <summary>
 /// Entry point for registering Headless TUS resumable uploads. Call
-/// <c>services.AddHeadlessTus(tus => tus.Use…(…))</c> once per application to select the upload store and
-/// configure what surrounds it.
+/// <c>services.AddHeadlessTus(tus => tus.Use…(…))</c> once per application to select the upload store, declare
+/// the upload endpoints, and configure what surrounds them.
 /// </summary>
 [PublicAPI]
 public static class SetupTus
@@ -20,17 +21,20 @@ public static class SetupTus
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers the host's tus upload store and the job that removes expired incomplete uploads. The
-        /// <paramref name="configure"/> callback must select exactly one store through a <c>Use*</c> member, such
-        /// as <c>tus.UseS3(…)</c>, <c>tus.UseAzure(…)</c>, or <c>tus.UseStore(…)</c>.
+        /// Registers the host's tus upload store, the upload endpoints declared through <c>AddUploadEndpoint</c>,
+        /// and the job that removes expired incomplete uploads. The <paramref name="configure"/> callback must
+        /// select exactly one store through a <c>Use*</c> member, such as <c>tus.UseS3(…)</c>,
+        /// <c>tus.UseAzure(…)</c>, or <c>tus.UseStore(…)</c>.
         /// </summary>
-        /// <param name="configure">Delegate that selects the store and configures locks and cleanup.</param>
+        /// <param name="configure">
+        /// Delegate that selects the store, declares the upload endpoints, and configures locks and cleanup.
+        /// </param>
         /// <returns>The same service collection for chaining.</returns>
         /// <remarks>
         /// The selected store resolves as the host's <see cref="ITusStore"/> and as its own type. Every
         /// contribution is deferred until the gates below pass, so a failed gate leaves the service collection
-        /// unchanged. The cleanup job is on by default; <c>ConfigureExpiredUploadsCleanup</c> changes its interval
-        /// or turns it off.
+        /// unchanged. A declared upload endpoint serves nothing until <c>MapHeadlessTus</c> maps it. The cleanup
+        /// job is on by default; <c>ConfigureExpiredUploadsCleanup</c> changes its interval or turns it off.
         /// </remarks>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">
@@ -76,6 +80,11 @@ public static class SetupTus
 
         services.TryAddSingleton(TimeProvider.System);
         services.Configure<TusExpiredUploadsCleanupOptions, TusExpiredUploadsCleanupOptionsValidator>(_ => { });
+
+        // Registered even when no endpoint is declared, so MapHeadlessTus can tell a missing AddHeadlessTus call from
+        // a name that was never declared.
+        services.AddSingleton(new TusEndpointRegistry(setup.Endpoints.Values));
+        services.AddSingleton<TusConfigurationFactory>();
 
         foreach (var action in setup.CrossCuttingExtensions)
         {
