@@ -238,7 +238,7 @@ export function rowMark(
 }
 
 /** A node's stream topic for one kind: the local node's is `messaging.{kind}`, another's `messaging.{kind}@{node}`. */
-export function topicOf(kind: MessageKind, node: string) {
+export function topicOf(kind: MessageKind | 'circuit', node: string) {
   return node ? `messaging.${kind}@${node}` : `messaging.${kind}`
 }
 

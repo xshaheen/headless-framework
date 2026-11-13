@@ -672,26 +672,18 @@ internal sealed class MessagingModuleApi(
     private JsonHttpResult<MessagingCircuitList> _Circuits()
     {
         var monitor = _services.GetService<ICircuitBreakerMonitor>();
+        var changes = _services.GetService<MessagingCircuitChanges>();
         var items = new List<MessagingCircuitView>();
 
         foreach (var consumer in (IEnumerable<string>?)monitor?.KnownConsumers.Order(StringComparer.Ordinal) ?? [])
         {
+            // The version is read before the circuit, so a row never claims a version later than the state it shows:
+            // a change it already claimed would be dropped when it arrives.
+            var version = changes?.VersionOf(consumer);
+
             if (monitor!.GetSnapshot(consumer) is { } snapshot)
             {
-                var (identity, lane) = MessagingViews.ReadCircuitKey(consumer);
-
-                items.Add(
-                    new MessagingCircuitView(
-                        MessagingViews.CircuitId(_stores.NodeName, consumer),
-                        identity,
-                        lane,
-                        snapshot.State,
-                        snapshot.ConsecutiveFailures,
-                        snapshot.FailureThreshold,
-                        snapshot.OpenedAt,
-                        snapshot.EstimatedRemainingOpenDuration
-                    )
-                );
+                items.Add(MessagingViews.CircuitView(_stores.NodeName, consumer, snapshot, version));
             }
         }
 

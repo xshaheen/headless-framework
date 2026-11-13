@@ -26,7 +26,8 @@ internal sealed class CircuitBreakerStateManager(
     ConsumerCircuitBreakerRegistry registry,
     ILogger<CircuitBreakerStateManager> logger,
     CircuitBreakerMetrics metrics,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    CircuitStateObservers? observers = null
 ) : ICircuitBreakerStateManager, IAsyncDisposable, IDisposable
 {
     // Lock-free reads on per-consumer state are intentional throughout this class:
@@ -163,6 +164,7 @@ internal sealed class CircuitBreakerStateManager(
         Func<long, ValueTask>? pauseCallback = null;
         var tripped = false;
         var closedFromHalfOpen = false;
+        var failureCounted = false;
         TimeSpan? openDuration = null;
         ITimer? closedTimerToDispose = null;
         ITimer? openTimerToDispose = null;
@@ -213,6 +215,7 @@ internal sealed class CircuitBreakerStateManager(
                     }
 
                     state.ConsecutiveFailures++;
+                    failureCounted = true;
 
                     if (state.ConsecutiveFailures >= state.EffectiveFailureThreshold)
                     {
@@ -240,6 +243,11 @@ internal sealed class CircuitBreakerStateManager(
         else if (closedFromHalfOpen)
         {
             logger.CircuitClosedAfterNonTransientHalfOpenFailure(LogSanitizer.Sanitize(consumerKey));
+        }
+
+        if (tripped || closedFromHalfOpen || failureCounted)
+        {
+            _NotifyChanged(consumerKey);
         }
 
         // Dispose timers outside the lock
@@ -351,6 +359,7 @@ internal sealed class CircuitBreakerStateManager(
         if (transitionedToHalfOpen)
         {
             logger.CircuitHalfOpen(circuitKey);
+            _NotifyChanged(circuitKey);
             _StartResumeCallback(state, circuitKey, resumeCallback, resumeEpoch, resumeTcs);
         }
 
@@ -462,11 +471,13 @@ internal sealed class CircuitBreakerStateManager(
         TimeSpan? openDuration = null;
         ITimer? closedTimerToDispose = null;
         var transitionedToClosed = false;
+        var failuresCleared = false;
 
         lock (stateLock)
         {
             if (state.State is CircuitBreakerState.Closed)
             {
+                failuresCleared = state.ConsecutiveFailures != 0;
                 state.ConsecutiveFailures = 0;
             }
             else if (state.State is CircuitBreakerState.HalfOpen && admissionEpoch == state.CurrentEpoch)
@@ -485,6 +496,11 @@ internal sealed class CircuitBreakerStateManager(
         if (transitionedToClosed)
         {
             logger.CircuitClosedAfterProbeSucceeded(consumerKey);
+        }
+
+        if (transitionedToClosed || failuresCleared)
+        {
+            _NotifyChanged(consumerKey);
         }
 
         if (closedTimerToDispose is not null)
@@ -541,6 +557,8 @@ internal sealed class CircuitBreakerStateManager(
             state.OpenTimer = null;
             resumeTasks = [.. state.InFlightResumes.Keys];
         }
+
+        _NotifyChanged(consumerKey);
 
         // Await timer disposal outside the lock so in-flight callbacks can complete.
         if (timerToDispose is not null)
@@ -609,6 +627,7 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         logger.CircuitReopenedAfterProbeAbort(safeConsumerKey);
+        _NotifyChanged(consumerKey);
 
         // Await timer disposal outside the lock
         if (oldTimer is not null)
@@ -765,6 +784,7 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         logger.CircuitClosedByManualReset(previousState, LogSanitizer.Sanitize(consumerKey));
+        _NotifyChanged(consumerKey);
 
         if (timerToDispose is not null)
         {
@@ -849,6 +869,7 @@ internal sealed class CircuitBreakerStateManager(
             escalationLevel,
             timerInfo.OpenDuration
         );
+        _NotifyChanged(consumerKey);
 
         if (timerToDispose is not null)
         {
@@ -1256,6 +1277,7 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         logger.CircuitHalfOpen(consumerKey);
+        _NotifyChanged(consumerKey);
 
         _StartResumeCallback(state, consumerKey, resumeCallback, resumeEpoch, resumeTcs);
     }
@@ -1370,6 +1392,7 @@ internal sealed class CircuitBreakerStateManager(
             openInfo.Escalation,
             openInfo.OpenDuration
         );
+        _NotifyChanged(consumerKey);
 
         // Dispose old timer outside the lock
         if (openInfo.OldTimerToDispose is not null)
@@ -1400,6 +1423,13 @@ internal sealed class CircuitBreakerStateManager(
                 logger.ReopenPauseCallbackFailed(ex, consumerKey, openInfo.Escalation);
             }
         }
+    }
+
+    // Called after the consumer lock is released, and before any callback or timer disposal is awaited, so an observer
+    // hears the change as soon as a reader could see it.
+    private void _NotifyChanged(string consumerKey)
+    {
+        observers?.Notify(consumerKey);
     }
 
     private TimeSpan _GetOpenDuration(ConsumerCircuitState state)

@@ -336,6 +336,81 @@ describe('messaging consumers', () => {
     await actor.click(within(table).getByRole('button', { name: 'Force open' }))
     expect(await screen.findByRole('alertdialog', { name: 'Force open' })).toBeTruthy()
   })
+
+  const closed = circuit({
+    state: 'Closed',
+    consecutiveFailures: 0,
+    openedAt: null,
+    estimatedRemainingOpenDuration: null,
+  })
+  const circuitReads = (view: ReturnType<typeof open>) =>
+    view.requests.filter((request) => request.path === 'messaging/circuits').length
+
+  function circuitChange(row: typeof closed, version: string, node = '') {
+    return {
+      module: 'messaging',
+      kind: 'circuit',
+      id: row.id,
+      topic: node ? `messaging.circuit@${node}` : 'messaging.circuit',
+      version,
+      projection: { ...row },
+    }
+  }
+
+  it('shows a circuit change from the stream in place, and reads nothing on a timer while every circuit is closed', async () => {
+    const view = open({ circuits: [closed] }, { path: 'consumers' })
+    const table = await screen.findByRole('grid', { name: 'Circuit breakers' })
+    await within(table).findByText('Closed')
+    expect(view.stream.topics()).toContain('messaging.circuit')
+    const before = circuitReads(view)
+
+    act(() => view.stream.push('change', circuitChange({ ...closed, state: 'HalfOpen', consecutiveFailures: 5 }, '2')))
+
+    expect(await within(table).findByText('Half open')).toBeTruthy()
+    expect(within(table).getByText('5 of 5')).toBeTruthy()
+    await act(() => vi.advanceTimersByTimeAsync(60_000))
+    expect(circuitReads(view)).toBe(before)
+  })
+
+  it('watches the circuits of the node it reads', async () => {
+    const view = open({ nodes: twoNodes, circuits: [closed] }, { path: 'consumers?node=node-b' })
+    await screen.findByRole('grid', { name: 'Circuit breakers' })
+
+    await waitFor(() => expect(view.stream.topics()).toContain('messaging.circuit@node-b'))
+    expect(view.stream.topics()).not.toContain('messaging.circuit')
+  })
+
+  it('reads the circuits again while one is open, because the time it has left moves with no change', async () => {
+    const view = open({ circuits: [circuit()] }, { path: 'consumers' })
+    const table = await screen.findByRole('grid', { name: 'Circuit breakers' })
+    await within(table).findByText('Open')
+    const before = circuitReads(view)
+
+    await act(() => vi.advanceTimersByTimeAsync(5_000))
+    await waitFor(() => expect(circuitReads(view)).toBe(before + 1))
+
+    act(() => view.stream.push('change', circuitChange(closed, '2')))
+    await within(table).findByText('Closed')
+    const settled = circuitReads(view)
+    await act(() => vi.advanceTimersByTimeAsync(60_000))
+    expect(circuitReads(view)).toBe(settled)
+  })
+
+  it('reads the circuits again for a change to a circuit the list does not hold', async () => {
+    const view = open({ circuits: [closed] }, { path: 'consumers' })
+    const table = await screen.findByRole('grid', { name: 'Circuit breakers' })
+    await within(table).findByText('Closed')
+    const before = circuitReads(view)
+
+    act(() =>
+      view.stream.push(
+        'change',
+        circuitChange({ ...closed, id: 'node-a~Orders.ShipConsumer', consumer: 'Orders.ShipConsumer' }, '2'),
+      ),
+    )
+
+    await waitFor(() => expect(circuitReads(view)).toBe(before + 1))
+  })
 })
 
 describe('messaging stale views', () => {

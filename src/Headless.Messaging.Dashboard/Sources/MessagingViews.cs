@@ -12,6 +12,7 @@ namespace Headless.Messaging.Dashboard;
 /// <see cref="MessagingDashboardOptions.NodeName"/>, the store that holds it (<c>primary</c> for the main store, else
 /// the outbox's name), and the row's storage id. The stores are shared by every node, so a change has no
 /// <see cref="ObjectRef.Node"/> and is sent on the topics <c>messaging.published</c> and <c>messaging.received</c>.
+/// A circuit's change is sent on <c>messaging.circuit</c> by the node that holds the circuit.
 /// </remarks>
 internal static class MessagingViews
 {
@@ -26,7 +27,8 @@ internal static class MessagingViews
 
     /// <summary>
     /// One node's circuit breaker for one consumer, with the id <c>{node}~{circuit key}</c>. A circuit lives in a node's
-    /// memory, so its id names the node and its commands act on that node alone.
+    /// memory, so its id names the node and its commands act on that node alone. Its stream topic is
+    /// <c>messaging.circuit</c>.
     /// </summary>
     public const string CircuitKind = "circuit";
 
@@ -79,6 +81,51 @@ internal static class MessagingViews
             : (circuitKey, null);
     }
 
+    /// <summary>A circuit as the circuits view lists it and as its change's projection carries it.</summary>
+    public static MessagingCircuitView CircuitView(
+        string node,
+        string circuitKey,
+        CircuitBreakerSnapshot snapshot,
+        string? version
+    )
+    {
+        var (consumer, lane) = ReadCircuitKey(circuitKey);
+
+        return new MessagingCircuitView(
+            CircuitId(node, circuitKey),
+            consumer,
+            lane,
+            snapshot.State,
+            snapshot.ConsecutiveFailures,
+            snapshot.FailureThreshold,
+            snapshot.OpenedAt,
+            snapshot.EstimatedRemainingOpenDuration,
+            version
+        );
+    }
+
+    /// <summary>
+    /// A circuit's change: its row, or no projection for a circuit the node no longer tracks, so views read the list
+    /// again. Every field is written, nulls included, because a patch must clear what a closed circuit no longer has.
+    /// </summary>
+    public static DashboardChange CircuitChange(
+        string node,
+        string circuitKey,
+        CircuitBreakerSnapshot? snapshot,
+        string version
+    ) =>
+        new()
+        {
+            Target = Ref(CircuitKind, CircuitId(node, circuitKey)),
+            Version = version,
+            Projection = snapshot is null
+                ? null
+                : JsonSerializer.SerializeToElement(
+                    CircuitView(node, circuitKey, snapshot, version),
+                    MessagingCircuitChangeJsonContext.Default.MessagingCircuitView
+                ),
+        };
+
     public static string KindOf(MessageType type) => type == MessageType.Publish ? PublishedKind : ReceivedKind;
 
     public static string KindOf(Persistence.MessageChangeKind kind) =>
@@ -105,8 +152,10 @@ internal static class MessagingViews
     public static ObjectRef Ref(MessageType type, MessagingObjectId id) => Ref(KindOf(type), id.ToString());
 
     /// <summary>The version a change of a row carries: its change marker in UTC ticks, fixed-width for the shell.</summary>
-    public static string VersionOf(DateTimeOffset changedAt) =>
-        changedAt.UtcTicks.ToString("D19", CultureInfo.InvariantCulture);
+    public static string VersionOf(DateTimeOffset changedAt) => VersionOf(changedAt.UtcTicks);
+
+    /// <summary>A version from UTC ticks, fixed-width for the shell.</summary>
+    public static string VersionOf(long utcTicks) => utcTicks.ToString("D19", CultureInfo.InvariantCulture);
 
     public static DashboardObject ToObject(MessageType type, MessagingObjectId id, MediumMessage message) =>
         new()
@@ -494,6 +543,10 @@ internal sealed record MessagingReceiptList(IReadOnlyList<MessagingOperationRece
 /// <param name="Id">The circuit's object id, <c>{node}~{circuit key}</c>, which its commands act on.</param>
 /// <param name="Consumer">The consumer identity, as the consumers read names it, without the key's lane.</param>
 /// <param name="Lane">The lane the circuit guards; null for a key that names none.</param>
+/// <param name="Version">
+/// The version of the circuit's latest change, so a list row and a stream change of the circuit compare; null on a
+/// host that publishes no circuit changes.
+/// </param>
 internal sealed record MessagingCircuitView(
     string Id,
     string Consumer,
@@ -502,7 +555,8 @@ internal sealed record MessagingCircuitView(
     int ConsecutiveFailures,
     int FailureThreshold,
     DateTimeOffset? OpenedAt,
-    TimeSpan? EstimatedRemainingOpenDuration
+    TimeSpan? EstimatedRemainingOpenDuration,
+    string? Version
 );
 
 internal sealed record MessagingCircuitList(IReadOnlyList<MessagingCircuitView> Items);
@@ -693,3 +747,8 @@ internal sealed record MessagingListScope
 [JsonSerializable(typeof(MessagingListScope))]
 [JsonSerializable(typeof(MessagingSearchRequest))]
 internal sealed partial class MessagingDashboardJsonContext : JsonSerializerContext;
+
+/// <summary>Writes a circuit's projection with its nulls, which <see cref="MessagingDashboardJsonContext"/> omits.</summary>
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web, UseStringEnumConverter = true)]
+[JsonSerializable(typeof(MessagingCircuitView))]
+internal sealed partial class MessagingCircuitChangeJsonContext : JsonSerializerContext;
