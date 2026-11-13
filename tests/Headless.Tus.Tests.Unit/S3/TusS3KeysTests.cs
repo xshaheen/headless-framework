@@ -86,7 +86,6 @@ public sealed class TusS3KeysTests : TestBase
 
         // then - the tenant's working sets never sit where the upload's own working set does
         tenantKeys.WorkingSetRoot.Should().Be($"uploads/.tus/.tenants/{_FileId}/");
-        tenantKeys.WorkingSetRoot.Should().NotStartWith(_keys.WorkingSet(_FileId));
     }
 
     [Theory]

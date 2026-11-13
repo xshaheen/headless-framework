@@ -145,6 +145,14 @@ internal sealed record TusUploadStamp(string Endpoint, string OwnerKey, string? 
         return ownerKey is null ? null : new TusUploadStamp(endpoint, ownerKey, tenantId);
     }
 
+    /// <summary>The stamp of a request that creates an upload, which authorization has already refused without one.</summary>
+    /// <exception cref="InvalidOperationException">The request has no owner.</exception>
+    public static TusUploadStamp RequireOwner(TusUploadStamp? caller)
+    {
+        return caller
+            ?? throw new InvalidOperationException("An upload cannot be created by a request that has no owner.");
+    }
+
     /// <summary>
     /// The entries of an <c>Upload-Metadata</c> string, each a key and an optional base64 value. A trailing comma
     /// is legal in the header and leaves no entry behind.

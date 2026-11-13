@@ -218,10 +218,7 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
             await _PutAsync(keys.HandedOffMark(fileId), [], PutCondition.Create, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.PreconditionFailed)
-        {
-            // Already marked.
-        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.PreconditionFailed) { }
     }
 
     /// <summary>

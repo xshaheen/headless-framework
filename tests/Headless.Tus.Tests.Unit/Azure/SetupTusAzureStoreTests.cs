@@ -143,7 +143,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
 
         // when / then
         provider.GetRequiredService<ITusAzureBlobHttpHeadersProvider>().Should().BeOfType<FakeHeadersProvider>();
-        provider.GetRequiredService<TusAzureStore>().Should().NotBeNull();
+        provider.GetRequiredService<TusAzureStore>();
     }
 
     [Fact]

@@ -213,6 +213,6 @@ public sealed class SetupTusS3StoreTests : TestBase
 
         // then
         provider.GetRequiredService<ITusS3ObjectHeadersProvider>().Should().BeSameAs(custom);
-        provider.GetRequiredService<TusS3Store>().Should().NotBeNull();
+        provider.GetRequiredService<TusS3Store>();
     }
 }

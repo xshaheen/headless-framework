@@ -182,11 +182,7 @@ internal sealed class TusStampedStore(ITusStore inner, TusUploadStamp? caller)
         }
 
         // The endpoint refuses a creating request that has no owner before tusdotnet reaches the store.
-        var stamp =
-            caller
-            ?? throw new InvalidOperationException("An upload cannot be created by a request that has no owner.");
-
-        return stamp.AppendTo(metadata);
+        return TusUploadStamp.RequireOwner(caller).AppendTo(metadata);
     }
 
     private TCapability _Inner<TCapability>()

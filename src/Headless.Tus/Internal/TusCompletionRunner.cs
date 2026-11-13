@@ -30,8 +30,6 @@ internal sealed partial class TusCompletionRunner(
     ITusFileLockProvider? fileLockProvider = null
 )
 {
-    private const string _TusResumable = "1.0.0";
-
     /// <summary>
     /// The lock tusdotnet itself takes around a request for the upload, so a handler run here excludes the
     /// requests that write or delete the upload, and another run.
@@ -132,7 +130,11 @@ internal sealed partial class TusCompletionRunner(
             if (!await fileLock.Lock().ConfigureAwait(false))
             {
                 // Another request holds the upload, and it may be the one running the handler.
-                _Fail(context, HttpStatusCode.Locked, "The upload is being completed. Please try again later.");
+                TusProtocol.Fail(
+                    context,
+                    HttpStatusCode.Locked,
+                    "The upload is being completed. Please try again later."
+                );
 
                 return;
             }
@@ -169,7 +171,7 @@ internal sealed partial class TusCompletionRunner(
 
             if (refusal is not null)
             {
-                _Fail(context, HttpStatusCode.BadRequest, refusal);
+                TusProtocol.Fail(context, HttpStatusCode.BadRequest, refusal);
             }
         }
         catch (Exception exception)
@@ -179,7 +181,11 @@ internal sealed partial class TusCompletionRunner(
                 LogOwedHandlerFailed(logger, exception, fileId);
             }
 
-            _Fail(context, HttpStatusCode.Locked, "The upload could not be completed. Please try again later.");
+            TusProtocol.Fail(
+                context,
+                HttpStatusCode.Locked,
+                "The upload could not be completed. Please try again later."
+            );
         }
     }
 
@@ -226,7 +232,7 @@ internal sealed partial class TusCompletionRunner(
             {
                 var response = httpContext.Response;
                 response.StatusCode = StatusCodes.Status400BadRequest;
-                response.Headers["Tus-Resumable"] = _TusResumable;
+                response.Headers[TusProtocol.ResumableHeader] = TusProtocol.Version;
                 response.ContentType = "text/plain";
 
                 // The refusal is decided, so it is written whether or not the client is still listening.
@@ -333,16 +339,6 @@ internal sealed partial class TusCompletionRunner(
 
         return length is not null
             && length == await store.GetUploadOffsetAsync(fileId, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Sets the refusal tusdotnet answers the request with. tusdotnet leaves the protocol version off a failed
-    /// authorization, and puts it on every other refusal, so it is added here.
-    /// </summary>
-    private static void _Fail(AuthorizeContext context, HttpStatusCode status, string message)
-    {
-        context.HttpContext.Response.Headers["Tus-Resumable"] = _TusResumable;
-        context.FailRequest(status, message);
     }
 
     [LoggerMessage(

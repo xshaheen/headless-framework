@@ -87,8 +87,7 @@ internal sealed partial class TusUploadAuthorizer(
             // then sends again from its first byte.
             if (context.Intent == IntentType.GetFileInfo)
             {
-                context.HttpContext.Response.Headers["Tus-Resumable"] = "1.0.0";
-                context.FailRequest(HttpStatusCode.Locked, "The upload store is not available.");
+                TusProtocol.Fail(context, HttpStatusCode.Locked, "The upload store is not available.");
             }
             else
             {
@@ -163,7 +162,7 @@ internal sealed partial class TusUploadAuthorizer(
     {
         // tusdotnet puts these two headers on its own 404 and leaves them off a failed authorization.
         var headers = context.HttpContext.Response.Headers;
-        headers["Tus-Resumable"] = "1.0.0";
+        headers[TusProtocol.ResumableHeader] = TusProtocol.Version;
         headers[HeaderNames.CacheControl] = "no-store";
 
         context.FailRequest(HttpStatusCode.NotFound);

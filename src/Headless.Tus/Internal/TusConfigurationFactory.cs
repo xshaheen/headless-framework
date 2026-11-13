@@ -145,8 +145,7 @@ internal sealed class TusConfigurationFactory(
     private static TusUploadStamp _Owner(TusUploadStamp? caller)
     {
         // Authorization refuses a creating request that has no owner before tusdotnet raises its create events.
-        return caller
-            ?? throw new InvalidOperationException("An upload cannot be created by a request that has no owner.");
+        return TusUploadStamp.RequireOwner(caller);
     }
 
     /// <summary>

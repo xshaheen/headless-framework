@@ -60,7 +60,6 @@ app.MapTus(
     {
         var tusConfiguration = new DefaultTusConfiguration
         {
-            // Resolved from DI — registered by UseAzure above.
             Store = httpContext.RequestServices.GetRequiredService<TusAzureStore>(),
             // For multi-node deployments, call UseDistributedLocks (Headless.Tus.DistributedLocks) in
             // AddHeadlessTus and set FileLockProvider from DI. Omitting it uses tusdotnet's
