@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure;
+using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
@@ -20,23 +21,27 @@ public sealed partial class TusAzureStore : ITusTerminationStore
     /// caller does not mistake a failed deletion for success — a TUS <c>DELETE</c> must not report 204
     /// while the blob persists, and <c>RemoveExpiredFilesAsync</c> must not count an undeleted file.
     /// </remarks>
-    public Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
+    public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
     {
+        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
         // Unconditional: a tus DELETE runs under the file lock and asks for the upload to go whatever
         // its state, so an ETag condition would only make a legitimate termination fail.
-        return _DeleteFileAsync(fileId, conditions: null, cancellationToken);
+        await _DeleteBlobAsync(_GetBlobClient(fileId), fileId, conditions: null, cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    private async Task _DeleteFileAsync(
+    /// <summary>
+    /// Deletes the blob the caller resolved for <paramref name="fileId"/>. A request names the blob by its
+    /// ambient tenant; the removal of expired uploads names it by the tenant it found the blob under.
+    /// </summary>
+    private async Task _DeleteBlobAsync(
+        BlobClient blobClient,
         string fileId,
         BlobRequestConditions? conditions,
         CancellationToken cancellationToken
     )
     {
-        await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
-
-        var blobClient = _GetBlobClient(fileId);
-
         bool deleted;
 
         try

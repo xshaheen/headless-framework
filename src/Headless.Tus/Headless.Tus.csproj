@@ -11,7 +11,8 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Tus.DistributedLocks" />
-    <!-- The store asks the root which tenant the current call's uploads belong to. -->
+    <!-- Each store asks the root which tenant the current call's uploads belong to. -->
+    <InternalsVisibleTo Include="Headless.Tus.Azure" />
     <InternalsVisibleTo Include="Headless.Tus.S3" />
     <InternalsVisibleTo Include="Headless.Tus.Tests.Unit" />
   </ItemGroup>

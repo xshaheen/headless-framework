@@ -88,6 +88,9 @@ public static class SetupTusAzure
         services.AddSingleton(provider => new TusAzureStore(
             provider.GetRequiredService<BlobServiceClient>(),
             provider.GetRequiredService<IOptions<TusAzureStoreOptions>>().Value,
+            // Registered by AddHeadlessTus: the store keeps each tenant's uploads apart once the application's
+            // tenancy setup scopes uploads by tenant.
+            provider.GetRequiredService<TusTenantScope>(),
             provider.GetRequiredService<ITusAzureBlobHttpHeadersProvider>(),
             provider.GetService<ITusFileIdProvider>(),
             provider.GetService<ILoggerFactory>(),

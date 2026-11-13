@@ -2,6 +2,7 @@
 
 using Azure;
 using Azure.Storage.Blobs.Models;
+using Headless.Tus.Internal;
 using Headless.Tus.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
@@ -135,6 +136,10 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// incomplete. A cancelled <paramref name="cancellationToken"/> returns the files found so
     /// far instead of throwing (<c>TusDiskStore</c> parity: the caller is typically a cleanup job
     /// shutting down, and the next pass picks up the remainder).
+    /// <para>
+    /// The listing covers the uploads kept outside any tenant and every tenant's uploads, whatever tenant is
+    /// ambient, so the identifiers of different tenants come back in one sequence.
+    /// </para>
     /// </remarks>
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
     {
@@ -144,12 +149,18 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     }
 
     /// <summary>
-    /// Enumerates the expired incomplete uploads together with the ETag each blob had when it was
-    /// judged expired, so the reaper can delete only blobs that are still in that state.
+    /// Enumerates the expired incomplete uploads together with the tenant each blob sits under and the ETag it
+    /// had when it was judged expired, so the reaper can delete only blobs that are still in that state.
     /// </summary>
-    private async Task<List<(string FileId, ETag ETag)>> _GetExpiredUploadsAsync(CancellationToken cancellationToken)
+    /// <remarks>
+    /// One flat listing of the prefix returns the blobs kept outside any tenant and every tenant's, so the pass
+    /// never reads the ambient tenant: it takes each upload's tenant from the blob's own name.
+    /// </remarks>
+    private async Task<List<(string? Tenant, string FileId, ETag ETag)>> _GetExpiredUploadsAsync(
+        CancellationToken cancellationToken
+    )
     {
-        var expiredFiles = new List<(string FileId, ETag ETag)>();
+        var expiredFiles = new List<(string? Tenant, string FileId, ETag ETag)>();
         var now = _timeProvider.GetUtcNow();
 
         try
@@ -158,7 +169,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
                 var blobItem in _containerClient.GetBlobsAsync(
                     traits: BlobTraits.Metadata,
                     states: BlobStates.None,
-                    // Normalized like _ExtractFileIdFromBlobName, so "uploads" does not also list "uploads-other/".
+                    // Normalized like TusBlobName, so "uploads" does not also list "uploads-other/".
                     prefix: _options.BlobPrefix.EnsureEndsWith('/'),
                     cancellationToken: cancellationToken
                 )
@@ -181,11 +192,13 @@ public sealed partial class TusAzureStore : ITusExpirationStore
                     continue;
                 }
 
-                var fileId = _ExtractFileIdFromBlobName(blobItem.Name);
-
-                if (!string.IsNullOrEmpty(fileId) && blobItem.Properties.ETag is { } etag)
+                // A name the store could not have built is another writer's blob, whatever its metadata says.
+                if (
+                    TusBlobName.TrySplit(_options.BlobPrefix, blobItem.Name, out var tenant, out var fileId)
+                    && blobItem.Properties.ETag is { } etag
+                )
                 {
-                    expiredFiles.Add((fileId, etag));
+                    expiredFiles.Add((tenant, fileId, etag));
                 }
             }
         }
@@ -229,18 +242,26 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// commit then fails against the missing blob. Deployments that must eliminate that window should
     /// gate uploads and cleanup with <c>Headless.Tus.DistributedLocks</c>.
     /// </para>
+    /// <para>
+    /// The pass never reads the ambient tenant. It removes the expired uploads kept outside any tenant and
+    /// those of every tenant, each through the tenant its blob sits under, so the cleanup job covers them all
+    /// from outside any tenant.
+    /// </para>
     /// </remarks>
     public async Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken)
     {
         var expiredUploads = await _GetExpiredUploadsAsync(cancellationToken).ConfigureAwait(false);
         var removedCount = 0;
 
-        foreach (var (fileId, etag) in expiredUploads)
+        foreach (var (tenant, fileId, etag) in expiredUploads)
         {
             try
             {
+                await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+
+                var blobClient = _containerClient.GetBlobClient(TusBlobName.Build(_options.BlobPrefix, fileId, tenant));
                 var conditions = new BlobRequestConditions { IfMatch = etag };
-                await _DeleteFileAsync(fileId, conditions, CancellationToken.None).ConfigureAwait(false);
+                await _DeleteBlobAsync(blobClient, fileId, conditions, CancellationToken.None).ConfigureAwait(false);
                 removedCount++;
             }
             catch (RequestFailedException e) when (e.Status == 412)

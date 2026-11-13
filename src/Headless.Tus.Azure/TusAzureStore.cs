@@ -69,6 +69,7 @@ public sealed partial class TusAzureStore
     private static readonly GuidFileIdProvider _DefaultFileIdProvider = new();
 
     private readonly TusAzureStoreOptions _options;
+    private readonly TusTenantScope? _tenantScope;
     private readonly ITusAzureBlobHttpHeadersProvider _blobHttpHeadersProvider;
     private readonly ITusFileIdProvider _fileIdProvider;
     private readonly ILoggerFactory _loggerFactory;
@@ -98,6 +99,11 @@ public sealed partial class TusAzureStore
     /// </param>
     /// <param name="loggerFactory">optional logger factory; defaults to the null logger</param>
     /// <param name="timeProvider">optional time abstraction; defaults to <c>TimeProvider.System</c></param>
+    /// <remarks>
+    /// A store constructed here keeps every upload outside any tenant, whatever the application's tenancy setup
+    /// says. Only the store <c>UseAzure</c> registers keeps each tenant's uploads under a path segment of their
+    /// own once the application calls <c>tenancy.Tus(t => t.ScopeByTenant())</c>.
+    /// </remarks>
     public TusAzureStore(
         BlobServiceClient blobServiceClient,
         TusAzureStoreOptions options,
@@ -106,6 +112,29 @@ public sealed partial class TusAzureStore
         ILoggerFactory? loggerFactory = null,
         TimeProvider? timeProvider = null
     )
+        : this(
+            blobServiceClient,
+            options,
+            tenantScope: null,
+            blobHttpHeadersProvider,
+            fileIdProvider,
+            loggerFactory,
+            timeProvider
+        ) { }
+
+    /// <summary>
+    /// Initializes the store <c>UseAzure</c> registers, which asks <paramref name="tenantScope"/> on every call
+    /// which tenant's uploads the call is about.
+    /// </summary>
+    internal TusAzureStore(
+        BlobServiceClient blobServiceClient,
+        TusAzureStoreOptions options,
+        TusTenantScope? tenantScope,
+        ITusAzureBlobHttpHeadersProvider? blobHttpHeadersProvider,
+        ITusFileIdProvider? fileIdProvider,
+        ILoggerFactory? loggerFactory,
+        TimeProvider? timeProvider
+    )
     {
         Argument.IsNotNull(options);
         // The store is factory-constructed (no DI/IOptions pipeline), so validation runs here to fail fast on
@@ -113,6 +142,7 @@ public sealed partial class TusAzureStore
         new TusAzureStoreOptionsValidator().ValidateAndThrow(options);
 
         _options = options;
+        _tenantScope = tenantScope;
         _blobHttpHeadersProvider = blobHttpHeadersProvider ?? new DefaultTusAzureBlobHttpHeadersProvider();
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -290,16 +320,18 @@ public sealed partial class TusAzureStore
         return _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
     }
 
+    /// <summary>
+    /// The name of the blob that holds the upload the current call is about: under the ambient tenant's folder
+    /// when uploads are scoped by tenant, otherwise outside any tenant. Asked on every call, because the store is
+    /// one instance for the host and the tenant is the caller's.
+    /// </summary>
+    /// <exception cref="Headless.MultiTenancy.MissingTenantContextException">
+    /// Uploads are scoped by tenant and no tenant is ambient.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The ambient tenant id cannot be used as a path segment.</exception>
     private string _GetBlobName(string fileId)
     {
-        return TusBlobName.Build(_options.BlobPrefix, fileId);
-    }
-
-    private string _ExtractFileIdFromBlobName(string blobName)
-    {
-        var prefix = _options.BlobPrefix.EnsureEndsWith('/');
-
-        return blobName.StartsWith(prefix, StringComparison.Ordinal) ? blobName[prefix.Length..] : string.Empty;
+        return TusBlobName.Build(_options.BlobPrefix, fileId, _tenantScope?.GetSegment());
     }
 }
 

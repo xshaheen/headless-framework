@@ -48,7 +48,7 @@ public sealed class HeadlessTusTenancyBuilder
 
     /// <summary>
     /// Makes every upload created through an upload endpoint belong to a tenant, and makes the store selected
-    /// through <c>UseS3</c> keep each tenant's uploads under a path segment of their own.
+    /// through <c>UseS3</c> or <c>UseAzure</c> keep each tenant's uploads under a path segment of their own.
     /// </summary>
     /// <returns>The same TUS tenancy builder.</returns>
     /// <remarks>
@@ -67,9 +67,9 @@ public sealed class HeadlessTusTenancyBuilder
     /// uploads are bound to their tenant by the endpoint alone.
     /// </para>
     /// <para>
-    /// Turning this on does not move the uploads a store already holds. The S3 store keeps them at their keys
-    /// outside any tenant, where a request no longer finds them, and the cleanup removes the incomplete ones once
-    /// they expire.
+    /// Turning this on does not move the uploads a store already holds. The S3 and Azure stores keep them where
+    /// they are, outside any tenant, where a request no longer finds them, and the cleanup removes the incomplete
+    /// ones once they expire.
     /// </para>
     /// </remarks>
     public HeadlessTusTenancyBuilder ScopeByTenant()
