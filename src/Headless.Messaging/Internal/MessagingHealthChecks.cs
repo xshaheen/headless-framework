@@ -8,9 +8,9 @@ using Microsoft.Extensions.Hosting;
 namespace Headless.Messaging.Internal;
 
 /// <summary>
-/// The readiness checks every Messaging host contributes: <c>messaging</c> reports whether the host can move messages
-/// at all, <c>messaging-consumers</c> whether any consumer is paused, and <c>messaging-outboxes</c> whether every
-/// additional outbox is ready to take writes.
+/// The readiness checks every Messaging host contributes: <c>messaging</c> reports whether the host has started and is
+/// not shutting down, <c>messaging-broker</c> whether it can reach its broker, <c>messaging-consumers</c> whether any
+/// consumer is paused, and <c>messaging-outboxes</c> whether every additional outbox is ready to take writes.
 /// </summary>
 /// <remarks>
 /// The probes read state the host already keeps and never wait on it. They resolve the internal services rather than
@@ -21,15 +21,17 @@ internal static class MessagingHealthChecks
 {
     public const string HostCheckName = "messaging";
 
+    public const string BrokerCheckName = "messaging-broker";
+
     public const string ConsumersCheckName = "messaging-consumers";
 
     public const string OutboxesCheckName = "messaging-outboxes";
 
     public static void Add(IServiceCollection services, bool hasAdditionalOutboxes)
     {
-        // Unhealthy until the bootstrapper has started, from the moment host shutdown begins, and while the broker is
-        // unreachable. The connectivity state is fed by real receive and send outcomes, so a publish-only host answers
-        // too, and a transport restart's optimistic reset does not read as a recovery.
+        // Unhealthy until the bootstrapper has started and from the moment host shutdown begins. Broker reachability is
+        // its own check, so an application can grade a broker outage (which the outbox absorbs) apart from a host that is
+        // not serving messages at all.
         services.AddHeadlessHealthCheck(
             HostCheckName,
             static (provider, _) =>
@@ -48,10 +50,21 @@ internal static class MessagingHealthChecks
                     throw new InvalidOperationException("The Messaging host is shutting down.");
                 }
 
-                return provider.GetRequiredService<TransportConnectivity>().IsReachable
-                    ? Task.CompletedTask
-                    : throw new InvalidOperationException("The message broker is unreachable.");
+                return Task.CompletedTask;
             },
+            HeadlessHealthCheckTags.Messaging,
+            HeadlessHealthCheckTags.HostState
+        );
+
+        // Unhealthy while the broker is unreachable. The connectivity state is fed by real receive and send outcomes, so
+        // a publish-only host answers too, and a transport restart's optimistic reset does not read as a recovery. It
+        // reads no lifecycle: a host still starting or already stopping reports through the messaging check alone.
+        services.AddHeadlessHealthCheck(
+            BrokerCheckName,
+            static (provider, _) =>
+                provider.GetRequiredService<TransportConnectivity>().IsReachable
+                    ? Task.CompletedTask
+                    : throw new InvalidOperationException("The message broker is unreachable."),
             HeadlessHealthCheckTags.Messaging,
             HeadlessHealthCheckTags.HostState
         );
