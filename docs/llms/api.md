@@ -646,12 +646,13 @@ app.MapHeadlessHostManifest("/_headless/describe", authorizationPolicy: "operato
 builder.AddHeadless(configureServices: options =>
 {
     options.OpenTelemetry.Enabled = true;
-    options.OpenTelemetry.RecordException = true; // record exceptions on spans (default: true)
+    options.OpenTelemetry.RecordException = true; // record the request span's exception, masked by MaskText patterns (default: true)
     // Tracing filter: null (default) skips /health and /alive via SkipOperationalEndpointFunc.
     // Set to a custom predicate to fully replace — compose SkipOperationalEndpointFunc to keep the default skip:
     //   options.OpenTelemetry.Filter = ctx => !options.OpenTelemetry.SkipOperationalEndpointFunc(ctx) && ...;
     // For full AspNetCoreTraceInstrumentationOptions control (runs AFTER framework defaults):
-    //   options.OpenTelemetry.ConfigureAspNetCoreInstrumentation = instr => { instr.RecordException = false; };
+    // Leave instr.RecordException off there: AddHeadless records a masked event itself, and the instrumentation's would be unmasked.
+    //   options.OpenTelemetry.ConfigureAspNetCoreInstrumentation = instr => { instr.EnrichWithHttpRequest = (activity, request) => { }; };
 
     options.OpenApi.Enabled = true;
     options.HttpClient.UseServiceDiscovery = true;
