@@ -3,23 +3,47 @@
 using Headless.Checks;
 using Headless.Tus.Internal;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Tus;
 
 /// <summary>
 /// One upload endpoint declared through <c>AddUploadEndpoint</c> inside <c>AddHeadlessTus</c>. Its limits are the
-/// endpoint's <see cref="TusUploadEndpointOptions"/>, its members say who owns its uploads, and
-/// <c>MapHeadlessTus</c> maps it to a route.
+/// endpoint's <see cref="TusUploadEndpointOptions"/>, its members say who owns its uploads and which application
+/// checks they must pass, and <c>MapHeadlessTus</c> maps it to a route.
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessTusUploadEndpointBuilder
 {
-    internal HeadlessTusUploadEndpointBuilder(TusEndpointRegistration endpoint)
+    private readonly HeadlessTusSetupBuilder _setup;
+
+    internal HeadlessTusUploadEndpointBuilder(HeadlessTusSetupBuilder setup, TusEndpointRegistration endpoint)
     {
+        _setup = setup;
         Endpoint = endpoint;
     }
 
     internal TusEndpointRegistration Endpoint { get; }
+
+    /// <summary>
+    /// Adds an application check that every upload must pass before it starts, for example a quota.
+    /// </summary>
+    /// <typeparam name="TValidator">The validator type.</typeparam>
+    /// <returns>The builder for chaining.</returns>
+    /// <remarks>
+    /// The endpoint's validators run in the order they are declared, after the endpoint's own rules, and the first
+    /// failure answers the creating request with that validator's status and message. The validator is resolved
+    /// from the request's services on every creating request. A type the application has not registered is
+    /// registered as a scoped service.
+    /// </remarks>
+    public HeadlessTusUploadEndpointBuilder ValidateWith<TValidator>()
+        where TValidator : class, ITusUploadValidator
+    {
+        Endpoint.Validators.Add(typeof(TValidator));
+        _setup.RegisterCrossCuttingExtension(static services => services.TryAddScoped<TValidator>());
+
+        return this;
+    }
 
     /// <summary>
     /// Names the owner of the endpoint's uploads from the request, in place of the signed-in user.

@@ -43,6 +43,14 @@ public static class TusEndpointRouteBuilderExtensions
         /// <c>headless-</c> are reserved for the server: a creating request that sends one is refused with 400.
         /// </para>
         /// <para>
+        /// A creating request must pass the endpoint's rules before the upload starts: required metadata and
+        /// empty uploads (400), allowed content types and file extensions (415), then the validators named
+        /// through <c>ValidateWith</c>, in order. While the endpoint lists content types or extensions, the
+        /// upload's first write is also checked against the format its leading bytes show, and an upload that
+        /// fails that check is deleted; <see cref="TusUploadEndpointOptions.VerifyFileSignature"/> describes the
+        /// check. Every refusal is a plain-text response.
+        /// </para>
+        /// <para>
         /// The name keeps the <c>Headless</c> prefix because tusdotnet already declares <c>MapTus</c> on
         /// <see cref="IEndpointRouteBuilder"/> in the <c>tusdotnet</c> namespace, which every tus host imports.
         /// <c>MapTus</c> maps an endpoint from a configuration the application builds by hand and applies none of

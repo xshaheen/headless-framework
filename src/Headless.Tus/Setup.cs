@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FileSignatures;
 using Headless.Checks;
+using Headless.IO;
 using Headless.Tus.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -85,7 +87,16 @@ public static class SetupTus
         // a name that was never declared.
         services.AddSingleton(new TusEndpointRegistry(setup.Endpoints.Values));
         services.AddSingleton<TusUploadAuthorizer>();
+        services.AddSingleton<TusContentCheck>();
         services.AddSingleton<TusConfigurationFactory>();
+
+        // The content check's collaborators. Both are TryAdd, so the ones an application registered are kept, for
+        // example an inspector limited to the formats it accepts. The factory defers building the inspector's
+        // format list to its first use.
+        services.TryAddSingleton<IFileFormatInspector>(static _ => new FileFormatInspector(
+            FileFormatLocator.GetFormats()
+        ));
+        services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
 
         foreach (var action in setup.CrossCuttingExtensions)
         {

@@ -21,6 +21,7 @@ internal sealed class TusConfigurationFactory(
     ITusStore store,
     IOptionsMonitor<TusUploadEndpointOptions> options,
     TusUploadAuthorizer authorizer,
+    TusContentCheck contentCheck,
     ITusFileLockProvider? fileLockProvider = null
 )
 {
@@ -34,13 +35,31 @@ internal sealed class TusConfigurationFactory(
 
         var caller = await _GetCallerAsync(context, endpoint).ConfigureAwait(false);
 
+        var stampedStore = new TusStampedStore(store, caller);
+
         var configuration = new DefaultTusConfiguration
         {
-            Store = new TusStampedStore(store, caller),
+            Store = stampedStore,
             MaxAllowedUploadSizeInBytesLong = endpointOptions.MaxSize,
             Expiration = new SlidingExpiration(endpointOptions.Expiration),
             AllowedExtensions = _allowedExtensions,
-            Events = new Events { OnAuthorizeAsync = authorize => authorizer.AuthorizeAsync(authorize, caller) },
+            Events = new Events
+            {
+                OnAuthorizeAsync = authorize => authorizer.AuthorizeAsync(authorize, caller),
+                OnBeforeCreateAsync = create =>
+                    TusCreateValidation.ValidateAsync(create, endpoint, endpointOptions, _Owner(caller)),
+                OnBeforeWriteAsync = write =>
+                    contentCheck.CheckAsync(
+                        write,
+                        endpointOptions,
+                        caller?.TenantId,
+                        createdByThisRequest: string.Equals(
+                            write.FileId,
+                            stampedStore.CreatedFileId,
+                            StringComparison.Ordinal
+                        )
+                    ),
+            },
         };
 
         // Left unset, tusdotnet locks a file within this process only.
@@ -90,6 +109,14 @@ internal sealed class TusConfigurationFactory(
         }
 
         return new TusExtensions([.. extensions]);
+    }
+
+    /// <summary>The stamp of a request tusdotnet lets create an upload.</summary>
+    private static TusUploadStamp _Owner(TusUploadStamp? caller)
+    {
+        // Authorization refuses a creating request that has no owner before tusdotnet raises its create events.
+        return caller
+            ?? throw new InvalidOperationException("An upload cannot be created by a request that has no owner.");
     }
 
     /// <summary>

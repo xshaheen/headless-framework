@@ -70,9 +70,19 @@ internal sealed class TusStampedStore(ITusStore inner, TusUploadStamp? caller)
         }
     }
 
-    public Task<string> CreateFileAsync(long uploadLength, string? metadata, CancellationToken cancellationToken)
+    /// <summary>
+    /// The upload this request created, or <see langword="null"/> when it created none. A write to that upload is
+    /// the data its creating request carries, not a request of its own.
+    /// </summary>
+    public string? CreatedFileId { get; private set; }
+
+    public async Task<string> CreateFileAsync(long uploadLength, string? metadata, CancellationToken cancellationToken)
     {
-        return _Inner<ITusCreationStore>().CreateFileAsync(uploadLength, _Stamp(metadata), cancellationToken);
+        CreatedFileId = await _Inner<ITusCreationStore>()
+            .CreateFileAsync(uploadLength, _Stamp(metadata), cancellationToken)
+            .ConfigureAwait(false);
+
+        return CreatedFileId;
     }
 
     public async Task<string?> GetUploadMetadataAsync(string fileId, CancellationToken cancellationToken)

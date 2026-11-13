@@ -272,6 +272,6 @@ public sealed class HeadlessTusSetupBuilder
 
         CrossCuttingExtensions.Add(configureOptions);
 
-        return new HeadlessTusUploadEndpointBuilder(endpoint);
+        return new HeadlessTusUploadEndpointBuilder(this, endpoint);
     }
 }

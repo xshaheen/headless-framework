@@ -40,4 +40,9 @@ internal sealed class TusEndpointRegistration(string name)
     /// leaves that to the signed-in user.
     /// </summary>
     public Func<HttpContext, ValueTask<string?>>? OwnerKey { get; set; }
+
+    /// <summary>
+    /// The application's <see cref="ITusUploadValidator"/> types, in the order a creating request runs them.
+    /// </summary>
+    public List<Type> Validators { get; } = [];
 }
