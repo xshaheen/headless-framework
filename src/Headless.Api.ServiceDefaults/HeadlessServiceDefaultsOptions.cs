@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Logging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OpenApi;
 using OpenTelemetry.Instrumentation.AspNetCore;
@@ -156,7 +157,15 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptions
     /// </summary>
     public Action<AspNetCoreTraceInstrumentationOptions>? ConfigureAspNetCoreInstrumentation { get; set; }
 
-    /// <summary>Whether to record exceptions on spans. Defaults to <see langword="true"/>.</summary>
+    /// <summary>Whether to record exceptions on the request span. Defaults to <see langword="true"/>.</summary>
+    /// <remarks>
+    /// The event is recorded from <see cref="LogTextMasker.Mask(Exception)"/>, so the app's text redactors mask its
+    /// messages while its type and stack frames stay. The instrumentation's own
+    /// <see cref="AspNetCoreTraceInstrumentationOptions.RecordException"/> stays off: setting it in
+    /// <see cref="ConfigureAspNetCoreInstrumentation"/> records a second, unmasked event, and replacing
+    /// <see cref="AspNetCoreTraceInstrumentationOptions.EnrichWithException"/> there, rather than composing with it,
+    /// drops the masked one.
+    /// </remarks>
     public bool RecordException { get; set; } = true;
 
     internal static Func<HttpContext, bool> BuildSkipFunc(

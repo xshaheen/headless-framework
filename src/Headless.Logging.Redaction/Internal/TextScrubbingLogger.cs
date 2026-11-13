@@ -2,7 +2,6 @@
 
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Logging.Internal;
@@ -61,7 +60,11 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
         // masked stand-in before the formatter or any provider sees it.
         if (exception is not null)
         {
-            exception = _ScrubException(exception, logLevel);
+            exception = ExceptionMasker.Mask(
+                exception,
+                static (text, scope) => scope.Logger._Scrub(text, scope.Level),
+                (Logger: this, Level: logLevel)
+            );
         }
 
         var rendered = formatter(state, exception);
@@ -148,112 +151,12 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
     }
 
     // Returns the same instance when nothing matched.
-    private object? _ScrubValue(object? value, LogLevel logLevel)
-    {
-        switch (value)
-        {
-            case null:
-                return null;
-            case string text:
-                var masked = _Scrub(text, logLevel);
-                return string.Equals(masked, text, StringComparison.Ordinal) ? text : masked;
-        }
-
-        // These render to text no value shape can hide in, so formatting them would only cost an allocation.
-        // Integers are still scanned: a 14-digit id held as a long renders as that id.
-        if (_HasNoMaskableText(value))
-        {
-            return value;
-        }
-
-        var formatted = Convert.ToString(value, CultureInfo.InvariantCulture);
-
-        if (formatted is null)
-        {
-            return value;
-        }
-
-        var scrubbed = _Scrub(formatted, logLevel);
-
-        return string.Equals(scrubbed, formatted, StringComparison.Ordinal) ? value : scrubbed;
-    }
-
-    // Returns the same instance, and allocates nothing, when no message in the chain matched. Only the messages are
-    // scanned: rendering ToString would format every stack trace on each logged exception, which the provider then
-    // repeats. A match yields a copy of the original type, so error trackers keep its type and stack frames; the
-    // stand-in is the fallback when the runtime cannot be copied or the copy's message would still match.
-    private Exception _ScrubException(Exception exception, LogLevel logLevel)
-    {
-        var message = exception.Message;
-        var maskedMessage = _Scrub(message, logLevel);
-        var changed = !string.Equals(maskedMessage, message, StringComparison.Ordinal);
-        Exception[]? inners = null;
-
-        if (exception is AggregateException aggregate)
-        {
-            var members = aggregate.InnerExceptions;
-
-            for (var i = 0; i < members.Count; i++)
-            {
-                var scrubbed = _ScrubException(members[i], logLevel);
-
-                if (!ReferenceEquals(scrubbed, members[i]))
-                {
-                    // Copied only once a member changed, so an aggregate with no match costs no array.
-                    inners ??= [.. members];
-                    inners[i] = scrubbed;
-                }
-            }
-        }
-        else if (exception.InnerException is { } innerException)
-        {
-            var scrubbed = _ScrubException(innerException, logLevel);
-
-            if (!ReferenceEquals(scrubbed, innerException))
-            {
-                inners = [scrubbed];
-            }
-        }
-
-        if (!changed && inners is null)
-        {
-            return exception;
-        }
-
-        inners ??= exception switch
-        {
-            AggregateException unchanged => [.. unchanged.InnerExceptions],
-            { InnerException: { } unchanged } => [unchanged],
-            _ => [],
-        };
-
-        if (
-            ExceptionCopier.TryGetOwnMessage(exception, out var ownMessage)
-            && ExceptionCopier.TryCopy(
-                exception,
-                ownMessage is null ? null : _Scrub(ownMessage, logLevel),
-                inners,
-                out var copy
-            )
-        )
-        {
-            // A subclass can build Message from fields of its own, which the copy does not rewrite, so the copy is
-            // used only when its message no longer matches.
-            var copiedMessage = copy.Message;
-
-            if (string.Equals(_Scrub(copiedMessage, logLevel), copiedMessage, StringComparison.Ordinal))
-            {
-                return copy;
-            }
-        }
-
-        return new RedactedException(exception, maskedMessage, inners, text => _Scrub(text, logLevel));
-    }
-
-    private static bool _HasNoMaskableText(object value)
-    {
-        return value is bool or Guid or Enum or DateTime or DateTimeOffset or DateOnly or TimeOnly or TimeSpan;
-    }
+    private object? _ScrubValue(object? value, LogLevel logLevel) =>
+        ValueMasker.Mask(
+            value,
+            static (text, scope) => scope.Logger._Scrub(text, scope.Level),
+            (Logger: this, Level: logLevel)
+        );
 
     private string _ScrubText(object state, LogLevel logLevel) =>
         state.ToString() is { } text ? _Scrub(text, logLevel) : string.Empty;

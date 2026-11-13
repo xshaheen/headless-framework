@@ -7,6 +7,7 @@ using Microsoft.Extensions.Compliance.Classification;
 using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Logging;
@@ -77,6 +78,11 @@ public static class SetupLoggingRedaction
             );
 
             services.AddStartupValidator<LogRedactionStartupValidator>();
+
+            // One masker for every channel outside the logger factory, built from the same redactors the logs use.
+            services.TryAddSingleton(static provider => new LogTextMasker([
+                .. LogTextRedactorRegistration.All(provider).Select(static registration => registration.Redactor),
+            ]));
 
             return services;
         }

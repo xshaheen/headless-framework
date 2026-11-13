@@ -15,6 +15,8 @@ namespace Tests;
 
 public sealed partial class SetupLoggingSerilogTests : TestBase
 {
+    private const string _NationalId = "29001011234567";
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -114,6 +116,95 @@ public sealed partial class SetupLoggingSerilogTests : TestBase
         var call = () => ((IHostApplicationBuilder)null!).AddHeadlessSerilog();
 
         call.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void should_mask_events_written_through_serilogs_own_logger()
+    {
+        // given
+        var sink = new CollectingSink();
+        using var configuration = new ConfigurationManager();
+        using var provider = _BuildMaskingHost(configuration, sink);
+        var logger = provider.GetRequiredService<Serilog.ILogger>().ForContext("Citizen", _NationalId);
+        Exception thrown;
+
+        try
+        {
+            throw new InvalidOperationException("lookup failed", new FormatException($"no citizen {_NationalId}"));
+        }
+        catch (InvalidOperationException e)
+        {
+            thrown = e;
+        }
+
+        // when: an interpolated message, a structured value, a context property, and an exception
+#pragma warning disable CA2254, Serilog004 // The test logs an interpolated message on purpose: it is the shape only text masking reaches.
+        logger.Information($"lookup failed for {_NationalId}");
+#pragma warning restore CA2254, Serilog004
+        logger.Error(thrown, "Order {Order} for {Id} failed", 7, 29001011234567L);
+
+        // then: every place the id could appear is masked, and the exception keeps its type and frames
+        sink.Events.Should().HaveCount(2);
+        sink.Events[0].RenderMessage().Should().Be("lookup failed for ***");
+        sink.Events[0].Properties["Citizen"].Should().BeEquivalentTo(new ScalarValue("***"));
+        var failure = sink.Events[1];
+        failure.Properties["Id"].Should().BeEquivalentTo(new ScalarValue("***"));
+        failure.Properties["Order"].Should().BeEquivalentTo(new ScalarValue(7));
+        var exception = failure.Exception.Should().BeOfType<InvalidOperationException>().Subject;
+        exception.Should().NotBeSameAs(thrown);
+        exception.InnerException!.Message.Should().Be("no citizen ***");
+        exception.StackTrace.Should().Be(thrown.StackTrace);
+    }
+
+    [Fact]
+    public void should_pass_an_event_logged_through_the_logger_factory_without_a_second_copy()
+    {
+        // given
+        var sink = new CollectingSink();
+        using var configuration = new ConfigurationManager();
+        using var provider = _BuildMaskingHost(configuration, sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        LogLookup(logger, _NationalId);
+
+        // then: the redacting factory already masked it on its way to Serilog
+        sink.Events.Should().ContainSingle().Which.RenderMessage().Should().Be("Lookup for \"***\"");
+    }
+
+    [Fact]
+    public void should_leave_serilogs_own_logger_unwrapped_without_a_text_redactor()
+    {
+        // given
+        var sink = new CollectingSink();
+        using var configuration = new ConfigurationManager();
+        using var provider = _BuildHost(configuration, sink);
+
+        // when
+        provider.GetRequiredService<Serilog.ILogger>().Information("Citizen {Id}", _NationalId);
+
+        // then
+        provider.GetRequiredService<Serilog.ILogger>().GetType().Name.Should().NotBe("MaskingSerilogLogger");
+        sink.Events.Should()
+            .ContainSingle()
+            .Which.Properties["Id"]
+            .Should()
+            .BeEquivalentTo(new ScalarValue(_NationalId));
+    }
+
+    [LoggerMessage(2, LogLevel.Information, "Lookup for {Id}")]
+    private static partial void LogLookup(ILogger logger, string id);
+
+    private static ServiceProvider _BuildMaskingHost(IConfigurationManager configuration, CollectingSink sink)
+    {
+        var builder = _CreateBuilder(configuration);
+        builder.Services.AddHeadlessRedaction(static setup => setup.MaskText(@"\b\d{14}\b"));
+        builder.AddHeadlessSerilog(
+            new SerilogOptions { WriteToFiles = false },
+            (_, loggerConfiguration) => loggerConfiguration.WriteTo.Sink(sink)
+        );
+
+        return builder.Services.BuildServiceProvider();
     }
 
     [LoggerMessage(1, LogLevel.Information, "User {Email} placed order {OrderId}")]

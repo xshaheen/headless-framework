@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
+using Headless.Logging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -81,6 +82,16 @@ public static class SetupLoggingSerilog
 
             // After Serilog's factory, so the wrapper is the one the container resolves.
             builder.Services.AddHeadlessRedaction();
+
+            // Serilog's own ILogger writes past the redacting factory, so the injected one masks with the same
+            // redactors. Without a text redactor it is left as is.
+            builder.Services.TryDecorateWith<Serilog.ILogger>(
+                static (logger, provider) =>
+                    logger is not MaskingSerilogLogger
+                    && provider.GetService<LogTextMasker>() is { IsEnabled: true } masker
+                        ? new MaskingSerilogLogger(logger, masker)
+                        : logger
+            );
 
             return builder;
         }
