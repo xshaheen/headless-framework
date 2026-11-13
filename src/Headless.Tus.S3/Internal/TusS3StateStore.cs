@@ -8,8 +8,8 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Tus.Internal;
 
 /// <summary>
-/// Reads and writes an upload's state object and completed record, with every state write conditional on the ETag the
-/// request holds.
+/// Reads and writes an upload's state object, completed record, and handed-off mark, with every state write
+/// conditional on the ETag the request holds.
 /// </summary>
 internal sealed class TusS3StateStore(
     IAmazonS3 s3,
@@ -176,6 +176,44 @@ internal sealed class TusS3StateStore(
     }
 
     /// <summary>
+    /// Reads where an upload stands between its completion and its handoff, straight from storage and never from
+    /// the request memo: the caller asks under the upload's lock to see what the lock's last holder did.
+    /// </summary>
+    public async Task<TusHandoffState> ReadHandoffStateAsync(string fileId, CancellationToken cancellationToken)
+    {
+        // The state object outlives the completed record's write and goes only when the completion commits, so
+        // while it exists the upload is not complete, whatever else is stored.
+        if (
+            await _ExistsAsync(keys.Info(fileId), cancellationToken).ConfigureAwait(false)
+            || !await _ExistsAsync(keys.CompletedRecord(fileId), cancellationToken).ConfigureAwait(false)
+        )
+        {
+            return TusHandoffState.NotComplete;
+        }
+
+        return await _ExistsAsync(keys.HandedOffMark(fileId), cancellationToken).ConfigureAwait(false)
+            ? TusHandoffState.HandedOff
+            : TusHandoffState.Pending;
+    }
+
+    /// <summary>
+    /// Writes the mark of a handed-off upload, unless it is already there. The mark is create-only, so the write
+    /// that finds one changes nothing.
+    /// </summary>
+    public async Task MarkHandedOffAsync(string fileId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _PutAsync(keys.HandedOffMark(fileId), [], PutCondition.Create, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.PreconditionFailed)
+        {
+            // Already marked.
+        }
+    }
+
+    /// <summary>
     /// Marks the upload gone, unless another request already moved it on (finished it, or marked it gone itself), in
     /// which case that request meets the same missing parts itself.
     /// </summary>
@@ -256,6 +294,24 @@ internal sealed class TusS3StateStore(
         public static PutCondition Create => new(IsCreate: true, ETag: null);
 
         public static PutCondition Match(string etag) => new(IsCreate: false, etag);
+    }
+
+    private async Task<bool> _ExistsAsync(string key, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await s3.GetObjectMetadataAsync(
+                    new GetObjectMetadataRequest { BucketName = options.Bucket, Key = key },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return true;
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return false;
+        }
     }
 
     private async Task<(byte[] Content, string ETag)?> _TryGetAsync(string key, CancellationToken cancellationToken)

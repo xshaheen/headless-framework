@@ -32,12 +32,19 @@ public sealed class TusS3KeysTests : TestBase
         _keys.CompletedRecord(_FileId).Should().Be("uploads/.tus-completed/" + _FileId);
     }
 
+    [Fact]
+    public void should_place_the_handed_off_mark_in_a_folder_of_its_own()
+    {
+        _keys.HandedOffMark(_FileId).Should().Be("uploads/.tus-handed-off/" + _FileId);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("a/b")]
     [InlineData("a\\b")]
     [InlineData(".tus")]
     [InlineData(".tus-completed")]
+    [InlineData(".tus-handed-off")]
     [InlineData(".")]
     [InlineData("..")]
     [InlineData(" leading")]

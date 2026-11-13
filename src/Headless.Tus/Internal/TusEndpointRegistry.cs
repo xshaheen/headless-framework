@@ -45,4 +45,13 @@ internal sealed class TusEndpointRegistration(string name)
     /// The application's <see cref="ITusUploadValidator"/> types, in the order a creating request runs them.
     /// </summary>
     public List<Type> Validators { get; } = [];
+
+    /// <summary>
+    /// The application's <see cref="ITusUploadCompletedHandler"/> type, or <see langword="null"/> when nothing
+    /// takes the endpoint's finished uploads over.
+    /// </summary>
+    public Type? CompletedHandler { get; set; }
+
+    /// <summary>The endpoint as a message names it.</summary>
+    public string DisplayName => Name.Length == 0 ? "The default upload endpoint" : $"The upload endpoint \"{Name}\"";
 }

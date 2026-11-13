@@ -87,7 +87,9 @@ public static class SetupTus
         // a name that was never declared.
         services.AddSingleton(new TusEndpointRegistry(setup.Endpoints.Values));
         services.AddSingleton<TusUploadAuthorizer>();
+        services.AddSingleton<TusUploadRemover>();
         services.AddSingleton<TusContentCheck>();
+        services.AddSingleton<TusCompletionRunner>();
         services.AddSingleton<TusConfigurationFactory>();
 
         // The content check's collaborators. Both are TryAdd, so the ones an application registered are kept, for

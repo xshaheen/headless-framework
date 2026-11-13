@@ -482,7 +482,7 @@ public sealed class TusIsolationTests : TestBase
     }
 
     [Fact]
-    public async Task should_answer_503_when_the_store_fails_while_the_upload_is_looked_up()
+    public async Task should_answer_503_to_a_write_and_423_to_a_status_request_when_the_store_fails_during_the_lookup()
     {
         // given
         FailingMetadataStore? failing = null;
@@ -498,15 +498,22 @@ public sealed class TusIsolationTests : TestBase
         // when - the upload exists and is the caller's, but the store cannot be read
         failing!.Fails = true;
         using var patch = await host.PatchAsync(location, new byte[10], offset: 0);
+        using var head = await host.HeadAsync(location);
 
-        // then - a refusal the client retries, where "not found" would make it start the upload again
+        // then - refusals the client retries, where "not found" would make it start the upload again. A tus
+        // client retries a failed write after any server error, and asks for an upload's status again only
+        // after 423
         patch.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        head.StatusCode.Should().Be(HttpStatusCode.Locked);
+        head.Headers.GetValues("Tus-Resumable").Should().ContainSingle().Which.Should().Be("1.0.0");
 
         // when
         failing.Fails = false;
+        using var headAgain = await host.HeadAsync(location);
         using var retried = await host.PatchAsync(location, new byte[10], offset: 0);
 
         // then
+        headAgain.StatusCode.Should().Be(HttpStatusCode.OK);
         retried.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 

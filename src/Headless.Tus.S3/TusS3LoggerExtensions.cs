@@ -224,4 +224,12 @@ internal static partial class TusS3LoggerExtensions
         Message = "Failed to get the content of file {FileId}"
     )]
     internal static partial void LogS3FailedToGetContent(this ILogger logger, Exception e, string fileId);
+
+    [LoggerMessage(
+        EventId = 3308,
+        EventName = "S3UploadHandedOff",
+        Level = LogLevel.Debug,
+        Message = "Recorded file {FileId} as handed off"
+    )]
+    internal static partial void LogS3UploadHandedOff(this ILogger logger, string fileId);
 }

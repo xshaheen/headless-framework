@@ -192,11 +192,15 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
         }
     }
 
-    /// <summary>Sends a request that carries <c>Tus-Resumable</c>, which every tus request except OPTIONS needs.</summary>
+    /// <summary>
+    /// Sends a request that carries <c>Tus-Resumable</c>, which every tus request except OPTIONS needs. A scenario
+    /// that abandons the request passes its own <paramref name="cancellationToken"/>.
+    /// </summary>
     public async Task<HttpResponseMessage> SendAsync(
         HttpMethod method,
         string uri,
-        Action<HttpRequestMessage>? configure = null
+        Action<HttpRequestMessage>? configure = null,
+        CancellationToken? cancellationToken = null
     )
     {
         using var request = new HttpRequestMessage(method, uri);
@@ -214,7 +218,7 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
 
         configure?.Invoke(request);
 
-        return await Client.SendAsync(request, _cancellationToken);
+        return await Client.SendAsync(request, cancellationToken ?? _cancellationToken);
     }
 
     /// <summary>
@@ -260,7 +264,13 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
         return response.Headers.Location!.ToString();
     }
 
-    public Task<HttpResponseMessage> PatchAsync(string location, byte[] body, long offset, long? uploadLength = null)
+    public Task<HttpResponseMessage> PatchAsync(
+        string location,
+        byte[] body,
+        long offset,
+        long? uploadLength = null,
+        CancellationToken? cancellationToken = null
+    )
     {
         return SendAsync(
             HttpMethod.Patch,
@@ -276,7 +286,8 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
 
                 request.Content = new ByteArrayContent(body);
                 request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/offset+octet-stream");
-            }
+            },
+            cancellationToken
         );
     }
 
@@ -294,6 +305,28 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
     public static string FileIdOf(string location)
     {
         return location[(location.LastIndexOf('/') + 1)..];
+    }
+
+    /// <summary>
+    /// Adds middleware that releases <paramref name="completed"/> after everything the endpoint does once a
+    /// response is sent. The server runs those callbacks last-registered first, and this one is registered before
+    /// the endpoint runs.
+    /// </summary>
+    public static void SignalWhenTheResponseCompletes(IApplicationBuilder app, SemaphoreSlim completed)
+    {
+        app.Use(
+            (context, next) =>
+            {
+                context.Response.OnCompleted(() =>
+                {
+                    completed.Release();
+
+                    return Task.CompletedTask;
+                });
+
+                return next(context);
+            }
+        );
     }
 
     /// <summary>

@@ -11,7 +11,8 @@ namespace Headless.Tus.Internal;
 /// <remarks>
 /// A finished upload is <c>{prefix}{fileId}</c>. An incomplete upload's working set lives under
 /// <c>{prefix}.tus/{fileId}/</c> and a completed upload's record at <c>{prefix}.tus-completed/{fileId}</c>, so the
-/// expiry sweep lists only in-progress uploads and never pages through finished ones.
+/// expiry sweep lists only in-progress uploads and never pages through finished ones. A handed-off upload keeps a
+/// mark at <c>{prefix}.tus-handed-off/{fileId}</c>.
 /// </remarks>
 internal sealed class TusS3Keys(string normalizedPrefix)
 {
@@ -20,6 +21,9 @@ internal sealed class TusS3Keys(string normalizedPrefix)
 
     /// <summary>The folder under the prefix that holds every completed upload's record.</summary>
     public const string CompletedFolder = ".tus-completed/";
+
+    /// <summary>The folder under the prefix that holds the mark of every handed-off upload.</summary>
+    public const string HandedOffFolder = ".tus-handed-off/";
 
     private const string _InfoName = "info";
     private const string _SegmentFolder = "seg/";
@@ -67,6 +71,16 @@ internal sealed class TusS3Keys(string normalizedPrefix)
     }
 
     /// <summary>
+    /// The key of the mark a completed upload gets once it was handed off to the application. It is an object of
+    /// its own because a completion that runs again rewrites the completed record, which would erase a mark kept
+    /// inside it.
+    /// </summary>
+    public string HandedOffMark(string fileId)
+    {
+        return normalizedPrefix + HandedOffFolder + EnsureValid(fileId);
+    }
+
+    /// <summary>
     /// Returns <paramref name="fileId"/> when it is safe to place in a key, otherwise throws.
     /// </summary>
     /// <exception cref="TusStoreException">The id could address an object outside the upload's own keys.</exception>
@@ -91,8 +105,8 @@ internal sealed class TusS3Keys(string normalizedPrefix)
 
     private static bool _IsUnsafe(string fileId)
     {
-        // A leading dot would let an id name the reserved .tus/ or .tus-completed/ folders; it also covers "." and
-        // "..", which some S3-compatible servers normalize out of a path.
+        // A leading dot would let an id name one of the store's reserved folders, which all start with one; it
+        // also covers "." and "..", which some S3-compatible servers normalize out of a path.
         if (fileId[0] == '.')
         {
             return true;

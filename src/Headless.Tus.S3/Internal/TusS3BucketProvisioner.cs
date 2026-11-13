@@ -143,6 +143,11 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
 
         await _ForEachPageAsync(_prefix + TusS3Keys.WorkingSetFolder, _DeleteKeysAsync, cancellationToken)
             .ConfigureAwait(false);
+
+        // The marks go last: a mark without its upload says nothing, while an upload that lost its mark would
+        // read as never handed off.
+        await _ForEachPageAsync(_prefix + TusS3Keys.HandedOffFolder, _DeleteKeysAsync, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task _ForEachPageAsync(

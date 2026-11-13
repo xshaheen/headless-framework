@@ -46,6 +46,37 @@ public sealed class HeadlessTusUploadEndpointBuilder
     }
 
     /// <summary>
+    /// Names the application's handler for the endpoint's finished uploads, which takes each one over or refuses
+    /// it.
+    /// </summary>
+    /// <typeparam name="THandler">The handler type.</typeparam>
+    /// <returns>The builder for chaining.</returns>
+    /// <remarks>
+    /// An endpoint has one handler. It is resolved from the request's services each time it runs, and a type the
+    /// application has not registered is registered as a scoped service. <see cref="ITusUploadCompletedHandler"/>
+    /// describes when it runs and how often.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">Thrown when the endpoint already has a completion handler.</exception>
+    public HeadlessTusUploadEndpointBuilder OnCompleted<THandler>()
+        where THandler : class, ITusUploadCompletedHandler
+    {
+        if (Endpoint.CompletedHandler is { } declared)
+        {
+            // A second handler would replace the first without a word, and the uploads meant for it would never
+            // reach it.
+            throw new InvalidOperationException(
+                $"{Endpoint.DisplayName} already has the completion handler {declared.Name}. An upload endpoint "
+                    + "has one completion handler."
+            );
+        }
+
+        Endpoint.CompletedHandler = typeof(THandler);
+        _setup.RegisterCrossCuttingExtension(static services => services.TryAddScoped<THandler>());
+
+        return this;
+    }
+
+    /// <summary>
     /// Names the owner of the endpoint's uploads from the request, in place of the signed-in user.
     /// </summary>
     /// <param name="ownerKey">

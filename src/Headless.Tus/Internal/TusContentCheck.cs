@@ -5,10 +5,6 @@ using System.IO.Pipelines;
 using System.Net;
 using FileSignatures;
 using Headless.IO;
-using Headless.MultiTenancy;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
 using tusdotnet.Models;
 using tusdotnet.Models.Configuration;
@@ -32,11 +28,11 @@ namespace Headless.Tus.Internal;
 /// so an allowed format of that kind is accepted on its container.
 /// </para>
 /// </remarks>
-internal sealed partial class TusContentCheck(
+internal sealed class TusContentCheck(
     ITusStore store,
+    TusUploadRemover remover,
     IFileFormatInspector inspector,
-    IMimeTypeProvider mimeTypes,
-    ILogger<TusContentCheck> logger
+    IMimeTypeProvider mimeTypes
 )
 {
     /// <summary>The most a first write is asked to carry, whatever a format's signature needs.</summary>
@@ -306,7 +302,10 @@ internal sealed partial class TusContentCheck(
         }
     }
 
-    /// <summary>Sets the refusal on <paramref name="context"/> and removes the upload it refuses.</summary>
+    /// <summary>
+    /// Sets the refusal on <paramref name="context"/> and removes the upload it refuses. The refusal stands
+    /// whether or not the removal succeeds; an upload that could not be removed stays until it expires.
+    /// </summary>
     private async ValueTask _RefuseAsync(
         BeforeWriteContext context,
         HttpStatusCode status,
@@ -317,58 +316,17 @@ internal sealed partial class TusContentCheck(
     {
         context.FailRequest(status, message);
 
-        // Without the termination extension the store cannot delete, and the upload stays until it expires.
-        if (store is not ITusTerminationStore terminationStore)
+        if (createdByThisRequest)
         {
-            return;
-        }
-
-        var fileId = context.FileId;
-
-        if (!createdByThisRequest)
-        {
-            await _DeleteAsync(terminationStore, fileId).ConfigureAwait(false);
+            // tusdotnet still answers a creating request with 201 and reads the new upload's offset to do so,
+            // so the upload must outlive the response.
+            remover.RemoveAfterResponse(context.HttpContext, context.FileId, tenantId);
 
             return;
         }
 
-        // tusdotnet still answers a creating request with 201 and reads the new upload's offset to do so, so the
-        // upload must outlive the response.
-        var currentTenant = context.HttpContext.RequestServices.GetService<ICurrentTenant>();
-
-        context.HttpContext.Response.OnCompleted(async () =>
-        {
-            // The application's tenant scope has ended by now, and a store that keeps uploads per tenant needs
-            // the tenant the upload was created in.
-            using (currentTenant?.Change(tenantId))
-            {
-                await _DeleteAsync(terminationStore, fileId).ConfigureAwait(false);
-            }
-        });
+        await remover.RemoveAsync(context.FileId).ConfigureAwait(false);
     }
-
-    /// <summary>
-    /// Deletes a refused upload. The refusal stands whether or not the delete succeeds, and it is not tied to the
-    /// request: a client that disconnects on the refusal must not keep the upload alive.
-    /// </summary>
-    private async ValueTask _DeleteAsync(ITusTerminationStore terminationStore, string fileId)
-    {
-        try
-        {
-            await terminationStore.DeleteFileAsync(fileId, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            LogRefusedUploadNotDeleted(logger, exception, fileId);
-        }
-    }
-
-    [LoggerMessage(
-        EventId = 3305,
-        Level = LogLevel.Error,
-        Message = "Could not delete upload {FileId} after its content was refused; it stays until it expires"
-    )]
-    private static partial void LogRefusedUploadNotDeleted(ILogger logger, Exception exception, string fileId);
 
     /// <summary>Content types and file extensions, as an allow-list or an upload's declaration names them.</summary>
     private sealed class TypeSet

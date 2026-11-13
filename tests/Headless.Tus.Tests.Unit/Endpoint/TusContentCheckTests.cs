@@ -683,7 +683,7 @@ public sealed class TusContentCheckTests : TestBase
     {
         // given
         using var responseCompleted = new SemaphoreSlim(0);
-        var setup = _Images(app => _SignalWhenTheResponseCompletes(app, responseCompleted));
+        var setup = _Images(app => TusEndpointTestHost.SignalWhenTheResponseCompletes(app, responseCompleted));
         await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
         var executable = _Executable();
 
@@ -717,7 +717,7 @@ public sealed class TusContentCheckTests : TestBase
                         options.MaxSize = TusEndpointTestHost.DefaultMaxSize;
                         options.AllowedContentTypes.Add("image/png");
                     }),
-            ConfigureMiddleware = app => _SignalWhenTheResponseCompletes(app, responseCompleted),
+            ConfigureMiddleware = app => TusEndpointTestHost.SignalWhenTheResponseCompletes(app, responseCompleted),
         };
         await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
         host.Tenant = "acme";
@@ -743,27 +743,6 @@ public sealed class TusContentCheckTests : TestBase
         {
             Headers = { ContentType = new MediaTypeHeaderValue("application/offset+octet-stream") },
         };
-    }
-
-    /// <summary>
-    /// Releases <paramref name="completed"/> after everything the endpoint does once a response is sent. The
-    /// server runs those callbacks last-registered first, and this one is registered before the endpoint runs.
-    /// </summary>
-    private static void _SignalWhenTheResponseCompletes(IApplicationBuilder app, SemaphoreSlim completed)
-    {
-        app.Use(
-            (context, next) =>
-            {
-                context.Response.OnCompleted(() =>
-                {
-                    completed.Release();
-
-                    return Task.CompletedTask;
-                });
-
-                return next(context);
-            }
-        );
     }
 
     /// <summary>A store whose every delete fails.</summary>

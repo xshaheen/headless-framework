@@ -71,8 +71,18 @@ internal sealed partial class TusUploadAuthorizer(
             }
 
             // Not "not found": the upload may well be the caller's, and a client told that it is gone gives it up.
-            // A 503 on a write is a failure clients retry.
-            context.FailRequest(HttpStatusCode.ServiceUnavailable, "The upload store is not available.");
+            // A 503 on a write is a failure clients retry. A status request is different: a tus client asks the
+            // same upload again only after 423, and takes any other failure as the loss of the upload, which it
+            // then sends again from its first byte.
+            if (context.Intent == IntentType.GetFileInfo)
+            {
+                context.HttpContext.Response.Headers["Tus-Resumable"] = "1.0.0";
+                context.FailRequest(HttpStatusCode.Locked, "The upload store is not available.");
+            }
+            else
+            {
+                context.FailRequest(HttpStatusCode.ServiceUnavailable, "The upload store is not available.");
+            }
 
             return;
         }
@@ -137,7 +147,7 @@ internal sealed partial class TusUploadAuthorizer(
     [LoggerMessage(
         EventId = 3285,
         Level = LogLevel.Error,
-        Message = "Could not read upload {FileId} from the store to authorize the request; answered 503"
+        Message = "Could not read upload {FileId} from the store to authorize the request; answered 503, or 423 to a status request"
     )]
     private static partial void LogStampReadFailed(ILogger logger, Exception exception, string? fileId);
 }
