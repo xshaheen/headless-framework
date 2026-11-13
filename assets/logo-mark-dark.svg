@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Headless Framework</title>
+  <rect x="12" y="12" width="22" height="72" rx="6" fill="#ededf3"/>
+  <rect x="62" y="12" width="22" height="72" rx="6" fill="#ededf3"/>
+  <rect x="38" y="38" width="20" height="20" rx="4" fill="#9d8cff"/>
+</svg>
