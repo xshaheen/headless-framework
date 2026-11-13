@@ -57,7 +57,7 @@ namespace Headless.Tus;
 /// blob, and its digest comparison is what rejects blocks a different writer staged in between.
 /// </para>
 /// <para>
-/// The store never creates its container. <c>AddTusAzureStore</c> registers it as a provisioned
+/// The store never creates its container. <c>UseAzure</c> registers it as a provisioned
 /// resource, so a deploy step creates it with <c>resources provision -k AzureBlob</c> and a
 /// starting host only checks that it exists; a manually constructed store needs the container
 /// created beforehand.

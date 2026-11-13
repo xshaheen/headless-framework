@@ -26,7 +26,7 @@ namespace Headless.Tus;
 /// <see cref="TusS3StoreOptions.Provider"/> only selects the per-request settings the store sends.
 /// </para>
 /// <para>
-/// The store never creates its bucket. <c>AddTusS3Store</c> registers it as a provisioned resource, so a deploy step
+/// The store never creates its bucket. <c>UseS3</c> registers it as a provisioned resource, so a deploy step
 /// creates it with <c>resources provision -k S3Bucket</c> and a starting host only checks that it exists; a manually
 /// constructed store needs the bucket created beforehand.
 /// </para>

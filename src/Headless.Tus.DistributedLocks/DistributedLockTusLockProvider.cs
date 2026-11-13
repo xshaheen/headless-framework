@@ -12,8 +12,8 @@ namespace Headless.Tus;
 /// <remarks>
 /// Register this as <c>ITusFileLockProvider</c> in DI alongside any
 /// <c>IDistributedLock</c> implementation (Redis, SQL Server, etc.) to protect concurrent TUS
-/// PATCH requests across multiple application nodes. Use
-/// <c>SetupTusDistributedLock.AddDistributedLockTusLockProvider</c> for convenient registration.
+/// PATCH requests across multiple application nodes. <c>UseDistributedLocks</c> inside
+/// <c>AddHeadlessTus</c> registers it.
 /// When several TUS endpoints (different stores/containers) share one distributed-lock backend,
 /// give each its own <paramref name="resourcePrefix"/> so equal file ids on different endpoints
 /// cannot contend for the same lock.

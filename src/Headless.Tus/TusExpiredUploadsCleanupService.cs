@@ -15,16 +15,17 @@ namespace Headless.Tus;
 /// </summary>
 /// <remarks>
 /// tusdotnet only sets the <c>Upload-Expires</c> header; nothing removes expired uploads unless
-/// the application runs a job like this one. Register it via
-/// <c>services.AddTusExpiredUploadsCleanup()</c> next to a store that implements
-/// <see cref="ITusExpirationStore"/>. The first pass runs immediately at startup (reclaiming
+/// the application runs a job like this one. <c>AddHeadlessTus</c> registers it against the host's
+/// <see cref="ITusStore"/>. It does nothing when <see cref="TusExpiredUploadsCleanupOptions.Enabled"/> is
+/// <see langword="false"/> or the store does not implement <see cref="ITusExpirationStore"/>. Otherwise the
+/// first pass runs immediately at startup (reclaiming
 /// uploads that expired while the app was down, matching tusdotnet's sample cleanup service),
 /// then every <see cref="TusExpiredUploadsCleanupOptions.Interval"/>; failures are logged and
-/// the loop continues. When a cleanup gate is registered (by <c>AddDistributedLockTusLockProvider</c>),
+/// the loop continues. When a cleanup gate is registered (by <c>UseDistributedLocks</c>),
 /// a node runs a pass only when it claims it, so one node sweeps per interval.
 /// </remarks>
 internal sealed partial class TusExpiredUploadsCleanupService(
-    ITusExpirationStore store,
+    ITusStore store,
     IOptions<TusExpiredUploadsCleanupOptions> options,
     TimeProvider timeProvider,
     ILogger<TusExpiredUploadsCleanupService> logger,
@@ -33,18 +34,32 @@ internal sealed partial class TusExpiredUploadsCleanupService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!options.Value.Enabled)
+        {
+            LogCleanupDisabled(logger);
+
+            return;
+        }
+
+        if (store is not ITusExpirationStore expirationStore)
+        {
+            LogStoreHasNoExpiration(logger, store.GetType().Name);
+
+            return;
+        }
+
         // Immediate first pass: reclaim uploads that expired while the app was down.
-        await _RunPassAsync(stoppingToken).ConfigureAwait(false);
+        await _RunPassAsync(expirationStore, stoppingToken).ConfigureAwait(false);
 
         using var timer = new PeriodicTimer(options.Value.Interval, timeProvider);
 
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
         {
-            await _RunPassAsync(stoppingToken).ConfigureAwait(false);
+            await _RunPassAsync(expirationStore, stoppingToken).ConfigureAwait(false);
         }
     }
 
-    private async Task _RunPassAsync(CancellationToken stoppingToken)
+    private async Task _RunPassAsync(ITusExpirationStore expirationStore, CancellationToken stoppingToken)
     {
         try
         {
@@ -61,7 +76,7 @@ internal sealed partial class TusExpiredUploadsCleanupService(
                 return;
             }
 
-            var removed = await store.RemoveExpiredFilesAsync(stoppingToken).ConfigureAwait(false);
+            var removed = await expirationStore.RemoveExpiredFilesAsync(stoppingToken).ConfigureAwait(false);
 
             if (removed > 0)
             {
@@ -94,12 +109,29 @@ internal sealed partial class TusExpiredUploadsCleanupService(
         Message = "Skipped the expired-upload cleanup pass: another node claimed it"
     )]
     private static partial void LogCleanupPassSkipped(ILogger logger);
+
+    [LoggerMessage(EventId = 3259, Level = LogLevel.Debug, Message = "Expired-upload cleanup is disabled on this host")]
+    private static partial void LogCleanupDisabled(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3269,
+        Level = LogLevel.Information,
+        Message = "Expired-upload cleanup has nothing to do: store {StoreType} does not support upload expiration"
+    )]
+    private static partial void LogStoreHasNoExpiration(ILogger logger, string storeType);
 }
 
-/// <summary>Options for <see cref="TusExpiredUploadsCleanupService"/>.</summary>
+/// <summary>Options for the job that removes expired incomplete uploads.</summary>
 [PublicAPI]
 public sealed class TusExpiredUploadsCleanupOptions
 {
+    /// <summary>Whether this host runs the cleanup job.</summary>
+    /// <remarks>
+    /// Defaults to <see langword="true"/>. Turn it off on hosts that should not sweep the store, for example
+    /// when a dedicated worker runs the job for the whole deployment.
+    /// </remarks>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>How often expired incomplete uploads are removed.</summary>
     /// <remarks>
     /// Defaults to 5 minutes. Each pass calls
@@ -107,7 +139,7 @@ public sealed class TusExpiredUploadsCleanupOptions
     /// store's uploads (a prefix listing for the Azure store) — prefer a coarser interval on
     /// containers with many uploads; the expiration window itself is configured on
     /// <c>DefaultTusConfiguration.Expiration</c>. In multi-node deployments every node runs its
-    /// own loop against the same store. With <c>AddDistributedLockTusLockProvider</c> registered,
+    /// own loop against the same store. With <c>UseDistributedLocks</c> selected,
     /// the node that takes the cleanup lease runs the pass and holds the lease for 90% of the
     /// interval, so the store is swept about once per interval across the cluster. Without it,
     /// every node sweeps on every tick: deletions are idempotent so this is safe, but the scan

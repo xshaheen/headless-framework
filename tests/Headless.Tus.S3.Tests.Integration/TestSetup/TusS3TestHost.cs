@@ -16,7 +16,7 @@ using tusdotnet.Models.Expiration;
 namespace Tests.TestSetup;
 
 /// <summary>
-/// The real tusdotnet middleware over an S3 store that, as <c>AddTusS3Store</c> wires it, reads the request's
+/// The real tusdotnet middleware over an S3 store that, as <c>UseS3</c> wires it, reads the request's
 /// <see cref="HttpContext" /> through an accessor, so a test sees the requests one tus operation costs in production.
 /// </summary>
 internal sealed class TusS3TestHost : IDisposable
