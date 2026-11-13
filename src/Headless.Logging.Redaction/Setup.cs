@@ -73,7 +73,8 @@ public static class SetupLoggingRedaction
                             inner,
                             provider.GetService<IRedactorProvider>(),
                             [.. provider.GetServices<ILogPathRedactor>()],
-                            LogTextRedactorRegistration.All(provider)
+                            LogTextRedactorRegistration.All(provider),
+                            LogPropertyClassification.Resolve(provider, provider.GetService<IRedactorProvider>())
                         )
             );
 

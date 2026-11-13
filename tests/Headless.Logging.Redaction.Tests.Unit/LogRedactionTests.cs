@@ -216,6 +216,145 @@ public sealed partial class LogRedactionTests : TestBase
     [LoggerMessage(1, LogLevel.Information, "User {Email} placed order {OrderId}")]
     private static partial void LogOrderPlaced(ILogger logger, [PrivateData] string? email, int orderId);
 
+    [Fact]
+    public void should_redact_a_property_classified_by_name_in_text_and_properties()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivateEmail));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when: a plain hole, where no attribute can reach the value
+#pragma warning disable CA1848, CA1873, CA1727 // The extension-method call is the one no attribute reaches, and the lowercase hole checks that names match ignoring case.
+        logger.LogInformation("Order {OrderId} placed by {email}", 42, "alice@example.com");
+#pragma warning restore CA1848, CA1873, CA1727
+
+        // then: the name matches ignoring case, and the other values keep their type
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Order 42 placed by *****");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("email", "*****"));
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("OrderId", 42));
+    }
+
+    [Fact]
+    public void should_give_a_name_classified_value_the_same_pseudonym_as_an_attribute_classified_one()
+    {
+        // given: an HMAC key, so both paths pseudonymize
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static services =>
+                services.AddHeadlessRedaction(static setup =>
+                    setup
+                        .UseHmac(static hmac =>
+                        {
+                            hmac.Key = Convert.ToBase64String(new byte[32]);
+                            hmac.KeyId = 1;
+                        })
+                        .ClassifyProperty("Email", HeadlessDataClassifications.Private)
+                )
+        );
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        LogOrderPlaced(logger, "alice@example.com", 42);
+#pragma warning disable CA1848, CA1873 // The test logs through the extension method on purpose: it is the call no attribute reaches.
+        logger.LogInformation("Signed in as {Email}", "alice@example.com");
+#pragma warning restore CA1848, CA1873
+
+        // then: operators can still tell both events concern the same person
+        var attributed = sink.Entries[0]
+            .Properties.Single(p => string.Equals(p.Key, "Email", StringComparison.Ordinal))
+            .Value;
+        var named = sink.Entries[1]
+            .Properties.Single(p => string.Equals(p.Key, "Email", StringComparison.Ordinal))
+            .Value;
+        attributed.Should().NotBe("alice@example.com");
+        named.Should().Be(attributed);
+    }
+
+    [Fact]
+    public void should_redact_a_name_classified_scope_value_and_collection_elements()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivateEmail));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        using (
+            logger.BeginScope(
+                new Dictionary<string, object?>(StringComparer.Ordinal) { ["Email"] = "alice@example.com" }
+            )
+        )
+        {
+#pragma warning disable CA1848, CA1873 // The test logs through the extension method on purpose: it is the call no attribute reaches.
+            logger.LogInformation("Notify {Email}", new List<string?> { "alice@example.com", null, "bob@example.com" });
+#pragma warning restore CA1848, CA1873
+        }
+
+        // then: each element is redacted on its own, so the count and the nulls stay
+        sink.Scopes.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(new KeyValuePair<string, object?>("Email", "*****"));
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Notify *****, (null), *****");
+        entry
+            .Properties.Single(p => string.Equals(p.Key, "Email", StringComparison.Ordinal))
+            .Value.Should()
+            .BeEquivalentTo(new[] { "*****", "(null)", "*****" });
+    }
+
+    [Fact]
+    public void should_redact_a_name_classified_plain_parameter_beside_an_attribute_classified_one()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static services =>
+                services.AddHeadlessRedaction(static setup =>
+                    setup
+                        .ConfigureRedaction(static redaction =>
+                            redaction.SetRedactor<StarRedactor>(
+                                new DataClassificationSet(HeadlessDataClassifications.Private)
+                            )
+                        )
+                        .ClassifyProperty("OrderId", HeadlessDataClassifications.Private)
+                )
+        );
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        LogOrderPlaced(logger, "alice@example.com", 420042);
+
+        // then: one entry is never half redacted
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("User ***** placed order *****");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("OrderId", "*****"));
+    }
+
+    [Fact]
+    public void should_throw_when_a_classified_property_name_is_empty()
+    {
+        var services = new ServiceCollection();
+
+        var empty = () =>
+            services.AddHeadlessRedaction(static setup =>
+                setup.ClassifyProperty(string.Empty, HeadlessDataClassifications.Private)
+            );
+
+        empty.Should().Throw<ArgumentException>();
+    }
+
+    private static void _StarPrivateEmail(HeadlessRedactionSetupBuilder setup) =>
+        setup
+            .ConfigureRedaction(static redaction =>
+                redaction.SetRedactor<StarRedactor>(new DataClassificationSet(HeadlessDataClassifications.Private))
+            )
+            .ClassifyProperty("Email", HeadlessDataClassifications.Private);
+
     private static ServiceProvider _Build(CapturingProvider sink, Action<IServiceCollection> configure)
     {
         var services = new ServiceCollection();

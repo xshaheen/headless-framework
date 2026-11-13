@@ -92,6 +92,36 @@ public sealed class HeadlessRedactionSetupBuilder
     }
 
     /// <summary>
+    /// Redacts a structured log property by its name, as if its value carried <paramref name="classification"/>: for a
+    /// value logged through a plain <c>{Email}</c> hole, or by a library, where no attribute can reach it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The name is matched ignoring case, in every log entry and scope. The value goes through the classification's
+    /// redactor, so it is erased, or becomes an HMAC pseudonym under <see cref="UseHmac(IConfigurationSection)"/>, exactly
+    /// as a <c>[PrivateData]</c> member would; a collection is redacted element by element. The rendered message carries
+    /// the redacted value in place of the raw one.
+    /// </para>
+    /// <para>
+    /// A value printed with a format that changes its text, such as <c>{Amount:N2}</c>, is redacted in the property but
+    /// can keep its formatted text in the message: classify such a value, or add a <c>MaskText</c> pattern. Members of a
+    /// destructured <c>{@Value}</c> are not matched by name: classify them.
+    /// </para>
+    /// </remarks>
+    /// <param name="name">The property name as it appears in message templates, for example <c>"Email"</c>.</param>
+    /// <param name="classification">The classification to redact the value as, such as <see cref="HeadlessDataClassifications.Private"/>.</param>
+    /// <returns>This builder.</returns>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is <see langword="null"/> or empty.</exception>
+    public HeadlessRedactionSetupBuilder ClassifyProperty(string name, DataClassification classification)
+    {
+        Argument.IsNotNullOrEmpty(name);
+
+        Services.AddSingleton(new LogPropertyClassification(name, classification));
+
+        return this;
+    }
+
+    /// <summary>
     /// Masks every match of <paramref name="pattern"/> in the text of log entries: the rendered message, property
     /// values, scope values, and the messages of a logged exception. For value shapes no classification reaches.
     /// </summary>
