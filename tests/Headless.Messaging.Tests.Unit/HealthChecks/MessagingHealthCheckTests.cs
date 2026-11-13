@@ -14,12 +14,13 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.HealthChecks;
 
 /// <summary>
-/// A Messaging host's readiness reports whether it can move messages: its lifecycle and broker reachability, paused
+/// A Messaging host's readiness reports whether it can move messages: its lifecycle, broker reachability, paused
 /// consumers, and additional outboxes whose database was down at startup.
 /// </summary>
 public sealed class MessagingHealthCheckTests : TestBase
 {
     private const string _MessagingCheck = "messaging";
+    private const string _BrokerCheck = "messaging-broker";
     private const string _ConsumersCheck = "messaging-consumers";
     private const string _OutboxesCheck = "messaging-outboxes";
 
@@ -58,7 +59,7 @@ public sealed class MessagingHealthCheckTests : TestBase
     }
 
     [Fact]
-    public async Task should_follow_broker_reachability_once_started()
+    public async Task should_report_the_broker_check_unhealthy_while_the_broker_is_unreachable_and_leave_messaging_healthy()
     {
         // given
         await using var provider = _BuildProvider(_ => { });
@@ -71,17 +72,60 @@ public sealed class MessagingHealthCheckTests : TestBase
             connectivity.ReportBrokerFailure();
         }
 
-        var unreachable = await _CheckAsync(provider, _MessagingCheck);
+        var unreachable = await _CheckAsync(provider, _BrokerCheck);
+        var messagingWhileUnreachable = await _CheckAsync(provider, _MessagingCheck);
         connectivity.ReportBrokerSuccess();
-        var reachable = await _CheckAsync(provider, _MessagingCheck);
+        var reachable = await _CheckAsync(provider, _BrokerCheck);
 
         // then
         unreachable.Status.Should().Be(HealthStatus.Unhealthy);
-        unreachable.Description.Should().Be("The 'messaging' dependency probe failed.");
+        unreachable.Description.Should().Be("The 'messaging-broker' dependency probe failed.");
         unreachable.Data.Should().BeEmpty();
+        messagingWhileUnreachable
+            .Status.Should()
+            .Be(HealthStatus.Healthy, "a started host that cannot reach its broker is still started");
         reachable.Status.Should().Be(HealthStatus.Healthy);
 
         await ((IHostedService)provider.GetRequiredService<IBootstrapper>()).StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_report_a_broker_outage_degraded_and_startup_unhealthy_when_the_application_grades_the_broker_check_degraded()
+    {
+        // given - the application keeps serving through a broker outage, because the outbox holds what it publishes
+        using var host = _BuildHost(
+            _ => { },
+            services =>
+                services.ConfigureHeadlessHealthCheck(
+                    _BrokerCheck,
+                    options => options.FailureStatus = HealthStatus.Degraded
+                )
+        );
+        var beforeStart = await _CheckMessagingAsync(host.Services);
+        await host.StartAsync(AbortToken);
+        await _WaitStartedAsync(host.Services);
+        var connectivity = host.Services.GetRequiredService<TransportConnectivity>();
+
+        // when
+        for (var i = 0; i < TransportConnectivity.FailureThreshold; i++)
+        {
+            connectivity.ReportBrokerFailure();
+        }
+
+        var brokerDown = await _CheckMessagingAsync(host.Services);
+        connectivity.ReportBrokerSuccess();
+        var brokerBack = await _CheckMessagingAsync(host.Services);
+
+        // then
+        beforeStart.Status.Should().Be(HealthStatus.Unhealthy, "a host that has not started moves no messages");
+        beforeStart.Entries[_MessagingCheck].Status.Should().Be(HealthStatus.Unhealthy);
+        beforeStart.Entries[_BrokerCheck].Status.Should().Be(HealthStatus.Healthy);
+        brokerDown.Status.Should().Be(HealthStatus.Degraded);
+        brokerDown.Entries[_MessagingCheck].Status.Should().Be(HealthStatus.Healthy);
+        brokerDown.Entries[_BrokerCheck].Status.Should().Be(HealthStatus.Degraded);
+        brokerBack.Status.Should().Be(HealthStatus.Healthy);
+
+        await host.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -252,7 +296,7 @@ public sealed class MessagingHealthCheckTests : TestBase
             .Where(r => r.Name.StartsWith("messaging", StringComparison.Ordinal))
             .Select(r => r.Name)
             .Should()
-            .BeEquivalentTo([_MessagingCheck, _ConsumersCheck]);
+            .BeEquivalentTo([_MessagingCheck, _BrokerCheck, _ConsumersCheck]);
 
         foreach (var registration in registrations.Where(r => r.Name.StartsWith("messaging", StringComparison.Ordinal)))
         {
@@ -267,6 +311,7 @@ public sealed class MessagingHealthCheckTests : TestBase
         }
 
         _Registration(provider, _MessagingCheck).FailureStatus.Should().Be(HealthStatus.Unhealthy);
+        _Registration(provider, _BrokerCheck).FailureStatus.Should().Be(HealthStatus.Unhealthy);
         _Registration(provider, _ConsumersCheck).FailureStatus.Should().Be(HealthStatus.Degraded);
     }
 
@@ -389,6 +434,16 @@ public sealed class MessagingHealthCheckTests : TestBase
             );
 
         return report.Entries[name];
+    }
+
+    private static Task<HealthReport> _CheckMessagingAsync(IServiceProvider services)
+    {
+        return services
+            .GetRequiredService<HealthCheckService>()
+            .CheckHealthAsync(
+                registration => registration.Tags.Contains(HeadlessHealthCheckTags.Messaging),
+                AbortToken
+            );
     }
 
     private static List<HealthCheckRegistration> _Registrations(IServiceProvider provider)
