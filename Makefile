@@ -594,7 +594,7 @@ FORMAT_CHANGED_FN = format_changed() { \
 		/^  / { if (mine) print; next } \
 		{ mine = 0 } \
 		END { if (others) { printf "[format] warning: %d unchanged file(s) in the scanned folders are not formatted (not part of this change):\n", others; for (i = 1; i <= others; i++) print "  " other[i] } \
-			if (bad) { printf "[format] %d changed file(s) are not formatted or do not parse. Run: make format (a syntax error needs a code fix first)\n", bad; exit 3 } \
+			if (bad) { printf "[format] %d changed file(s) are not formatted or do not parse. Run: make format-changed (a syntax error needs a code fix first)\n", bad; exit 3 } \
 			if (named == 0 && rc != 0) exit 1 }' rc="$$rc" <(printf '%s\n' "$${files[@]}") <(printf '%s\n' "$$out") || arc=$$?; \
 	if [ $$arc -eq 1 ]; then printf '%s\n' "$$out" >&2; echo "[format] csharpier exited $$rc without naming a file" >&2; return $$rc; fi; \
 	if [ $$arc -ne 0 ]; then return $$arc; fi; \
@@ -604,6 +604,18 @@ FORMAT_CHANGED = $(FORMAT_CHANGED_FN); format_changed
 .PHONY: format-check-changed
 format-check-changed: ## Check C# formatting of the files changed vs AFFECTED_BASE, committed or not; the local gate's format stage.
 	@$(FORMAT_CHANGED) worktree
+
+# The write side of format-check-changed: the same file list, formatted in place. `make format` walks
+# the whole repo, so agents fixing their own change reached for raw `dotnet csharpier` instead.
+.PHONY: format-changed
+format-changed: ## Format the C# files changed vs AFFECTED_BASE, committed or not (writes files; format-check-changed checks them).
+	@base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
+	if [ -z "$$base" ]; then echo "[format] no merge base with $(AFFECTED_BASE); run make format for the whole repo" >&2; exit 2; fi; \
+	files=(); while IFS= read -r -d '' file; do if [ -f "$$file" ]; then files+=("$$file"); fi; done < <( \
+		git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR "$$base" -- '*.cs'; \
+		git -c core.quotePath=false ls-files -z --others --exclude-standard -- '*.cs'); \
+	if [ "$${#files[@]}" -eq 0 ]; then echo "[format] no changed C# files to format"; exit 0; fi; \
+	$(DOTNET) csharpier format "$${files[@]}"
 
 # Manual pre-push sanity build; no longer wired into the hook. Warning posture is NOT "warnings stay
 # warnings": Headless.NET.Sdk turns CodeAnalysisTreatWarningsAsErrors and MSBuildTreatWarningsAsErrors
@@ -799,6 +811,10 @@ DASHBOARD_CHECK_FN = dashboard_check() { \
 .PHONY: dashboards-format
 dashboards-format: ## Format the dashboard SPAs' sources with Prettier (writes files; each dashboard-<name>-test checks them).
 	$(NPM) run format
+
+.PHONY: dashboards-format-check
+dashboards-format-check: ## Check every dashboard SPA's formatting with Prettier; exit 3 when a file needs make dashboards-format.
+	@$(NPM) run format:check || exit 3
 
 .PHONY: dashboard-shell-test
 dashboard-shell-test: ## Lint, type-check, unit-test, and build the dashboard shell's workspace, size budgets included (CI's Shell dashboard job).
