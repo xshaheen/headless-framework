@@ -93,12 +93,12 @@ public sealed class HeadlessRedactionSetupBuilder
 
     /// <summary>
     /// Masks every match of <paramref name="pattern"/> in the text of log entries: the rendered message, property
-    /// values, scope values, and the text of a logged exception. For value shapes no classification reaches.
+    /// values, scope values, and the messages of a logged exception. For value shapes no classification reaches.
     /// </summary>
     /// <remarks>
     /// The pattern is compiled culture-invariant with a 100 ms match timeout. A timed-out match replaces the whole
-    /// text, so a slow match never lets the value through. A logged exception whose text matches reaches providers as a
-    /// <see cref="RedactedException"/>.
+    /// text, so a slow match never lets the value through. A logged exception whose message, or an inner
+    /// exception's, matches reaches providers as a <see cref="RedactedException"/>.
     /// </remarks>
     /// <param name="pattern">The shape to mask, for example <c>@"\b\d{14}\b"</c>.</param>
     /// <param name="replacement">The text that replaces each match.</param>
@@ -120,11 +120,12 @@ public sealed class HeadlessRedactionSetupBuilder
 
     /// <summary>
     /// Masks every match of <paramref name="pattern"/> in the text of log entries: the rendered message, property
-    /// values, scope values, and the text of a logged exception. For value shapes no classification reaches.
+    /// values, scope values, and the messages of a logged exception. For value shapes no classification reaches.
     /// </summary>
     /// <remarks>
     /// Give the pattern a match timeout, because it runs on every scanned entry: a timed-out match replaces the whole
-    /// text. A logged exception whose text matches reaches providers as a <see cref="RedactedException"/>.
+    /// text. A logged exception whose message, or an inner exception's, matches reaches
+    /// providers as a <see cref="RedactedException"/>.
     /// </remarks>
     /// <param name="pattern">The shape to mask.</param>
     /// <param name="replacement">The text that replaces each match.</param>

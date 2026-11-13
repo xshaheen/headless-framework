@@ -6,7 +6,8 @@ using Headless.Checks;
 namespace Headless.Logging;
 
 /// <summary>
-/// The stand-in log providers receive instead of an exception whose text an <see cref="ILogTextRedactor"/> masked.
+/// The stand-in log providers receive instead of an exception whose message, or an inner exception's message, an
+/// <see cref="ILogTextRedactor"/> masked.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -14,39 +15,43 @@ namespace Headless.Logging;
 /// hands providers this copy instead. <see cref="ToString"/> returns the original's full text, masked: the original
 /// type name, message, every inner exception, and the stack traces, in the original's own format. <see cref="Message"/>
 /// and <see cref="StackTrace"/> return the original's, masked. <see cref="Exception.InnerException"/> and
-/// <see cref="InnerExceptions"/> hold the original's inner exceptions, each replaced by its own stand-in when its text
-/// matched.
+/// <see cref="InnerExceptions"/> hold the original's inner exceptions, each replaced by its own stand-in when its
+/// messages matched.
+/// </para>
+/// <para>
+/// <see cref="ToString"/> and <see cref="StackTrace"/> are rendered and masked the first time a provider reads them,
+/// then reused, so a provider that never prints the exception pays nothing for them.
 /// </para>
 /// <para>
 /// A provider that reports <see cref="object.GetType"/> sees this type; <see cref="OriginalTypeName"/> names the
 /// original. <see cref="Exception.TargetSite"/> is <see langword="null"/>, and <see cref="Data"/> holds the original's
-/// entries unscanned. Only an exception whose text matched is replaced; any other reaches providers as the same object.
+/// entries unscanned. Only an exception whose messages matched is replaced; any other reaches providers as the same
+/// object.
 /// </para>
 /// </remarks>
 [PublicAPI]
 public sealed class RedactedException : Exception
 {
+    private readonly Exception _original;
+    private readonly Func<string, string> _redact;
     private readonly string _message;
-    private readonly string? _stackTrace;
-    private readonly string _text;
-    private readonly IDictionary _data;
+    private string? _stackTrace;
+    private string? _text;
 
     internal RedactedException(
         Exception original,
-        Func<string, string> redact,
-        string redactedText,
-        IReadOnlyList<Exception> innerExceptions
+        string redactedMessage,
+        IReadOnlyList<Exception> innerExceptions,
+        Func<string, string> redact
     )
         : base(message: null, innerException: innerExceptions.Count > 0 ? innerExceptions[0] : null)
     {
-        Argument.IsNotNull(original);
+        _original = Argument.IsNotNull(original);
+        _redact = Argument.IsNotNull(redact);
+        _message = Argument.IsNotNull(redactedMessage);
 
         OriginalTypeName = original.GetType().FullName ?? original.GetType().Name;
         InnerExceptions = innerExceptions;
-        _message = redact(original.Message);
-        _stackTrace = original.StackTrace is { } stackTrace ? redact(stackTrace) : null;
-        _text = redactedText;
-        _data = original.Data;
         HResult = original.HResult;
         HelpLink = original.HelpLink;
         Source = original.Source;
@@ -64,12 +69,13 @@ public sealed class RedactedException : Exception
     /// <inheritdoc />
     public override string Message => _message;
 
+    // A race renders the same text twice and keeps either copy, which is cheaper than a lock on every read.
     /// <inheritdoc />
-    public override string? StackTrace => _stackTrace;
+    public override string? StackTrace => _stackTrace ??= _original.StackTrace is { } trace ? _redact(trace) : null;
 
     /// <inheritdoc />
-    public override IDictionary Data => _data;
+    public override IDictionary Data => _original.Data;
 
     /// <inheritdoc />
-    public override string ToString() => _text;
+    public override string ToString() => _text ??= _redact(_original.ToString());
 }

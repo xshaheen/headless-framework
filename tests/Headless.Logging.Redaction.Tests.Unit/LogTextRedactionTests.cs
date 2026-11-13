@@ -334,6 +334,27 @@ public sealed partial class LogTextRedactionTests : TestBase
     }
 
     [Fact]
+    public void should_scan_only_exception_messages_and_mask_the_full_text_once_one_matched()
+    {
+        // given: one id only in a ToString override, another in an inner message
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var unscanned = new CitizenException("lookup failed", innerException: null);
+        var scanned = new CitizenException("lookup failed", new FormatException(_NationalId));
+
+        // when
+        LogFailure(logger, unscanned, 7);
+        LogFailure(logger, scanned, 8);
+
+        // then: a match only in rendered text is not looked for; once a message matched, the whole text is masked
+        sink.Entries[0].Exception.Should().BeSameAs(unscanned);
+        var redacted = sink.Entries[1].Exception.Should().BeOfType<RedactedException>().Subject;
+        redacted.ToString().Should().NotContain(_NationalId).And.Contain("citizen ***");
+        redacted.ToString().Should().BeSameAs(redacted.ToString());
+    }
+
+    [Fact]
     public void should_leave_an_exception_untouched_when_no_text_redactor_is_registered()
     {
         // given: redaction without a text redactor, so loggers are not wrapped for text
@@ -432,6 +453,12 @@ public sealed partial class LogTextRedactionTests : TestBase
     private sealed class UpperCaseRedactor : ILogTextRedactor
     {
         public string Redact(string text) => text.ToUpperInvariant();
+    }
+
+    private sealed class CitizenException(string message, Exception? innerException)
+        : Exception(message, innerException)
+    {
+        public override string ToString() => $"{base.ToString()} (citizen {_NationalId})";
     }
 
     private sealed record Citizen(string Id)

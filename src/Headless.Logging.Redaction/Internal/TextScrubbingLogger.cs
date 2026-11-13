@@ -57,8 +57,8 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
             return;
         }
 
-        // Providers read an exception's text from the object itself, so one whose text matched is swapped for a masked
-        // stand-in before the formatter or any provider sees it.
+        // Providers read an exception's text from the object itself, so one whose messages matched is swapped for a
+        // masked stand-in before the formatter or any provider sees it.
         if (exception is not null)
         {
             exception = _ScrubException(exception, logLevel);
@@ -178,27 +178,55 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
         return string.Equals(scrubbed, formatted, StringComparison.Ordinal) ? value : scrubbed;
     }
 
-    // Returns the same instance when nothing in its full text matched. Its full text already holds every inner
-    // exception, so a chain with no match costs one scan; one that matched is rebuilt node by node, and an inner
-    // exception with no match of its own is kept as is.
+    // Returns the same instance, and allocates nothing, when no message in the chain matched. Only the messages are
+    // scanned: rendering ToString would format every stack trace on each logged exception, which the provider then
+    // repeats. The stand-in masks its full text, stack traces included, only when a provider reads it.
     private Exception _ScrubException(Exception exception, LogLevel logLevel)
     {
-        var text = exception.ToString();
-        var masked = _Scrub(text, logLevel);
+        var message = exception.Message;
+        var maskedMessage = _Scrub(message, logLevel);
+        var changed = !string.Equals(maskedMessage, message, StringComparison.Ordinal);
+        Exception[]? inners = null;
 
-        if (string.Equals(masked, text, StringComparison.Ordinal))
+        if (exception is AggregateException aggregate)
+        {
+            var members = aggregate.InnerExceptions;
+
+            for (var i = 0; i < members.Count; i++)
+            {
+                var scrubbed = _ScrubException(members[i], logLevel);
+
+                if (!ReferenceEquals(scrubbed, members[i]))
+                {
+                    // Copied only once a member changed, so an aggregate with no match costs no array.
+                    inners ??= [.. members];
+                    inners[i] = scrubbed;
+                }
+            }
+        }
+        else if (exception.InnerException is { } innerException)
+        {
+            var scrubbed = _ScrubException(innerException, logLevel);
+
+            if (!ReferenceEquals(scrubbed, innerException))
+            {
+                inners = [scrubbed];
+            }
+        }
+
+        if (!changed && inners is null)
         {
             return exception;
         }
 
-        Exception[] inners = exception switch
+        inners ??= exception switch
         {
-            AggregateException aggregate => [.. aggregate.InnerExceptions.Select(e => _ScrubException(e, logLevel))],
-            { InnerException: { } innerException } => [_ScrubException(innerException, logLevel)],
+            AggregateException unchanged => [.. unchanged.InnerExceptions],
+            { InnerException: { } unchanged } => [unchanged],
             _ => [],
         };
 
-        return new RedactedException(exception, value => _Scrub(value, logLevel), masked, inners);
+        return new RedactedException(exception, maskedMessage, inners, text => _Scrub(text, logLevel));
     }
 
     private static bool _HasNoMaskableText(object value)
