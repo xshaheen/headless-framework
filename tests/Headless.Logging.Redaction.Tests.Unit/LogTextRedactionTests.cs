@@ -248,6 +248,153 @@ public sealed partial class LogTextRedactionTests : TestBase
         nullRedactor.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public void should_mask_an_exception_message_and_its_inner_exceptions()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var original = _Thrown(() =>
+            throw new InvalidOperationException(
+                "lookup failed",
+                _Thrown(() => throw new ArgumentException($"no citizen {_NationalId}"))
+            )
+        );
+
+        // when
+        LogFailure(logger, original, 7);
+
+        // then: the provider gets a stand-in that keeps the type names, the stack trace, and the chain
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        var redacted = entry.Exception.Should().BeOfType<RedactedException>().Subject;
+        redacted.OriginalTypeName.Should().Be(typeof(InvalidOperationException).FullName);
+        redacted.Message.Should().Be("lookup failed");
+        redacted.StackTrace.Should().Be(original.StackTrace);
+        redacted.ToString().Should().Be(original.ToString().Replace(_NationalId, "***", StringComparison.Ordinal));
+        redacted.ToString().Should().Contain(typeof(ArgumentException).FullName!);
+
+        var inner = redacted.InnerException.Should().BeOfType<RedactedException>().Subject;
+        inner.OriginalTypeName.Should().Be(typeof(ArgumentException).FullName);
+        inner.Message.Should().Be("no citizen ***");
+        redacted.InnerExceptions.Should().Equal(inner);
+
+        // the caught exception itself is left as it was
+        original.InnerException!.Message.Should().Be($"no citizen {_NationalId}");
+    }
+
+    [Fact]
+    public void should_mask_every_member_of_an_aggregate_exception_and_keep_the_ones_without_a_match()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var clean = new TimeoutException("timed out");
+        var original = new AggregateException(
+            new InvalidOperationException($"first {_NationalId}"),
+            clean,
+            new FormatException($"third {_NationalId}")
+        );
+
+        // when
+        LogFailure(logger, original, 7);
+
+        // then
+        var redacted = sink
+            .Entries.Should()
+            .ContainSingle()
+            .Which.Exception.Should()
+            .BeOfType<RedactedException>()
+            .Subject;
+        redacted.OriginalTypeName.Should().Be(typeof(AggregateException).FullName);
+        redacted.ToString().Should().NotContain(_NationalId).And.Contain(typeof(FormatException).FullName!);
+        redacted.InnerExceptions.Should().HaveCount(3);
+        redacted.InnerExceptions[0].Message.Should().Be("first ***");
+        redacted.InnerExceptions[1].Should().BeSameAs(clean);
+        redacted.InnerExceptions[2].Message.Should().Be("third ***");
+        redacted.InnerException.Should().BeSameAs(redacted.InnerExceptions[0]);
+    }
+
+    [Fact]
+    public void should_pass_an_exception_without_a_match_through_as_the_same_object()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var original = new InvalidOperationException("lookup failed", new ArgumentException("bad input"));
+
+        // when
+        LogFailure(logger, original, 7);
+
+        // then
+        sink.Entries.Should().ContainSingle().Which.Exception.Should().BeSameAs(original);
+    }
+
+    [Fact]
+    public void should_leave_an_exception_untouched_when_no_text_redactor_is_registered()
+    {
+        // given: redaction without a text redactor, so loggers are not wrapped for text
+        using var sink = new CapturingProvider();
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.ClearProviders().AddProvider(sink));
+        services.AddHeadlessRedaction();
+        using var provider = services.BuildServiceProvider();
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var original = new InvalidOperationException($"no citizen {_NationalId}");
+
+        // when
+        LogFailure(logger, original, 7);
+
+        // then
+        sink.Entries.Should().ContainSingle().Which.Exception.Should().BeSameAs(original);
+    }
+
+    [Fact]
+    public void should_leave_an_exception_untouched_below_the_level_a_pattern_is_scoped_to()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static setup => setup.MaskText(_Pattern(), scope: static scope => scope.MinimumLevel = LogLevel.Critical)
+        );
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var original = new InvalidOperationException($"no citizen {_NationalId}");
+
+        // when: the failure is logged at Error, below the pattern's Critical scope
+        LogFailure(logger, original, 7);
+
+        // then
+        sink.Entries.Should().ContainSingle().Which.Exception.Should().BeSameAs(original);
+    }
+
+    [Fact]
+    public void should_mask_the_exception_a_template_rendering_provider_prints()
+    {
+        // given: Serilog prints the exception from the object it is handed
+        var sink = new CollectingSink();
+        using var serilog = new Serilog.LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
+        using var serilogFactory = new SerilogLoggerFactory(serilog);
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(serilogFactory);
+        services.AddHeadlessRedaction(setup => setup.MaskText(_Pattern()));
+        using var provider = services.BuildServiceProvider();
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        LogFailure(logger, new InvalidOperationException("lookup failed", new ArgumentException(_NationalId)), 7);
+
+        // then
+        var exception = sink.Events.Should().ContainSingle().Which.Exception;
+        exception.Should().BeOfType<RedactedException>();
+        exception!.ToString().Should().NotContain(_NationalId).And.Contain("System.ArgumentException: ***");
+    }
+
+    [LoggerMessage(7, LogLevel.Error, "Order {Order} failed")]
+    private static partial void LogFailure(ILogger logger, Exception exception, int order);
+
     [LoggerMessage(5, LogLevel.Information, "Order {Order} shipped as {Tracking} at {ShippedAt}")]
     private static partial void LogShipment(ILogger logger, int order, Guid tracking, DateTimeOffset shippedAt);
 
@@ -265,6 +412,20 @@ public sealed partial class LogTextRedactionTests : TestBase
 
     [LoggerMessage(2, LogLevel.Information, "{Text}")]
     private static partial void LogRaw(ILogger logger, string text);
+
+    private static Exception _Thrown(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception e)
+        {
+            return e;
+        }
+
+        throw new InvalidOperationException("The action did not throw.");
+    }
 
     private static Regex _Pattern() => new(@"\b\d{14}\b", RegexOptions.None, TimeSpan.FromMilliseconds(100));
 
@@ -294,7 +455,12 @@ public sealed partial class LogTextRedactionTests : TestBase
         public void Emit(LogEvent logEvent) => Events.Add(logEvent);
     }
 
-    private sealed record Entry(string Text, IReadOnlyList<KeyValuePair<string, object?>> Properties, string StateType);
+    private sealed record Entry(
+        string Text,
+        IReadOnlyList<KeyValuePair<string, object?>> Properties,
+        string StateType,
+        Exception? Exception
+    );
 
     private sealed class CapturingProvider : ILoggerProvider, ISupportExternalScope
     {
@@ -347,7 +513,9 @@ public sealed partial class LogTextRedactionTests : TestBase
                     owner
                 );
 
-                owner.Entries.Add(new Entry(formatter(state, exception), properties, state?.GetType().Name ?? "null"));
+                owner.Entries.Add(
+                    new Entry(formatter(state, exception), properties, state?.GetType().Name ?? "null", exception)
+                );
             }
         }
     }

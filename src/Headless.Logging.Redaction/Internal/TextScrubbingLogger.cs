@@ -57,6 +57,13 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
             return;
         }
 
+        // Providers read an exception's text from the object itself, so one whose text matched is swapped for a masked
+        // stand-in before the formatter or any provider sees it.
+        if (exception is not null)
+        {
+            exception = _ScrubException(exception, logLevel);
+        }
+
         var rendered = formatter(state, exception);
         var message = _Scrub(rendered, logLevel);
         var messageChanged =
@@ -169,6 +176,29 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
         var scrubbed = _Scrub(formatted, logLevel);
 
         return string.Equals(scrubbed, formatted, StringComparison.Ordinal) ? value : scrubbed;
+    }
+
+    // Returns the same instance when nothing in its full text matched. Its full text already holds every inner
+    // exception, so a chain with no match costs one scan; one that matched is rebuilt node by node, and an inner
+    // exception with no match of its own is kept as is.
+    private Exception _ScrubException(Exception exception, LogLevel logLevel)
+    {
+        var text = exception.ToString();
+        var masked = _Scrub(text, logLevel);
+
+        if (string.Equals(masked, text, StringComparison.Ordinal))
+        {
+            return exception;
+        }
+
+        Exception[] inners = exception switch
+        {
+            AggregateException aggregate => [.. aggregate.InnerExceptions.Select(e => _ScrubException(e, logLevel))],
+            { InnerException: { } innerException } => [_ScrubException(innerException, logLevel)],
+            _ => [],
+        };
+
+        return new RedactedException(exception, value => _Scrub(value, logLevel), masked, inners);
     }
 
     private static bool _HasNoMaskableText(object value)

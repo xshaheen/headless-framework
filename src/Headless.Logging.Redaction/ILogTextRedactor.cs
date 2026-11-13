@@ -4,7 +4,7 @@ namespace Headless.Logging;
 
 /// <summary>
 /// Masks value shapes an app knows are sensitive, such as a national id or a card number, in the text of every log
-/// entry: the rendered message, property values, and scope values.
+/// entry: the rendered message, property values, scope values, and the text of a logged exception.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,8 +16,9 @@ namespace Headless.Logging;
 /// <para>
 /// Register an implementation with <c>AddHeadlessRedaction(setup =&gt; setup.MaskText(redactor, scope))</c>, which can
 /// limit it to some categories and levels; one registered directly as an <see cref="ILogTextRedactor"/> singleton scans
-/// every entry. Nothing is scanned until one is registered. Exception messages and stack traces are
-/// not rewritten: providers read them from the exception object. A non-string value is scanned in its invariant text
+/// every entry. Nothing is scanned until one is registered. A logged exception is scanned in its full
+/// <see cref="Exception.ToString"/> text, inner exceptions included; when that matches, providers receive a
+/// <see cref="RedactedException"/> carrying the masked text instead of the exception. A non-string value is scanned in its invariant text
 /// form and replaced by its masked text only when that text matches; booleans, GUIDs, enums, and date and time values
 /// are not scanned, the members of a destructured <c>{@Value}</c> are not either.
 /// </para>
