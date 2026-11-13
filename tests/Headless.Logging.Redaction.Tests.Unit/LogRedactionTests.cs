@@ -225,9 +225,9 @@ public sealed partial class LogRedactionTests : TestBase
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
 
         // when: a plain hole, where no attribute can reach the value
-#pragma warning disable CA1848, CA1873 // The test logs through the extension method on purpose: it is the call no attribute reaches.
+#pragma warning disable CA1848, CA1873, CA1727 // The extension-method call is the one no attribute reaches, and the lowercase hole checks that names match ignoring case.
         logger.LogInformation("Order {OrderId} placed by {email}", 42, "alice@example.com");
-#pragma warning restore CA1848, CA1873
+#pragma warning restore CA1848, CA1873, CA1727
 
         // then: the name matches ignoring case, and the other values keep their type
         var entry = sink.Entries.Should().ContainSingle().Subject;
@@ -263,8 +263,12 @@ public sealed partial class LogRedactionTests : TestBase
 #pragma warning restore CA1848, CA1873
 
         // then: operators can still tell both events concern the same person
-        var attributed = sink.Entries[0].Properties.Single(p => p.Key == "Email").Value;
-        var named = sink.Entries[1].Properties.Single(p => p.Key == "Email").Value;
+        var attributed = sink.Entries[0]
+            .Properties.Single(p => string.Equals(p.Key, "Email", StringComparison.Ordinal))
+            .Value;
+        var named = sink.Entries[1]
+            .Properties.Single(p => string.Equals(p.Key, "Email", StringComparison.Ordinal))
+            .Value;
         attributed.Should().NotBe("alice@example.com");
         named.Should().Be(attributed);
     }
@@ -297,7 +301,7 @@ public sealed partial class LogRedactionTests : TestBase
         var entry = sink.Entries.Should().ContainSingle().Subject;
         entry.Text.Should().Be("Notify *****, (null), *****");
         entry
-            .Properties.Single(p => p.Key == "Email")
+            .Properties.Single(p => string.Equals(p.Key, "Email", StringComparison.Ordinal))
             .Value.Should()
             .BeEquivalentTo(new[] { "*****", "(null)", "*****" });
     }
