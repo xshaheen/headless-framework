@@ -32,6 +32,27 @@ public sealed class NatsHealthCheckRegistrationTests : TestBase
     }
 
     [Fact]
+    public async Task should_bound_the_nats_check_with_a_default_timeout()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessMessaging(setup => setup.UseNats("nats://localhost:4222"));
+        await using var provider = services.BuildServiceProvider();
+
+        // then - a ping waits for the client's reconnect while the server is down, so only the timeout ends it
+        var registration = provider
+            .GetRequiredService<IOptions<HealthCheckServiceOptions>>()
+            .Value.Registrations.Should()
+            .ContainSingle(registration => registration.Name == "messaging-nats")
+            .Subject;
+        registration.Timeout.Should().Be(TimeSpan.FromSeconds(5));
+        registration.FailureStatus.Should().Be(HealthStatus.Unhealthy);
+    }
+
+    [Fact]
     public async Task should_apply_the_configured_options_to_the_nats_check()
     {
         // given

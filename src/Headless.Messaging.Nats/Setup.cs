@@ -28,7 +28,8 @@ namespace Headless.Messaging;
 /// Request/reply is supported on core NATS, outside JetStream: a requesting process receives replies on a subject of
 /// its own under the reserved <c>headless.reply.</c> prefix, which no provisioned stream captures.
 /// <para/>
-/// The <c>messaging-nats</c> readiness health check is contributed too; it pings the server over a pooled connection.
+/// The <c>messaging-nats</c> readiness health check is contributed too; it pings the server over a pooled connection
+/// and fails after 5 seconds without an answer.
 /// </remarks>
 public static class SetupMessagingNats
 {
@@ -176,6 +177,14 @@ public static class SetupMessagingNats
                         .PingAsync(cancellationToken)
                         .ConfigureAwait(false),
                 HeadlessHealthCheckTags.Messaging
+            );
+
+            // A ping on a connection that lost the server waits for the client's reconnect, which never ends while the
+            // server is down, so without a limit the health request hangs until the caller gives up. A package default,
+            // so configuration and an application's ConfigureHeadlessHealthCheck call override it.
+            services.ConfigureHeadlessHealthCheckDefault(
+                "messaging-nats",
+                static options => options.Timeout = TimeSpan.FromSeconds(5)
             );
         }
     }

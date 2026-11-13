@@ -2512,20 +2512,33 @@ Messaging contributes readiness checks automatically; there is no `AddMessagingH
 
 | Check | Registered by | Failure status | Fails when |
 | --- | --- | --- | --- |
-| `messaging` | `AddHeadlessMessaging` | `Unhealthy` | The host has not started, host shutdown has begun, or the broker is unreachable (see [Broker reachability](#broker-reachability)). Applies to consuming and publish-only hosts on every transport |
+| `messaging` | `AddHeadlessMessaging` | `Unhealthy` | The host has not started, or host shutdown has begun. Messaging starts in the background after the host already serves requests, so this check is what holds readiness until it has started |
+| `messaging-broker` | `AddHeadlessMessaging` | `Unhealthy` | The broker is unreachable (see [Broker reachability](#broker-reachability)). Applies to consuming and publish-only hosts on every transport. It reads no lifecycle, so it stays healthy while the host starts or stops |
 | `messaging-consumers` | `AddHeadlessMessaging` | `Degraded` | Any consumer circuit is `Open`, whether it tripped or an operator called `ICircuitBreakerMonitor.ForceOpenAsync`. `HalfOpen` reports healthy: it is already resuming, and reporting it would make alerts flap |
 | `messaging-outboxes` | `AddHeadlessMessaging` with at least one `AddOutbox(name)` | `Degraded` | An [additional outbox](#additional-outboxes) is not initialized yet. Its initialization keeps retrying and only units of work on that database are refused, so the host stays ready |
 | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default` | The primary PostgreSQL or SQL Server storage, raw or EF; also tagged `database` | `Unhealthy` | A connection from the storage's options cannot open, or `SELECT 1` on it fails |
 | `messaging-storage-postgresql-outbox-{name}`, `messaging-storage-sqlserver-outbox-{name}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{name}` is the name passed to `AddOutbox(name)`, so the check keeps its name when registrations are added or reordered |
-| `messaging-nats` | `UseNats` | `Unhealthy` | A NATS `PING` fails (see [Headless.Messaging.Nats](#headlessmessagingnats)) |
+| `messaging-nats` | `UseNats` | `Unhealthy` | A NATS `PING` fails or gets no answer within 5 seconds (see [Headless.Messaging.Nats](#headlessmessagingnats)) |
 
-`messaging`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`), and the [`check` command](utilities.md#health-check-command) skips them before the host starts; the storage and NATS checks probe their dependency and run there.
+`messaging`, `messaging-broker`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`), and the [`check` command](utilities.md#health-check-command) skips them before the host starts; the storage and NATS checks probe their dependency and run there.
 
-The `Degraded` defaults are defaults only: `ConfigureHeadlessHealthCheck("messaging-consumers", o => o.FailureStatus = HealthStatus.Unhealthy)` overrides one, before or after `AddHeadlessMessaging`. The storage probe runs a query rather than only opening a connection, because a pooled open can return an idle connection without a round trip and would report a stopped database as reachable. The in-memory storage and transport contribute no storage or broker probe.
+The `Degraded` defaults are defaults only: `ConfigureHeadlessHealthCheck("messaging-consumers", o => o.FailureStatus = HealthStatus.Unhealthy)` overrides one, before or after `AddHeadlessMessaging`. The `messaging-nats` timeout is a default too: `ConfigureHeadlessHealthCheck("messaging-nats", o => o.Timeout = ...)` or `Headless:HealthChecks:messaging-nats:Timeout` changes it.
+
+A host whose writes go through the outbox keeps serving while the broker is down: the outbox holds each message until the broker is back. To report a broker outage as `Degraded` while a host that has not started, or is shutting down, still fails readiness, grade the broker checks and leave `messaging` alone:
+
+```csharp
+using Headless.Hosting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+
+builder.Services.ConfigureHeadlessHealthCheck("messaging-broker", o => o.FailureStatus = HealthStatus.Degraded);
+builder.Services.ConfigureHeadlessHealthCheck("messaging-nats", o => o.FailureStatus = HealthStatus.Degraded); // UseNats only
+```
+
+On NATS, set both: the `messaging-nats` ping fails readiness during the same outage otherwise. The storage probe runs a query rather than only opening a connection, because a pooled open can return an idle connection without a round trip and would report a stopped database as reachable. The in-memory storage and transport contribute no storage or broker probe.
 
 ### Broker reachability
 
-The `messaging` check does not ping the broker (only NATS adds its own `messaging-nats` probe). It judges reachability from the receive and send outcomes the host already observes:
+The `messaging-broker` check does not ping the broker (only NATS adds its own `messaging-nats` probe). It judges reachability from the receive and send outcomes the host already observes:
 
 - **Unreachable** after 3 broker failures in a row with no success between them. A failure is a consumer client that cannot connect or that reports a lost connection, a transport receive that fails because the broker cannot be reached, a dispatcher send whose transport returns `OperateResult.BrokerUnreachable` (or throws a socket, I/O, HTTP, or timeout failure), or a send that hits the publish timeout. One failed receive or send is often a blip the client retries through, so readiness does not follow it.
 - **A refused message never counts.** A send the broker answered with a refusal, such as a missing SNS topic or Service Bus entity, a RabbitMQ exchange that does not exist, a Kafka or NATS message over the size limit, or a NATS publish no stream acknowledged, returns a plain `OperateResult.Failed`. It fails that message's attempt and leaves reachability alone, so one bad outbox row cannot take a host out of readiness.
@@ -3194,7 +3207,7 @@ Registers the Kafka transport, the shared producer, the consumer factory, and pr
 - Consumer hatch: `Tune(identity, c => c.UseNats(nats => ...))` takes `Sharded()`, needed only when the producer shards a message this host declares without `SubjectShard(...)`, and the consumer's JetStream limits `AckWait(...)`, `MaxAckPending(...)`, `MaxDeliver(...)`, and the opt-in `InactiveThreshold(...)`. A later `UseNats(...)` for the same consumer replaces the earlier one's NATS settings, so set them in one call.
 - Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
 - Request/reply over a core NATS subscription on `headless.reply.{32 hex}`, outside JetStream; the address survives reconnects. Keep JetStream streams off `headless.reply.>`. See [Request/reply](#requestreply).
-- Contributes the `messaging-nats` readiness health check (tags `ready`, `headless`, `messaging`), which sends a NATS `PING` on a pooled connection. See [Health checks](utilities.md#health-checks).
+- Contributes the `messaging-nats` readiness health check (tags `ready`, `headless`, `messaging`), which sends a NATS `PING` on a pooled connection. It fails after 5 seconds without an answer: a ping on a connection that lost the server waits for the client's reconnect, which does not end while the server is down. See [Health checks](utilities.md#health-checks).
 
 ### Design constraints
 
