@@ -180,7 +180,8 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
 
     // Returns the same instance, and allocates nothing, when no message in the chain matched. Only the messages are
     // scanned: rendering ToString would format every stack trace on each logged exception, which the provider then
-    // repeats. The stand-in masks its full text, stack traces included, only when a provider reads it.
+    // repeats. A match yields a copy of the original type, so error trackers keep its type and stack frames; the
+    // stand-in is the fallback when the runtime cannot be copied or the copy's message would still match.
     private Exception _ScrubException(Exception exception, LogLevel logLevel)
     {
         var message = exception.Message;
@@ -225,6 +226,26 @@ internal sealed class TextScrubbingLogger(ILogger inner, LogTextRedactorRegistra
             { InnerException: { } unchanged } => [unchanged],
             _ => [],
         };
+
+        if (
+            ExceptionCopier.TryGetOwnMessage(exception, out var ownMessage)
+            && ExceptionCopier.TryCopy(
+                exception,
+                ownMessage is null ? null : _Scrub(ownMessage, logLevel),
+                inners,
+                out var copy
+            )
+        )
+        {
+            // A subclass can build Message from fields of its own, which the copy does not rewrite, so the copy is
+            // used only when its message no longer matches.
+            var copiedMessage = copy.Message;
+
+            if (string.Equals(_Scrub(copiedMessage, logLevel), copiedMessage, StringComparison.Ordinal))
+            {
+                return copy;
+            }
+        }
 
         return new RedactedException(exception, maskedMessage, inners, text => _Scrub(text, logLevel));
     }

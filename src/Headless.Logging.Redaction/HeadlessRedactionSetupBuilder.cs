@@ -98,7 +98,7 @@ public sealed class HeadlessRedactionSetupBuilder
     /// <remarks>
     /// The pattern is compiled culture-invariant with a 100 ms match timeout. A timed-out match replaces the whole
     /// text, so a slow match never lets the value through. A logged exception whose message, or an inner
-    /// exception's, matches reaches providers as a <see cref="RedactedException"/>.
+    /// exception's, matches reaches providers as a masked copy of the same type.
     /// </remarks>
     /// <param name="pattern">The shape to mask, for example <c>@"\b\d{14}\b"</c>.</param>
     /// <param name="replacement">The text that replaces each match.</param>
@@ -125,7 +125,7 @@ public sealed class HeadlessRedactionSetupBuilder
     /// <remarks>
     /// Give the pattern a match timeout, because it runs on every scanned entry: a timed-out match replaces the whole
     /// text. A logged exception whose message, or an inner exception's, matches reaches
-    /// providers as a <see cref="RedactedException"/>.
+    /// providers as a masked copy of the same type.
     /// </remarks>
     /// <param name="pattern">The shape to mask.</param>
     /// <param name="replacement">The text that replaces each match.</param>

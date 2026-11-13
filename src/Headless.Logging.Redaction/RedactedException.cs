@@ -6,17 +6,20 @@ using Headless.Checks;
 namespace Headless.Logging;
 
 /// <summary>
-/// The stand-in log providers receive instead of an exception whose message, or an inner exception's message, an
-/// <see cref="ILogTextRedactor"/> masked.
+/// The stand-in log providers receive for an exception whose message an <see cref="ILogTextRedactor"/> matched, when a
+/// masked copy of the exception's own type is not possible.
 /// </summary>
 /// <remarks>
 /// <para>
-/// An exception cannot be changed in place without changing it for the code that caught it, so the redacting logger
-/// hands providers this copy instead. <see cref="ToString"/> returns the original's full text, masked: the original
-/// type name, message, every inner exception, and the stack traces, in the original's own format. <see cref="Message"/>
-/// and <see cref="StackTrace"/> return the original's, masked. <see cref="Exception.InnerException"/> and
-/// <see cref="InnerExceptions"/> hold the original's inner exceptions, each replaced by its own stand-in when its
-/// messages matched.
+/// The redacting logger first copies the exception, keeping its type and stack frames, and masks the copy's messages.
+/// It falls back to this stand-in when the type builds <see cref="Exception.Message"/> from fields of its own, so the
+/// copy would still carry the match, or when the runtime's exception fields are not where it expects them.
+/// </para>
+/// <para>
+/// <see cref="ToString"/> returns the original's full text, masked: the original type name, message, every inner
+/// exception, and the stack traces, in the original's own format. <see cref="Message"/> and <see cref="StackTrace"/>
+/// return the original's, masked. <see cref="Exception.InnerException"/> and <see cref="InnerExceptions"/> hold the
+/// original's inner exceptions, each replaced by its masked copy when its messages matched.
 /// </para>
 /// <para>
 /// <see cref="ToString"/> and <see cref="StackTrace"/> are rendered and masked the first time a provider reads them,
@@ -25,8 +28,7 @@ namespace Headless.Logging;
 /// <para>
 /// A provider that reports <see cref="object.GetType"/> sees this type; <see cref="OriginalTypeName"/> names the
 /// original. <see cref="Exception.TargetSite"/> is <see langword="null"/>, and <see cref="Data"/> holds the original's
-/// entries unscanned. Only an exception whose messages matched is replaced; any other reaches providers as the same
-/// object.
+/// entries unscanned.
 /// </para>
 /// </remarks>
 [PublicAPI]

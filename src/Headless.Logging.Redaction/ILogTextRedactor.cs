@@ -17,8 +17,9 @@ namespace Headless.Logging;
 /// Register an implementation with <c>AddHeadlessRedaction(setup =&gt; setup.MaskText(redactor, scope))</c>, which can
 /// limit it to some categories and levels; one registered directly as an <see cref="ILogTextRedactor"/> singleton scans
 /// every entry. Nothing is scanned until one is registered. A logged exception is scanned in its
-/// <see cref="Exception.Message"/> and every inner exception's; when one matches, providers receive a
-/// <see cref="RedactedException"/> whose full text, stack traces included, is masked. Text only in a stack trace or a
+/// <see cref="Exception.Message"/> and every inner exception's; when one matches, providers receive a copy of the
+/// exception, of the same type and with the same stack frames, whose messages are masked, or a
+/// <see cref="RedactedException"/> when such a copy cannot be masked. Text only in a stack trace or a
 /// <see cref="Exception.ToString"/> override is not looked for, because rendering it would cost every logged exception. A non-string value is scanned in its invariant text
 /// form and replaced by its masked text only when that text matches; booleans, GUIDs, enums, and date and time values
 /// are not scanned, the members of a destructured <c>{@Value}</c> are not either.
