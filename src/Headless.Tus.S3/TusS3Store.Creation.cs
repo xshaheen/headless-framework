@@ -56,6 +56,8 @@ public sealed partial class TusS3Store
         CancellationToken cancellationToken
     )
     {
+        var keys = _Keys();
+
         try
         {
             _EnsureValidMetadata(metadata);
@@ -69,7 +71,7 @@ public sealed partial class TusS3Store
             {
                 // The finished object goes first: a record without its object would read as a completed upload whose
                 // content is missing.
-                await _PutFinishedObjectAsync(fileId, metadata, [], 0, cancellationToken).ConfigureAwait(false);
+                await _PutFinishedObjectAsync(keys, fileId, metadata, [], 0, cancellationToken).ConfigureAwait(false);
 
                 var record = new TusS3CompletedRecord
                 {
@@ -78,7 +80,9 @@ public sealed partial class TusS3Store
                     Concat = concat,
                 };
 
-                await _stateStore.CreateCompletedRecordAsync(fileId, record, cancellationToken).ConfigureAwait(false);
+                await _stateStore
+                    .CreateCompletedRecordAsync(keys, fileId, record, cancellationToken)
+                    .ConfigureAwait(false);
             }
             else
             {
@@ -90,7 +94,7 @@ public sealed partial class TusS3Store
                     Concat = concat,
                 };
 
-                await _stateStore.CreateAsync(fileId, state, cancellationToken).ConfigureAwait(false);
+                await _stateStore.CreateAsync(keys, fileId, state, cancellationToken).ConfigureAwait(false);
             }
 
             _logger.LogS3FileCreated(fileId, uploadLength);

@@ -39,19 +39,20 @@ public sealed partial class TusS3Store
     {
         Argument.IsNotNull(stream);
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
         try
         {
-            var upload = await _LoadForAppendAsync(fileId, cancellationToken).ConfigureAwait(false);
+            var upload = await _LoadForAppendAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
             if (!_AcceptsBytes(upload))
             {
                 var bodyBytes = await _DrainAsync(stream, cancellationToken).ConfigureAwait(false);
 
-                return await _AppendToFullUploadAsync(fileId, upload, bodyBytes).ConfigureAwait(false);
+                return await _AppendToFullUploadAsync(keys, fileId, upload, bodyBytes).ConfigureAwait(false);
             }
 
-            await using var writer = await _BeginAppendAsync(fileId, upload).ConfigureAwait(false);
+            await using var writer = await _BeginAppendAsync(keys, fileId, upload).ConfigureAwait(false);
 
             while (true)
             {
@@ -89,7 +90,7 @@ public sealed partial class TusS3Store
                 }
             }
 
-            return await _CommitAppendAsync(fileId, writer).ConfigureAwait(false);
+            return await _CommitAppendAsync(keys, fileId, writer).ConfigureAwait(false);
         }
         catch (Exception e)
         {

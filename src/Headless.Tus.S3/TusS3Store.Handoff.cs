@@ -25,8 +25,9 @@ public sealed partial class TusS3Store : ITusHandoffStore
     public async Task<TusHandoffState> GetHandoffStateAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        return await _stateStore.ReadHandoffStateAsync(fileId, cancellationToken).ConfigureAwait(false);
+        return await _stateStore.ReadHandoffStateAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -45,8 +46,9 @@ public sealed partial class TusS3Store : ITusHandoffStore
     public async Task MarkHandedOffAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
         if (upload is null)
         {
@@ -62,7 +64,7 @@ public sealed partial class TusS3Store : ITusHandoffStore
             );
         }
 
-        await _stateStore.MarkHandedOffAsync(fileId, cancellationToken).ConfigureAwait(false);
+        await _stateStore.MarkHandedOffAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
         _logger.LogS3UploadHandedOff(fileId);
     }
 }

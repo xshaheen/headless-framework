@@ -424,6 +424,7 @@ public sealed class TenantScopedBlobStorageTests : TestBase
     [InlineData("é")]
     [InlineData("Acme")]
     [InlineData("0190C7A2-7A5E-7B3C-9F2E-1D4C5B6A7E8F")]
+    [InlineData("acme\n")]
     public async Task should_refuse_a_tenant_id_that_is_not_one_safe_path_segment(string tenantId)
     {
         // given

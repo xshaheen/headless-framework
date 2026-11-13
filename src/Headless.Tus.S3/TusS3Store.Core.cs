@@ -26,8 +26,9 @@ public sealed partial class TusS3Store
     public async Task<bool> FileExistAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
         if (upload is null)
         {
@@ -67,8 +68,9 @@ public sealed partial class TusS3Store
     public async Task<long?> GetUploadLengthAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
         if (upload?.Completed is { } completed)
         {
@@ -99,8 +101,9 @@ public sealed partial class TusS3Store
     public async Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
         if (upload?.Completed is { } completed)
         {
@@ -127,8 +130,9 @@ public sealed partial class TusS3Store
     public async Task<string?> GetUploadMetadataAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
         return upload?.Completed?.Metadata ?? upload?.State?.Metadata;
     }
@@ -145,8 +149,9 @@ public sealed partial class TusS3Store
     public async Task<FileConcat?> GetUploadConcatAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
         var concat = upload?.Completed?.Concat ?? upload?.State?.Concat;
 
         return concat?.Kind switch
@@ -173,8 +178,9 @@ public sealed partial class TusS3Store
     public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
         return upload?.State is { Status: not (TusS3UploadStatus.Completing or TusS3UploadStatus.Committing) } state
             ? state.ExpiresAt
@@ -201,12 +207,13 @@ public sealed partial class TusS3Store
     public async Task SetExpirationAsync(string fileId, DateTimeOffset expires, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
         try
         {
             for (var attempt = 1; ; attempt++)
             {
-                var upload = await _stateStore.LoadAsync(fileId, CancellationToken.None).ConfigureAwait(false);
+                var upload = await _stateStore.LoadAsync(keys, fileId, CancellationToken.None).ConfigureAwait(false);
 
                 if (upload?.State is not { Status: TusS3UploadStatus.Active } state)
                 {
@@ -222,7 +229,7 @@ public sealed partial class TusS3Store
 
                 try
                 {
-                    await _stateStore.UpdateAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
+                    await _stateStore.UpdateAsync(keys, fileId, upload, CancellationToken.None).ConfigureAwait(false);
 
                     break;
                 }

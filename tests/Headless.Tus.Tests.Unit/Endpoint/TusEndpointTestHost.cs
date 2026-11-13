@@ -47,6 +47,15 @@ internal sealed class TusEndpointTestHostSetup
     /// </summary>
     public bool RegisterCurrentTenant { get; init; }
 
+    /// <summary>
+    /// The <c>AddHeadlessTenancy</c> callback, for a scenario about the application's tenancy setup. Left unset, the
+    /// host calls no tenancy setup.
+    /// </summary>
+    public Action<HeadlessTenancyBuilder>? ConfigureTenancy { get; init; }
+
+    /// <summary>Runs <see cref="ConfigureTenancy"/> before <c>AddHeadlessTus</c> instead of after it.</summary>
+    public bool TenancyBeforeTus { get; init; }
+
     /// <summary>Middleware that runs before the mapped endpoint.</summary>
     public Action<IApplicationBuilder>? ConfigureMiddleware { get; init; }
 
@@ -147,7 +156,17 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
                 builder.WebHost.UseTestServer();
             }
 
+            if (setup is { ConfigureTenancy: { } tenancyFirst, TenancyBeforeTus: true })
+            {
+                builder.AddHeadlessTenancy(tenancyFirst);
+            }
+
             builder.Services.AddHeadlessTus(tus => setup.ConfigureTus(tus, store));
+
+            if (setup is { ConfigureTenancy: { } tenancyLast, TenancyBeforeTus: false })
+            {
+                builder.AddHeadlessTenancy(tenancyLast);
+            }
 
             if (setup.RegisterCurrentUser)
             {

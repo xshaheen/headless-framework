@@ -28,15 +28,16 @@ public sealed partial class TusS3Store
     public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
         try
         {
-            var workingSet = await _ListWorkingSetAsync(fileId, cancellationToken).ConfigureAwait(false);
+            var workingSet = await _ListWorkingSetAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
             // Every multipart upload on the key, not only the recorded one: a crashed or stale writer can leave one the
             // state never recorded, and it would otherwise hold its parts until the provider's abort rule.
-            await _AbortMultipartUploadsOnFinishedKeyAsync(fileId, cancellationToken).ConfigureAwait(false);
-            await _DeleteUploadObjectsAsync(fileId, workingSet, cancellationToken).ConfigureAwait(false);
+            await _AbortMultipartUploadsOnFinishedKeyAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
+            await _DeleteUploadObjectsAsync(keys, fileId, workingSet, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -46,32 +47,40 @@ public sealed partial class TusS3Store
         }
         finally
         {
-            _stateStore.Forget(fileId);
+            _stateStore.Forget(keys, fileId);
         }
 
         _logger.LogS3FileDeleted(fileId);
     }
 
     /// <summary>The keys of every object under the upload's working set, its state object included.</summary>
-    private async Task<List<string>> _ListWorkingSetAsync(string fileId, CancellationToken cancellationToken)
+    private async Task<List<string>> _ListWorkingSetAsync(
+        TusS3Keys keys,
+        string fileId,
+        CancellationToken cancellationToken
+    )
     {
-        var keys = new List<string>();
-        var request = new ListObjectsV2Request { BucketName = _options.Bucket, Prefix = _keys.WorkingSet(fileId) };
+        var objectKeys = new List<string>();
+        var request = new ListObjectsV2Request { BucketName = _options.Bucket, Prefix = keys.WorkingSet(fileId) };
         ListObjectsV2Response response;
 
         do
         {
             response = await _s3.ListObjectsV2Async(request, cancellationToken).ConfigureAwait(false);
-            keys.AddRange((response.S3Objects ?? []).Select(o => o.Key));
+            objectKeys.AddRange((response.S3Objects ?? []).Select(o => o.Key));
             request.ContinuationToken = response.NextContinuationToken;
         } while (response.IsTruncated is true);
 
-        return keys;
+        return objectKeys;
     }
 
-    private async Task _AbortMultipartUploadsOnFinishedKeyAsync(string fileId, CancellationToken cancellationToken)
+    private async Task _AbortMultipartUploadsOnFinishedKeyAsync(
+        TusS3Keys keys,
+        string fileId,
+        CancellationToken cancellationToken
+    )
     {
-        var finishedKey = _keys.FinishedObject(fileId);
+        var finishedKey = keys.FinishedObject(fileId);
         await foreach (
             var upload in TusS3Requests
                 .ListMultipartUploadsAsync(_s3, _options.Bucket, finishedKey, cancellationToken)
@@ -81,7 +90,7 @@ public sealed partial class TusS3Store
             // The prefix also matches longer keys, which belong to other uploads.
             if (string.Equals(upload.Key, finishedKey, StringComparison.Ordinal))
             {
-                await _AbortMultipartUploadIfExistsAsync(fileId, upload.UploadId, cancellationToken)
+                await _AbortMultipartUploadIfExistsAsync(keys, fileId, upload.UploadId, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -89,6 +98,7 @@ public sealed partial class TusS3Store
 
     /// <summary>Aborts one multipart upload of the file, treating one that no longer exists as already aborted.</summary>
     private async Task _AbortMultipartUploadIfExistsAsync(
+        TusS3Keys keys,
         string fileId,
         string uploadId,
         CancellationToken cancellationToken
@@ -99,7 +109,7 @@ public sealed partial class TusS3Store
             var request = new AbortMultipartUploadRequest
             {
                 BucketName = _options.Bucket,
-                Key = _keys.FinishedObject(fileId),
+                Key = keys.FinishedObject(fileId),
                 UploadId = uploadId,
             };
 
@@ -116,21 +126,22 @@ public sealed partial class TusS3Store
     /// set, then its state object last.
     /// </summary>
     private async Task _DeleteUploadObjectsAsync(
+        TusS3Keys keys,
         string fileId,
         List<string> workingSet,
         CancellationToken cancellationToken
     )
     {
-        var infoKey = _keys.Info(fileId);
-        List<string> keys =
+        var infoKey = keys.Info(fileId);
+        List<string> objectKeys =
         [
-            _keys.FinishedObject(fileId),
-            _keys.CompletedRecord(fileId),
-            _keys.HandedOffMark(fileId),
+            keys.FinishedObject(fileId),
+            keys.CompletedRecord(fileId),
+            keys.HandedOffMark(fileId),
             .. workingSet.Where(key => !string.Equals(key, infoKey, StringComparison.Ordinal)),
         ];
 
-        await _DeleteObjectKeysAsync(keys, cancellationToken).ConfigureAwait(false);
+        await _DeleteObjectKeysAsync(objectKeys, cancellationToken).ConfigureAwait(false);
 
         if (workingSet.Contains(infoKey, StringComparer.Ordinal))
         {

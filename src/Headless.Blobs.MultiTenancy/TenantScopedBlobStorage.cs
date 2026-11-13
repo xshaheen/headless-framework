@@ -327,11 +327,9 @@ internal sealed partial class TenantBlobScope(
 
     private static string _TenantSegment(string tenantId)
     {
-        // An allow-list rather than a deny-list: a segment the filesystem-like normalizers would strip or split
-        // ('a:b' becomes 'ab', 'a/b' becomes two segments) would land one tenant inside another tenant's prefix.
-        // Lowercase only, because a FileSystem store on a case-insensitive disk (macOS, Windows) would put 'Acme'
-        // and 'acme' in one directory; folding the case instead would merge the two tenants just the same.
-        if (!TenantSegmentRegex.IsMatch(tenantId) || BlobStorageHelpers.HasSidecarSegment(tenantId))
+        // The rule every tenant-scoped storage feature shares, then the one name blob storage reserves for itself:
+        // no segment of a blob path may end in the metadata sidecar suffix.
+        if (!TenantStorageSegment.IsValid(tenantId) || BlobStorageHelpers.HasSidecarSegment(tenantId))
         {
             throw new InvalidOperationException(
                 "Tenant-scoped blob storage cannot use this tenant id as a path segment. A tenant id must start and "
@@ -375,9 +373,6 @@ internal sealed partial class TenantBlobScope(
 
         return container;
     }
-
-    [GeneratedRegex("^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$", RegexOptions.CultureInvariant, 100)]
-    private static partial Regex TenantSegmentRegex { get; }
 
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.CultureInvariant, 100)]
     private static partial Regex TenantContainerRegex { get; }

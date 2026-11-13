@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -48,6 +49,16 @@ internal sealed partial class TusUploadAuthorizer(
         if (context.Intent == IntentType.CreateFile)
         {
             _AuthorizeCreate(context, caller);
+
+            return;
+        }
+
+        // With uploads scoped by tenant every upload belongs to a tenant, so a caller with none, or with one no
+        // upload can be stored under, has no upload to find. The store is not asked: a store that keeps uploads
+        // per tenant refuses to look outside one, and that refusal would read as a store failure.
+        if (tenantScoping.Value.Enabled && !TenantStorageSegment.IsValid(caller.TenantId))
+        {
+            _FailAsNotFound(context);
 
             return;
         }
@@ -108,9 +119,23 @@ internal sealed partial class TusUploadAuthorizer(
             return;
         }
 
-        if (caller.TenantId is null && tenantScoping.Value.Enabled)
+        if (!tenantScoping.Value.Enabled)
+        {
+            return;
+        }
+
+        if (caller.TenantId is null)
         {
             context.FailRequest(HttpStatusCode.Forbidden, "The request has no tenant.");
+
+            return;
+        }
+
+        // A store that keeps uploads per tenant would refuse the id as a path segment after tusdotnet has already
+        // run the create checks, and that refusal would surface as a server error.
+        if (!TenantStorageSegment.IsValid(caller.TenantId))
+        {
+            context.FailRequest(HttpStatusCode.Forbidden, "The request's tenant id cannot be used to store uploads.");
         }
     }
 

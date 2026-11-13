@@ -25,7 +25,7 @@ public sealed class TusS3PartWriterTests : TestBase
     private readonly TusS3StoreOptions _options = new() { Bucket = "bucket", Prefix = "uploads/" };
     private readonly TusS3Keys _keys = new("uploads/");
 
-    private TusS3StateStore _StateStore => new(_s3.Client, _options, _keys, new TusS3RequestMemo(null), Logger);
+    private TusS3StateStore _StateStore => new(_s3.Client, _options, new TusS3RequestMemo(null), Logger);
 
     [Fact]
     public async Task should_store_a_body_below_one_part_as_one_segment_without_reading_anything_back()
@@ -368,8 +368,13 @@ public sealed class TusS3PartWriterTests : TestBase
     {
         // given - this request read the state, then another request wrote it
         await _SeedAsync(new TusS3UploadState { PartSize = _PartSize, UploadLength = 100 });
-        var view = await _StateStore.LoadAsync(_FileId, AbortToken);
-        await _StateStore.UpdateAsync(_FileId, (await _StateStore.LoadAsync(_FileId, AbortToken))!, AbortToken);
+        var view = await _StateStore.LoadAsync(_keys, _FileId, AbortToken);
+        await _StateStore.UpdateAsync(
+            _keys,
+            _FileId,
+            (await _StateStore.LoadAsync(_keys, _FileId, AbortToken))!,
+            AbortToken
+        );
         _s3.ClearRequests();
 
         // when
@@ -450,18 +455,17 @@ public sealed class TusS3PartWriterTests : TestBase
         return new TusS3AppendServices(
             _s3.Client,
             _options,
-            _keys,
             _StateStore,
             _pool,
             Logger,
             TimeProvider.System,
-            async (fileId, _, cancellationToken) =>
+            async (keys, fileId, _, cancellationToken) =>
                 (
                     await _s3.Client.InitiateMultipartUploadAsync(
                         new InitiateMultipartUploadRequest
                         {
                             BucketName = _options.Bucket,
-                            Key = _keys.FinishedObject(fileId),
+                            Key = keys.FinishedObject(fileId),
                         },
                         cancellationToken
                     )
@@ -471,17 +475,17 @@ public sealed class TusS3PartWriterTests : TestBase
 
     private async Task _SeedAsync(TusS3UploadState state)
     {
-        await _StateStore.CreateAsync(_FileId, state, AbortToken);
+        await _StateStore.CreateAsync(_keys, _FileId, state, AbortToken);
         _s3.ClearRequests();
     }
 
     // Drives the writer as the store's append overloads do, in reads of 7 bytes so reads straddle part boundaries.
     private async Task<long> _AppendAsync(byte[] body, TusS3LoadedUpload? view = null)
     {
-        view ??= await _StateStore.LoadAsync(_FileId, AbortToken);
+        view ??= await _StateStore.LoadAsync(_keys, _FileId, AbortToken);
         _s3.ClearRequests();
 
-        await using var writer = new TusS3PartWriter(_Services(), _FileId, view!);
+        await using var writer = new TusS3PartWriter(_Services(), _keys, _FileId, view!);
         await writer.StartAsync();
 
         for (var position = 0; position < body.Length; )

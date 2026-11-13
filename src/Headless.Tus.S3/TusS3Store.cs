@@ -59,7 +59,8 @@ public sealed partial class TusS3Store
     private readonly ITusS3ObjectHeadersProvider _objectHeadersProvider;
     private readonly ILogger<TusS3Store> _logger;
     private readonly TimeProvider _timeProvider;
-    private readonly TusS3Keys _keys;
+    private readonly TusS3Keys _unscopedKeys;
+    private readonly TusTenantScope? _tenantScope;
     private readonly TusS3StateStore _stateStore;
     private readonly TusS3AppendServices _appendServices;
 
@@ -81,6 +82,11 @@ public sealed partial class TusS3Store
     /// optional accessor that lets the store read an upload's state once per tus request; without it the store reads
     /// the state on every call and stays correct
     /// </param>
+    /// <remarks>
+    /// A store constructed here keeps every upload outside any tenant, whatever the application's tenancy setup
+    /// says. Only the store <c>UseS3</c> registers keeps each tenant's uploads under a path segment of their own
+    /// once the application calls <c>tenancy.Tus(t => t.ScopeByTenant())</c>.
+    /// </remarks>
     /// <exception cref="ValidationException">The options are invalid.</exception>
     public TusS3Store(
         IAmazonS3 s3,
@@ -90,6 +96,31 @@ public sealed partial class TusS3Store
         ILoggerFactory? loggerFactory = null,
         TimeProvider? timeProvider = null,
         IHttpContextAccessor? httpContextAccessor = null
+    )
+        : this(
+            s3,
+            options,
+            tenantScope: null,
+            objectHeadersProvider,
+            fileIdProvider,
+            loggerFactory,
+            timeProvider,
+            httpContextAccessor
+        ) { }
+
+    /// <summary>
+    /// Initializes the store <c>UseS3</c> registers, which asks <paramref name="tenantScope"/> on every call which
+    /// tenant's uploads the call is about.
+    /// </summary>
+    internal TusS3Store(
+        IAmazonS3 s3,
+        TusS3StoreOptions options,
+        TusTenantScope? tenantScope,
+        ITusS3ObjectHeadersProvider? objectHeadersProvider,
+        ITusFileIdProvider? fileIdProvider,
+        ILoggerFactory? loggerFactory,
+        TimeProvider? timeProvider,
+        IHttpContextAccessor? httpContextAccessor
     )
     {
         Argument.IsNotNull(s3);
@@ -104,12 +135,12 @@ public sealed partial class TusS3Store
         _objectHeadersProvider = objectHeadersProvider ?? new DefaultTusS3ObjectHeadersProvider();
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<TusS3Store>();
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _keys = new TusS3Keys(options.NormalizedPrefix);
-        _stateStore = new TusS3StateStore(s3, options, _keys, new TusS3RequestMemo(httpContextAccessor), _logger);
+        _unscopedKeys = new TusS3Keys(options.NormalizedPrefix);
+        _tenantScope = tenantScope;
+        _stateStore = new TusS3StateStore(s3, options, new TusS3RequestMemo(httpContextAccessor), _logger);
         _appendServices = new TusS3AppendServices(
             s3,
             options,
-            _keys,
             _stateStore,
             // A pool of its own, sized to the largest part, so whole parts are reused across requests instead of
             // allocated on the large object heap per PATCH; the shared pool caps its arrays far below a part.
@@ -118,6 +149,20 @@ public sealed partial class TusS3Store
             _timeProvider,
             _CreateMultipartUploadAsync
         );
+    }
+
+    /// <summary>
+    /// The keys of the uploads the current call is about: the ambient tenant's when uploads are scoped by tenant,
+    /// otherwise the ones kept outside any tenant. Asked once per call, because the store is one instance for the
+    /// host and the tenant is the caller's.
+    /// </summary>
+    /// <exception cref="Headless.MultiTenancy.MissingTenantContextException">
+    /// Uploads are scoped by tenant and no tenant is ambient.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The ambient tenant id cannot be used as a path segment.</exception>
+    private TusS3Keys _Keys()
+    {
+        return _tenantScope?.GetSegment() is { } tenant ? _unscopedKeys.ForTenant(tenant) : _unscopedKeys;
     }
 
     /// <summary>
@@ -137,9 +182,13 @@ public sealed partial class TusS3Store
 
     /// <summary>Loads the upload a PATCH appends to.</summary>
     /// <exception cref="TusStoreException">The upload does not exist or is gone.</exception>
-    private async Task<TusS3LoadedUpload> _LoadForAppendAsync(string fileId, CancellationToken cancellationToken)
+    private async Task<TusS3LoadedUpload> _LoadForAppendAsync(
+        TusS3Keys keys,
+        string fileId,
+        CancellationToken cancellationToken
+    )
     {
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
         if (
             upload is null
@@ -160,9 +209,9 @@ public sealed partial class TusS3Store
     }
 
     /// <summary>Prepares the writer for the bytes of a PATCH to an active upload.</summary>
-    private async Task<TusS3PartWriter> _BeginAppendAsync(string fileId, TusS3LoadedUpload upload)
+    private async Task<TusS3PartWriter> _BeginAppendAsync(TusS3Keys keys, string fileId, TusS3LoadedUpload upload)
     {
-        var writer = new TusS3PartWriter(_appendServices, fileId, upload);
+        var writer = new TusS3PartWriter(_appendServices, keys, fileId, upload);
 
         try
         {
@@ -179,13 +228,13 @@ public sealed partial class TusS3Store
     }
 
     /// <summary>Commits what the writer holds, completes the upload when that was its last byte, and reports the bytes this request appended.</summary>
-    private async Task<long> _CommitAppendAsync(string fileId, TusS3PartWriter writer)
+    private async Task<long> _CommitAppendAsync(TusS3Keys keys, string fileId, TusS3PartWriter writer)
     {
         var (upload, appended) = await writer.CommitAsync().ConfigureAwait(false);
 
         if (upload.State is { Status: TusS3UploadStatus.Completing })
         {
-            await _FinishCompletionAsync(fileId, upload).ConfigureAwait(false);
+            await _FinishCompletionAsync(keys, fileId, upload).ConfigureAwait(false);
         }
 
         return appended;
@@ -203,7 +252,12 @@ public sealed partial class TusS3Store
     /// offset and raises its completion event
     /// </returns>
     /// <exception cref="TusStoreException">The upload is complete and the request still carries bytes.</exception>
-    private async Task<long> _AppendToFullUploadAsync(string fileId, TusS3LoadedUpload upload, long bodyBytes)
+    private async Task<long> _AppendToFullUploadAsync(
+        TusS3Keys keys,
+        string fileId,
+        TusS3LoadedUpload upload,
+        long bodyBytes
+    )
     {
         if (upload.State is not { } state)
         {
@@ -214,7 +268,7 @@ public sealed partial class TusS3Store
 
         // The client re-sent the PATCH whose completion failed. Its bytes are already stored, so the body is discarded
         // and only the completion runs again.
-        await _FinishCompletionAsync(fileId, upload).ConfigureAwait(false);
+        await _FinishCompletionAsync(keys, fileId, upload).ConfigureAwait(false);
 
         return state.UploadLength!.Value - (state.PreFinalOffset ?? state.Offset);
     }
@@ -223,6 +277,7 @@ public sealed partial class TusS3Store
     /// Starts the multipart upload an upload's parts go to, under the key its finished object will have.
     /// </summary>
     private async Task<string> _CreateMultipartUploadAsync(
+        TusS3Keys keys,
         string fileId,
         string? metadata,
         CancellationToken cancellationToken
@@ -231,7 +286,7 @@ public sealed partial class TusS3Store
         var request = new InitiateMultipartUploadRequest
         {
             BucketName = _options.Bucket,
-            Key = _keys.FinishedObject(fileId),
+            Key = keys.FinishedObject(fileId),
         };
 
         // The headers belong to the multipart upload; the object completing it takes them as they are now.

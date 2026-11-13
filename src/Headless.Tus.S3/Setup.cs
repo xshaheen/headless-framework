@@ -91,6 +91,9 @@ public static class SetupTusS3
         services.AddSingleton(provider => new TusS3Store(
             provider.GetRequiredService<IAmazonS3>(),
             provider.GetRequiredService<IOptions<TusS3StoreOptions>>().Value,
+            // Registered by AddHeadlessTus: the store keeps each tenant's uploads apart once the application's
+            // tenancy setup scopes uploads by tenant.
+            provider.GetRequiredService<TusTenantScope>(),
             provider.GetRequiredService<ITusS3ObjectHeadersProvider>(),
             provider.GetService<ITusFileIdProvider>(),
             provider.GetService<ILoggerFactory>(),
