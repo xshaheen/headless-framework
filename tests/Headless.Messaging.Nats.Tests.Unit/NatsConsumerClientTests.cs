@@ -174,7 +174,7 @@ public sealed class NatsConsumerClientTests : TestBase
     [Fact]
     public void should_name_one_bus_durable_per_consumer_identity()
     {
-        NatsPhysicalAddress.BusDurable("payments").Should().Be("bus-payments");
+        NatsPhysicalAddress.BusDurable("payments").Should().Be("bus_payments");
     }
 
     [Fact]
@@ -182,8 +182,8 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         var name = NatsPhysicalAddress.BusDurable("billing.invoice-projection");
 
-        name.Should().StartWith("bus-billing-invoice-projection-");
-        name.Should().HaveLength("bus-billing-invoice-projection-".Length + 12);
+        name.Should().StartWith("bus_billing-invoice-projection-");
+        name.Should().HaveLength("bus_billing-invoice-projection-".Length + 12);
         name.IndexOfAny([' ', '.', '*', '>', '/', '\\']).Should().Be(-1);
         NatsPhysicalAddress.BusDurable("billing.invoice-projection").Should().Be(name);
         NatsPhysicalAddress
@@ -198,7 +198,7 @@ public sealed class NatsConsumerClientTests : TestBase
         var name = NatsPhysicalAddress.BusDurable("billing." + new string('a', 260));
 
         name.Should().HaveLength(255);
-        name.Should().StartWith("bus-billing-aaa");
+        name.Should().StartWith("bus_billing-aaa");
     }
 
     [Fact]
@@ -213,6 +213,18 @@ public sealed class NatsConsumerClientTests : TestBase
             .LegacyBusDurable("billing." + new string('a', 190), "orders." + new string('x', 60))
             .Should()
             .HaveLength(255);
+    }
+
+    [Theory]
+    [InlineData("notifications", "email")]
+    [InlineData("billing.invoice", "orders.created")]
+    public void should_never_name_a_bus_durable_like_another_identitys_legacy_durable(string identity, string message)
+    {
+        // The hand-off deletes the legacy names, so another identity's durable must never carry one of them.
+        NatsPhysicalAddress
+            .BusDurable($"{identity}-{message}")
+            .Should()
+            .NotBe(NatsPhysicalAddress.LegacyBusDurable(identity, message));
     }
 
     [Fact]

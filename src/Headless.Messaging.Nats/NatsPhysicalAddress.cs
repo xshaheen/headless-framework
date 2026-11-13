@@ -24,8 +24,13 @@ internal static class NatsPhysicalAddress
     /// of this name on each stream it reads, filtering on every subject it consumes there: one pull loop per stream
     /// keeps the stream's order across message types.
     /// </summary>
+    /// <remarks>
+    /// The underscore keeps these names apart from the <see cref="LegacyBusDurable"/> names, which all start with
+    /// <c>bus-</c>. With a dash, identity <c>a-b</c> would get the name identity <c>a</c> gave its durable for message
+    /// <c>b</c>, and the first bind of <c>a</c> would take that durable over and delete it.
+    /// </remarks>
     public static string BusDurable(string subscriptionName) =>
-        BusNameBuilder.Build($"bus-{subscriptionName}", _BusDurableRules);
+        BusNameBuilder.Build($"bus_{subscriptionName}", _BusDurableRules);
 
     /// <summary>
     /// Returns the per-subject Bus durable that releases before the per-stream <see cref="BusDurable"/> created. A

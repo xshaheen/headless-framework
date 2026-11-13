@@ -93,10 +93,17 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
         var durable = await js.GetConsumerAsync(stream, NatsPhysicalAddress.BusDurable(identity), AbortToken);
         durable.Info.Config.FilterSubjects.Should().BeEquivalentTo(names.Select(_Subject));
 
-        // and a restart binds the handed-off durable again, keeping its start position, and goes on delivering
+        // and an old replica still running during a rolling deploy recreates its per-message durable
+        await _CreateLegacyDurableAsync(js, stream, identity, names[0]);
+
+        // and a restart binds the handed-off durable again, keeping its start position, goes on delivering, and removes
+        // the recreated per-message durable
         await using var restarted = await _ListenAsync(options, identity, names);
         await _PublishAsync(names[1], "after-restart");
         (await restarted.TakeAsync(1)).Should().Equal("after-restart");
+        (await _ConsumerExistsAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable(identity, names[0])))
+            .Should()
+            .BeFalse();
     }
 
     [Fact]
@@ -297,8 +304,8 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
             return taken;
         }
 
-        // Long enough for a redelivery of anything already pulled, which the 30 s AckWait would not produce sooner, and for
-        // a replayed backlog, which the pull would hand over at once.
+        // Catches a replayed backlog, which the open pull would hand over at once. A redelivery of something already
+        // delivered waits for the 30 s AckWait, so this window does not cover one.
         public async Task ExpectNothingMoreAsync()
         {
             await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);

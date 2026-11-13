@@ -10,7 +10,7 @@ namespace Tests;
 public sealed class NatsDurableBinderTests : TestBase
 {
     private const string _Stream = "headless-bus-orders";
-    private const string _Durable = "bus-billing";
+    private const string _Durable = "bus_billing";
     private const string _LegacyCreated = "bus-billing-orders-created";
     private const string _LegacyUpdated = "bus-billing-orders-updated";
 
@@ -198,7 +198,35 @@ public sealed class NatsDurableBinderTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         await _js.DidNotReceiveWithAnyArgs().CreateConsumerAsync(default!, default!, AbortToken);
-        await _js.DidNotReceiveWithAnyArgs().DeleteConsumerAsync(default!, default!, AbortToken);
+        await _js.DidNotReceiveWithAnyArgs().GetStreamAsync(default!, default, AbortToken);
+        _warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_delete_legacy_durables_left_behind_when_binding_an_existing_bus_durable()
+    {
+        // given - an earlier hand-off created the durable but stopped before its deletes, or an old replica recreated a
+        // legacy durable during a rolling deploy
+        var existing = _Consumer(_BusConfig());
+        _js.GetConsumerAsync(_Stream, _Durable, Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<INatsJSConsumer>(existing));
+        _Legacy(_LegacyUpdated, ackFloor: 3, numPending: 5, numAckPending: 0);
+
+        // when
+        await NatsDurableBinder.BindAsync(
+            _js,
+            _Stream,
+            _BusConfig(),
+            [_LegacyCreated, _LegacyUpdated],
+            _warnings.Add,
+            AbortToken
+        );
+
+        // then - both are deleted, and the existing durable keeps its own start
+        await _js.Received(1).DeleteConsumerAsync(_Stream, _LegacyCreated, Arg.Any<CancellationToken>());
+        await _js.Received(1).DeleteConsumerAsync(_Stream, _LegacyUpdated, Arg.Any<CancellationToken>());
+        await _js.DidNotReceiveWithAnyArgs().CreateConsumerAsync(default!, default!, AbortToken);
+        _warnings.Should().BeEmpty();
     }
 
     [Fact]

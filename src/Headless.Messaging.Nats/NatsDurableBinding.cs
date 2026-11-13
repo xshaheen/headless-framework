@@ -61,8 +61,8 @@ internal static class NatsDurableBinder
     /// <summary>
     /// Binds the durable <paramref name="config"/> names. A Queue durable (no legacy durables) is created or updated as
     /// configured. A Bus durable keeps the start position it was created with, because JetStream refuses an update that
-    /// changes it; when it does not exist yet, it starts where the slowest legacy per-subject durable stopped, and those
-    /// durables are deleted.
+    /// changes it; when it does not exist yet, it starts where the slowest legacy per-subject durable stopped. Every Bus
+    /// bind then deletes the legacy durables that still exist.
     /// </summary>
     public static async Task<INatsJSConsumer> BindAsync(
         INatsJSContext js,
@@ -97,10 +97,17 @@ internal static class NatsDurableBinder
                     OptStartTime = existingConfig.OptStartTime,
                 };
 
-                return _Checked(
+                var bound = _Checked(
                     await js.CreateOrUpdateConsumerAsync(stream, kept, cancellationToken).ConfigureAwait(false),
                     kept
                 );
+
+                // Finishes a hand-off that stopped before its deletes (a crash, a refused delete) and removes a legacy
+                // durable an old replica recreated during a rolling deploy. Nothing is lost: this durable already
+                // filters on those subjects from a sequence no later than anything a legacy durable still holds.
+                await _DeleteLegacyAsync(js, stream, legacyDurables, warn, cancellationToken).ConfigureAwait(false);
+
+                return bound;
             }
 
             var start = await HandOffSequenceAsync(js, stream, legacyDurables, cancellationToken).ConfigureAwait(false);

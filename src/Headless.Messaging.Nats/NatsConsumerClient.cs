@@ -391,8 +391,8 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        // A subject loop only completes on shutdown or an unrecoverable failure. Stop its sibling
-        // loops when either happens so Task.WhenAll cannot hide the failure behind still-running subjects.
+        // A durable's loop only completes on shutdown or an unrecoverable failure. Stop its sibling
+        // loops when either happens so Task.WhenAll cannot hide the failure behind still-running durables.
         _ = await Task.WhenAny(tasks).ConfigureAwait(false);
         await listeningCts.CancelAsync().ConfigureAwait(false);
         await Task.WhenAll(tasks).ConfigureAwait(false);
