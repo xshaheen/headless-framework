@@ -1162,7 +1162,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             var js = new NatsJSContext(await fixture.GetConnectionAsync());
             var consumer = await js.GetConsumerAsync(
                 NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
-                NatsConsumerClient.BuildDurableName("progress-group", subject, MessageLane.Bus),
+                NatsPhysicalAddress.BusDurable("progress-group"),
                 AbortToken
             );
             consumer.Info.NumRedelivered.Should().Be(0);

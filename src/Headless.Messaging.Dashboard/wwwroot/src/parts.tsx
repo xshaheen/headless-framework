@@ -23,7 +23,13 @@ import {
   type HistoryItem,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
-import { DashboardApiError, refetchTopics, type CappedCount } from '@headless/dashboard-sdk/data'
+import {
+  DashboardApiError,
+  listKey,
+  refetchTopics,
+  useDashboardList,
+  type CappedCount,
+} from '@headless/dashboard-sdk/data'
 import {
   AttentionIcon,
   CancelIcon,
@@ -241,7 +247,11 @@ export function useNodeReset() {
 
   useStreamEvent('node.reset', (event) => {
     if (event.module === module.id) {
-      void refetchTopics(client, [topicOf('published', event.node), topicOf('received', event.node)])
+      void refetchTopics(client, [
+        topicOf('published', event.node),
+        topicOf('received', event.node),
+        topicOf('circuit', event.node),
+      ])
       void client.invalidateQueries({ queryKey: ['messaging', 'counts', event.node] })
     }
   })
@@ -411,7 +421,10 @@ export function lastMinuteRate(values: readonly (number | null)[]) {
   return measured.length > 0 ? measured.reduce((sum, value) => sum + value, 0) / measured.length : undefined
 }
 
-/** The node's throughput, second by second for five minutes; the server measures it in memory, so it is polled. */
+/**
+ * The node's throughput, second by second for five minutes. It is polled: the node measures a new second whether or
+ * not anything changed, so the stream has no change to send for it.
+ */
 export function useRealtime() {
   const { api } = useDashboard()
   const { node } = useNode()
@@ -911,6 +924,8 @@ export interface MessagingCircuit {
   openedAt?: string | null
   /** A .NET time span, `hh:mm:ss`, while the circuit is open. */
   estimatedRemainingOpenDuration?: string | null
+  /** The version of the circuit's latest change: the list serves it, and a stream change that patches the row replaces it. */
+  version?: string
 }
 
 /** The consumers the node registers, as its host manifest describes them; they change only with a deploy. */
@@ -932,23 +947,49 @@ export function useConsumers() {
   })
 }
 
-/** A consumer's circuits on the node the views read; the breaker keeps its state in memory, so it is polled. */
+/** How often the time left on an open circuit is read again; no change carries the seconds as they pass. */
+const openCircuitRefreshMs = 5_000
+
+/**
+ * A consumer's circuits on the node the views read, as a live list: the node that holds a circuit sends each change
+ * on the stream, which patches its row. Only the time left on an open circuit moves with no change behind it, so the
+ * list is read again on a timer while one is open, and never otherwise.
+ */
 export function useCircuits() {
   const { api } = useDashboard()
   const { node } = useNode()
-
-  return useQuery({
-    queryKey: ['messaging', 'circuits', node],
-    queryFn: async () =>
-      (
-        await api.request<{ items: MessagingCircuit[] }>({
-          method: 'GET',
-          path: 'messaging/circuits',
-          query: nodeQuery(node),
-        })
-      ).items,
-    refetchInterval: 5_000,
+  const client = useQueryClient()
+  const topic = topicOf('circuit', node)
+  const circuits = useDashboardList<MessagingCircuit>({
+    topic,
+    fetch: () =>
+      api.request<{ items: MessagingCircuit[] }>({
+        method: 'GET',
+        path: 'messaging/circuits',
+        query: nodeQuery(node),
+      }),
   })
+  const rows = circuits.data?.items
+  const hasOpen = rows?.some((circuit) => circuit.state === 'Open') ?? false
+
+  // A change patches a row the list holds; a circuit it does not hold yet has no row to patch, so the list is read.
+  useStreamEvent('change', (change) => {
+    if (change.topic === topic && rows && !rows.some((circuit) => circuit.id === change.id)) {
+      void client.invalidateQueries({ queryKey: listKey(topic) })
+    }
+  })
+
+  useEffect(() => {
+    if (!hasOpen) {
+      return undefined
+    }
+
+    const timer = setInterval(() => void client.invalidateQueries({ queryKey: listKey(topic) }), openCircuitRefreshMs)
+
+    return () => clearInterval(timer)
+  }, [client, hasOpen, topic])
+
+  return circuits
 }
 
 /** One store's stored work still waiting. A figure the store does not keep is missing, never zero. */

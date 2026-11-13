@@ -17,6 +17,7 @@ import {
   QueryState,
 } from '@headless/dashboard-sdk/components'
 import { FilterCombobox } from '@headless/dashboard-sdk/combobox'
+import { refetchTopics } from '@headless/dashboard-sdk/data'
 import { ConsumerIcon, OpenCircuitIcon, RefreshIcon, type IconComponent } from '@headless/dashboard-sdk/icons'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
@@ -27,6 +28,7 @@ import {
   circuitTones,
   formatSeconds,
   spanSeconds,
+  topicOf,
   useMessagingCommands,
   type MessageCommandName,
 } from '../messages.ts'
@@ -83,9 +85,9 @@ export default function ConsumersView() {
   const frame = usePageFrame({ viewId: 'messaging.consumers', rows })
   const nodeName = node || local?.name || ''
   // A circuit's link opens its consumer, as the circuit is one consumer's breaker on one node.
-  const openCircuit = circuits.data?.find((circuit) => circuit.id === frame.openId)
+  const circuitRows = circuits.data?.items ?? []
+  const openCircuit = circuitRows.find((circuit) => circuit.id === frame.openId)
   const open = rows.find((row) => row.id === (openCircuit?.consumer ?? frame.openId))
-  const circuitRows = circuits.data ?? []
 
   return (
     <PageFrame
@@ -200,11 +202,11 @@ export default function ConsumersView() {
       </QueryState>
       <Section
         label="Circuit breakers"
-        caption={circuits.data ? format.number(circuits.data.length) : undefined}
+        caption={circuits.data ? format.number(circuitRows.length) : undefined}
         description="A breaker opens after repeated failures and closes again on its own; reset one to let its consumer run now."
       >
         <QueryState query={circuits} label="Loading circuit breakers" rows={2} shape="table">
-          {(items) => <CircuitsTable circuits={items} nodeName={nodeName} />}
+          {(page) => <CircuitsTable circuits={page.items} nodeName={nodeName} />}
         </QueryState>
       </Section>
     </PageFrame>
@@ -292,6 +294,7 @@ function CircuitsTable({ circuits, nodeName }: { circuits: readonly MessagingCir
 function CircuitActions({ circuit, nodeName }: { circuit: MessagingCircuit; nodeName: string }) {
   const module = useModule()
   const client = useQueryClient()
+  const { node } = useNode()
   const commands = useMessagingCommands()
   const refusal = useAllowedActions('circuit', [circuit])
   const noun = `circuit of ${circuit.consumer}${nodeName ? ` on ${nodeName}` : ''}`
@@ -311,8 +314,8 @@ function CircuitActions({ circuit, nodeName }: { circuit: MessagingCircuit; node
         appearance="icon"
         commands={commands.all}
         disabledReason={refusal(command.id)}
-        // The breaker answers no stream topic, so its new state is read back at once rather than at the next poll.
-        onDone={() => void client.invalidateQueries({ queryKey: ['messaging', 'circuits'] })}
+        // Read back at once: another node's circuit reaches the stream only when this node next reads that node.
+        onDone={() => void refetchTopics(client, [topicOf('circuit', node)])}
       />
     ) : null
   }

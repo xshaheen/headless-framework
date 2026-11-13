@@ -67,7 +67,7 @@ internal static class PeerEndpoints
                 _AnswerAsync(
                     context,
                     async token => new PeerCursor(
-                        await module.LocalChanges.GetStartCursorAsync(token).ConfigureAwait(false)
+                        await module.PeerChanges.GetStartCursorAsync(token).ConfigureAwait(false)
                     )
                 )
         );
@@ -199,9 +199,7 @@ internal static class PeerEndpoints
 
         try
         {
-            var batch = await module
-                .LocalChanges.ReadChangesAsync(cursor, context.RequestAborted)
-                .ConfigureAwait(false);
+            var batch = await module.PeerChanges.ReadChangesAsync(cursor, context.RequestAborted).ConfigureAwait(false);
 
             return Results.Json(batch, MessagingForwarding.JsonOptions);
         }
