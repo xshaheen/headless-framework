@@ -230,13 +230,17 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
 
     private async Task<Listener> _ListenAsync(IOptions<NatsMessagingOptions> options, string identity, string[] names)
     {
-        var client = new NatsConsumerClient(identity, 0, options, _serviceProvider);
-        var listener = new Listener(client);
-        await client.ConnectAsync(AbortToken);
-        await client.SubscribeAsync(await client.FetchMessageNamesAsync(names, AbortToken), AbortToken);
-        listener.Start();
-        await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(15), AbortToken);
-        return listener;
+        var listener = new Listener(identity, options, _serviceProvider);
+        try
+        {
+            await listener.StartAsync(names);
+            return listener;
+        }
+        catch
+        {
+            await listener.DisposeAsync();
+            throw;
+        }
     }
 
     private sealed class Listener : IAsyncDisposable
@@ -247,8 +251,9 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
         private readonly ConcurrentQueue<string> _logs = new();
         private Task? _listening;
 
-        public Listener(NatsConsumerClient client)
+        public Listener(string identity, IOptions<NatsMessagingOptions> options, IServiceProvider serviceProvider)
         {
+            var client = new NatsConsumerClient(identity, 0, options, serviceProvider);
             _client = client;
             client.OnMessageCallback = async (message, sender) =>
             {
@@ -258,7 +263,13 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
             client.OnLogCallback = args => _logs.Enqueue($"{args.LogType}: {args.Reason}");
         }
 
-        public void Start() => _listening = _client.ListeningAsync(TimeSpan.FromSeconds(1), _stop.Token).AsTask();
+        public async Task StartAsync(string[] names)
+        {
+            await _client.ConnectAsync(AbortToken);
+            await _client.SubscribeAsync(await _client.FetchMessageNamesAsync(names, AbortToken), AbortToken);
+            _listening = _client.ListeningAsync(TimeSpan.FromSeconds(1), _stop.Token).AsTask();
+            await _client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(15), AbortToken);
+        }
 
         public async Task<List<string>> TakeAsync(int count)
         {

@@ -243,7 +243,7 @@ internal static class NatsDurableBinder
         }
 
         var echoed = consumer.Info?.Config.FilterSubjects;
-        if (echoed is null || !echoed.ToHashSet(StringComparer.Ordinal).SetEquals(wanted))
+        if (echoed?.ToHashSet(StringComparer.Ordinal).SetEquals(wanted) != true)
         {
             throw new InvalidOperationException(
                 $"NATS server ignored the filter subjects of consumer '{requested.Name}'. A Bus consumer of several "

@@ -124,7 +124,7 @@ public sealed class NatsDurableBinderTests : TestBase
         await NatsDurableBinder.BindAsync(_js, _Stream, config, [], _warnings.Add, AbortToken);
 
         await _js.Received(1).CreateOrUpdateConsumerAsync(_Stream, config, Arg.Any<CancellationToken>());
-        await _js.DidNotReceiveWithAnyArgs().CreateConsumerAsync(default!, default!, default);
+        await _js.DidNotReceiveWithAnyArgs().CreateConsumerAsync(default!, default!, AbortToken);
     }
 
     [Fact]
@@ -197,8 +197,8 @@ public sealed class NatsDurableBinderTests : TestBase
                 ),
                 Arg.Any<CancellationToken>()
             );
-        await _js.DidNotReceiveWithAnyArgs().CreateConsumerAsync(default!, default!, default);
-        await _js.DidNotReceiveWithAnyArgs().DeleteConsumerAsync(default!, default!, default);
+        await _js.DidNotReceiveWithAnyArgs().CreateConsumerAsync(default!, default!, AbortToken);
+        await _js.DidNotReceiveWithAnyArgs().DeleteConsumerAsync(default!, default!, AbortToken);
     }
 
     [Fact]
