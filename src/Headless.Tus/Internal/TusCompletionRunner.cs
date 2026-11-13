@@ -64,11 +64,11 @@ internal sealed partial class TusCompletionRunner(
         bool createdByThisRequest
     )
     {
-        TusUploadHandoff handoff;
+        TusUploadHandoff? handoff = null;
 
         try
         {
-            handoff = await _HandOffAsync(
+            handoff = await _DecideAsync(
                     context.HttpContext,
                     context.FileId,
                     handlerType,
@@ -76,11 +76,15 @@ internal sealed partial class TusCompletionRunner(
                     context.CancellationToken
                 )
                 .ConfigureAwait(false);
+
+            await _ApplyAsync(context.HttpContext, context.FileId, caller, handoff).ConfigureAwait(false);
         }
-        catch (Exception) when (createdByThisRequest)
+        catch (Exception) when (createdByThisRequest && !ReferenceEquals(handoff, TusUploadHandoff.Keep))
         {
             // The client never receives the URL of an upload whose creating request fails, so no later request
             // could run the handler for it: the upload would stay in the store with nobody to take or delete it.
+            // An upload the handler kept is the exception. The application already holds it, so a handoff that
+            // could not be recorded fails the request and leaves the upload where the application expects it.
             await remover.RemoveAsync(context.FileId).ConfigureAwait(false);
 
             throw;
@@ -151,7 +155,7 @@ internal sealed partial class TusCompletionRunner(
 
                 if (state == TusHandoffState.Pending)
                 {
-                    var handoff = await _HandOffAsync(
+                    var handoff = await _DecideAsync(
                             context.HttpContext,
                             fileId,
                             handlerType,
@@ -159,6 +163,8 @@ internal sealed partial class TusCompletionRunner(
                             context.CancellationToken
                         )
                         .ConfigureAwait(false);
+
+                    await _ApplyAsync(context.HttpContext, fileId, caller, handoff).ConfigureAwait(false);
 
                     refusal = handoff.Message;
                 }
@@ -241,13 +247,9 @@ internal sealed partial class TusCompletionRunner(
         };
     }
 
-    /// <summary>
-    /// Runs the handler for a complete upload and applies what it decides: a refused upload is removed at once,
-    /// and any other upload is recorded as handed off, then removed after the response when the handler asked
-    /// for that.
-    /// </summary>
+    /// <summary>Runs the handler for a complete upload.</summary>
     /// <returns>What the handler decided.</returns>
-    private async Task<TusUploadHandoff> _HandOffAsync(
+    private async Task<TusUploadHandoff> _DecideAsync(
         HttpContext httpContext,
         string fileId,
         Type handlerType,
@@ -257,13 +259,26 @@ internal sealed partial class TusCompletionRunner(
     {
         var upload = await _DescribeAsync(fileId, caller, cancellationToken).ConfigureAwait(false);
         var handler = (ITusUploadCompletedHandler)httpContext.RequestServices.GetRequiredService(handlerType);
-        var handoff = await handler.HandleAsync(upload, cancellationToken).ConfigureAwait(false);
 
+        return await handler.HandleAsync(upload, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Applies what the handler decided: a refused upload is removed at once, and any other upload is recorded as
+    /// handed off, then removed after the response when the handler asked for that.
+    /// </summary>
+    private async Task _ApplyAsync(
+        HttpContext httpContext,
+        string fileId,
+        TusUploadStamp caller,
+        TusUploadHandoff handoff
+    )
+    {
         if (handoff.IsRejected)
         {
             await remover.RemoveAsync(fileId).ConfigureAwait(false);
 
-            return handoff;
+            return;
         }
 
         if (store is ITusHandoffStore handoffStore)
@@ -279,8 +294,6 @@ internal sealed partial class TusCompletionRunner(
             // creating request reads it for its 201.
             remover.RemoveAfterResponse(httpContext, fileId, caller.TenantId);
         }
-
-        return handoff;
     }
 
     private async Task<TusCompletedUpload> _DescribeAsync(

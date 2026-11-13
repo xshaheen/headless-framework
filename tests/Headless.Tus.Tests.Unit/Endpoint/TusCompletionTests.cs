@@ -457,6 +457,75 @@ public sealed class TusCompletionTests : TestBase
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public async Task should_keep_the_upload_when_the_handler_kept_it_and_the_handoff_cannot_be_recorded_in_the_creating_request(
+        bool withData
+    )
+    {
+        // given - a handler that keeps the upload, over a store that cannot record the handoff
+        var script = new HandlerScript();
+        var setup = _Handled(script, static store => store.FailsMarks = true, useKestrel: true);
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+
+        // when
+        using var created = await _CreateCompleteAsync(host, withData);
+
+        // then - the application already holds the upload, so the failed request must not take it away
+        created.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        script.Uploads.Should().ContainSingle();
+        Directory.EnumerateFileSystemEntries(host.Directory).Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task should_delete_the_upload_when_the_handler_asked_for_that_and_the_handoff_cannot_be_recorded_in_the_creating_request()
+    {
+        // given
+        var script = new HandlerScript { Run = static (_, _) => ValueTask.FromResult(TusUploadHandoff.Delete) };
+        var setup = _Handled(script, static store => store.FailsMarks = true, useKestrel: true);
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+
+        // when
+        using var created = await _CreateCompleteAsync(host, withData: true);
+
+        // then - nobody holds the upload: the handler gave it up, and the client never learned its URL
+        created.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        script.Uploads.Should().ContainSingle();
+        Directory.EnumerateFileSystemEntries(host.Directory).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_run_the_handler_again_on_a_status_request_when_the_handoff_could_not_be_recorded()
+    {
+        // given - a handler that keeps the upload, over a store that cannot record the handoff at first
+        HandoffDiskStore? store = null;
+        var script = new HandlerScript();
+        var setup = _Handled(script, created => (store = created).FailsMarks = true, useKestrel: true);
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+        var location = await host.CreateUploadAsync(_Content.Length);
+
+        // when
+        using var patch = await host.PatchAsync(location, _Content, offset: 0);
+        using var head = await host.HeadAsync(location);
+
+        // then - the write fails, and the status request answers the one status a tus client asks again after
+        patch.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        head.StatusCode.Should().Be(HttpStatusCode.Locked);
+        script.Uploads.Should().HaveCount(2);
+
+        // when
+        store!.FailsMarks = false;
+        using var retried = await host.HeadAsync(location);
+        using var delete = await host.DeleteAsync(location);
+
+        // then - the upload stayed where it was and is handed off once the record is written
+        retried.StatusCode.Should().Be(HttpStatusCode.OK);
+        retried.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("11");
+        script.Uploads.Should().HaveCount(3);
+        delete.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public async Task should_hand_off_an_upload_that_is_complete_when_its_creating_request_ends(bool withData)
     {
         // given

@@ -31,6 +31,9 @@ internal sealed class HandoffDiskStore(TusDiskStore inner)
     /// <summary>Makes every read of an upload's handoff state fail, the way an unreachable backend does.</summary>
     public bool FailsHandoffReads { get; set; }
 
+    /// <summary>Makes every attempt to record a handoff fail, the way an unreachable backend does.</summary>
+    public bool FailsMarks { get; set; }
+
     /// <summary>Makes every delete fail, the way an unreachable backend does.</summary>
     public bool FailsDeletes { get; set; }
 
@@ -117,6 +120,11 @@ internal sealed class HandoffDiskStore(TusDiskStore inner)
 
     public async Task MarkHandedOffAsync(string fileId, CancellationToken cancellationToken)
     {
+        if (FailsMarks)
+        {
+            throw new IOException("The store is unreachable.");
+        }
+
         if (await inner.FileExistAsync(fileId, cancellationToken))
         {
             _handedOff.TryAdd(fileId, true);
