@@ -900,6 +900,7 @@
           "AwesomeAssertions": "[9.6.0, )",
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Headless.Tus": "[1.0.0, )",
           "Microsoft.AspNetCore.Mvc.Testing": "[10.0.13, )",
