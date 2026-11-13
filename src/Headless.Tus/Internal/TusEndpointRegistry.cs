@@ -2,6 +2,7 @@
 
 using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Http;
 
 namespace Headless.Tus.Internal;
 
@@ -33,4 +34,10 @@ internal sealed class TusEndpointRegistry(IEnumerable<TusEndpointRegistration> e
 internal sealed class TusEndpointRegistration(string name)
 {
     public string Name { get; } = name;
+
+    /// <summary>
+    /// Names the owner of the uploads a request creates or asks for, or <see langword="null"/> when the endpoint
+    /// leaves that to the signed-in user.
+    /// </summary>
+    public Func<HttpContext, ValueTask<string?>>? OwnerKey { get; set; }
 }

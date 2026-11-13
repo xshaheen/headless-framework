@@ -728,7 +728,9 @@
       "headless.tus": {
         "type": "Project",
         "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "tusdotnet": "[2.12.0, )"
         }
       },

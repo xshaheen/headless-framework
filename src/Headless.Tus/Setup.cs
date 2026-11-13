@@ -84,6 +84,7 @@ public static class SetupTus
         // Registered even when no endpoint is declared, so MapHeadlessTus can tell a missing AddHeadlessTus call from
         // a name that was never declared.
         services.AddSingleton(new TusEndpointRegistry(setup.Endpoints.Values));
+        services.AddSingleton<TusUploadAuthorizer>();
         services.AddSingleton<TusConfigurationFactory>();
 
         foreach (var action in setup.CrossCuttingExtensions)

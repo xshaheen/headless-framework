@@ -2,13 +2,20 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using Headless.Context;
+using Headless.MultiTenancy;
+using Headless.Primitives;
+using Headless.Testing;
 using Headless.Tus;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using tusdotnet.Models;
+using tusdotnet.Parsers;
 using tusdotnet.Stores;
 
 namespace Tests.Endpoint;
@@ -27,6 +34,18 @@ internal sealed class TusEndpointTestHostSetup
 
     /// <summary>Services the scenario adds beside <c>AddHeadlessTus</c>.</summary>
     public Action<IServiceCollection>? ConfigureServices { get; init; }
+
+    /// <summary>
+    /// Registers <see cref="ICurrentUser"/>, which reports the user a request is sent as. On by default; a scenario
+    /// about a host that has none turns it off.
+    /// </summary>
+    public bool RegisterCurrentUser { get; init; } = true;
+
+    /// <summary>
+    /// Registers <see cref="ICurrentTenant"/> and runs every request inside the tenant it is sent as. Off by
+    /// default, as in a host that has no tenancy.
+    /// </summary>
+    public bool RegisterCurrentTenant { get; init; }
 
     /// <summary>Middleware that runs before the mapped endpoint.</summary>
     public Action<IApplicationBuilder>? ConfigureMiddleware { get; init; }
@@ -51,6 +70,12 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
     public const string Route = "/files";
 
     public const long DefaultMaxSize = 1024 * 1024;
+
+    /// <summary>The user a request is sent as until a scenario changes <see cref="User"/>.</summary>
+    public const string DefaultUser = "alice";
+
+    private const string _UserHeader = "X-Test-User";
+    private const string _TenantHeader = "X-Test-Tenant";
 
     private readonly WebApplication _app;
     private readonly DirectoryInfo _directory;
@@ -77,6 +102,17 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
     public HttpClient Client { get; }
 
     public IServiceProvider Services => _app.Services;
+
+    /// <summary>
+    /// The user the following requests are sent as, or <see langword="null"/> for requests nobody is signed in on.
+    /// </summary>
+    public string? User { get; set; } = DefaultUser;
+
+    /// <summary>
+    /// The tenant the following requests run in, or <see langword="null"/> for none. It has an effect only on a
+    /// host that registers <see cref="ICurrentTenant"/>.
+    /// </summary>
+    public string? Tenant { get; set; }
 
     /// <summary>The directory the disk store keeps its files in; removed when the host is disposed.</summary>
     public string Directory => _directory.FullName;
@@ -112,9 +148,26 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
             }
 
             builder.Services.AddHeadlessTus(tus => setup.ConfigureTus(tus, store));
+
+            if (setup.RegisterCurrentUser)
+            {
+                // Scoped, so the endpoint is also proven against an application whose user is a per-request service.
+                builder.Services.AddScoped<TestCurrentUser>();
+                builder.Services.AddScoped<ICurrentUser>(static provider =>
+                    provider.GetRequiredService<TestCurrentUser>()
+                );
+            }
+
+            if (setup.RegisterCurrentTenant)
+            {
+                builder.Services.AddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+                builder.Services.AddSingleton<ICurrentTenant, CurrentTenant>();
+            }
+
             setup.ConfigureServices?.Invoke(builder.Services);
 
             app = builder.Build();
+            app.Use(_SignInAsync);
             setup.ConfigureMiddleware?.Invoke(app);
             setup.Map(app);
 
@@ -148,6 +201,17 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
     {
         using var request = new HttpRequestMessage(method, uri);
         request.Headers.Add("Tus-Resumable", "1.0.0");
+
+        if (User is not null)
+        {
+            request.Headers.Add(_UserHeader, User);
+        }
+
+        if (Tenant is not null)
+        {
+            request.Headers.Add(_TenantHeader, Tenant);
+        }
+
         configure?.Invoke(request);
 
         return await Client.SendAsync(request, _cancellationToken);
@@ -221,10 +285,61 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
         return SendAsync(HttpMethod.Head, location);
     }
 
+    public Task<HttpResponseMessage> DeleteAsync(string location)
+    {
+        return SendAsync(HttpMethod.Delete, location);
+    }
+
     /// <summary>The file id is the last segment of the location a creating request answers with.</summary>
     public static string FileIdOf(string location)
     {
         return location[(location.LastIndexOf('/') + 1)..];
+    }
+
+    /// <summary>
+    /// Stands in for the application's authentication and tenant resolution: the request's user and tenant are
+    /// the ones its test headers name, entered through the same services an application uses.
+    /// </summary>
+    private static async Task _SignInAsync(HttpContext context, RequestDelegate next)
+    {
+        if (
+            context.Request.Headers.TryGetValue(_UserHeader, out var user)
+            && context.RequestServices.GetService<TestCurrentUser>() is { } currentUser
+        )
+        {
+            currentUser.IsAuthenticated = true;
+            currentUser.UserId = new UserId(user.ToString());
+        }
+
+        if (
+            context.Request.Headers.TryGetValue(_TenantHeader, out var tenant)
+            && context.RequestServices.GetService<ICurrentTenant>() is { } currentTenant
+        )
+        {
+            using (currentTenant.Change(tenant.ToString()))
+            {
+                await next(context);
+            }
+
+            return;
+        }
+
+        await next(context);
+    }
+
+    /// <summary>
+    /// Decodes a raw <c>Upload-Metadata</c> string, as a store keeps it, with tusdotnet's own parser.
+    /// </summary>
+    public static Dictionary<string, string> DecodeMetadata(string? raw)
+    {
+        var parsed = MetadataParser.ParseAndValidate(MetadataParsingStrategy.AllowEmptyValues, raw);
+        parsed.Success.Should().BeTrue();
+
+        return parsed.Metadata.ToDictionary(
+            static entry => entry.Key,
+            static entry => entry.Value.GetString(Encoding.UTF8),
+            StringComparer.Ordinal
+        );
     }
 
     public async ValueTask DisposeAsync()

@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
+using Headless.Context;
 using Headless.Tus.Internal;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -34,6 +35,14 @@ public static class TusEndpointRouteBuilderExtensions
         /// neither advertises nor accepts parallel uploads.
         /// </para>
         /// <para>
+        /// Every upload is bound to the endpoint that created it, to its owner, and to the request's tenant when it
+        /// has one. The owner is the key the endpoint's <c>OwnedBy</c> function returns, or the signed-in user's id
+        /// from <c>ICurrentUser</c> when the endpoint has no such function. A request with no owner is refused with
+        /// 401. A request for an upload that another endpoint, owner, or tenant created is answered as not found,
+        /// exactly like a request for an upload that does not exist. Metadata keys that start with
+        /// <c>headless-</c> are reserved for the server: a creating request that sends one is refused with 400.
+        /// </para>
+        /// <para>
         /// The name keeps the <c>Headless</c> prefix because tusdotnet already declares <c>MapTus</c> on
         /// <see cref="IEndpointRouteBuilder"/> in the <c>tusdotnet</c> namespace, which every tus host imports.
         /// <c>MapTus</c> maps an endpoint from a configuration the application builds by hand and applies none of
@@ -43,7 +52,8 @@ public static class TusEndpointRouteBuilderExtensions
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="pattern"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">Thrown when <paramref name="pattern"/> declares a <c>TusFileId</c> route parameter.</exception>
         /// <exception cref="InvalidOperationException">
-        /// Thrown when <c>AddHeadlessTus</c> was not called, or when it declared no default upload endpoint.
+        /// Thrown when <c>AddHeadlessTus</c> was not called, when it declared no default upload endpoint, or when
+        /// the endpoint has no <c>OwnedBy</c> function and no <c>ICurrentUser</c> is registered.
         /// </exception>
         public IEndpointConventionBuilder MapHeadlessTus([StringSyntax("Route")] string pattern)
         {
@@ -71,8 +81,9 @@ public static class TusEndpointRouteBuilderExtensions
         /// a <c>TusFileId</c> route parameter.
         /// </exception>
         /// <exception cref="InvalidOperationException">
-        /// Thrown when <c>AddHeadlessTus</c> was not called, or when it declared no upload endpoint named
-        /// <paramref name="name"/>.
+        /// Thrown when <c>AddHeadlessTus</c> was not called, when it declared no upload endpoint named
+        /// <paramref name="name"/>, or when the endpoint has no <c>OwnedBy</c> function and no <c>ICurrentUser</c>
+        /// is registered.
         /// </exception>
         public IEndpointConventionBuilder MapHeadlessTus([StringSyntax("Route")] string pattern, string name)
         {
@@ -103,8 +114,32 @@ public static class TusEndpointRouteBuilderExtensions
             );
         }
 
+        // Without an owner every request would be refused, so the mistake is reported here, not on the first upload.
+        if (endpoint.OwnerKey is null && !_IsRegistered<ICurrentUser>(endpoints.ServiceProvider))
+        {
+            throw new InvalidOperationException(
+                (
+                    string.Equals(name, Options.DefaultName, StringComparison.Ordinal)
+                        ? "The default upload endpoint"
+                        : $"The upload endpoint \"{name}\""
+                )
+                    + " has no owner for its uploads. Call OwnedBy(…) on the endpoint, or register ICurrentUser so "
+                    + "that the signed-in user owns them."
+            );
+        }
+
         var factory = endpoints.ServiceProvider.GetRequiredService<TusConfigurationFactory>();
 
         return endpoints.MapTus(pattern, context => factory.CreateAsync(context, endpoint));
+    }
+
+    /// <summary>
+    /// Whether the container can resolve <typeparamref name="TService"/>, asked without resolving it: the service
+    /// may be registered per request, and mapping runs outside one.
+    /// </summary>
+    private static bool _IsRegistered<TService>(IServiceProvider services)
+    {
+        // A container that cannot say is not held to the check: a request with no owner is still refused.
+        return services.GetService<IServiceProviderIsService>()?.IsService(typeof(TService)) ?? true;
     }
 }
