@@ -477,9 +477,10 @@ A provider package that talks to an external dependency contributes a readiness 
 | `AddHeadlessDbContext<T>`, `AddHeadlessDbContextPool<T>` | `dbcontext-{T full name}` | `database` | Microsoft's `AddDbContextCheck<T>`: `Database.CanConnectAsync`, or the configured `TestCommand` through `ExecuteSqlRawAsync`, on the context of the check's scope |
 | Caching `UseRedis` / `AddRedisTier` | `cache-redis` (named: `cache-redis-{name}`) | `redis` | `PING` to every configured endpoint of the options' multiplexer, `CLUSTER INFO` = `cluster_state:ok` on cluster nodes (`ProbeEndpointsAsync`) |
 | Distributed locks `UseRedis` | `distributed-locks-redis` | `redis` | The same endpoint probe through the registered `IConnectionMultiplexer` |
-| Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection |
+| Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection, with a 5 second default timeout |
 | Blobs `UseAzure` | `blobs-azure` (named: `blobs-azure-{name}`) | `blobs` | Reads one page of the account's container list, or the properties of `AzureStorageOptions.HealthCheckContainerName` when set |
-| `AddHeadlessMessaging` | `messaging` | `messaging`, `host-state` | Reads host state: `Unhealthy` before the Messaging host starts, once shutdown begins, and while the broker is unreachable, judged from receive and send outcomes ([Messaging](messaging.md#broker-reachability)) |
+| `AddHeadlessMessaging` | `messaging` | `messaging`, `host-state` | Reads host state: `Unhealthy` before the Messaging host starts and once shutdown begins |
+| `AddHeadlessMessaging` | `messaging-broker` | `messaging`, `host-state` | Reads broker reachability: `Unhealthy` while the broker is unreachable, judged from receive and send outcomes ([Messaging](messaging.md#broker-reachability)) |
 | `AddHeadlessMessaging` | `messaging-consumers` | `messaging`, `host-state` | Reads circuit state: `Degraded` by default while any consumer circuit is `Open`, including an operator pause |
 | `AddHeadlessMessaging` with `AddOutbox(name)` | `messaging-outboxes` | `messaging`, `host-state` | Reads outbox state: `Degraded` by default while an additional outbox is not initialized |
 | Messaging PostgreSQL / SQL Server storage | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default`; per additional outbox `messaging-storage-postgresql-outbox-{name}`, `messaging-storage-sqlserver-outbox-{name}`, keyed on the name passed to `AddOutbox(name)` | `messaging`, `database` | `SELECT 1` on a new connection from that store's options |
@@ -487,7 +488,7 @@ A provider package that talks to an external dependency contributes a readiness 
 | `AddHeadlessJobs` with background services | `jobs-scheduler` | `jobs`, `host-state` | Reads `IJobsHostScheduler.IsRunning`: `Degraded` by default while the scheduler is stopped by an operator or by manual start mode |
 | Jobs `UseEntityFramework` | `jobs-storage-{DbContext full name}` | `jobs`, `database` | `Database.CanConnectAsync` on a context from the store's pooled factory |
 
-- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag: `database`, `redis`, `messaging`, `blobs`, or `jobs` (`HeadlessHealthCheckTags.Jobs`, for the checks that report whether a Jobs host can run jobs). A storage check of Messaging or Jobs carries both its feature tag and `database`. A check that reads the running host's own state rather than probing a dependency (the five `host-state` rows above) also carries `host-state` (`HeadlessHealthCheckTags.HostState`); the [`check` command](#health-check-command) skips those, because a host that was never started always fails them. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
+- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag: `database`, `redis`, `messaging`, `blobs`, or `jobs` (`HeadlessHealthCheckTags.Jobs`, for the checks that report whether a Jobs host can run jobs). A storage check of Messaging or Jobs carries both its feature tag and `database`. A check that reads the running host's own state rather than probing a dependency (the six `host-state` rows above) also carries `host-state` (`HeadlessHealthCheckTags.HostState`); the [`check` command](#health-check-command) skips those, because a host that was never started always fails them. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
 
   ```csharp
   app.MapHealthChecks("/ready", new HealthCheckOptions
@@ -722,6 +723,7 @@ dotnet MyApp.dll check
 messaging-nats       Healthy     3ms
 sql-postgresql       Unhealthy  41ms  The 'sql-postgresql' dependency probe failed. Connection refused
 messaging            Skipped       -  Reports the state of a running host; not run before start.
+messaging-broker     Skipped       -  Reports the state of a running host; not run before start.
 messaging-consumers  Skipped       -  Reports the state of a running host; not run before start.
 ```
 
