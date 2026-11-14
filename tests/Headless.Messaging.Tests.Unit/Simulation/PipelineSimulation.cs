@@ -189,13 +189,14 @@ internal static class PipelineHosts
         SimulationHost previous,
         PipelineProbe probe,
         CancellationToken cancellationToken,
-        Action<MessagingSetupBuilder>? configure = null
+        Action<MessagingSetupBuilder>? configure = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         return SimulationHost.RestartAsync(
             previous,
             setup => _Configure(setup, probe, configure),
-            services => _ConfigureServices(services, probe, configureServices: null),
+            services => _ConfigureServices(services, probe, configureServices),
             cancellationToken
         );
     }

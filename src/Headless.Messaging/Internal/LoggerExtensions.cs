@@ -1212,6 +1212,14 @@ internal static partial class LoggerExtensions
     internal static partial void RequestExpiredBeforeAttempt(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
+        EventId = 134,
+        EventName = "RetryAttemptDeferredForRateLimit",
+        Level = LogLevel.Debug,
+        Message = "Message stored as {StorageId} has no rate-limit permit for its next attempt; the retry pickup puts it back instead of waiting."
+    )]
+    internal static partial void RetryAttemptDeferredForRateLimit(this ILogger logger, Guid storageId);
+
+    [LoggerMessage(
         EventId = 122,
         EventName = "ConsumerSucceededButStateWriteFailed",
         Level = LogLevel.Warning,
