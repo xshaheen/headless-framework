@@ -57,6 +57,7 @@ internal sealed class ConsumerKeySequencers
     /// <param name="clock">The app clock the keeper's cadence runs on.</param>
     /// <param name="backoffClock">The clock that bounds each store call.</param>
     /// <param name="logger">The logger.</param>
+#pragma warning disable IDE0290 // Fix makes the code worse: a primary constructor would hold six parameters the class only passes on to its keeper.
     public ConsumerKeySequencers(
         Func<SequencedWork, Task> run,
         Func<MediumMessage, TimeSpan, CancellationToken, ValueTask<bool>> defer,
@@ -71,6 +72,7 @@ internal sealed class ConsumerKeySequencers
         _logger = logger;
         _waiting = new WaitingRows(defer, renew, policy, clock, backoffClock, logger);
     }
+#pragma warning restore IDE0290
 
     /// <summary>Completes once <see cref="StopAsync"/> ran and every message that had started has finished.</summary>
     public Task Completion => _drained.Task;

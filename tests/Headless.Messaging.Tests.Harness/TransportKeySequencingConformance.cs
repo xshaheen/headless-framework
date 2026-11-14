@@ -99,7 +99,7 @@ public static class TransportKeySequencingConformance
         );
 
         // then: one handler per key, as many keys as the concurrency, and nothing else started
-        held.Select(static start => start.Order.Key).Should().OnlyHaveUniqueItems("a key runs one message at a time");
+        held.Should().OnlyHaveUniqueItems(static start => start.Order.Key, "a key runs one message at a time");
         probe.Started.Should().Be(_Concurrency, "no more keys run at once than the consumer's concurrency");
 
         // and: every later message runs only after the one before it on its key finished

@@ -158,7 +158,7 @@ public sealed class SequentialConsumerTests : TestBase
             Behavior = (id, attempt, _) =>
             {
                 order.Enqueue($"{id}#{attempt}");
-                return id == "a-1" && attempt == 1
+                return string.Equals(id, "a-1", StringComparison.Ordinal) && attempt == 1
                     ? throw new InvalidOperationException("boom")
                     : ValueTask.CompletedTask;
             },
@@ -195,7 +195,7 @@ public sealed class SequentialConsumerTests : TestBase
         var probe = new PipelineProbe
         {
             Behavior = (id, attempt, cancellationToken) =>
-                id == "a-1" && attempt == 1
+                string.Equals(id, "a-1", StringComparison.Ordinal) && attempt == 1
                     ? throw new InvalidOperationException("boom")
                     : _HoldUntilReleased(id, attempt, cancellationToken),
         };
