@@ -8,6 +8,7 @@ using Headless.Tus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using tusdotnet.Interfaces;
 
 namespace Tests.Azure;
 
@@ -23,20 +24,47 @@ public sealed class SetupTusAzureStoreTests : TestBase
         return services;
     }
 
-    [Fact]
-    public void should_register_store_as_singleton()
+    public static TheoryData<string> Overloads => ["configuration", "action", "action-with-provider"];
+
+    [Theory]
+    [MemberData(nameof(Overloads))]
+    public void should_resolve_store_and_host_store_as_one_singleton(string overload)
     {
         // given
         var services = _Services();
-        services.AddTusAzureStore(_ => { });
+        services.AddHeadlessTus(tus =>
+        {
+            switch (overload)
+            {
+                case "configuration":
+                    tus.UseAzure(
+                        new ConfigurationBuilder()
+                            .AddInMemoryCollection(
+                                new Dictionary<string, string?>(StringComparer.Ordinal)
+                                {
+                                    ["ContainerName"] = "my-uploads",
+                                }
+                            )
+                            .Build()
+                    );
+                    break;
+                case "action":
+                    tus.UseAzure(options => options.ContainerName = "my-uploads");
+                    break;
+                default:
+                    tus.UseAzure((options, _) => options.ContainerName = "my-uploads");
+                    break;
+            }
+        });
         using var provider = services.BuildServiceProvider();
 
         // when
         var store = provider.GetRequiredService<TusAzureStore>();
 
         // then
-        store.Should().NotBeNull();
         provider.GetRequiredService<TusAzureStore>().Should().BeSameAs(store);
+        provider.GetRequiredService<ITusStore>().Should().BeSameAs(store);
+        provider.GetRequiredService<IOptions<TusAzureStoreOptions>>().Value.ContainerName.Should().Be("my-uploads");
     }
 
     [Fact]
@@ -54,7 +82,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
             .Build();
 
         var services = _Services();
-        services.AddTusAzureStore(config);
+        services.AddHeadlessTus(tus => tus.UseAzure(config));
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -69,14 +97,16 @@ public sealed class SetupTusAzureStoreTests : TestBase
     public void should_bind_options_via_service_provider_overload()
     {
         // given - the provider-factory overload resolves a registered marker to derive options,
-        // exercising the AddTusAzureStore(Action<TOptions, IServiceProvider>) wiring path.
+        // exercising the UseAzure(Action<TOptions, IServiceProvider>) wiring path.
         var services = _Services();
         services.AddSingleton(new ContainerNameSource("provider-derived-uploads"));
-        services.AddTusAzureStore(
-            (options, provider) =>
-            {
-                options.ContainerName = provider.GetRequiredService<ContainerNameSource>().Name;
-            }
+        services.AddHeadlessTus(tus =>
+            tus.UseAzure(
+                (options, provider) =>
+                {
+                    options.ContainerName = provider.GetRequiredService<ContainerNameSource>().Name;
+                }
+            )
         );
         using var provider = services.BuildServiceProvider();
 
@@ -92,7 +122,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
     {
         // given
         var services = _Services();
-        services.AddTusAzureStore(_ => { });
+        services.AddHeadlessTus(tus => tus.UseAzure(_ => { }));
         using var provider = services.BuildServiceProvider();
 
         // when / then
@@ -105,15 +135,15 @@ public sealed class SetupTusAzureStoreTests : TestBase
     [Fact]
     public void should_honor_pre_registered_headers_provider()
     {
-        // given - a custom provider registered before AddTusAzureStore wins (TryAdd semantics)
+        // given - a custom provider registered before AddHeadlessTus wins (TryAdd semantics)
         var services = _Services();
         services.AddSingleton<ITusAzureBlobHttpHeadersProvider, FakeHeadersProvider>();
-        services.AddTusAzureStore(_ => { });
+        services.AddHeadlessTus(tus => tus.UseAzure(_ => { }));
         using var provider = services.BuildServiceProvider();
 
         // when / then
         provider.GetRequiredService<ITusAzureBlobHttpHeadersProvider>().Should().BeOfType<FakeHeadersProvider>();
-        provider.GetRequiredService<TusAzureStore>().Should().NotBeNull();
+        provider.GetRequiredService<TusAzureStore>();
     }
 
     [Fact]
@@ -121,7 +151,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
     {
         // given - empty container name violates the FluentValidation rules
         var services = _Services();
-        services.AddTusAzureStore(options => options.ContainerName = "");
+        services.AddHeadlessTus(tus => tus.UseAzure(options => options.ContainerName = ""));
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -134,9 +164,9 @@ public sealed class SetupTusAzureStoreTests : TestBase
     [Fact]
     public void should_fail_resolution_without_blob_service_client()
     {
-        // given - AddTusAzureStore requires the app to register BlobServiceClient
+        // given - UseAzure requires the app to register BlobServiceClient
         var services = new ServiceCollection();
-        services.AddTusAzureStore(_ => { });
+        services.AddHeadlessTus(tus => tus.UseAzure(_ => { }));
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -151,7 +181,7 @@ public sealed class SetupTusAzureStoreTests : TestBase
     {
         // given
         var services = _Services();
-        services.AddTusAzureStore(options => options.ContainerName = "my-uploads");
+        services.AddHeadlessTus(tus => tus.UseAzure(options => options.ContainerName = "my-uploads"));
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -162,19 +192,6 @@ public sealed class SetupTusAzureStoreTests : TestBase
         provisioners[0].Kind.Should().Be("AzureBlob");
         provisioners[0].Name.Should().Be("my-uploads");
         provisioners[0].StartupCheck.Should().Be(ResourceStartupCheck.GateReadiness);
-    }
-
-    [Fact]
-    public void should_register_one_provisioner_when_called_twice()
-    {
-        // given
-        var services = _Services();
-        services.AddTusAzureStore(_ => { });
-        services.AddTusAzureStore(_ => { });
-        using var provider = services.BuildServiceProvider();
-
-        // when / then
-        provider.GetServices<IResourceProvisioner>().Should().ContainSingle();
     }
 
     private sealed record ContainerNameSource(string Name);

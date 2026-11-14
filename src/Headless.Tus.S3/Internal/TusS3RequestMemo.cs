@@ -19,24 +19,24 @@ internal sealed class TusS3RequestMemo(IHttpContextAccessor? httpContextAccessor
     // One key per memo instance, so two stores sharing a request never see each other's entries.
     private readonly object _itemsKey = new();
 
-    public bool TryGet(string fileId, [NotNullWhen(true)] out TusS3LoadedUpload? upload)
+    public bool TryGet(string? tenant, string fileId, [NotNullWhen(true)] out TusS3LoadedUpload? upload)
     {
         upload = null;
 
-        return _GetEntries(create: false)?.TryGetValue(fileId, out upload) == true;
+        return _GetEntries(create: false)?.TryGetValue((tenant, fileId), out upload) == true;
     }
 
-    public void Set(string fileId, TusS3LoadedUpload upload)
+    public void Set(string? tenant, string fileId, TusS3LoadedUpload upload)
     {
-        _GetEntries(create: true)?[fileId] = upload;
+        _GetEntries(create: true)?[(tenant, fileId)] = upload;
     }
 
-    public void Remove(string fileId)
+    public void Remove(string? tenant, string fileId)
     {
-        _GetEntries(create: false)?.Remove(fileId);
+        _GetEntries(create: false)?.Remove((tenant, fileId));
     }
 
-    private Dictionary<string, TusS3LoadedUpload>? _GetEntries(bool create)
+    private Dictionary<(string? Tenant, string FileId), TusS3LoadedUpload>? _GetEntries(bool create)
     {
         var items = httpContextAccessor?.HttpContext?.Items;
 
@@ -45,7 +45,10 @@ internal sealed class TusS3RequestMemo(IHttpContextAccessor? httpContextAccessor
             return null;
         }
 
-        if (items.TryGetValue(_itemsKey, out var existing) && existing is Dictionary<string, TusS3LoadedUpload> found)
+        if (
+            items.TryGetValue(_itemsKey, out var existing)
+            && existing is Dictionary<(string? Tenant, string FileId), TusS3LoadedUpload> found
+        )
         {
             return found;
         }
@@ -55,7 +58,9 @@ internal sealed class TusS3RequestMemo(IHttpContextAccessor? httpContextAccessor
             return null;
         }
 
-        var entries = new Dictionary<string, TusS3LoadedUpload>(StringComparer.Ordinal);
+        // Keyed by tenant as well as file id: code that changes the ambient tenant inside one request must never
+        // be handed the upload another tenant holds under the same id.
+        var entries = new Dictionary<(string? Tenant, string FileId), TusS3LoadedUpload>();
         items[_itemsKey] = entries;
 
         return entries;

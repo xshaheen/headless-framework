@@ -24,18 +24,19 @@ builder.Services.AddAzureClients(clients =>
         .WithVersion(BlobClientOptions.ServiceVersion.V2024_11_04)
 );
 
-// Registers TusAzureStore as a singleton with validated options bound from the "Tus" section.
-builder.Services.AddTusAzureStore(builder.Configuration.GetSection("Tus"));
+// Registers TusAzureStore as the host's tus store, with validated options bound from the "Tus" section.
+// The job that removes expired incomplete uploads runs by default; a 1-minute interval keeps the demo
+// snappy (the default is 5).
+builder.Services.AddHeadlessTus(tus =>
+    tus.UseAzure(builder.Configuration.GetSection("Tus"))
+        .ConfigureExpiredUploadsCleanup(options => options.Interval = TimeSpan.FromMinutes(1))
+);
 
 // The store never creates its container. A deployment runs `resources provision`; this demo
 // creates it as the host starts instead.
 builder.Services.AddDeployStepsOnStartup();
 
 builder.Services.AddSingleton<UploadDirectory>();
-
-// Removes expired incomplete uploads (registered against the ITusExpirationStore that
-// AddTusAzureStore forwarded). A 1-minute interval keeps the demo snappy; the default is 5.
-builder.Services.AddTusExpiredUploadsCleanup(options => options.Interval = TimeSpan.FromMinutes(1));
 
 builder.Services.AddCors(options =>
     options.AddPolicy(
@@ -59,11 +60,10 @@ app.MapTus(
     {
         var tusConfiguration = new DefaultTusConfiguration
         {
-            // Resolved from DI — registered by AddTusAzureStore above.
             Store = httpContext.RequestServices.GetRequiredService<TusAzureStore>(),
-            // For multi-node deployments, register Headless.Tus.DistributedLocks and set
-            // FileLockProvider from DI. Omitting it uses tusdotnet's in-process lock, which is
-            // sufficient for this single-node demo.
+            // For multi-node deployments, call UseDistributedLocks (Headless.Tus.DistributedLocks) in
+            // AddHeadlessTus and set FileLockProvider from DI. Omitting it uses tusdotnet's
+            // in-process lock, which is sufficient for this single-node demo.
             UsePipelinesIfAvailable = true,
             AllowedExtensions = TusExtensions.All,
             MaxAllowedUploadSizeInBytesLong = 2L * 1024 * 1024 * 1024, // 2 GB demo cap

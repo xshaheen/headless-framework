@@ -20,6 +20,7 @@ Headless multi-tenancy is built from these pieces:
 - `Headless.EntityFramework` reads `ICurrentTenant.Id` in global query filters for finalized tenant-owned metadata and can opt in to tenant validation and Added-transition stamping.
 - `Headless.Permissions` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
 - `Headless.Blobs.MultiTenancy` scopes blob locations by tenant through `.Blobs(blobs => blobs.ScopeByTenant())`, and `Headless.MultiTenancy`'s `AddTenantScopedCache<T>()` does the same for application cache keys. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
+- `Headless.Tus` binds every resumable upload to the tenant that created it, and `.Tus(tus => tus.ScopeByTenant())` makes a tenant mandatory and keeps each tenant's uploads under their own storage path. See [Resumable uploads](#resumable-uploads).
 
 For tenant-aware hosts, the recommended setup is:
 
@@ -77,6 +78,7 @@ app.UseAuthorization();
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
 - Files and cache entries carry no tenant column. In a tenant-aware host, add `.Blobs(blobs => blobs.ScopeByTenant())` and register tenant-owned application caches with `services.AddTenantScopedCache<T>()`. Both refuse an operation with no ambient tenant. Keep blobs every tenant shares in a named store listed in `TenantBlobScopingOptions.UnscopedStores`, cache values every tenant shares through the unscoped `ICache`, and run cross-tenant work inside `currentTenant.Change(tenantId)`. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
+- For resumable uploads, add `.Tus(tus => tus.ScopeByTenant())`. An upload endpoint already answers "not found" to a caller outside the upload's tenant; the seam refuses an upload created with no tenant (403) and makes the `UseS3` and `UseAzure` stores keep each tenant's uploads under `.tenants/{tenant}/`. A job that reads an upload through a scoped store runs inside `currentTenant.Change(tenantId)`. See [Resumable uploads](#resumable-uploads).
 - For background jobs, adopt the Jobs tenancy seam (`.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue())`) so time jobs capture the ambient tenant at schedule time and restore it around every execution attempt. Cron is always system-scope: fan out one explicit-tenant time job per tenant from application code — see [Background Jobs](#background-jobs).
 - For message consumers, use the Messaging seam. When not using a seam on either path, set tenant explicitly with `using (currentTenant.Change(tenantId)) { ... }`.
 - When an operation names its tenant (a console command, a job, a message for one tenant) and may run with or without an ambient tenant, use `using (currentTenant.EnterOrVerify(tenantId)) { ... }`. It enters the tenant when none is set, keeps the ambient tenant when it is the same id (ordinal), and throws `TenantMismatchException` (403 `g:tenant_mismatch` over HTTP) when it is a different one, rather than silently running against another tenant's data. It checks consistency, never access: authorize the caller for `tenantId` first.
@@ -724,7 +726,7 @@ When no tenant is active, the cache scope is `t:`. This is expected host-level b
 
 ## Tenant-Scoped Blobs and Caches
 
-The query filter and write guard keep rows apart, but a file or a cache entry carries no tenant column. Two tenants that each have a user with id `1` collide on the cache key `user:1` and the blob path `avatars/1.png`. The fix is the one Laravel tenancy and django-tenants use: put the tenant into the key or the path. Both seams below are opt-in and fail closed.
+The query filter and write guard keep rows apart, but a file or a cache entry carries no tenant column. Two tenants that each have a user with id `1` collide on the cache key `user:1` and the blob path `avatars/1.png`. The fix is the one Laravel tenancy and django-tenants use: put the tenant into the key or the path. The seams below are opt-in and fail closed.
 
 ### Blob storage
 
@@ -759,11 +761,34 @@ builder.AddHeadlessTenancy(tenancy =>
 ```
 
 - **Fail closed.** A scoped operation with no ambient tenant throws `MissingTenantContextException` (HTTP 403 `g:tenant_required`) before reaching the provider.
-- **Tenant ids must be one safe storage segment.** Under `PathPrefix` a tenant id must start and end with a lowercase ASCII letter or digit and contain only lowercase ASCII letters, digits, `.`, `_`, and `-`. Under `ContainerPerTenant`, `ContainerPrefix` plus the tenant id must be 3-63 characters of lowercase ASCII letters, digits, and single hyphens, and a container used as a key segment cannot contain `/` or `\`. Any other id is refused with `InvalidOperationException`, because provider normalizers lowercase, strip, and truncate names and would otherwise land one tenant inside another's scope. Uppercase is refused rather than folded: a FileSystem store on a case-insensitive disk (macOS, Windows) treats `Acme` and `acme` as one directory, and folding would merge the two tenants the same way. Lowercase GUIDs (`Guid.ToString()`) and DNS-slug ids pass unchanged; lowercase any other id before it becomes the ambient tenant.
+- **Tenant ids must be one safe storage segment.** Under `PathPrefix` a tenant id must start and end with a lowercase ASCII letter or digit and contain only lowercase ASCII letters, digits, `.`, `_`, and `-` (`TenantStorageSegment.IsValid`, the rule [resumable uploads](#resumable-uploads) share, so an id one feature accepts the other accepts too). Under `ContainerPerTenant`, `ContainerPrefix` plus the tenant id must be 3-63 characters of lowercase ASCII letters, digits, and single hyphens, and a container used as a key segment cannot contain `/` or `\`. Any other id is refused with `InvalidOperationException`, because provider normalizers lowercase, strip, and truncate names and would otherwise land one tenant inside another's scope. Uppercase is refused rather than folded: a FileSystem store on a case-insensitive disk (macOS, Windows) treats `Acme` and `acme` as one directory, and folding would merge the two tenants the same way. Lowercase GUIDs (`Guid.ToString()`) and DNS-slug ids pass unchanged; lowercase any other id before it becomes the ambient tenant.
 - **Host-level shared blobs.** Put blobs every tenant shares in a named store listed in `UnscopedStores`, which is never wrapped. Cross-tenant work, such as a cleanup job, runs once per tenant inside `currentTenant.Change(tenantId)`. A scoped store implements `IScopedBlobStorage`; its `Unscoped` property is the wrapped store, which addresses physical keys (`acme/1.png`) with no tenant. Reach for it only for infrastructure that holds physical locations, as the two consumers below do. Under `PathPrefix`, do not write host blobs at the top level of a container tenants use: a host folder named like a tenant id would sit inside that tenant's prefix.
 - **Data-protection key ring.** `PersistKeysToBlobStorage()` from `Headless.DataProtection.Blobs` reads and writes the key ring through `IScopedBlobStorage.Unscoped`, so on a scoped store it stays at the physical key container root (`BlobStorageDataProtectionOptions.ContainerName`, default `DataProtection`), shared by every tenant, whichever request first touches data protection. The key XML sits at the top level of that container, where no tenant's `{container}/{tenantId}/` prefix reaches it.
 - **Presigned URLs.** A URL is minted for the tenant's physical location. The `Headless.Blobs.SignedUrlEndpoint` endpoint serves a grant through `IScopedBlobStorage.Unscoped`, because the grant already carries the physical location and its signature is the authorization, so an anonymous request redeems a tenant's URL.
 - **Not scoped.** `IBlobContainerManager` is never wrapped. Under `ContainerPerTenant`, provision each tenant's container (`{ContainerPrefix}{tenantId}`) at onboarding with `EnsureContainerAsync`. A store registered directly as `IBlobStorage`, outside `AddHeadlessBlobs`, is not wrapped either; when the seam wraps no store at all, startup fails with `HEADLESS_TENANCY_BLOBS_NO_SCOPED_STORE`.
+
+### Resumable uploads
+
+```csharp
+builder.Services.AddHeadlessTus(tus =>
+{
+    tus.UseS3(options => options.Bucket = "tus-uploads");
+    tus.AddUploadEndpoint(options => options.MaxSize = 1024L * 1024 * 1024);
+});
+
+builder.AddHeadlessTenancy(tenancy => tenancy.Tus(tus => tus.ScopeByTenant()));
+```
+
+The seam lives in `Headless.Tus` itself, with no separate package, and the two calls may run in either order. An upload endpoint (`MapHeadlessTus`) stamps every upload with the ambient tenant and answers 404 to a caller in another tenant, or in none, with or without this seam. `ScopeByTenant()` adds the rest:
+
+- **A tenant is mandatory.** A request that creates an upload with no ambient tenant is refused with 403, and so is one whose tenant id fails `TenantStorageSegment.IsValid`. A request that names an existing upload still answers 404.
+- **Each tenant has its own path.** The stores registered through `UseS3` and `UseAzure` keep a tenant's uploads under `.tenants/{tenant}/` inside the store's prefix. The bucket or container stays shared.
+- **Background passes cover every tenant.** The expired-upload cleanup and `resources purge` run with no ambient tenant and reach every tenant's uploads.
+- **Fail closed outside a request.** A scoped store called with no ambient tenant throws `MissingTenantContextException`; a job that reads or deletes an upload runs inside `currentTenant.Change(tenantId)`.
+- **Not scoped.** A store passed to `UseStore`, or a `TusS3Store` or `TusAzureStore` constructed by hand, keeps its own layout; the endpoint's stamp is the only thing that binds its uploads to a tenant. When the seam is recorded and `AddHeadlessTus` was never called, startup fails with `HEADLESS_TENANCY_TUS_NO_STORE`.
+- **Existing uploads do not move.** Turning the seam on leaves uploads already in the store outside any tenant, where requests no longer find them.
+
+[TUS](tus.md#tenant-scoping) owns the layout, the answers, and the limits.
 
 ### Application caches
 
@@ -1044,6 +1069,7 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
 - Forgetting `using` around `currentTenant.Change()` in non-HTTP code can leak tenant context within the current async flow.
 - Assuming host-level cache scope `t:` is tenant-isolated is incorrect; it is intentionally shared.
 - Assuming `ScopeByTenant()` covers a store registered directly as `IBlobStorage` is incorrect; only stores registered through `AddHeadlessBlobs` are wrapped, and `IBlobContainerManager` never is.
+- Assuming `.Tus(tus => tus.ScopeByTenant())` separates uploads physically on every store is incorrect; only the `UseS3` and `UseAzure` stores keep a per-tenant path, and an endpoint mapped with tusdotnet's `MapTus` checks no tenant at all.
 - Assuming `RemoveByTagAsync`, `ClearAsync`, or `FlushAsync` on a tenant-scoped `ICache<T>` stays inside the tenant is incorrect; they act on the whole underlying cache.
 - Assuming `IgnoreMultiTenancyFilter()` bypasses write protection is incorrect; it only affects reads.
 
@@ -1059,6 +1085,7 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
     - `ITenantWriteGuardBypass` — tracks an operation-local bypass for intentional host or admin tenant-owned writes
     - `CrossTenantWriteException` — thrown when a tenant write guard detects a tenant-owned write that does not match the current tenant context
     - `MissingTenantContextException` — thrown when an operation requires an ambient tenant context but none is available
+    - `TenantStorageSegment.IsValid(tenantId)` — the one rule a tenant id must pass before a storage feature places it in a path as a segment: it starts and ends with a lowercase ASCII letter or digit and holds only lowercase ASCII letters, digits, `.`, `_`, and `-`. Blob path-prefix scoping and TUS tenant scoping both apply it. The id is checked, never encoded or normalized
 - **Tenant catalog** (opt-in; see `Headless.MultiTenancy`'s `Catalog(...)` for wiring):
     - `TenantInfo` — non-generic, non-sealed canonical tenant metadata: `Id` (canonical id), `Identifier` (public-facing, pre-normalized), `Name`, `IsEnabled`, `ExtraProperties` (read-along payload, never queried)
     - `ITenantStore` — read-only store SPI: `FindByIdentifierAsync(normalizedIdentifier)`, `FindByIdAsync(id)`
@@ -1113,7 +1140,7 @@ None.
 
 - **Posture composition**:
     - `AddHeadlessTenancy(Action<HeadlessTenancyBuilder> configure)` — root configuration entry point; registers the shared manifest and startup validator, then invokes the configure callback.
-    - `HeadlessTenancyBuilder` — root builder passed to the configure callback. Exposes `ApplicationBuilder`, `Services`, `Manifest`, and `RecordSeam(...)`. Seam packages extend it with their own methods (`.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, `.Blobs(...)`, `.Catalog(...)`).
+    - `HeadlessTenancyBuilder` — root builder passed to the configure callback. Exposes `ApplicationBuilder`, `Services`, `Manifest`, and `RecordSeam(...)`. Seam packages extend it with their own methods (`.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, `.Blobs(...)`, `.Tus(...)`, `.Catalog(...)`).
     - `TenantPostureManifest` — thread-safe, singleton, non-PII record of seam posture: status (`TenantPostureStatus`), capability labels, and runtime markers. Diagnostic breadcrumb only; records do not create enforcement.
     - `TenantPostureStatus` — enum whose ordinal is posture precedence: `Configured(0) < Propagating(1) < Guarded(2) < Enforcing(3)`. `RecordSeam` always keeps the strongest status across contributions.
     - `AddTenantScopedCache<T>()` — registers `ICache<T>` as a `ScopedCache<T>` keyed by the ambient tenant (`t:{tenantId}:{key}`), refusing an operation with no tenant. It declares `ICurrentTenant` as a required service, so a host with no tenant source fails at startup. See [Tenant-Scoped Blobs and Caches](#tenant-scoped-blobs-and-caches).
@@ -1186,7 +1213,7 @@ app.UseHeadlessTenancy(); // after UseAuthentication, before UseAuthorization
 app.UseAuthorization();
 ```
 
-`AddHeadlessTenancy` and `AddTenantScopedCache<T>()` are the calls owned by this package; the `.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, and `.Blobs(...)` (`Headless.Blobs.MultiTenancy`) extensions are contributed by the respective seam packages once they are installed. See [Tenant Catalog](#tenant-catalog) for adding `.Catalog(...)`.
+`AddHeadlessTenancy` and `AddTenantScopedCache<T>()` are the calls owned by this package; the `.Http(...)`, `.Authorization(...)`, `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, `.Blobs(...)` (`Headless.Blobs.MultiTenancy`), and `.Tus(...)` (`Headless.Tus`) extensions are contributed by the respective seam packages once they are installed. See [Tenant Catalog](#tenant-catalog) for adding `.Catalog(...)`.
 
 ### Configuration
 

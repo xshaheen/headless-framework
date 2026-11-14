@@ -11,12 +11,18 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Tus.DistributedLocks" />
+    <!-- Each store asks the root which tenant the current call's uploads belong to. -->
+    <InternalsVisibleTo Include="Headless.Tus.Azure" />
+    <InternalsVisibleTo Include="Headless.Tus.S3" />
     <InternalsVisibleTo Include="Headless.Tus.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="FileSignatures" />
     <PackageReference Include="tusdotnet" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
   </ItemGroup>
 </Project>

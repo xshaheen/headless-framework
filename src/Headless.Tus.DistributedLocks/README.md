@@ -6,6 +6,8 @@ Distributed lock-based TUS file lock provider, using `Headless.DistributedLocks`
 
 The TUS protocol allows only one concurrent PATCH per file. On single-instance deployments, `tusdotnet`'s default in-process locking suffices. On multi-instance deployments (load-balanced or Kubernetes pods), each instance has its own in-process lock table, so two nodes can simultaneously PATCH the same file, producing interleaved blocks and corrupted uploads. `DistributedLockTusLockProvider` uses the framework's `IDistributedLock` to coordinate across nodes.
 
+Select it with `UseDistributedLocks` inside `AddHeadlessTus`. It also keeps an upload's completion handler to one node at a time and runs the expired-upload cleanup on one node per interval.
+
 ## Install
 
 ```bash

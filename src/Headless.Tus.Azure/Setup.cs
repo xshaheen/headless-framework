@@ -13,93 +13,93 @@ using tusdotnet.Interfaces;
 
 namespace Headless.Tus;
 
-/// <summary>
-/// DI registration helpers for the Azure Blob Storage TUS store.
-/// </summary>
-/// <remarks>
-/// Registration is optional: tusdotnet composes stores inside <c>DefaultTusConfiguration</c>
-/// factories, so constructing <c>TusAzureStore</c> manually remains fully supported. Use these
-/// extensions when the store should participate in the host's options pipeline
-/// (configuration binding, FluentValidation, <c>ValidateOnStart</c>) and be resolved from DI in
-/// the configuration factory.
-/// </remarks>
+/// <summary>Extension methods to select the Azure Blob Storage TUS store.</summary>
 [PublicAPI]
-public static class SetupTusAzureStore
+public static class SetupTusAzure
 {
-    extension(IServiceCollection services)
+    extension(HeadlessTusSetupBuilder setup)
     {
         /// <summary>
-        /// Registers <see cref="TusAzureStore"/> as a singleton with options bound from
-        /// <paramref name="config"/> and validated at startup.
+        /// Uses <see cref="TusAzureStore"/> as the host's tus store, with options bound from
+        /// <paramref name="configuration"/> and validated at startup.
         /// </summary>
-        /// <param name="config">configuration section to bind <see cref="TusAzureStoreOptions"/> from</param>
-        /// <returns>the same service collection for chaining</returns>
+        /// <param name="configuration">The configuration section to bind <see cref="TusAzureStoreOptions"/> from.</param>
+        /// <returns>The builder for chaining.</returns>
         /// <remarks>
         /// Requires a <see cref="BlobServiceClient"/> registration (for example via
         /// <c>Microsoft.Extensions.Azure</c>'s <c>AddAzureClients</c>). An
-        /// <c>ITusAzureBlobHttpHeadersProvider</c> or <c>ITusFileIdProvider</c> registered before
-        /// this call is honored; otherwise the defaults apply. The container is registered as a
-        /// provisioned resource of kind <c>AzureBlob</c>: a deploy step creates it with
-        /// <c>resources provision</c>, and a starting host holds readiness until it exists.
+        /// <c>ITusAzureBlobHttpHeadersProvider</c> or <c>ITusFileIdProvider</c> the application registers is
+        /// honored; otherwise the defaults apply. The container is registered as a provisioned resource of kind
+        /// <c>AzureBlob</c>: a deploy step creates it with <c>resources provision</c>, and a starting host holds
+        /// readiness until it exists.
         /// </remarks>
-        public IServiceCollection AddTusAzureStore(IConfiguration config)
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public HeadlessTusSetupBuilder UseAzure(IConfiguration configuration)
         {
-            Argument.IsNotNull(config);
-            services.Configure<TusAzureStoreOptions, TusAzureStoreOptionsValidator>(config);
+            Argument.IsNotNull(configuration);
 
-            return _AddTusAzureStoreCore(services);
+            setup.RegisterStore<TusAzureStore>(services =>
+            {
+                services.Configure<TusAzureStoreOptions, TusAzureStoreOptionsValidator>(configuration);
+                _AddStoreCore(services);
+            });
+
+            return setup;
         }
 
-        /// <inheritdoc cref="AddTusAzureStore(IServiceCollection, IConfiguration)"/>
-        /// <param name="setupAction">delegate configuring <see cref="TusAzureStoreOptions"/></param>
-        public IServiceCollection AddTusAzureStore(Action<TusAzureStoreOptions> setupAction)
+        /// <inheritdoc cref="UseAzure(HeadlessTusSetupBuilder, IConfiguration)"/>
+        /// <param name="setupAction">Delegate configuring <see cref="TusAzureStoreOptions"/>.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public HeadlessTusSetupBuilder UseAzure(Action<TusAzureStoreOptions> setupAction)
         {
             Argument.IsNotNull(setupAction);
-            services.Configure<TusAzureStoreOptions, TusAzureStoreOptionsValidator>(setupAction);
 
-            return _AddTusAzureStoreCore(services);
+            setup.RegisterStore<TusAzureStore>(services =>
+            {
+                services.Configure<TusAzureStoreOptions, TusAzureStoreOptionsValidator>(setupAction);
+                _AddStoreCore(services);
+            });
+
+            return setup;
         }
 
-        /// <inheritdoc cref="AddTusAzureStore(IServiceCollection, IConfiguration)"/>
-        /// <param name="setupAction">delegate configuring <see cref="TusAzureStoreOptions"/> with access to the service provider</param>
-        public IServiceCollection AddTusAzureStore(Action<TusAzureStoreOptions, IServiceProvider> setupAction)
+        /// <inheritdoc cref="UseAzure(HeadlessTusSetupBuilder, IConfiguration)"/>
+        /// <param name="setupAction">Delegate configuring <see cref="TusAzureStoreOptions"/> with access to the service provider.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public HeadlessTusSetupBuilder UseAzure(Action<TusAzureStoreOptions, IServiceProvider> setupAction)
         {
             Argument.IsNotNull(setupAction);
-            services.Configure<TusAzureStoreOptions, TusAzureStoreOptionsValidator>(setupAction);
 
-            return _AddTusAzureStoreCore(services);
+            setup.RegisterStore<TusAzureStore>(services =>
+            {
+                services.Configure<TusAzureStoreOptions, TusAzureStoreOptionsValidator>(setupAction);
+                _AddStoreCore(services);
+            });
+
+            return setup;
         }
     }
 
-    private static IServiceCollection _AddTusAzureStoreCore(IServiceCollection services)
+    private static void _AddStoreCore(IServiceCollection services)
     {
-        // A repeated call keeps the first store (TryAdd), so it must not register a second provisioner either.
-        var storeAlreadyRegistered = services.Any(static d => d.ServiceType == typeof(TusAzureStore));
-
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ITusAzureBlobHttpHeadersProvider, DefaultTusAzureBlobHttpHeadersProvider>();
 
-        services.TryAddSingleton(provider => new TusAzureStore(
+        services.AddSingleton(provider => new TusAzureStore(
             provider.GetRequiredService<BlobServiceClient>(),
             provider.GetRequiredService<IOptions<TusAzureStoreOptions>>().Value,
+            // Registered by AddHeadlessTus: the store keeps each tenant's uploads apart once the application's
+            // tenancy setup scopes uploads by tenant.
+            provider.GetRequiredService<TusTenantScope>(),
             provider.GetRequiredService<ITusAzureBlobHttpHeadersProvider>(),
             provider.GetService<ITusFileIdProvider>(),
             provider.GetService<ILoggerFactory>(),
             provider.GetService<TimeProvider>()
         ));
 
-        if (!storeAlreadyRegistered)
-        {
-            services.AddResourceProvisioner(static provider => new TusAzureContainerProvisioner(
-                provider.GetRequiredService<BlobServiceClient>(),
-                provider.GetRequiredService<IOptions<TusAzureStoreOptions>>().Value
-            ));
-        }
-
-        // Lets cross-cutting consumers (e.g. AddTusExpiredUploadsCleanup) resolve the store by
-        // its tusdotnet capability interface without knowing the provider.
-        services.TryAddSingleton<ITusExpirationStore>(provider => provider.GetRequiredService<TusAzureStore>());
-
-        return services;
+        services.AddResourceProvisioner(static provider => new TusAzureContainerProvisioner(
+            provider.GetRequiredService<BlobServiceClient>(),
+            provider.GetRequiredService<IOptions<TusAzureStoreOptions>>().Value
+        ));
     }
 }

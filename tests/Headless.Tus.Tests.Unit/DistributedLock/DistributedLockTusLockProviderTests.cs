@@ -106,7 +106,7 @@ public sealed class TusDistributedLockSetupTests : TestBase
         services.AddSingleton(Substitute.For<IDistributedLock>());
 
         // when
-        services.AddDistributedLockTusLockProvider();
+        services.AddHeadlessTus(tus => tus.UseStore(Substitute.For<ITusStore>()).UseDistributedLocks());
 
         // then
         var serviceProvider = services.BuildServiceProvider();
@@ -125,7 +125,7 @@ public sealed class TusDistributedLockSetupTests : TestBase
         services.AddSingleton(distributedLock);
 
         // when
-        services.AddDistributedLockTusLockProvider("tus-avatars");
+        services.AddHeadlessTus(tus => tus.UseStore(Substitute.For<ITusStore>()).UseDistributedLocks("tus-avatars"));
 
         // then - locks created by the registered provider carry the prefix
         var serviceProvider = services.BuildServiceProvider();

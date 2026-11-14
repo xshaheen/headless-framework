@@ -8,16 +8,11 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Tus.Internal;
 
 /// <summary>
-/// Reads and writes an upload's state object and completed record, with every state write conditional on the ETag the
-/// request holds.
+/// Reads and writes an upload's state object, completed record, and handed-off mark, with every state write
+/// conditional on the ETag the request holds. Every call names the keys of the tenant the upload belongs to, so one
+/// instance serves every tenant.
 /// </summary>
-internal sealed class TusS3StateStore(
-    IAmazonS3 s3,
-    TusS3StoreOptions options,
-    TusS3Keys keys,
-    TusS3RequestMemo memo,
-    ILogger logger
-)
+internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, TusS3RequestMemo memo, ILogger logger)
 {
     private const string _JsonContentType = "application/json";
 
@@ -25,9 +20,9 @@ internal sealed class TusS3StateStore(
     /// Loads an upload: its state when it is incomplete, its completed record when it is finished, or
     /// <see langword="null"/> when neither exists. An incomplete upload costs one request and a completed one two.
     /// </summary>
-    public async Task<TusS3LoadedUpload?> LoadAsync(string fileId, CancellationToken cancellationToken)
+    public async Task<TusS3LoadedUpload?> LoadAsync(TusS3Keys keys, string fileId, CancellationToken cancellationToken)
     {
-        if (memo.TryGet(fileId, out var memoized))
+        if (memo.TryGet(keys.Tenant, fileId, out var memoized))
         {
             return memoized;
         }
@@ -51,7 +46,7 @@ internal sealed class TusS3StateStore(
             upload = TusS3LoadedUpload.Finished(TusS3CompletedRecord.FromJson(record.Value.Content));
         }
 
-        memo.Set(fileId, upload);
+        memo.Set(keys.Tenant, fileId, upload);
 
         return upload;
     }
@@ -61,7 +56,11 @@ internal sealed class TusS3StateStore(
     /// <see langword="null"/> when no state object exists.
     /// </summary>
     /// <exception cref="InvalidDataException">The stored state is not one this build can read.</exception>
-    public async Task<TusS3LoadedUpload?> ReadIncompleteAsync(string fileId, CancellationToken cancellationToken)
+    public async Task<TusS3LoadedUpload?> ReadIncompleteAsync(
+        TusS3Keys keys,
+        string fileId,
+        CancellationToken cancellationToken
+    )
     {
         var info = await _TryGetAsync(keys.Info(fileId), cancellationToken).ConfigureAwait(false);
 
@@ -71,20 +70,25 @@ internal sealed class TusS3StateStore(
     }
 
     /// <summary>Drops what this request remembers about an upload, after its objects were removed.</summary>
-    public void Forget(string fileId)
+    public void Forget(TusS3Keys keys, string fileId)
     {
-        memo.Remove(fileId);
+        memo.Remove(keys.Tenant, fileId);
     }
 
     /// <summary>Writes a new upload's state, failing if any state already exists under its id.</summary>
     /// <exception cref="AmazonS3Exception">An upload with the same id already exists (412).</exception>
-    public async Task CreateAsync(string fileId, TusS3UploadState state, CancellationToken cancellationToken)
+    public async Task CreateAsync(
+        TusS3Keys keys,
+        string fileId,
+        TusS3UploadState state,
+        CancellationToken cancellationToken
+    )
     {
         var etag = await _PutAsync(keys.Info(fileId), state.ToJson(), PutCondition.Create, cancellationToken)
             .ConfigureAwait(false);
 
         // Creation-with-upload runs its append in the same request, which then needs no read.
-        memo.Set(fileId, TusS3LoadedUpload.Incomplete(state, etag));
+        memo.Set(keys.Tenant, fileId, TusS3LoadedUpload.Incomplete(state, etag));
     }
 
     /// <summary>
@@ -98,6 +102,7 @@ internal sealed class TusS3StateStore(
     /// whereas a <c>TusStoreException</c> would become a 400 that clients treat as fatal.
     /// </exception>
     public async Task<TusS3LoadedUpload> UpdateAsync(
+        TusS3Keys keys,
         string fileId,
         TusS3LoadedUpload upload,
         CancellationToken cancellationToken
@@ -116,14 +121,14 @@ internal sealed class TusS3StateStore(
                 .ConfigureAwait(false);
 
             var written = TusS3LoadedUpload.Incomplete(state, etag);
-            memo.Set(fileId, written);
+            memo.Set(keys.Tenant, fileId, written);
 
             return written;
         }
         catch (Exception e)
         {
             // The caller changed the memoized state for a write that did not land, so the next call must re-read.
-            memo.Remove(fileId);
+            memo.Remove(keys.Tenant, fileId);
 
             if (e is AmazonS3Exception s3Exception && IsStaleWrite(s3Exception))
             {
@@ -136,6 +141,7 @@ internal sealed class TusS3StateStore(
 
     /// <summary>Writes the record a completed upload keeps, failing if one already exists.</summary>
     public async Task CreateCompletedRecordAsync(
+        TusS3Keys keys,
         string fileId,
         TusS3CompletedRecord record,
         CancellationToken cancellationToken
@@ -144,7 +150,7 @@ internal sealed class TusS3StateStore(
         await _PutAsync(keys.CompletedRecord(fileId), record.ToJson(), PutCondition.Create, cancellationToken)
             .ConfigureAwait(false);
 
-        memo.Set(fileId, TusS3LoadedUpload.Finished(record));
+        memo.Set(keys.Tenant, fileId, TusS3LoadedUpload.Finished(record));
     }
 
     /// <summary>
@@ -158,6 +164,7 @@ internal sealed class TusS3StateStore(
     /// repaired by the next attempt simply writing the record again.
     /// </remarks>
     public async Task CommitCompletionAsync(
+        TusS3Keys keys,
         string fileId,
         TusS3CompletedRecord record,
         CancellationToken cancellationToken
@@ -172,7 +179,46 @@ internal sealed class TusS3StateStore(
             )
             .ConfigureAwait(false);
 
-        memo.Set(fileId, TusS3LoadedUpload.Finished(record));
+        memo.Set(keys.Tenant, fileId, TusS3LoadedUpload.Finished(record));
+    }
+
+    /// <summary>
+    /// Reads where an upload stands between its completion and its handoff, straight from storage and never from
+    /// the request memo: the caller asks under the upload's lock to see what the lock's last holder did.
+    /// </summary>
+    public async Task<TusHandoffState> ReadHandoffStateAsync(
+        TusS3Keys keys,
+        string fileId,
+        CancellationToken cancellationToken
+    )
+    {
+        // The state object outlives the completed record's write and goes only when the completion commits, so
+        // while it exists the upload is not complete, whatever else is stored.
+        if (
+            await _ExistsAsync(keys.Info(fileId), cancellationToken).ConfigureAwait(false)
+            || !await _ExistsAsync(keys.CompletedRecord(fileId), cancellationToken).ConfigureAwait(false)
+        )
+        {
+            return TusHandoffState.NotComplete;
+        }
+
+        return await _ExistsAsync(keys.HandedOffMark(fileId), cancellationToken).ConfigureAwait(false)
+            ? TusHandoffState.HandedOff
+            : TusHandoffState.Pending;
+    }
+
+    /// <summary>
+    /// Writes the mark of a handed-off upload, unless it is already there. The mark is create-only, so the write
+    /// that finds one changes nothing.
+    /// </summary>
+    public async Task MarkHandedOffAsync(TusS3Keys keys, string fileId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _PutAsync(keys.HandedOffMark(fileId), [], PutCondition.Create, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.PreconditionFailed) { }
     }
 
     /// <summary>
@@ -181,6 +227,7 @@ internal sealed class TusS3StateStore(
     /// </summary>
     /// <returns>the upload as written, or <paramref name="upload"/> when the write lost to another request</returns>
     public async Task<TusS3LoadedUpload> TryMarkGoneAsync(
+        TusS3Keys keys,
         string fileId,
         TusS3LoadedUpload upload,
         CancellationToken cancellationToken
@@ -190,7 +237,7 @@ internal sealed class TusS3StateStore(
 
         try
         {
-            return await UpdateAsync(fileId, upload, cancellationToken).ConfigureAwait(false);
+            return await UpdateAsync(keys, fileId, upload, cancellationToken).ConfigureAwait(false);
         }
         catch (AmazonS3Exception e) when (IsStaleWrite(e) || e.StatusCode is HttpStatusCode.NotFound)
         {
@@ -256,6 +303,24 @@ internal sealed class TusS3StateStore(
         public static PutCondition Create => new(IsCreate: true, ETag: null);
 
         public static PutCondition Match(string etag) => new(IsCreate: false, etag);
+    }
+
+    private async Task<bool> _ExistsAsync(string key, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await s3.GetObjectMetadataAsync(
+                    new GetObjectMetadataRequest { BucketName = options.Bucket, Key = key },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return true;
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return false;
+        }
     }
 
     private async Task<(byte[] Content, string ETag)?> _TryGetAsync(string key, CancellationToken cancellationToken)

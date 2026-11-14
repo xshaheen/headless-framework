@@ -2,6 +2,7 @@
 
 using Amazon.S3;
 using Amazon.S3.Model;
+using Headless.MultiTenancy;
 using Headless.Tus.Internal;
 
 namespace Headless.Tus;
@@ -30,13 +31,28 @@ public sealed partial class TusS3Store
     /// completed uploads the bucket holds. A completing upload counts once the expiry it had before completing has
     /// passed, unless its completion has already written the finished object and is recording it. A cancelled token
     /// returns the uploads found so far instead of throwing.
+    /// <para>
+    /// The listing covers the uploads kept outside any tenant and every tenant's uploads, whatever tenant is ambient,
+    /// so the identifiers of different tenants come back in one sequence.
+    /// </para>
     /// </remarks>
     /// <exception cref="AmazonS3Exception">Storage refused the listing or a read.</exception>
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
     {
-        var scan = await _ScanInProgressUploadsAsync(cancellationToken).ConfigureAwait(false);
+        List<string> expired = [];
 
-        return scan.Abandoned.ConvertAll(upload => upload.FileId);
+        await _ForEachScopeAsync(
+                scan =>
+                {
+                    expired.AddRange(scan.Abandoned.Select(upload => upload.FileId));
+
+                    return Task.CompletedTask;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return expired;
     }
 
     /// <summary>
@@ -66,32 +82,24 @@ public sealed partial class TusS3Store
     /// when the caller shuts down, and the token bounds only the listing. One upload's failure is logged and does not
     /// stop the rest.
     /// </para>
+    /// <para>
+    /// The pass never reads the ambient tenant. It handles the uploads kept outside any tenant first and then, one
+    /// tenant at a time, the uploads of every tenant that has one in progress, so the cleanup job covers them all
+    /// from outside any tenant. Finding the tenants costs one more listing, sent only when a tenant's upload is in
+    /// progress.
+    /// </para>
     /// </remarks>
     /// <exception cref="AmazonS3Exception">Storage refused the listing or a read.</exception>
     public async Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken)
     {
-        var scan = await _ScanInProgressUploadsAsync(cancellationToken).ConfigureAwait(false);
-
-        foreach (var fileId in scan.Orphans)
-        {
-            await _RemoveOrphanWorkingSetAsync(fileId).ConfigureAwait(false);
-        }
-
         var removed = 0;
 
-        foreach (var (fileId, upload) in scan.Abandoned)
-        {
-            if (await _RemoveAbandonedUploadAsync(fileId, upload).ConfigureAwait(false))
-            {
-                removed++;
-            }
-        }
-
-        if (!scan.Cancelled)
-        {
-            await _AbortUnrecordedMultipartUploadsAsync(scan.Tracked, scan.Now, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await _ForEachScopeAsync(
+                async scan =>
+                    removed += await _RemoveAbandonedUploadsAsync(scan, cancellationToken).ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         _logger.LogS3ExpiredUploadsRemoved(removed);
 
@@ -99,12 +107,123 @@ public sealed partial class TusS3Store
     }
 
     /// <summary>
-    /// Lists the in-progress uploads one folder per upload, and reads each one's state once.
+    /// Scans the in-progress uploads kept outside any tenant, then those of each tenant that has one, and hands
+    /// each scan to <paramref name="handle"/> before the next one starts, so the pass holds one tenant's uploads
+    /// at a time.
     /// </summary>
-    private async Task<SweepScan> _ScanInProgressUploadsAsync(CancellationToken cancellationToken)
+    private async Task _ForEachScopeAsync(Func<SweepScan, Task> handle, CancellationToken cancellationToken)
     {
-        var scan = new SweepScan(_timeProvider.GetUtcNow());
-        var root = _keys.WorkingSetRoot;
+        var scan = await _ScanInProgressUploadsAsync(_unscopedKeys, cancellationToken).ConfigureAwait(false);
+        await handle(scan).ConfigureAwait(false);
+
+        // Tenants are looked up only when the listing above showed their folder, so a bucket that holds no tenant's
+        // upload in progress costs the pass nothing more than before.
+        if (!scan.HasTenantFolder || scan.Cancelled)
+        {
+            return;
+        }
+
+        foreach (var tenant in await _ListTenantsInProgressAsync(cancellationToken).ConfigureAwait(false))
+        {
+            scan = await _ScanInProgressUploadsAsync(_unscopedKeys.ForTenant(tenant), cancellationToken)
+                .ConfigureAwait(false);
+            await handle(scan).ConfigureAwait(false);
+
+            if (scan.Cancelled)
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The tenants that have a working set, one listing page per 1,000 of them. Only the working-set folder is
+    /// listed, so the cost follows the tenants with an upload in progress, not every tenant that ever uploaded.
+    /// </summary>
+    private async Task<List<string>> _ListTenantsInProgressAsync(CancellationToken cancellationToken)
+    {
+        List<string> tenants = [];
+        var root = _unscopedKeys.TenantWorkingSetsRoot;
+        var request = new ListObjectsV2Request
+        {
+            BucketName = _options.Bucket,
+            Prefix = root,
+            Delimiter = "/",
+        };
+
+        try
+        {
+            ListObjectsV2Response response;
+
+            do
+            {
+                response = await _s3.ListObjectsV2Async(request, cancellationToken).ConfigureAwait(false);
+
+                foreach (var folder in response.CommonPrefixes ?? [])
+                {
+                    var tenant = folder[root.Length..^1];
+
+                    // The store writes under a tenant only after this same check, so any other folder is not its own.
+                    if (TenantStorageSegment.IsValid(tenant))
+                    {
+                        tenants.Add(tenant);
+                    }
+                }
+
+                request.ContinuationToken = response.NextContinuationToken;
+            } while (response.IsTruncated is true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The cleanup job is shutting down; the tenants found so far are still handled, the next pass the rest.
+        }
+        catch (Exception e)
+        {
+            _logger.LogS3ExpiredUploadsScanFailed(e);
+
+            throw;
+        }
+
+        return tenants;
+    }
+
+    /// <summary>Removes what one scan found: its orphan working sets, abandoned uploads, and leaked multipart uploads.</summary>
+    /// <returns>the number of uploads removed</returns>
+    private async Task<int> _RemoveAbandonedUploadsAsync(SweepScan scan, CancellationToken cancellationToken)
+    {
+        foreach (var fileId in scan.Orphans)
+        {
+            await _RemoveOrphanWorkingSetAsync(scan.Keys, fileId).ConfigureAwait(false);
+        }
+
+        var removed = 0;
+
+        foreach (var (fileId, upload) in scan.Abandoned)
+        {
+            if (await _RemoveAbandonedUploadAsync(scan.Keys, fileId, upload).ConfigureAwait(false))
+            {
+                removed++;
+            }
+        }
+
+        if (!scan.Cancelled)
+        {
+            await _AbortUnrecordedMultipartUploadsAsync(scan.Keys, scan.Tracked, scan.Now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return removed;
+    }
+
+    /// <summary>
+    /// Lists the in-progress uploads <paramref name="keys"/> covers (one tenant's, or the ones kept outside any
+    /// tenant), one folder per upload, and reads each one's state once.
+    /// </summary>
+    private async Task<SweepScan> _ScanInProgressUploadsAsync(TusS3Keys keys, CancellationToken cancellationToken)
+    {
+        var scan = new SweepScan(keys, _timeProvider.GetUtcNow());
+        var root = keys.WorkingSetRoot;
+        var tenantsRoot = keys.TenantWorkingSetsRoot;
         var request = new ListObjectsV2Request
         {
             BucketName = _options.Bucket,
@@ -124,9 +243,15 @@ public sealed partial class TusS3Store
                 {
                     var fileId = folder[root.Length..^1];
 
+                    // The folder that holds the tenants sits beside the working sets kept outside any tenant. Its
+                    // name is no file id, so it is never read as an upload; each tenant in it gets a scan of its own.
                     if (TusS3Keys.IsValid(fileId))
                     {
-                        await _ScanUploadAsync(scan, fileId, cancellationToken).ConfigureAwait(false);
+                        await _ScanUploadAsync(keys, scan, fileId, cancellationToken).ConfigureAwait(false);
+                    }
+                    else if (string.Equals(folder, tenantsRoot, StringComparison.Ordinal))
+                    {
+                        scan.HasTenantFolder = true;
                     }
                 }
 
@@ -148,13 +273,18 @@ public sealed partial class TusS3Store
         return scan;
     }
 
-    private async Task _ScanUploadAsync(SweepScan scan, string fileId, CancellationToken cancellationToken)
+    private async Task _ScanUploadAsync(
+        TusS3Keys keys,
+        SweepScan scan,
+        string fileId,
+        CancellationToken cancellationToken
+    )
     {
         TusS3LoadedUpload? upload;
 
         try
         {
-            upload = await _stateStore.ReadIncompleteAsync(fileId, cancellationToken).ConfigureAwait(false);
+            upload = await _stateStore.ReadIncompleteAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
         }
         catch (InvalidDataException e)
         {
@@ -199,14 +329,14 @@ public sealed partial class TusS3Store
 
     /// <summary>Claims an abandoned upload as gone, then destroys its objects.</summary>
     /// <returns><see langword="true"/> when the upload was claimed and removed</returns>
-    private async Task<bool> _RemoveAbandonedUploadAsync(string fileId, TusS3LoadedUpload upload)
+    private async Task<bool> _RemoveAbandonedUploadAsync(TusS3Keys keys, string fileId, TusS3LoadedUpload upload)
     {
         var state = upload.State!;
         state.Status = TusS3UploadStatus.Gone;
 
         try
         {
-            await _stateStore.UpdateAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
+            await _stateStore.UpdateAsync(keys, fileId, upload, CancellationToken.None).ConfigureAwait(false);
         }
         catch (AmazonS3Exception e) when (TusS3StateStore.IsStaleWrite(e))
         {
@@ -228,12 +358,12 @@ public sealed partial class TusS3Store
         {
             if (state.MultipartUploadId is { } uploadId)
             {
-                await _AbortMultipartUploadIfExistsAsync(fileId, uploadId, CancellationToken.None)
+                await _AbortMultipartUploadIfExistsAsync(keys, fileId, uploadId, CancellationToken.None)
                     .ConfigureAwait(false);
             }
 
-            var workingSet = await _ListWorkingSetAsync(fileId, CancellationToken.None).ConfigureAwait(false);
-            await _DeleteUploadObjectsAsync(fileId, workingSet, CancellationToken.None).ConfigureAwait(false);
+            var workingSet = await _ListWorkingSetAsync(keys, fileId, CancellationToken.None).ConfigureAwait(false);
+            await _DeleteUploadObjectsAsync(keys, fileId, workingSet, CancellationToken.None).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // The upload is claimed as gone, so the next pass finds it again and finishes the removal.
         catch (Exception e)
@@ -248,16 +378,16 @@ public sealed partial class TusS3Store
     }
 
     /// <summary>Deletes a working-set folder whose state object is gone; it holds only leftover tail segments.</summary>
-    private async Task _RemoveOrphanWorkingSetAsync(string fileId)
+    private async Task _RemoveOrphanWorkingSetAsync(TusS3Keys keys, string fileId)
     {
         try
         {
-            var keys = await _ListWorkingSetAsync(fileId, CancellationToken.None).ConfigureAwait(false);
+            var objectKeys = await _ListWorkingSetAsync(keys, fileId, CancellationToken.None).ConfigureAwait(false);
 
             // A finished object or record under the id belongs to a completed upload and stays.
-            await _DeleteObjectKeysAsync(keys, CancellationToken.None).ConfigureAwait(false);
+            await _DeleteObjectKeysAsync(objectKeys, CancellationToken.None).ConfigureAwait(false);
 
-            _logger.LogS3OrphanWorkingSetRemoved(fileId, keys.Count);
+            _logger.LogS3OrphanWorkingSetRemoved(fileId, objectKeys.Count);
         }
 #pragma warning disable CA1031 // Leftover segments only cost storage; the next pass tries again.
         catch (Exception e)
@@ -268,10 +398,16 @@ public sealed partial class TusS3Store
     }
 
     /// <summary>
-    /// Aborts multipart uploads that a crash or a stale writer left on the key of an upload this pass read, when the
+    /// Aborts multipart uploads that a crash or a stale writer left on the key of an upload this scan read, when the
     /// upload's state does not record them and they are older than the grace period.
     /// </summary>
+    /// <remarks>
+    /// The listing for the uploads kept outside any tenant also returns every tenant's multipart uploads, because
+    /// their keys start with the same prefix. None of them is taken for a leak: a tenant's key continues with the
+    /// tenants folder and a slash, which no file id this scan read can equal.
+    /// </remarks>
     private async Task _AbortUnrecordedMultipartUploadsAsync(
+        TusS3Keys keys,
         Dictionary<string, string?> tracked,
         DateTimeOffset now,
         CancellationToken cancellationToken
@@ -282,7 +418,7 @@ public sealed partial class TusS3Store
             return;
         }
 
-        var prefix = _options.NormalizedPrefix;
+        var prefix = keys.FinishedObjectRoot;
 
         try
         {
@@ -294,7 +430,7 @@ public sealed partial class TusS3Store
             {
                 if (_IsUnrecordedLeak(upload, prefix, tracked, now, out var fileId))
                 {
-                    await _AbortMultipartUploadIfExistsAsync(fileId, upload.UploadId, CancellationToken.None)
+                    await _AbortMultipartUploadIfExistsAsync(keys, fileId, upload.UploadId, CancellationToken.None)
                         .ConfigureAwait(false);
 
                     _logger.LogS3UnrecordedMultipartUploadAborted(fileId, upload.UploadId);
@@ -323,8 +459,8 @@ public sealed partial class TusS3Store
     {
         fileId = null;
 
-        // Only the exact finished key of an upload this pass read belongs to the store; anything else under the prefix
-        // may be another writer's.
+        // Only the exact finished key of an upload this scan read is judged; anything else under the prefix may be
+        // another writer's, or an upload of a tenant this scan does not cover.
         if (
             upload.Key is not { } key
             || !key.StartsWith(prefix, StringComparison.Ordinal)
@@ -342,9 +478,15 @@ public sealed partial class TusS3Store
         return true;
     }
 
-    /// <summary>What one listing pass found, in the order it found it.</summary>
-    private sealed class SweepScan(DateTimeOffset now)
+    /// <summary>
+    /// What one listing found among one tenant's uploads, or among the ones kept outside any tenant, in the order it
+    /// found it.
+    /// </summary>
+    private sealed class SweepScan(TusS3Keys keys, DateTimeOffset now)
     {
+        /// <summary>The keys of the uploads this scan covers.</summary>
+        public TusS3Keys Keys { get; } = keys;
+
         /// <summary>The instant every expiry in this pass is judged against.</summary>
         public DateTimeOffset Now { get; } = now;
 
@@ -356,6 +498,12 @@ public sealed partial class TusS3Store
 
         /// <summary>Every upload whose state the pass read, with the multipart upload that state records.</summary>
         public Dictionary<string, string?> Tracked { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Whether the listing showed the folder that holds each tenant's working sets, which only the scan of the
+        /// uploads kept outside any tenant can see.
+        /// </summary>
+        public bool HasTenantFolder { get; set; }
 
         public bool Cancelled { get; set; }
     }

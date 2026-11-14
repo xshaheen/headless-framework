@@ -15,6 +15,7 @@ internal sealed class TusAzureMetadata
     public const string LastChunkBlocksKey = "tus_last_chunk_blocks";
     public const string LastChunkChecksumKey = "tus_last_chunk_checksum";
     public const string LastChunkOffsetKey = "tus_last_chunk_offset";
+    public const string HandedOffKey = "tus_handed_off";
 
     /// <summary>
     /// Blob-metadata key holding the client's Upload-Metadata header value <em>verbatim</em>.
@@ -169,6 +170,26 @@ internal sealed class TusAzureMetadata
             else
             {
                 _decodedMetadata.Remove(LastChunkOffsetKey);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the completed upload was handed off to the application. Every write of the blob's metadata carries
+    /// the entries it read, so the mark stays through later writes and goes only with the blob.
+    /// </summary>
+    public bool HandedOff
+    {
+        get => _decodedMetadata.ContainsKey(HandedOffKey);
+        set
+        {
+            if (value)
+            {
+                _decodedMetadata[HandedOffKey] = "true";
+            }
+            else
+            {
+                _decodedMetadata.Remove(HandedOffKey);
             }
         }
     }

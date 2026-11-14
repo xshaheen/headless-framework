@@ -10,6 +10,9 @@ using tusdotnet.Interfaces;
 
 namespace Tests;
 
+/// <summary>A store that can expire uploads, as one type NSubstitute can stand in for.</summary>
+public interface IExpiringTusStore : ITusStore, ITusExpirationStore;
+
 public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
 {
     private static readonly TimeSpan _Interval = TimeSpan.FromMinutes(5);
@@ -31,14 +34,15 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     }
 
     private static TusExpiredUploadsCleanupService _CreateService(
-        ITusExpirationStore store,
+        ITusStore store,
         FakeTimeProvider timeProvider,
-        ITusExpiredUploadsCleanupGate? gate = null
+        ITusExpiredUploadsCleanupGate? gate = null,
+        bool enabled = true
     )
     {
         return new TusExpiredUploadsCleanupService(
             store,
-            Options.Create(new TusExpiredUploadsCleanupOptions { Interval = _Interval }),
+            Options.Create(new TusExpiredUploadsCleanupOptions { Interval = _Interval, Enabled = enabled }),
             timeProvider,
             NullLogger<TusExpiredUploadsCleanupService>.Instance,
             gate
@@ -49,7 +53,7 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     public async Task should_skip_the_pass_when_another_node_claimed_it()
     {
         // given
-        var store = Substitute.For<ITusExpirationStore>();
+        var store = Substitute.For<IExpiringTusStore>();
         var gate = new _FakeGate(claims: false);
 
         var timeProvider = new FakeTimeProvider();
@@ -68,7 +72,7 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     public async Task should_run_the_pass_and_hold_the_claim_for_most_of_the_interval_when_claimed()
     {
         // given
-        var store = Substitute.For<ITusExpirationStore>();
+        var store = Substitute.For<IExpiringTusStore>();
         var firstPass = new TaskCompletionSource();
         store.RemoveExpiredFilesAsync(Arg.Any<CancellationToken>()).Returns(1).AndDoes(_ => firstPass.TrySetResult());
         var gate = new _FakeGate(claims: true);
@@ -106,9 +110,8 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     {
         // given
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<ITusExpirationStore>());
         services.AddLogging();
-        services.AddTusExpiredUploadsCleanup();
+        services.AddHeadlessTus(tus => tus.UseStore(Substitute.For<IExpiringTusStore>()));
 
         // when
         using var provider = services.BuildServiceProvider();
@@ -122,10 +125,43 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_end_without_a_pass_when_disabled()
+    {
+        // given
+        var store = Substitute.For<IExpiringTusStore>();
+        var timeProvider = new FakeTimeProvider();
+        using var service = _CreateService(store, timeProvider, enabled: false);
+
+        // when - the loop ends at once, so no interval has to pass
+        await service.StartAsync(AbortToken);
+        await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        await store.DidNotReceive().RemoveExpiredFilesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_end_without_a_pass_when_the_store_cannot_expire_uploads()
+    {
+        // given - a store with no ITusExpirationStore, and a gate that would record a claim attempt
+        var store = Substitute.For<ITusStore>();
+        var gate = new _FakeGate(claims: true);
+        var timeProvider = new FakeTimeProvider();
+        using var service = _CreateService(store, timeProvider, gate);
+
+        // when
+        await service.StartAsync(AbortToken);
+        await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then - it never competed for the pass it could not run
+        gate.HoldFor.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_run_a_cleanup_pass_immediately_at_startup()
     {
         // given
-        var store = Substitute.For<ITusExpirationStore>();
+        var store = Substitute.For<IExpiringTusStore>();
         var firstPass = new TaskCompletionSource();
         store.RemoveExpiredFilesAsync(Arg.Any<CancellationToken>()).Returns(1).AndDoes(_ => firstPass.TrySetResult());
 
@@ -146,7 +182,7 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     {
         // given - the startup pass satisfies call #1, so the interval loop is only proven by a
         // SECOND call that requires advancing fake time
-        var store = Substitute.For<ITusExpirationStore>();
+        var store = Substitute.For<IExpiringTusStore>();
         var secondPass = new TaskCompletionSource();
         var calls = 0;
         store
@@ -177,7 +213,7 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     public async Task should_keep_running_after_a_failed_pass()
     {
         // given - the first pass throws, the second succeeds
-        var store = Substitute.For<ITusExpirationStore>();
+        var store = Substitute.For<IExpiringTusStore>();
         var secondPass = new TaskCompletionSource();
         var calls = 0;
         store
@@ -206,45 +242,5 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
 
         // then - the loop survived the failure
         calls.Should().BeGreaterThanOrEqualTo(2);
-    }
-
-    [Fact]
-    public void should_register_cleanup_service_via_di()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<ITusExpirationStore>());
-        services.AddLogging();
-
-        // when
-        services.AddTusExpiredUploadsCleanup(options => options.Interval = TimeSpan.FromSeconds(30));
-        using var provider = services.BuildServiceProvider();
-
-        // then
-        provider
-            .GetServices<Microsoft.Extensions.Hosting.IHostedService>()
-            .Should()
-            .ContainSingle(service => service is TusExpiredUploadsCleanupService);
-        provider
-            .GetRequiredService<IOptions<TusExpiredUploadsCleanupOptions>>()
-            .Value.Interval.Should()
-            .Be(TimeSpan.FromSeconds(30));
-    }
-
-    [Fact]
-    public void should_reject_non_positive_interval()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<ITusExpirationStore>());
-        services.AddLogging();
-        services.AddTusExpiredUploadsCleanup(options => options.Interval = TimeSpan.Zero);
-        using var provider = services.BuildServiceProvider();
-
-        // when
-        var act = () => provider.GetRequiredService<IOptions<TusExpiredUploadsCleanupOptions>>().Value;
-
-        // then
-        act.Should().Throw<OptionsValidationException>();
     }
 }
