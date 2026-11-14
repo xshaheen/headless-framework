@@ -131,6 +131,49 @@ public sealed class MessagingCommandTests : TestBase
     }
 
     [Fact]
+    public async Task should_refuse_re_execute_as_still_processing_when_the_failed_row_waits_for_a_delayed_retry()
+    {
+        // given — a failed receipt whose consumer policy still has a delayed retry left, whatever MaxPersistedRetries says.
+        await using var app = await MessagingCommandHost.StartAsync(_time, _log, AbortToken);
+        var storage = app.Services.GetRequiredService<IDataStorage>();
+        var row = await MessagingCommandHost.InboxRetryingAsync(storage, "order-1", AbortToken);
+        var id = _ReceivedId(row);
+        using var client = MessagingCommandHost.Client(app);
+        var cookie = await MessagingCommandHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var allowed = await MessagingCommandHost.GetAsync(
+            client,
+            $"{_Commands}/allowed?kind=received&id={Uri.EscapeDataString(id)}",
+            cookie,
+            AbortToken
+        );
+        using var reExecute = await MessagingCommandHost.PostAsync(
+            client,
+            $"{_Commands}/{MessagingCommands.ReExecuteId}",
+            new { ids = new[] { id }, confirmed = true },
+            cookie,
+            AbortToken
+        );
+
+        // then — the list offers the action disabled with the server's reason, and a direct call answers the same.
+        var reExecuteAnswer = _Command(
+            await MessagingCommandHost.ReadAsync(allowed, AbortToken),
+            MessagingCommands.ReExecuteId
+        );
+        reExecuteAnswer.GetProperty("allowed").GetBoolean().Should().BeFalse();
+        reExecuteAnswer.GetProperty("disabledReason").GetString().Should().Be(MessagingCommands.StillProcessing);
+
+        reExecute.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await MessagingCommandHost.ReadAsync(reExecute, AbortToken))
+            .GetProperty("detail")
+            .GetString()
+            .Should()
+            .Be(MessagingCommands.StillProcessing);
+        _log.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_reject_an_operation_confirm_when_it_names_no_reason()
     {
         // given
