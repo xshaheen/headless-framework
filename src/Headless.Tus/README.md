@@ -8,7 +8,7 @@ Root package of the Headless TUS (resumable upload) stack: the `AddHeadlessTus` 
 
 - **Isolation.** Each upload is bound to the endpoint, owner, and tenant that created it, and is "not found" for anyone else.
 - **Validation.** A size limit, content-type and extension allow-lists checked against the upload's real first bytes, required metadata, and the application's own checks.
-- **A completion handler.** The application's handler receives each finished upload, and receives it again when it failed.
+- **A way to take a finished upload.** The application asks for the upload a client's request names, and gets it only when it belongs to that caller.
 - **Housekeeping.** Expired incomplete uploads are removed, and browsers get the CORS headers that tus clients need to read `Location` and `Upload-Offset`.
 
 Pair it with one store package (`Headless.Tus.Azure` or `Headless.Tus.S3`) or any other `ITusStore`, and add `Headless.Tus.DistributedLocks` when more than one node serves uploads.

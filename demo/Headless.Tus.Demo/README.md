@@ -64,7 +64,7 @@ To run against a real storage account instead of Azurite, set the
 - The Blob service version is pinned (`V2024_11_04`) so the demo works against Azurite, which lags
   behind the newest Azure Storage API versions.
 - The demo maps its endpoint with tusdotnet's `MapTus`, so it shows the protocol and the store, not
-  the upload endpoint layer: `/files` has no owner, validation, or completion handler, and anyone
+  the upload endpoint layer: `/files` has no owner, validation, or delete rule, and anyone
   who holds a file id can resume or delete that upload. An application maps a declared endpoint
   with `MapHeadlessTus` instead; see the
   [TUS guide](../../docs/llms/tus.md#upload-endpoints).
