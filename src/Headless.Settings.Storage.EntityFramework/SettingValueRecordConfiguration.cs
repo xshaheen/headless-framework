@@ -14,7 +14,7 @@ namespace Headless.Settings;
 /// (<c>Name</c>, <c>ProviderName</c>, <c>ProviderKey</c>) that also covers a <see langword="null"/>
 /// <c>ProviderKey</c>.
 /// </summary>
-/// <param name="options">Storage options that supply the table name and schema.</param>
+/// <param name="options">Storage options that supply the table name, schema, and column lengths.</param>
 /// <param name="style">The naming style of the database the model targets.</param>
 internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<SettingValueRecord>
@@ -27,10 +27,10 @@ internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions opt
         b.ToTable(table, options.Schema);
         b.ConfigureHeadlessConvention();
         b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
-        b.Property(x => x.Name).HasMaxLength(SettingValueRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.Value).HasMaxLength(SettingValueRecordConstants.ValueMaxLength).IsRequired();
-        b.Property(x => x.ProviderName).HasMaxLength(SettingValueRecordConstants.ProviderNameMaxLength).IsRequired();
-        b.Property(x => x.ProviderKey).HasMaxLength(SettingValueRecordConstants.ProviderKeyMaxLength).IsRequired(false);
+        b.Property(x => x.Name).HasMaxLength(options.SettingValuesNameMaxLength).IsRequired();
+        b.Property(x => x.Value).HasMaxLength(options.SettingValuesValueMaxLength).IsRequired();
+        b.Property(x => x.ProviderName).HasMaxLength(options.SettingValuesProviderNameMaxLength).IsRequired();
+        b.Property(x => x.ProviderKey).HasMaxLength(options.SettingValuesProviderKeyMaxLength).IsRequired(false);
 
         var providerKey = HeadlessStorageNaming.Apply(style, nameof(SettingValueRecord.ProviderKey));
 

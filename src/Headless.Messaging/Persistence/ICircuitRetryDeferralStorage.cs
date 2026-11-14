@@ -3,8 +3,8 @@
 namespace Headless.Messaging.Persistence;
 
 /// <summary>
-/// Optional built-in storage capability for atomically deferring a circuit-open received retry
-/// while releasing that exact claimed lease generation.
+/// Optional built-in storage capability for atomically deferring a claimed received retry that cannot run yet, because
+/// its consumer's circuit is open or its rate limit has no permit, while releasing that exact claimed lease generation.
 /// </summary>
 /// <remarks>
 /// Implementations update only <c>NextRetryAt</c> (store now plus the delay) and release the row lease. The update must
@@ -20,7 +20,7 @@ internal interface ICircuitRetryDeferralStorage
 }
 
 /// <summary>
-/// Identifies one exact received-retry lease generation and how long until the circuit lets it be claimed again,
-/// a delay the store adds to its own clock.
+/// Identifies one exact received-retry lease generation and how long until it may be claimed again, a delay the store
+/// adds to its own clock.
 /// </summary>
 internal readonly record struct CircuitRetryDeferral(MessageLeaseIdentity Identity, TimeSpan Delay);

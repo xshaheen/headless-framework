@@ -8,7 +8,10 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-/// <summary>Broker delivery evidence for native affinity adapters and deterministic unsupported rejection.</summary>
+/// <summary>
+/// Broker delivery evidence for routing affinity keys: a native adapter where the route has one, and the key carried
+/// as an envelope header where it has none.
+/// </summary>
 [PublicAPI]
 public static class TransportRoutingAffinityConformance
 {
@@ -145,19 +148,18 @@ public static class TransportRoutingAffinityConformance
         var message = new TransportMessage(headers, "affinity"u8.ToArray());
         if (!driver.SupportsRoutingAffinity)
         {
-            bool rejected;
-            try
-            {
-                var result = await session.PublishAsync(message, cancellationToken);
-                rejected = !result.Succeeded;
-            }
-            catch (InvalidOperationException exception)
-                when (exception.Message.Contains("affinity", StringComparison.Ordinal))
-            {
-                rejected = true;
-            }
-
-            rejected.Should().BeTrue("an unsupported topology must reject the typed key");
+            // No native mapping: the publish succeeds and the key reaches the consumer as the envelope header, on the
+            // first delivery and on a redelivery, which is what a sequential consumer orders by.
+            await session.StartAsync(cancellationToken: cancellationToken);
+            (await session.PublishAsync(message, cancellationToken)).Succeeded.Should().BeTrue();
+            var carried = await session.ReceiveAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            carried.Message.Id.Should().Be(identity);
+            carried.Message.RoutingAffinityKey.Should().Be("order-42");
+            await session.Consumer.RejectAsync(carried.SettlementValue, cancellationToken);
+            var redelivered = await session.ReceiveAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            redelivered.Message.Id.Should().Be(identity);
+            redelivered.Message.RoutingAffinityKey.Should().Be("order-42");
+            await session.Consumer.CommitAsync(redelivered.SettlementValue, cancellationToken);
             return;
         }
 

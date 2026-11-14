@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Headless.Features;
 
 /// <summary>EF Core entity type configuration for <see cref="FeatureValueRecord"/>.</summary>
-/// <param name="options">Storage options supplying the table name and schema.</param>
+/// <param name="options">Storage options supplying the table name, schema, and column lengths.</param>
 /// <param name="style">The naming style of the database the model targets.</param>
 internal sealed class FeatureValueRecordConfiguration(FeaturesStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<FeatureValueRecord>
@@ -21,10 +21,10 @@ internal sealed class FeatureValueRecordConfiguration(FeaturesStorageOptions opt
         b.ToTable(table, options.Schema);
         b.ConfigureHeadlessConvention();
         b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
-        b.Property(x => x.Name).HasMaxLength(FeatureValueRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.Value).HasMaxLength(FeatureValueRecordConstants.ValueMaxLength).IsRequired();
-        b.Property(x => x.ProviderName).HasMaxLength(FeatureValueRecordConstants.ProviderNameMaxLength).IsRequired();
-        b.Property(x => x.ProviderKey).HasMaxLength(FeatureValueRecordConstants.ProviderKeyMaxLength).IsRequired(false);
+        b.Property(x => x.Name).HasMaxLength(options.FeatureValuesNameMaxLength).IsRequired();
+        b.Property(x => x.Value).HasMaxLength(options.FeatureValuesValueMaxLength).IsRequired();
+        b.Property(x => x.ProviderName).HasMaxLength(options.FeatureValuesProviderNameMaxLength).IsRequired();
+        b.Property(x => x.ProviderKey).HasMaxLength(options.FeatureValuesProviderKeyMaxLength).IsRequired(false);
 
         var providerKey = HeadlessStorageNaming.Apply(style, nameof(FeatureValueRecord.ProviderKey));
 

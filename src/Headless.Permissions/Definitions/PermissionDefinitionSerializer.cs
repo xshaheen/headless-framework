@@ -1,13 +1,24 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Primitives;
 using Headless.Serializer;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Permissions;
 
-/// <summary>Default implementation of <see cref="IPermissionDefinitionSerializer"/>.</summary>
-public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator) : IPermissionDefinitionSerializer
+/// <summary>
+/// Default implementation of <see cref="IPermissionDefinitionSerializer"/>. Serializing refuses a name or display
+/// name longer than the column <see cref="PermissionsStorageOptions"/> configures for it, so an over-long definition
+/// fails here with the offending value instead of at the database.
+/// </summary>
+public sealed class PermissionDefinitionSerializer(
+    IGuidGenerator guidGenerator,
+    IOptions<PermissionsStorageOptions> storageOptions
+) : IPermissionDefinitionSerializer
 {
+    private readonly PermissionsStorageOptions _lengths = storageOptions.Value;
+
     public (
         IReadOnlyCollection<PermissionGroupDefinitionRecord>,
         IReadOnlyCollection<PermissionDefinitionRecord>
@@ -29,6 +40,9 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
 
     public PermissionGroupDefinitionRecord Serialize(PermissionGroupDefinition group)
     {
+        Argument.IsLessThanOrEqualTo(group.Name.Length, _lengths.PermissionGroupDefinitionsNameMaxLength);
+        Argument.IsLessThanOrEqualTo(group.DisplayName.Length, _lengths.PermissionGroupDefinitionsDisplayNameMaxLength);
+
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
             var permissionGroupRecord = new PermissionGroupDefinitionRecord(
@@ -50,6 +64,15 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
 
     public PermissionDefinitionRecord Serialize(PermissionDefinition permission, PermissionGroupDefinition group)
     {
+        Argument.IsLessThanOrEqualTo(group.Name.Length, _lengths.PermissionGroupDefinitionsNameMaxLength);
+        Argument.IsLessThanOrEqualTo(permission.Name.Length, _lengths.PermissionDefinitionsNameMaxLength);
+        Argument.IsLessThanOrEqualTo(permission.DisplayName.Length, _lengths.PermissionDefinitionsDisplayNameMaxLength);
+
+        if (permission.Parent is { } parent)
+        {
+            Argument.IsLessThanOrEqualTo(parent.Name.Length, _lengths.PermissionDefinitionsNameMaxLength);
+        }
+
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
             var permissionRecord = new PermissionDefinitionRecord(

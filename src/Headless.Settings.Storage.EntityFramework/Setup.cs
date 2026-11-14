@@ -88,6 +88,7 @@ public static class SetupSettingsEntityFramework
                 .IsValidCrossProviderIdentifier()
                 .FitsDerivedPostgreSqlNames(SettingsStorageNames.DefinitionsIndexes)
                 .When(x => x.SettingDefinitionsTableName is not null);
+            this.AddColumnLengthRules();
         }
     }
 }

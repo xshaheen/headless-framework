@@ -533,6 +533,43 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<CancellationToken>()
             );
     }
+
+    [Fact]
+    public async Task should_run_a_dispatch_on_the_permit_the_retry_pickup_already_took()
+    {
+        // given - a consumer allowed one delivery an hour, with that permit spent
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null)));
+        var executor = _CreateExecutor(invoker, storage);
+        var descriptor = new ConsumerExecutorDescriptor
+        {
+            FailurePolicy = MessagingOptions.FrameworkDefaultFailurePolicy,
+            Lane = MessageLane.Bus,
+            ConsumerType = typeof(CancellationExecutorTestConsumer),
+            MessageType = typeof(CancellationExecutorTestMessage),
+            MessageBinding = ConsumeMessageBinding.For<CancellationExecutorTestMessage>(),
+            MessageName = "test.messageName",
+            SubscriptionName = CancellationExecutorTestConsumer.Identity,
+            ConsumerIdentity = CancellationExecutorTestConsumer.Identity,
+            RateLimit = ConsumerRateLimit.FixedWindow(1, TimeSpan.FromHours(1)),
+        };
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, descriptor, AbortToken);
+        var prepaid = _CreateMediumMessage();
+        prepaid.HoldsRateLimitPermit = true;
+
+        // when - a wait here would last the hour
+        var result = await executor
+            .ExecuteAsync(prepaid, _EmptyScope, descriptor, AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then - the handler ran, and the permit is spent with the attempt that used it
+        result.Succeeded.Should().BeTrue();
+        prepaid.HoldsRateLimitPermit.Should().BeFalse();
+        await invoker.Received(2).InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
+    }
 }
 
 // Supporting types

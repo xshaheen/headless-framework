@@ -19,9 +19,14 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
         TransportConformanceTestBinding[] bindings =
         [
             new(
-                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                TransportConformanceScenario.RoutingAffinityMappingOrHeader,
                 typeof(InMemoryProviderConformanceTests),
-                nameof(InMemoryProviderConformanceTests.should_prove_routing_affinity_mapping_or_rejection)
+                nameof(InMemoryProviderConformanceTests.should_prove_routing_affinity_mapping_or_header)
+            ),
+            new(
+                TransportConformanceScenario.KeySequencing,
+                typeof(InMemoryProviderConformanceTests),
+                nameof(InMemoryProviderConformanceTests.should_run_one_key_at_a_time_on_a_sequential_consumer)
             ),
             new(
                 TransportConformanceScenario.QueueRoundTrip,

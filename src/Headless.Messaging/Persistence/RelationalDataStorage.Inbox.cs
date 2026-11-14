@@ -78,6 +78,7 @@ internal sealed partial class RelationalDataStorage
                                     SqlColumnType.Int64,
                                     retentionSeconds
                                 );
+                                _dialect.AddParameter(command, "SequenceKey", _SequenceKeyType, message.SequenceKey);
                             },
                             _ReadAppliedAsync,
                             ct
@@ -154,6 +155,7 @@ internal sealed partial class RelationalDataStorage
                     _t.IsInboxRecord,
                     _t.InboxRetentionSeconds,
                     _t.ConsumerKeyHash,
+                    _t.SequenceKey,
                     _t.ChangedAt,
                 ],
                 [
@@ -184,6 +186,7 @@ internal sealed partial class RelationalDataStorage
                     _t.True,
                     "@InboxRetentionSeconds",
                     "@ConsumerKeyHash",
+                    "@SequenceKey",
                     SqlDialectTokens.Now,
                 ],
                 [_t.Id],

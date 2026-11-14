@@ -397,6 +397,10 @@ internal sealed partial class RelationalDataStorage
             set.Add(
                 $"{_t.EffectiveExpiresAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} AND @IsTerminal = {_t.True} THEN {_dialect.ShiftBySeconds(SqlDialectTokens.Now, _t.InboxRetentionSeconds)} ELSE {_t.EffectiveExpiresAt} END"
             );
+
+            // A finished row stops holding its sequential consumer's key in the same write, so the next row of the key
+            // is free to run the moment this one is.
+            set.Add($"{_t.SequenceKey}=CASE WHEN @IsTerminal = {_t.True} THEN NULL ELSE {_t.SequenceKey} END");
             condition += $" AND {_InboxAttemptGuard(matchStorageId: false)}";
         }
 
@@ -636,6 +640,70 @@ internal sealed partial class RelationalDataStorage
             message,
             leaseDuration,
             cancellationToken
+        );
+    }
+
+    public async ValueTask<bool> DeferReceivedDispatchAsync(
+        MediumMessage message,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    )
+    {
+        var deferred = await _RunAsync(
+                "messaging.defer_received_dispatch",
+                transaction: null,
+                (connection, tx, ct) =>
+                    RelationalCommand.ExecuteNonQueryAsync(
+                        connection,
+                        tx,
+                        _deferReceivedDispatchSql,
+                        CommandTimeoutSeconds,
+                        command =>
+                        {
+                            _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
+                            _dialect.AddDuration(command, "RetryDelay", delay);
+                            _dialect.AddParameter(command, "Retries", SqlColumnType.Int32, message.Retries);
+                            _dialect.AddParameter(
+                                command,
+                                "InlineAttempts",
+                                SqlColumnType.Int32,
+                                message.InlineAttempts
+                            );
+                        },
+                        ct
+                    ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return deferred == 1;
+    }
+
+    public ValueTask<SequenceBlock?> GetSequenceBlockAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        return new(
+            _RunAsync(
+                "messaging.get_sequence_block",
+                transaction: null,
+                (connection, tx, ct) =>
+                    RelationalCommand.ExecuteReaderAsync(
+                        connection,
+                        tx,
+                        _sequenceBlockSql,
+                        CommandTimeoutSeconds,
+                        command =>
+                        {
+                            _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
+                            _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, 1);
+                        },
+                        static async (reader, token) =>
+                            await reader.ReadAsync(token).ConfigureAwait(false)
+                                ? new SequenceBlock(await _ReadInstantAsync(reader, 1, token).ConfigureAwait(false))
+                                : (SequenceBlock?)null,
+                        ct
+                    ),
+                cancellationToken
+            )
         );
     }
 

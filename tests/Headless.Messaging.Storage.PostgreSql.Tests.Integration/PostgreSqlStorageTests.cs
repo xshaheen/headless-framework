@@ -2023,6 +2023,46 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         predicate.Should().NotBeNull().And.Contain("lease_state").And.Contain("= 1");
     }
 
+    [Fact]
+    public async Task should_key_the_sequence_index_on_consumer_key_and_admission_order_of_keyed_rows()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var columns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_class c ON c.oid = i.indexrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                WHERE n.nspname = 'headless'
+                  AND c.relname = 'idx_messaging_received_sequence'
+                  AND k.ord <= i.indnkeyatts
+                ORDER BY k.ord;
+                """
+            )
+        ).ToList();
+
+        columns
+            .Should()
+            .BeEquivalentTo(["consumer_identity", "sequence_key", "sequence_no"], opts => opts.WithStrictOrdering());
+
+        var predicate = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT pg_get_expr(i.indpred, i.indrelid, true)
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'headless' AND c.relname = 'idx_messaging_received_sequence';
+            """
+        );
+
+        predicate.Should().NotBeNull().And.Contain("sequence_key").And.Contain("IS NOT NULL");
+    }
+
     [Theory]
     [InlineData("messaging_received", "idx_messaging_received_version_next_retry_at")]
     [InlineData("messaging_published", "idx_messaging_published_version_next_retry_at")]

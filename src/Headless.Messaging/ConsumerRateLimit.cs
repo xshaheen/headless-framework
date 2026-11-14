@@ -61,6 +61,9 @@ public sealed class ConsumerRateLimit
     /// <summary>How often a token-bucket rate adds permits.</summary>
     internal TimeSpan ReplenishmentPeriod { get; private init; }
 
+    /// <summary>How often the rate adds permits: the window of a fixed-window rate, or a token bucket's period.</summary>
+    internal TimeSpan Period => Algorithm is LimiterAlgorithm.FixedWindow ? Window : ReplenishmentPeriod;
+
     /// <summary>
     /// Allows <paramref name="permitLimit"/> deliveries in each fixed <paramref name="window"/>. A burst of up to
     /// <paramref name="permitLimit"/> deliveries can start at the beginning of each window.

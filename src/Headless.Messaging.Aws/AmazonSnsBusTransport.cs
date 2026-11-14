@@ -43,12 +43,9 @@ internal sealed class AmazonSnsBusTransport(
 
         try
         {
-            if (!message.Name.IsAwsFifoName())
-            {
-                MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
-            }
-
-            var affinityKey = AwsRoutingAffinity.Mapping.ResolveKey(message);
+            // Only a FIFO destination has a message group to map the key to; a standard one carries the key in the
+            // header bag, where the group's length and character limits do not apply.
+            var affinityKey = message.Name.IsAwsFifoName() ? AwsRoutingAffinity.Mapping.ResolveKey(message) : null;
             await _FetchExistingTopicArns(cancellationToken).ConfigureAwait(false);
 
             var normalizeForAws = AwsPhysicalAddress.BusTopic(message.Name);

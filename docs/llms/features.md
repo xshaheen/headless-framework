@@ -291,7 +291,7 @@ Core implementation of feature management with caching, value providers, and def
 - `FeatureDefinitions` seeder — saves static definitions when the host seeds, with up to 10 jittered exponential-back-off retries capped at 30 seconds
 - `FeatureDefinitions` warm-up — loads the dynamic store into its in-process cache after the start, behind readiness, when `IsDynamicFeatureStoreEnabled` is true
 - `FeatureManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle, and named cache routing
-- `FeaturesStorageOptions` — schema and table name configuration shared across all storage providers
+- `FeaturesStorageOptions` — schema, table name, and column length configuration shared across all storage providers
 - `RelationalFeaturesOptions` — base of `PostgreSqlFeaturesOptions` and `SqlServerFeaturesOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
 - `HeadlessFeaturesSetupBuilder` — fluent builder returned to `AddHeadlessFeatures`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
@@ -399,6 +399,47 @@ services.AddHeadlessFeatures(setup =>
 ```
 
 Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`feature_values`, `provider_key`, `pk_feature_values`, `ix_feature_values_provider_name_provider_key`); on SQL Server and other databases they are PascalCase (`FeatureValues`, `ProviderKey`, `PK_FeatureValues`, `IX_FeatureValues_ProviderName_ProviderKey`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyValues`). The raw providers and the EF mapping produce the same names on the same database. Because PostgreSQL silently truncates identifiers longer than 63 bytes, every provider refuses a configured table name whose longest derived PostgreSQL key or index name would exceed that: at most 23 characters for the values table, 49 for definitions, and 55 for groups.
+
+##### Column lengths
+
+Every string column's maximum length is an option on `FeaturesStorageOptions`. The defaults are the lengths the tables always had, so an application that sets none gets the same schema:
+
+| Option | Column | Default |
+| --- | --- | --- |
+| `FeatureValuesNameMaxLength` | values `Name` | 128 |
+| `FeatureValuesValueMaxLength` | values `Value` | 128 |
+| `FeatureValuesProviderNameMaxLength` | values `ProviderName` | 64 |
+| `FeatureValuesProviderKeyMaxLength` | values `ProviderKey` | 64 |
+| `FeatureDefinitionsNameMaxLength` | definitions `Name` and `ParentName` | 128 |
+| `FeatureDefinitionsDisplayNameMaxLength` | definitions `DisplayName` | 256 |
+| `FeatureDefinitionsDescriptionMaxLength` | definitions `Description` | 256 |
+| `FeatureDefinitionsDefaultValueMaxLength` | definitions `DefaultValue` | 256 |
+| `FeatureDefinitionsProvidersMaxLength` | definitions `Providers` | 256 |
+| `FeatureGroupDefinitionsNameMaxLength` | group definitions `Name` and definitions `GroupName` | 128 |
+| `FeatureGroupDefinitionsDisplayNameMaxLength` | group definitions `DisplayName` | 256 |
+
+```csharp
+setup.ConfigureStorage(o => o.FeatureValuesProviderKeyMaxLength = 128);
+```
+
+Each value must be between 1 and 4000, the widest sized `nvarchar` on SQL Server; the registration refuses anything else when the options are first read. One option drives every reader: the EF Core model (`HasMaxLength`), the raw providers' `CREATE TABLE`, and the size of the raw providers' lookup parameters. Set it in `ConfigureStorage`, or bind it from the `Headless:Features:Storage` section, before the tables are created. `FeatureDefinitionSerializer` checks each definition against the same options and throws `ArgumentOutOfRangeException` for a value that would not fit, so an over-long definition fails when definitions are saved instead of at the database; the definition record constructors no longer check length.
+
+The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey`. SQL Server limits a nonclustered index key to 1700 bytes, which is 850 `nvarchar` characters, and PostgreSQL limits a B-tree entry to about 2700 bytes. Keep the three lengths together under 850, or a row that fills them fails on insert. `Value` is not indexed.
+
+**Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column: the schema runner records a step as applied and never re-runs it, and EF Core changes a column only through a migration. Change the option and the column in the same release:
+
+- **EF Core storage**: change the option, then add a migration (`dotnet ef migrations add WidenFeatureValueProviderKeyColumn`). The model now maps the new length, so the migration contains the `AlterColumn`. Apply it as you apply every migration.
+- **Raw PostgreSQL or SQL Server storage**: run the `ALTER` with the tool that owns your schema, then deploy the option. `resources provision` does not widen a column.
+
+  ```sql
+  -- PostgreSQL: widening a varchar changes metadata only and keeps its indexes
+  ALTER TABLE headless.feature_values ALTER COLUMN provider_key TYPE character varying(128);
+
+  -- SQL Server: restate the nullability, or the column takes the session default
+  ALTER TABLE [headless].[FeatureValues] ALTER COLUMN [ProviderKey] nvarchar(128) NULL;
+  ```
+
+Widen the column before, or together with, the code that writes longer values. Narrowing a column that already holds longer values fails on both databases, so shorten the data first.
 
 ### Runtime behavior
 
@@ -522,6 +563,7 @@ builder.Services.AddHeadlessFeatures(setup =>
 - `FeatureValuesTableName = null`: `feature_values` on PostgreSQL, `FeatureValues` elsewhere
 - `FeatureDefinitionsTableName = null`: `feature_definitions` on PostgreSQL, `FeatureDefinitions` elsewhere
 - `FeatureGroupDefinitionsTableName = null`: `feature_group_definitions` on PostgreSQL, `FeatureGroupDefinitions` elsewhere
+- Every `*MaxLength` option defaults to the length its column always had; see [Column lengths](#column-lengths) for the list and for changing one after the tables exist
 
 The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any features entity is missing.
 

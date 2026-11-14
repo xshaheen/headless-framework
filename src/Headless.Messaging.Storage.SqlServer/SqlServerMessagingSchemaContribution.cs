@@ -123,6 +123,10 @@ internal static class SqlServerMessagingSchemaContribution
                     [ExceptionInfo] [nvarchar](max) NULL,
                     -- The versioned fingerprint that groups failures by cause, written with the failure's text.
                     [FailureFingerprint] [nvarchar](64) NULL,
+                    -- A sequential consumer's key (a hash of the routing affinity key), cleared once the row is
+                    -- terminal, and the admission order the key's rows run in.
+                    [SequenceKey] [nvarchar](64) COLLATE Latin1_General_100_BIN2 NULL,
+                    [SequenceNo] [bigint] IDENTITY(1,1) NOT NULL,
                     [IsInboxRecord] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_IsInboxRecord] DEFAULT 0,
                     [TenantPresent] [bit] NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantPresent] DEFAULT 0,
                     [TenantId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NOT NULL CONSTRAINT [DF_{receivedPrefix}_TenantId] DEFAULT N'',
@@ -250,6 +254,10 @@ internal static class SqlServerMessagingSchemaContribution
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_LeaseHolder_Active' AND object_id = OBJECT_ID(N'{received}'))
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_LeaseHolder_Active] ON {received} ([LeaseHolder] ASC) WHERE [LeaseState] = 1;
 
+            -- A sequential consumer looks up the earliest unfinished row of its key before it runs a keyed row.
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Sequence' AND object_id = OBJECT_ID(N'{received}'))
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Sequence] ON {received} ([ConsumerIdentity] ASC,[SequenceKey] ASC,[SequenceNo] ASC) INCLUDE ([StatusName],[NextRetryAt]) WHERE [SequenceKey] IS NOT NULL;
+
             IF OBJECT_ID(N'{schema}.{_ReceiptsTable}',N'U') IS NULL
             BEGIN
                 CREATE TABLE [{schema}].[{_ReceiptsTable}](
@@ -305,6 +313,8 @@ internal static class SqlServerMessagingSchemaContribution
             IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxIdentity' AND parent_object_id=OBJECT_ID(N'{received}'))
                OR COL_LENGTH(N'{received}',N'LifecycleId') IS NULL
                OR COL_LENGTH(N'{received}',N'ConsumerIdentityHash') IS NULL
+               OR COL_LENGTH(N'{received}',N'SequenceKey') IS NULL
+               OR COL_LENGTH(N'{received}',N'SequenceNo') IS NULL
                OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_NonInboxIdentity' AND parent_object_id=OBJECT_ID(N'{received}'))
                OR NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name=N'CK_{receivedPrefix}_InboxLifecycle' AND parent_object_id=OBJECT_ID(N'{received}'))
                OR COL_LENGTH(N'{schema}.{_ReceiptsTable}',N'ExpectedStatus') IS NULL

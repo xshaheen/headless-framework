@@ -27,6 +27,14 @@ public class MediumMessage
     public string? RoutingAffinityKey =>
         Origin.Headers.TryGetValue(Headers.RoutingAffinityKey, out var key) ? key : null;
 
+    /// <summary>
+    /// The key a sequential consumer orders this received row under: a fixed-size hash of
+    /// <see cref="RoutingAffinityKey"/>, written at admission only when the consumer is sequential and the message has
+    /// a key, and <see langword="null"/> otherwise. A storage provider persists it with the admitted row and clears it in
+    /// the same write that makes the row terminal, so a finished row never blocks a later one of its key.
+    /// </summary>
+    public string? SequenceKey { get; set; }
+
     public required MessageLane Lane { get; set; }
 
     public DateTimeOffset Added { get; set; }
@@ -92,6 +100,12 @@ public class MediumMessage
     /// This is in-memory handoff state only; storage providers must not persist it.
     /// </summary>
     public long ProbeEpoch { get; set; }
+
+    /// <summary>
+    /// Whether the retry processor already took this dispatch's rate-limit permit, so its first attempt does not wait
+    /// for a second one. In-memory handoff state only.
+    /// </summary>
+    internal bool HoldsRateLimitPermit { get; set; }
 
     /// <summary>
     /// The additional outbox storage that holds this published row, or <see langword="null" /> for a row of the

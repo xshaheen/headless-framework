@@ -83,8 +83,40 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
             .SendMessageAsync(Arg.Is<ServiceBusMessage>(message => message.SessionId == "order-42"), AbortToken);
     }
 
+    [Fact]
+    public async Task should_carry_affinity_as_a_header_without_a_session_when_sessions_are_off()
+    {
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        var sender = Substitute.For<ServiceBusSender>();
+        pool.GetSender("orders").Returns(sender);
+        var options = Options.Create(new AzureServiceBusMessagingOptions { EnableSessions = false });
+        await using var transport = new AzureServiceBusQueueTransport(
+            NullLogger<AzureServiceBusQueueTransport>.Instance,
+            options,
+            pool
+        );
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "orders",
+            [Headers.RoutingAffinityKey] = "order-42",
+        };
+
+        var result = await transport.SendAsync(new TransportMessage(headers, default), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        await sender
+            .Received(1)
+            .SendMessageAsync(
+                Arg.Is<ServiceBusMessage>(message =>
+                    message.SessionId == null
+                    && (string)message.ApplicationProperties[Headers.RoutingAffinityKey] == "order-42"
+                ),
+                AbortToken
+            );
+    }
+
     [Theory]
-    [InlineData(false, null)]
     [InlineData(true, "other")]
     public async Task should_reject_invalid_affinity_before_creating_sender(bool sessions, string? raw)
     {

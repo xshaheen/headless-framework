@@ -1212,6 +1212,14 @@ internal static partial class LoggerExtensions
     internal static partial void RequestExpiredBeforeAttempt(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
+        EventId = 134,
+        EventName = "RetryAttemptDeferredForRateLimit",
+        Level = LogLevel.Debug,
+        Message = "Message stored as {StorageId} has no rate-limit permit for its next attempt; the retry pickup puts it back instead of waiting."
+    )]
+    internal static partial void RetryAttemptDeferredForRateLimit(this ILogger logger, Guid storageId);
+
+    [LoggerMessage(
         EventId = 122,
         EventName = "ConsumerSucceededButStateWriteFailed",
         Level = LogLevel.Warning,
@@ -1264,4 +1272,36 @@ internal static partial class LoggerExtensions
         string messageId,
         string consumer
     );
+
+    [LoggerMessage(
+        EventId = 4138,
+        EventName = "SequencedWaitHoldFailed",
+        Level = LogLevel.Warning,
+        Message = "Holding message {StorageId}, which waits behind its routing affinity key on a sequential consumer, failed; the hold is retried on the next pass, and a row left unheld past its dispatch grace is taken by the retry pickup, out of its key's order."
+    )]
+    internal static partial void SequencedWaitHoldFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4139,
+        EventName = "SequencedDispatchFailed",
+        Level = LogLevel.Error,
+        Message = "Dispatching message {StorageId} on a sequential consumer failed outside its handler; the messages queued behind its key continue, and the row is recovered by the retry pickup."
+    )]
+    internal static partial void SequencedDispatchFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4140,
+        EventName = "SequenceGateReadFailed",
+        Level = LogLevel.Warning,
+        Message = "Checking whether message {StorageId} waits behind an earlier unfinished message of its routing affinity key failed; the message is put back for the retry pickup instead of running out of its key's order."
+    )]
+    internal static partial void SequenceGateReadFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4141,
+        EventName = "SequenceGatePutBackFailed",
+        Level = LogLevel.Warning,
+        Message = "Putting back message {StorageId}, which waits behind an earlier unfinished message of its routing affinity key, failed; the retry pickup takes the row once its due time or claim runs out, and checks its key again."
+    )]
+    internal static partial void SequenceGatePutBackFailed(this ILogger logger, Exception exception, Guid storageId);
 }

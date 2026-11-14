@@ -103,8 +103,17 @@ public abstract record MessageOptions
     /// <summary>Gets the explicit message contract schema version override.</summary>
     public string? ContractVersion { get; init; }
 
-    /// <summary>Optional logical affinity key mapped to the configured provider native routing mechanism.</summary>
-    /// <remarks>The destination must be registered and support affinity. This does not promise FIFO or exclusive handling.</remarks>
+    /// <summary>
+    /// Optional logical key that groups related messages, such as an order id. A destination with a native mapping
+    /// hands it to the broker, which partitions by it; any other carries it as the
+    /// <see cref="Headers.RoutingAffinityKey"/> header.
+    /// </summary>
+    /// <remarks>
+    /// The destination must be registered. The key must not be blank or hold a control character, and where the
+    /// destination has a native mapping it must also fit the broker's limits. On its own the key promises neither
+    /// FIFO nor exclusive handling: a consumer tuned <c>Sequential()</c> handles the messages that share a key one at
+    /// a time, in the order one host admitted them.
+    /// </remarks>
     public string? RoutingAffinityKey { get; init; }
 
     /// <summary>

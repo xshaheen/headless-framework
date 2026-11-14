@@ -83,7 +83,7 @@ public sealed class TransportConformanceManifestTests : TestBase
     }
 
     [Theory]
-    [InlineData(TransportConformanceScenario.RoutingAffinityMappingOrRejection)]
+    [InlineData(TransportConformanceScenario.RoutingAffinityMappingOrHeader)]
     [InlineData(TransportConformanceScenario.BusConsumerIdentityFanOut)]
     [InlineData(TransportConformanceScenario.BusReplicaCompetition)]
     [InlineData(TransportConformanceScenario.QueueOwnership)]

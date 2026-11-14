@@ -13,8 +13,8 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 /// <summary>
-/// Pins how often the fallback loop sweeps for stalled work. While timed-out work drains, the loop spins every 10 ms;
-/// the stall sweep must not ride along on every spin, only once per <see cref="SchedulerOptionsBuilder.FallbackIntervalChecker" />,
+/// Pins how often the fallback loop sweeps for stalled work and expired idempotency reservations. While timed-out work
+/// drains, the loop spins every 10 ms; neither sweep may ride along on every spin, only once per <see cref="SchedulerOptionsBuilder.FallbackIntervalChecker" />,
 /// the same cadence an idle loop already has.
 /// </summary>
 public sealed class JobsFallbackStallSweepCadenceTests : TestBase
@@ -45,6 +45,7 @@ public sealed class JobsFallbackStallSweepCadenceTests : TestBase
 
             await manager.Received(2).ReclaimStalledResources(Arg.Any<CancellationToken>());
             await manager.Received(2).RunTimedOutTickers(Arg.Any<CancellationToken>());
+            await manager.Received(2).DeleteExpiredIdempotencyReservationsAsync(Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -74,6 +75,7 @@ public sealed class JobsFallbackStallSweepCadenceTests : TestBase
 
             await manager.Received(drainingPasses + 1).RunTimedOutTickers(Arg.Any<CancellationToken>());
             await manager.Received(1).ReclaimStalledResources(Arg.Any<CancellationToken>());
+            await manager.Received(1).DeleteExpiredIdempotencyReservationsAsync(Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -105,6 +107,7 @@ public sealed class JobsFallbackStallSweepCadenceTests : TestBase
 
             await manager.Received(drainingPasses + 1).RunTimedOutTickers(Arg.Any<CancellationToken>());
             await manager.Received(2).ReclaimStalledResources(Arg.Any<CancellationToken>());
+            await manager.Received(2).DeleteExpiredIdempotencyReservationsAsync(Arg.Any<CancellationToken>());
         }
         finally
         {

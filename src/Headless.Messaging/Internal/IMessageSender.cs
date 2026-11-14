@@ -118,7 +118,7 @@ internal sealed class MessageSender : IMessageSender
                 ?? throw new MessagingConfigurationException(
                     "Stored routing affinity requires a frozen capability mapping."
                 );
-            capabilities.EnsureRoutingAffinitySupported(message.Origin.Name, message.Lane, key, message.Origin.Headers);
+            capabilities.ValidateRoutingAffinityKey(message.Origin.Name, message.Lane, key, message.Origin.Headers);
         }
 
         // Outbox sender doesn't propagate user cancellation; messages should be delivered.

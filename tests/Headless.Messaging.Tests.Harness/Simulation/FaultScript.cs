@@ -27,6 +27,8 @@ public enum StorageOperation
     ChangeReceiveRetryState,
     ReserveReceiveAttempt,
     RenewReceiveLease,
+    DeferReceivedDispatch,
+    GetSequenceBlock,
     LeaseReceive,
     LeaseReceiveAndReserveAttempt,
     StoreMessage,

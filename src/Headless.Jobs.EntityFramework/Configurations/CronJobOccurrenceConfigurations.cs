@@ -86,6 +86,14 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
             .HasIndex("Status", "ExecutionTime")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Status", "ExecutionTime"));
 
+        // The peek and every claim filter to the not-yet-started rows and read them in (ExecutionTime, Id) order. Filtered
+        // to those rows, the index stays the size of the backlog instead of the whole history, and the scan reads it in
+        // order and stops at its page instead of skipping past every finished row.
+        builder
+            .HasIndex("ExecutionTime", "Id")
+            .HasFilter($"{JobsStorageNaming.QuotedColumn(style, "Status")} IN ('Idle', 'Queued')")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "ExecutionTime", "Id", "Claimable"));
+
         builder
             .HasOne(x => x.CronJob)
             .WithMany()

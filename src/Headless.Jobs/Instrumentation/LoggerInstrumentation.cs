@@ -81,15 +81,15 @@ internal sealed class LoggerInstrumentation(
         activity?.SetTag("headless.job.function", functionName);
         activity?.SetTag("headless.job.retry_count", retryCount);
         activity?.SetTag("exception.type", exception.GetType().Name);
-        activity?.SetTag("exception.message", exception.Message);
+        activity?.SetTag("exception.message", JobExceptionText.ForTag(exception.Message));
 
         if (activity != null)
         {
-            activity.SetStatus(ActivityStatusCode.Error, exception.Message);
+            activity.SetStatus(ActivityStatusCode.Error, JobExceptionText.ForTag(exception.Message));
             // Record exception information in tags instead of RecordException (not available in all .NET versions)
             if (exception.StackTrace != null)
             {
-                activity.SetTag("exception.stacktrace", exception.StackTrace);
+                activity.SetTag("exception.stacktrace", JobExceptionText.ForTag(exception.StackTrace));
             }
         }
 
@@ -101,9 +101,9 @@ internal sealed class LoggerInstrumentation(
         using var activity = JobsDiagnostics.Start("job.cancel");
         activity?.SetTag("headless.job.id", jobId.ToString());
         activity?.SetTag("headless.job.function", functionName);
-        activity?.SetTag("headless.job.cancellation_reason", reason);
+        activity?.SetTag("headless.job.cancellation_reason", JobExceptionText.ForTag(reason));
 
-        activity?.SetStatus(ActivityStatusCode.Error, reason);
+        activity?.SetStatus(ActivityStatusCode.Error, JobExceptionText.ForTag(reason));
 
         base.LogJobCancelled(jobId, functionName, reason);
     }
@@ -113,7 +113,7 @@ internal sealed class LoggerInstrumentation(
         using var activity = JobsDiagnostics.Start("job.skip");
         activity?.SetTag("headless.job.id", jobId.ToString());
         activity?.SetTag("headless.job.function", functionName);
-        activity?.SetTag("headless.job.skip_reason", reason);
+        activity?.SetTag("headless.job.skip_reason", JobExceptionText.ForTag(reason));
 
         base.LogJobSkipped(jobId, functionName, reason);
     }
@@ -148,7 +148,7 @@ internal sealed class LoggerInstrumentation(
         activity?.SetTag("headless.job.id", jobId.ToString());
         activity?.SetTag("headless.job.function", functionName);
         activity?.SetTag("exception.type", exception.GetType().Name);
-        activity?.SetTag("exception.message", exception.Message);
+        activity?.SetTag("exception.message", JobExceptionText.ForTag(exception.Message));
         base.LogRequestDeserializationFailure(requestType, functionName, jobId, type, exception);
     }
 }

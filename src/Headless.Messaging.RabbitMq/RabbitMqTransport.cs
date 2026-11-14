@@ -36,7 +36,6 @@ internal sealed class RabbitMqTransport(
             return OperateResult.Failed(new ObjectDisposedException(nameof(RabbitMqTransport)));
         }
 
-        MessagingRoutingAffinityMapping.RejectUnsupported(message, "RabbitMq");
         cancellationToken.ThrowIfCancellationRequested();
         RabbitMqValidation.ValidateMessageName(message.Name);
         var routingKey = RabbitMqPhysicalAddress.RoutingKey(_lane, message.Name);

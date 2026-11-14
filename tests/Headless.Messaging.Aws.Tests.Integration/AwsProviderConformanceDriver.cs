@@ -19,6 +19,9 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
 
     public override bool SupportsRoutingAffinity => true;
 
+    // The suite's destination is a standard SQS queue, which promises no delivery order.
+    public override bool DeliversInPublishOrder => false;
+
     // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
     public override void ConfigureRequestReplyTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
         ConfigureRoutingAffinityTransport(setup);

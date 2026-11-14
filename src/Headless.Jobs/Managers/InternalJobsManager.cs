@@ -1973,6 +1973,11 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return persistenceProvider.GetActiveOwnerIdsAsync(cancellationToken);
     }
 
+    public Task<int> DeleteExpiredIdempotencyReservationsAsync(CancellationToken cancellationToken = default)
+    {
+        return persistenceProvider.DeleteExpiredIdempotencyReservationsAsync(cancellationToken);
+    }
+
     public async Task<JobReclaimCounts> ReclaimStalledResources(CancellationToken cancellationToken = default)
     {
         List<Exception> failures = [];

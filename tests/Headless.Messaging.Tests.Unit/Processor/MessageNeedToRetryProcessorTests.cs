@@ -1303,6 +1303,239 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             );
     }
 
+    private static ConsumerExecutorDescriptor _CreateRateLimitedDescriptor(string consumerIdentity)
+    {
+        return new ConsumerExecutorDescriptor
+        {
+            ConsumerType = typeof(object),
+            MessageName = "test.messageName",
+            SubscriptionName = consumerIdentity,
+            ConsumerIdentity = consumerIdentity,
+            Lane = MessageLane.Bus,
+            // One delivery an hour: the second can only wait, so a pickup that waited would never finish.
+            RateLimit = ConsumerRateLimit.FixedWindow(1, TimeSpan.FromHours(1)),
+        };
+    }
+
+    private static MessageNeedToRetryProcessor _CreateRateLimitAwareProcessor(
+        IDispatcher dispatcher,
+        ConsumerRateLimiters rateLimiters,
+        ConsumerExecutorDescriptor descriptor,
+        ICircuitBreakerStateManager? stateManager = null
+    )
+    {
+        var selector = Substitute.For<IConsumerServiceSelector>();
+        selector.SelectCandidates().Returns([descriptor]);
+        selector
+            .SelectBestCandidate(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConsumerExecutorDescriptor>>())
+            .Returns(call => call.Arg<IReadOnlyList<ConsumerExecutorDescriptor>>() is [var first, ..] ? first : null);
+
+        return new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.Zero, AdaptivePolling = false }),
+            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            dispatcher,
+            Substitute.For<IDistributedLock>(),
+            stateManager,
+            stateManager,
+            new MethodMatcherCache(selector),
+            rateLimiters: rateLimiters
+        );
+    }
+
+    private static MediumMessage _CreateClaimedMessage(string consumerIdentity)
+    {
+        var message = _CreateMessage(consumerIdentity);
+        message.Lease = new RowLeaseSnapshot(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddMinutes(5), "node-a", 0);
+        return message;
+    }
+
+    [Fact]
+    public async Task should_defer_a_row_whose_consumer_has_no_permit_and_dispatch_the_row_behind_it()
+    {
+        // given: the limited consumer's permit is spent, and its row sits ahead of another consumer's
+        var descriptor = _CreateRateLimitedDescriptor("limited-consumer");
+        using var rateLimiters = new ConsumerRateLimiters();
+        rateLimiters.TryAcquire(descriptor).Should().BeTrue();
+        var limited = _CreateClaimedMessage("limited-consumer");
+        var other = _CreateClaimedMessage("other-consumer");
+
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage>();
+        var deferralStorage = (ICircuitRetryDeferralStorage)storage;
+        _SetupReceivedMessages(storage, limited, other);
+        deferralStorage
+            .DeferReceivedRetryAsync(Arg.Any<CircuitRetryDeferral>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = _CreateRateLimitAwareProcessor(dispatcher, rateLimiters, descriptor);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+
+        // when: the cycle completes, which a wait on the hour-long window would prevent
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        // then
+        await dispatcher.Received(1).EnqueueToExecute(other, null, Arg.Any<CancellationToken>());
+        await dispatcher.DidNotReceive().EnqueueToExecute(limited, null, Arg.Any<CancellationToken>());
+        limited.HoldsRateLimitPermit.Should().BeFalse();
+        await deferralStorage
+            .Received(1)
+            .DeferReceivedRetryAsync(
+                Arg.Is<CircuitRetryDeferral>(request =>
+                    request.Identity.StorageId == limited.StorageId
+                    && request.Identity.Generation == limited.Lease.Generation
+                    // The rate adds no permit sooner than its hour, so the row waits the dispatch grace, not the hour:
+                    // a restart or another host must still find it soon.
+                    && request.Delay == new MessagingOptions().RetryPolicy.InitialDispatchGrace
+                ),
+                CancellationToken.None
+            );
+    }
+
+    [Fact]
+    public async Task should_dispatch_a_rate_limited_row_on_the_permit_the_pickup_took()
+    {
+        // given
+        var descriptor = _CreateRateLimitedDescriptor("limited-consumer");
+        using var rateLimiters = new ConsumerRateLimiters();
+        var limited = _CreateClaimedMessage("limited-consumer");
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage>();
+        _SetupReceivedMessages(storage, limited);
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = _CreateRateLimitAwareProcessor(dispatcher, rateLimiters, descriptor);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        // then: the row carries the one permit, so its attempt does not ask the limiter for a second
+        await dispatcher.Received(1).EnqueueToExecute(limited, null, Arg.Any<CancellationToken>());
+        limited.HoldsRateLimitPermit.Should().BeTrue();
+        rateLimiters.TryAcquire(descriptor).Should().BeFalse();
+        await ((ICircuitRetryDeferralStorage)storage)
+            .DidNotReceive()
+            .DeferReceivedRetryAsync(Arg.Any<CircuitRetryDeferral>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_leave_a_row_to_its_waiting_delivery_without_taking_a_permit()
+    {
+        // given: the row's own delivery waits for a permit on this host, as it does when a pickup claims it past its
+        // dispatch grace
+        var descriptor = _CreateRateLimitedDescriptor("limited-consumer");
+        using var rateLimiters = new ConsumerRateLimiters();
+        var limited = _CreateClaimedMessage("limited-consumer");
+        await rateLimiters.WaitAsync(descriptor, Guid.NewGuid(), AbortToken);
+        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+#pragma warning disable AsyncFixer04 // False positive: the task is started to observe it while it waits, and is awaited before the using scope ends.
+        var delivery = rateLimiters.WaitAsync(descriptor, limited.StorageId, shutdown.Token).AsTask();
+#pragma warning restore AsyncFixer04
+
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage>();
+        var deferralStorage = (ICircuitRetryDeferralStorage)storage;
+        _SetupReceivedMessages(storage, limited);
+        deferralStorage
+            .DeferReceivedRetryAsync(Arg.Any<CircuitRetryDeferral>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = _CreateRateLimitAwareProcessor(dispatcher, rateLimiters, descriptor);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        // then: the claim is given back, so the delivery finds its row unleased when its permit comes
+        await dispatcher.DidNotReceive().EnqueueToExecute(limited, null, Arg.Any<CancellationToken>());
+        await deferralStorage
+            .Received(1)
+            .DeferReceivedRetryAsync(
+                Arg.Is<CircuitRetryDeferral>(request => request.Identity.StorageId == limited.StorageId),
+                CancellationToken.None
+            );
+        delivery.IsCompleted.Should().BeFalse();
+        await shutdown.CancelAsync();
+        var act = () => delivery.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_give_back_an_acquired_probe_when_its_consumer_has_no_permit()
+    {
+        // given: a half-open circuit hands this row the probe, and the consumer's permit is spent
+        var descriptor = _CreateRateLimitedDescriptor("limited-consumer");
+        using var rateLimiters = new ConsumerRateLimiters();
+        rateLimiters.TryAcquire(descriptor).Should().BeTrue();
+        var limited = _CreateClaimedMessage("limited-consumer");
+        var storage = Substitute.For<IDataStorage, ICircuitRetryDeferralStorage>();
+        var deferralStorage = (ICircuitRetryDeferralStorage)storage;
+        _SetupReceivedMessages(storage, limited);
+        deferralStorage
+            .DeferReceivedRetryAsync(Arg.Any<CircuitRetryDeferral>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+        var stateManager = Substitute.For<ICircuitBreakerStateManager>();
+        stateManager
+            .GetRetryDecision(MessageLane.Bus, "limited-consumer")
+            .Returns(new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null, 57L));
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = _CreateRateLimitAwareProcessor(dispatcher, rateLimiters, descriptor, stateManager);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        // then: the probe slot is free for the next pickup instead of being held by a row that did not run
+        stateManager.Received(1).ReleaseHalfOpenProbe(_CircuitKey("limited-consumer"), 57L);
+        await dispatcher.DidNotReceive().EnqueueToExecute(limited, null, Arg.Any<CancellationToken>());
+        await deferralStorage
+            .Received(1)
+            .DeferReceivedRetryAsync(
+                Arg.Is<CircuitRetryDeferral>(request => request.Identity.StorageId == limited.StorageId),
+                CancellationToken.None
+            );
+    }
+
+    [Fact]
+    public async Task should_release_a_throttled_claim_when_the_store_cannot_defer_it()
+    {
+        // given: a store with no deferral, so the claim can only be released as it is
+        var descriptor = _CreateRateLimitedDescriptor("limited-consumer");
+        using var rateLimiters = new ConsumerRateLimiters();
+        rateLimiters.TryAcquire(descriptor).Should().BeTrue();
+        var limited = _CreateClaimedMessage("limited-consumer");
+        var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
+        var releaseStorage = (IGracefulLeaseReleaseStorage)storage;
+        _SetupReceivedMessages(storage, limited);
+        var dispatcher = Substitute.For<IDispatcher>();
+        var sut = _CreateRateLimitAwareProcessor(dispatcher, rateLimiters, descriptor);
+        await using var context = _CreateContext(
+            new ServiceCollection().AddSingleton(storage).BuildServiceProvider(),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
+
+        // then
+        await dispatcher.DidNotReceive().EnqueueToExecute(limited, null, Arg.Any<CancellationToken>());
+        await releaseStorage
+            .Received(1)
+            .ReleaseReceivedLeaseAsync(
+                Arg.Is<MessageLeaseIdentity>(identity => identity.StorageId == limited.StorageId),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     [Fact]
     public async Task should_warn_once_per_processor_when_monitor_only_fallback_retains_open_claims()
     {

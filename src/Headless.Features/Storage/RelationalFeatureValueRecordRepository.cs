@@ -28,6 +28,9 @@ internal sealed class RelationalFeatureValueRecordRepository(
     private const string _Operation = "feature value";
 
     private readonly ISqlDialect _dialect = tables.Dialect;
+
+    /// <summary>Read per statement, so a lookup parameter is sized to the column the options configured.</summary>
+    private readonly FeaturesStorageOptions _lengths = tables.Options;
     private readonly string _select = _BuildSelect(tables);
     private readonly string _byScope = _BuildByScope(tables);
     private readonly string _name = tables.Column("Name");
@@ -56,14 +59,9 @@ internal sealed class RelationalFeatureValueRecordRepository(
                 sql,
                 command =>
                 {
-                    _AddFilter(command, "Name", FeatureValueRecordConstants.NameMaxLength, name);
-                    _AddFilter(
-                        command,
-                        "ProviderName",
-                        FeatureValueRecordConstants.ProviderNameMaxLength,
-                        providerName
-                    );
-                    _AddFilter(command, "ProviderKey", FeatureValueRecordConstants.ProviderKeyMaxLength, providerKey);
+                    _AddFilter(command, "Name", _lengths.FeatureValuesNameMaxLength, name);
+                    _AddFilter(command, "ProviderName", _lengths.FeatureValuesProviderNameMaxLength, providerName);
+                    _AddFilter(command, "ProviderKey", _lengths.FeatureValuesProviderKeyMaxLength, providerKey);
                 },
                 cancellationToken
             )
@@ -98,21 +96,16 @@ internal sealed class RelationalFeatureValueRecordRepository(
             sql,
             command =>
             {
-                _AddFilter(command, "Name", FeatureValueRecordConstants.NameMaxLength, name);
+                _AddFilter(command, "Name", _lengths.FeatureValuesNameMaxLength, name);
 
                 if (providerName is not null)
                 {
-                    _AddFilter(
-                        command,
-                        "ProviderName",
-                        FeatureValueRecordConstants.ProviderNameMaxLength,
-                        providerName
-                    );
+                    _AddFilter(command, "ProviderName", _lengths.FeatureValuesProviderNameMaxLength, providerName);
                 }
 
                 if (providerKey is not null)
                 {
-                    _AddFilter(command, "ProviderKey", FeatureValueRecordConstants.ProviderKeyMaxLength, providerKey);
+                    _AddFilter(command, "ProviderKey", _lengths.FeatureValuesProviderKeyMaxLength, providerKey);
                 }
             },
             cancellationToken
@@ -371,7 +364,7 @@ internal sealed class RelationalFeatureValueRecordRepository(
         string? providerKey
     )
     {
-        var nameList = SqlColumnType.LookupText(FeatureValueRecordConstants.NameMaxLength, names);
+        var nameList = SqlColumnType.LookupText(_lengths.FeatureValuesNameMaxLength, names);
         var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope};";
 
         return (
@@ -386,8 +379,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
 
     private void _AddScope(DbCommand command, string providerName, string? providerKey)
     {
-        _AddFilter(command, "ProviderName", FeatureValueRecordConstants.ProviderNameMaxLength, providerName);
-        _AddFilter(command, "ProviderKey", FeatureValueRecordConstants.ProviderKeyMaxLength, providerKey);
+        _AddFilter(command, "ProviderName", _lengths.FeatureValuesProviderNameMaxLength, providerName);
+        _AddFilter(command, "ProviderKey", _lengths.FeatureValuesProviderKeyMaxLength, providerKey);
     }
 
     private async Task<List<FeatureValueRecord>> _ReadAsync(

@@ -5,14 +5,16 @@ using Headless.Sql;
 namespace Headless.Permissions;
 
 /// <summary>
-/// The permissions tables' names in one dialect's convention, shared by the relational repositories and each
-/// provider's schema contribution so the DDL and the statements name the same objects.
+/// The permissions tables' names in one dialect's convention and their configured column lengths, shared by the
+/// relational repositories and each provider's schema contribution so the DDL and the statements name the same
+/// objects and size the same columns.
 /// </summary>
 internal sealed class RelationalPermissionsTables
 {
     public RelationalPermissionsTables(ISqlDialect dialect, PermissionsStorageOptions options)
     {
         Dialect = dialect;
+        Options = options;
         Schema = options.Schema;
         // A configured name is used verbatim; the default follows the dialect's convention.
         GrantsName = options.PermissionGrantsTableName ?? dialect.Name("PermissionGrants");
@@ -24,6 +26,9 @@ internal sealed class RelationalPermissionsTables
     }
 
     public ISqlDialect Dialect { get; }
+
+    /// <summary>The storage options the names came from; the source of every column length.</summary>
+    public PermissionsStorageOptions Options { get; }
 
     public string Schema { get; }
 
