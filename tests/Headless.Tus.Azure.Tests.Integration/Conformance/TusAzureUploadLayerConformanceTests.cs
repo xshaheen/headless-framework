@@ -27,6 +27,14 @@ public sealed class TusAzureUploadLayerConformanceTests(TusAzureFixture fixture)
         base.should_refuse_a_clients_delete_of_a_finished_upload_and_leave_nothing_once_the_application_deletes_it();
 
     [Fact]
+    public override Task should_refuse_a_clients_delete_of_an_upload_that_finished_after_the_request_first_read_it() =>
+        base.should_refuse_a_clients_delete_of_an_upload_that_finished_after_the_request_first_read_it();
+
+    [Fact]
+    public override Task should_find_an_upload_that_finished_after_the_same_request_first_looked_it_up() =>
+        base.should_find_an_upload_that_finished_after_the_same_request_first_looked_it_up();
+
+    [Fact]
     public override Task should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant() =>
         base.should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant();
 

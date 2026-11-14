@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using tusdotnet.FileLocks;
 using tusdotnet.Interfaces;
 
 namespace Tests;
@@ -33,6 +34,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 {
     private const string _Route = "/files";
     private const string _Claims = "/claims";
+    private const string _ClaimsTwice = "/claims-twice";
     private const string _EndpointName = "documents";
     private const long _MaxSize = 1024 * 1024;
     private const string _UserHeader = "X-Test-User";
@@ -51,6 +53,8 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 
     private readonly ITusUploadLayerConformanceBackend _backend = createBackend();
     private readonly SemaphoreSlim _responseCompleted = new(0);
+    private readonly InterposedLockProvider _locks = new();
+    private Func<Task> _betweenLookups = static () => Task.CompletedTask;
     private WebApplication? _app;
     private HttpClient? _client;
 
@@ -145,6 +149,46 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 
         using var head = await _HeadAsync(_AliceAtAcme, location);
         head.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    public virtual async Task should_refuse_a_clients_delete_of_an_upload_that_finished_after_the_request_first_read_it()
+    {
+        // given - an upload that lacks its last 200 bytes
+        await _StartHostAsync(scopeByTenant: false);
+        var content = Faker.Random.Bytes(300);
+        var location = await _CreateUploadAsync(_Alice, content.Length);
+        await _WriteAsync(_Alice, location, content[..100], offset: 0);
+
+        // and a final write that lands after the delete request was matched to the upload and before it takes the
+        // upload's file lock, which is where a store that remembers what a request read holds a stale answer
+        _locks.BeforeNextLock = () => _WriteAsync(_Alice, location, content[100..], offset: 100);
+
+        // when - the client asks to delete the upload
+        using var delete = await _SendAsync(_Alice, HttpMethod.Delete, location);
+
+        // then - under the lock the upload is finished, so the delete is refused and the application finds it
+        delete.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var claim = await _ClaimAsync(_Alice, location);
+        (await claim.Content.ReadAsByteArrayAsync(AbortToken)).Should().Equal(content);
+    }
+
+    public virtual async Task should_find_an_upload_that_finished_after_the_same_request_first_looked_it_up()
+    {
+        // given - an upload that lacks its last 200 bytes
+        await _StartHostAsync(scopeByTenant: false);
+        var content = Faker.Random.Bytes(300);
+        var location = await _CreateUploadAsync(_Alice, content.Length);
+        await _WriteAsync(_Alice, location, content[..100], offset: 0);
+
+        // and a final write that lands between two lookups one application request makes
+        _betweenLookups = () => _WriteAsync(_Alice, location, content[100..], offset: 100);
+
+        // when
+        using var response = await _SendAsync(_Alice, HttpMethod.Get, $"{_ClaimsTwice}/{_FileIdOf(location)}");
+
+        // then - the first lookup finds nothing, and the second reads the upload as it is now
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be("first=null;second=300");
     }
 
     public virtual async Task should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant()
@@ -258,6 +302,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         builder.WebHost.UseUrls("http://127.0.0.1:0");
 
         _backend.ConfigureServices(builder.Services);
+        builder.Services.AddSingleton<ITusFileLockProvider>(_locks);
         builder.Services.AddScoped<TestCurrentUser>();
         builder.Services.AddScoped<ICurrentUser>(static provider => provider.GetRequiredService<TestCurrentUser>());
 
@@ -284,6 +329,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         app.MapHeadlessTus(_Route, _EndpointName);
         app.MapGet(_Claims + "/{fileId}", _FindAsync);
         app.MapDelete(_Claims + "/{fileId}", _FindAndDeleteAsync);
+        app.MapGet(_ClaimsTwice + "/{fileId}", _FindTwiceAsync);
 
         // The deploy step an application runs before its hosts start: a store does not create its own storage.
         await app.Services.ProvisionResourcesAsync(AbortToken);
@@ -340,6 +386,22 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 
         await upload.DeleteAsync(context.RequestAborted);
         context.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+
+    /// <summary>
+    /// The application's endpoint that looks one upload up twice in a single request, with whatever the scenario
+    /// does in between, and answers with the length each lookup found.
+    /// </summary>
+    private async Task _FindTwiceAsync(HttpContext context)
+    {
+        var first = await _FindForRequestAsync(context);
+        await _betweenLookups();
+        var second = await _FindForRequestAsync(context);
+
+        await context.Response.WriteAsync($"first={describe(first)};second={describe(second)}", context.RequestAborted);
+
+        static string describe(TusUpload? upload) =>
+            upload is null ? "null" : upload.Length.ToString(CultureInfo.InvariantCulture);
     }
 
     private static Task<TusUpload?> _FindForRequestAsync(HttpContext context)
@@ -549,4 +611,30 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 
     /// <summary>Who a request is sent as: the signed-in user, and the tenant it runs in when it has one.</summary>
     private sealed record Caller(string User, string? Tenant);
+
+    /// <summary>
+    /// The host's file lock provider: tusdotnet's in-process locks, plus one step a scenario runs just before the
+    /// next lock is handed out. A request reaches that point after it was matched to its upload and before it holds
+    /// the upload's lock.
+    /// </summary>
+    private sealed class InterposedLockProvider : ITusFileLockProvider
+    {
+        private Func<Task>? _beforeNextLock;
+
+        public Func<Task>? BeforeNextLock
+        {
+            set => _beforeNextLock = value;
+        }
+
+        public async Task<ITusFileLock> AquireLock(string fileId)
+        {
+            // Taken before it runs, so the requests the step itself sends get their locks without running it again.
+            if (Interlocked.Exchange(ref _beforeNextLock, null) is { } step)
+            {
+                await step();
+            }
+
+            return await InMemoryFileLockProvider.Instance.AquireLock(fileId);
+        }
+    }
 }

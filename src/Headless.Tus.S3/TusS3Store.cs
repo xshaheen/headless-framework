@@ -49,7 +49,8 @@ public sealed partial class TusS3Store
         ITusTerminationStore,
         ITusExpirationStore,
         ITusReadableStore,
-        ITusConcatenationStore
+        ITusConcatenationStore,
+        ITusRequestSnapshotStore
 {
     private static readonly GuidFileIdProvider _DefaultFileIdProvider = new();
 
@@ -163,6 +164,12 @@ public sealed partial class TusS3Store
     private TusS3Keys _Keys()
     {
         return _tenantScope?.GetSegment() is { } tenant ? _unscopedKeys.ForTenant(tenant) : _unscopedKeys;
+    }
+
+    /// <inheritdoc />
+    void ITusRequestSnapshotStore.ForgetRequestSnapshot(string fileId)
+    {
+        _stateStore.Forget(_Keys(), fileId);
     }
 
     /// <summary>

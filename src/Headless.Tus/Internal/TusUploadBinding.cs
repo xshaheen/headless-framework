@@ -93,6 +93,10 @@ internal sealed class TusUploadBinding(ITusStore store, IOptions<TusTenantScopin
     /// </remarks>
     public async Task<long?> ReadFinishedLengthAsync(string fileId, CancellationToken cancellationToken)
     {
+        // The caller holds the lock now, and whatever this request read about the upload before that may be older
+        // than what the lock's last holder wrote.
+        (store as ITusRequestSnapshotStore)?.ForgetRequestSnapshot(fileId);
+
         var length = await store.GetUploadLengthAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return
