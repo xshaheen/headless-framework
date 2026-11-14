@@ -540,6 +540,15 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         );
     }
 
+    public ValueTask<SequenceBlock?> GetSequenceBlockAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        return _RunAsync(
+            StorageOperation.GetSequenceBlock,
+            () => Inner.GetSequenceBlockAsync(message, cancellationToken),
+            cancellationToken
+        );
+    }
+
     public async ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
         TimeSpan leaseDuration,

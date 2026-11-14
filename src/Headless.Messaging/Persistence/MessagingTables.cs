@@ -112,6 +112,8 @@ internal sealed class MessagingTables
         InboxKeyHash = column("InboxKeyHash");
         ConsumerIdentityHash = column("ConsumerIdentityHash");
         ConsumerKeyHash = column("ConsumerKeyHash");
+        SequenceKey = column("SequenceKey");
+        SequenceNo = column("SequenceNo");
         ChangedAt = column("ChangedAt");
         StampChange = $"{ChangedAt}={dialect.NextChangeMarker(ChangedAt)}";
 
@@ -222,6 +224,15 @@ internal sealed class MessagingTables
     public string ExceptionInfo { get; }
 
     public string FailureFingerprint { get; }
+
+    /// <summary>
+    /// The received table's sequential-consumer key: a hash of the routing affinity key, set at admission and cleared
+    /// by the write that makes the row terminal.
+    /// </summary>
+    public string SequenceKey { get; }
+
+    /// <summary>The received table's admission order, an identity column the store assigns on insert.</summary>
+    public string SequenceNo { get; }
 
     public string IsInboxRecord { get; }
 

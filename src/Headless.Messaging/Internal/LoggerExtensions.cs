@@ -1288,4 +1288,20 @@ internal static partial class LoggerExtensions
         Message = "Dispatching message {StorageId} on a sequential consumer failed outside its handler; the messages queued behind its key continue, and the row is recovered by the retry pickup."
     )]
     internal static partial void SequencedDispatchFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4140,
+        EventName = "SequenceGateReadFailed",
+        Level = LogLevel.Warning,
+        Message = "Checking whether message {StorageId} waits behind an earlier unfinished message of its routing affinity key failed; the message is put back for the retry pickup instead of running out of its key's order."
+    )]
+    internal static partial void SequenceGateReadFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4141,
+        EventName = "SequenceGatePutBackFailed",
+        Level = LogLevel.Warning,
+        Message = "Putting back message {StorageId}, which waits behind an earlier unfinished message of its routing affinity key, failed; the retry pickup takes the row once its due time or claim runs out, and checks its key again."
+    )]
+    internal static partial void SequenceGatePutBackFailed(this ILogger logger, Exception exception, Guid storageId);
 }

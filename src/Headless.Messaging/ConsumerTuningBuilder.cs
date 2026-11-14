@@ -125,23 +125,28 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
 
     /// <summary>
     /// Handles the messages that share a <see cref="MessageOptions.RoutingAffinityKey"/> one at a time, in the order
-    /// this host admitted them, while messages with different keys run side by side up to
+    /// they were admitted to the inbox, while messages with different keys run side by side up to
     /// <see cref="Concurrency"/>. A message without a key is not ordered against any other, and still takes one of
     /// those concurrency slots.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The order is kept in this process, so it holds on every transport, and it is a per-host guarantee: two hosts
-    /// that share the subscription each order only what they receive, unless the broker already routes one key to one
-    /// host (a Kafka partition key, an Azure Service Bus session, an SQS FIFO message group).
+    /// The order is kept in this process, so it holds on every transport. Across hosts it is kept through the store:
+    /// before a message with a key runs, the host checks that no earlier message of that key and consumer is
+    /// unfinished in the store, on any host, and otherwise puts it back to run later. Hosts that share one store
+    /// therefore never run two messages of a key at once, and run them in the order the store admitted them. The check
+    /// is one indexed read per message with a key. A store that does not implement
+    /// <see cref="Persistence.IDataStorage.GetSequenceBlockAsync"/> keeps the order per host only: two hosts that share
+    /// the subscription each order what they receive, unless the broker routes one key to one host (a Kafka partition
+    /// key, an Azure Service Bus session, an SQS FIFO message group).
     /// </para>
     /// <para>
     /// The host reads the consumer's subscription through one client, one delivery at a time, so the broker's order
     /// is the order messages are admitted in: <see cref="MessagingOptions.ConsumerThreadCount"/> does not apply to it,
-    /// and each delivery is stored and acknowledged before the next is read. Immediate retries keep the key. A message
-    /// waiting for a delayed retry releases it, so later messages with the same key run first; the retry then takes
-    /// its turn behind whatever the key has queued. An every-instance consumer cannot be sequential, and tuning it so
-    /// fails startup.
+    /// and each delivery is stored and acknowledged before the next is read. Immediate retries keep the key, and so does a
+    /// message waiting for a delayed retry: later messages of the key wait until it succeeds or fails for good, while
+    /// other keys keep running. A message that keeps failing stalls only its own key. An every-instance consumer cannot
+    /// be sequential, and tuning it so fails startup.
     /// </para>
     /// </remarks>
     /// <param name="enabled"><see langword="false"/> turns off sequencing an earlier <c>Tune</c> call turned on.</param>

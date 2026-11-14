@@ -471,7 +471,13 @@ public static class MessagingGuarantees
             "MSG-LANE-06",
             GuaranteeArea.Lanes,
             realSystem: false,
-            "A message waiting for a delayed retry releases its key, and the retry later takes its turn behind the key's queue."
+            "A message waiting for a delayed retry holds its key until it finishes: later messages of the key wait, other keys run, and the key moves on in admission order once the message succeeds or fails for good."
+        ),
+        _Bound(
+            "MSG-LANE-07",
+            GuaranteeArea.Lanes,
+            realSystem: false,
+            "Hosts that share one store never start a sequential consumer's message while a message of its key admitted earlier is unfinished on another host."
         ),
         // Envelope
         _Bound(

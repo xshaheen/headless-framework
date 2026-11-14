@@ -432,6 +432,27 @@ public interface IDataStorage
         );
 
     /// <summary>
+    /// Reports whether an earlier unfinished received row of the same consumer identity and
+    /// <see cref="MediumMessage.SequenceKey"/> stands before <paramref name="message"/>, so a sequential consumer runs
+    /// the row only once every earlier row of its key has finished, on whichever node it ran.
+    /// </summary>
+    /// <remarks>
+    /// "Earlier" is admission order, which the store records per row. "Unfinished" is any row that is not terminal:
+    /// queued, running, or failed with a retry still due. The lookup is keyed by the row's
+    /// <see cref="MediumMessage.StorageId"/> and reads the key the store wrote at admission, so a row admitted without a
+    /// key, or one whose key a terminal write cleared, is never blocked. The default returns <see langword="null"/>,
+    /// which keeps a provider that does not implement it at per-node ordering.
+    /// </remarks>
+    /// <param name="message">The row about to run.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <see langword="null"/> when nothing stands before the row; otherwise the earliest blocker, with its due time when
+    /// it waits for a retry.
+    /// </returns>
+    ValueTask<SequenceBlock?> GetSequenceBlockAsync(MediumMessage message, CancellationToken cancellationToken) =>
+        ValueTask.FromResult<SequenceBlock?>(null);
+
+    /// <summary>
     /// Writes a pre-attempt lease on a received message, granting the row's lease to this node so
     /// the persisted retry processor excludes it while a consume attempt is active.
     /// </summary>

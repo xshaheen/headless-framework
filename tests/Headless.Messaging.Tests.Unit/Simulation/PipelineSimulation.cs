@@ -202,6 +202,26 @@ internal static class PipelineHosts
     }
 
     /// <summary>
+    /// Starts a second host beside <paramref name="running"/>, on its broker and store, with the same consumer; dispose
+    /// it first.
+    /// </summary>
+    public static Task<SimulationHost> StartBesideAsync(
+        SimulationHost running,
+        PipelineProbe probe,
+        CancellationToken cancellationToken,
+        Action<MessagingSetupBuilder>? configure = null,
+        Action<IServiceCollection>? configureServices = null
+    )
+    {
+        return SimulationHost.StartBesideAsync(
+            running,
+            setup => _Configure(setup, probe, configure),
+            services => _ConfigureServices(services, probe, configureServices),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
     /// Stops the host gracefully, moving the clock past each wait shutdown arms (its drain and close bounds) until it
     /// finishes; waits armed before the stop began are left alone.
     /// </summary>

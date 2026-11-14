@@ -323,7 +323,8 @@ internal sealed partial class RelationalDataStorage
             $"{_t.StatusName}=@StatusName, {_t.NextRetryAt}=NULL, {_RevokeAnyLeaseAssignments(ending: RowLeaseState.Settled)}, {_t.ExpiresAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter")}, {_t.ExceptionInfo}=CASE {_t.Id} {exceptions} END, {_t.FailureFingerprint}=@PoisonFingerprint, {_t.StampChange}";
         if (received)
         {
-            // The inbox generation ends, and its retention starts.
+            // The inbox generation ends, and its retention starts, and the row stops holding its sequential key.
+            set += $", {_t.SequenceKey}=NULL";
             set +=
                 $", {_t.AttemptId}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN NULL ELSE {_t.AttemptId} END, {_t.TerminalAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {SqlDialectTokens.Now} ELSE {_t.TerminalAt} END, {_t.EffectiveExpiresAt}=CASE WHEN {_t.IsInboxRecord} = {_t.True} THEN {_dialect.ShiftBySeconds(SqlDialectTokens.Now, _t.InboxRetentionSeconds)} ELSE {_t.EffectiveExpiresAt} END";
         }

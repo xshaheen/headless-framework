@@ -28,6 +28,11 @@ namespace Headless.Messaging.Processor;
 /// and again, and a waiting retry's claim is renewed, so no host picks the row up out of order. A store that can do
 /// neither leaves the row to that pickup, as after a crash.
 /// </para>
+/// <para>
+/// A sequencer orders the work of one host. The run delegate orders a key across hosts: before a keyed message runs,
+/// it asks the store whether an earlier message of the key is unfinished, a message waiting for a delayed retry
+/// included, and puts a blocked message back instead of running it. For the sequencer such a message has finished.
+/// </para>
 /// </remarks>
 internal sealed class ConsumerKeySequencers
 {

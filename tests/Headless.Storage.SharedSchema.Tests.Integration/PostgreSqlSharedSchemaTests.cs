@@ -68,7 +68,8 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
         "time_jobs",
     ];
 
-    // The audit log's identity column owns an implicit sequence named after the table and column.
+    // An identity column owns an implicit sequence named after the table and column: the audit log's id and the
+    // admission number of a received message.
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawSequences { get; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
@@ -76,6 +77,7 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
             ["DistributedLocks"] = ["headless_distributed_locks_fence"],
             ["Fencing"] = ["fencing_lease_generations"],
             ["Idempotency"] = ["idempotency_record_generations"],
+            ["Messaging"] = ["messaging_received_sequence_no_seq"],
         };
 
     protected override async Task<string> CreateDatabaseAsync(CancellationToken cancellationToken)
