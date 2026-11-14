@@ -628,12 +628,11 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                             );
                         }
 
-                        var period = rateLimited.RateLimit!.Period;
                         throttled.Add(
                             new ThrottledRetryWork(
                                 message,
                                 consumerIdentity,
-                                period < _initialDispatchGrace ? period : _initialDispatchGrace
+                                ConsumerRateLimiters.DeferralFor(rateLimited.RateLimit!, _initialDispatchGrace)
                             )
                         );
                         continue;

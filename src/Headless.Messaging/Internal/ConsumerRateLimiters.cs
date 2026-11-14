@@ -92,6 +92,16 @@ internal sealed class ConsumerRateLimiters : IDisposable
         return _GetLimiter(consumer.ResolvedConsumerIdentity, rateLimit)?.TryAcquire() ?? false;
     }
 
+    /// <summary>
+    /// How long a row put back for want of a permit waits before a retry pickup looks at it again: until the rate adds
+    /// permits, but no longer than <paramref name="initialDispatchGrace"/>, so a restart or another host still finds
+    /// the row soon under a slow rate.
+    /// </summary>
+    public static TimeSpan DeferralFor(ConsumerRateLimit rateLimit, TimeSpan initialDispatchGrace)
+    {
+        return rateLimit.Period < initialDispatchGrace ? rateLimit.Period : initialDispatchGrace;
+    }
+
     public void Dispose()
     {
         lock (_sync)
