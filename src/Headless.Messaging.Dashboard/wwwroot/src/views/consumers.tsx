@@ -365,6 +365,7 @@ function ConsumerPanel({
                     {consumer.runState === 'runs-here' ? 'Yes' : 'No, registered only'}
                   </GridField>
                   <GridField label="Concurrency">{format.number(consumer.concurrency)}</GridField>
+                  {consumer.sequential ? <GridField label="Ordering">One at a time per key</GridField> : null}
                   {consumer.consumeOnly ? (
                     <GridField label="Consume-only list">
                       {consumer.consumeOnly === 'listed' ? 'Listed' : 'Not listed'}

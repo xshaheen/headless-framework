@@ -639,6 +639,42 @@ internal sealed partial class RelationalDataStorage
         );
     }
 
+    public async ValueTask<bool> DeferReceivedDispatchAsync(
+        MediumMessage message,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    )
+    {
+        var deferred = await _RunAsync(
+                "messaging.defer_received_dispatch",
+                transaction: null,
+                (connection, tx, ct) =>
+                    RelationalCommand.ExecuteNonQueryAsync(
+                        connection,
+                        tx,
+                        _deferReceivedDispatchSql,
+                        CommandTimeoutSeconds,
+                        command =>
+                        {
+                            _dialect.AddParameter(command, "Id", SqlColumnType.Guid, message.StorageId);
+                            _dialect.AddDuration(command, "RetryDelay", delay);
+                            _dialect.AddParameter(command, "Retries", SqlColumnType.Int32, message.Retries);
+                            _dialect.AddParameter(
+                                command,
+                                "InlineAttempts",
+                                SqlColumnType.Int32,
+                                message.InlineAttempts
+                            );
+                        },
+                        ct
+                    ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return deferred == 1;
+    }
+
     public ValueTask<bool> RenewReceiveLeaseAsync(
         MediumMessage message,
         TimeSpan leaseDuration,

@@ -31,12 +31,9 @@ internal sealed class AmazonSqsQueueTransport(
 
         try
         {
-            if (!message.Name.IsAwsFifoName())
-            {
-                MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
-            }
-
-            var affinityKey = AwsRoutingAffinity.Mapping.ResolveKey(message);
+            // Only a FIFO destination has a message group to map the key to; a standard one carries the key in the
+            // header bag, where the group's length and character limits do not apply.
+            var affinityKey = message.Name.IsAwsFifoName() ? AwsRoutingAffinity.Mapping.ResolveKey(message) : null;
             var queueName = AwsPhysicalAddress.QueueDestination(message.Name);
             var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
             var attributes = SqsHeaderCodec.Encode(message);

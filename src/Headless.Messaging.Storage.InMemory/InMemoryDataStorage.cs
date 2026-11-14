@@ -547,6 +547,40 @@ internal sealed partial class InMemoryDataStorage(
         }
     }
 
+    public ValueTask<bool> DeferReceivedDispatchAsync(
+        MediumMessage message,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_receivedUpsertLock)
+        {
+            if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            lock (current)
+            {
+                var now = timeProvider.GetUtcNow();
+                if (
+                    MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
+                    || current.Retries != message.Retries
+                    || current.InlineAttempts != message.InlineAttempts
+                    || (current.Lease.State is RowLeaseState.Active && current.Lease.ExpiresAt > now)
+                )
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                current.NextRetryAt = now.Add(delay);
+                _StampChange(current);
+                return ValueTask.FromResult(true);
+            }
+        }
+    }
+
     public ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
         TimeSpan leaseDuration,

@@ -185,21 +185,25 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
         }
     }
 
-    internal void EnsureRoutingAffinitySupported(
+    /// <summary>
+    /// Validates a routing affinity key for a route. A route with a native mapping applies the broker's limits and
+    /// checks the raw provider headers agree; any other route carries the key as an envelope header, which a
+    /// sequential consumer orders by, so only the rules every route shares apply.
+    /// </summary>
+    internal void ValidateRoutingAffinityKey(
         string messageName,
         MessageLane lane,
         string key,
         IDictionary<string, string?> headers
     )
     {
-        if (!_affinityRoutes.TryGetValue((lane, messageName), out var mapping))
+        if (_affinityRoutes.TryGetValue((lane, messageName), out var mapping))
         {
-            throw new MessagingConfigurationException(
-                $"Routing affinity is unsupported or unverifiable for '{messageName}' ({lane})."
-            );
+            mapping.Validate(key, headers);
+            return;
         }
 
-        mapping.Validate(key, headers);
+        MessagingRoutingAffinityMapping.ValidateKey(key);
     }
 
     /// <summary>Rejects a direct publish when the selected lane has no declared transport capability.</summary>
@@ -426,12 +430,12 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
 
     void IMessageCapabilityGate.EnsureDirectSupported(MessageLane lane) => EnsureDirectSupported(lane);
 
-    void IMessageCapabilityGate.EnsureRoutingAffinitySupported(
+    void IMessageCapabilityGate.ValidateRoutingAffinityKey(
         string messageName,
         MessageLane lane,
         string key,
         IDictionary<string, string?> headers
-    ) => EnsureRoutingAffinitySupported(messageName, lane, key, headers);
+    ) => ValidateRoutingAffinityKey(messageName, lane, key, headers);
 
     void IMessageCapabilityGate.EnsureOutboxSupported(MessageLane lane, bool scheduled) =>
         EnsureOutboxSupported(lane, scheduled);
@@ -476,7 +480,7 @@ internal interface IMessageCapabilityGate : IMessagingCapabilityModel
 
     void EnsureDirectSupported(MessageLane lane);
 
-    void EnsureRoutingAffinitySupported(
+    void ValidateRoutingAffinityKey(
         string messageName,
         MessageLane lane,
         string key,

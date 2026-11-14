@@ -878,9 +878,14 @@ internal sealed partial class ConsumerRegister(
         {
             var subscriptionKey = match.Key;
             var handleName = _CreateHandleName(subscriptionKey);
-            var limit = _selector.GetSubscriptionConcurrentLimit(subscriptionKey);
             var everyInstance = subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance;
             var descriptors = match.Value;
+
+            // A sequential consumer orders by the order its deliveries are admitted in, so they must be admitted one
+            // at a time: one client that hands over one delivery at a time. Its concurrency applies after admission,
+            // in the dispatcher, where it bounds how many keys run at once.
+            var sequential = !everyInstance && descriptors.Any(static d => d.Sequential);
+            var limit = sequential ? (byte)1 : _selector.GetSubscriptionConcurrentLimit(subscriptionKey);
 
             // A runtime subscription carries a handler id; no deploy step knows it, so its client creates its topology.
             var provisionsTopology = descriptors.Any(static d => d.HandlerId is not null);
@@ -952,7 +957,8 @@ internal sealed partial class ConsumerRegister(
 
             // An every-instance subscription belongs to this process, so a second client would open a second
             // subscription and deliver every message twice here; its concurrency still applies inside the one client.
-            var clientCount = everyInstance ? 1 : _options.ConsumerThreadCount;
+            // A second client on a sequential subscription would compete for its deliveries and admit them out of order.
+            var clientCount = everyInstance || sequential ? 1 : _options.ConsumerThreadCount;
 
             for (var i = 0; i < clientCount; i++)
             {

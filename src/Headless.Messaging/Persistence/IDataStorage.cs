@@ -404,6 +404,34 @@ public interface IDataStorage
         );
 
     /// <summary>
+    /// Puts off retry pickup of a received message whose first dispatch this node still holds in memory, so no node
+    /// picks the row up while it waits its turn. The row's due time becomes the STORE's clock plus
+    /// <paramref name="delay"/>; nothing else about the row changes.
+    /// </summary>
+    /// <remarks>
+    /// The write applies only to a row no attempt has touched since the caller read it: not terminal, not held by a
+    /// live lease, and with the retry counters <paramref name="message"/> carries. It takes no lease, so the dispatch
+    /// that follows starts the row as it starts any fresh one, and a node that stops calling it (a crash, a shutdown)
+    /// leaves the row to retry pickup once the last delay runs out.
+    /// </remarks>
+    /// <param name="message">The waiting message, as the caller holds it.</param>
+    /// <param name="delay">How long from the store's current time until retry pickup may take the row.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when the due time moved; <see langword="false"/> when the row is terminal, missing,
+    /// leased, or was attempted since the caller read it.
+    /// </returns>
+    /// <exception cref="NotSupportedException">The storage provider cannot defer a waiting dispatch.</exception>
+    ValueTask<bool> DeferReceivedDispatchAsync(
+        MediumMessage message,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    ) =>
+        throw new NotSupportedException(
+            $"Messaging storage provider '{GetType().FullName}' does not support deferring a waiting dispatch."
+        );
+
+    /// <summary>
     /// Writes a pre-attempt lease on a received message, granting the row's lease to this node so
     /// the persisted retry processor excludes it while a consume attempt is active.
     /// </summary>

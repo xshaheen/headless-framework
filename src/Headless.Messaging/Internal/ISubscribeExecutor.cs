@@ -152,23 +152,7 @@ internal sealed class SubscribeExecutor(
 
         if (descriptor == null)
         {
-            var selector = _methodMatcherCache;
-            var found = message.InboxKey is { } inboxKey
-                ? selector.TryGetInboxExecutor(
-                    inboxKey.ConsumerIdentity,
-                    inboxKey.ContractIdentity,
-                    inboxKey.ContractVersion,
-                    inboxKey.Lane,
-                    out descriptor
-                )
-                : message.Origin.GetConsumerIdentity() is { } consumerIdentity
-                    && selector.TryGetConsumerIdentityExecutor(
-                        message.Origin.Name,
-                        consumerIdentity,
-                        message.Lane,
-                        out descriptor
-                    );
-            if (!found)
+            if (!_methodMatcherCache.TryGetStoredMessageExecutor(message, out descriptor))
             {
                 var safeName = LogSanitizer.Sanitize(message.Origin.Name);
                 var safeConsumer = LogSanitizer.Sanitize(message.Origin.GetConsumerIdentity());

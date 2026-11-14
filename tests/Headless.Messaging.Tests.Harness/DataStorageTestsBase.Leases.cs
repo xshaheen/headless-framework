@@ -286,6 +286,63 @@ public abstract partial class DataStorageTestsBase
             );
     }
 
+    /// <summary>
+    /// A received row no attempt holds has its retry pickup put off by a delay on the store's clock, and falls due
+    /// again when that delay runs out.
+    /// </summary>
+    [Fact]
+    public async Task should_put_off_the_pickup_of_a_received_row_no_attempt_holds()
+    {
+        // given: a received row that retry pickup would take now
+        var storage = GetStorage();
+        var waiting = await _StoreRetryDueAsync(storage, published: false, "defer-dispatch-waiting");
+
+        // when
+        var deferred = await storage.DeferReceivedDispatchAsync(waiting, TimeSpan.FromSeconds(2), AbortToken);
+
+        // then: pickup leaves it alone until the delay has passed
+        deferred.Should().BeTrue();
+        (await _PickUpRetriesAsync(storage, published: false))
+            .Should()
+            .NotContain(m => m.StorageId == waiting.StorageId);
+
+        await _ElapseAsync(TimeSpan.FromSeconds(3));
+        (await _PickUpRetriesAsync(storage, published: false)).Should().Contain(m => m.StorageId == waiting.StorageId);
+    }
+
+    /// <summary>
+    /// The deferral writes nothing to a row an attempt holds, a row that was attempted since the caller read it, or a
+    /// row that does not exist, so it can never move a row another node is running.
+    /// </summary>
+    [Fact]
+    public async Task should_not_put_off_the_pickup_of_a_received_row_that_is_held_or_was_attempted()
+    {
+        // given
+        var storage = GetStorage();
+        NodeMembership.SetIdentity("defer-dispatch-holder");
+        var leased = await _StoreRetryDueAsync(storage, published: false, "defer-dispatch-leased");
+        (await _LeaseAsync(storage, published: false, leased, _FutureLease())).Should().BeTrue();
+        var attempted = await _StoreRetryDueAsync(storage, published: false, "defer-dispatch-attempted");
+        var staleCopy = _CopyLease(attempted);
+        staleCopy.Retries = attempted.Retries + 1;
+        var missing = _CopyLease(attempted);
+        missing.StorageId = Guid.NewGuid();
+        var delay = TimeSpan.FromMinutes(5);
+
+        // when
+        var heldRow = await storage.DeferReceivedDispatchAsync(_CopyLease(leased), delay, AbortToken);
+        var staleRow = await storage.DeferReceivedDispatchAsync(staleCopy, delay, AbortToken);
+        var missingRow = await storage.DeferReceivedDispatchAsync(missing, delay, AbortToken);
+
+        // then: each is refused, and the row whose counters did not match is still due
+        heldRow.Should().BeFalse("a live lease holds the row");
+        staleRow.Should().BeFalse("the row's retry counter is not the one the caller read");
+        missingRow.Should().BeFalse();
+        (await _PickUpRetriesAsync(storage, published: false))
+            .Should()
+            .Contain(m => m.StorageId == attempted.StorageId);
+    }
+
     private async Task<MediumMessage> _StoreRetryDueAsync(IDataStorage storage, bool published, string name)
     {
         var message = published

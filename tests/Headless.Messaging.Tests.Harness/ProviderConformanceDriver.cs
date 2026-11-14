@@ -83,6 +83,13 @@ public abstract class TransportProviderConformanceDriver
     public virtual bool SupportsRoutingAffinity => false;
 
     /// <summary>
+    /// Whether one consumer receives the messages of a destination in the order they were published, or, where the
+    /// broker partitions by key, the messages of one key in that order. The key sequencing suite checks run order
+    /// against publish order only then.
+    /// </summary>
+    public virtual bool DeliversInPublishOrder => true;
+
+    /// <summary>
     /// Whether the provider gives each process a Bus subscription of its own. A driver opts in once its provider maps
     /// <see cref="ConsumerSubscriptionKind.EveryInstance"/> requests to per-process subscriptions.
     /// </summary>

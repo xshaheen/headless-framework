@@ -96,8 +96,12 @@ public sealed class SimulatorConsumerConformanceTests : TransportConsumerConform
         base.should_bound_shutdown_while_handler_is_active();
 
     [Fact]
-    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+    public Task should_prove_routing_affinity_mapping_or_header() =>
         TransportRoutingAffinityConformance.AssertAsync(_simulator.Driver, AbortToken);
+
+    [Fact]
+    public Task should_run_one_key_at_a_time_on_a_sequential_consumer() =>
+        TransportKeySequencingConformance.AssertAsync(_simulator.Driver, AbortToken);
 
     [Fact]
     public Task should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete() =>

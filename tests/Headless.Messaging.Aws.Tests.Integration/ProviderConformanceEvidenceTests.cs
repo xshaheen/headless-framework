@@ -15,8 +15,12 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
         GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
 
     [Fact]
-    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+    public Task should_prove_routing_affinity_mapping_or_header() =>
         TransportRoutingAffinityConformance.AssertAsync(new AwsProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
+    public Task should_run_one_key_at_a_time_on_a_sequential_consumer() =>
+        TransportKeySequencingConformance.AssertAsync(new AwsProviderConformanceDriver(fixture), AbortToken);
 
     [Fact]
     public Task should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply() =>
@@ -54,9 +58,14 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
                 )
             ),
             new(
-                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                TransportConformanceScenario.RoutingAffinityMappingOrHeader,
                 typeof(ProviderConformanceEvidenceTests),
-                nameof(should_prove_routing_affinity_mapping_or_rejection)
+                nameof(should_prove_routing_affinity_mapping_or_header)
+            ),
+            new(
+                TransportConformanceScenario.KeySequencing,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_run_one_key_at_a_time_on_a_sequential_consumer)
             ),
             _Bind(
                 TransportConformanceScenario.QueueRoundTrip,

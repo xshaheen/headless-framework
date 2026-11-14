@@ -1264,4 +1264,20 @@ internal static partial class LoggerExtensions
         string messageId,
         string consumer
     );
+
+    [LoggerMessage(
+        EventId = 4138,
+        EventName = "SequencedWaitHoldFailed",
+        Level = LogLevel.Warning,
+        Message = "Holding message {StorageId}, which waits behind its routing affinity key on a sequential consumer, failed; the hold is retried on the next pass, and a row left unheld past its dispatch grace is taken by the retry pickup, out of its key's order."
+    )]
+    internal static partial void SequencedWaitHoldFailed(this ILogger logger, Exception exception, Guid storageId);
+
+    [LoggerMessage(
+        EventId = 4139,
+        EventName = "SequencedDispatchFailed",
+        Level = LogLevel.Error,
+        Message = "Dispatching message {StorageId} on a sequential consumer failed outside its handler; the messages queued behind its key continue, and the row is recovered by the retry pickup."
+    )]
+    internal static partial void SequencedDispatchFailed(this ILogger logger, Exception exception, Guid storageId);
 }

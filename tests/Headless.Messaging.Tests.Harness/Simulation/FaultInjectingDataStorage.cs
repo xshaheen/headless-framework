@@ -527,6 +527,19 @@ public sealed class FaultInjectingDataStorage(IDataStorage inner, FaultScript fa
         return _TrackLease(renewed, message, published: false, renewal: true);
     }
 
+    public ValueTask<bool> DeferReceivedDispatchAsync(
+        MediumMessage message,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    )
+    {
+        return _RunAsync(
+            StorageOperation.DeferReceivedDispatch,
+            () => Inner.DeferReceivedDispatchAsync(message, delay, cancellationToken),
+            cancellationToken
+        );
+    }
+
     public async ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
         TimeSpan leaseDuration,
