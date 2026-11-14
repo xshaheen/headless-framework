@@ -165,6 +165,12 @@ internal interface IInternalJobManager
     Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Deletes expired idempotency reservations (see the provider SPI counterpart). Runs on the fallback cadence so
+    /// the reservation store holds about one TTL of keys instead of every key ever used.
+    /// </summary>
+    Task<int> DeleteExpiredIdempotencyReservationsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reconciles the timed chain descendants of one parent that just reached a terminal state: releases the
     /// children whose run condition matches (re-stamping a past-due child to the store's now) and skips the rest with
     /// their subtrees, then wakes the scheduler for the earliest released time. Invoked per-parent after a terminal

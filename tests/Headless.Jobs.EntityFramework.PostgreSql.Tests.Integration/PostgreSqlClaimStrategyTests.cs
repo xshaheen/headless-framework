@@ -269,6 +269,8 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
             entity.ToTable("native_time_jobs", "mapped_jobs");
             entity.Property(x => x.Id).HasColumnName("job_id");
             entity.Property(x => x.Status).HasColumnName("job_status");
+            // Filters are SQL text, so a column renamed after the Jobs configuration ran needs its filter restated.
+            entity.HasIndex(x => new { x.ExecutionTime, x.Id }).HasFilter("\"job_status\" IN ('Idle', 'Queued')");
             entity.ComplexProperty(x => x.Lease).Property(x => x.Holder).HasColumnName("owner_key");
             entity.ComplexProperty(x => x.Lease).Property(x => x.ExpiresAt).HasColumnName("lease_until");
             entity.Property(x => x.OnNodeDeath).HasColumnName("death_policy");
@@ -286,6 +288,9 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
             entity.Property(x => x.CorrelationId).HasColumnName("correlation_key");
             entity.Property(x => x.CausationId).HasColumnName("causation_key");
             entity.Property(x => x.Status).HasColumnName("occurrence_status");
+            entity
+                .HasIndex(x => new { x.ExecutionTime, x.Id })
+                .HasFilter("\"occurrence_status\" IN ('Idle', 'Queued')");
             entity.ComplexProperty(x => x.Lease).Property(x => x.Holder).HasColumnName("occurrence_owner");
             entity.Property(x => x.ExecutionTime).HasColumnName("occurrence_time");
             entity.Property(x => x.CronJobId).HasColumnName("cron_key");
