@@ -1007,7 +1007,7 @@ internal sealed class JobsExecutionTaskHandler
                 }
 
                 var terminatedAt = _timeProvider.GetUtcNow();
-                var terminateReason = ex.InnerException?.Message ?? ex.Message;
+                var terminateReason = JobExceptionText.ForStore(ex.InnerException?.Message ?? ex.Message);
                 context
                     .SetProperty(x => x.Status, ex.Status)
                     .SetProperty(x => x.ExecutedAt, terminatedAt)
@@ -1017,16 +1017,8 @@ internal sealed class JobsExecutionTaskHandler
                         attemptEnd(_AttemptOutcomeOf(ex.Status), terminatedAt, terminateReason)
                     );
 
-                if (ex.InnerException != null)
-                {
-                    context.SetProperty(x => x.ExceptionDetails, ex.InnerException.Message);
-                    jobActivity?.SetTag("headless.job.skip.reason", ex.InnerException.Message);
-                }
-                else
-                {
-                    context.SetProperty(x => x.ExceptionDetails, ex.Message);
-                    jobActivity?.SetTag("headless.job.skip.reason", ex.Message);
-                }
+                context.SetProperty(x => x.ExceptionDetails, terminateReason);
+                jobActivity?.SetTag("headless.job.skip.reason", JobExceptionText.ForTag(terminateReason));
 
                 // Add skip tags to activity
                 jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());

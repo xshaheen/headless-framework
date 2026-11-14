@@ -71,4 +71,26 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             );
         }
     }
+
+    public Task<int> DeleteExpiredIdempotencyReservationsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_keyedOperations)
+        {
+            // Same expiry test as the enqueue's dedup check, inverted: a reservation the enqueue would replace is gone.
+            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+            var deleted = 0;
+
+            foreach (var (identity, reservation) in _idempotencyReservations)
+            {
+                if (reservation.ExpiresAt <= utcNow && _idempotencyReservations.Remove(identity))
+                {
+                    deleted++;
+                }
+            }
+
+            return Task.FromResult(deleted);
+        }
+    }
 }

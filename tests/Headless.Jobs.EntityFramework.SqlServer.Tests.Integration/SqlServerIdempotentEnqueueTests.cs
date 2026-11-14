@@ -24,4 +24,12 @@ public sealed class SqlServerIdempotentEnqueueTests(SqlServerJobsCoordinationFix
     [Fact]
     public override Task coordinated_rollback_discards_reservation_and_job_together() =>
         base.coordinated_rollback_discards_reservation_and_job_together();
+
+    [Fact]
+    public override Task sweep_deletes_expired_reservations_and_keeps_live_ones() =>
+        base.sweep_deletes_expired_reservations_and_keeps_live_ones();
+
+    [Fact]
+    public override Task expired_reservation_replacement_survives_a_concurrent_sweep() =>
+        base.expired_reservation_replacement_survives_a_concurrent_sweep();
 }

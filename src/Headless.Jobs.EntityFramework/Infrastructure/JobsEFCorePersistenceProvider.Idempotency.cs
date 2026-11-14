@@ -15,6 +15,10 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    // Large enough that a steady stream of unique keys drains in a few statements per interval, small enough that one
+    // statement's locks and log volume stay short.
+    private const int _IdempotencySweepBatchSize = 1000;
+
     public async Task<JobIdempotencyEnqueueResult> AddIdempotentTimeJobAsync(
         TTimeJob job,
         string idempotencyKey,
@@ -61,6 +65,38 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         return result;
     }
 
+    public async Task<int> DeleteExpiredIdempotencyReservationsAsync(CancellationToken cancellationToken = default)
+    {
+        var total = 0;
+        int deleted;
+
+        do
+        {
+            // Each batch is its own autocommit statement, so DateTime.UtcNow translates to the store's clock at that
+            // statement and no batch holds its row locks past its own delete. An enqueue that holds the key's lock
+            // and replaces an expired row deletes it itself, so losing this race to it is harmless either way.
+            await using var dbContext = await DbContextFactory
+                .CreateDbContextAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (dbContext.Model.FindEntityType(typeof(JobIdempotencyReservationEntity))?.GetTableName() is null)
+            {
+                // A context that never mapped the reservation table never took an idempotent enqueue.
+                return 0;
+            }
+
+            deleted = await dbContext
+                .Set<JobIdempotencyReservationEntity>()
+                .Where(x => x.ExpiresAt <= DateTime.UtcNow)
+                .Take(_IdempotencySweepBatchSize)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
+            total += deleted;
+        } while (deleted == _IdempotencySweepBatchSize);
+
+        return total;
+    }
+
     // The supplied-context kernel also serves a caller-owned transaction; it never commits or starts a transaction.
     private async Task<JobIdempotencyEnqueueResult> _AddIdempotentAsync(
         TDbContext context,
@@ -102,35 +138,45 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             job.Id = GuidGenerator.Create();
         }
 
-        if (reservation is null)
+        if (reservation is not null)
         {
+            // Post-expiry replacement: exactly one contender reaches here per lock generation; losers observe the
+            // winner's row after the winner's commit. The expired row is deleted and inserted fresh rather than
+            // updated, because the fallback sweep may delete it concurrently: an update would then match no row and
+            // fail the enqueue, while a delete that finds the row already gone is harmless. The predicate keeps the
+            // statement from touching anything but the expired row this call observed.
+            context.Entry(reservation).State = EntityState.Detached;
             await context
                 .Set<JobIdempotencyReservationEntity>()
-                .AddAsync(
-                    new JobIdempotencyReservationEntity
-                    {
-                        ScopeKey = scopeKey,
-                        Function = job.Function,
-                        ContractVersion = job.ContractVersion,
-                        IdempotencyKey = idempotencyKey,
-                        TenantId = job.TenantId,
-                        JobId = job.Id,
-                        ExpiresAt = now + idempotencyTtl,
-                        CreatedAt = now,
-                        UpdatedAt = now,
-                    },
-                    cancellationToken
+                .Where(x =>
+                    x.ScopeKey == scopeKey
+                    && x.Function == job.Function
+                    && x.ContractVersion == job.ContractVersion
+                    && x.IdempotencyKey == idempotencyKey
+                    && x.ExpiresAt <= now
                 )
+                .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
-        else
-        {
-            // Post-expiry replacement: exactly one contender reaches here per lock generation; losers observe
-            // the winner's row after the winner's commit.
-            reservation.JobId = job.Id;
-            reservation.ExpiresAt = now + idempotencyTtl;
-            reservation.UpdatedAt = now;
-        }
+
+        await context
+            .Set<JobIdempotencyReservationEntity>()
+            .AddAsync(
+                new JobIdempotencyReservationEntity
+                {
+                    ScopeKey = scopeKey,
+                    Function = job.Function,
+                    ContractVersion = job.ContractVersion,
+                    IdempotencyKey = idempotencyKey,
+                    TenantId = job.TenantId,
+                    JobId = job.Id,
+                    ExpiresAt = now + idempotencyTtl,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         // The statement clock that just decided the reservation's expiry also anchors a relative due time, so one read
         // serves both and the due time cannot predate the reservation.

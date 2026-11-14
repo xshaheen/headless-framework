@@ -7,6 +7,7 @@ using Headless.DistributedLocks;
 using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -26,12 +27,14 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     private readonly TimeSpan _baseInterval;
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
+    private readonly TimeSpan _initialDispatchGrace;
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private readonly MethodMatcherCache? _consumerResolver;
     private readonly IMessagingCapabilityModel? _capabilityModel;
     private readonly InboxMetricPolicy _inboxMetricPolicy;
     private readonly IConsumerHostOwnership? _hostOwnership;
+    private readonly ConsumerRateLimiters? _rateLimiters;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private readonly Dictionary<RetryQuadrantKey, RetryQuadrantState> _quadrants;
@@ -56,10 +59,12 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         IMessagingCapabilityModel? capabilityModel = null,
         InboxMetricPolicy? inboxMetricPolicy = null,
         MessagingOutboxes? outboxes = null,
-        IConsumerHostOwnership? hostOwnership = null
+        IConsumerHostOwnership? hostOwnership = null,
+        ConsumerRateLimiters? rateLimiters = null
     )
     {
         _options = options;
+        _initialDispatchGrace = options.Value.RetryPolicy.InitialDispatchGrace;
         _logger = logger;
         _dispatcher = dispatcher;
         _baseInterval = retryOptions.Value.BaseInterval;
@@ -70,6 +75,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         _capabilityModel = capabilityModel;
         _inboxMetricPolicy = inboxMetricPolicy ?? new InboxMetricPolicy(TenantTagName: null);
         _hostOwnership = hostOwnership;
+        _rateLimiters = rateLimiters;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -514,6 +520,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         var skippedCircuitOpen = 0;
         var healthy = new List<MediumMessage>(messages.Count);
         var circuitWork = new List<CircuitRetryWork>();
+        var throttled = new List<ThrottledRetryWork>();
         bool orphanPickupSucceeded;
 
         try
@@ -544,6 +551,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     );
                 }
 
+                ConsumerExecutorDescriptor? descriptor = null;
                 if (message.InboxKey is { } inboxKey)
                 {
                     if (
@@ -553,7 +561,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                             inboxKey.ContractIdentity,
                             inboxKey.ContractVersion,
                             inboxKey.Lane,
-                            out var descriptor
+                            out descriptor
                         )
                     )
                     {
@@ -588,9 +596,52 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 }
 
                 var consumerIdentity = message.Origin.GetConsumerIdentity();
+                var rateLimited = _GetRateLimitedConsumer(message, descriptor, consumerIdentity, context);
+
+                // The row's own delivery is still alive on this host, waiting for its permit without a lease. It runs
+                // the row; a dispatch from here would take the lease that delivery needs and waste its permit.
+                if (rateLimited is not null && _rateLimiters!.IsWaiting(message.StorageId))
+                {
+                    throttled.Add(new ThrottledRetryWork(message, consumerIdentity, _initialDispatchGrace));
+                    continue;
+                }
+
                 var decision = consumerIdentity is null
                     ? CircuitRetryDecision.Closed
                     : _GetCircuitRetryDecision(state.Key.Lane, consumerIdentity);
+
+                // A row that is about to run needs its consumer's permit. This task dispatches the batch one row at a
+                // time, so waiting for one here would hold every other consumer's retry behind it: the permit is taken
+                // now or the row is put back for later.
+                if (
+                    rateLimited is not null
+                    && decision.Kind is CircuitRetryDecisionKind.Closed or CircuitRetryDecisionKind.ProbeAcquired
+                )
+                {
+                    if (!_rateLimiters!.TryAcquire(rateLimited))
+                    {
+                        if (decision.Kind is CircuitRetryDecisionKind.ProbeAcquired)
+                        {
+                            _circuitBreakerStateManager?.ReleaseHalfOpenProbe(
+                                CircuitBreakerKeys.For(state.Key.Lane, consumerIdentity!),
+                                decision.Epoch
+                            );
+                        }
+
+                        var period = rateLimited.RateLimit!.Period;
+                        throttled.Add(
+                            new ThrottledRetryWork(
+                                message,
+                                consumerIdentity,
+                                period < _initialDispatchGrace ? period : _initialDispatchGrace
+                            )
+                        );
+                        continue;
+                    }
+
+                    message.HoldsRateLimitPermit = true;
+                }
+
                 if (decision.Kind is CircuitRetryDecisionKind.Closed)
                 {
                     healthy.Add(message);
@@ -636,6 +687,13 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             }
 
             throw;
+        }
+
+        // Before the dispatch below: a waiting delivery can get its permit at any moment, and must find its row
+        // unleased.
+        foreach (var work in throttled)
+        {
+            await _DeferThrottledClaimAsync(connection, work).ConfigureAwait(false);
         }
 
         // Circuit claims are deliberately absent from this generic release range. Once classified,
@@ -722,6 +780,80 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             _AdjustPollingInterval(state, enqueued, skippedCircuitOpen);
         }
     }
+
+    /// <summary>
+    /// The row's consumer when this host limits its rate and the row will ask for a permit, otherwise
+    /// <see langword="null"/>. A row past its request or delivery deadline ends without running the handler, so it
+    /// takes no permit here either.
+    /// </summary>
+    private ConsumerExecutorDescriptor? _GetRateLimitedConsumer(
+        MediumMessage message,
+        ConsumerExecutorDescriptor? descriptor,
+        string? consumerIdentity,
+        ProcessingContext context
+    )
+    {
+        if (_rateLimiters is null)
+        {
+            return null;
+        }
+
+        if (descriptor is null && consumerIdentity is not null)
+        {
+            _ = _consumerResolver?.TryGetConsumerIdentityExecutor(
+                message.Origin.Name,
+                consumerIdentity,
+                message.Lane,
+                out descriptor
+            );
+        }
+
+        if (descriptor?.RateLimit is null)
+        {
+            return null;
+        }
+
+        var now = context.GetUtcNow();
+        return
+            RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, now)
+            || DeliverByEnvelope.IsExpired(message.Origin.Headers, now)
+            ? null
+            : descriptor;
+    }
+
+    /// <summary>
+    /// Puts a claimed row of a throttled consumer back with a later due time, so the cycle goes on without it. A
+    /// failure leaves the claim to its lease expiry.
+    /// </summary>
+    private async ValueTask _DeferThrottledClaimAsync(IDataStorage storage, ThrottledRetryWork work)
+    {
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.RetryDeferredForRateLimit(work.Message.StorageId, LogSanitizer.Sanitize(work.ConsumerIdentity));
+        }
+
+        try
+        {
+            if (storage is ICircuitRetryDeferralStorage && work.Message.Lease.State is RowLeaseState.Active)
+            {
+                _ = await _DeferCircuitClaimAsync(storage, work.Message, work.Delay).ConfigureAwait(false);
+                return;
+            }
+
+            // No deferral to write: the claim is released as it is, and the next pickup looks at the row again.
+            await _ReleaseClaimedAsync(storage, MessageType.Subscribe, work.Message).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.ThrottledRetryDeferralFailed(
+                ex,
+                work.Message.StorageId,
+                LogSanitizer.Sanitize(work.ConsumerIdentity)
+            );
+        }
+    }
+
+    private readonly record struct ThrottledRetryWork(MediumMessage Message, string? ConsumerIdentity, TimeSpan Delay);
 
     private void _RecordInboxRecovery(MediumMessage message, InboxMetricOutcome outcome)
     {
@@ -1178,6 +1310,25 @@ internal static partial class RetryProcessorLog
     )]
     internal static partial void CircuitRetryRetainedWithoutStateManager(
         this ILogger logger,
+        Guid storageId,
+        string? consumer
+    );
+
+    [LoggerMessage(
+        EventId = 3123,
+        Level = LogLevel.Debug,
+        Message = "Deferring retry for message {StorageId}: consumer {Consumer} has no rate-limit permit"
+    )]
+    internal static partial void RetryDeferredForRateLimit(this ILogger logger, Guid storageId, string? consumer);
+
+    [LoggerMessage(
+        EventId = 3124,
+        Level = LogLevel.Warning,
+        Message = "Deferring the retry of message {StorageId} for rate-limited consumer {Consumer} failed; the claim is retained until its lease expires"
+    )]
+    internal static partial void ThrottledRetryDeferralFailed(
+        this ILogger logger,
+        Exception exception,
         Guid storageId,
         string? consumer
     );

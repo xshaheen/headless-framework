@@ -125,6 +125,23 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Deletes idempotency reservations whose expiry is in the store's past, so a stream of distinct keys does not
+    /// grow the reservation store without bound. The fallback sweep calls it once per fallback interval.
+    /// </summary>
+    /// <remarks>
+    /// Judge expiry by the store's clock, as <see cref="AddIdempotentTimeJobAsync"/> does, and never delete a live
+    /// reservation. Deleting an expired one changes no outcome: the next enqueue with that key creates a new job
+    /// either way. Delete in bounded batches so one pass never holds a long lock. The default does nothing, which
+    /// is correct for a store that keeps no reservations; a store that implements
+    /// <see cref="AddIdempotentTimeJobAsync"/> overrides it.
+    /// </remarks>
+    /// <param name="cancellationToken">Token that aborts the sweep between batches.</param>
+    /// <returns>The number of reservations deleted.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<int> DeleteExpiredIdempotencyReservationsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(0);
+
     /// <summary>Conditionally cancels only the observed current generation, retaining every generation indefinitely.</summary>
     Task<JobScheduleResult> CancelKeyedTimeJobAsync(
         JobKeyScope scope,

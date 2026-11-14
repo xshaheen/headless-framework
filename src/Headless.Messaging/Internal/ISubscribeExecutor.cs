@@ -341,14 +341,19 @@ internal sealed class SubscribeExecutor(
         // so a throttled delivery holds neither a database connection nor lease time while it waits. Each attempt, a
         // retry included, runs the handler again, so each one takes a permit. A message already past its request or
         // delivery deadline will not run the handler, so it skips the wait and leaves the permit to live work; the
-        // checks after the reservation below end it.
-        if (
+        // checks after the reservation below end it. A retry pickup that cannot wait takes the permit before it
+        // dispatches the row, and the first attempt runs on that one.
+        if (message.HoldsRateLimitPermit)
+        {
+            message.HoldsRateLimitPermit = false;
+        }
+        else if (
             _rateLimiters is not null
             && !RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, timeProvider.GetUtcNow())
             && !DeliverByEnvelope.IsExpired(message.Origin.Headers, timeProvider.GetUtcNow())
         )
         {
-            await _rateLimiters.WaitAsync(descriptor, cancellationToken).ConfigureAwait(false);
+            await _rateLimiters.WaitAsync(descriptor, message.StorageId, cancellationToken).ConfigureAwait(false);
         }
 
         if (needsLease)

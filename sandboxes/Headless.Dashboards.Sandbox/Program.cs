@@ -98,6 +98,12 @@ builder.Services.AddHeadlessMessaging(setup =>
     // delivery starts, so one delivery at a time would leave the rest of a burst in the transport, where no backlog
     // counts it; the concurrency stores the whole burst at once.
     setup.Tune(SandboxConsumerIds.StockCounts, consumer => consumer.Concurrency(8));
+    // One quote every 30 s, the dispatch grace, so a burst waits for its permits past the point where retry pickup
+    // claims a row with no lease. The concurrency stores the whole burst at once, as it does for the stock counts.
+    setup.Tune(
+        SandboxConsumerIds.CarrierQuotes,
+        consumer => consumer.Concurrency(8).RateLimit(ConsumerRateLimit.FixedWindow(1, TimeSpan.FromSeconds(30)))
+    );
     setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     // Messages stay on the in-memory transport; their storage follows the sandbox store, so with STORE=postgres the
     // published and received rows survive a restart and `make db-q` can read them.

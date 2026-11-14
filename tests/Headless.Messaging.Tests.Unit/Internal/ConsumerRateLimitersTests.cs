@@ -151,6 +151,107 @@ public sealed class ConsumerRateLimitersTests : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Fact]
+    public async Task should_report_a_row_as_waiting_only_while_its_delivery_waits_for_a_permit()
+    {
+        // given
+        using var sut = new ConsumerRateLimiters();
+        var consumer = _Consumer(
+            "orders.audit",
+            "orders.placed",
+            ConsumerRateLimit.FixedWindow(1, TimeSpan.FromSeconds(1))
+        );
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        // when
+        await sut.WaitAsync(consumer, first, AbortToken);
+        var waiting = sut.WaitAsync(consumer, second, AbortToken).AsTask();
+
+        // then
+        sut.IsWaiting(first).Should().BeFalse("a delivery that got its permit at once never waited");
+        sut.IsWaiting(second).Should().BeTrue();
+        await waiting.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        sut.IsWaiting(second).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_stop_reporting_a_row_as_waiting_when_its_wait_is_cancelled()
+    {
+        // given
+        using var sut = new ConsumerRateLimiters();
+        var consumer = _Consumer("orders.audit", "orders.placed", ConsumerRateLimit.FixedWindow(1, _Hour));
+        var row = Guid.NewGuid();
+        await sut.WaitAsync(consumer, Guid.NewGuid(), AbortToken);
+        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+#pragma warning disable AsyncFixer04 // False positive: the task is started to observe it while it waits, and is awaited before the using scope ends.
+        var waiting = sut.WaitAsync(consumer, row, shutdown.Token).AsTask();
+#pragma warning restore AsyncFixer04
+
+        // when
+        await shutdown.CancelAsync();
+        var act = () => waiting.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        sut.IsWaiting(row).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_take_a_permit_without_waiting_and_refuse_once_the_rate_is_spent()
+    {
+        // given
+        using var sut = new ConsumerRateLimiters();
+        var limited = _Consumer("orders.audit", "orders.placed", ConsumerRateLimit.FixedWindow(2, _Hour));
+        var unlimited = _Consumer("orders.billing", "orders.placed", rateLimit: null);
+
+        // when / then
+        sut.TryAcquire(limited).Should().BeTrue();
+        sut.TryAcquire(limited).Should().BeTrue();
+        sut.TryAcquire(limited).Should().BeFalse();
+        sut.TryAcquire(limited).Should().BeFalse("a queued acquisition is not granted before the rate renews");
+        sut.TryAcquire(unlimited).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_keep_a_place_in_the_queue_for_a_refused_caller_so_waiting_deliveries_cannot_starve_it()
+    {
+        // given: the permit is spent, and a refused non-waiting call queues ahead of a later waiting delivery
+        using var sut = new ConsumerRateLimiters();
+        var consumer = _Consumer(
+            "orders.audit",
+            "orders.placed",
+            ConsumerRateLimit.FixedWindow(1, TimeSpan.FromSeconds(1))
+        );
+        await sut.WaitAsync(consumer, AbortToken);
+        sut.TryAcquire(consumer).Should().BeFalse();
+        var laterDelivery = sut.WaitAsync(consumer, AbortToken).AsTask();
+
+        // when: two windows renew, one permit each, oldest first
+        await laterDelivery.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then: the first permit went to the queued acquisition, and the next call takes it
+        sut.TryAcquire(consumer).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_refuse_a_permit_once_disposed()
+    {
+        // given
+        var sut = new ConsumerRateLimiters();
+        var consumer = _Consumer("orders.audit", "orders.placed", ConsumerRateLimit.FixedWindow(1, _Hour));
+        var late = _Consumer("orders.billing", "orders.placed", ConsumerRateLimit.FixedWindow(1, _Hour));
+        sut.TryAcquire(consumer).Should().BeTrue();
+        sut.TryAcquire(consumer).Should().BeFalse();
+
+        // when
+        sut.Dispose();
+
+        // then
+        sut.TryAcquire(consumer).Should().BeFalse();
+        sut.TryAcquire(late).Should().BeFalse();
+    }
+
     private static ConsumerExecutorDescriptor _Consumer(
         string identity,
         string messageName,

@@ -92,6 +92,32 @@ public sealed class IdempotentEnqueueTests : TestBase
     }
 
     [Fact]
+    public async Task should_delete_only_expired_reservations_on_sweep()
+    {
+        var (provider, scheduler, clock) = _Host();
+        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        await scheduler.EnqueueAsync(new IdemRequest("short"), _Options("short", TimeSpan.FromMinutes(1)), AbortToken);
+        var live = await scheduler.EnqueueAsync(
+            new IdemRequest("long"),
+            _Options("long", TimeSpan.FromMinutes(10)),
+            AbortToken
+        );
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        (await persistence.DeleteExpiredIdempotencyReservationsAsync(AbortToken))
+            .Should()
+            .Be(1, "a reservation is expired once its expiry is reached");
+        (await persistence.DeleteExpiredIdempotencyReservationsAsync(AbortToken)).Should().Be(0);
+        var repeat = await scheduler.EnqueueAsync(
+            new IdemRequest("long-again"),
+            _Options("long", TimeSpan.FromMinutes(10)),
+            AbortToken
+        );
+        repeat.Should().Be(live, "the sweep kept the live reservation");
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_not_dedup_across_descriptors_or_scopes()
     {
         var (provider, scheduler, _) = _Host();

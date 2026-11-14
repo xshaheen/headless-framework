@@ -94,6 +94,12 @@ public class MediumMessage
     public long ProbeEpoch { get; set; }
 
     /// <summary>
+    /// Whether the retry processor already took this dispatch's rate-limit permit, so its first attempt does not wait
+    /// for a second one. In-memory handoff state only.
+    /// </summary>
+    internal bool HoldsRateLimitPermit { get; set; }
+
+    /// <summary>
     /// The additional outbox storage that holds this published row, or <see langword="null" /> for a row of the
     /// primary storage. In-memory handoff state only: core stamps it where it writes or picks up a row from an
     /// additional outbox, so every later state change reaches that row's own database.
