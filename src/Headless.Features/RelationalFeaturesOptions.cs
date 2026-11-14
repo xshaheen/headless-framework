@@ -47,5 +47,6 @@ internal sealed class RelationalFeaturesStorageOptionsValidator : AbstractValida
             .IsValidIdentifierFor(provider)
             .FitsDerivedPostgreSqlNames(FeaturesStorageNames.GroupsIndexes)
             .When(x => x.FeatureGroupDefinitionsTableName is not null);
+        this.AddColumnLengthRules();
     }
 }

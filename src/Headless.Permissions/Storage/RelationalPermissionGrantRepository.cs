@@ -50,6 +50,9 @@ internal sealed class RelationalPermissionGrantRepository(
     ];
 
     private readonly ISqlDialect _dialect = tables.Dialect;
+
+    /// <summary>Read per statement, so a lookup parameter is sized to the column the options configured.</summary>
+    private readonly PermissionsStorageOptions _lengths = tables.Options;
     private readonly string _select = _BuildSelect(tables);
     private readonly string _byTenant = _BuildByTenant(tables);
 
@@ -74,7 +77,7 @@ internal sealed class RelationalPermissionGrantRepository(
                 sql,
                 command =>
                 {
-                    _AddFilter(command, "Name", PermissionGrantRecordConstants.NameMaxLength, name);
+                    _AddFilter(command, "Name", _lengths.PermissionGrantsNameMaxLength, name);
                     _AddScope(command, providerName, providerKey);
                 },
                 cancellationToken
@@ -164,8 +167,8 @@ internal sealed class RelationalPermissionGrantRepository(
             return Task.FromResult(new List<PermissionGrantRecord>());
         }
 
-        var nameList = SqlColumnType.LookupText(PermissionGrantRecordConstants.NameMaxLength, names);
-        var keyList = SqlColumnType.LookupText(PermissionGrantRecordConstants.ProviderKeyMaxLength, providerKeys);
+        var nameList = SqlColumnType.LookupText(_lengths.PermissionGrantsNameMaxLength, names);
+        var keyList = SqlColumnType.LookupText(_lengths.PermissionGrantsProviderKeyMaxLength, providerKeys);
 
         var providerKeyColumn = tables.Column("ProviderKey");
         var sql =
@@ -180,7 +183,7 @@ internal sealed class RelationalPermissionGrantRepository(
             {
                 _dialect.AddListParameter(command, "Names", nameList, names);
                 _dialect.AddListParameter(command, "ProviderKeys", keyList, providerKeys);
-                _AddFilter(command, "ProviderName", PermissionGrantRecordConstants.ProviderNameMaxLength, providerName);
+                _AddFilter(command, "ProviderName", _lengths.PermissionGrantsProviderNameMaxLength, providerName);
                 _AddTenant(command);
             },
             cancellationToken
@@ -379,8 +382,8 @@ internal sealed class RelationalPermissionGrantRepository(
 
     private void _AddScope(DbCommand command, string providerName, string providerKey)
     {
-        _AddFilter(command, "ProviderName", PermissionGrantRecordConstants.ProviderNameMaxLength, providerName);
-        _AddFilter(command, "ProviderKey", PermissionGrantRecordConstants.ProviderKeyMaxLength, providerKey);
+        _AddFilter(command, "ProviderName", _lengths.PermissionGrantsProviderNameMaxLength, providerName);
+        _AddFilter(command, "ProviderKey", _lengths.PermissionGrantsProviderKeyMaxLength, providerKey);
         _AddTenant(command);
     }
 
@@ -389,7 +392,7 @@ internal sealed class RelationalPermissionGrantRepository(
         _AddFilter(
             command,
             "TenantId",
-            PermissionGrantRecordConstants.TenantIdMaxLength,
+            _lengths.PermissionGrantsTenantIdMaxLength,
             services.GetService<ICurrentTenant>()?.Id
         );
     }
@@ -428,7 +431,7 @@ internal sealed class RelationalPermissionGrantRepository(
         string providerKey
     )
     {
-        var nameList = SqlColumnType.LookupText(PermissionGrantRecordConstants.NameMaxLength, names);
+        var nameList = SqlColumnType.LookupText(_lengths.PermissionGrantsNameMaxLength, names);
 
         var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope} AND {_byTenant};";
 

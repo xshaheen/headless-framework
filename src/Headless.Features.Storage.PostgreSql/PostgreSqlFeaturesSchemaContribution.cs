@@ -26,43 +26,47 @@ internal static class PostgreSqlFeaturesSchemaContribution
         var groupsName = tables.GroupsName;
         var valuesTable = tables.Values;
         var definitionsTable = tables.Definitions;
+        var lengths = tables.Options;
         var groupsTable = tables.Groups;
 
-        var tablesSql = $"""
+        var tablesSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             CREATE TABLE IF NOT EXISTS {groupsTable} (
                 "id" uuid NOT NULL,
-                "name" character varying({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "display_name" character varying({FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                "name" character varying({lengths.FeatureGroupDefinitionsNameMaxLength}) NOT NULL,
+                "display_name" character varying({lengths.FeatureGroupDefinitionsDisplayNameMaxLength}) NOT NULL,
                 "extra_properties" text NOT NULL,
                 CONSTRAINT "pk_{groupsName}" PRIMARY KEY ("id")
             );
 
             CREATE TABLE IF NOT EXISTS {definitionsTable} (
                 "id" uuid NOT NULL,
-                "group_name" character varying({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "name" character varying({FeatureDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "display_name" character varying({FeatureDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
-                "parent_name" character varying({FeatureDefinitionRecordConstants.NameMaxLength}),
-                "description" character varying({FeatureDefinitionRecordConstants.DescriptionMaxLength}),
-                "default_value" character varying({FeatureDefinitionRecordConstants.DefaultValueMaxLength}),
+                "group_name" character varying({lengths.FeatureGroupDefinitionsNameMaxLength}) NOT NULL,
+                "name" character varying({lengths.FeatureDefinitionsNameMaxLength}) NOT NULL,
+                "display_name" character varying({lengths.FeatureDefinitionsDisplayNameMaxLength}) NOT NULL,
+                "parent_name" character varying({lengths.FeatureDefinitionsNameMaxLength}),
+                "description" character varying({lengths.FeatureDefinitionsDescriptionMaxLength}),
+                "default_value" character varying({lengths.FeatureDefinitionsDefaultValueMaxLength}),
                 "is_visible_to_clients" boolean NOT NULL,
                 "is_available_to_host" boolean NOT NULL,
-                "providers" character varying({FeatureDefinitionRecordConstants.ProvidersMaxLength}),
+                "providers" character varying({lengths.FeatureDefinitionsProvidersMaxLength}),
                 "extra_properties" text NOT NULL,
                 CONSTRAINT "pk_{definitionsName}" PRIMARY KEY ("id")
             );
 
             CREATE TABLE IF NOT EXISTS {valuesTable} (
                 "id" uuid NOT NULL,
-                "name" character varying({FeatureValueRecordConstants.NameMaxLength}) NOT NULL,
-                "value" character varying({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
-                "provider_name" character varying({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
-                "provider_key" character varying({FeatureValueRecordConstants.ProviderKeyMaxLength}),
+                "name" character varying({lengths.FeatureValuesNameMaxLength}) NOT NULL,
+                "value" character varying({lengths.FeatureValuesValueMaxLength}) NOT NULL,
+                "provider_name" character varying({lengths.FeatureValuesProviderNameMaxLength}) NOT NULL,
+                "provider_key" character varying({lengths.FeatureValuesProviderKeyMaxLength}),
                 "created_at" timestamp with time zone NOT NULL,
                 "updated_at" timestamp with time zone,
                 CONSTRAINT "pk_{valuesName}" PRIMARY KEY ("id")
             );
-            """;
+            """
+        );
 
         // Two partial unique indexes cover the provider key, because a plain unique index treats every NULL key as
         // distinct and would admit duplicate keyless values.

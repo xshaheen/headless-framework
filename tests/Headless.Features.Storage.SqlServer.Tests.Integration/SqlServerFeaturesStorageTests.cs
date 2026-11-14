@@ -92,6 +92,60 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
         remaining.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_size_lookup_parameters_to_the_configured_columns()
+    {
+        // given — widths no other test configures, in a schema of its own, so the cached statement is this test's
+        const string schema = "features_sql_parameters";
+        var providerKey = "ws_" + new string('a', 32) + ":usr_" + new string('b', 32);
+        await fixture.DropSchemaAsync(schema, AbortToken);
+        using var host = fixture.CreateHost(
+            schema,
+            configureServices: services =>
+                services.Configure<FeaturesStorageOptions>(options =>
+                {
+                    options.FeatureValuesNameMaxLength = 133;
+                    options.FeatureValuesProviderNameMaxLength = 67;
+                    options.FeatureValuesProviderKeyMaxLength = 131;
+                })
+        );
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+
+        // when
+        await repository.FindAsync("Name", "Tenant", providerKey, AbortToken);
+
+        // then — the statement SQL Server cached declares each lookup parameter at its column's width; a parameter
+        // sized by the default constant would bind the longer key unsized, as nvarchar(max), and miss the plan
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new SqlCommand(
+            """
+            SELECT st.text
+            FROM sys.dm_exec_query_stats qs
+            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+            WHERE st.text LIKE @pattern
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("@pattern", $"%[[]{schema}]%");
+        await using var reader = await command.ExecuteReaderAsync(AbortToken);
+        var statements = new List<string>();
+
+        while (await reader.ReadAsync(AbortToken))
+        {
+            statements.Add(reader.GetString(0));
+        }
+
+        statements
+            .Should()
+            .Contain(x =>
+                x.Contains("@Name nvarchar(133)", StringComparison.Ordinal)
+                && x.Contains("@ProviderName nvarchar(67)", StringComparison.Ordinal)
+                && x.Contains("@ProviderKey nvarchar(131)", StringComparison.Ordinal)
+            );
+    }
+
     private async Task<bool> _IndexExistsAsync(string tableName, string indexName)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);

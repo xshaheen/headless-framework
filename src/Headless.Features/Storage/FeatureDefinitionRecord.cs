@@ -31,14 +31,6 @@ public sealed class FeatureDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
     /// <param name="providers">Comma-separated list of provider names allowed to manage this feature's value, or <see langword="null"/> for all providers.</param>
     /// <exception cref="ArgumentNullException"><paramref name="groupName"/>, <paramref name="name"/>, or <paramref name="displayName"/> is <see langword="null"/> or white space.</exception>
     /// <exception cref="ArgumentException"><paramref name="groupName"/>, <paramref name="name"/>, or <paramref name="displayName"/> is empty or white space.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="groupName"/> or <paramref name="name"/> exceeds <see cref="FeatureDefinitionRecordConstants.NameMaxLength"/> characters,
-    /// <paramref name="displayName"/> exceeds <see cref="FeatureDefinitionRecordConstants.DisplayNameMaxLength"/> characters,
-    /// <paramref name="parentName"/> exceeds <see cref="FeatureDefinitionRecordConstants.NameMaxLength"/> characters,
-    /// <paramref name="description"/> exceeds <see cref="FeatureDefinitionRecordConstants.DescriptionMaxLength"/> characters,
-    /// <paramref name="defaultValue"/> exceeds <see cref="FeatureDefinitionRecordConstants.DefaultValueMaxLength"/> characters,
-    /// or <paramref name="providers"/> exceeds <see cref="FeatureDefinitionRecordConstants.ProvidersMaxLength"/> characters.
-    /// </exception>
     [SetsRequiredMembers]
     public FeatureDefinitionRecord(
         Guid id,
@@ -54,33 +46,10 @@ public sealed class FeatureDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
     )
     {
         Argument.IsNotNullOrWhiteSpace(groupName);
-        Argument.IsLessThanOrEqualTo(groupName.Length, FeatureDefinitionRecordConstants.NameMaxLength);
 
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, FeatureDefinitionRecordConstants.NameMaxLength);
 
         Argument.IsNotNullOrWhiteSpace(displayName);
-        Argument.IsLessThanOrEqualTo(displayName.Length, FeatureDefinitionRecordConstants.DisplayNameMaxLength);
-
-        if (parentName is not null)
-        {
-            Argument.IsLessThanOrEqualTo(parentName.Length, FeatureDefinitionRecordConstants.NameMaxLength);
-        }
-
-        if (description is not null)
-        {
-            Argument.IsLessThanOrEqualTo(description.Length, FeatureDefinitionRecordConstants.DescriptionMaxLength);
-        }
-
-        if (defaultValue is not null)
-        {
-            Argument.IsLessThanOrEqualTo(defaultValue.Length, FeatureDefinitionRecordConstants.DefaultValueMaxLength);
-        }
-
-        if (providers is not null)
-        {
-            Argument.IsLessThanOrEqualTo(providers.Length, FeatureDefinitionRecordConstants.ProvidersMaxLength);
-        }
 
         Id = id;
         GroupName = groupName;

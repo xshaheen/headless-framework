@@ -85,6 +85,7 @@ public static class SetupFeaturesEntityFramework
                 .IsValidCrossProviderIdentifier()
                 .FitsDerivedPostgreSqlNames(FeaturesStorageNames.GroupsIndexes)
                 .When(x => x.FeatureGroupDefinitionsTableName is not null);
+            this.AddColumnLengthRules();
         }
     }
 }

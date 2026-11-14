@@ -5,6 +5,7 @@ using Headless.EntityFramework;
 using Headless.Permissions;
 using Headless.Primitives;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Serialization;
 
@@ -16,7 +17,7 @@ public sealed class PermissionDefinitionSerializerTests : TestBase
     {
         var guidGenerator = Substitute.For<IGuidGenerator>();
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
-        _sut = new PermissionDefinitionSerializer(guidGenerator);
+        _sut = new PermissionDefinitionSerializer(guidGenerator, Options.Create(new PermissionsStorageOptions()));
     }
 
     #region Test 112: should_serialize_permission_to_record

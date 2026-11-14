@@ -417,4 +417,141 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         byNames.Should().BeEmpty();
         byScope.Should().BeEmpty();
     }
+
+    private const string _LengthsSchema = "features_lengths";
+
+    // The shape a consumer app composes from two prefixed identifiers: 72 characters, past the default 64.
+    private static readonly string _LongProviderKey = "ws_" + new string('a', 32) + ":usr_" + new string('b', 32);
+
+    [Fact]
+    public async Task should_create_every_column_at_its_configured_length()
+    {
+        // given — a distinct length per option, so a column wired to the wrong option shows
+        await fixture.DropSchemaAsync(_LengthsSchema, AbortToken);
+        using var host = fixture.CreateHost(
+            _LengthsSchema,
+            configureServices: services =>
+                services.Configure<FeaturesStorageOptions>(options =>
+                {
+                    options.FeatureValuesNameMaxLength = 201;
+                    options.FeatureValuesValueMaxLength = 202;
+                    options.FeatureValuesProviderNameMaxLength = 203;
+                    options.FeatureValuesProviderKeyMaxLength = 204;
+                    options.FeatureDefinitionsNameMaxLength = 205;
+                    options.FeatureDefinitionsDisplayNameMaxLength = 206;
+                    options.FeatureDefinitionsDescriptionMaxLength = 207;
+                    options.FeatureDefinitionsDefaultValueMaxLength = 208;
+                    options.FeatureDefinitionsProvidersMaxLength = 209;
+                    options.FeatureGroupDefinitionsNameMaxLength = 210;
+                    options.FeatureGroupDefinitionsDisplayNameMaxLength = 211;
+                })
+        );
+
+        // when
+        await host.StartAsync(AbortToken);
+        var lengths = await _ReadColumnLengthsAsync(_LengthsSchema);
+
+        // then
+        lengths
+            .Should()
+            .BeEquivalentTo(
+                new Dictionary<string, int>(StringComparer.Ordinal)
+                {
+                    ["featurevalues.name"] = 201,
+                    ["featurevalues.value"] = 202,
+                    ["featurevalues.providername"] = 203,
+                    ["featurevalues.providerkey"] = 204,
+                    ["featuredefinitions.name"] = 205,
+                    ["featuredefinitions.parentname"] = 205,
+                    ["featuredefinitions.displayname"] = 206,
+                    ["featuredefinitions.description"] = 207,
+                    ["featuredefinitions.defaultvalue"] = 208,
+                    ["featuredefinitions.providers"] = 209,
+                    ["featuredefinitions.groupname"] = 210,
+                    ["featuregroupdefinitions.name"] = 210,
+                    ["featuregroupdefinitions.displayname"] = 211,
+                }
+            );
+    }
+
+    [Fact]
+    public async Task should_round_trip_a_72_character_provider_key_when_its_column_is_widened_to_128()
+    {
+        // given
+        await fixture.DropSchemaAsync(_LengthsSchema, AbortToken);
+        using var host = fixture.CreateHost(
+            _LengthsSchema,
+            configureServices: services =>
+                services.Configure<FeaturesStorageOptions>(options => options.FeatureValuesProviderKeyMaxLength = 128)
+        );
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var record = new FeatureValueRecord(Guid.NewGuid(), "Name", "v", "Tenant", _LongProviderKey);
+
+        // when
+        await repository.InsertAsync(record, AbortToken);
+        var found = await repository.FindAsync("Name", "Tenant", _LongProviderKey, AbortToken);
+        var listed = await repository.GetListAsync("Tenant", _LongProviderKey, AbortToken);
+        await repository.DeleteAsync([record], AbortToken);
+        var afterDelete = await repository.FindAsync("Name", "Tenant", _LongProviderKey, AbortToken);
+
+        // then
+        _LongProviderKey.Should().HaveLength(72);
+        found.Should().NotBeNull();
+        found!.ProviderKey.Should().Be(_LongProviderKey);
+        listed.Should().ContainSingle().Which.Id.Should().Be(record.Id);
+        afterDelete.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_reject_a_72_character_provider_key_at_the_default_length()
+    {
+        // given — the default stays 64, so an application that configures nothing keeps the schema it had
+        await fixture.DropSchemaAsync(_LengthsSchema, AbortToken);
+        using var host = fixture.CreateHost(_LengthsSchema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var record = new FeatureValueRecord(Guid.NewGuid(), "Name", "v", "Tenant", _LongProviderKey);
+
+        // when
+        var act = () => repository.InsertAsync(record, AbortToken);
+
+        // then
+        (await act.Should().ThrowAsync<Exception>())
+            .Which.Should()
+            .BeAssignableTo(fixture.ProviderExceptionType);
+    }
+
+    // INFORMATION_SCHEMA reads the same on both databases. Keys are lower-cased with underscores removed, so one
+    // expectation reads on either naming style.
+    private async Task<Dictionary<string, int>> _ReadColumnLengthsAsync(string schema)
+    {
+        await using var connection = fixture.CreateConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT TABLE_NAME, COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = '{schema}' AND CHARACTER_MAXIMUM_LENGTH > 0
+            """;
+        await using var reader = await command.ExecuteReaderAsync(AbortToken);
+        var lengths = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        while (await reader.ReadAsync(AbortToken))
+        {
+            var table = reader.GetString(0);
+
+            if (!table.StartsWith(SchemaRunner.HistoryTableName, StringComparison.Ordinal))
+            {
+                lengths[_NormalizeName(table) + "." + _NormalizeName(reader.GetString(1))] = reader.GetInt32(2);
+            }
+        }
+
+        return lengths;
+    }
+
+    private static string _NormalizeName(string name)
+    {
+        return name.Replace("_", "", StringComparison.Ordinal).ToLowerInvariant();
+    }
 }

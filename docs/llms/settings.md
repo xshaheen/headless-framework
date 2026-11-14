@@ -306,7 +306,7 @@ Core implementation of dynamic settings management with hierarchical value provi
 - `SettingDefinitions` seeder — saves static definitions when the host seeds, with up to 10 jittered exponential-back-off retries capped at 30 seconds
 - `SettingDefinitions` warm-up — loads the dynamic store into its in-process cache after the start, behind readiness, when `IsDynamicSettingStoreEnabled` is true
 - `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
-- `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
+- `SettingsStorageOptions` — schema, table name, and column length configuration shared across all storage providers
 - `RelationalSettingsOptions` — base of `PostgreSqlSettingsOptions` and `SqlServerSettingsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
 - `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddSettingDefinitionProvider<T>()` — registers a custom `ISettingDefinitionProvider`
@@ -488,6 +488,45 @@ services.AddHeadlessSettings(setup =>
 
 Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`setting_values`, `provider_key`, `pk_setting_values`, `ix_setting_values_name_provider_name_provider_key`); on SQL Server and other databases they are PascalCase (`SettingValues`, `ProviderKey`, `PK_SettingValues`, `IX_SettingValues_Name_ProviderName_ProviderKey`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyValues`). The raw providers and the EF mapping produce the same names on the same database. Because PostgreSQL silently truncates identifiers longer than 63 bytes, every provider refuses a configured table name whose longest derived PostgreSQL key or index name would exceed that: at most 23 characters for the values table and 55 for definitions.
 
+##### Column lengths
+
+Every string column's maximum length is an option on `SettingsStorageOptions`. The defaults are the lengths the tables always had, so an application that sets none gets the same schema:
+
+| Option | Column | Default |
+| --- | --- | --- |
+| `SettingValuesNameMaxLength` | values `Name` | 128 |
+| `SettingValuesValueMaxLength` | values `Value` | 2000 |
+| `SettingValuesProviderNameMaxLength` | values `ProviderName` | 64 |
+| `SettingValuesProviderKeyMaxLength` | values `ProviderKey` | 64 |
+| `SettingDefinitionsNameMaxLength` | definitions `Name` | 128 |
+| `SettingDefinitionsDisplayNameMaxLength` | definitions `DisplayName` | 256 |
+| `SettingDefinitionsDescriptionMaxLength` | definitions `Description` | 512 |
+| `SettingDefinitionsDefaultValueMaxLength` | definitions `DefaultValue` | 2000 |
+| `SettingDefinitionsProvidersMaxLength` | definitions `Providers` | 1024 |
+
+```csharp
+setup.ConfigureStorage(o => o.SettingValuesProviderKeyMaxLength = 128);
+```
+
+Each value must be between 1 and 4000, the widest sized `nvarchar` on SQL Server; the registration refuses anything else when the options are first read. One option drives every reader: the EF Core model (`HasMaxLength`), the raw providers' `CREATE TABLE`, and the size of the raw providers' lookup parameters. Set it in `ConfigureStorage`, or bind it from the `Headless:Settings:Storage` section, before the tables are created. `SettingDefinitionSerializer` checks each definition against the same options and throws `ArgumentOutOfRangeException` for a value that would not fit, so an over-long definition fails when definitions are saved instead of at the database; the definition record constructors no longer check length.
+
+The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey`. SQL Server limits a nonclustered index key to 1700 bytes, which is 850 `nvarchar` characters, and PostgreSQL limits a B-tree entry to about 2700 bytes. Keep the three lengths together under 850, or a row that fills them fails on insert. `Value` is not indexed. `SettingDefinitionsDefaultValueMaxLength` is independent of `SettingValuesValueMaxLength`; raise both when stored values and defaults grow together.
+
+**Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column: the schema runner records a step as applied and never re-runs it, and EF Core changes a column only through a migration. Change the option and the column in the same release:
+
+- **EF Core storage**: change the option, then add a migration (`dotnet ef migrations add WidenSettingValueProviderKeyColumn`). The model now maps the new length, so the migration contains the `AlterColumn`. Apply it as you apply every migration.
+- **Raw PostgreSQL or SQL Server storage**: run the `ALTER` with the tool that owns your schema, then deploy the option. `resources provision` does not widen a column.
+
+  ```sql
+  -- PostgreSQL: widening a varchar changes metadata only and keeps its indexes
+  ALTER TABLE headless.setting_values ALTER COLUMN provider_key TYPE character varying(128);
+
+  -- SQL Server: restate the nullability, or the column takes the session default
+  ALTER TABLE [headless].[SettingValues] ALTER COLUMN [ProviderKey] nvarchar(128) NULL;
+  ```
+
+Widen the column before, or together with, the code that writes longer values. Narrowing a column that already holds longer values fails on both databases, so shorten the data first.
+
 ### Runtime behavior
 
 - Registers `ISettingManager` and `IClientVisibleSettingsReader` as singletons
@@ -565,6 +604,7 @@ builder.Services.AddHeadlessSettings(setup =>
 - `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
 - `SettingValuesTableName = null`: `setting_values` on PostgreSQL, `SettingValues` elsewhere
 - `SettingDefinitionsTableName = null`: `setting_definitions` on PostgreSQL, `SettingDefinitions` elsewhere
+- Every `*MaxLength` option defaults to the length its column always had; see [Column lengths](#column-lengths) for the list and for changing one after the tables exist
 
 The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing. The EF provider writes no DDL; create its tables with EF migrations.
 

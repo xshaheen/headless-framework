@@ -2,7 +2,10 @@
 
 namespace Headless.Features;
 
-/// <summary>Column-length limits for <see cref="FeatureValueRecord"/> fields.</summary>
+/// <summary>
+/// Default column lengths for <see cref="FeatureValueRecord"/>. <see cref="FeaturesStorageOptions"/> starts from them and is
+/// what the schema, the EF Core model, and the repositories read, so configure a length there.
+/// </summary>
 public static class FeatureValueRecordConstants
 {
     /// <summary>Maximum length (128) for <see cref="FeatureValueRecord.Name"/>.</summary>

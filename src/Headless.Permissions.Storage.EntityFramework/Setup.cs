@@ -96,6 +96,7 @@ public static class SetupPermissionsEntityFramework
                 .IsValidCrossProviderIdentifier()
                 .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GroupsIndexes)
                 .When(x => x.PermissionGroupDefinitionsTableName is not null);
+            this.AddColumnLengthRules();
         }
     }
 }
