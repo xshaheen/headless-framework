@@ -470,7 +470,7 @@ internal sealed class Dispatcher
                 return false;
             }
 
-            var executionState = new RetryExecutionState();
+            var executionState = new RetryExecutionState { RunsOnPickupTask = true };
             try
             {
                 await using var dispatchScope = _scopeFactory.CreateAsyncScope();
