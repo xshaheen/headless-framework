@@ -807,6 +807,36 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
+    public async Task should_schedule_a_delayed_retry_when_max_persisted_retries_is_zero_and_the_consumer_policy_allows_one()
+    {
+        // given — the publish cap allows no persisted retry; the consumer's policy still allows one delayed retry.
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _AlwaysThrowing(new TimeoutException("boom"), out var invocations);
+        var exhausted = 0;
+        var options = _OptionsCountingExhausted(() => exhausted++);
+        options.RetryPolicy.MaxPersistedRetries = 0;
+        var executor = _CreateExecutor(invoker, storage, options);
+        var writes = _CaptureWrites(storage);
+
+        // when
+        await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(_Policy(immediate: 0, delayed: 1)),
+            AbortToken
+        );
+
+        // then — the row stays Failed with a next retry, so the retry processor still owns it.
+        invocations().Should().Be(1);
+        writes
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<StateWrite>(write => write.Status == StatusName.Failed && write.Delay != null);
+        exhausted.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_treat_message_deserialization_exception_as_terminal_and_fire_on_terminal_once()
     {
         var storage = Substitute.For<IDataStorage>();

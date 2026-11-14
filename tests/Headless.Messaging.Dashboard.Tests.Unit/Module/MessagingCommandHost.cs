@@ -176,10 +176,35 @@ internal static class MessagingCommandHost
     ) => InboxFailureAsync(storage, messageId, content: null, cancellationToken);
 
     /// <summary>As <see cref="InboxFailureAsync(IDataStorage, string, CancellationToken)"/>, with the stored content.</summary>
-    public static async Task<MediumMessage> InboxFailureAsync(
+    public static Task<MediumMessage> InboxFailureAsync(
         IDataStorage storage,
         string messageId,
         string? content,
+        CancellationToken cancellationToken
+    ) => _InboxFailureAsync(storage, messageId, content, retryDelay: null, cancellationToken);
+
+    /// <summary>
+    /// A received row that failed and waits for its consumer's next delayed retry: still <c>Failed</c>, but with a
+    /// next retry time, so the retry processor owns it.
+    /// </summary>
+    public static Task<MediumMessage> InboxRetryingAsync(
+        IDataStorage storage,
+        string messageId,
+        CancellationToken cancellationToken
+    ) =>
+        _InboxFailureAsync(
+            storage,
+            messageId,
+            content: null,
+            RetryDelay.Exactly(TimeSpan.FromMinutes(5)),
+            cancellationToken
+        );
+
+    private static async Task<MediumMessage> _InboxFailureAsync(
+        IDataStorage storage,
+        string messageId,
+        string? content,
+        RetryDelay? retryDelay,
         CancellationToken cancellationToken
     )
     {
@@ -201,7 +226,7 @@ internal static class MessagingCommandHost
                 message,
                 StatusName.Failed,
                 MessageContentWrite.Preserve,
-                retryDelay: null,
+                retryDelay,
                 keepLease: false,
                 originalRetries: 0,
                 originalInlineAttempts: 1,
