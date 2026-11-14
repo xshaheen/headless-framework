@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Simulation;
@@ -456,6 +457,30 @@ internal static class PipelineHosts
         }
 
         await host.WhenRetryPickupParkedAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs one retry pickup per poll interval until <paramref name="effect"/> completes, at most
+    /// <paramref name="polls"/> times. A pickup hands a sequential consumer's row to its sequencer and returns, so each
+    /// poll also waits for the handed-over rows to finish before the clock moves again.
+    /// </summary>
+    public static async Task RunRetryPickupsUntilAsync(
+        this SimulationHost host,
+        Task effect,
+        int polls,
+        CancellationToken cancellationToken
+    )
+    {
+        var dispatcher = (Dispatcher)host.Services.GetRequiredService<IDispatcher>();
+
+        for (var poll = 0; poll < polls && !effect.IsCompleted; poll++)
+        {
+            await host.RunRetryPickupAsync(PollInterval, cancellationToken).ConfigureAwait(false);
+            await host.WithinBoundAsync(dispatcher.WhenSequencedWorkIdleAsync(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await host.WithinBoundAsync(effect, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Runs one retry pickup per poll interval for <paramref name="duration"/>, each one to completion.</summary>

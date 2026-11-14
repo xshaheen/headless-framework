@@ -1207,6 +1207,12 @@ internal sealed class Dispatcher
         }
     }
 
+    /// <summary>Completes once every message handed to a sequential consumer's sequencer has finished.</summary>
+    internal Task WhenSequencedWorkIdleAsync()
+    {
+        return _sequencers?.WhenIdleAsync() ?? Task.CompletedTask;
+    }
+
     /// <summary>
     /// Runs one message a sequential consumer's sequencer hands over, unless an earlier message of its key is still
     /// unfinished in the store, on this host or another: queued, running, or waiting for a delayed retry.

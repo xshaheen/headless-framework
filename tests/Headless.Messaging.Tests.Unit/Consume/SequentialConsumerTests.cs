@@ -161,12 +161,7 @@ public sealed class SequentialConsumerTests : TestBase
 
         // and: the pickup brings it back, the check answers, and it runs once
         var completed = probe.WhenCompletedAsync("a-1", 1);
-        for (var poll = 0; poll < 300 && !completed.IsCompleted; poll++)
-        {
-            await host.RunRetryPickupAsync(PipelineHosts.PollInterval, AbortToken);
-        }
-
-        await host.WithinBoundAsync(completed, AbortToken);
+        await host.RunRetryPickupsUntilAsync(completed, polls: 300, AbortToken);
         probe.Attempts("a-1").Should().Be(1);
     }
 
@@ -185,12 +180,7 @@ public sealed class SequentialConsumerTests : TestBase
 
         // then: the row keeps the due time admission gave it, so the pickup still runs it once
         var completed = probe.WhenCompletedAsync("a-1", 1);
-        for (var poll = 0; poll < 300 && !completed.IsCompleted; poll++)
-        {
-            await host.RunRetryPickupAsync(PipelineHosts.PollInterval, AbortToken);
-        }
-
-        await host.WithinBoundAsync(completed, AbortToken);
+        await host.RunRetryPickupsUntilAsync(completed, polls: 300, AbortToken);
         probe.Attempts("a-1").Should().Be(1);
     }
 
@@ -236,12 +226,7 @@ public sealed class SequentialConsumerTests : TestBase
 
         // and: the retry runs once it falls due, then the parked backlog resumes in admission order
         var drained = probe.WhenCompletedAsync("a-3", 1);
-        for (var poll = 0; poll < 300 && !drained.IsCompleted; poll++)
-        {
-            await host.RunRetryPickupAsync(PipelineHosts.PollInterval, AbortToken);
-        }
-
-        await host.WithinBoundAsync(drained, AbortToken);
+        await host.RunRetryPickupsUntilAsync(drained, polls: 300, AbortToken);
         order
             .Where(static entry => entry.StartsWith("a-", StringComparison.Ordinal))
             .Should()
@@ -287,12 +272,7 @@ public sealed class SequentialConsumerTests : TestBase
 
         // and: once a-1 fails for good, the key moves on
         var completed = probe.WhenCompletedAsync("a-2", 1);
-        for (var poll = 0; poll < 300 && !completed.IsCompleted; poll++)
-        {
-            await host.RunRetryPickupAsync(PipelineHosts.PollInterval, AbortToken);
-        }
-
-        await host.WithinBoundAsync(completed, AbortToken);
+        await host.RunRetryPickupsUntilAsync(completed, polls: 300, AbortToken);
         probe.Exhausted.Should().ContainSingle();
         order
             .Where(static entry => entry.StartsWith("a-", StringComparison.Ordinal))
@@ -369,12 +349,7 @@ public sealed class SequentialConsumerTests : TestBase
         _Release("b-1");
         await first.WithinBoundAsync(probe.WhenCompletedAsync("a-1", 1), AbortToken);
         var completed = probe.WhenCompletedAsync("a-2", 1);
-        for (var poll = 0; poll < 120 && !completed.IsCompleted; poll++)
-        {
-            await second.RunRetryPickupAsync(PipelineHosts.PollInterval, AbortToken);
-        }
-
-        await second.WithinBoundAsync(completed, AbortToken);
+        await second.RunRetryPickupsUntilAsync(completed, polls: 120, AbortToken);
         Volatile.Read(ref overlaps).Should().Be(0);
         order.Should().Equal("a-1", "a-2");
     }
@@ -402,13 +377,7 @@ public sealed class SequentialConsumerTests : TestBase
             _Sequential(concurrency: 1)
         );
         var completed = probe.WhenCompletedAsync("a-2", 1);
-        for (var poll = 0; poll < 600 && !completed.IsCompleted; poll++)
-        {
-            await host.RunRetryPickupAsync(PipelineHosts.PollInterval, AbortToken);
-        }
-
-        // then: the waiting row runs once, after the cut-off message of its key finished
-        await host.WithinBoundAsync(completed, AbortToken);
+        await host.RunRetryPickupsUntilAsync(completed, polls: 600, AbortToken);
         probe.Attempts("a-2").Should().Be(1);
         probe.Completions("a-1").Should().Be(1);
     }
