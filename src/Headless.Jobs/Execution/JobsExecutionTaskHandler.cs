@@ -342,7 +342,7 @@ internal sealed class JobsExecutionTaskHandler
             // twice, so the run records it once here, on its way out.
             if (context.LeaseLost)
             {
-                JobsMetrics.LeaseLost(_functionTags, context.FunctionName);
+                JobsMetrics.LeaseLost(_functionTags, context.FunctionName, context.LeaseLossReason);
             }
         }
     }
@@ -622,7 +622,7 @@ internal sealed class JobsExecutionTaskHandler
 
                 if (cancellationRequested is null)
                 {
-                    context.LeaseLost = true;
+                    context.MarkLeaseLost(JobsLeaseLossReason.RowNotOwned);
                     _cancellationRegistry.TrySignalLeaseLoss(cancellationRegistration);
                     _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
                     return;
@@ -682,7 +682,7 @@ internal sealed class JobsExecutionTaskHandler
                     .ConfigureAwait(false);
                 if (versionReleaseAffected == 0)
                 {
-                    context.LeaseLost = true;
+                    context.MarkLeaseLost(JobsLeaseLossReason.ReleaseUnmatched);
                 }
 
                 context.ResetUpdateProps();
@@ -774,7 +774,7 @@ internal sealed class JobsExecutionTaskHandler
                 else
                 {
                     // Fenced terminal write — leave children for reclaim, not local processing.
-                    context.LeaseLost = true;
+                    context.MarkLeaseLost(JobsLeaseLossReason.CompletionRejected);
                 }
 
                 // Early return (same shape as TerminateExecution): the durable parent-terminal gate hands
@@ -924,7 +924,7 @@ internal sealed class JobsExecutionTaskHandler
 
                             if (affected == 0)
                             {
-                                context.LeaseLost = true;
+                                context.MarkLeaseLost(JobsLeaseLossReason.RetryWriteUnmatched);
                                 _cancellationRegistry.TrySignalLeaseLoss(cancellationRegistration);
                                 _LogLeaseLost(context, JobsLeaseLossReason.RetryWriteUnmatched, error: null);
                                 throw new OperationCanceledException(cancellationTokenSource.Token);
@@ -1001,7 +1001,7 @@ internal sealed class JobsExecutionTaskHandler
                     {
                         // Fenced terminal write — this Cancelled status was not persisted (the row was
                         // reclaimed). Flag lease loss so the child-processing guard leaves children for reclaim.
-                        context.LeaseLost = true;
+                        context.MarkLeaseLost(JobsLeaseLossReason.CompletionRejected);
                         return;
                     }
 
@@ -1070,7 +1070,7 @@ internal sealed class JobsExecutionTaskHandler
                 {
                     // Fenced terminal write — this terminal status was not persisted (the row was reclaimed).
                     // Flag lease loss so the child-processing guard leaves children for reclaim.
-                    context.LeaseLost = true;
+                    context.MarkLeaseLost(JobsLeaseLossReason.CompletionRejected);
                 }
 
                 // Clean up and exit early on termination
@@ -1159,7 +1159,7 @@ internal sealed class JobsExecutionTaskHandler
                     // This Succeeded status was never persisted (the durable row is the sweep's, possibly
                     // contradictory, terminal). Flag lease loss so the child-processing guard leaves children for
                     // reclaim instead of running them from state that never reached the store.
-                    context.LeaseLost = true;
+                    context.MarkLeaseLost(JobsLeaseLossReason.CompletionRejected);
                 }
             }
             else if (lastException != null)
@@ -1231,7 +1231,7 @@ internal sealed class JobsExecutionTaskHandler
                 {
                     // Fenced terminal write — this Failed status was not persisted (the row was reclaimed).
                     // Flag lease loss so the child-processing guard leaves children for reclaim.
-                    context.LeaseLost = true;
+                    context.MarkLeaseLost(JobsLeaseLossReason.CompletionRejected);
                 }
             }
         }
@@ -1299,7 +1299,7 @@ internal sealed class JobsExecutionTaskHandler
 
         if (affected == 0)
         {
-            context.LeaseLost = true;
+            context.MarkLeaseLost(JobsLeaseLossReason.RetryWriteUnmatched);
             return;
         }
 
@@ -1360,7 +1360,7 @@ internal sealed class JobsExecutionTaskHandler
 
         if (_cancellationRegistry.TrySignalLeaseLoss(registration))
         {
-            context.LeaseLost = true;
+            context.MarkLeaseLost(JobsLeaseLossReason.MembershipLost);
             _LogLeaseLost(context, JobsLeaseLossReason.MembershipLost, error: null);
         }
     }
@@ -1401,7 +1401,7 @@ internal sealed class JobsExecutionTaskHandler
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            context.LeaseLost = true;
+            context.MarkLeaseLost(JobsLeaseLossReason.ReleaseFailed);
             _logger.LogJobShutdownWriteFailed(exception, context.JobId, context.FunctionName);
             return false;
         }
@@ -1419,7 +1419,7 @@ internal sealed class JobsExecutionTaskHandler
         }
 
         // A peer reclaimed the row first; it owns the outcome now.
-        context.LeaseLost = true;
+        context.MarkLeaseLost(JobsLeaseLossReason.ReleaseUnmatched);
         _logger.LogJobShutdownReleaseFenced(context.JobId, context.FunctionName);
         return false;
     }
@@ -1644,7 +1644,7 @@ internal sealed class JobsExecutionTaskHandler
 
                 if (cancellationRequested is null)
                 {
-                    context.LeaseLost = true;
+                    context.MarkLeaseLost(JobsLeaseLossReason.RowNotOwned);
                     _cancellationRegistry.TrySignalLeaseLoss(registration);
                     _LogLeaseLost(context, JobsLeaseLossReason.RowNotOwned, error: null);
                     return;
@@ -1692,7 +1692,7 @@ internal sealed class JobsExecutionTaskHandler
                 // within the cadence — #463). Flag lease-loss so the cancellation handler leaves the row InProgress for
                 // the stalled-reclaim/OnNodeDeath sweep (#1) rather than writing a terminal Cancelled, then best-effort
                 // cancel the running job (a job ignoring its token still relies on OnNodeDeath for correctness).
-                context.LeaseLost = true;
+                context.MarkLeaseLost(loss);
                 _cancellationRegistry.TrySignalLeaseLoss(registration);
                 _LogLeaseLost(context, loss, renewal.Error);
                 return;
@@ -1779,7 +1779,7 @@ internal sealed class JobsExecutionTaskHandler
             }
             else
             {
-                context.LeaseLost = true;
+                context.MarkLeaseLost(JobsLeaseLossReason.MembershipLost);
                 _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
             }
 
@@ -1787,7 +1787,7 @@ internal sealed class JobsExecutionTaskHandler
         }
 
         var renewal = await _TryRenewLeaseAsync(context, cancellationToken).ConfigureAwait(false);
-        if (renewal.Loss is null)
+        if (renewal.Loss is not { } loss)
         {
             return true;
         }
@@ -1797,7 +1797,7 @@ internal sealed class JobsExecutionTaskHandler
             _logger.LogJobLeaseRenewalFailed(renewal.Error, context.JobId, context.FunctionName);
         }
 
-        context.LeaseLost = true;
+        context.MarkLeaseLost(loss);
         _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
 
         return false;
@@ -1816,14 +1816,14 @@ internal sealed class JobsExecutionTaskHandler
         catch (Exception exception)
         {
             // With no identity there is nothing to retry under: the lease lapses and reclaim recovers the row.
-            context.LeaseLost = true;
+            context.MarkLeaseLost(JobsLeaseLossReason.MembershipLost);
             _logger.LogJobStartReleaseFailedMembershipUnknown(exception, context.JobId, context.FunctionName);
             return;
         }
 
         if (released == 0)
         {
-            context.LeaseLost = true;
+            context.MarkLeaseLost(JobsLeaseLossReason.ReleaseUnmatched);
             _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
             return;
         }

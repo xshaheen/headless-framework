@@ -153,6 +153,7 @@ internal interface IInternalJobManager
     /// Recovers the time jobs and cron occurrences one dead owner held, applying each row's <c>OnNodeDeath</c> policy.
     /// </summary>
     /// <returns>The rows moved, by transition.</returns>
+    /// <exception cref="JobReclaimException">A store sweep or the reconcile failed; it carries the rows that moved.</exception>
     Task<JobReclaimCounts> ReleaseDeadNodeResources(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
@@ -160,9 +161,12 @@ internal interface IInternalJobManager
 
     /// <summary>
     /// Recovers the rows several dead owners held, applying each row's <c>OnNodeDeath</c> policy. Every owner is
-    /// attempted; failures surface together as one <see cref="AggregateException" /> once the rest ran.
+    /// attempted; failures surface together once the rest ran.
     /// </summary>
     /// <returns>The rows moved across every owner, by transition.</returns>
+    /// <exception cref="JobReclaimException">
+    /// An owner's sweep or the reconcile failed; it carries the rows every owner moved.
+    /// </exception>
     Task<JobReclaimCounts> ReleaseDeadNodeResources(
         IReadOnlyCollection<string> instanceIdentifiers,
         CancellationToken cancellationToken = default
@@ -176,6 +180,7 @@ internal interface IInternalJobManager
     /// fallback cadence so a job stalled on a still-live node is recovered within ≈ one lease TTL.
     /// </summary>
     /// <returns>The rows moved, by transition.</returns>
+    /// <exception cref="JobReclaimException">A store sweep or the reconcile failed; it carries the rows that moved.</exception>
     Task<JobReclaimCounts> ReclaimStalledResources(CancellationToken cancellationToken = default);
 
     /// <summary>

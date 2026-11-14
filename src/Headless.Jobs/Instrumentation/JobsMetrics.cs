@@ -55,6 +55,14 @@ internal static class JobsMetrics
     /// </summary>
     internal const string ExecutionOutcomesName = "headless.jobs.execution.outcomes";
 
+    /// <summary>
+    /// Why a <c>lease_lost</c> run stopped owning its row; absent on every other outcome. One of
+    /// <c>renewal_unmatched</c>, <c>renewal_timed_out</c>, <c>renewal_failed</c>, <c>membership_lost</c>,
+    /// <c>row_not_owned</c>, <c>retry_write_unmatched</c>, <c>completion_rejected</c>, <c>release_unmatched</c>, or
+    /// <c>release_failed</c>.
+    /// </summary>
+    internal const string TagLeaseLossReason = "headless.jobs.lease_loss.reason";
+
     /// <summary>Terminal writes the store refused because the run no longer owned its row.</summary>
     internal const string CompletionRejectedName = "headless.jobs.completion.rejected";
 
@@ -282,19 +290,41 @@ internal static class JobsMetrics
 
     /// <summary>
     /// Records a run that ended because it lost its lease: the outcome is <c>lease_lost</c>, with no duration sample,
-    /// because the row's node-death policy decides how the run ends.
+    /// because the row's node-death policy decides how the run ends. A run flagged without a reason carries no reason
+    /// tag.
     /// </summary>
-    internal static void LeaseLost(JobsFunctionTagBound functions, string function)
+    internal static void LeaseLost(JobsFunctionTagBound functions, string function, JobsLeaseLossReason? reason)
     {
         if (!_ExecutionOutcomes.Enabled)
         {
             return;
         }
 
-        _ExecutionOutcomes.Add(
-            1,
-            new TagList { { TagFunction, functions.Tag(function) }, { TagOutcome, OutcomeLeaseLost } }
-        );
+        var tags = new TagList { { TagFunction, functions.Tag(function) }, { TagOutcome, OutcomeLeaseLost } };
+        if (reason is { } known)
+        {
+            tags.Add(TagLeaseLossReason, LeaseLossReasonOf(known));
+        }
+
+        _ExecutionOutcomes.Add(1, tags);
+    }
+
+    /// <summary>The one mapping from a lease-loss reason to its tag value.</summary>
+    internal static string LeaseLossReasonOf(JobsLeaseLossReason reason)
+    {
+        return reason switch
+        {
+            JobsLeaseLossReason.RenewalUnmatched => "renewal_unmatched",
+            JobsLeaseLossReason.RenewalTimedOut => "renewal_timed_out",
+            JobsLeaseLossReason.RenewalFailed => "renewal_failed",
+            JobsLeaseLossReason.MembershipLost => "membership_lost",
+            JobsLeaseLossReason.RowNotOwned => "row_not_owned",
+            JobsLeaseLossReason.RetryWriteUnmatched => "retry_write_unmatched",
+            JobsLeaseLossReason.CompletionRejected => "completion_rejected",
+            JobsLeaseLossReason.ReleaseUnmatched => "release_unmatched",
+            JobsLeaseLossReason.ReleaseFailed => "release_failed",
+            _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unknown lease-loss reason."),
+        };
     }
 
     /// <summary>

@@ -210,8 +210,17 @@ internal sealed class JobsFallbackBackgroundService(
 
         _lastStallSweepTimestamp = timeProvider.GetTimestamp();
 
-        var reclaimed = await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
-        JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonLeaseExpired, reclaimed);
+        try
+        {
+            var reclaimed = await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
+            JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonLeaseExpired, reclaimed);
+        }
+        catch (JobReclaimException exception)
+        {
+            // The rows that moved before the failure stay moved, and no retry finds them again, so count them now.
+            JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonLeaseExpired, exception.Reclaimed);
+            throw;
+        }
     }
 
     // Recovers rows stamped by an owner identity that is no longer a live member: a Dead identity, a superseded
@@ -291,10 +300,19 @@ internal sealed class JobsFallbackBackgroundService(
 
         // Final membership fence immediately before the must-complete durable transition. Once started, the release
         // deliberately uses None so host shutdown cannot interrupt only part of the owner batch.
-        var reclaimed = await internalJobsManager
-            .ReleaseDeadNodeResources(orphanedOwners, CancellationToken.None)
-            .ConfigureAwait(false);
-        JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonOrphanedOwner, reclaimed);
+        try
+        {
+            var reclaimed = await internalJobsManager
+                .ReleaseDeadNodeResources(orphanedOwners, CancellationToken.None)
+                .ConfigureAwait(false);
+            JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonOrphanedOwner, reclaimed);
+        }
+        catch (JobReclaimException exception)
+        {
+            // The rows that moved before the failure stay moved, and no retry finds them again, so count them now.
+            JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonOrphanedOwner, exception.Reclaimed);
+            throw;
+        }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

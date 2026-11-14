@@ -560,7 +560,8 @@ public sealed class JobsMetricsTests : TestBase
             .ContainSingle("the store never held Succeeded, so only the lease loss counts")
             .Which.Tags.Should()
             .Contain(_FunctionTag, function)
-            .And.Contain(_OutcomeTag, "lease_lost");
+            .And.Contain(_OutcomeTag, "lease_lost")
+            .And.Contain(_LeaseLossReasonTag, "completion_rejected");
         recorder.Of(_Duration).Should().BeEmpty("a run whose outcome the store refused adds no duration sample");
     }
 
@@ -588,7 +589,13 @@ public sealed class JobsMetricsTests : TestBase
             .Which.Tags.Should()
             .Contain(_FunctionTag, function)
             .And.Contain(_OutcomeTag, "failed");
-        recorder.Of(_Outcomes).Should().ContainSingle().Which.Tags.Should().Contain(_OutcomeTag, "lease_lost");
+        recorder
+            .Of(_Outcomes)
+            .Should()
+            .ContainSingle()
+            .Which.Tags.Should()
+            .Contain(_OutcomeTag, "lease_lost")
+            .And.Contain(_LeaseLossReasonTag, "completion_rejected");
         recorder.Of(_Duration).Should().BeEmpty();
     }
 
@@ -628,7 +635,8 @@ public sealed class JobsMetricsTests : TestBase
             .ContainSingle()
             .Which.Tags.Should()
             .Contain(_FunctionTag, function)
-            .And.Contain(_OutcomeTag, "lease_lost");
+            .And.Contain(_OutcomeTag, "lease_lost")
+            .And.Contain(_LeaseLossReasonTag, "renewal_unmatched");
         recorder.Of(_Duration).Should().BeEmpty("the node-death policy decides how the run ends");
         recorder.Of(_CompletionRejected).Should().BeEmpty("the run attempted no terminal write");
     }
@@ -680,6 +688,77 @@ public sealed class JobsMetricsTests : TestBase
         measurement.Tags.Should().Contain(_ReclaimActionTag, "marked_failed").And.HaveCount(2);
     }
 
+    [Fact]
+    public void should_map_every_lease_loss_reason_to_its_own_tag_value()
+    {
+        // when
+        var values = Enum.GetValues<JobsLeaseLossReason>().Select(JobsMetrics.LeaseLossReasonOf).ToList();
+
+        // then: a reason added without a tag value would throw while the run exits
+        values
+            .Should()
+            .Equal(
+                "renewal_unmatched",
+                "renewal_timed_out",
+                "renewal_failed",
+                "membership_lost",
+                "row_not_owned",
+                "retry_write_unmatched",
+                "completion_rejected",
+                "release_unmatched",
+                "release_failed"
+            );
+    }
+
+    [Fact]
+    public void should_keep_the_first_lease_loss_reason_when_a_run_is_marked_twice()
+    {
+        // given
+        var job = _Job("metrics.marked.twice", static (_, _, _) => Task.CompletedTask);
+
+        // when
+        job.MarkLeaseLost(JobsLeaseLossReason.MembershipLost);
+        job.MarkLeaseLost(JobsLeaseLossReason.CompletionRejected);
+
+        // then
+        job.LeaseLost.Should().BeTrue();
+        job.LeaseLossReason.Should().Be(JobsLeaseLossReason.MembershipLost);
+    }
+
+    [Fact]
+    public async Task should_record_the_rows_a_dead_node_batch_moved_before_it_failed()
+    {
+        // given: one owner failed, the others moved rows; the counts are distinctive against parallel tests
+        using var recorder = new MetricRecorder();
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .ReleaseDeadNodeResources(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<JobReclaimCounts>(
+                    new JobReclaimException(
+                        new JobReclaimCounts { MarkedFailed = 8123 },
+                        [new InvalidOperationException("store blip")]
+                    )
+                )
+            );
+        var reclaimer = new JobsDeadOwnerReclaimer(manager, new SchedulerOptionsBuilder());
+
+        // when
+        var act = () => reclaimer.ReclaimAsync(["node-a@1", "node-b@1"], AbortToken);
+
+        // then: the failure still reaches the bridge for its retry, and the moved rows are counted
+        await act.Should().ThrowAsync<JobReclaimException>();
+        recorder
+            .Of(_Reclaims)
+            .Should()
+            .Contain(x =>
+                Equals(x.Value, 8123d)
+                && Equals(x.Tags[_ReclaimReasonTag], "dead_node")
+                && Equals(x.Tags[_ReclaimActionTag], "marked_failed")
+            );
+    }
+
+    private const string _LeaseLossReasonTag = "headless.jobs.lease_loss.reason";
     private const string _CompletionRejected = "headless.jobs.completion.rejected";
     private const string _Reclaims = "headless.jobs.reclaims";
     private const string _ReclaimReasonTag = "headless.jobs.reclaim.reason";

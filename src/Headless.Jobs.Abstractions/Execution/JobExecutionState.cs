@@ -131,6 +131,22 @@ public class JobExecutionState
     public bool LeaseLost { get; set; }
 
     /// <summary>
+    /// Why the run first lost its row, set with <see cref="LeaseLost" /> by <see cref="MarkLeaseLost" />;
+    /// <see langword="null" /> while the run owns it.
+    /// </summary>
+    internal JobsLeaseLossReason? LeaseLossReason { get; private set; }
+
+    /// <summary>
+    /// Flags the run as lease-lost and keeps the first reason. The renewal loop and the membership callback can race to
+    /// mark one run; either reason is true, so the unsynchronized first-write-wins is enough.
+    /// </summary>
+    internal void MarkLeaseLost(JobsLeaseLossReason reason)
+    {
+        LeaseLossReason ??= reason;
+        LeaseLost = true;
+    }
+
+    /// <summary>
     /// Transient, non-persisted <c>cluster/node@incarnation</c> owner that claimed this row, captured from the claimed root
     /// and shared by every chain descendant that runs under the root's claim. It is never part of
     /// <see cref="PropertiesToUpdate"/>.
