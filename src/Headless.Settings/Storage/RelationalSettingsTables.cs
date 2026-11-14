@@ -5,14 +5,16 @@ using Headless.Sql;
 namespace Headless.Settings;
 
 /// <summary>
-/// The settings tables' names in one dialect's convention, shared by the relational repositories and each provider's
-/// schema contribution so the DDL and the statements name the same objects.
+/// The settings tables' names in one dialect's convention and their configured column lengths, shared by the
+/// relational repositories and each provider's schema contribution so the DDL and the statements name the same
+/// objects and size the same columns.
 /// </summary>
 internal sealed class RelationalSettingsTables
 {
     public RelationalSettingsTables(ISqlDialect dialect, SettingsStorageOptions options)
     {
         Dialect = dialect;
+        Options = options;
         Schema = options.Schema;
         // A configured name is used verbatim; the default follows the dialect's convention.
         ValuesName = options.SettingValuesTableName ?? dialect.Name(DefaultValuesPascalName);
@@ -25,6 +27,9 @@ internal sealed class RelationalSettingsTables
     public const string DefaultDefinitionsPascalName = "SettingDefinitions";
 
     public ISqlDialect Dialect { get; }
+
+    /// <summary>The storage options the names came from; the source of every column length.</summary>
+    public SettingsStorageOptions Options { get; }
 
     public string Schema { get; }
 

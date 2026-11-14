@@ -2,7 +2,10 @@
 
 namespace Headless.Settings;
 
-/// <summary>Column length limits for <see cref="SettingDefinitionRecord"/> fields.</summary>
+/// <summary>
+/// Default column lengths for <see cref="SettingDefinitionRecord"/>. <see cref="SettingsStorageOptions"/> starts from them and is
+/// what the schema, the EF Core model, and the repositories read, so configure a length there.
+/// </summary>
 public static class SettingDefinitionRecordConstants
 {
     /// <summary>Maximum character length for <see cref="SettingDefinitionRecord.Name"/>.</summary>

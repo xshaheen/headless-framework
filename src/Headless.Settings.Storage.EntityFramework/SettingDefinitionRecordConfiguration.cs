@@ -12,7 +12,7 @@ namespace Headless.Settings;
 /// table and schema specified by <see cref="SettingsStorageOptions"/> and enforcing column
 /// length constraints and a unique index on <c>Name</c>.
 /// </summary>
-/// <param name="options">Storage options that supply the table name and schema.</param>
+/// <param name="options">Storage options that supply the table name, schema, and column lengths.</param>
 /// <param name="style">The naming style of the database the model targets.</param>
 internal sealed class SettingDefinitionRecordConfiguration(SettingsStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<SettingDefinitionRecord>
@@ -26,11 +26,11 @@ internal sealed class SettingDefinitionRecordConfiguration(SettingsStorageOption
         b.TryConfigureExtraProperties();
         b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
 
-        b.Property(x => x.Name).HasMaxLength(SettingDefinitionRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.DisplayName).HasMaxLength(SettingDefinitionRecordConstants.DisplayNameMaxLength).IsRequired();
-        b.Property(x => x.Description).HasMaxLength(SettingDefinitionRecordConstants.DescriptionMaxLength);
-        b.Property(x => x.DefaultValue).HasMaxLength(SettingDefinitionRecordConstants.DefaultValueMaxLength);
-        b.Property(x => x.Providers).HasMaxLength(SettingDefinitionRecordConstants.ProvidersMaxLength);
+        b.Property(x => x.Name).HasMaxLength(options.SettingDefinitionsNameMaxLength).IsRequired();
+        b.Property(x => x.DisplayName).HasMaxLength(options.SettingDefinitionsDisplayNameMaxLength).IsRequired();
+        b.Property(x => x.Description).HasMaxLength(options.SettingDefinitionsDescriptionMaxLength);
+        b.Property(x => x.DefaultValue).HasMaxLength(options.SettingDefinitionsDefaultValueMaxLength);
+        b.Property(x => x.Providers).HasMaxLength(options.SettingDefinitionsProvidersMaxLength);
 
         b.HasIndex(x => new { x.Name })
             .IsUnique()

@@ -2,8 +2,10 @@
 
 namespace Headless.Permissions;
 
-/// <summary>Column-length constraints for <see cref="PermissionDefinitionRecord"/> enforced at both the entity
-/// constructor and the database schema level.</summary>
+/// <summary>
+/// Default column lengths for <see cref="PermissionDefinitionRecord"/>. <see cref="PermissionsStorageOptions"/> starts from them
+/// and is what the schema, the EF Core model, and the repositories read, so configure a length there.
+/// </summary>
 public static class PermissionDefinitionRecordConstants
 {
     /// <summary>Maximum length of <see cref="PermissionDefinitionRecord.Name"/> (128 characters).</summary>

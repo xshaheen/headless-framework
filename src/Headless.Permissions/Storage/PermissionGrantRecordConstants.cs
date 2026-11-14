@@ -4,8 +4,10 @@ using Headless.Domain;
 
 namespace Headless.Permissions;
 
-/// <summary>Column-length constraints for <see cref="PermissionGrantRecord"/> enforced at both the entity
-/// constructor and the database schema level.</summary>
+/// <summary>
+/// Default column lengths for <see cref="PermissionGrantRecord"/>. <see cref="PermissionsStorageOptions"/> starts from them
+/// and is what the schema, the EF Core model, and the repositories read, so configure a length there.
+/// </summary>
 public static class PermissionGrantRecordConstants
 {
     /// <summary>Maximum length of <see cref="PermissionGrantRecord.Name"/> (128 characters).</summary>

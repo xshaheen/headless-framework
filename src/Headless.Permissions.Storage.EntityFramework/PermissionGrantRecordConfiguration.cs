@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Headless.Permissions;
 
 /// <summary>EF Core entity type configuration for <see cref="PermissionGrantRecord"/>.</summary>
-/// <param name="options">Storage options supplying the table name and schema.</param>
+/// <param name="options">Storage options supplying the table name, schema, and column lengths.</param>
 /// <param name="style">The naming style of the database the model targets.</param>
 internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptions options, StorageNamingStyle style)
     : IEntityTypeConfiguration<PermissionGrantRecord>
@@ -20,10 +20,10 @@ internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptio
         b.ToTable(table, options.Schema);
         b.ConfigureHeadlessConvention();
         b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
-        b.Property(x => x.Name).HasMaxLength(PermissionGrantRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.ProviderName).HasMaxLength(PermissionGrantRecordConstants.ProviderNameMaxLength).IsRequired();
-        b.Property(x => x.ProviderKey).HasMaxLength(PermissionGrantRecordConstants.ProviderKeyMaxLength).IsRequired();
-        b.Property(x => x.TenantId).HasMaxLength(PermissionGrantRecordConstants.TenantIdMaxLength).IsRequired(false);
+        b.Property(x => x.Name).HasMaxLength(options.PermissionGrantsNameMaxLength).IsRequired();
+        b.Property(x => x.ProviderName).HasMaxLength(options.PermissionGrantsProviderNameMaxLength).IsRequired();
+        b.Property(x => x.ProviderKey).HasMaxLength(options.PermissionGrantsProviderKeyMaxLength).IsRequired();
+        b.Property(x => x.TenantId).HasMaxLength(options.PermissionGrantsTenantIdMaxLength).IsRequired(false);
 
         var tenantId = HeadlessStorageNaming.Apply(style, nameof(PermissionGrantRecord.TenantId));
 

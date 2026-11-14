@@ -5,6 +5,7 @@ using Headless.EntityFramework;
 using Headless.Primitives;
 using Headless.Settings;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Definitions;
 
@@ -17,7 +18,7 @@ public sealed class SettingDefinitionSerializerTests : TestBase
     public SettingDefinitionSerializerTests()
     {
         _guidGenerator.Create().Returns(_generatedId);
-        _sut = new SettingDefinitionSerializer(_guidGenerator);
+        _sut = new SettingDefinitionSerializer(_guidGenerator, Options.Create(new SettingsStorageOptions()));
     }
 
     [Fact]

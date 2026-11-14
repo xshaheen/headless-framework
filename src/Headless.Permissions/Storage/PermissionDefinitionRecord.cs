@@ -9,8 +9,8 @@ namespace Headless.Permissions;
 /// <summary>
 /// Aggregate root representing the DB-persisted snapshot of a single <see cref="PermissionDefinition"/>.
 /// Serialized by <see cref="IPermissionDefinitionSerializer"/> and stored by
-/// <see cref="IPermissionDefinitionRecordRepository"/>. All string length constraints are
-/// defined in <see cref="PermissionDefinitionRecordConstants"/>.
+/// <see cref="IPermissionDefinitionRecordRepository"/>. The serializer checks each string against the column
+/// lengths in <see cref="PermissionsStorageOptions"/>; the record itself holds whatever the store returns.
 /// </summary>
 public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
@@ -58,18 +58,8 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
         string? providers = null
     )
     {
-        Argument.IsLessThanOrEqualTo(groupName.Length, PermissionGroupDefinitionRecordConstants.NameMaxLength);
-
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, PermissionDefinitionRecordConstants.NameMaxLength);
-
         Argument.IsNotNullOrWhiteSpace(displayName);
-        Argument.IsLessThanOrEqualTo(displayName.Length, PermissionDefinitionRecordConstants.DisplayNameMaxLength);
-
-        if (parentName != null)
-        {
-            Argument.IsLessThanOrEqualTo(parentName.Length, PermissionDefinitionRecordConstants.NameMaxLength);
-        }
 
         Id = id;
         GroupName = groupName;

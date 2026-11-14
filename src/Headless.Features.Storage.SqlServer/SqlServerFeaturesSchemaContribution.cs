@@ -25,18 +25,21 @@ internal static class SqlServerFeaturesSchemaContribution
         var groupsName = tables.GroupsName;
         var valuesTable = tables.Values;
         var definitionsTable = tables.Definitions;
+        var lengths = tables.Options;
         var groupsTable = tables.Groups;
         var schema = tables.Schema;
         var valuesObject = $"{schema}.{valuesName}";
         var definitionsObject = $"{schema}.{definitionsName}";
         var groupsObject = $"{schema}.{groupsName}";
 
-        var sql = $"""
+        var sql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             IF OBJECT_ID(N'{groupsObject}', N'U') IS NULL
                 CREATE TABLE {groupsTable} (
                     [Id] uniqueidentifier NOT NULL,
-                    [Name] nvarchar({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                    [DisplayName] nvarchar({FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                    [Name] nvarchar({lengths.FeatureGroupDefinitionsNameMaxLength}) NOT NULL,
+                    [DisplayName] nvarchar({lengths.FeatureGroupDefinitionsDisplayNameMaxLength}) NOT NULL,
                     [ExtraProperties] nvarchar(max) NOT NULL,
                     CONSTRAINT [PK_{groupsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
@@ -44,15 +47,15 @@ internal static class SqlServerFeaturesSchemaContribution
             IF OBJECT_ID(N'{definitionsObject}', N'U') IS NULL
                 CREATE TABLE {definitionsTable} (
                     [Id] uniqueidentifier NOT NULL,
-                    [GroupName] nvarchar({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                    [Name] nvarchar({FeatureDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                    [DisplayName] nvarchar({FeatureDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
-                    [ParentName] nvarchar({FeatureDefinitionRecordConstants.NameMaxLength}) NULL,
-                    [Description] nvarchar({FeatureDefinitionRecordConstants.DescriptionMaxLength}) NULL,
-                    [DefaultValue] nvarchar({FeatureDefinitionRecordConstants.DefaultValueMaxLength}) NULL,
+                    [GroupName] nvarchar({lengths.FeatureGroupDefinitionsNameMaxLength}) NOT NULL,
+                    [Name] nvarchar({lengths.FeatureDefinitionsNameMaxLength}) NOT NULL,
+                    [DisplayName] nvarchar({lengths.FeatureDefinitionsDisplayNameMaxLength}) NOT NULL,
+                    [ParentName] nvarchar({lengths.FeatureDefinitionsNameMaxLength}) NULL,
+                    [Description] nvarchar({lengths.FeatureDefinitionsDescriptionMaxLength}) NULL,
+                    [DefaultValue] nvarchar({lengths.FeatureDefinitionsDefaultValueMaxLength}) NULL,
                     [IsVisibleToClients] bit NOT NULL,
                     [IsAvailableToHost] bit NOT NULL,
-                    [Providers] nvarchar({FeatureDefinitionRecordConstants.ProvidersMaxLength}) NULL,
+                    [Providers] nvarchar({lengths.FeatureDefinitionsProvidersMaxLength}) NULL,
                     [ExtraProperties] nvarchar(max) NOT NULL,
                     CONSTRAINT [PK_{definitionsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
@@ -60,10 +63,10 @@ internal static class SqlServerFeaturesSchemaContribution
             IF OBJECT_ID(N'{valuesObject}', N'U') IS NULL
                 CREATE TABLE {valuesTable} (
                     [Id] uniqueidentifier NOT NULL,
-                    [Name] nvarchar({FeatureValueRecordConstants.NameMaxLength}) NOT NULL,
-                    [Value] nvarchar({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
-                    [ProviderName] nvarchar({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
-                    [ProviderKey] nvarchar({FeatureValueRecordConstants.ProviderKeyMaxLength}) NULL,
+                    [Name] nvarchar({lengths.FeatureValuesNameMaxLength}) NOT NULL,
+                    [Value] nvarchar({lengths.FeatureValuesValueMaxLength}) NOT NULL,
+                    [ProviderName] nvarchar({lengths.FeatureValuesProviderNameMaxLength}) NOT NULL,
+                    [ProviderKey] nvarchar({lengths.FeatureValuesProviderKeyMaxLength}) NULL,
                     [CreatedAt] datetimeoffset NOT NULL,
                     [UpdatedAt] datetimeoffset NULL,
                     CONSTRAINT [PK_{valuesName}] PRIMARY KEY CLUSTERED ([Id] ASC)
@@ -88,7 +91,8 @@ internal static class SqlServerFeaturesSchemaContribution
                 CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
 
 
-            """;
+            """
+        );
 
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
