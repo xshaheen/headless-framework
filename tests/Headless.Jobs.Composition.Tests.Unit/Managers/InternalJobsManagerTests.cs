@@ -734,10 +734,10 @@ public sealed class InternalJobsManagerTests : TestBase
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         provider
             .ReleaseDeadNodeTimeJobResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(0));
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         provider
             .ReleaseDeadNodeOccurrenceResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(0));
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         provider
             .ApplyParentTerminalRunConditionsAsync(parentId: null, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<DateTime?>(null));

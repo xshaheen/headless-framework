@@ -33,6 +33,11 @@ internal sealed class JobsDeadOwnerReclaimer(
         //
         // The manager continues past per-owner failures, aggregates them for bridge retry, and performs the global
         // terminal-child reconciliation once for the whole disruption rather than once per dead owner.
-        await _internalJobManager.ReleaseDeadNodeResources(owners, CancellationToken.None).ConfigureAwait(false);
+        // A batch that throws records nothing, so rows the owners that did succeed moved go unmetered: the retry finds
+        // them already moved. The metric undercounts a partly failed batch rather than delay the bridge's retry.
+        var reclaimed = await _internalJobManager
+            .ReleaseDeadNodeResources(owners, CancellationToken.None)
+            .ConfigureAwait(false);
+        JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonDeadNode, reclaimed);
     }
 }

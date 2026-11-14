@@ -117,7 +117,9 @@ public sealed class JobsFallbackStallSweepCadenceTests : TestBase
     private static IInternalJobManager _Manager(int drainingPasses)
     {
         var manager = Substitute.For<IInternalJobManager>();
-        manager.ReclaimStalledResources(Arg.Any<CancellationToken>()).Returns(Task.FromResult(0));
+        manager
+            .ReclaimStalledResources(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         var passes = 0;
         manager
             .RunTimedOutTickers(Arg.Any<CancellationToken>())

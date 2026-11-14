@@ -49,8 +49,29 @@ internal static class JobsMetrics
     /// <summary>How long a run took, from its first attempt to its outcome, in seconds.</summary>
     internal const string ExecutionDurationName = "headless.jobs.execution.duration";
 
-    /// <summary>Runs that reached a terminal outcome, whether or not the handler was invoked.</summary>
+    /// <summary>
+    /// Runs that stored a terminal outcome, whether or not the handler was invoked, and runs that ended because they lost
+    /// their lease.
+    /// </summary>
     internal const string ExecutionOutcomesName = "headless.jobs.execution.outcomes";
+
+    /// <summary>Terminal writes the store refused because the run no longer owned its row.</summary>
+    internal const string CompletionRejectedName = "headless.jobs.completion.rejected";
+
+    /// <summary>Rows a reclaim sweep moved out of a lease their owner no longer held.</summary>
+    internal const string ReclaimsName = "headless.jobs.reclaims";
+
+    /// <summary>
+    /// What made the sweep reclaim the row: <c>lease_expired</c> (the lease lapsed on any node), <c>dead_node</c> (the
+    /// membership declared the owner dead), or <c>orphaned_owner</c> (the owner is absent from the membership).
+    /// </summary>
+    internal const string TagReclaimReason = "headless.jobs.reclaim.reason";
+
+    /// <summary>
+    /// What the row's node-death policy did with it: <c>released</c> (back to <c>Idle</c>), <c>marked_failed</c>, or
+    /// <c>skipped</c>.
+    /// </summary>
+    internal const string TagReclaimAction = "headless.jobs.reclaim.action";
 
     /// <summary>Attempts a run made beyond its first.</summary>
     internal const string ExecutionRetriesName = "headless.jobs.execution.retries";
@@ -61,7 +82,11 @@ internal static class JobsMetrics
     /// <summary>Rows a claim selected and lost to another node.</summary>
     internal const string ClaimConflictsName = "headless.jobs.claim.conflicts";
 
-    /// <summary>The run's terminal outcome: <c>succeeded</c>, <c>failed</c>, <c>cancelled</c>, or <c>skipped</c>.</summary>
+    /// <summary>
+    /// The run's outcome: <c>succeeded</c>, <c>failed</c>, <c>cancelled</c>, or <c>skipped</c> when the store holds that
+    /// terminal status, or <c>lease_lost</c> when the run ended without owning its row. On
+    /// <c>headless.jobs.completion.rejected</c> it is the outcome the refused write tried to store.
+    /// </summary>
     internal const string TagOutcome = "headless.jobs.outcome";
 
     /// <summary>The fully qualified type of the exception behind a failed run, per the OpenTelemetry convention.</summary>
@@ -89,6 +114,24 @@ internal static class JobsMetrics
     internal const string OutcomeCancelled = "cancelled";
 
     internal const string OutcomeSkipped = "skipped";
+
+    /// <summary>
+    /// Not a terminal status: the run stopped because it lost its lease, and the row's node-death policy settles it on
+    /// reclaim.
+    /// </summary>
+    internal const string OutcomeLeaseLost = "lease_lost";
+
+    internal const string ReclaimReasonLeaseExpired = "lease_expired";
+
+    internal const string ReclaimReasonDeadNode = "dead_node";
+
+    internal const string ReclaimReasonOrphanedOwner = "orphaned_owner";
+
+    internal const string ReclaimActionReleased = "released";
+
+    internal const string ReclaimActionMarkedFailed = "marked_failed";
+
+    internal const string ReclaimActionSkipped = "skipped";
 
     internal const string RetryKindInProcess = "in_process";
 
@@ -144,7 +187,22 @@ internal static class JobsMetrics
     private static readonly Counter<long> _ExecutionOutcomes = JobsDiagnostics.Meter.CreateCounter<long>(
         ExecutionOutcomesName,
         unit: "{run}",
-        description: "Job runs that reached a terminal outcome, including runs whose handler was never invoked."
+        description: "Job runs that stored a terminal outcome, including runs whose handler was never invoked, and runs "
+            + "that ended on lease loss (outcome lease_lost, which is not a terminal status)."
+    );
+
+    private static readonly Counter<long> _CompletionRejected = JobsDiagnostics.Meter.CreateCounter<long>(
+        CompletionRejectedName,
+        unit: "{run}",
+        description: "Terminal writes the store refused because the run no longer owned its row, by the outcome the "
+            + "write tried to store."
+    );
+
+    private static readonly Counter<long> _Reclaims = JobsDiagnostics.Meter.CreateCounter<long>(
+        ReclaimsName,
+        unit: "{row}",
+        description: "Rows reclaim sweeps moved out of a lease their owner no longer held, by reason and by what the "
+            + "node-death policy did."
     );
 
     private static readonly Counter<long> _ExecutionRetries = JobsDiagnostics.Meter.CreateCounter<long>(
@@ -223,7 +281,60 @@ internal static class JobsMetrics
     }
 
     /// <summary>
-    /// Records a run that reached <paramref name="status" />. A non-terminal status records nothing: the row is left
+    /// Records a run that ended because it lost its lease: the outcome is <c>lease_lost</c>, with no duration sample,
+    /// because the row's node-death policy decides how the run ends.
+    /// </summary>
+    internal static void LeaseLost(JobsFunctionTagBound functions, string function)
+    {
+        if (!_ExecutionOutcomes.Enabled)
+        {
+            return;
+        }
+
+        _ExecutionOutcomes.Add(
+            1,
+            new TagList { { TagFunction, functions.Tag(function) }, { TagOutcome, OutcomeLeaseLost } }
+        );
+    }
+
+    /// <summary>
+    /// Records a terminal write of <paramref name="status" /> that matched no row: the run lost its row before the write
+    /// committed, so the store keeps the reclaim's status. A non-terminal status records nothing.
+    /// </summary>
+    internal static void CompletionRejected(JobsFunctionTagBound functions, string function, JobStatus status)
+    {
+        if (!_CompletionRejected.Enabled || OutcomeOf(status) is not { } outcome)
+        {
+            return;
+        }
+
+        _CompletionRejected.Add(1, new TagList { { TagFunction, functions.Tag(function) }, { TagOutcome, outcome } });
+    }
+
+    /// <summary>Records one sweep's moved rows, one measurement per action that moved any.</summary>
+    internal static void Reclaims(string reason, JobReclaimCounts counts)
+    {
+        if (counts.Total <= 0 || !_Reclaims.Enabled)
+        {
+            return;
+        }
+
+        _AddReclaims(reason, ReclaimActionReleased, counts.Released);
+        _AddReclaims(reason, ReclaimActionMarkedFailed, counts.MarkedFailed);
+        _AddReclaims(reason, ReclaimActionSkipped, counts.Skipped);
+    }
+
+    private static void _AddReclaims(string reason, string action, int count)
+    {
+        if (count > 0)
+        {
+            _Reclaims.Add(count, new TagList { { TagReclaimReason, reason }, { TagReclaimAction, action } });
+        }
+    }
+
+    /// <summary>
+    /// Records a run that stored <paramref name="status" />. Call it only once the terminal write matched its row. A
+    /// non-terminal status records nothing: the row is left
     /// for recovery, and the run that finishes it records the outcome. <paramref name="duration" /> is
     /// <see langword="null" /> when the handler was never invoked, so such a run counts as an outcome but adds no
     /// duration sample.

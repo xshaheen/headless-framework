@@ -1281,14 +1281,16 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(owners);
     }
 
-    public Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
+    public Task<JobReclaimCounts> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         // #316 (mirror EF ReclaimStalledTimeJobsAsync): reclaim InProgress rows whose lease lapsed on ANY node, per
         // OnNodeDeath. Not owner-scoped — the trigger is a stalled lease, not a declared node death. A healthy
         // renewing job keeps its lease live and never matches. Each arm abandons the lapsed lease in the same swap,
         // so the lost attempt's late completion is refused.
         var now = _timeProvider.GetUtcNow();
-        var affected = 0;
+        var released = 0;
+        var failed = 0;
+        var skipped = 0;
 
         // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
         // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
@@ -1331,7 +1333,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.RetryCount++;
                         }
                     ):
-                    affected++;
+                    released++;
                     break;
                 case NodeDeathPolicy.MarkFailed
                     when tryApply(
@@ -1351,7 +1353,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.ExecutedAt = now;
                         }
                     ):
-                    affected++;
+                    failed++;
                     break;
                 case NodeDeathPolicy.Skip
                     when tryApply(
@@ -1365,12 +1367,19 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.ExecutedAt = now;
                         }
                     ):
-                    affected++;
+                    skipped++;
                     break;
             }
         }
 
-        return Task.FromResult(affected);
+        return Task.FromResult(
+            new JobReclaimCounts
+            {
+                Released = released,
+                MarkedFailed = failed,
+                Skipped = skipped,
+            }
+        );
     }
 
     public Task<TTimeJob?> GetTimeJobByIdAsync(Guid id, CancellationToken cancellationToken = default)
@@ -1912,13 +1921,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
     }
 
-    public Task<int> ReleaseDeadNodeTimeJobResourcesAsync(
+    public Task<JobReclaimCounts> ReleaseDeadNodeTimeJobResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
     {
         var now = _timeProvider.GetUtcNow();
-        var affected = 0;
+        var released = 0;
+        var failed = 0;
+        var skipped = 0;
 
         // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
         // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
@@ -1985,7 +1996,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     )
                 )
                 {
-                    affected++;
+                    released++;
                 }
             }
             else if (inProgressLapsed && job.OnNodeDeath == NodeDeathPolicy.MarkFailed)
@@ -2010,7 +2021,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     )
                 )
                 {
-                    affected++;
+                    failed++;
                 }
             }
             else if (inProgressLapsed && job.OnNodeDeath == NodeDeathPolicy.Skip)
@@ -2029,12 +2040,19 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     )
                 )
                 {
-                    affected++;
+                    skipped++;
                 }
             }
         }
 
-        return Task.FromResult(affected);
+        return Task.FromResult(
+            new JobReclaimCounts
+            {
+                Released = released,
+                MarkedFailed = failed,
+                Skipped = skipped,
+            }
+        );
     }
 
     #endregion
@@ -3746,11 +3764,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(false);
     }
 
-    public Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
+    public Task<JobReclaimCounts> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
     {
         // #316 — cron mirror of ReclaimStalledTimeJobsAsync.
         var now = _timeProvider.GetUtcNow();
-        var affected = 0;
+        var released = 0;
+        var failed = 0;
+        var skipped = 0;
 
         // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
         bool tryApply(
@@ -3798,7 +3818,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.RetryCount++;
                         }
                     ):
-                    affected++;
+                    released++;
                     break;
                 case NodeDeathPolicy.MarkFailed
                     when tryApply(
@@ -3818,7 +3838,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.ExecutedAt = now;
                         }
                     ):
-                    affected++;
+                    failed++;
                     break;
                 case NodeDeathPolicy.Skip
                     when tryApply(
@@ -3834,12 +3854,19 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             t.ExecutedAt = now;
                         }
                     ):
-                    affected++;
+                    skipped++;
                     break;
             }
         }
 
-        return Task.FromResult(affected);
+        return Task.FromResult(
+            new JobReclaimCounts
+            {
+                Released = released,
+                MarkedFailed = failed,
+                Skipped = skipped,
+            }
+        );
     }
 
     public Task ReleaseAcquiredCronJobOccurrencesAsync(
@@ -4042,13 +4069,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(updatedIds.ToArray());
     }
 
-    public Task<int> ReleaseDeadNodeOccurrenceResourcesAsync(
+    public Task<JobReclaimCounts> ReleaseDeadNodeOccurrenceResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
     {
         var now = _timeProvider.GetUtcNow();
-        var affected = 0;
+        var released = 0;
+        var failed = 0;
+        var skipped = 0;
 
         // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
         bool tryApply(
@@ -4115,7 +4144,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     )
                 )
                 {
-                    affected++;
+                    released++;
                 }
             }
             else if (inProgressLapsed && occurrence.OnNodeDeath == NodeDeathPolicy.MarkFailed)
@@ -4140,7 +4169,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     )
                 )
                 {
-                    affected++;
+                    failed++;
                 }
             }
             else if (inProgressLapsed && occurrence.OnNodeDeath == NodeDeathPolicy.Skip)
@@ -4163,12 +4192,19 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     )
                 )
                 {
-                    affected++;
+                    skipped++;
                 }
             }
         }
 
-        return Task.FromResult(affected);
+        return Task.FromResult(
+            new JobReclaimCounts
+            {
+                Released = released,
+                MarkedFailed = failed,
+                Skipped = skipped,
+            }
+        );
     }
 
     public Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrencesAsync(

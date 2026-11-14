@@ -854,7 +854,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             await _ForceInProgressWithLapsedLeaseAsync(rootId, "dead-node@1", ct);
 
             (await persistence.ReclaimStalledTimeJobsAsync(ct))
-                .Should()
+                .Total.Should()
                 .BePositive("the stalled-lease sweep must reclaim the dead owner's running root");
 
             var rootRow = await _ReadNodeAsync(rootId, ct);
