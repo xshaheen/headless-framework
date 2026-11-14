@@ -42,7 +42,7 @@ public sealed class StalledReclaimRaceProviderTests : TestBase
         int reclaimed;
         try
         {
-            reclaimed = await provider.ReclaimStalledTimeJobsAsync(AbortToken);
+            reclaimed = (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total;
         }
         finally
         {

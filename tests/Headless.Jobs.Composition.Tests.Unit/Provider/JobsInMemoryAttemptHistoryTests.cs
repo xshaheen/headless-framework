@@ -44,8 +44,8 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
             .Should()
             .BeTrue();
 
-        (await store.ReleaseDeadNodeTimeJobResourcesAsync(_Owner, AbortToken)).Should().Be(1);
-        (await store.ReleaseDeadNodeOccurrenceResourcesAsync(_Owner, AbortToken)).Should().Be(1);
+        (await store.ReleaseDeadNodeTimeJobResourcesAsync(_Owner, AbortToken)).Total.Should().Be(1);
+        (await store.ReleaseDeadNodeOccurrenceResourcesAsync(_Owner, AbortToken)).Total.Should().Be(1);
 
         var attempt = (await store.GetTimeJobAttemptsAsync(job.Id, AbortToken)).Should().ContainSingle().Subject;
         attempt.Number.Should().Be(1);
@@ -73,7 +73,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
             .Should()
             .BeTrue();
 
-        (await store.ReleaseDeadNodeTimeJobResourcesAsync(_Owner, AbortToken)).Should().Be(1);
+        (await store.ReleaseDeadNodeTimeJobResourcesAsync(_Owner, AbortToken)).Total.Should().Be(1);
 
         var claimed = (await store.AcquireImmediateTimeJobsAsync([job.Id], AbortToken))
             .Should()
@@ -114,7 +114,7 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
                 .BeTrue();
         }
 
-        (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(2);
+        (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(2);
         (
             await store.SettleInterruptedTimeJobAsync(
                 JobsLeaseTables.TimeJob(released.Id, 1),
@@ -196,12 +196,12 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         {
             (await store.UpdateTimeJobAsync(success, AbortToken)).Should().Be(1);
             _time.Advance(TimeSpan.FromMinutes(10));
-            (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(0);
+            (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(0);
         }
         else
         {
             _time.Advance(TimeSpan.FromMinutes(10));
-            (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
+            (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(1);
             (await store.UpdateTimeJobAsync(success, AbortToken)).Should().Be(0);
         }
 
@@ -223,8 +223,8 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
             _Now.UtcDateTime,
             AbortToken
         );
-        (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
-        (await store.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Should().Be(1);
+        (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(1);
+        (await store.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Total.Should().Be(1);
 
         (await store.RemoveTimeJobsAsync([job.Id], AbortToken)).Should().Be(1);
         (await store.RemoveCronJobOccurrencesAsync([occurrence.Id], AbortToken)).Should().Be(1);

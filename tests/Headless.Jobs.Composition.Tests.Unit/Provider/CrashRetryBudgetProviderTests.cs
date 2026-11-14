@@ -32,7 +32,7 @@ public sealed class CrashRetryBudgetProviderTests : TestBase
         job.RetryCount = 1;
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var reclaimed = await provider.ReclaimStalledTimeJobsAsync(AbortToken);
+        var reclaimed = (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total;
 
         reclaimed.Should().Be(1);
         var stored = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
@@ -59,7 +59,7 @@ public sealed class CrashRetryBudgetProviderTests : TestBase
         );
         await provider.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
 
-        var reclaimed = await provider.ReclaimStalledCronJobOccurrencesAsync(AbortToken);
+        var reclaimed = (await provider.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Total;
 
         reclaimed.Should().Be(1);
         var all = await provider.GetAllCronJobOccurrencesAsync(predicate: null, AbortToken);
@@ -81,7 +81,7 @@ public sealed class CrashRetryBudgetProviderTests : TestBase
         interruptedInProgress.RetryCount = 1;
         await provider.AddTimeJobsAsync([queuedNeverStarted, interruptedInProgress], AbortToken);
 
-        var released = await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken);
+        var released = (await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken)).Total;
 
         released.Should().Be(2);
         var neverStarted = await provider.GetTimeJobByIdAsync(queuedNeverStarted.Id, AbortToken);

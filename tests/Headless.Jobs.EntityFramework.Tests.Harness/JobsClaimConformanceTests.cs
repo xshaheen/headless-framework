@@ -299,7 +299,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     );
             }
 
-            (await provider.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(1);
+            (await provider.ReclaimStalledCronJobOccurrencesAsync(ct)).Total.Should().Be(1);
             var retry = (await provider.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct))
                 .Should()
                 .ContainSingle()

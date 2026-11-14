@@ -334,7 +334,7 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
 
             // The crashed run's lease lapses; the stalled sweep releases it for another attempt.
             await _ExpireLeaseAsync(crashed, ct);
-            (await store.ReclaimStalledTimeJobsAsync(ct)).Should().Be(1);
+            (await store.ReclaimStalledTimeJobsAsync(ct)).Total.Should().Be(1);
             var released = (await store.GetTimeJobByIdAsync(crashed, ct))!;
             released.Status.Should().Be(JobStatus.Idle);
             released.RetryCount.Should().Be(1);

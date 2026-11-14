@@ -131,7 +131,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Retry);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
+        (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(1);
         (await provider.RenewTimeJobLeaseAsync(_Claimed(job), _NodeA, AbortToken)).Should().Be(0);
     }
 
@@ -249,7 +249,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Retry);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var affected = await provider.ReclaimStalledTimeJobsAsync(AbortToken);
+        var affected = (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total;
 
         affected.Should().Be(1);
         var reclaimed = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
@@ -294,7 +294,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(10)); // valid future lease
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var affected = await provider.ReclaimStalledTimeJobsAsync(AbortToken);
+        var affected = (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total;
 
         affected.Should().Be(0);
         var untouched = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
@@ -309,8 +309,8 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Retry);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
-        (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(0); // already reclaimed -> no-op
+        (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(1);
+        (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(0); // already reclaimed -> no-op
     }
 
     // ── Node-death sweep defers InProgress to the lease ──────────────────────────────────────────────────────
@@ -322,7 +322,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(10)); // still-valid lease
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var affected = await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken);
+        var affected = (await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken)).Total;
 
         affected.Should().Be(0); // the stalled-job reclaim path handles it once the lease lapses
         var row = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
@@ -337,7 +337,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1), NodeDeathPolicy.Retry);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        var affected = await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken);
+        var affected = (await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken)).Total;
 
         affected.Should().Be(1);
         var row = await provider.GetTimeJobByIdAsync(job.Id, AbortToken);
@@ -353,7 +353,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var queued = _TimeJob(JobStatus.Queued, _NodeA, _Now.UtcDateTime.AddMinutes(10));
         await provider.AddTimeJobsAsync([idle, queued], AbortToken);
 
-        var affected = await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken);
+        var affected = (await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken)).Total;
 
         affected.Should().Be(2);
         (await provider.GetTimeJobByIdAsync(idle.Id, AbortToken))!.Lease.State.Should().NotBe(RowLeaseState.Active);
@@ -582,7 +582,7 @@ public sealed class SlidingLeaseProviderTests : TestBase
         var (provider, _) = _Create();
         var id = await _SeedCronOccurrence(provider, JobStatus.InProgress, _NodeA, _Now.UtcDateTime.AddMinutes(-1));
 
-        (await provider.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Should().Be(1);
+        (await provider.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Total.Should().Be(1);
         var rows = await provider.GetAllCronJobOccurrencesAsync(x => x.Id == id, AbortToken);
         rows.Should().ContainSingle().Which.Status.Should().Be(JobStatus.Idle);
     }

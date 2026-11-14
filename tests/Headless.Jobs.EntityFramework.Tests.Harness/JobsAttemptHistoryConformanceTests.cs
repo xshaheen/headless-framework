@@ -99,8 +99,8 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                     .Should()
                     .BeTrue();
 
-                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(1);
-                (await store.ReleaseDeadNodeOccurrenceResourcesAsync(dead, ct)).Should().Be(1);
+                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Total.Should().Be(1);
+                (await store.ReleaseDeadNodeOccurrenceResourcesAsync(dead, ct)).Total.Should().Be(1);
 
                 var attempt = (await store.GetTimeJobAttemptsAsync(job, ct)).Should().ContainSingle().Subject;
                 attempt.EndedAt.Should().NotBeNull();
@@ -134,7 +134,7 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                     .Should()
                     .BeTrue();
 
-                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(1);
+                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Total.Should().Be(1);
                 var reclaimed = (await store.AcquireImmediateTimeJobsAsync([job], ct)).Should().ContainSingle().Subject;
                 (
                     await store.OpenTimeJobAttemptAsync(
@@ -198,9 +198,9 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                     .Should()
                     .BeTrue();
 
-                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(1);
-                (await store.ReclaimStalledTimeJobsAsync(ct)).Should().Be(1);
-                (await store.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(1);
+                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Total.Should().Be(1);
+                (await store.ReclaimStalledTimeJobsAsync(ct)).Total.Should().Be(1);
+                (await store.ReclaimStalledCronJobOccurrencesAsync(ct)).Total.Should().Be(1);
                 (
                     await store.SettleInterruptedTimeJobAsync(
                         JobsLeaseTables.TimeJob(released, 1),
@@ -246,7 +246,7 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                     .SetProperty(x => x.Status, JobStatus.Failed)
                     .SetProperty(x => x.AttemptEnd, _End(JobAttemptOutcome.Failed, "boom", _Fingerprint));
                 (await store.UpdateTimeJobAsync(failure, ct)).Should().Be(1);
-                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(1);
+                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Total.Should().Be(1);
 
                 var executorClosed = await _OnlyClosedAttemptAsync(store, completed, ct);
                 executorClosed.Number.Should().Be(1);
@@ -359,7 +359,7 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
                     var sweep = Task.Run(() => store.ReclaimStalledTimeJobsAsync(ct), ct);
                     var secondSweep = Task.Run(() => store.ReclaimStalledTimeJobsAsync(ct), ct);
                     var executorWrote = await executor;
-                    var sweepsWrote = await sweep + await secondSweep;
+                    var sweepsWrote = (await sweep).Total + (await secondSweep).Total;
 
                     (executorWrote + sweepsWrote).Should().Be(1, "exactly one writer ends the run");
                     var attempt = await _OnlyClosedAttemptAsync(store, job, ct);

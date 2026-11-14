@@ -524,7 +524,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             var affected = await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct);
 
             // One Queued row + one InProgress-Retry row, both released back to Idle (default policy is Retry).
-            affected.Should().Be(2);
+            affected.Should().Be(new JobReclaimCounts { Released = 2 });
 
             (await fixture.ReadTimeJobAsync(reclaimedId, ct)).Should().Be(((int)JobStatus.Idle, null));
             (await fixture.ReadTimeJobAsync(retryInFlightId, ct)).Should().Be(((int)JobStatus.Idle, null));
@@ -570,7 +570,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
             // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit,
             // lease cleared (#4) and a node-death ExceptionMessage set so it's distinguishable from a run failure (#8).
-            affected.Should().Be(1);
+            affected.Should().Be(new JobReclaimCounts { MarkedFailed = 1 });
             var (status, lease, exceptionMessage, _) = await fixture.ReadTimeJobDetailAsync(id, ct);
             status.Should().Be((int)JobStatus.Failed);
             lease.Holder.Should().Be(dead);
@@ -611,7 +611,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
             // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run), owner retained,
             // lease cleared (#4) and SkippedReason set.
-            affected.Should().Be(1);
+            affected.Should().Be(new JobReclaimCounts { Skipped = 1 });
             var (status, lease, _, skippedReason) = await fixture.ReadTimeJobDetailAsync(id, ct);
             status.Should().Be((int)JobStatus.Skipped);
             lease.Holder.Should().Be(dead);
@@ -764,8 +764,8 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(2);
-            (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(0);
+            (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Total.Should().Be(2);
+            (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Total.Should().Be(0);
         }
         finally
         {
@@ -1280,7 +1280,17 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-            (await persistence.ReclaimStalledTimeJobsAsync(ct)).Should().Be(3);
+            (await persistence.ReclaimStalledTimeJobsAsync(ct))
+                .Should()
+                .Be(
+                    new JobReclaimCounts
+                    {
+                        Released = 1,
+                        MarkedFailed = 1,
+                        Skipped = 1,
+                    },
+                    "one row per policy lapsed"
+                );
 
             (await fixture.ReadTimeJobAsync(retryId, ct)).Should().Be(((int)JobStatus.Idle, null));
 
@@ -1451,7 +1461,17 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-        (await persistence.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(3);
+        (await persistence.ReclaimStalledCronJobOccurrencesAsync(ct))
+            .Should()
+            .Be(
+                new JobReclaimCounts
+                {
+                    Released = 1,
+                    MarkedFailed = 1,
+                    Skipped = 1,
+                },
+                "one occurrence per policy lapsed"
+            );
 
         (await fixture.ReadCronOccurrenceAsync(validId, ct)).Should().Be(((int)JobStatus.InProgress, "n@1"));
         (await fixture.ReadCronOccurrenceAsync(retryId, ct)).Should().Be(((int)JobStatus.Idle, null));

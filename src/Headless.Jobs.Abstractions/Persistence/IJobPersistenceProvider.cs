@@ -612,17 +612,17 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// sweep: <c>Retry</c> → released to <c>Idle</c> (re-claimable), <c>MarkFailed</c> → <c>Failed</c>, <c>Skip</c> →
     /// <c>Skipped</c>. A healthy renewing job keeps a future lease and is never matched. Every transition ends the
     /// lapsed lease as abandoned in the same write, so the stalled attempt's late completion is refused. Returns the
-    /// affected count.
+    /// rows moved, by transition.
     /// </summary>
     /// <param name="cancellationToken">Token that aborts the sweep.</param>
-    /// <returns>The number of rows transitioned by this sweep; <c>0</c> when nothing had stalled.</returns>
+    /// <returns>The rows this sweep moved, by transition; all zero when nothing had stalled.</returns>
     /// <remarks>
     /// Deliberately <b>not</b> owner-scoped: the trigger is a lapsed lease on any node, not a declared node death,
     /// which is what makes this the gap-closer for a node that vanished without being marked dead. Failed and
     /// skipped rows are stamped with a lease-lapse reason for diagnostics.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default);
+    Task<JobReclaimCounts> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default);
 
     #endregion
 
@@ -887,7 +887,7 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// considered, so a restarted node's new incarnation is never swept by its predecessor's cleanup.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the sweep.</param>
-    /// <returns>The number of rows transitioned; <c>0</c> when the dead node held nothing recoverable.</returns>
+    /// <returns>The rows moved, by transition; all zero when the dead node held nothing recoverable.</returns>
     /// <remarks>
     /// <c>Idle</c> and <c>Queued</c> rows are reclaimed immediately — they were never executing, so nothing can be
     /// in flight. <c>InProgress</c> rows are reclaimed only once their lease has also lapsed, so a job that is
@@ -895,7 +895,7 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <see cref="ReclaimStalledTimeJobsAsync"/> if it truly died.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<int> ReleaseDeadNodeTimeJobResourcesAsync(
+    Task<JobReclaimCounts> ReleaseDeadNodeTimeJobResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     );
@@ -1128,14 +1128,14 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// considered.
     /// </param>
     /// <param name="cancellationToken">Token that aborts the sweep.</param>
-    /// <returns>The number of occurrences transitioned; <c>0</c> when the dead node held nothing recoverable.</returns>
+    /// <returns>The occurrences moved, by transition; all zero when the dead node held nothing recoverable.</returns>
     /// <remarks>
     /// <c>Idle</c> and <c>Queued</c> occurrences are reclaimed immediately; <c>InProgress</c> occurrences only
     /// once their lease has also lapsed, leaving a still-leased running occurrence to
     /// <see cref="ReclaimStalledCronJobOccurrencesAsync"/>.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<int> ReleaseDeadNodeOccurrenceResourcesAsync(
+    Task<JobReclaimCounts> ReleaseDeadNodeOccurrenceResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     );
@@ -1182,15 +1182,15 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <summary>
     /// Reclaims cron occurrences stuck <c>InProgress</c> whose lease lapsed (#316) — the cron mirror of
     /// <see cref="ReclaimStalledTimeJobsAsync"/>, applying the same per-<c>OnNodeDeath</c> transitions. Returns the
-    /// affected count.
+    /// occurrences moved, by transition.
     /// </summary>
     /// <param name="cancellationToken">Token that aborts the sweep.</param>
-    /// <returns>The number of occurrences transitioned by this sweep; <c>0</c> when nothing had stalled.</returns>
+    /// <returns>The occurrences this sweep moved, by transition; all zero when nothing had stalled.</returns>
     /// <remarks>
     /// Not owner-scoped: the trigger is a lapsed lease on any node, not a declared node death.
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default);
+    Task<JobReclaimCounts> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically moves a <c>Failed</c>, <c>Cancelled</c>, or <c>Skipped</c> cron occurrence back to <c>Idle</c>:

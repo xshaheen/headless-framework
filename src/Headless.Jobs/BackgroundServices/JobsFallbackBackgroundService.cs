@@ -210,7 +210,8 @@ internal sealed class JobsFallbackBackgroundService(
 
         _lastStallSweepTimestamp = timeProvider.GetTimestamp();
 
-        await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
+        var reclaimed = await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
+        JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonLeaseExpired, reclaimed);
     }
 
     // Recovers rows stamped by an owner identity that is no longer a live member: a Dead identity, a superseded
@@ -290,9 +291,10 @@ internal sealed class JobsFallbackBackgroundService(
 
         // Final membership fence immediately before the must-complete durable transition. Once started, the release
         // deliberately uses None so host shutdown cannot interrupt only part of the owner batch.
-        await internalJobsManager
+        var reclaimed = await internalJobsManager
             .ReleaseDeadNodeResources(orphanedOwners, CancellationToken.None)
             .ConfigureAwait(false);
+        JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonOrphanedOwner, reclaimed);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

@@ -531,6 +531,160 @@ public sealed class JobsMetricsTests : TestBase
         recorder.Of(_SweepDeferred).Should().OnlyContain(x => x.Tags.Count == 1, "a node tag would be unbounded");
     }
 
+    [Fact]
+    public async Task should_count_a_rejected_success_and_a_lease_lost_outcome_when_the_success_write_matches_no_row()
+    {
+        // given: a reclaim took the row before the success write committed
+        const string function = "metrics.fenced.success";
+        using var recorder = new MetricRecorder();
+        var manager = _HealthyManager();
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+        var handler = _Handler(manager, _Registry(function));
+
+        // when
+        await handler.ExecuteTaskAsync(
+            _Job(function, static (_, _, _) => Task.CompletedTask),
+            isDue: false,
+            AbortToken
+        );
+
+        // then
+        var rejected = recorder.Of(_CompletionRejected).Should().ContainSingle().Subject;
+        rejected.Value.Should().Be(1);
+        rejected.Tags.Should().Contain(_FunctionTag, function).And.Contain(_OutcomeTag, "succeeded");
+        recorder
+            .Of(_Outcomes)
+            .Should()
+            .ContainSingle("the store never held Succeeded, so only the lease loss counts")
+            .Which.Tags.Should()
+            .Contain(_FunctionTag, function)
+            .And.Contain(_OutcomeTag, "lease_lost");
+        recorder.Of(_Duration).Should().BeEmpty("a run whose outcome the store refused adds no duration sample");
+    }
+
+    [Fact]
+    public async Task should_count_a_rejected_failure_and_a_lease_lost_outcome_when_the_failure_write_matches_no_row()
+    {
+        // given: the handler fails, and a reclaim took the row before the Failed write committed
+        const string function = "metrics.fenced.failure";
+        using var recorder = new MetricRecorder();
+        var manager = _HealthyManager();
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+        var handler = _Handler(manager, _Registry(function));
+        var job = _Job(function, static (_, _, _) => throw new InvalidOperationException("the job fails"));
+
+        // when
+        await handler.ExecuteTaskAsync(job, isDue: false, AbortToken);
+
+        // then
+        recorder
+            .Of(_CompletionRejected)
+            .Should()
+            .ContainSingle()
+            .Which.Tags.Should()
+            .Contain(_FunctionTag, function)
+            .And.Contain(_OutcomeTag, "failed");
+        recorder.Of(_Outcomes).Should().ContainSingle().Which.Tags.Should().Contain(_OutcomeTag, "lease_lost");
+        recorder.Of(_Duration).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_record_one_lease_lost_outcome_when_renewal_matches_no_row_while_the_handler_runs()
+    {
+        // given: the lease holds when the run starts, and the first renewal during the run matches no row
+        const string function = "metrics.renewal.lost";
+        using var recorder = new MetricRecorder();
+        var time = new FakeTimeProvider(_Now);
+        var manager = _HealthyManager();
+        manager
+            .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1), Task.FromResult(0));
+        var handler = _Handler(manager, _Registry(function), time);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var job = _Job(
+            function,
+            async (_, _, token) =>
+            {
+                started.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+        );
+
+        // when
+        var run = handler.ExecuteTaskAsync(job, isDue: false, AbortToken);
+        await started.Task.WaitAsync(AbortToken);
+        time.Advance(new SchedulerOptionsBuilder().ResolveLeaseRenewalInterval());
+        await run.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        job.LeaseLost.Should().BeTrue();
+        recorder
+            .Of(_Outcomes)
+            .Should()
+            .ContainSingle()
+            .Which.Tags.Should()
+            .Contain(_FunctionTag, function)
+            .And.Contain(_OutcomeTag, "lease_lost");
+        recorder.Of(_Duration).Should().BeEmpty("the node-death policy decides how the run ends");
+        recorder.Of(_CompletionRejected).Should().BeEmpty("the run attempted no terminal write");
+    }
+
+    [Fact]
+    public async Task should_record_a_dead_node_reclaim_per_action_that_moved_rows()
+    {
+        // given: the counts are distinctive, so a reclaim another test records in parallel cannot match them
+        using var recorder = new MetricRecorder();
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .ReleaseDeadNodeResources(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new JobReclaimCounts { Released = 7341, Skipped = 7342 }));
+        var reclaimer = new JobsDeadOwnerReclaimer(manager, new SchedulerOptionsBuilder());
+
+        // when
+        await reclaimer.ReclaimAsync(["node-a@1"], AbortToken);
+
+        // then
+        var dead = recorder
+            .Of(_Reclaims)
+            .Where(x => Equals(x.Tags[_ReclaimReasonTag], "dead_node"))
+            .Select(x => (x.Value, Action: x.Tags[_ReclaimActionTag]))
+            .ToList();
+        dead.Should().Contain((7341d, "released")).And.Contain((7342d, "skipped"));
+        dead.Should()
+            .NotContain(x => Equals(x.Action, "marked_failed"), "an action that moved nothing records nothing");
+    }
+
+    [Theory]
+    [InlineData("lease_expired")]
+    [InlineData("orphaned_owner")]
+    public void should_tag_a_reclaim_with_its_reason_and_skip_a_sweep_that_moved_nothing(string reason)
+    {
+        // given
+        using var recorder = new MetricRecorder();
+        var moved = new JobReclaimCounts { MarkedFailed = 6113 };
+
+        // when
+        JobsMetrics.Reclaims(reason, default);
+        JobsMetrics.Reclaims(reason, moved);
+
+        // then
+        var measurement = recorder
+            .Of(_Reclaims)
+            .Should()
+            .ContainSingle(x => Equals(x.Tags[_ReclaimReasonTag], reason) && Equals(x.Value, 6113d))
+            .Subject;
+        measurement.Tags.Should().Contain(_ReclaimActionTag, "marked_failed").And.HaveCount(2);
+    }
+
+    private const string _CompletionRejected = "headless.jobs.completion.rejected";
+    private const string _Reclaims = "headless.jobs.reclaims";
+    private const string _ReclaimReasonTag = "headless.jobs.reclaim.reason";
+    private const string _ReclaimActionTag = "headless.jobs.reclaim.action";
+
     private const string _SweepDeferred = "headless.jobs.cron.fingerprint_sweep.deferred";
     private const string _ReasonTag = "headless.jobs.deferral_reason";
 

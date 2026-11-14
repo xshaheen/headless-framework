@@ -1289,7 +1289,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         return (earliest, skipped);
     }
 
-    public async Task<int> ReleaseDeadNodeTimeJobResourcesAsync(
+    public async Task<JobReclaimCounts> ReleaseDeadNodeTimeJobResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -1311,7 +1311,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         // idempotent by design). Do not "fix" this by removing the transaction: that reintroduces the half-reclaimed
         // node the transaction exists to prevent.
         return await JobsStoreTransaction
-            .ExecuteAsync<TDbContext, int>(
+            .ExecuteAsync<TDbContext, JobReclaimCounts>(
                 DbContextFactory,
                 async (attempt, _) =>
                 {
@@ -1412,7 +1412,12 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
 
                     await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
-                    return released + failed + skipped;
+                    return new JobReclaimCounts
+                    {
+                        Released = released,
+                        MarkedFailed = failed,
+                        Skipped = skipped,
+                    };
                 },
                 CancellationToken.None
             )
@@ -1655,7 +1660,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         return [.. timeJobOwners.Concat(occurrenceOwners).Distinct(StringComparer.Ordinal)];
     }
 
-    public async Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
+    public async Task<JobReclaimCounts> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
         // #316 gap-closer: reclaim InProgress rows whose lease lapsed by the database clock on ANY node — not
         // owner-scoped, unlike the dead-node sweep, because the trigger is a stalled lease, not a declared node
@@ -1667,7 +1672,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         // #316 clock-skew: lease-expiry is decided by the DB clock, never the reclaiming node's TimeProvider.
 
         return await JobsStoreTransaction
-            .ExecuteAsync<TDbContext, int>(
+            .ExecuteAsync<TDbContext, JobReclaimCounts>(
                 DbContextFactory,
                 async (attempt, _) =>
                 {
@@ -1738,7 +1743,12 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
 
                     await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
-                    return released + failed + skipped;
+                    return new JobReclaimCounts
+                    {
+                        Released = released,
+                        MarkedFailed = failed,
+                        Skipped = skipped,
+                    };
                 },
                 cancellationToken
             )
@@ -3061,7 +3071,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         return claimStrategy.ClaimTimedOutCronJobOccurrencesAsync(cancellationToken);
     }
 
-    public async Task<int> ReleaseDeadNodeOccurrenceResourcesAsync(
+    public async Task<JobReclaimCounts> ReleaseDeadNodeOccurrenceResourcesAsync(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -3075,7 +3085,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
         // See ReleaseDeadNodeTimeJobResourcesAsync: strict WhereOwnedBy, one transaction so a crash between the
         // writes can't leave a half-reclaimed row, and CancellationToken.None for the reclaim writes.
         return await JobsStoreTransaction
-            .ExecuteAsync<TDbContext, int>(
+            .ExecuteAsync<TDbContext, JobReclaimCounts>(
                 DbContextFactory,
                 async (attempt, _) =>
                 {
@@ -3181,7 +3191,12 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
 
                     await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
-                    return released + failed + skipped;
+                    return new JobReclaimCounts
+                    {
+                        Released = released,
+                        MarkedFailed = failed,
+                        Skipped = skipped,
+                    };
                 },
                 CancellationToken.None
             )
@@ -3252,14 +3267,16 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             .ConfigureAwait(false);
     }
 
-    public async Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
+    public async Task<JobReclaimCounts> ReclaimStalledCronJobOccurrencesAsync(
+        CancellationToken cancellationToken = default
+    )
     {
         // #316 — cron mirror of ReclaimStalledTimeJobsAsync. Reclaim lapsed-lease InProgress occurrences on any node.
 
         // #316 clock-skew: lease-expiry is decided by the DB clock, never the reclaiming node's TimeProvider.
 
         return await JobsStoreTransaction
-            .ExecuteAsync<TDbContext, int>(
+            .ExecuteAsync<TDbContext, JobReclaimCounts>(
                 DbContextFactory,
                 async (attempt, _) =>
                 {
@@ -3338,7 +3355,12 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
 
                     await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
-                    return released + failed + skipped;
+                    return new JobReclaimCounts
+                    {
+                        Released = released,
+                        MarkedFailed = failed,
+                        Skipped = skipped,
+                    };
                 },
                 cancellationToken
             )

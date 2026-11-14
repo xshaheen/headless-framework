@@ -1913,27 +1913,34 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    public async Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default)
+    public async Task<JobReclaimCounts> ReleaseDeadNodeResources(
+        string instanceIdentifier,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
+        var counts = await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
 
         // The dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
         // per-parent reconcile cannot reach them — reconcile every terminal parent's timed children set-based here.
         await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+
+        return counts;
     }
 
-    public async Task ReleaseDeadNodeResources(
+    public async Task<JobReclaimCounts> ReleaseDeadNodeResources(
         IReadOnlyCollection<string> instanceIdentifiers,
         CancellationToken cancellationToken = default
     )
     {
         List<Exception>? failures = null;
+        var counts = default(JobReclaimCounts);
 
         foreach (var instanceIdentifier in instanceIdentifiers)
         {
             try
             {
-                await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
+                counts += await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (Exception exception)
             {
@@ -1956,9 +1963,14 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             throw new AggregateException("One or more dead-owner resource releases failed.", failures);
         }
+
+        return counts;
     }
 
-    private async Task _ReleaseDeadNodeResourcesAsync(string instanceIdentifier, CancellationToken cancellationToken)
+    private async Task<JobReclaimCounts> _ReleaseDeadNodeResourcesAsync(
+        string instanceIdentifier,
+        CancellationToken cancellationToken
+    )
     {
         var cronOccurrence = persistenceProvider.ReleaseDeadNodeOccurrenceResourcesAsync(
             instanceIdentifier,
@@ -1967,7 +1979,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         var timeJobs = persistenceProvider.ReleaseDeadNodeTimeJobResourcesAsync(instanceIdentifier, cancellationToken);
 
-        await Task.WhenAll(cronOccurrence, timeJobs).ConfigureAwait(false);
+        var results = await Task.WhenAll(cronOccurrence, timeJobs).ConfigureAwait(false);
+
+        return results[0] + results[1];
     }
 
     public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
@@ -1975,12 +1989,12 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return persistenceProvider.GetActiveOwnerIdsAsync(cancellationToken);
     }
 
-    public async Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default)
+    public async Task<JobReclaimCounts> ReclaimStalledResources(CancellationToken cancellationToken = default)
     {
         var timeJobsTask = persistenceProvider.ReclaimStalledTimeJobsAsync(cancellationToken);
         var cronOccurrencesTask = persistenceProvider.ReclaimStalledCronJobOccurrencesAsync(cancellationToken);
 
-        // WhenAll of two Task<int> yields the results array in one await — concurrent, no double-await, and a double
+        // WhenAll of two tasks of one result type yields the results array in one await — concurrent, no double-await, and a double
         // fault surfaces as AggregateException rather than collapsing to the first task's exception.
         var results = await Task.WhenAll(timeJobsTask, cronOccurrencesTask).ConfigureAwait(false);
 

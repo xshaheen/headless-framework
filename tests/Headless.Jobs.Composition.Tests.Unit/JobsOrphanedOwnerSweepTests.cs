@@ -469,7 +469,9 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
     private static IInternalJobManager _Manager()
     {
         var manager = Substitute.For<IInternalJobManager>();
-        manager.ReclaimStalledResources(Arg.Any<CancellationToken>()).Returns(Task.FromResult(0));
+        manager
+            .ReclaimStalledResources(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         manager
             .RunTimedOutTickers(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(Array.Empty<JobExecutionState>()));

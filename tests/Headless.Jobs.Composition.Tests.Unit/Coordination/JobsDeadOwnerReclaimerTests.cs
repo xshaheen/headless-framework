@@ -17,7 +17,11 @@ public sealed class JobsDeadOwnerReclaimerTests : TestBase
         var manager = Substitute.For<IInternalJobManager>();
         manager
             .ReleaseDeadNodeResources(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new AggregateException(new InvalidOperationException("store blip"))));
+            .Returns(
+                Task.FromException<JobReclaimCounts>(
+                    new AggregateException(new InvalidOperationException("store blip"))
+                )
+            );
         var reclaimer = new JobsDeadOwnerReclaimer(manager, new SchedulerOptionsBuilder());
 
         var act = () => reclaimer.ReclaimAsync(["node-a@1", "node-b@1", "node-c@1"], AbortToken);

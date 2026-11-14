@@ -89,7 +89,9 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
         manager
             .RunTimedOutTickers(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(Array.Empty<JobExecutionState>()));
-        manager.ReclaimStalledResources(Arg.Any<CancellationToken>()).Returns(Task.FromResult(0));
+        manager
+            .ReclaimStalledResources(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
         manager
             .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())

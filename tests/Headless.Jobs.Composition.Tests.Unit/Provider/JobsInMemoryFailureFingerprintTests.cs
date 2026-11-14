@@ -54,8 +54,8 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
         await store.AddTimeJobsAsync([job], AbortToken);
         var occurrence = await _AddOccurrenceAsync(store, lockedUntil: _Now.UtcDateTime.AddMinutes(-1));
 
-        (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
-        (await store.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Should().Be(1);
+        (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(1);
+        (await store.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Total.Should().Be(1);
 
         var stored = (await store.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(JobStatus.Failed);
@@ -73,8 +73,8 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
         await store.AddTimeJobsAsync([job], AbortToken);
         var occurrence = await _AddOccurrenceAsync(store, lockedUntil: _Now.UtcDateTime.AddMinutes(-1));
 
-        (await store.ReleaseDeadNodeTimeJobResourcesAsync(_Owner, AbortToken)).Should().Be(1);
-        (await store.ReleaseDeadNodeOccurrenceResourcesAsync(_Owner, AbortToken)).Should().Be(1);
+        (await store.ReleaseDeadNodeTimeJobResourcesAsync(_Owner, AbortToken)).Total.Should().Be(1);
+        (await store.ReleaseDeadNodeOccurrenceResourcesAsync(_Owner, AbortToken)).Total.Should().Be(1);
 
         (await store.GetTimeJobByIdAsync(job.Id, AbortToken))!.FailureFingerprint.Should().Be("v1:node-not-alive");
         (await _OccurrenceAsync(store, occurrence.Id)).FailureFingerprint.Should().Be("v1:node-not-alive");
@@ -135,12 +135,12 @@ public sealed class JobsInMemoryFailureFingerprintTests : TestBase
         {
             executorWrote = await store.UpdateTimeJobAsync(failure, AbortToken);
             _time.Advance(TimeSpan.FromMinutes(10));
-            sweepWrote = await store.ReclaimStalledTimeJobsAsync(AbortToken);
+            sweepWrote = (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Total;
         }
         else
         {
             _time.Advance(TimeSpan.FromMinutes(10));
-            sweepWrote = await store.ReclaimStalledTimeJobsAsync(AbortToken);
+            sweepWrote = (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Total;
             executorWrote = await store.UpdateTimeJobAsync(failure, AbortToken);
         }
 
