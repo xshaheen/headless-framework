@@ -28,6 +28,11 @@ namespace Headless.Messaging.Processor;
 /// and again, and a waiting retry's claim is renewed, so no host picks the row up out of order. A store that can do
 /// neither leaves the row to that pickup, as after a crash.
 /// </para>
+/// <para>
+/// A sequencer orders the work of one host. The run delegate orders a key across hosts: before a keyed message runs,
+/// it asks the store whether an earlier message of the key is unfinished, a message waiting for a delayed retry
+/// included, and puts a blocked message back instead of running it. For the sequencer such a message has finished.
+/// </para>
 /// </remarks>
 internal sealed class ConsumerKeySequencers
 {
@@ -43,6 +48,7 @@ internal sealed class ConsumerKeySequencers
     private readonly TaskCompletionSource _drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Lock _sync = new();
     private int _running;
+    private TaskCompletionSource? _idle;
     private volatile bool _stopped;
 
     /// <summary>Creates the sequencers of one dispatcher start.</summary>
@@ -76,6 +82,25 @@ internal sealed class ConsumerKeySequencers
 
     /// <summary>Completes once <see cref="StopAsync"/> ran and every message that had started has finished.</summary>
     public Task Completion => _drained.Task;
+
+    /// <summary>
+    /// Completes once no slot is running, which also means nothing is queued: a slot ends only when no key has work.
+    /// Retry pickup hands a sequenced row over without waiting for it, so a caller that needs the handed-over rows
+    /// finished, such as a simulated run that moves the clock next, awaits this.
+    /// </summary>
+    public Task WhenIdleAsync()
+    {
+        lock (_sync)
+        {
+            if (_running == 0)
+            {
+                return Task.CompletedTask;
+            }
+
+            _idle ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            return _idle.Task;
+        }
+    }
 
     /// <summary>
     /// Hands <paramref name="work"/> to its consumer's sequencer, waiting while the sequencer is full.
@@ -275,6 +300,12 @@ internal sealed class ConsumerKeySequencers
             lock (_sync)
             {
                 _running--;
+                if (_running == 0)
+                {
+                    _idle?.TrySetResult();
+                    _idle = null;
+                }
+
                 if (_stopped && _running == 0)
                 {
                     _drained.TrySetResult();

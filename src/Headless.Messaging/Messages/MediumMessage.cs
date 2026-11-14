@@ -27,6 +27,14 @@ public class MediumMessage
     public string? RoutingAffinityKey =>
         Origin.Headers.TryGetValue(Headers.RoutingAffinityKey, out var key) ? key : null;
 
+    /// <summary>
+    /// The key a sequential consumer orders this received row under: a fixed-size hash of
+    /// <see cref="RoutingAffinityKey"/>, written at admission only when the consumer is sequential and the message has
+    /// a key, and <see langword="null"/> otherwise. A storage provider persists it with the admitted row and clears it in
+    /// the same write that makes the row terminal, so a finished row never blocks a later one of its key.
+    /// </summary>
+    public string? SequenceKey { get; set; }
+
     public required MessageLane Lane { get; set; }
 
     public DateTimeOffset Added { get; set; }

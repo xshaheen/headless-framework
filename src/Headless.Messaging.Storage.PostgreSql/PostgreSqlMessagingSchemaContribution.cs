@@ -129,6 +129,10 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "exception_info" text NULL,
                 -- The versioned fingerprint that groups failures by cause, written with the failure's text.
                 "failure_fingerprint" VARCHAR(64) NULL,
+                -- A sequential consumer's key (a hash of the routing affinity key), cleared once the row is terminal,
+                -- and the admission order the key's rows run in.
+                "sequence_key" VARCHAR(64) COLLATE "C" NULL,
+                "sequence_no" BIGINT GENERATED ALWAYS AS IDENTITY,
                 "is_inbox_record" BOOLEAN NOT NULL DEFAULT FALSE,
                 "tenant_present" BOOLEAN NOT NULL DEFAULT FALSE,
                 "tenant_id" VARCHAR(200) COLLATE "C" NOT NULL DEFAULT '',
@@ -312,6 +316,10 @@ internal static class PostgreSqlMessagingSchemaContribution
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema='{schema}' AND table_name='messaging_received' AND column_name='consumer_identity_hash')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_schema='{schema}' AND table_name='messaging_received' AND column_name='sequence_key')
+                    AND EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_schema='{schema}' AND table_name='messaging_received' AND column_name='sequence_no')
+                    AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='expected_status')
                     AND EXISTS (SELECT 1 FROM information_schema.columns
                         WHERE table_schema='{schema}' AND table_name='{_ReceiptsTable}' AND column_name='outcome')
@@ -421,6 +429,8 @@ internal static class PostgreSqlMessagingSchemaContribution
             + $"""
                 CREATE INDEX IF NOT EXISTS "idx_messaging_received_version_next_retry_at" ON {received} ("version","intent_type","next_retry_at") INCLUDE ("retries","lease_state","lease_expires_at") WHERE "next_retry_at" IS NOT NULL;
                 CREATE INDEX IF NOT EXISTS "idx_messaging_received_lease_holder_active" ON {received} ("lease_holder") WHERE "lease_state" = 1;
+                -- A sequential consumer looks up the earliest unfinished row of its key before it runs a keyed row.
+                CREATE INDEX IF NOT EXISTS "idx_messaging_received_sequence" ON {received} ("consumer_identity","sequence_key","sequence_no") INCLUDE ("status_name","next_retry_at") WHERE "sequence_key" IS NOT NULL;
 
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_type_created" ON "{schema}"."{_ReceiptsTable}" ("operation_type","created_at");
                 -- The operator ledger reads receipts newest first by (created_at, operation_id).

@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Simulation;
@@ -195,6 +196,26 @@ internal static class PipelineHosts
     {
         return SimulationHost.RestartAsync(
             previous,
+            setup => _Configure(setup, probe, configure),
+            services => _ConfigureServices(services, probe, configureServices),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Starts a second host beside <paramref name="running"/>, on its broker and store, with the same consumer; dispose
+    /// it first.
+    /// </summary>
+    public static Task<SimulationHost> StartBesideAsync(
+        SimulationHost running,
+        PipelineProbe probe,
+        CancellationToken cancellationToken,
+        Action<MessagingSetupBuilder>? configure = null,
+        Action<IServiceCollection>? configureServices = null
+    )
+    {
+        return SimulationHost.StartBesideAsync(
+            running,
             setup => _Configure(setup, probe, configure),
             services => _ConfigureServices(services, probe, configureServices),
             cancellationToken
@@ -436,6 +457,30 @@ internal static class PipelineHosts
         }
 
         await host.WhenRetryPickupParkedAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs one retry pickup per poll interval until <paramref name="effect"/> completes, at most
+    /// <paramref name="polls"/> times. A pickup hands a sequential consumer's row to its sequencer and returns, so each
+    /// poll also waits for the handed-over rows to finish before the clock moves again.
+    /// </summary>
+    public static async Task RunRetryPickupsUntilAsync(
+        this SimulationHost host,
+        Task effect,
+        int polls,
+        CancellationToken cancellationToken
+    )
+    {
+        var dispatcher = (Dispatcher)host.Services.GetRequiredService<IDispatcher>();
+
+        for (var poll = 0; poll < polls && !effect.IsCompleted; poll++)
+        {
+            await host.RunRetryPickupAsync(PollInterval, cancellationToken).ConfigureAwait(false);
+            await host.WithinBoundAsync(dispatcher.WhenSequencedWorkIdleAsync(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await host.WithinBoundAsync(effect, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Runs one retry pickup per poll interval for <paramref name="duration"/>, each one to completion.</summary>

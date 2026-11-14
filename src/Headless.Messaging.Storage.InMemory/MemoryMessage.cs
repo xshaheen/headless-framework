@@ -4,6 +4,8 @@ namespace Headless.Messaging.Storage.InMemory;
 
 internal sealed class MemoryMessage : MediumMessage
 {
+    private static long _lastSequenceNo;
+
     public required string Name { get; init; }
 
     public string ConsumerIdentity { get; init; } = null!;
@@ -44,6 +46,13 @@ internal sealed class MemoryMessage : MediumMessage
     public DateTimeOffset ChangedAt { get; set; }
 
     public TimeSpan InboxRetention { get; set; } = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// The row's admission order, the in-memory counterpart of the SQL providers' identity column. A process-wide
+    /// counter keeps it increasing across every store in the process, which is all the order a sequential consumer
+    /// compares within one store needs.
+    /// </summary>
+    public long SequenceNo { get; } = Interlocked.Increment(ref _lastSequenceNo);
 
     /// <summary>
     /// Version identifier copied from <c>MessagingOptions.Version</c> at write time.
