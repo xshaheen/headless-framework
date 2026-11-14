@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using tusdotnet.FileLocks;
+using tusdotnet.Interfaces;
 
 namespace Tests.Endpoint;
 
@@ -28,11 +29,13 @@ public sealed class TusUploadsTests : TestBase
         Action<HeadlessTusSetupBuilder, tusdotnet.Stores.TusDiskStore>? configureTus = null,
         bool registerCurrentTenant = false,
         bool scopeByTenant = false,
-        Action<IEndpointRouteBuilder>? mapUploads = null
+        Action<IEndpointRouteBuilder>? mapUploads = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         return new TusEndpointTestHostSetup
         {
+            ConfigureServices = configureServices,
             ConfigureTus =
                 configureTus
                 ?? (
@@ -314,6 +317,10 @@ public sealed class TusUploadsTests : TestBase
 
         // then - it is answered like any upload that is not the caller's, and the request does not fail
         found.Status.Should().Be(HttpStatusCode.NotFound);
+
+        // and so is a request whose tenant id no upload could be stored under
+        host.Tenant = "ACME";
+        (await _ClaimAsync(host, location)).Status.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -387,12 +394,14 @@ public sealed class TusUploadsTests : TestBase
         (await _ClaimAsync(host, location)).Content.Should().Equal(content);
     }
 
-    [Fact]
-    public async Task should_let_a_client_delete_an_upload_that_still_lacks_bytes()
+    [Theory]
+    [InlineData(300L)]
+    [InlineData(null)]
+    public async Task should_let_a_client_delete_an_upload_that_still_lacks_bytes(long? uploadLength)
     {
-        // given
+        // given - an upload that holds 100 bytes of a longer declared length, or of a length it never declared
         await using var host = await TusEndpointTestHost.StartAsync(_Setup(), AbortToken);
-        var location = await host.CreateUploadAsync(uploadLength: 300);
+        var location = await host.CreateUploadAsync(uploadLength);
         (await host.PatchAsync(location, Faker.Random.Bytes(100), offset: 0)).Dispose();
 
         // when
@@ -475,6 +484,61 @@ public sealed class TusUploadsTests : TestBase
         // then - each names the capability the store lacks
         await open.Should().ThrowAsync<NotSupportedException>().WithMessage("*ITusReadableStore*");
         await delete.Should().ThrowAsync<NotSupportedException>().WithMessage("*ITusTerminationStore*");
+    }
+
+    [Fact]
+    public async Task should_answer_not_found_to_another_owners_delete_of_a_finished_upload()
+    {
+        // given - alice's finished upload
+        await using var host = await TusEndpointTestHost.StartAsync(_Setup(), AbortToken);
+        var content = Faker.Random.Bytes(300);
+        var location = await _UploadAsync(host, content);
+
+        // when - bob asks to delete it, and to delete an upload that never existed
+        host.User = "bob";
+        using var foreign = await host.DeleteAsync(location);
+        using var unknown = await host.DeleteAsync($"{_Route}/{Guid.NewGuid():n}");
+
+        // then - both are answered alike, so the refusal a finished upload's own client gets tells bob nothing
+        foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await TusEndpointTestHost.DescribeAsync(foreign, AbortToken))
+            .Should()
+            .Be(await TusEndpointTestHost.DescribeAsync(unknown, AbortToken));
+
+        // and the upload is still alice's
+        host.User = TusEndpointTestHost.DefaultUser;
+        (await _ClaimAsync(host, location)).Content.Should().Equal(content);
+    }
+
+    [Fact]
+    public async Task should_take_the_registered_file_lock_for_both_lookups()
+    {
+        // given - a host with a file lock provider of its own, and a finished upload
+        var locks = new ScriptedLockProvider();
+        var setup = _Setup(configureServices: services => services.AddSingleton<ITusFileLockProvider>(locks));
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+        var content = Faker.Random.Bytes(300);
+        var location = await _UploadAsync(host, content);
+        var fileId = TusEndpointTestHost.FileIdOf(location);
+        var uploads = host.Services.GetRequiredService<ITusUploads>();
+
+        // when - that provider reports the upload as held by another request
+        locks.Held = true;
+
+        // then - neither lookup returns it
+        (await _ClaimAsync(host, location))
+            .Status.Should()
+            .Be(HttpStatusCode.NotFound);
+        (await uploads.FindUncheckedAsync(fileId, AbortToken)).Should().BeNull();
+
+        // when - it is free again
+        locks.Held = false;
+
+        // then - both do
+        (await _ClaimAsync(host, location))
+            .Content.Should()
+            .Equal(content);
+        (await uploads.FindUncheckedAsync(fileId, AbortToken)).Should().NotBeNull();
     }
 
     /// <summary>Creates an upload and sends every byte of <paramref name="content"/>, and returns its location.</summary>
@@ -616,6 +680,35 @@ public sealed class TusUploadsTests : TestBase
         return endpoint.Length == 0
             ? uploads.FindAsync(fileId, context.RequestAborted)
             : uploads.FindAsync(fileId, endpoint, context.RequestAborted);
+    }
+
+    /// <summary>
+    /// A file lock provider of the application's own, which hands out tusdotnet's in-process locks until a scenario
+    /// makes it report every upload as held by another request.
+    /// </summary>
+    private sealed class ScriptedLockProvider : ITusFileLockProvider
+    {
+        public bool Held { get; set; }
+
+        public Task<ITusFileLock> AquireLock(string fileId)
+        {
+            return Held
+                ? Task.FromResult<ITusFileLock>(new HeldLock())
+                : InMemoryFileLockProvider.Instance.AquireLock(fileId);
+        }
+
+        private sealed class HeldLock : ITusFileLock
+        {
+            public Task<bool> Lock()
+            {
+                return Task.FromResult(false);
+            }
+
+            public Task ReleaseIfHeld()
+            {
+                return Task.CompletedTask;
+            }
+        }
     }
 
     /// <summary>What the application's endpoint answered: the upload it was given, or only a status.</summary>
