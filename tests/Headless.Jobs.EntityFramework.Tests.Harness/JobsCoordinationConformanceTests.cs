@@ -1318,7 +1318,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
             // Idempotency: a second pass over already-reclaimed rows affects zero.
             (await persistence.ReclaimStalledTimeJobsAsync(ct))
-                .Should()
+                .Total.Should()
                 .Be(0);
         }
         finally
@@ -1384,7 +1384,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
         // Only the genuinely-lapsed row is reclaimed; the skewed local clock must not terminalize the still-valid
         // MarkFailed lease (pre-fix this would have returned 2 and recorded the valid row Failed mid-flight).
         (await persistence.ReclaimStalledTimeJobsAsync(ct))
-            .Should()
+            .Total.Should()
             .Be(1);
 
         (await fixture.ReadTimeJobAsync(validId, ct)).Should().Be(((int)JobStatus.InProgress, "node-a@1"));
@@ -1718,7 +1718,7 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
 
             // Only the Idle row is reclaimed now; the valid-lease InProgress row is left to the lease.
             (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct))
-                .Should()
+                .Total.Should()
                 .Be(1);
 
             (await fixture.ReadTimeJobAsync(validId, ct)).Should().Be(((int)JobStatus.InProgress, dead));

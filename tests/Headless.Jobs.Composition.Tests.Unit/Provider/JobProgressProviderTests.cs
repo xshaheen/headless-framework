@@ -214,7 +214,7 @@ public sealed class JobProgressProviderTests : TestBase
         await fixture.Provider.UpdateTimeJobProgressAsync(_Claimed(job), new(80, "before the crash"), AbortToken);
         fixture.Time.Advance(_Lease + TimeSpan.FromMinutes(1));
 
-        (await fixture.Provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
+        (await fixture.Provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(1);
 
         var stored = (await fixture.Provider.GetTimeJobByIdAsync(job.Id, AbortToken))!;
         stored.Status.Should().Be(JobStatus.Idle);
