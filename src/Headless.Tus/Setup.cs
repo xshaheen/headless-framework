@@ -90,10 +90,16 @@ public static class SetupTus
         // Registered whether or not uploads are scoped by tenant: the tenancy setup that turns scoping on may run
         // after this call, and a store that keeps uploads per tenant asks on every call.
         services.AddSingleton<TusTenantScope>();
+        services.AddSingleton<TusUploadBinding>();
         services.AddSingleton<TusUploadAuthorizer>();
         services.AddSingleton<TusUploadRemover>();
         services.AddSingleton<TusContentCheck>();
         services.AddSingleton<TusConfigurationFactory>();
+
+        // What an application asks for a finished upload. It compares the upload with the caller of the current
+        // request, which it reaches through the accessor.
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<ITusUploads, TusUploads>();
 
         // The content check's collaborators. Both are TryAdd, so the ones an application registered are kept, for
         // example an inspector limited to the formats it accepts. The factory defers building the inspector's

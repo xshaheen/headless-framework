@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Context;
-using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using tusdotnet.Interfaces;
 using tusdotnet.Models;
@@ -33,7 +30,7 @@ internal sealed class TusConfigurationFactory(
 
         _SetRequestBodyLimit(context, endpointOptions.MaxSize);
 
-        var caller = await _GetCallerAsync(context, endpoint).ConfigureAwait(false);
+        var caller = await TusUploadBinding.ResolveCallerAsync(context, endpoint).ConfigureAwait(false);
 
         var stampedStore = new TusStampedStore(store, caller);
 
@@ -41,22 +38,26 @@ internal sealed class TusConfigurationFactory(
         bool createdByThisRequest(string fileId) =>
             string.Equals(fileId, stampedStore.CreatedFileId, StringComparison.Ordinal);
 
-        var events = new Events
-        {
-            OnAuthorizeAsync = authorize => authorizer.AuthorizeAsync(authorize, caller),
-            OnBeforeCreateAsync = create =>
-                TusCreateValidation.ValidateAsync(create, endpoint, endpointOptions, _Owner(caller)),
-            OnBeforeWriteAsync = write =>
-                contentCheck.CheckAsync(write, endpointOptions, caller?.TenantId, createdByThisRequest(write.FileId)),
-        };
-
         var configuration = new DefaultTusConfiguration
         {
             Store = stampedStore,
             MaxAllowedUploadSizeInBytesLong = endpointOptions.MaxSize,
             Expiration = new SlidingExpiration(endpointOptions.Expiration),
             AllowedExtensions = _allowedExtensions,
-            Events = events,
+            Events = new Events
+            {
+                OnAuthorizeAsync = authorize => authorizer.AuthorizeAsync(authorize, caller),
+                OnBeforeDeleteAsync = authorizer.AuthorizeDeleteAsync,
+                OnBeforeCreateAsync = create =>
+                    TusCreateValidation.ValidateAsync(create, endpoint, endpointOptions, _Owner(caller)),
+                OnBeforeWriteAsync = write =>
+                    contentCheck.CheckAsync(
+                        write,
+                        endpointOptions,
+                        caller?.TenantId,
+                        createdByThisRequest(write.FileId)
+                    ),
+            },
         };
 
         // Left unset, tusdotnet locks a file within this process only.
@@ -113,30 +114,6 @@ internal sealed class TusConfigurationFactory(
     {
         // Authorization refuses a creating request that has no owner before tusdotnet raises its create events.
         return TusUploadStamp.RequireOwner(caller);
-    }
-
-    /// <summary>
-    /// Returns the stamp an upload created by this request gets, which is also what an upload the request names
-    /// must carry, or <see langword="null"/> when the request has no owner.
-    /// </summary>
-    private static async ValueTask<TusUploadStamp?> _GetCallerAsync(
-        HttpContext context,
-        TusEndpointRegistration endpoint
-    )
-    {
-        // Resolved from the request's services: an application may register either one per request.
-        var ownerKey = endpoint.OwnerKey is { } ownedBy
-            ? await ownedBy(context).ConfigureAwait(false)
-            : context.RequestServices.GetService<ICurrentUser>()?.UserId?.GetUnderlyingPrimitiveValue();
-
-        if (string.IsNullOrWhiteSpace(ownerKey))
-        {
-            return null;
-        }
-
-        var tenantId = context.RequestServices.GetService<ICurrentTenant>()?.Id;
-
-        return new TusUploadStamp(endpoint.Name, ownerKey, string.IsNullOrEmpty(tenantId) ? null : tenantId);
     }
 
     /// <summary>

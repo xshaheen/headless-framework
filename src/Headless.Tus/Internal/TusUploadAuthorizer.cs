@@ -3,7 +3,6 @@
 using System.Net;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using tusdotnet.Interfaces;
 using tusdotnet.Models;
@@ -22,7 +21,7 @@ namespace Headless.Tus.Internal;
 /// </remarks>
 internal sealed partial class TusUploadAuthorizer(
     ITusStore store,
-    IOptions<TusTenantScopingOptions> tenantScoping,
+    TusUploadBinding binding,
     ILogger<TusUploadAuthorizer> logger
 )
 {
@@ -53,10 +52,7 @@ internal sealed partial class TusUploadAuthorizer(
             return;
         }
 
-        // With uploads scoped by tenant every upload belongs to a tenant, so a caller with none, or with one no
-        // upload can be stored under, has no upload to find. The store is not asked: a store that keeps uploads
-        // per tenant refuses to look outside one, and that refusal would read as a store failure.
-        if (tenantScoping.Value.Enabled && !TenantStorageSegment.IsValid(caller.TenantId))
+        if (!binding.CanHaveUploads(caller))
         {
             _FailAsNotFound(context);
 
@@ -67,12 +63,9 @@ internal sealed partial class TusUploadAuthorizer(
 
         try
         {
-            stamp = await _ReadStampAsync(context.FileId, context.CancellationToken).ConfigureAwait(false);
-        }
-        catch (TusStoreException)
-        {
-            // A store's own refusal of the id, for example one it could not have issued: no such upload.
-            stamp = null;
+            stamp = TusUploadStamp.Read(
+                await binding.ReadMetadataAsync(context.FileId, context.CancellationToken).ConfigureAwait(false)
+            );
         }
         catch (Exception exception)
         {
@@ -103,6 +96,32 @@ internal sealed partial class TusUploadAuthorizer(
         }
     }
 
+    /// <summary>
+    /// Refuses a client's request to delete an upload that holds every byte of its declared length. Such an upload
+    /// is the application's: it may already have been given the upload, or keep it where it is, and nothing on
+    /// the upload says which. An upload that still lacks bytes, or a declared length, stays its client's to cancel.
+    /// </summary>
+    /// <remarks>
+    /// It runs as tusdotnet's before-delete event, under the upload's file lock, so the write that stores the
+    /// upload's last byte cannot be in flight while it decides.
+    /// </remarks>
+    public async Task AuthorizeDeleteAsync(BeforeDeleteContext context)
+    {
+        var length = await store.GetUploadLengthAsync(context.FileId, context.CancellationToken).ConfigureAwait(false);
+
+        if (
+            length is not null
+            && length
+                == await store.GetUploadOffsetAsync(context.FileId, context.CancellationToken).ConfigureAwait(false)
+        )
+        {
+            context.FailRequest(
+                HttpStatusCode.Forbidden,
+                "The upload is complete, so it can no longer be deleted through this endpoint."
+            );
+        }
+    }
+
     private void _AuthorizeCreate(AuthorizeContext context, TusUploadStamp caller)
     {
         if (caller.OwnerKey.Length > TusUploadStamp.MaxOwnerKeyLength)
@@ -118,7 +137,7 @@ internal sealed partial class TusUploadAuthorizer(
             return;
         }
 
-        if (!tenantScoping.Value.Enabled)
+        if (!binding.IsScopedByTenant)
         {
             return;
         }
@@ -136,22 +155,6 @@ internal sealed partial class TusUploadAuthorizer(
         {
             context.FailRequest(HttpStatusCode.Forbidden, "The request's tenant id cannot be used to store uploads.");
         }
-    }
-
-    /// <summary>
-    /// Reads the upload's stamp from the host's store, in one read that also tells whether the upload exists.
-    /// </summary>
-    private async Task<TusUploadStamp?> _ReadStampAsync(string? fileId, CancellationToken cancellationToken)
-    {
-        // Only a creation store keeps metadata, and without one no upload was ever stamped.
-        if (string.IsNullOrEmpty(fileId) || store is not ITusCreationStore creationStore)
-        {
-            return null;
-        }
-
-        var metadata = await creationStore.GetUploadMetadataAsync(fileId, cancellationToken).ConfigureAwait(false);
-
-        return TusUploadStamp.Read(metadata);
     }
 
     /// <summary>

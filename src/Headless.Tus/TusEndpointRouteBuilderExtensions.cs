@@ -51,6 +51,11 @@ public static class TusEndpointRouteBuilderExtensions
         /// check. Every refusal is a plain-text response.
         /// </para>
         /// <para>
+        /// An upload is finished once every byte of its declared length is stored. From then on it is the
+        /// application's: <see cref="ITusUploads"/> gives it to the application, and a client's request to delete
+        /// it is refused with 403. A client may still delete an upload of its own that lacks bytes.
+        /// </para>
+        /// <para>
         /// The name keeps the <c>Headless</c> prefix because tusdotnet already declares <c>MapTus</c> on
         /// <see cref="IEndpointRouteBuilder"/> in the <c>tusdotnet</c> namespace, which every tus host imports.
         /// <c>MapTus</c> maps an endpoint from a configuration the application builds by hand and applies none of
