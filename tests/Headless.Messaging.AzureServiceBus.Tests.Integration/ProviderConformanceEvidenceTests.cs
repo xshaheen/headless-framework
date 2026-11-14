@@ -15,7 +15,7 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
         GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
 
     [Fact]
-    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+    public Task should_prove_routing_affinity_mapping_or_header() =>
         TransportRoutingAffinityConformance.AssertAsync(
             new AzureServiceBusProviderConformanceDriver(fixture),
             AbortToken
@@ -42,9 +42,9 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 )
             ),
             new(
-                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                TransportConformanceScenario.RoutingAffinityMappingOrHeader,
                 typeof(ProviderConformanceEvidenceTests),
-                nameof(should_prove_routing_affinity_mapping_or_rejection)
+                nameof(should_prove_routing_affinity_mapping_or_header)
             ),
             _Bind(
                 TransportConformanceScenario.QueueRoundTrip,

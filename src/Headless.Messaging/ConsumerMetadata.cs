@@ -105,4 +105,10 @@ public sealed record ConsumerMetadata(
     /// or <see langword="null"/> when its deliveries are not throttled.
     /// </summary>
     internal ConsumerRateLimit? RateLimit { get; init; }
+
+    /// <summary>
+    /// Whether <c>Tune</c> or <c>Headless:Messaging:Consumers:{identity}:Sequential</c> configuration made this consumer
+    /// handle the messages that share a routing affinity key one at a time.
+    /// </summary>
+    internal bool Sequential { get; init; }
 }

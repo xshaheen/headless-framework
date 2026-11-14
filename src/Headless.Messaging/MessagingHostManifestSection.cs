@@ -229,6 +229,12 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
             _WriteRateLimit(writer, rateLimit);
         }
 
+        // Written only when set, like the rate limit: an absent field means deliveries are not ordered by key.
+        if (first.Sequential)
+        {
+            writer.WriteBoolean("sequential", value: true);
+        }
+
         if (first.CircuitBreakerOverride is { } circuitBreaker)
         {
             _WriteCircuitBreaker(writer, circuitBreaker);

@@ -13,6 +13,36 @@ namespace Tests.Configuration;
 
 public sealed class MessagingCapabilityModelTests : TestBase
 {
+    [Theory]
+    [InlineData("order-42")]
+    [InlineData("طلب ٤٢")]
+    public void should_accept_a_routing_affinity_key_on_a_route_with_no_native_mapping(string key)
+    {
+        var model = MessagingCapabilityModel.Compose([_Transport("Unmapped", [MessageLane.Queue], true)]);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        var act = () => model.ValidateRoutingAffinityKey("orders", MessageLane.Queue, key, headers);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(" ")]
+    [InlineData("order\n42")]
+    [InlineData("order\u000042")]
+    public void should_reject_a_blank_or_control_character_routing_affinity_key_on_every_route(string key)
+    {
+        var model = MessagingCapabilityModel.Compose([_Transport("Unmapped", [MessageLane.Queue], true)]);
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        var act = () => model.ValidateRoutingAffinityKey("orders", MessageLane.Queue, key, headers);
+
+        act.Should()
+            .Throw<Exception>()
+            .Which.Should()
+            .Match(e => e is ArgumentException || e is InvalidOperationException);
+    }
+
     [Fact]
     public async Task should_reject_required_affinity_before_storage_processors_or_clients_start()
     {

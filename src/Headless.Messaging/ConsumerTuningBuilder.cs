@@ -28,6 +28,7 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     private ConsumerCircuitBreakerOptions? _circuitBreaker;
     private FailurePolicyDefinition? _failurePolicy;
     private ConsumerRateLimit? _rateLimit;
+    private bool? _sequential;
 
     internal ConsumerTuningBuilder(string identity)
     {
@@ -123,6 +124,35 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     }
 
     /// <summary>
+    /// Handles the messages that share a <see cref="MessageOptions.RoutingAffinityKey"/> one at a time, in the order
+    /// this host admitted them, while messages with different keys run side by side up to
+    /// <see cref="Concurrency"/>. A message without a key is not ordered against any other, and still takes one of
+    /// those concurrency slots.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The order is kept in this process, so it holds on every transport, and it is a per-host guarantee: two hosts
+    /// that share the subscription each order only what they receive, unless the broker already routes one key to one
+    /// host (a Kafka partition key, an Azure Service Bus session, an SQS FIFO message group).
+    /// </para>
+    /// <para>
+    /// The host reads the consumer's subscription through one client, one delivery at a time, so the broker's order
+    /// is the order messages are admitted in: <see cref="MessagingOptions.ConsumerThreadCount"/> does not apply to it,
+    /// and each delivery is stored and acknowledged before the next is read. Immediate retries keep the key. A message
+    /// waiting for a delayed retry releases it, so later messages with the same key run first; the retry then takes
+    /// its turn behind whatever the key has queued. An every-instance consumer cannot be sequential, and tuning it so
+    /// fails startup.
+    /// </para>
+    /// </remarks>
+    /// <param name="enabled"><see langword="false"/> turns off sequencing an earlier <c>Tune</c> call turned on.</param>
+    /// <returns>This builder, for chaining.</returns>
+    public ConsumerTuningBuilder Sequential(bool enabled = true)
+    {
+        _sequential = enabled;
+        return this;
+    }
+
+    /// <summary>
     /// Runs <typeparamref name="TMiddleware"/> around every delivery to this consumer on this host, inside the global and
     /// per-message consume middleware. The middleware is resolved from each attempt's own service scope, the one the
     /// consumer runs in; when it is not registered yet, it is registered as scoped.
@@ -158,7 +188,8 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
             _inboxRetention,
             _circuitBreaker,
             _failurePolicy,
-            _rateLimit
+            _rateLimit,
+            _sequential
         );
 
     internal static TimeSpan ValidateInboxRetention(TimeSpan retention)
@@ -182,7 +213,8 @@ internal sealed record ConsumerTuning(
     TimeSpan? InboxRetention,
     ConsumerCircuitBreakerOptions? CircuitBreaker,
     FailurePolicyDefinition? FailurePolicy = null,
-    ConsumerRateLimit? RateLimit = null
+    ConsumerRateLimit? RateLimit = null,
+    bool? Sequential = null
 );
 
 /// <summary>One <c>Tune</c> call recorded in the service collection.</summary>

@@ -14,8 +14,12 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
         GuaranteeBindings.GetLeafErrors(typeof(ProviderConformanceEvidenceTests).Assembly).Should().BeEmpty();
 
     [Fact]
-    public Task should_prove_routing_affinity_mapping_or_rejection() =>
+    public Task should_prove_routing_affinity_mapping_or_header() =>
         TransportRoutingAffinityConformance.AssertAsync(new RedisProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
+    public Task should_run_one_key_at_a_time_on_a_sequential_consumer() =>
+        TransportKeySequencingConformance.AssertAsync(new RedisProviderConformanceDriver(fixture), AbortToken);
 
     [Fact]
     public void should_back_every_supported_manifest_scenario_with_a_test()
@@ -39,9 +43,14 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
                 nameof(RedisRawPayloadTests.should_consume_a_headerless_entry_once_and_poison_a_malformed_body)
             ),
             new(
-                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+                TransportConformanceScenario.RoutingAffinityMappingOrHeader,
                 typeof(ProviderConformanceEvidenceTests),
-                nameof(should_prove_routing_affinity_mapping_or_rejection)
+                nameof(should_prove_routing_affinity_mapping_or_header)
+            ),
+            new(
+                TransportConformanceScenario.KeySequencing,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_run_one_key_at_a_time_on_a_sequential_consumer)
             ),
             _Bind(
                 TransportConformanceScenario.QueueRoundTrip,

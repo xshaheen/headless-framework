@@ -21,12 +21,9 @@ internal static class AzureServiceBusMessageBuilder
         DateTimeOffset? now = null
     )
     {
-        if (!enableSessions)
-        {
-            MessagingRoutingAffinityMapping.RejectUnsupported(transportMessage, "Azure Service Bus without sessions");
-        }
-
-        var affinityKey = AzureServiceBusRoutingAffinity.Mapping.ResolveKey(transportMessage);
+        // Only a session-enabled entity has a session to map the key to; without sessions the key travels as the
+        // envelope header alone.
+        var affinityKey = enableSessions ? AzureServiceBusRoutingAffinity.Mapping.ResolveKey(transportMessage) : null;
         // BinaryData.FromBytes wraps the ReadOnlyMemory without copying; ServiceBusMessage(byte[]) would force a
         // full payload copy via Body.ToArray() on every publish.
         var message = new ServiceBusMessage(BinaryData.FromBytes(transportMessage.Body))

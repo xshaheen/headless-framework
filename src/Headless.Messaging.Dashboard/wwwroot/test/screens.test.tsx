@@ -500,6 +500,30 @@ describe('messaging consumers implementation', () => {
   })
 })
 
+describe('messaging consumers ordering', () => {
+  it('says a sequential consumer runs one message per key at a time', async () => {
+    const actor = user()
+    open({ consumers: [{ ...consumer, sequential: true }] }, { path: 'consumers' })
+
+    await actor.click(await screen.findByRole('row', { name: /Billing\.OrderPlacedConsumer/ }))
+
+    const panel = screen.getByRole('region', { name: /^Consumer / })
+    expect(within(panel).getByText('Ordering')).toBeTruthy()
+    expect(within(panel).getByText('One at a time per key')).toBeTruthy()
+  })
+
+  it('shows no ordering for a consumer that is not sequential', async () => {
+    const actor = user()
+    open({ consumers: [consumer] }, { path: 'consumers' })
+
+    await actor.click(await screen.findByRole('row', { name: /Billing\.OrderPlacedConsumer/ }))
+
+    const panel = screen.getByRole('region', { name: /^Consumer / })
+    expect(within(panel).getByText('Concurrency')).toBeTruthy()
+    expect(within(panel).queryByText('Ordering')).toBeNull()
+  })
+})
+
 describe('messaging scheduled name filter', () => {
   it('asks the server for one message name', async () => {
     const view = open({}, { path: 'scheduled?name=OrderPlaced' })

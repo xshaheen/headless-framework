@@ -85,11 +85,13 @@ internal static class ConsumerTuningApplier
             CircuitBreakerOverride = tuning.CircuitBreaker ?? metadata.CircuitBreakerOverride,
             FailurePolicy = tuning.FailurePolicy ?? metadata.FailurePolicy,
             RateLimit = tuning.RateLimit ?? metadata.RateLimit,
+            Sequential = tuning.Sequential ?? metadata.Sequential,
         };
     }
 
     // An every-instance subscription belongs to one process and delivers at most once, with no inbox and no retry
-    // backlog, so an inbox retention, a circuit breaker, or a failure policy on it would silently do nothing.
+    // backlog, so an inbox retention, a circuit breaker, or a failure policy on it would silently do nothing. Its
+    // deliveries bypass the dispatch stage that orders by key, so sequencing would do nothing either.
     private static bool _RejectDurableSettingsOnEveryInstance(
         ConsumerMetadata[] tuned,
         string identity,
@@ -103,6 +105,7 @@ internal static class ConsumerTuningApplier
             tuning.InboxRetention is not null ? "an inbox retention"
             : tuning.CircuitBreaker is not null ? "a circuit breaker"
             : tuning.FailurePolicy is not null || configuresFailurePolicy ? "a failure policy"
+            : tuning.Sequential is true ? "per-key sequencing"
             : null;
 
         if (setting is null)
@@ -117,7 +120,7 @@ internal static class ConsumerTuningApplier
 
         errors.Add(
             $"{source} gives every-instance consumer '{identity}' {setting}. An every-instance subscription belongs to "
-                + "one process and delivers at most once, with no inbox, retry, or circuit breaker."
+                + "one process and delivers at most once, with no inbox, retry, circuit breaker, or per-key order."
         );
 
         return true;
@@ -154,7 +157,8 @@ internal static class ConsumerTuningApplier
                 ProviderConfigs: new Dictionary<Type, object>(),
                 settings.InboxRetention,
                 settings.CircuitBreaker,
-                RateLimit: settings.RateLimit
+                RateLimit: settings.RateLimit,
+                Sequential: settings.Sequential
             );
 
             if (
@@ -230,6 +234,7 @@ internal static class ConsumerTuningApplier
         ConsumerCircuitBreakerOptions? circuitBreaker = null;
         FailurePolicyOverrides? failurePolicy = null;
         ConsumerRateLimit? rateLimit = null;
+        bool? sequential = null;
 
         foreach (var setting in consumer.GetChildren())
         {
@@ -263,16 +268,34 @@ internal static class ConsumerTuningApplier
             {
                 rateLimit = _ReadRateLimit(setting, errors);
             }
+            else if (string.Equals(setting.Key, "Sequential", StringComparison.OrdinalIgnoreCase))
+            {
+                if (bool.TryParse(setting.Value, out var enabled))
+                {
+                    sequential = enabled;
+                }
+                else
+                {
+                    errors.Add($"Configuration '{setting.Path}' must be true or false.");
+                }
+            }
             else
             {
                 errors.Add(
                     $"Configuration '{setting.Path}' is not a consumer setting. The supported settings are "
-                        + "Concurrency, InboxRetention, CircuitBreaker, FailurePolicy, and RateLimit."
+                        + "Concurrency, InboxRetention, CircuitBreaker, FailurePolicy, RateLimit, and Sequential."
                 );
             }
         }
 
-        return new ConfiguredSettings(concurrency, inboxRetention, circuitBreaker, failurePolicy, rateLimit);
+        return new ConfiguredSettings(
+            concurrency,
+            inboxRetention,
+            circuitBreaker,
+            failurePolicy,
+            rateLimit,
+            sequential
+        );
     }
 
     // The section names one algorithm, keyed like the ConsumerRateLimit factory that builds it, so a configured rate
@@ -503,7 +526,8 @@ internal static class ConsumerTuningApplier
         TimeSpan? InboxRetention,
         ConsumerCircuitBreakerOptions? CircuitBreaker,
         FailurePolicyOverrides? FailurePolicy,
-        ConsumerRateLimit? RateLimit
+        ConsumerRateLimit? RateLimit,
+        bool? Sequential
     )
     {
         public bool IsEmpty =>
@@ -511,7 +535,8 @@ internal static class ConsumerTuningApplier
             && InboxRetention is null
             && CircuitBreaker is null
             && FailurePolicy is null
-            && RateLimit is null;
+            && RateLimit is null
+            && Sequential is null;
     }
 }
 

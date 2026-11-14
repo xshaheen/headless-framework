@@ -14,8 +14,12 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
         TransportConformanceTestBinding[] bindings =
         [
             _Consumer(
-                TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                nameof(SimulatorConsumerConformanceTests.should_prove_routing_affinity_mapping_or_rejection)
+                TransportConformanceScenario.RoutingAffinityMappingOrHeader,
+                nameof(SimulatorConsumerConformanceTests.should_prove_routing_affinity_mapping_or_header)
+            ),
+            _Consumer(
+                TransportConformanceScenario.KeySequencing,
+                nameof(SimulatorConsumerConformanceTests.should_run_one_key_at_a_time_on_a_sequential_consumer)
             ),
             _Consumer(
                 TransportConformanceScenario.QueueRoundTrip,
