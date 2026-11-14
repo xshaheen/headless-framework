@@ -49,7 +49,13 @@ internal sealed class TusConfigurationFactory(
                 OnAuthorizeAsync = authorize => authorizer.AuthorizeAsync(authorize, caller),
                 OnBeforeDeleteAsync = authorizer.AuthorizeDeleteAsync,
                 OnBeforeCreateAsync = create =>
-                    TusCreateValidation.ValidateAsync(create, endpoint, endpointOptions, _Owner(caller)),
+                    // Authorization has already refused a creating request that has no owner.
+                    TusCreateValidation.ValidateAsync(
+                        create,
+                        endpoint,
+                        endpointOptions,
+                        TusUploadStamp.RequireOwner(caller)
+                    ),
                 OnBeforeWriteAsync = write =>
                     contentCheck.CheckAsync(
                         write,
@@ -107,13 +113,6 @@ internal sealed class TusConfigurationFactory(
         }
 
         return new TusExtensions([.. extensions]);
-    }
-
-    /// <summary>The stamp of a request tusdotnet lets create an upload.</summary>
-    private static TusUploadStamp _Owner(TusUploadStamp? caller)
-    {
-        // Authorization refuses a creating request that has no owner before tusdotnet raises its create events.
-        return TusUploadStamp.RequireOwner(caller);
     }
 
     /// <summary>

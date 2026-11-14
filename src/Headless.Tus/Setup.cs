@@ -96,8 +96,8 @@ public static class SetupTus
         services.AddSingleton<TusContentCheck>();
         services.AddSingleton<TusConfigurationFactory>();
 
-        // What an application asks for a finished upload. It compares the upload with the caller of the current
-        // request, which it reaches through the accessor.
+        // The lookup compares an upload with the caller of the current request, which it reaches through the
+        // accessor.
         services.AddHttpContextAccessor();
         services.TryAddSingleton<ITusUploads, TusUploads>();
 

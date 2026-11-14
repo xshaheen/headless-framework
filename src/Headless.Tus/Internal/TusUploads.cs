@@ -157,16 +157,10 @@ internal sealed class TusUploads(
     }
 
     /// <summary>
-    /// The upload's length when it holds every byte of a declared length, as tusdotnet decides an upload is
-    /// complete, otherwise <see langword="null"/>. Also <see langword="null"/> while another request holds the
-    /// upload's file lock.
+    /// The upload's length when it is finished, read under the upload's file lock so the application is never
+    /// given an upload whose client could still rewrite or delete it. <see langword="null"/> when the upload is not
+    /// finished, and while another request holds the lock.
     /// </summary>
-    /// <remarks>
-    /// The answer is read under the upload's file lock because a write is not over when its bytes are stored: a
-    /// write that carries a checksum stores them first and verifies them afterwards, and a store takes them back
-    /// when they do not match. Read without the lock, such an upload looks finished for a moment, and its client
-    /// could still rewrite or delete an upload the application was already given.
-    /// </remarks>
     private async Task<long?> _GetFinishedLengthAsync(string fileId, CancellationToken cancellationToken)
     {
         var fileLock = await _fileLockProvider.AquireLock(fileId).ConfigureAwait(false);
@@ -178,13 +172,7 @@ internal sealed class TusUploads(
 
         try
         {
-            var length = await store.GetUploadLengthAsync(fileId, cancellationToken).ConfigureAwait(false);
-
-            return
-                length is not null
-                && length == await store.GetUploadOffsetAsync(fileId, cancellationToken).ConfigureAwait(false)
-                ? length
-                : null;
+            return await binding.ReadFinishedLengthAsync(fileId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

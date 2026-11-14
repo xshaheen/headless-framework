@@ -81,4 +81,24 @@ internal sealed class TusUploadBinding(ITusStore store, IOptions<TusTenantScopin
             return null;
         }
     }
+
+    /// <summary>
+    /// The upload's length when it holds every byte of a declared length, which is how tusdotnet decides an upload
+    /// is complete, otherwise <see langword="null"/>.
+    /// </summary>
+    /// <remarks>
+    /// The answer holds only while the caller has the upload's file lock. A write is not over when its bytes are
+    /// stored: one that carries a checksum stores them first and verifies them afterwards, and a store takes them
+    /// back when they do not match, so an upload read without the lock can look finished for a moment.
+    /// </remarks>
+    public async Task<long?> ReadFinishedLengthAsync(string fileId, CancellationToken cancellationToken)
+    {
+        var length = await store.GetUploadLengthAsync(fileId, cancellationToken).ConfigureAwait(false);
+
+        return
+            length is not null
+            && length == await store.GetUploadOffsetAsync(fileId, cancellationToken).ConfigureAwait(false)
+            ? length
+            : null;
+    }
 }

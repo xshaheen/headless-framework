@@ -4,7 +4,6 @@ using System.Net;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
-using tusdotnet.Interfaces;
 using tusdotnet.Models;
 using tusdotnet.Models.Configuration;
 
@@ -19,11 +18,7 @@ namespace Headless.Tus.Internal;
 /// It runs as tusdotnet's authorization event, which tusdotnet calls outside its own error handling: an exception
 /// that leaves <see cref="AuthorizeAsync"/> becomes a 500, so every outcome is a refusal set on the context.
 /// </remarks>
-internal sealed partial class TusUploadAuthorizer(
-    ITusStore store,
-    TusUploadBinding binding,
-    ILogger<TusUploadAuthorizer> logger
-)
+internal sealed partial class TusUploadAuthorizer(TusUploadBinding binding, ILogger<TusUploadAuthorizer> logger)
 {
     /// <summary>Lets the request go on, or sets the refusal tusdotnet answers it with.</summary>
     /// <param name="context">tusdotnet's authorization context for the request.</param>
@@ -107,13 +102,11 @@ internal sealed partial class TusUploadAuthorizer(
     /// </remarks>
     public async Task AuthorizeDeleteAsync(BeforeDeleteContext context)
     {
-        var length = await store.GetUploadLengthAsync(context.FileId, context.CancellationToken).ConfigureAwait(false);
+        var finishedLength = await binding
+            .ReadFinishedLengthAsync(context.FileId, context.CancellationToken)
+            .ConfigureAwait(false);
 
-        if (
-            length is not null
-            && length
-                == await store.GetUploadOffsetAsync(context.FileId, context.CancellationToken).ConfigureAwait(false)
-        )
+        if (finishedLength is not null)
         {
             context.FailRequest(
                 HttpStatusCode.Forbidden,
