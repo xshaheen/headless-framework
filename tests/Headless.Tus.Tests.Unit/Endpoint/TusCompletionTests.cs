@@ -880,6 +880,34 @@ public sealed class TusCompletionTests : TestBase
     }
 
     [Fact]
+    public async Task should_hand_off_an_empty_upload_when_a_deferred_length_is_declared_zero_on_an_endpoint_that_refuses_empty_uploads()
+    {
+        // given - tusdotnet's disk store, which can defer a length, on an endpoint that refuses a declared length of 0
+        var script = new HandlerScript();
+        var setup = new TusEndpointTestHostSetup
+        {
+            ConfigureTus = static (tus, disk) =>
+                tus.UseStore(disk)
+                    .AddUploadEndpoint(static options =>
+                    {
+                        options.MaxSize = 1000;
+                        options.AllowEmptyUploads = false;
+                    })
+                    .OnCompleted<ScriptedHandler>(),
+            ConfigureServices = services => services.AddSingleton(script),
+        };
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+        var location = await host.CreateUploadAsync(uploadLength: null);
+
+        // when - the upload's length is declared only once it is known to have no bytes
+        using var patch = await host.PatchAsync(location, [], offset: 0, uploadLength: 0);
+
+        // then - a deferred length is not empty at creation, so the rule for empty uploads never applied to it
+        patch.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        script.Uploads.Should().ContainSingle().Which.Length.Should().Be(0);
+    }
+
+    [Fact]
     public void should_refuse_a_second_completion_handler_on_one_endpoint()
     {
         // given

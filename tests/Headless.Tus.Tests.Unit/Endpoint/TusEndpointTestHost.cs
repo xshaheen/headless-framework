@@ -327,6 +327,21 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
     }
 
     /// <summary>
+    /// Everything a client can tell two responses apart by: the status, every header with its value, and the body.
+    /// Two refusals that describe the same reveal nothing about which upload exists.
+    /// </summary>
+    public static async Task<string> DescribeAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var headers = response
+            .Headers.Concat(response.Content.Headers)
+            .Select(static header => $"{header.Key}: {string.Join(", ", header.Value)}")
+            .Order(StringComparer.Ordinal);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        return $"{(int)response.StatusCode}\n{string.Join('\n', headers)}\n\n{body}";
+    }
+
+    /// <summary>
     /// Adds middleware that releases <paramref name="completed"/> after everything the endpoint does once a
     /// response is sent. The server runs those callbacks last-registered first, and this one is registered before
     /// the endpoint runs.

@@ -173,12 +173,10 @@ public sealed class TusTenancySetupTests : TestBase
         using var reference = await _SendAsync(host, method, unknown);
 
         // then - the answer an id that was never created gets
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         reference.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Headers.Select(h => h.Key).Should().BeEquivalentTo(reference.Headers.Select(h => h.Key));
-        (await response.Content.ReadAsStringAsync(AbortToken))
+        (await TusEndpointTestHost.DescribeAsync(response, AbortToken))
             .Should()
-            .Be(await reference.Content.ReadAsStringAsync(AbortToken));
+            .Be(await TusEndpointTestHost.DescribeAsync(reference, AbortToken));
 
         // and the upload is still its tenant's
         host.Tenant = "acme";

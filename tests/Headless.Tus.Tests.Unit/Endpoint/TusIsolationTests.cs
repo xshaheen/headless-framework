@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using Headless.Testing.Tests;
@@ -103,16 +104,23 @@ public sealed class TusIsolationTests : TestBase
         await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
         var location = await host.CreateUploadAsync(uploadLength: 10, route: createdOn);
         var elsewhere = $"{reachedThrough}/{TusEndpointTestHost.FileIdOf(location)}";
+        var unknown = $"{reachedThrough}/{Guid.NewGuid():n}";
 
         // when
         using var head = await host.HeadAsync(elsewhere);
         using var patch = await host.PatchAsync(elsewhere, new byte[10], offset: 0);
         using var delete = await host.DeleteAsync(elsewhere);
+        using var unknownHead = await host.HeadAsync(unknown);
+        using var unknownPatch = await host.PatchAsync(unknown, new byte[10], offset: 0);
+        using var unknownDelete = await host.DeleteAsync(unknown);
 
-        // then
+        // then - the other endpoint answers as if the upload did not exist
         head.StatusCode.Should().Be(HttpStatusCode.NotFound);
         patch.StatusCode.Should().Be(HttpStatusCode.NotFound);
         delete.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _DescribeAsync(head)).Should().Be(await _DescribeAsync(unknownHead));
+        (await _DescribeAsync(patch)).Should().Be(await _DescribeAsync(unknownPatch));
+        (await _DescribeAsync(delete)).Should().Be(await _DescribeAsync(unknownDelete));
 
         using var own = await host.HeadAsync(location);
         own.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -132,17 +140,24 @@ public sealed class TusIsolationTests : TestBase
         await using var host = await TusEndpointTestHost.StartAsync(_WithTenancy(), AbortToken);
         host.Tenant = uploadTenant;
         var location = await host.CreateUploadAsync(uploadLength: 10);
+        var unknown = $"{_Route}/{Guid.NewGuid():n}";
 
         // when - the same user, in another tenant or in none
         host.Tenant = callerTenant;
         using var head = await host.HeadAsync(location);
         using var patch = await host.PatchAsync(location, new byte[10], offset: 0);
         using var delete = await host.DeleteAsync(location);
+        using var unknownHead = await host.HeadAsync(unknown);
+        using var unknownPatch = await host.PatchAsync(unknown, new byte[10], offset: 0);
+        using var unknownDelete = await host.DeleteAsync(unknown);
 
-        // then
+        // then - the caller's tenant is answered as if the upload did not exist
         head.StatusCode.Should().Be(HttpStatusCode.NotFound);
         patch.StatusCode.Should().Be(HttpStatusCode.NotFound);
         delete.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _DescribeAsync(head)).Should().Be(await _DescribeAsync(unknownHead));
+        (await _DescribeAsync(patch)).Should().Be(await _DescribeAsync(unknownPatch));
+        (await _DescribeAsync(delete)).Should().Be(await _DescribeAsync(unknownDelete));
 
         host.Tenant = uploadTenant;
         using var own = await host.HeadAsync(location);
@@ -358,6 +373,76 @@ public sealed class TusIsolationTests : TestBase
             .Be("design");
     }
 
+    [Theory]
+    [InlineData("alice")]
+    [InlineData(" Alice")]
+    [InlineData("Alice ")]
+    public async Task should_answer_404_when_the_owner_key_differs_from_the_uploads_only_in_case_or_white_space(
+        string otherKey
+    )
+    {
+        // given - the owner key is the request's owner query value, which keeps its case and white space as sent
+        await using var host = await TusEndpointTestHost.StartAsync(
+            _OwnedBy(endpoint => endpoint.OwnedBy(static context => context.Request.Query["owner"].ToString())),
+            AbortToken
+        );
+        var location = await host.CreateUploadAsync(uploadLength: 10, route: $"{_Route}?owner=Alice");
+
+        // when
+        using var sameKey = await host.HeadAsync($"{location}?owner=Alice");
+        using var lookalike = await host.HeadAsync($"{location}?owner={Uri.EscapeDataString(otherKey)}");
+
+        // then - owner keys are compared exactly, so a key that only looks the same reaches nothing
+        sameKey.StatusCode.Should().Be(HttpStatusCode.OK);
+        lookalike.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task should_not_run_the_completion_handler_of_the_endpoint_an_upload_is_reached_through()
+    {
+        // given - the default endpoint without a completion handler, and a videos endpoint with one, over one store
+        var recorder = new RecordingHandler();
+        var setup = new TusEndpointTestHostSetup
+        {
+            ConfigureTus = static (tus, store) =>
+            {
+                tus.UseStore(store);
+                tus.AddUploadEndpoint(static options => options.MaxSize = 1000);
+                tus.AddUploadEndpoint("videos", static options => options.MaxSize = 1000)
+                    .OnCompleted<RecordingHandler>();
+            },
+            ConfigureServices = services => services.AddSingleton(recorder),
+            Map = static endpoints =>
+            {
+                endpoints.MapHeadlessTus("/files");
+                endpoints.MapHeadlessTus("/videos", "videos");
+            },
+        };
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+        var location = await host.CreateUploadAsync(uploadLength: 10, route: "/files");
+
+        // when - every byte of the default endpoint's upload is sent through the videos endpoint's path
+        using var patch = await host.PatchAsync(
+            $"/videos/{TusEndpointTestHost.FileIdOf(location)}",
+            new byte[10],
+            offset: 0
+        );
+
+        // then - nothing was written, so the upload is not complete and the videos handler was never given it
+        patch.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        recorder.Uploads.Should().BeEmpty();
+
+        using var own = await host.HeadAsync(location);
+        own.StatusCode.Should().Be(HttpStatusCode.OK);
+        own.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
+
+        // and the videos handler does run for an upload of its own endpoint
+        var video = await host.CreateUploadAsync(uploadLength: 10, route: "/videos");
+        using var videoPatch = await host.PatchAsync(video, new byte[10], offset: 0);
+        videoPatch.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        recorder.Uploads.Should().ContainSingle().Which.FileId.Should().Be(TusEndpointTestHost.FileIdOf(video));
+    }
+
     [Fact]
     public async Task should_await_an_asynchronous_owner_function()
     {
@@ -425,9 +510,11 @@ public sealed class TusIsolationTests : TestBase
         // when - a POST would be a create, which any signed-in caller may send
         host.User = "bob";
         using var foreign = await _PostAsDeleteAsync(host, location);
+        using var unknown = await _PostAsDeleteAsync(host, $"{_Route}/{Guid.NewGuid():n}");
 
         // then
         foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _DescribeAsync(foreign)).Should().Be(await _DescribeAsync(unknown));
         Directory.EnumerateFiles(host.Directory, "*.metadata").Should().ContainSingle();
 
         // when
@@ -446,16 +533,23 @@ public sealed class TusIsolationTests : TestBase
         await using var host = await TusEndpointTestHost.StartAsync(setup: null, AbortToken);
         var fileId = await host.Store.CreateFileAsync(10, "filename cmVwb3J0LnBkZg==", AbortToken);
         var location = $"{_Route}/{fileId}";
+        var unknown = $"{_Route}/{Guid.NewGuid():n}";
 
         // when
         using var head = await host.HeadAsync(location);
         using var patch = await host.PatchAsync(location, new byte[10], offset: 0);
         using var delete = await host.DeleteAsync(location);
+        using var unknownHead = await host.HeadAsync(unknown);
+        using var unknownPatch = await host.PatchAsync(unknown, new byte[10], offset: 0);
+        using var unknownDelete = await host.DeleteAsync(unknown);
 
-        // then
+        // then - answered as if the upload did not exist
         head.StatusCode.Should().Be(HttpStatusCode.NotFound);
         patch.StatusCode.Should().Be(HttpStatusCode.NotFound);
         delete.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _DescribeAsync(head)).Should().Be(await _DescribeAsync(unknownHead));
+        (await _DescribeAsync(patch)).Should().Be(await _DescribeAsync(unknownPatch));
+        (await _DescribeAsync(delete)).Should().Be(await _DescribeAsync(unknownDelete));
         (await host.Store.FileExistAsync(fileId, AbortToken)).Should().BeTrue();
     }
 
@@ -661,16 +755,9 @@ public sealed class TusIsolationTests : TestBase
         );
     }
 
-    /// <summary>Everything a client can tell two responses apart by: the status, every header, and the body.</summary>
-    private static async Task<string> _DescribeAsync(HttpResponseMessage response)
+    private static Task<string> _DescribeAsync(HttpResponseMessage response)
     {
-        var headers = response
-            .Headers.Concat(response.Content.Headers)
-            .Select(static header => $"{header.Key}: {string.Join(", ", header.Value)}")
-            .Order(StringComparer.Ordinal);
-        var body = await response.Content.ReadAsStringAsync(AbortToken);
-
-        return $"{(int)response.StatusCode}\n{string.Join('\n', headers)}\n\n{body}";
+        return TusEndpointTestHost.DescribeAsync(response, AbortToken);
     }
 
     /// <summary>The metadata the store itself keeps for an upload, decoded.</summary>
@@ -682,6 +769,19 @@ public sealed class TusIsolationTests : TestBase
         var raw = await host.Store.GetUploadMetadataAsync(TusEndpointTestHost.FileIdOf(location), AbortToken);
 
         return TusEndpointTestHost.DecodeMetadata(raw);
+    }
+
+    /// <summary>A completion handler that keeps every upload and records each one it was given.</summary>
+    private sealed class RecordingHandler : ITusUploadCompletedHandler
+    {
+        public ConcurrentQueue<TusCompletedUpload> Uploads { get; } = new();
+
+        public ValueTask<TusUploadHandoff> HandleAsync(TusCompletedUpload upload, CancellationToken cancellationToken)
+        {
+            Uploads.Enqueue(upload);
+
+            return ValueTask.FromResult(TusUploadHandoff.Keep);
+        }
     }
 
     /// <summary>A store whose metadata read fails, on demand, the way an unreachable backend does.</summary>
