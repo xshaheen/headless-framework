@@ -11,8 +11,9 @@ namespace Headless.Tus;
 /// <remarks>
 /// <para>
 /// An upload is finished once every byte of its declared length is stored. Neither method returns an upload that
-/// still lacks bytes, one whose length was never declared, or one another request is writing at that moment, so
-/// the result may be <see langword="null"/> for an upload that is found a moment later.
+/// still lacks bytes, one whose length was never declared, or one another request holds at that moment: a write,
+/// a status request, or another lookup of the same upload. So the result may be <see langword="null"/> for an
+/// upload that is found a moment later.
 /// </para>
 /// <para>
 /// Finding an upload reserves nothing: every call that names a finished upload gets it, so an application that

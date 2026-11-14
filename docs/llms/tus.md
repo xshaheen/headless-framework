@@ -269,7 +269,7 @@ An upload is finished once every byte of its declared length is stored. The laye
 
 - **It applies the endpoint's own check.** The caller is resolved exactly as the upload endpoint resolves it: the owner from `OwnedBy` or `ICurrentUser`, the tenant from `ICurrentTenant`. The upload is returned only when its stamp's endpoint, owner, and tenant equal the caller's ([Isolation](#isolation)).
 - **`null` covers every upload the caller may not use:** an unknown or malformed id, another owner's upload, another tenant's, one created on another endpoint, one that carries no stamp, any upload when the request has no owner, and an upload that is not finished. Answer all of them the same way, so a file id reveals nothing.
-- **`null` can be momentary.** A lookup decides that an upload is finished while holding the upload's file lock, and returns `null` when another request holds it. A write holds that lock until it has verified its bytes, so a lookup never returns an upload whose last write can still be taken back. A client that sends its request after its last write was answered does not meet this.
+- **`null` can be momentary.** A lookup decides that an upload is finished while holding the upload's file lock, and returns `null` when another request holds it. A write holds that lock until it has verified its bytes, so a lookup never returns an upload whose last write can still be taken back. A status request and another lookup of the same upload hold the lock too, for as long as they read it. A client that sends its request after its last write was answered, and does not ask for the upload's status at the same moment, does not meet this.
 - **It reserves nothing.** Every request that names a finished upload of the caller gets it, so a form submitted twice gives the application the same upload twice. Make the step that records or copies an upload safe to repeat, for example by keying it on `FileId`.
 - **It needs the request.** The call must run inside an HTTP request, because the owner function reads the `HttpContext`. Outside one it throws `InvalidOperationException`, and so does the name of an endpoint that was never declared.
 - **Protect the route like the upload route.** When `OwnedBy` reads a route value, the application's endpoint must carry the same route value and the same authorization policy as the upload endpoint. Otherwise the owner it resolves is not the one the upload was created for.
@@ -575,8 +575,8 @@ No list may hold a blank entry. [Validation](#validation) describes each rule.
 
 ### Runtime behavior
 
-- `AddHeadlessTus` registers the selected store as a singleton under `ITusStore` and its own type, the upload endpoints' options with their validator, an internal hosted service for the cleanup, `TimeProvider.System` (TryAdd), and `IFileFormatInspector` and `IMimeTypeProvider` (TryAdd). It registers each validator and handler type the application has not registered, as scoped.
-- `MapHeadlessTus` resolves the store when the endpoint is mapped, and logs the run-once warning for an endpoint whose handler the store cannot re-run.
+- `AddHeadlessTus` registers the selected store as a singleton under `ITusStore` and its own type, the upload endpoints' options with their validator, an internal hosted service for the cleanup, `TimeProvider.System` (TryAdd), and `IFileFormatInspector` and `IMimeTypeProvider` (TryAdd), `ITusUploads` as a singleton (TryAdd), and `IHttpContextAccessor`, which `ITusUploads.FindAsync` reads the current request through. It registers each validator type the application has not registered, as scoped.
+- `MapHeadlessTus` resolves the store when the endpoint is mapped.
 - `tenancy.Tus(t => t.ScopeByTenant())` registers the default `ICurrentTenant` services when the host has none.
 - `TusCorsDefaults` and `WithTusHeaders` are pure helpers with no registrations.
 
@@ -1010,7 +1010,7 @@ Distributed lock-based TUS file lock provider, using `Headless.DistributedLocks`
 - Compatible with any `IDistributedLock` backend (Redis, in-memory, etc.)
 - Single-flights expired-upload cleanup: one node per interval runs the sweep under the `{resourcePrefix}:expired-uploads-cleanup` lease
 - Covers `ITusUploads` across nodes: a lookup decides that an upload is finished under the upload's file lock, which this provider makes a cross-node lock ([Finished uploads](#finished-uploads))
-- Best-effort mutual exclusion, not fencing: tusdotnet's `ITusFileLock` contract has no hook to observe a lease lost mid-request, so a holder that loses its lease during a backend partition keeps writing until the request ends — the auto-extending lease shrinks that window but cannot eliminate it. The store has to fence: `TusAzureStore` conditions every write on the blob ETag and `TusS3Store` on the state object's ETag, so such a holder's write fails with `412` instead of overwriting the new holder's data. A completion handler has no such fence, which is one more reason it must be safe to repeat
+- Best-effort mutual exclusion, not fencing: tusdotnet's `ITusFileLock` contract has no hook to observe a lease lost mid-request, so a holder that loses its lease during a backend partition keeps writing until the request ends — the auto-extending lease shrinks that window but cannot eliminate it. The store has to fence: `TusAzureStore` conditions every write on the blob ETag and `TusS3Store` on the state object's ETag, so such a holder's write fails with `412` instead of overwriting the new holder's data. What an application does with a finished upload has no such fence, which is one more reason that step must be safe to repeat
 
 ### Install
 
