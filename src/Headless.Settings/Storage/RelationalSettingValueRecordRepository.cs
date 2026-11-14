@@ -28,6 +28,9 @@ internal sealed class RelationalSettingValueRecordRepository(
     private const string _Operation = "setting value";
 
     private readonly ISqlDialect _dialect = tables.Dialect;
+
+    /// <summary>Read per statement, so a lookup parameter is sized to the column the options configured.</summary>
+    private readonly SettingsStorageOptions _lengths = tables.Options;
     private readonly string _select = _BuildSelect(tables);
     private readonly string _byScope = _BuildByScope(tables);
     private readonly string _name = tables.Column("Name");
@@ -54,7 +57,7 @@ internal sealed class RelationalSettingValueRecordRepository(
                 sql,
                 command =>
                 {
-                    _AddFilter(command, "Name", SettingValueRecordConstants.NameMaxLength, name);
+                    _AddFilter(command, "Name", _lengths.SettingValuesNameMaxLength, name);
                     _AddScope(command, providerName, providerKey);
                 },
                 cancellationToken
@@ -90,21 +93,16 @@ internal sealed class RelationalSettingValueRecordRepository(
             sql,
             command =>
             {
-                _AddFilter(command, "Name", SettingValueRecordConstants.NameMaxLength, name);
+                _AddFilter(command, "Name", _lengths.SettingValuesNameMaxLength, name);
 
                 if (providerName is not null)
                 {
-                    _AddFilter(
-                        command,
-                        "ProviderName",
-                        SettingValueRecordConstants.ProviderNameMaxLength,
-                        providerName
-                    );
+                    _AddFilter(command, "ProviderName", _lengths.SettingValuesProviderNameMaxLength, providerName);
                 }
 
                 if (providerKey is not null)
                 {
-                    _AddFilter(command, "ProviderKey", SettingValueRecordConstants.ProviderKeyMaxLength, providerKey);
+                    _AddFilter(command, "ProviderKey", _lengths.SettingValuesProviderKeyMaxLength, providerKey);
                 }
             },
             cancellationToken
@@ -363,7 +361,7 @@ internal sealed class RelationalSettingValueRecordRepository(
         string? providerKey
     )
     {
-        var nameList = SqlColumnType.LookupText(SettingValueRecordConstants.NameMaxLength, names);
+        var nameList = SqlColumnType.LookupText(_lengths.SettingValuesNameMaxLength, names);
         var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope};";
 
         return (
@@ -378,8 +376,8 @@ internal sealed class RelationalSettingValueRecordRepository(
 
     private void _AddScope(DbCommand command, string providerName, string? providerKey)
     {
-        _AddFilter(command, "ProviderName", SettingValueRecordConstants.ProviderNameMaxLength, providerName);
-        _AddFilter(command, "ProviderKey", SettingValueRecordConstants.ProviderKeyMaxLength, providerKey);
+        _AddFilter(command, "ProviderName", _lengths.SettingValuesProviderNameMaxLength, providerName);
+        _AddFilter(command, "ProviderKey", _lengths.SettingValuesProviderKeyMaxLength, providerKey);
     }
 
     private async Task<List<SettingValueRecord>> _ReadAsync(

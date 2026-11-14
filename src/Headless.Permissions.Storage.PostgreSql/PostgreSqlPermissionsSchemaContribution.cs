@@ -27,40 +27,44 @@ internal static class PostgreSqlPermissionsSchemaContribution
         var grantsTable = tables.Grants;
         var definitionsTable = tables.Definitions;
         var groupsTable = tables.Groups;
+        var lengths = tables.Options;
 
-        var tablesSql = $"""
+        var tablesSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             CREATE TABLE IF NOT EXISTS {groupsTable} (
                 "id" uuid NOT NULL,
-                "name" character varying({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "display_name" character varying({PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                "name" character varying({lengths.PermissionGroupDefinitionsNameMaxLength}) NOT NULL,
+                "display_name" character varying({lengths.PermissionGroupDefinitionsDisplayNameMaxLength}) NOT NULL,
                 "extra_properties" text NOT NULL,
                 CONSTRAINT "pk_{groupsName}" PRIMARY KEY ("id")
             );
 
             CREATE TABLE IF NOT EXISTS {definitionsTable} (
                 "id" uuid NOT NULL,
-                "group_name" character varying({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "name" character varying({PermissionDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "display_name" character varying({PermissionDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                "group_name" character varying({lengths.PermissionGroupDefinitionsNameMaxLength}) NOT NULL,
+                "name" character varying({lengths.PermissionDefinitionsNameMaxLength}) NOT NULL,
+                "display_name" character varying({lengths.PermissionDefinitionsDisplayNameMaxLength}) NOT NULL,
                 "is_enabled" boolean NOT NULL,
-                "parent_name" character varying({PermissionDefinitionRecordConstants.NameMaxLength}),
-                "providers" character varying({PermissionDefinitionRecordConstants.ProvidersMaxLength}),
+                "parent_name" character varying({lengths.PermissionDefinitionsNameMaxLength}),
+                "providers" character varying({lengths.PermissionDefinitionsProvidersMaxLength}),
                 "extra_properties" text NOT NULL,
                 CONSTRAINT "pk_{definitionsName}" PRIMARY KEY ("id")
             );
 
             CREATE TABLE IF NOT EXISTS {grantsTable} (
                 "id" uuid NOT NULL,
-                "name" character varying({PermissionGrantRecordConstants.NameMaxLength}) NOT NULL,
-                "provider_name" character varying({PermissionGrantRecordConstants.ProviderNameMaxLength}) NOT NULL,
-                "provider_key" character varying({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
-                "tenant_id" character varying({PermissionGrantRecordConstants.TenantIdMaxLength}),
+                "name" character varying({lengths.PermissionGrantsNameMaxLength}) NOT NULL,
+                "provider_name" character varying({lengths.PermissionGrantsProviderNameMaxLength}) NOT NULL,
+                "provider_key" character varying({lengths.PermissionGrantsProviderKeyMaxLength}) NOT NULL,
+                "tenant_id" character varying({lengths.PermissionGrantsTenantIdMaxLength}),
                 "is_granted" boolean NOT NULL DEFAULT TRUE,
                 "created_at" timestamp with time zone NOT NULL,
                 "updated_at" timestamp with time zone,
                 CONSTRAINT "pk_{grantsName}" PRIMARY KEY ("id")
             );
-            """;
+            """
+        );
 
         var indexesSql = $"""
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{groupsName}_name" ON {groupsTable} ("name");

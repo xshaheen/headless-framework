@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Headless.Permissions;
 
 /// <summary>EF Core entity type configuration for <see cref="PermissionDefinitionRecord"/>.</summary>
-/// <param name="options">Storage options supplying the table name and schema.</param>
+/// <param name="options">Storage options supplying the table name, schema, and column lengths.</param>
 /// <param name="style">The naming style of the database the model targets.</param>
 internal sealed class PermissionDefinitionRecordConfiguration(
     PermissionsStorageOptions options,
@@ -22,13 +22,11 @@ internal sealed class PermissionDefinitionRecordConfiguration(
         b.ToTable(table, options.Schema);
         b.TryConfigureExtraProperties();
         b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
-        b.Property(x => x.GroupName).HasMaxLength(PermissionDefinitionRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.Name).HasMaxLength(PermissionDefinitionRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.ParentName).HasMaxLength(PermissionDefinitionRecordConstants.NameMaxLength);
-        b.Property(x => x.DisplayName)
-            .HasMaxLength(PermissionDefinitionRecordConstants.DisplayNameMaxLength)
-            .IsRequired();
-        b.Property(x => x.Providers).HasMaxLength(PermissionDefinitionRecordConstants.ProvidersMaxLength);
+        b.Property(x => x.GroupName).HasMaxLength(options.PermissionGroupDefinitionsNameMaxLength).IsRequired();
+        b.Property(x => x.Name).HasMaxLength(options.PermissionDefinitionsNameMaxLength).IsRequired();
+        b.Property(x => x.ParentName).HasMaxLength(options.PermissionDefinitionsNameMaxLength);
+        b.Property(x => x.DisplayName).HasMaxLength(options.PermissionDefinitionsDisplayNameMaxLength).IsRequired();
+        b.Property(x => x.Providers).HasMaxLength(options.PermissionDefinitionsProvidersMaxLength);
         b.HasIndex(x => new { x.Name })
             .IsUnique()
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, PermissionsStorageNames.DefinitionsByName));

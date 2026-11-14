@@ -21,23 +21,16 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
 
     /// <summary>Initializes a new <see cref="SettingDefinitionRecord"/> with all required fields validated.</summary>
     /// <param name="id">Unique identifier for the record.</param>
-    /// <param name="name">Unique name of the setting. Must not be null, empty, or whitespace and must not exceed <see cref="SettingDefinitionRecordConstants.NameMaxLength"/> characters.</param>
-    /// <param name="displayName">Human-readable display name. Must not be null, empty, or whitespace and must not exceed <see cref="SettingDefinitionRecordConstants.DisplayNameMaxLength"/> characters.</param>
-    /// <param name="description">Optional description. When non-<see langword="null"/>, must not exceed <see cref="SettingDefinitionRecordConstants.DescriptionMaxLength"/> characters.</param>
-    /// <param name="defaultValue">Optional default value. When non-<see langword="null"/>, must not exceed <see cref="SettingDefinitionRecordConstants.DefaultValueMaxLength"/> characters.</param>
-    /// <param name="providers">Optional comma-separated list of provider names. When non-<see langword="null"/>, must not exceed <see cref="SettingDefinitionRecordConstants.ProvidersMaxLength"/> characters.</param>
+    /// <param name="name">Unique name of the setting. Must not be null, empty, or whitespace.</param>
+    /// <param name="displayName">Human-readable display name. Must not be null, empty, or whitespace.</param>
+    /// <param name="description">Optional description.</param>
+    /// <param name="defaultValue">Optional default value.</param>
+    /// <param name="providers">Optional comma-separated list of provider names.</param>
     /// <param name="isVisibleToClients">Whether clients may read this setting and its value.</param>
     /// <param name="isInherited">Whether the value falls back to the next provider when not set for the requested provider.</param>
     /// <param name="isEncrypted">Whether the value is stored encrypted in the data source.</param>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="displayName"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="name"/> or <paramref name="displayName"/> is empty or whitespace.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="name"/> exceeds <see cref="SettingDefinitionRecordConstants.NameMaxLength"/>,
-    /// <paramref name="displayName"/> exceeds <see cref="SettingDefinitionRecordConstants.DisplayNameMaxLength"/>,
-    /// <paramref name="description"/> exceeds <see cref="SettingDefinitionRecordConstants.DescriptionMaxLength"/>,
-    /// <paramref name="defaultValue"/> exceeds <see cref="SettingDefinitionRecordConstants.DefaultValueMaxLength"/>,
-    /// or <paramref name="providers"/> exceeds <see cref="SettingDefinitionRecordConstants.ProvidersMaxLength"/>.
-    /// </exception>
     [SetsRequiredMembers]
     public SettingDefinitionRecord(
         Guid id,
@@ -52,25 +45,8 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
     )
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, SettingDefinitionRecordConstants.NameMaxLength);
 
         Argument.IsNotNullOrWhiteSpace(displayName);
-        Argument.IsLessThanOrEqualTo(displayName.Length, SettingDefinitionRecordConstants.DisplayNameMaxLength);
-
-        if (description is not null)
-        {
-            Argument.IsLessThanOrEqualTo(description.Length, SettingDefinitionRecordConstants.DescriptionMaxLength);
-        }
-
-        if (defaultValue is not null)
-        {
-            Argument.IsLessThanOrEqualTo(defaultValue.Length, SettingDefinitionRecordConstants.DefaultValueMaxLength);
-        }
-
-        if (providers is not null)
-        {
-            Argument.IsLessThanOrEqualTo(providers.Length, SettingDefinitionRecordConstants.ProvidersMaxLength);
-        }
 
         Id = id;
         Name = name;

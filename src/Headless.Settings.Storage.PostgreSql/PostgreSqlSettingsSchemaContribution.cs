@@ -25,33 +25,37 @@ internal static class PostgreSqlSettingsSchemaContribution
         var definitionsName = tables.DefinitionsName;
         var valuesTable = tables.Values;
         var definitionsTable = tables.Definitions;
+        var lengths = tables.Options;
 
-        var tablesSql = $"""
+        var tablesSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             CREATE TABLE IF NOT EXISTS {definitionsTable} (
                 "id" uuid NOT NULL,
-                "name" character varying({SettingDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                "display_name" character varying({SettingDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
-                "description" character varying({SettingDefinitionRecordConstants.DescriptionMaxLength}),
-                "default_value" character varying({SettingDefinitionRecordConstants.DefaultValueMaxLength}),
+                "name" character varying({lengths.SettingDefinitionsNameMaxLength}) NOT NULL,
+                "display_name" character varying({lengths.SettingDefinitionsDisplayNameMaxLength}) NOT NULL,
+                "description" character varying({lengths.SettingDefinitionsDescriptionMaxLength}),
+                "default_value" character varying({lengths.SettingDefinitionsDefaultValueMaxLength}),
                 "is_visible_to_clients" boolean NOT NULL,
                 "is_inherited" boolean NOT NULL,
                 "is_encrypted" boolean NOT NULL,
-                "providers" character varying({SettingDefinitionRecordConstants.ProvidersMaxLength}),
+                "providers" character varying({lengths.SettingDefinitionsProvidersMaxLength}),
                 "extra_properties" text NOT NULL,
                 CONSTRAINT "pk_{definitionsName}" PRIMARY KEY ("id")
             );
 
             CREATE TABLE IF NOT EXISTS {valuesTable} (
                 "id" uuid NOT NULL,
-                "name" character varying({SettingValueRecordConstants.NameMaxLength}) NOT NULL,
-                "value" character varying({SettingValueRecordConstants.ValueMaxLength}) NOT NULL,
-                "provider_name" character varying({SettingValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
-                "provider_key" character varying({SettingValueRecordConstants.ProviderKeyMaxLength}),
+                "name" character varying({lengths.SettingValuesNameMaxLength}) NOT NULL,
+                "value" character varying({lengths.SettingValuesValueMaxLength}) NOT NULL,
+                "provider_name" character varying({lengths.SettingValuesProviderNameMaxLength}) NOT NULL,
+                "provider_key" character varying({lengths.SettingValuesProviderKeyMaxLength}),
                 "created_at" timestamp with time zone NOT NULL,
                 "updated_at" timestamp with time zone,
                 CONSTRAINT "pk_{valuesName}" PRIMARY KEY ("id")
             );
-            """;
+            """
+        );
 
         // Two partial unique indexes split on provider_key nullability: a plain unique index treats NULLs as
         // distinct, so duplicate (name, provider_name) host-scope rows would slip past it.

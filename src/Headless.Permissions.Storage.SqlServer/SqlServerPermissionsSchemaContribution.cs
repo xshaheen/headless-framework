@@ -26,17 +26,20 @@ internal static class SqlServerPermissionsSchemaContribution
         var grantsTable = tables.Grants;
         var definitionsTable = tables.Definitions;
         var groupsTable = tables.Groups;
+        var lengths = tables.Options;
         var schema = tables.Schema;
         var grantsObject = $"{schema}.{grantsName}";
         var definitionsObject = $"{schema}.{definitionsName}";
         var groupsObject = $"{schema}.{groupsName}";
 
-        var sql = $"""
+        var sql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             IF OBJECT_ID(N'{groupsObject}', N'U') IS NULL
                 CREATE TABLE {groupsTable} (
                     [Id] uniqueidentifier NOT NULL,
-                    [Name] nvarchar({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                    [DisplayName] nvarchar({PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                    [Name] nvarchar({lengths.PermissionGroupDefinitionsNameMaxLength}) NOT NULL,
+                    [DisplayName] nvarchar({lengths.PermissionGroupDefinitionsDisplayNameMaxLength}) NOT NULL,
                     [ExtraProperties] nvarchar(max) NOT NULL,
                     CONSTRAINT [PK_{groupsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
@@ -47,12 +50,12 @@ internal static class SqlServerPermissionsSchemaContribution
             IF OBJECT_ID(N'{definitionsObject}', N'U') IS NULL
                 CREATE TABLE {definitionsTable} (
                     [Id] uniqueidentifier NOT NULL,
-                    [GroupName] nvarchar({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                    [Name] nvarchar({PermissionDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                    [DisplayName] nvarchar({PermissionDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                    [GroupName] nvarchar({lengths.PermissionGroupDefinitionsNameMaxLength}) NOT NULL,
+                    [Name] nvarchar({lengths.PermissionDefinitionsNameMaxLength}) NOT NULL,
+                    [DisplayName] nvarchar({lengths.PermissionDefinitionsDisplayNameMaxLength}) NOT NULL,
                     [IsEnabled] bit NOT NULL,
-                    [ParentName] nvarchar({PermissionDefinitionRecordConstants.NameMaxLength}) NULL,
-                    [Providers] nvarchar({PermissionDefinitionRecordConstants.ProvidersMaxLength}) NULL,
+                    [ParentName] nvarchar({lengths.PermissionDefinitionsNameMaxLength}) NULL,
+                    [Providers] nvarchar({lengths.PermissionDefinitionsProvidersMaxLength}) NULL,
                     [ExtraProperties] nvarchar(max) NOT NULL,
                     CONSTRAINT [PK_{definitionsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
@@ -66,10 +69,10 @@ internal static class SqlServerPermissionsSchemaContribution
             IF OBJECT_ID(N'{grantsObject}', N'U') IS NULL
                 CREATE TABLE {grantsTable} (
                     [Id] uniqueidentifier NOT NULL,
-                    [Name] nvarchar({PermissionGrantRecordConstants.NameMaxLength}) NOT NULL,
-                    [ProviderName] nvarchar({PermissionGrantRecordConstants.ProviderNameMaxLength}) NOT NULL,
-                    [ProviderKey] nvarchar({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
-                    [TenantId] nvarchar({PermissionGrantRecordConstants.TenantIdMaxLength}) NULL,
+                    [Name] nvarchar({lengths.PermissionGrantsNameMaxLength}) NOT NULL,
+                    [ProviderName] nvarchar({lengths.PermissionGrantsProviderNameMaxLength}) NOT NULL,
+                    [ProviderKey] nvarchar({lengths.PermissionGrantsProviderKeyMaxLength}) NOT NULL,
+                    [TenantId] nvarchar({lengths.PermissionGrantsTenantIdMaxLength}) NULL,
                     [IsGranted] bit NOT NULL DEFAULT CAST(1 AS bit),
                     [CreatedAt] datetimeoffset NOT NULL,
                     [UpdatedAt] datetimeoffset NULL,
@@ -92,7 +95,8 @@ internal static class SqlServerPermissionsSchemaContribution
             -- ceiling, portable to older engines). The name type is a heap (no PK) so trailing-space / collation
             -- duplicate names cannot raise a PK violation the dynamic IN-list never had.
 
-            """;
+            """
+        );
 
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(

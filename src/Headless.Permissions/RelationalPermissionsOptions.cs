@@ -47,5 +47,6 @@ internal sealed class RelationalPermissionsStorageOptionsValidator : AbstractVal
             .IsValidIdentifierFor(provider)
             .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GroupsIndexes)
             .When(x => x.PermissionGroupDefinitionsTableName is not null);
+        this.AddColumnLengthRules();
     }
 }

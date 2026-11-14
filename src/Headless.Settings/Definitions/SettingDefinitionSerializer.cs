@@ -1,16 +1,35 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
+using Headless.Checks;
 using Headless.Primitives;
 using Headless.Serializer;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Settings;
 
-/// <summary>Default implementation of <see cref="ISettingDefinitionSerializer"/>.</summary>
-public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : ISettingDefinitionSerializer
+/// <summary>
+/// Default implementation of <see cref="ISettingDefinitionSerializer"/>. Serializing refuses a value longer than the
+/// column <see cref="SettingsStorageOptions"/> configures for it, so an over-long definition fails here with the
+/// offending value instead of at the database.
+/// </summary>
+public sealed class SettingDefinitionSerializer(
+    IGuidGenerator guidGenerator,
+    IOptions<SettingsStorageOptions> storageOptions
+) : ISettingDefinitionSerializer
 {
+    private readonly SettingsStorageOptions _lengths = storageOptions.Value;
+
     /// <inheritdoc/>
     public SettingDefinitionRecord Serialize(SettingDefinition setting)
     {
+        var providers = _SerializeProviders(setting.Providers);
+        _EnsureFits(setting.Name, _lengths.SettingDefinitionsNameMaxLength);
+        _EnsureFits(setting.DisplayName, _lengths.SettingDefinitionsDisplayNameMaxLength);
+        _EnsureFits(setting.Description, _lengths.SettingDefinitionsDescriptionMaxLength);
+        _EnsureFits(setting.DefaultValue, _lengths.SettingDefinitionsDefaultValueMaxLength);
+        _EnsureFits(providers, _lengths.SettingDefinitionsProvidersMaxLength);
+
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
             var record = new SettingDefinitionRecord(
@@ -19,7 +38,7 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 displayName: setting.DisplayName,
                 description: setting.Description,
                 defaultValue: setting.DefaultValue,
-                providers: _SerializeProviders(setting.Providers),
+                providers: providers,
                 isVisibleToClients: setting.IsVisibleToClients,
                 isInherited: setting.IsInherited,
                 isEncrypted: setting.IsEncrypted
@@ -77,6 +96,19 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
     public List<SettingDefinition> Deserialize(IEnumerable<SettingDefinitionRecord> records)
     {
         return [.. records.Select(Deserialize)];
+    }
+
+    /// <summary>Refuses a value longer than its column, naming the value; a null value has no length to check.</summary>
+    private static void _EnsureFits(
+        string? value,
+        int maxLength,
+        [CallerArgumentExpression(nameof(value))] string? name = null
+    )
+    {
+        if (value is not null)
+        {
+            Argument.IsLessThanOrEqualTo(value.Length, maxLength, paramName: name);
+        }
     }
 
     private static string? _SerializeProviders(List<string> providers)

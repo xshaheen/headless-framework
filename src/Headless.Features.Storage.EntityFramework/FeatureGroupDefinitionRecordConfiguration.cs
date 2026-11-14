@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Headless.Features;
 
 /// <summary>EF Core entity type configuration for <see cref="FeatureGroupDefinitionRecord"/>.</summary>
-/// <param name="options">Storage options supplying the table name and schema.</param>
+/// <param name="options">Storage options supplying the table name, schema, and column lengths.</param>
 /// <param name="style">The naming style of the database the model targets.</param>
 internal sealed class FeatureGroupDefinitionRecordConfiguration(
     FeaturesStorageOptions options,
@@ -23,10 +23,8 @@ internal sealed class FeatureGroupDefinitionRecordConfiguration(
         b.ToTable(table, options.Schema);
         b.TryConfigureExtraProperties();
         b.HasKey(x => x.Id).HasName(HeadlessStorageNaming.PrimaryKeyName(style, table));
-        b.Property(x => x.Name).HasMaxLength(FeatureGroupDefinitionRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.DisplayName)
-            .HasMaxLength(FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength)
-            .IsRequired();
+        b.Property(x => x.Name).HasMaxLength(options.FeatureGroupDefinitionsNameMaxLength).IsRequired();
+        b.Property(x => x.DisplayName).HasMaxLength(options.FeatureGroupDefinitionsDisplayNameMaxLength).IsRequired();
         b.HasIndex(x => new { x.Name })
             .IsUnique()
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, FeaturesStorageNames.GroupsByName));
