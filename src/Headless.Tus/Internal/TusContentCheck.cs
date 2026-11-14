@@ -30,6 +30,7 @@ namespace Headless.Tus.Internal;
 /// </remarks>
 internal sealed class TusContentCheck(
     ITusStore store,
+    TusUploadBinding binding,
     TusUploadRemover remover,
     IFileFormatInspector inspector,
     IMimeTypeProvider mimeTypes
@@ -306,6 +307,12 @@ internal sealed class TusContentCheck(
     /// Sets the refusal on <paramref name="context"/> and removes the upload it refuses. The refusal stands
     /// whether or not the removal succeeds; an upload that could not be removed stays until it expires.
     /// </summary>
+    /// <remarks>
+    /// An upload that is finished is never removed. A write is matched to its upload before it holds the upload's
+    /// file lock, and a store may answer the write's own checks from what the request read back then. So a write
+    /// can reach this point for an upload that another request finished in between, and that upload is the
+    /// application's by now.
+    /// </remarks>
     private async ValueTask _RefuseAsync(
         BeforeWriteContext context,
         HttpStatusCode status,
@@ -325,7 +332,16 @@ internal sealed class TusContentCheck(
             return;
         }
 
-        await remover.RemoveAsync(context.FileId).ConfigureAwait(false);
+        // Not tied to the request, like the removal it guards: the decision stands whether or not the client is
+        // still there.
+        var finishedLength = await binding
+            .ReadFinishedLengthAsync(context.FileId, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        if (finishedLength is null)
+        {
+            await remover.RemoveAsync(context.FileId).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Content types and file extensions, as an allow-list or an upload's declaration names them.</summary>

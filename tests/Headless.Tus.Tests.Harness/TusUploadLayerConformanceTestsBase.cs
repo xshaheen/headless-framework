@@ -36,6 +36,8 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
     private const string _Claims = "/claims";
     private const string _ClaimsTwice = "/claims-twice";
     private const string _EndpointName = "documents";
+    private const string _ImagesRoute = "/images";
+    private const string _ImagesEndpointName = "images";
     private const long _MaxSize = 1024 * 1024;
     private const string _UserHeader = "X-Test-User";
     private const string _TenantHeader = "X-Test-Tenant";
@@ -170,6 +172,30 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         delete.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         using var claim = await _ClaimAsync(_Alice, location);
         (await claim.Content.ReadAsByteArrayAsync(AbortToken)).Should().Equal(content);
+    }
+
+    public virtual async Task should_keep_an_upload_that_finished_while_a_refused_write_to_it_was_waiting()
+    {
+        // given - an endpoint that accepts only PNG images, and an upload on it that holds no bytes yet
+        await _StartHostAsync(scopeByTenant: false);
+        var png = _FileStartingWith([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], length: 1024);
+        var pdf = _FileStartingWith("%PDF-1.7\n"u8.ToArray(), length: 1024);
+        var location = await _CreateUploadAsync(_Alice, png.Length, $"filetype {"image/png".ToBase64()}", _ImagesRoute);
+
+        // and a write of the whole image that lands after a second write was matched to the upload and before that
+        // second write takes the upload's file lock
+        _locks.BeforeNextLock = () => _WriteAsync(_Alice, location, png, offset: 0);
+
+        // when - the second write sends bytes the endpoint refuses, from the upload's first byte
+        using var refused = await _PatchAsync(_Alice, location, pdf, offset: 0);
+
+        // then - it is not accepted, and the upload the first write finished is still there: a refused first write
+        // removes its upload, but never one that is finished by the time the write holds the lock
+        refused.StatusCode.Should().BeOneOf(HttpStatusCode.UnsupportedMediaType, HttpStatusCode.Conflict);
+
+        using var head = await _HeadAsync(_Alice, location);
+        head.StatusCode.Should().Be(HttpStatusCode.OK);
+        _OffsetOf(head).Should().Be(png.Length);
     }
 
     public virtual async Task should_find_an_upload_that_finished_after_the_same_request_first_looked_it_up()
@@ -315,6 +341,16 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 
             // A named endpoint, so an upload's record carries every entry the endpoint can write.
             tus.AddUploadEndpoint(_EndpointName, static options => options.MaxSize = _MaxSize);
+
+            // A second endpoint with a type rule, for the scenario about a write the endpoint refuses.
+            tus.AddUploadEndpoint(
+                _ImagesEndpointName,
+                static options =>
+                {
+                    options.MaxSize = _MaxSize;
+                    options.AllowedContentTypes.Add("image/png");
+                }
+            );
         });
 
         if (scopeByTenant)
@@ -327,6 +363,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         app.Use(_SignalWhenTheResponseCompletes);
         app.Use(_SignInAsync);
         app.MapHeadlessTus(_Route, _EndpointName);
+        app.MapHeadlessTus(_ImagesRoute, _ImagesEndpointName);
         app.MapGet(_Claims + "/{fileId}", _FindAsync);
         app.MapDelete(_Claims + "/{fileId}", _FindAndDeleteAsync);
         app.MapGet(_ClaimsTwice + "/{fileId}", _FindTwiceAsync);
@@ -475,12 +512,17 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
     }
 
     /// <summary>Creates an upload that must succeed and returns its location.</summary>
-    private async Task<string> _CreateUploadAsync(Caller caller, long uploadLength, string? metadata = null)
+    private async Task<string> _CreateUploadAsync(
+        Caller caller,
+        long uploadLength,
+        string? metadata = null,
+        string route = _Route
+    )
     {
         using var response = await _SendAsync(
             caller,
             HttpMethod.Post,
-            _Route,
+            route,
             request =>
             {
                 request.Headers.Add("Upload-Length", uploadLength.ToString(CultureInfo.InvariantCulture));
@@ -583,6 +625,15 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         metadata.Should().HaveLength(length);
 
         return metadata;
+    }
+
+    /// <summary>Random content of <paramref name="length"/> bytes that begins with <paramref name="signature"/>.</summary>
+    private byte[] _FileStartingWith(byte[] signature, int length)
+    {
+        var file = Faker.Random.Bytes(length);
+        signature.CopyTo(file, 0);
+
+        return file;
     }
 
     /// <summary>The file id is the last segment of the location a creating request answers with.</summary>
