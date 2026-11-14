@@ -471,8 +471,9 @@ public sealed class TusCompletionTests : TestBase
 
         // then - the application already holds the upload, so the failed request must not take it away
         created.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        script.Uploads.Should().ContainSingle();
-        Directory.EnumerateFileSystemEntries(host.Directory).Should().NotBeEmpty();
+        var kept = script.Uploads.Should().ContainSingle().Which.FileId;
+        (await host.Store.FileExistAsync(kept, AbortToken)).Should().BeTrue();
+        (await host.Store.GetUploadOffsetAsync(kept, AbortToken)).Should().Be(withData ? _Content.Length : 0);
     }
 
     [Fact]
@@ -521,6 +522,26 @@ public sealed class TusCompletionTests : TestBase
         retried.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("11");
         script.Uploads.Should().HaveCount(3);
         delete.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task should_let_the_client_delete_an_upload_whose_handoff_could_not_be_recorded()
+    {
+        // given - the handler kept the upload, and the store could not record that
+        var script = new HandlerScript();
+        var setup = _Handled(script, static store => store.FailsMarks = true, useKestrel: true);
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+        var location = await host.CreateUploadAsync(_Content.Length);
+        using var patch = await host.PatchAsync(location, _Content, offset: 0);
+
+        // when
+        using var delete = await host.DeleteAsync(location);
+
+        // then - without the record the upload is still owed, and an owed upload is its uploader's to cancel
+        patch.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        script.Uploads.Should().ContainSingle();
+        Directory.EnumerateFileSystemEntries(host.Directory).Should().BeEmpty();
     }
 
     [Theory]

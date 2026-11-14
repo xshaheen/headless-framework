@@ -278,7 +278,9 @@ public sealed class TusValidationTests : TestBase
     [InlineData("\u00A0filetype dGV4dC9odG1s")]
     // a tab inside the key
     [InlineData("file\ttype aW1hZ2UvcG5n")]
-    public async Task should_answer_400_when_a_metadata_key_carries_white_space(string oddEntry)
+    // a control character that is not white space
+    [InlineData("file\u007Ftype aW1hZ2UvcG5n")]
+    public async Task should_answer_400_when_a_metadata_key_carries_white_space_or_a_control_character(string oddEntry)
     {
         // given - the declared "type" and "name" are allowed, so only the odd key can refuse the upload
         var metadata = $"type aW1hZ2UvcG5n,name Y2F0LnBuZw==,{oddEntry}";
