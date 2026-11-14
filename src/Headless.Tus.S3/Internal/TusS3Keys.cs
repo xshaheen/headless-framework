@@ -13,14 +13,13 @@ namespace Headless.Tus.Internal;
 /// <para>
 /// A finished upload is <c>{prefix}{fileId}</c>. An incomplete upload's working set lives under
 /// <c>{prefix}.tus/{fileId}/</c> and a completed upload's record at <c>{prefix}.tus-completed/{fileId}</c>, so the
-/// expiry sweep lists only in-progress uploads and never pages through finished ones. A handed-off upload keeps a
-/// mark at <c>{prefix}.tus-handed-off/{fileId}</c>.
+/// expiry sweep lists only in-progress uploads and never pages through finished ones.
 /// </para>
 /// <para>
-/// A tenant's uploads have the same four keys with <c>.tenants/{tenant}/</c> in front of the file id:
+/// A tenant's uploads have the same three keys with <c>.tenants/{tenant}/</c> in front of the file id:
 /// <c>{prefix}.tenants/{tenant}/{fileId}</c>, <c>{prefix}.tus/.tenants/{tenant}/{fileId}/</c>, and so on. A file
 /// id cannot start with a dot, so no upload kept outside a tenant can own a key inside that folder, and whatever
-/// lists one of the four roots without a delimiter still reaches every tenant's objects under it.
+/// lists one of the three roots without a delimiter still reaches every tenant's objects under it.
 /// </para>
 /// </remarks>
 internal sealed class TusS3Keys
@@ -30,9 +29,6 @@ internal sealed class TusS3Keys
 
     /// <summary>The folder under the prefix that holds every completed upload's record.</summary>
     public const string CompletedFolder = ".tus-completed/";
-
-    /// <summary>The folder under the prefix that holds the mark of every handed-off upload.</summary>
-    public const string HandedOffFolder = ".tus-handed-off/";
 
     /// <summary>
     /// The folder, under the prefix and under each of the folders above, that holds one folder per tenant.
@@ -44,7 +40,6 @@ internal sealed class TusS3Keys
 
     private readonly string _normalizedPrefix;
     private readonly string _completedRoot;
-    private readonly string _handedOffRoot;
 
     /// <summary>Builds the keys of one tenant's uploads, or of the uploads kept outside any tenant.</summary>
     /// <param name="normalizedPrefix">The store's key prefix, ending in a slash.</param>
@@ -61,7 +56,6 @@ internal sealed class TusS3Keys
         FinishedObjectRoot = normalizedPrefix + scope;
         WorkingSetRoot = normalizedPrefix + WorkingSetFolder + scope;
         _completedRoot = normalizedPrefix + CompletedFolder + scope;
-        _handedOffRoot = normalizedPrefix + HandedOffFolder + scope;
     }
 
     /// <summary>
@@ -126,16 +120,6 @@ internal sealed class TusS3Keys
     public string CompletedRecord(string fileId)
     {
         return _completedRoot + EnsureValid(fileId);
-    }
-
-    /// <summary>
-    /// The key of the mark a completed upload gets once it was handed off to the application. It is an object of
-    /// its own because a completion that runs again rewrites the completed record, which would erase a mark kept
-    /// inside it.
-    /// </summary>
-    public string HandedOffMark(string fileId)
-    {
-        return _handedOffRoot + EnsureValid(fileId);
     }
 
     /// <summary>

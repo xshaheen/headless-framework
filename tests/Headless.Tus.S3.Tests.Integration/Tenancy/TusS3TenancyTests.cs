@@ -74,15 +74,10 @@ public abstract class TusS3TenancyTestsBase(IS3TestBackend backend) : TestBase
 
     public virtual async Task should_keep_every_object_of_a_tenants_uploads_under_the_tenants_folder()
     {
-        // given - an upload in progress that holds a part and a tail segment, and a finished, handed-off upload
+        // given - an upload in progress that holds a part and a tail segment, and a finished upload
         var inProgress = await _CreateAsync(_Acme, 20 * _MiB, Faker.Random.Bytes(6 * _MiB));
         var content = Faker.Random.Bytes(400);
         var finished = await _CreateAsync(_Acme, content.Length, content);
-
-        using (_tenant.Change(_Acme))
-        {
-            await _store.MarkHandedOffAsync(finished, AbortToken);
-        }
 
         // then - each kind of object sits under the tenant's folder inside its own root
         var prefix = _options.Prefix;
@@ -91,7 +86,6 @@ public abstract class TusS3TenancyTestsBase(IS3TestBackend backend) : TestBase
         keys.Should().Contain(key => key.StartsWith($"{prefix}.tus/.tenants/acme/{inProgress}/seg/"));
         keys.Should().Contain($"{prefix}.tenants/acme/{finished}");
         keys.Should().Contain($"{prefix}.tus-completed/.tenants/acme/{finished}");
-        keys.Should().Contain($"{prefix}.tus-handed-off/.tenants/acme/{finished}");
 
         // and nothing of either upload sits anywhere else, the parts of the one in progress included
         keys.Should().OnlyContain(key => key.Contains("/.tenants/acme/"));
@@ -106,7 +100,6 @@ public abstract class TusS3TenancyTestsBase(IS3TestBackend backend) : TestBase
             await using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer, AbortToken);
             buffer.ToArray().Should().Equal(content);
-            (await _store.GetHandoffStateAsync(finished, AbortToken)).Should().Be(TusHandoffState.HandedOff);
         }
     }
 
@@ -125,7 +118,6 @@ public abstract class TusS3TenancyTestsBase(IS3TestBackend backend) : TestBase
                 .BeFalse();
             (await _store.GetFileAsync(fileId, AbortToken)).Should().BeNull();
             (await _store.GetUploadMetadataAsync(fileId, AbortToken)).Should().BeNull();
-            (await _store.GetHandoffStateAsync(fileId, AbortToken)).Should().Be(TusHandoffState.NotComplete);
             await _store.DeleteFileAsync(fileId, AbortToken);
         }
 
@@ -273,7 +265,7 @@ public abstract class TusS3TenancyTestsBase(IS3TestBackend backend) : TestBase
 
     public virtual async Task should_delete_a_tenants_upload_with_every_object_it_owns()
     {
-        // given - a handed-off upload and one in progress with a part
+        // given - a finished upload and one in progress with a part
         var content = Faker.Random.Bytes(400);
         var finished = await _CreateAsync(_Acme, content.Length, content);
         var inProgress = await _CreateAsync(_Acme, 20 * _MiB, Faker.Random.Bytes(6 * _MiB));
@@ -281,7 +273,6 @@ public abstract class TusS3TenancyTestsBase(IS3TestBackend backend) : TestBase
         // when
         using (_tenant.Change(_Acme))
         {
-            await _store.MarkHandedOffAsync(finished, AbortToken);
             await _store.DeleteFileAsync(finished, AbortToken);
             await _store.DeleteFileAsync(inProgress, AbortToken);
         }
@@ -327,26 +318,20 @@ public abstract class TusS3TenancyTestsBase(IS3TestBackend backend) : TestBase
         (await _ListKeysAsync(_options.Prefix)).Should().Contain($"{_options.Prefix}.tenants/acme/{final}");
     }
 
-    public virtual async Task should_purge_the_uploads_of_every_tenant_and_of_none_with_their_marks()
+    public virtual async Task should_purge_the_uploads_of_every_tenant_and_of_none()
     {
-        // given - in a tenant and outside any: a handed-off upload and one in progress; and another writer's object
+        // given - in a tenant and outside any: a finished upload and one in progress; and another writer's object
         var unscopedStore = _CreateUnscopedStore();
         var content = Faker.Random.Bytes(400);
-        var unscopedFinished = await _AppendToNewAsync(unscopedStore, content.Length, content);
-        await unscopedStore.MarkHandedOffAsync(unscopedFinished, AbortToken);
+        await _AppendToNewAsync(unscopedStore, content.Length, content);
         await _AppendToNewAsync(unscopedStore, 1000, Faker.Random.Bytes(300));
 
-        var scopedFinished = await _CreateAsync(_Acme, content.Length, content);
+        await _CreateAsync(_Acme, content.Length, content);
         await _CreateAsync(_Globex, 1000, Faker.Random.Bytes(300));
-
-        using (_tenant.Change(_Acme))
-        {
-            await _store.MarkHandedOffAsync(scopedFinished, AbortToken);
-        }
 
         var foreignKey = _options.Prefix + "another-writer-object";
         await _PutAsync(foreignKey, Faker.Random.Bytes(10));
-        (await _ListKeysAsync(_options.Prefix)).Should().HaveCountGreaterThan(8);
+        (await _ListKeysAsync(_options.Prefix)).Should().HaveCountGreaterThan(6);
 
         // when - the provisioner the application registered, outside any tenant
         var provisioner = _provider
@@ -493,8 +478,8 @@ public sealed class MinioTusS3TenancyTests(TusS3MinioFixture fixture) : TusS3Ten
         base.should_build_a_final_upload_from_partial_uploads_of_the_same_tenant();
 
     [Fact]
-    public override Task should_purge_the_uploads_of_every_tenant_and_of_none_with_their_marks() =>
-        base.should_purge_the_uploads_of_every_tenant_and_of_none_with_their_marks();
+    public override Task should_purge_the_uploads_of_every_tenant_and_of_none() =>
+        base.should_purge_the_uploads_of_every_tenant_and_of_none();
 }
 
 [Collection<TusS3LocalStackFixture>]
@@ -537,6 +522,6 @@ public sealed class LocalStackTusS3TenancyTests(TusS3LocalStackFixture fixture) 
         base.should_build_a_final_upload_from_partial_uploads_of_the_same_tenant();
 
     [Fact]
-    public override Task should_purge_the_uploads_of_every_tenant_and_of_none_with_their_marks() =>
-        base.should_purge_the_uploads_of_every_tenant_and_of_none_with_their_marks();
+    public override Task should_purge_the_uploads_of_every_tenant_and_of_none() =>
+        base.should_purge_the_uploads_of_every_tenant_and_of_none();
 }

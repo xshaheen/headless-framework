@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using Headless.Context;
@@ -23,8 +22,8 @@ namespace Tests;
 /// Runs an application's upload endpoint against the store under test: the endpoint is declared through
 /// <c>AddHeadlessTus</c>, the store is selected through its provider's own registration, and a real server takes
 /// the requests. The scenarios pin what only a real store can break: the round trip of the entries the endpoint
-/// writes on an upload's record, the record of a handoff, and the per-tenant layout. The endpoint's responses in
-/// detail are the subject of its unit tests, not of this suite.
+/// writes on an upload's record and the per-tenant layout. The endpoint's responses in detail are the subject of
+/// its unit tests, not of this suite.
 /// </summary>
 /// <param name="createBackend">
 /// Creates the backend of one scenario. The scenario owns it and disposes it when it ends.
@@ -50,7 +49,6 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
     private static readonly TimeSpan _SignalTimeout = TimeSpan.FromSeconds(30);
 
     private readonly ITusUploadLayerConformanceBackend _backend = createBackend();
-    private readonly HandlerScript _handler = new();
     private readonly SemaphoreSlim _responseCompleted = new(0);
     private WebApplication? _app;
     private HttpClient? _client;
@@ -87,35 +85,6 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         _OffsetOf(own).Should().Be(100);
     }
 
-    public virtual async Task should_run_a_failed_handler_again_on_the_next_status_request_and_not_after_it_returned()
-    {
-        // given - a handler that fails on its first run
-        _handler.FailNextRun();
-        await _StartHostAsync(scopeByTenant: false);
-        var content = Faker.Random.Bytes(300);
-        var location = await _CreateUploadAsync(_Alice, content.Length);
-
-        // when - the last byte arrives
-        using var patch = await _PatchAsync(_Alice, location, content, offset: 0);
-
-        // then - the write fails, and the upload still owes its handler
-        patch.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        _handler.Uploads.Should().ContainSingle();
-
-        // when - the client asks where the upload stands
-        using var head = await _HeadAsync(_Alice, location);
-
-        // then - the handler ran again and took the upload over
-        head.StatusCode.Should().Be(HttpStatusCode.OK);
-        _OffsetOf(head).Should().Be(300);
-        _handler.Uploads.Should().HaveCount(2);
-
-        // and the store recorded the handoff, so another status request owes nothing
-        using var again = await _HeadAsync(_Alice, location);
-        again.StatusCode.Should().Be(HttpStatusCode.OK);
-        _handler.Uploads.Should().HaveCount(2);
-    }
-
     public virtual async Task should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant()
     {
         // given - the same user starts an upload in each of two tenants, so only the tenant tells the two apart
@@ -132,7 +101,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         await _ShouldNotReachAsync(_AliceAtGlobex, acme, acmeContent[100..], offset: 100);
         await _ShouldNotReachAsync(_AliceAtAcme, globex, globexContent[100..], offset: 100);
 
-        // and each upload finishes inside its own tenant, where its handler takes it over once
+        // and each upload finishes inside its own tenant
         await _WriteAsync(_AliceAtAcme, acme, acmeContent[100..], offset: 100);
         await _WriteAsync(_AliceAtGlobex, globex, globexContent[100..], offset: 100);
 
@@ -140,10 +109,6 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         using var globexHead = await _HeadAsync(_AliceAtGlobex, globex);
         _OffsetOf(acmeHead).Should().Be(300);
         _OffsetOf(globexHead).Should().Be(400);
-        _handler
-            .Uploads.Select(static upload => (upload.FileId, upload.TenantId, upload.Length))
-            .Should()
-            .Equal((_FileIdOf(acme), "acme", 300L), (_FileIdOf(globex), "globex", 400L));
 
         // and the store keeps everything it holds of an upload under that upload's tenant
         var names = await _backend.ListStoredNamesAsync(AbortToken);
@@ -174,7 +139,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         stored.Should().Contain("headless-");
     }
 
-    public virtual async Task should_keep_metadata_that_fills_the_stores_limit_through_the_handoff()
+    public virtual async Task should_keep_metadata_that_fills_the_stores_limit_until_the_upload_finishes()
     {
         // given - what the endpoint adds to this caller's metadata, measured on a first upload
         await _StartHostAsync(scopeByTenant: true);
@@ -195,46 +160,20 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         // then
         _MetadataOf(created).Should().Be(metadata);
 
-        // when - the upload finishes, and the store records the handoff beside metadata that already fills it
+        // when - the upload finishes, and the store rewrites its record beside metadata that already fills it
         await _WriteAsync(_AliceAtAcme, location, content, offset: 0);
         using var finished = await _HeadAsync(_AliceAtAcme, location);
 
-        // then - the record took, so the status request owed no second run, and the metadata is still whole
+        // then - the metadata is still whole
         finished.StatusCode.Should().Be(HttpStatusCode.OK);
         _OffsetOf(finished).Should().Be(300);
         _MetadataOf(finished).Should().Be(metadata);
-        _handler.Uploads.Should().ContainSingle();
-    }
-
-    public virtual async Task should_leave_nothing_of_a_scoped_upload_the_handler_asked_to_delete()
-    {
-        // given - a handler that takes what it needs and asks for the upload to be deleted
-        _handler.Handoff = TusUploadHandoff.Delete;
-        await _StartHostAsync(scopeByTenant: true);
-        var content = Faker.Random.Bytes(300);
-        var location = await _CreateUploadAsync(_AliceAtAcme, content.Length);
-        (await _backend.ListStoredNamesAsync(AbortToken)).Should().NotBeEmpty();
-
-        // when - the last byte arrives
-        using var patch = await _PatchAsync(_AliceAtAcme, location, content, offset: 0);
-
-        // then - the write is answered as complete
-        patch.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        _handler.Uploads.Should().ContainSingle().Which.TenantId.Should().Be("acme");
-
-        // and once the response is sent the store holds nothing of the upload, in its tenant's folder or outside it
-        (await _backend.ListStoredNamesAsync(AbortToken))
-            .Should()
-            .BeEmpty();
-
-        using var head = await _HeadAsync(_AliceAtAcme, location);
-        head.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     /// <summary>
     /// Starts the host of one scenario: the store registered the way an application registers it, one upload
-    /// endpoint with a completion handler, and, when <paramref name="scopeByTenant"/> is set, the tenancy setup
-    /// that scopes uploads by tenant.
+    /// endpoint, and, when <paramref name="scopeByTenant"/> is set, the tenancy setup that scopes uploads by
+    /// tenant.
     /// </summary>
     private async Task _StartHostAsync(bool scopeByTenant)
     {
@@ -247,7 +186,6 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         builder.WebHost.UseUrls("http://127.0.0.1:0");
 
         _backend.ConfigureServices(builder.Services);
-        builder.Services.AddSingleton(_handler);
         builder.Services.AddScoped<TestCurrentUser>();
         builder.Services.AddScoped<ICurrentUser>(static provider => provider.GetRequiredService<TestCurrentUser>());
 
@@ -259,8 +197,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
             tus.ConfigureExpiredUploadsCleanup(static options => options.Enabled = false);
 
             // A named endpoint, so an upload's record carries every entry the endpoint can write.
-            tus.AddUploadEndpoint(_EndpointName, static options => options.MaxSize = _MaxSize)
-                .OnCompleted<ScriptedHandler>();
+            tus.AddUploadEndpoint(_EndpointName, static options => options.MaxSize = _MaxSize);
         });
 
         if (scopeByTenant)
@@ -325,8 +262,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 
     /// <summary>
     /// Sends a tus request as <paramref name="caller"/> and returns once the server finished everything it does
-    /// for it, which includes what an endpoint defers until after the response: the removal of an upload its
-    /// handler asked to delete.
+    /// for it, which includes what an endpoint defers until after the response.
     /// </summary>
     private async Task<HttpResponseMessage> _SendAsync(
         Caller caller,
@@ -486,45 +422,4 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 
     /// <summary>Who a request is sent as: the signed-in user, and the tenant it runs in when it has one.</summary>
     private sealed record Caller(string User, string? Tenant);
-
-    /// <summary>
-    /// What the endpoint's <see cref="ScriptedHandler"/> does on each run, and every upload it was given, in
-    /// order.
-    /// </summary>
-    private sealed class HandlerScript
-    {
-        private int _failNextRun;
-
-        /// <summary>The upload of every run, failed runs included, in order.</summary>
-        public ConcurrentQueue<TusCompletedUpload> Uploads { get; } = new();
-
-        /// <summary>What a run that does not fail decides.</summary>
-        public TusUploadHandoff Handoff { get; set; } = TusUploadHandoff.Keep;
-
-        /// <summary>Makes the next run throw, as a handler does when something it depends on is unreachable.</summary>
-        public void FailNextRun()
-        {
-            Interlocked.Exchange(ref _failNextRun, 1);
-        }
-
-        public TusUploadHandoff Run(TusCompletedUpload upload)
-        {
-            Uploads.Enqueue(upload);
-
-            if (Interlocked.Exchange(ref _failNextRun, 0) == 1)
-            {
-                throw new IOException("The application could not take the upload over.");
-            }
-
-            return Handoff;
-        }
-    }
-
-    private sealed class ScriptedHandler(HandlerScript script) : ITusUploadCompletedHandler
-    {
-        public ValueTask<TusUploadHandoff> HandleAsync(TusCompletedUpload upload, CancellationToken cancellationToken)
-        {
-            return ValueTask.FromResult(script.Run(upload));
-        }
-    }
 }

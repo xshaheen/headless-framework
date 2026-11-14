@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using Headless.Testing.Tests;
@@ -398,52 +397,6 @@ public sealed class TusIsolationTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_run_the_completion_handler_of_the_endpoint_an_upload_is_reached_through()
-    {
-        // given - the default endpoint without a completion handler, and a videos endpoint with one, over one store
-        var recorder = new RecordingHandler();
-        var setup = new TusEndpointTestHostSetup
-        {
-            ConfigureTus = static (tus, store) =>
-            {
-                tus.UseStore(store);
-                tus.AddUploadEndpoint(static options => options.MaxSize = 1000);
-                tus.AddUploadEndpoint("videos", static options => options.MaxSize = 1000)
-                    .OnCompleted<RecordingHandler>();
-            },
-            ConfigureServices = services => services.AddSingleton(recorder),
-            Map = static endpoints =>
-            {
-                endpoints.MapHeadlessTus("/files");
-                endpoints.MapHeadlessTus("/videos", "videos");
-            },
-        };
-        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
-        var location = await host.CreateUploadAsync(uploadLength: 10, route: "/files");
-
-        // when - every byte of the default endpoint's upload is sent through the videos endpoint's path
-        using var patch = await host.PatchAsync(
-            $"/videos/{TusEndpointTestHost.FileIdOf(location)}",
-            new byte[10],
-            offset: 0
-        );
-
-        // then - nothing was written, so the upload is not complete and the videos handler was never given it
-        patch.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        recorder.Uploads.Should().BeEmpty();
-
-        using var own = await host.HeadAsync(location);
-        own.StatusCode.Should().Be(HttpStatusCode.OK);
-        own.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
-
-        // and the videos handler does run for an upload of its own endpoint
-        var video = await host.CreateUploadAsync(uploadLength: 10, route: "/videos");
-        using var videoPatch = await host.PatchAsync(video, new byte[10], offset: 0);
-        videoPatch.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        recorder.Uploads.Should().ContainSingle().Which.FileId.Should().Be(TusEndpointTestHost.FileIdOf(video));
-    }
-
-    [Fact]
     public async Task should_await_an_asynchronous_owner_function()
     {
         // given
@@ -769,19 +722,6 @@ public sealed class TusIsolationTests : TestBase
         var raw = await host.Store.GetUploadMetadataAsync(TusEndpointTestHost.FileIdOf(location), AbortToken);
 
         return TusEndpointTestHost.DecodeMetadata(raw);
-    }
-
-    /// <summary>A completion handler that keeps every upload and records each one it was given.</summary>
-    private sealed class RecordingHandler : ITusUploadCompletedHandler
-    {
-        public ConcurrentQueue<TusCompletedUpload> Uploads { get; } = new();
-
-        public ValueTask<TusUploadHandoff> HandleAsync(TusCompletedUpload upload, CancellationToken cancellationToken)
-        {
-            Uploads.Enqueue(upload);
-
-            return ValueTask.FromResult(TusUploadHandoff.Keep);
-        }
     }
 
     /// <summary>A store whose metadata read fails, on demand, the way an unreachable backend does.</summary>

@@ -10,8 +10,8 @@ namespace Headless.Tus;
 public sealed partial class TusS3Store
 {
     /// <summary>
-    /// Removes everything the upload owns: every multipart upload under its finished key, its finished object,
-    /// completed record, and handed-off mark, and its working set (state object and tail segments, recorded or not).
+    /// Removes everything the upload owns: every multipart upload under its finished key, its finished object and
+    /// completed record, and its working set (state object and tail segments, recorded or not).
     /// </summary>
     /// <param name="fileId">the TUS file identifier to delete</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
@@ -122,8 +122,8 @@ public sealed partial class TusS3Store
     }
 
     /// <summary>
-    /// Deletes the upload's finished object, completed record, and handed-off mark together with its listed working
-    /// set, then its state object last.
+    /// Deletes the upload's finished object and completed record together with its listed working set, then its
+    /// state object last.
     /// </summary>
     private async Task _DeleteUploadObjectsAsync(
         TusS3Keys keys,
@@ -137,7 +137,6 @@ public sealed partial class TusS3Store
         [
             keys.FinishedObject(fileId),
             keys.CompletedRecord(fileId),
-            keys.HandedOffMark(fileId),
             .. workingSet.Where(key => !string.Equals(key, infoKey, StringComparison.Ordinal)),
         ];
 

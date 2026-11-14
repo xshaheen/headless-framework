@@ -51,14 +51,6 @@ public static class TusEndpointRouteBuilderExtensions
         /// check. Every refusal is a plain-text response.
         /// </para>
         /// <para>
-        /// An endpoint that names a completion handler through <c>OnCompleted</c> hands it each upload whose last
-        /// byte is stored, and <see cref="ITusUploadCompletedHandler"/> describes when the handler runs and runs
-        /// again. An upload the handler refuses is removed and its request answered with 400 and the handler's
-        /// reason. A client may delete its upload until the handler has taken it over, and is answered with 403
-        /// afterwards. A status request for an upload whose handler is still owed runs the handler first, and is
-        /// answered with 423 when that fails, which is the status a tus client asks again after.
-        /// </para>
-        /// <para>
         /// The name keeps the <c>Headless</c> prefix because tusdotnet already declares <c>MapTus</c> on
         /// <see cref="IEndpointRouteBuilder"/> in the <c>tusdotnet</c> namespace, which every tus host imports.
         /// <c>MapTus</c> maps an endpoint from a configuration the application builds by hand and applies none of
@@ -140,24 +132,8 @@ public static class TusEndpointRouteBuilderExtensions
         }
 
         var factory = endpoints.ServiceProvider.GetRequiredService<TusConfigurationFactory>();
-        var builder = endpoints.MapTus(pattern, context => factory.CreateAsync(context, endpoint));
 
-        if (endpoint.CompletedHandler is not null)
-        {
-            endpoints.ServiceProvider.GetRequiredService<TusCompletionRunner>().WarnWhenTheHandlerRunsOnce(endpoint);
-
-            // tusdotnet's completion event cannot fail its request, so a handler's refusal is answered around
-            // tusdotnet's own request delegate.
-            builder.Add(static endpointBuilder =>
-            {
-                if (endpointBuilder.RequestDelegate is { } requestDelegate)
-                {
-                    endpointBuilder.RequestDelegate = TusCompletionRunner.AnswerRejection(requestDelegate);
-                }
-            });
-        }
-
-        return builder;
+        return endpoints.MapTus(pattern, context => factory.CreateAsync(context, endpoint));
     }
 
     /// <summary>

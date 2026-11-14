@@ -22,7 +22,6 @@ internal sealed class TusConfigurationFactory(
     IOptionsMonitor<TusUploadEndpointOptions> options,
     TusUploadAuthorizer authorizer,
     TusContentCheck contentCheck,
-    TusCompletionRunner completion,
     ITusFileLockProvider? fileLockProvider = null
 )
 {
@@ -38,27 +37,18 @@ internal sealed class TusConfigurationFactory(
 
         var stampedStore = new TusStampedStore(store, caller);
 
-        // A write to, or the completion of, the upload this request created is part of that creating request,
-        // not a request of its own.
+        // A write to the upload this request created is part of that creating request, not a request of its own.
         bool createdByThisRequest(string fileId) =>
             string.Equals(fileId, stampedStore.CreatedFileId, StringComparison.Ordinal);
 
         var events = new Events
         {
-            OnAuthorizeAsync = authorize => _AuthorizeAsync(authorize, endpoint, caller),
+            OnAuthorizeAsync = authorize => authorizer.AuthorizeAsync(authorize, caller),
             OnBeforeCreateAsync = create =>
                 TusCreateValidation.ValidateAsync(create, endpoint, endpointOptions, _Owner(caller)),
             OnBeforeWriteAsync = write =>
                 contentCheck.CheckAsync(write, endpointOptions, caller?.TenantId, createdByThisRequest(write.FileId)),
         };
-
-        // Without a handler nothing is ever handed off, so a client may delete any of its uploads.
-        if (endpoint.CompletedHandler is { } handlerType)
-        {
-            events.OnBeforeDeleteAsync = completion.AuthorizeDeleteAsync;
-            events.OnFileCompleteAsync = complete =>
-                completion.CompleteAsync(complete, handlerType, _Owner(caller), createdByThisRequest(complete.FileId));
-        }
 
         var configuration = new DefaultTusConfiguration
         {
@@ -76,29 +66,6 @@ internal sealed class TusConfigurationFactory(
         }
 
         return configuration;
-    }
-
-    /// <summary>
-    /// Decides whether the request may go on and, for a status request the upload's own caller sent, first runs
-    /// a completion handler the upload still owes.
-    /// </summary>
-    private async Task _AuthorizeAsync(
-        AuthorizeContext context,
-        TusEndpointRegistration endpoint,
-        TusUploadStamp? caller
-    )
-    {
-        await authorizer.AuthorizeAsync(context, caller).ConfigureAwait(false);
-
-        if (
-            !context.HasFailed
-            && caller is not null
-            && context.Intent == IntentType.GetFileInfo
-            && endpoint.CompletedHandler is { } handlerType
-        )
-        {
-            await completion.RunOwedHandlerAsync(context, handlerType, caller).ConfigureAwait(false);
-        }
     }
 
     /// <summary>

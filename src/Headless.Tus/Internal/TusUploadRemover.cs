@@ -9,8 +9,7 @@ using tusdotnet.Interfaces;
 namespace Headless.Tus.Internal;
 
 /// <summary>
-/// Removes an upload the endpoint itself decided to remove: one whose content it refused, or one the
-/// application's completion handler asked to have deleted or refused.
+/// Removes an upload the endpoint itself decided to remove: one whose content it refused.
 /// </summary>
 /// <remarks>
 /// A removal is never tied to the request: the decision stands whether or not the client is still there, so a
@@ -41,7 +40,7 @@ internal sealed partial class TusUploadRemover(ITusStore store, ILogger<TusUploa
     /// <summary>
     /// Removes the upload once the response to <paramref name="httpContext"/> is sent, for a request whose answer
     /// still needs the upload: tusdotnet reads an upload's offset to build the response to the request that
-    /// created it or asked for its status.
+    /// created it.
     /// </summary>
     /// <param name="httpContext">The request being answered.</param>
     /// <param name="fileId">The upload to remove.</param>

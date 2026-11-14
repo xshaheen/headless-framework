@@ -34,12 +34,6 @@ public sealed class TusS3KeysTests : TestBase
     }
 
     [Fact]
-    public void should_place_the_handed_off_mark_in_a_folder_of_its_own()
-    {
-        _keys.HandedOffMark(_FileId).Should().Be("uploads/.tus-handed-off/" + _FileId);
-    }
-
-    [Fact]
     public void should_place_every_key_of_a_tenants_upload_under_the_tenants_folder_of_its_root()
     {
         _acmeKeys.FinishedObject(_FileId).Should().Be($"uploads/.tenants/acme/{_FileId}");
@@ -51,7 +45,6 @@ public sealed class TusS3KeysTests : TestBase
             .Should()
             .Be($"uploads/.tus/.tenants/acme/{_FileId}/seg/0000000000000000005-nonce");
         _acmeKeys.CompletedRecord(_FileId).Should().Be($"uploads/.tus-completed/.tenants/acme/{_FileId}");
-        _acmeKeys.HandedOffMark(_FileId).Should().Be($"uploads/.tus-handed-off/.tenants/acme/{_FileId}");
     }
 
     [Fact]
@@ -94,7 +87,6 @@ public sealed class TusS3KeysTests : TestBase
     [InlineData("a\\b")]
     [InlineData(".tus")]
     [InlineData(".tus-completed")]
-    [InlineData(".tus-handed-off")]
     [InlineData(".")]
     [InlineData("..")]
     [InlineData(" leading")]

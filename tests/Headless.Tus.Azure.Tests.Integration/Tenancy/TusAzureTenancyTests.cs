@@ -60,15 +60,10 @@ public sealed class TusAzureTenancyTests(TusAzureFixture fixture) : TestBase
     [Fact]
     public async Task should_keep_a_tenants_upload_under_the_tenants_folder()
     {
-        // given - an upload in progress and a finished, handed-off one
+        // given - an upload in progress and a finished one
         var inProgress = await _CreateAsync(_Acme, 1_000, Faker.Random.Bytes(300));
         var content = Faker.Random.Bytes(400);
         var finished = await _CreateAsync(_Acme, content.Length, content);
-
-        using (_tenant.Change(_Acme))
-        {
-            await _store.MarkHandedOffAsync(finished, AbortToken);
-        }
 
         // then - each upload is one blob under the tenant's folder, and nothing sits anywhere else
         var prefix = _options.BlobPrefix;
@@ -81,7 +76,6 @@ public sealed class TusAzureTenancyTests(TusAzureFixture fixture) : TestBase
         {
             (await _store.GetUploadOffsetAsync(inProgress, AbortToken)).Should().Be(300);
             (await _ReadAsync(finished)).Should().Equal(content);
-            (await _store.GetHandoffStateAsync(finished, AbortToken)).Should().Be(TusHandoffState.HandedOff);
         }
     }
 
@@ -102,7 +96,6 @@ public sealed class TusAzureTenancyTests(TusAzureFixture fixture) : TestBase
             (await _store.GetFileAsync(fileId, AbortToken)).Should().BeNull();
             (await _store.GetUploadLengthAsync(fileId, AbortToken)).Should().BeNull();
             (await _store.GetUploadMetadataAsync(fileId, AbortToken)).Should().BeNull();
-            (await _store.GetHandoffStateAsync(fileId, AbortToken)).Should().Be(TusHandoffState.NotComplete);
             await _store.DeleteFileAsync(fileId, AbortToken);
         }
 
@@ -234,20 +227,14 @@ public sealed class TusAzureTenancyTests(TusAzureFixture fixture) : TestBase
     [Fact]
     public async Task should_purge_the_uploads_of_every_tenant_and_of_none()
     {
-        // given - in a tenant and outside any: a handed-off upload and one in progress; and another writer's blob
+        // given - in a tenant and outside any: a finished upload and one in progress; and another writer's blob
         var unscopedStore = _CreateUnscopedStore();
         var content = Faker.Random.Bytes(400);
-        var unscopedFinished = await _AppendToNewAsync(unscopedStore, content.Length, content);
-        await unscopedStore.MarkHandedOffAsync(unscopedFinished, AbortToken);
+        await _AppendToNewAsync(unscopedStore, content.Length, content);
         await _AppendToNewAsync(unscopedStore, 1_000, Faker.Random.Bytes(300));
 
-        var scopedFinished = await _CreateAsync(_Acme, content.Length, content);
+        await _CreateAsync(_Acme, content.Length, content);
         await _CreateAsync(_Globex, 1_000, Faker.Random.Bytes(300));
-
-        using (_tenant.Change(_Acme))
-        {
-            await _store.MarkHandedOffAsync(scopedFinished, AbortToken);
-        }
 
         var foreignBlob = $"{_options.BlobPrefix.TrimEnd('/')}-other/kept";
         await _Container.UploadBlobAsync(foreignBlob, BinaryData.FromString("data"), AbortToken);
