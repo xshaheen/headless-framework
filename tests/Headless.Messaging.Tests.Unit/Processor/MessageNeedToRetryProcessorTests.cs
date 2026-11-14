@@ -1328,7 +1328,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         selector.SelectCandidates().Returns([descriptor]);
         selector
             .SelectBestCandidate(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConsumerExecutorDescriptor>>())
-            .Returns(call => call.Arg<IReadOnlyList<ConsumerExecutorDescriptor>>().FirstOrDefault());
+            .Returns(call => call.Arg<IReadOnlyList<ConsumerExecutorDescriptor>>() is [var first, ..] ? first : null);
 
         return new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),

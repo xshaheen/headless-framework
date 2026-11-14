@@ -50,7 +50,9 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
         var probe = new PipelineProbe
         {
             Behavior = static (id, attempt, _) =>
-                id == _Retried && attempt == 1 ? throw new InvalidOperationException("boom") : ValueTask.CompletedTask,
+                string.Equals(id, _Retried, StringComparison.Ordinal) && attempt == 1
+                    ? throw new InvalidOperationException("boom")
+                    : ValueTask.CompletedTask,
         };
         await using var host = await PipelineHosts.StartAsync(
             probe,
