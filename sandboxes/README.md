@@ -73,6 +73,7 @@ short cadences (progress writes every 500 ms, a 30 s lease, a 5 s fallback poll)
 | `message-operator-log` | One failed message re-executed, and one consumed message held then released, all by `sandbox-seed` | The Operator log with three operation types, and a received message with an original and a replay generation |
 | `message-circuit-open` | Two messages that time out in `sandbox.payments`, which opens its circuit | An open circuit on the Circuits view, and Reset |
 | `message-backlog` | Five Queue-lane messages that `sandbox.stock-counts` takes 45 s to 165 s to handle | A received backlog that drains one row every 30 s, for under three minutes |
+| `message-rate-limited` | Six Queue-lane messages for `sandbox.carrier-quotes`, which handles one every 30 s | Received rows that wait for a rate-limit permit and drain one every 30 s. Run it with `message-retrying`: the shipments' retries still run when they are due |
 | `message-publish-failed` | One message published with a delivery deadline that has already passed when it is sent | A published row that failed for good, with Re-send and Delete |
 
 The host also defines `sandbox.nightly-report` in code with a daily cron schedule, so the Cron jobs view always lists
@@ -88,14 +89,15 @@ stop it.
 per-checkout PostgreSQL volume, built with `EnsureCreated` instead of migrations; after a Jobs schema change, run
 `make sandbox-reset CONFIRM=1` to drop it. With `STORE=postgres` Messaging stores its rows there too; its transport is always in memory.
 
-The sandbox consumers' failures are deliberate, so a `FailOn<InvalidOperationException>()` default failure policy with no retries makes them terminal at once. Inbox operations such as Force reprocess act only on terminal generations. Three consumers differ, each for one state:
+The sandbox consumers' failures are deliberate, so a `FailOn<InvalidOperationException>()` default failure policy with no retries makes them terminal at once. Inbox operations such as Force reprocess act only on terminal generations. Four consumers differ, each for one state:
 
 | Consumer | Lane | Differs by | State it holds |
 | --- | --- | --- | --- |
 | `sandbox.shipments` | Queue | A failure policy of eight delayed retries, from 1 minute up to 15 | Failed rows with a retry pending |
 | `sandbox.payments` | Bus | A circuit breaker that opens after two timeouts in a row, for 30 minutes | An open circuit. While it is open the consumer receives nothing, so a later message for it waits in the transport until Reset, or until the 30 minutes pass |
 | `sandbox.stock-counts` | Queue | A handler that takes as long as the message asks, eight messages at a time | Received rows that wait to be handled |
+| `sandbox.carrier-quotes` | Queue | A rate limit of one delivery every 30 s | Received rows that wait for a permit. Its message has no declared contract, so the Contracts view does not list it |
 
-The host declares a contract for each of its four messages under the message's type name, so the Contracts view lists them. The scenarios act on received rows as the operator `sandbox-seed`, through the store's inbox operations, the ones the dashboard's commands call.
+The host declares a contract for four of its messages under the message's type name, so the Contracts view lists them. The scenarios act on received rows as the operator `sandbox-seed`, through the store's inbox operations, the ones the dashboard's commands call.
 
 The in-memory transport never fails a send, so `message-publish-failed` ends its row another way: the message's delivery deadline (`DeliverWithin`) has passed before the stored row is dispatched, and the row becomes `Failed` without a send. Re-send on that row fails again for the same reason.

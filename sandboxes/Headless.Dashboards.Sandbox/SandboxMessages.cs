@@ -128,6 +128,23 @@ public sealed class SandboxStockCountedConsumer : IConsume<SandboxStockCounted>
     }
 }
 
+/// <summary>A Queue-lane message whose consumer the host limits to one delivery every 30 seconds.</summary>
+/// <param name="QuoteId">Sequence number, visible in the message content.</param>
+public sealed record SandboxQuoteRequested(int QuoteId);
+
+/// <summary>
+/// Consumes <see cref="SandboxQuoteRequested"/> at once and always succeeds. The host's rate limit is what makes a
+/// burst wait, so its received rows stay stored and unhandled past the dispatch grace, where retry pickup finds them.
+/// </summary>
+[QueueConsumer(SandboxConsumerIds.CarrierQuotes)]
+public sealed class SandboxQuoteRequestedConsumer : IConsume<SandboxQuoteRequested>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<SandboxQuoteRequested> context, CancellationToken cancellationToken)
+    {
+        return ValueTask.CompletedTask;
+    }
+}
+
 /// <summary>The stable consumer identities the host tunes and the scenarios name.</summary>
 public static class SandboxConsumerIds
 {
@@ -135,4 +152,5 @@ public static class SandboxConsumerIds
     public const string Shipments = "sandbox.shipments";
     public const string Payments = "sandbox.payments";
     public const string StockCounts = "sandbox.stock-counts";
+    public const string CarrierQuotes = "sandbox.carrier-quotes";
 }

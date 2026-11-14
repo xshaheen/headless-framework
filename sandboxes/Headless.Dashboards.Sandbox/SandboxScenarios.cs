@@ -81,6 +81,8 @@ public static class SandboxScenarios
             "Two messages that time out in sandbox.payments, whose circuit opens after two failures and stays open for 30 minutes.",
         ["message-backlog"] =
             "Five Queue-lane messages that sandbox.stock-counts takes 45 s to 165 s to handle: a received backlog that drains one row every 30 s.",
+        ["message-rate-limited"] =
+            "Six Queue-lane messages for sandbox.carrier-quotes, which handles one every 30 s: rows that wait for a permit past the dispatch grace while other consumers' retries still run on time.",
         ["message-publish-failed"] =
             "One message published with a delivery deadline that has passed by the time it is sent: a published row that failed for good.",
     };
@@ -157,6 +159,7 @@ public static class SandboxScenarios
             "message-operator-log" => await _RecordOperatorActionsAsync(services, cancellationToken),
             "message-circuit-open" => await _TripPaymentsCircuitAsync(bus, cancellationToken),
             "message-backlog" => await _EnqueueStockCountsAsync(queue, cancellationToken),
+            "message-rate-limited" => await _EnqueueQuotesAsync(queue, cancellationToken),
             "message-publish-failed" =>
             [
                 _Id(
@@ -426,6 +429,23 @@ public static class SandboxScenarios
         for (var index = 0; index < 5; index++)
         {
             var message = new SandboxStockCounted(Sku: 4001 + index, CountSeconds: 45 + (30 * index));
+            receipts.Add(_Id(await queue.EnqueueAsync(message, cancellationToken)));
+        }
+
+        return receipts;
+    }
+
+    // One more than a 30 s window handles before the dispatch grace ends, so the later rows are due for retry pickup
+    // while their deliveries still wait.
+    private static async Task<IReadOnlyList<string>> _EnqueueQuotesAsync(
+        IQueue queue,
+        CancellationToken cancellationToken
+    )
+    {
+        var receipts = new List<string>();
+        for (var index = 0; index < 6; index++)
+        {
+            var message = new SandboxQuoteRequested(QuoteId: 5001 + index);
             receipts.Add(_Id(await queue.EnqueueAsync(message, cancellationToken)));
         }
 
