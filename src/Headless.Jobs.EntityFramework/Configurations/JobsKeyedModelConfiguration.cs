@@ -115,6 +115,14 @@ internal static class JobsKeyedModelConfiguration
         var current = column(nameof(TimeJobEntity.IsCurrentGeneration));
         var parent = column(nameof(TimeJobEntity.ParentId));
         var condition = column(nameof(TimeJobEntity.RunCondition));
+        // The peek and every claim filter to the not-yet-started rows and read them in (ExecutionTime, Id) order. Filtered
+        // to those rows, the index stays the size of the backlog instead of the whole history, and the scan reads it in
+        // order and stops at its page instead of skipping past every finished row. Built here, from the final column
+        // names, because a consumer may rename Status after the Jobs configuration ran.
+        builder
+            .HasIndex(nameof(TimeJobEntity.ExecutionTime), nameof(TimeJobEntity.Id))
+            .HasFilter($"{column(nameof(TimeJobEntity.Status))} IN ('Idle', 'Queued')")
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, tableName, "ExecutionTime", "Id", "Claimable"));
         var tenantFilter = $"{key} IS NOT NULL AND {tenant} IS NOT NULL";
         var systemFilter = $"{key} IS NOT NULL AND {tenant} IS NULL";
         builder

@@ -108,14 +108,50 @@ internal sealed class ExceptionDetailClassForSerialization
                     )
                 );
 
-        return JsonSerializer.Serialize(
-            new ExceptionDetailClassForSerialization
+        var fullStackTrace = stackTrace.Length == 0 ? null : stackTrace;
+        var detail = new ExceptionDetailClassForSerialization
+        {
+            Type = exception.GetType().FullName,
+            Message = exception.Message,
+            StackTrace = fullStackTrace,
+        };
+
+        // Bound the fields, not the JSON text: cutting the serialized string would leave JSON the dashboard can no
+        // longer read. The message keeps the first quarter of the budget so a long stack cannot crowd it out, and the
+        // stack takes what is left. JSON escaping can make the text longer than its fields (a newline is two
+        // characters, a control character six), so each pass cuts the stack, then the message, by its share of the overshoot.
+        var messageLimit = JobExceptionText.StoredMaxLength / 4;
+        var stackLimit = JobExceptionText.StoredMaxLength;
+
+        while (true)
+        {
+            detail.Message = exception.Message.TruncateEnd(messageLimit, JobExceptionText.TruncationMarker);
+            detail.StackTrace = fullStackTrace.TruncateEnd(stackLimit, JobExceptionText.TruncationMarker);
+            var json = JsonSerializer.Serialize(
+                detail,
+                JobsExceptionJsonContext.Default.ExceptionDetailClassForSerialization
+            );
+            var overshoot = json.Length - JobExceptionText.StoredMaxLength;
+
+            if (overshoot <= 0 || (messageLimit == 0 && stackLimit == 0))
             {
-                Type = exception.GetType().FullName,
-                Message = exception.Message,
-                StackTrace = stackTrace.Length == 0 ? null : stackTrace,
-            },
-            JobsExceptionJsonContext.Default.ExceptionDetailClassForSerialization
-        );
+                return json;
+            }
+
+            if (detail.StackTrace is { Length: > 0 } stack)
+            {
+                stackLimit = _Shrink(stack.Length, overshoot, json.Length);
+            }
+            else
+            {
+                stackLimit = 0;
+                messageLimit = _Shrink(detail.Message.Length, overshoot, json.Length);
+            }
+        }
     }
+
+    // Cuts a field by its share of the overshoot: a field that escapes to six characters each shrinks by a sixth of the
+    // overshoot, not by all of it, so it keeps as much text as fits. Always cuts at least one character, so the loop ends.
+    private static int _Shrink(int length, int overshoot, int jsonLength) =>
+        Math.Max(0, length - Math.Max(1, (int)Math.Ceiling((double)overshoot * length / jsonLength)));
 }

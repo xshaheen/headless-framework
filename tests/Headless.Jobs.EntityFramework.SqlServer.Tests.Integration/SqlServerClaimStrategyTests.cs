@@ -380,6 +380,94 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
     }
 
     [Fact]
+    public async Task cas_cron_waves_over_the_same_definitions_in_opposite_order_do_not_deadlock()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("cas-fence-order");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        // Started for the owner identity the claim stamps; the yearly expression and a far next-due keep the host's own
+        // scheduler off these definitions.
+        await host.StartAsync(ct);
+
+        try
+        {
+            var strategy = ActivatorUtilities.CreateInstance<
+                EfCoreCasJobsClaimStrategy<JobsDbContext, TimeJobEntity, CronJobEntity>
+            >(host.Services);
+            var definitionIds = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+            foreach (var id in definitionIds)
+            {
+                await fixture.SeedCronJobAsync(
+                    id,
+                    "fence-order",
+                    "0 0 1 1 *",
+                    NodeDeathPolicy.Retry,
+                    ct,
+                    nextDueOffsetSeconds: 86_400
+                );
+            }
+
+            var start = DateTime.UtcNow;
+            var baseInstant = new DateTime(
+                start.Year,
+                start.Month,
+                start.Day,
+                start.Hour,
+                start.Minute,
+                0,
+                DateTimeKind.Utc
+            ).AddDays(-1);
+
+            // Each round claims the same instant from both ends: before the fence loop ran in one global order, the
+            // two transactions locked the definitions in opposite orders and one became a deadlock victim.
+            for (var round = 0; round < 20; round++)
+            {
+                var instant = baseInstant.AddMinutes(round);
+                var forward = definitionIds.Select(_Context).ToArray();
+                var backward = definitionIds.Reverse().Select(_Context).ToArray();
+
+                var claims = await Task.WhenAll(
+                    Task.Run(
+                        () => strategy.ClaimCronJobOccurrencesAsync((instant, forward), ct).ToArrayAsync(ct).AsTask(),
+                        ct
+                    ),
+                    Task.Run(
+                        () => strategy.ClaimCronJobOccurrencesAsync((instant, backward), ct).ToArrayAsync(ct).AsTask(),
+                        ct
+                    )
+                );
+
+                claims
+                    .SelectMany(x => x)
+                    .Should()
+                    .HaveCount(definitionIds.Length, "each definition fires once per instant");
+                foreach (var (claimed, input) in claims.Zip([forward, backward]))
+                {
+                    var inputOrder = input.Select(x => x.Id).ToList();
+                    claimed
+                        .Select(x => inputOrder.IndexOf(x.CronJobId))
+                        .Should()
+                        .BeInAscendingOrder("results keep the order the caller passed");
+                }
+            }
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+
+        static JobManagerDispatchContext _Context(Guid id) =>
+            new(id)
+            {
+                FunctionName = "fence-order",
+                Expression = "0 0 1 1 *",
+                OnNodeDeath = NodeDeathPolicy.Retry,
+                NextCronOccurrence = null,
+            };
+    }
+
+    [Fact]
     public async Task cancellation_before_commit_rolls_back_mutations()
     {
         var ct = AbortToken;
@@ -604,6 +692,8 @@ internal sealed class SqlServerMappedJobsDbContext(DbContextOptions<SqlServerMap
             entity.ToTable("native_time_jobs", "mapped_jobs");
             entity.Property(x => x.Id).HasColumnName("job_id");
             entity.Property(x => x.Status).HasColumnName("job_status");
+            // Filters are SQL text, so a column renamed after the Jobs configuration ran needs its filter restated.
+            entity.HasIndex(x => new { x.ExecutionTime, x.Id }).HasFilter("[job_status] IN (N'Idle', N'Queued')");
             entity.ComplexProperty(x => x.Lease).Property(x => x.Holder).HasColumnName("owner_key");
             entity.ComplexProperty(x => x.Lease).Property(x => x.ExpiresAt).HasColumnName("lease_until");
             entity.Property(x => x.OnNodeDeath).HasColumnName("death_policy");
@@ -621,6 +711,9 @@ internal sealed class SqlServerMappedJobsDbContext(DbContextOptions<SqlServerMap
             entity.Property(x => x.CorrelationId).HasColumnName("correlation_key");
             entity.Property(x => x.CausationId).HasColumnName("causation_key");
             entity.Property(x => x.Status).HasColumnName("occurrence_status");
+            entity
+                .HasIndex(x => new { x.ExecutionTime, x.Id })
+                .HasFilter("[occurrence_status] IN (N'Idle', N'Queued')");
             entity.ComplexProperty(x => x.Lease).Property(x => x.Holder).HasColumnName("occurrence_owner");
             entity.Property(x => x.ExecutionTime).HasColumnName("occurrence_time");
             entity.Property(x => x.CronJobId).HasColumnName("cron_key");

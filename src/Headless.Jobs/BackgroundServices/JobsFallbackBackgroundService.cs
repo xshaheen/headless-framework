@@ -30,6 +30,7 @@ internal sealed class JobsFallbackBackgroundService(
     private int _started;
     private long _lastOrphanSweepTimestamp;
     private long _lastStallSweepTimestamp;
+    private long _lastReservationSweepTimestamp;
     private readonly TimeSpan _fallbackJobPeriod = schedulerOptions.FallbackIntervalChecker;
 
     // One cadence with the dead-owner bridge, which resolves the same value and logs the clamp. Only the durable path
@@ -103,6 +104,7 @@ internal sealed class JobsFallbackBackgroundService(
                 // dead-node sweep.
                 await _ReclaimStalledResourcesAsync(loopToken).ConfigureAwait(false);
                 await _ReclaimOrphanedOwnersAsync(loopToken).ConfigureAwait(false);
+                await _DeleteExpiredReservationsAsync(loopToken).ConfigureAwait(false);
 
                 var functions = await internalJobsManager.RunTimedOutTickers(loopToken).ConfigureAwait(false);
 
@@ -211,6 +213,24 @@ internal sealed class JobsFallbackBackgroundService(
         _lastStallSweepTimestamp = timeProvider.GetTimestamp();
 
         await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
+    }
+
+    // Idempotency reservations are only reused when their own key returns, so with distinct keys the store would keep
+    // every key ever used. Gated like the stall sweep: once per period, also while timed-out work drains, and stamped
+    // before the call so a failing sweep is not retried on the next spin.
+    private async Task _DeleteExpiredReservationsAsync(CancellationToken cancellationToken)
+    {
+        if (
+            _lastReservationSweepTimestamp != 0
+            && timeProvider.GetElapsedTime(_lastReservationSweepTimestamp) < _fallbackJobPeriod
+        )
+        {
+            return;
+        }
+
+        _lastReservationSweepTimestamp = timeProvider.GetTimestamp();
+
+        await internalJobsManager.DeleteExpiredIdempotencyReservationsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // Recovers rows stamped by an owner identity that is no longer a live member: a Dead identity, a superseded
