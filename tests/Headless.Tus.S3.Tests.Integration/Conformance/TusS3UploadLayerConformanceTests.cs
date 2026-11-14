@@ -15,6 +15,18 @@ public sealed class MinioTusS3UploadLayerConformanceTests(TusS3MinioFixture fixt
         base.should_answer_not_found_to_another_owner_and_leave_the_upload_untouched();
 
     [Fact]
+    public override Task should_give_the_application_the_creators_finished_upload_and_nothing_to_another_owner() =>
+        base.should_give_the_application_the_creators_finished_upload_and_nothing_to_another_owner();
+
+    [Fact]
+    public override Task should_give_a_request_with_no_tenant_nothing_when_uploads_are_scoped_by_tenant() =>
+        base.should_give_a_request_with_no_tenant_nothing_when_uploads_are_scoped_by_tenant();
+
+    [Fact]
+    public override Task should_refuse_a_clients_delete_of_a_finished_upload_and_leave_nothing_once_the_application_deletes_it() =>
+        base.should_refuse_a_clients_delete_of_a_finished_upload_and_leave_nothing_once_the_application_deletes_it();
+
+    [Fact]
     public override Task should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant() =>
         base.should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant();
 
@@ -34,6 +46,18 @@ public sealed class LocalStackTusS3UploadLayerConformanceTests(TusS3LocalStackFi
     [Fact]
     public override Task should_answer_not_found_to_another_owner_and_leave_the_upload_untouched() =>
         base.should_answer_not_found_to_another_owner_and_leave_the_upload_untouched();
+
+    [Fact]
+    public override Task should_give_the_application_the_creators_finished_upload_and_nothing_to_another_owner() =>
+        base.should_give_the_application_the_creators_finished_upload_and_nothing_to_another_owner();
+
+    [Fact]
+    public override Task should_give_a_request_with_no_tenant_nothing_when_uploads_are_scoped_by_tenant() =>
+        base.should_give_a_request_with_no_tenant_nothing_when_uploads_are_scoped_by_tenant();
+
+    [Fact]
+    public override Task should_refuse_a_clients_delete_of_a_finished_upload_and_leave_nothing_once_the_application_deletes_it() =>
+        base.should_refuse_a_clients_delete_of_a_finished_upload_and_leave_nothing_once_the_application_deletes_it();
 
     [Fact]
     public override Task should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant() =>

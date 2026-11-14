@@ -22,8 +22,8 @@ namespace Tests;
 /// Runs an application's upload endpoint against the store under test: the endpoint is declared through
 /// <c>AddHeadlessTus</c>, the store is selected through its provider's own registration, and a real server takes
 /// the requests. The scenarios pin what only a real store can break: the round trip of the entries the endpoint
-/// writes on an upload's record and the per-tenant layout. The endpoint's responses in detail are the subject of
-/// its unit tests, not of this suite.
+/// writes on an upload's record, the per-tenant layout, and the content and removal of a finished upload the
+/// application asks for. The endpoint's responses in detail are the subject of its unit tests, not of this suite.
 /// </summary>
 /// <param name="createBackend">
 /// Creates the backend of one scenario. The scenario owns it and disposes it when it ends.
@@ -32,6 +32,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
     : TestBase
 {
     private const string _Route = "/files";
+    private const string _Claims = "/claims";
     private const string _EndpointName = "documents";
     private const long _MaxSize = 1024 * 1024;
     private const string _UserHeader = "X-Test-User";
@@ -85,6 +86,67 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         _OffsetOf(own).Should().Be(100);
     }
 
+    public virtual async Task should_give_the_application_the_creators_finished_upload_and_nothing_to_another_owner()
+    {
+        // given - alice's finished upload
+        await _StartHostAsync(scopeByTenant: false);
+        var content = Faker.Random.Bytes(300);
+        var location = await _CreateUploadAsync(_Alice, content.Length);
+        await _WriteAsync(_Alice, location, content, offset: 0);
+
+        // when - a request of alice's names it, and then one of bob's
+        using var own = await _ClaimAsync(_Alice, location);
+        using var foreign = await _ClaimAsync(_Bob, location);
+
+        // then - the application reads back what alice sent, and is given nothing for bob
+        own.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await own.Content.ReadAsByteArrayAsync(AbortToken)).Should().Equal(content);
+        foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    public virtual async Task should_give_a_request_with_no_tenant_nothing_when_uploads_are_scoped_by_tenant()
+    {
+        // given - a finished upload of the acme tenant
+        await _StartHostAsync(scopeByTenant: true);
+        var content = Faker.Random.Bytes(300);
+        var location = await _CreateUploadAsync(_AliceAtAcme, content.Length);
+        await _WriteAsync(_AliceAtAcme, location, content, offset: 0);
+
+        // when - a request that runs in no tenant names it
+        using var claim = await _ClaimAsync(_Alice, location);
+
+        // then - it is answered like any upload that is not the caller's: the store, which refuses to look outside
+        // a tenant, is never asked
+        claim.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    public virtual async Task should_refuse_a_clients_delete_of_a_finished_upload_and_leave_nothing_once_the_application_deletes_it()
+    {
+        // given - a finished upload of the acme tenant
+        await _StartHostAsync(scopeByTenant: true);
+        var content = Faker.Random.Bytes(300);
+        var location = await _CreateUploadAsync(_AliceAtAcme, content.Length);
+        await _WriteAsync(_AliceAtAcme, location, content, offset: 0);
+
+        // when - its client asks to delete it
+        using var clientDelete = await _SendAsync(_AliceAtAcme, HttpMethod.Delete, location);
+
+        // then - the request is refused and the upload is whole
+        clientDelete.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var claim = await _ClaimAsync(_AliceAtAcme, location);
+        (await claim.Content.ReadAsByteArrayAsync(AbortToken)).Should().Equal(content);
+
+        // when - the application deletes the upload it found
+        using var applicationDelete = await _SendAsync(_AliceAtAcme, HttpMethod.Delete, _ClaimUri(location));
+
+        // then - the store holds nothing of the upload, in its tenant's folder or outside it
+        applicationDelete.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await _backend.ListStoredNamesAsync(AbortToken)).Should().BeEmpty();
+
+        using var head = await _HeadAsync(_AliceAtAcme, location);
+        head.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     public virtual async Task should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant()
     {
         // given - the same user starts an upload in each of two tenants, so only the tenant tells the two apart
@@ -109,6 +171,16 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         using var globexHead = await _HeadAsync(_AliceAtGlobex, globex);
         _OffsetOf(acmeHead).Should().Be(300);
         _OffsetOf(globexHead).Should().Be(400);
+
+        // and the application is given each finished upload only inside its own tenant
+        using var acmeFromGlobex = await _ClaimAsync(_AliceAtGlobex, acme);
+        using var globexFromAcme = await _ClaimAsync(_AliceAtAcme, globex);
+        using var acmeOwn = await _ClaimAsync(_AliceAtAcme, acme);
+        using var globexOwn = await _ClaimAsync(_AliceAtGlobex, globex);
+        acmeFromGlobex.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        globexFromAcme.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await acmeOwn.Content.ReadAsByteArrayAsync(AbortToken)).Should().Equal(acmeContent);
+        (await globexOwn.Content.ReadAsByteArrayAsync(AbortToken)).Should().Equal(globexContent);
 
         // and the store keeps everything it holds of an upload under that upload's tenant
         var names = await _backend.ListStoredNamesAsync(AbortToken);
@@ -172,8 +244,8 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
 
     /// <summary>
     /// Starts the host of one scenario: the store registered the way an application registers it, one upload
-    /// endpoint, and, when <paramref name="scopeByTenant"/> is set, the tenancy setup that scopes uploads by
-    /// tenant.
+    /// endpoint, an endpoint of the application's own that asks for a finished upload, and, when
+    /// <paramref name="scopeByTenant"/> is set, the tenancy setup that scopes uploads by tenant.
     /// </summary>
     private async Task _StartHostAsync(bool scopeByTenant)
     {
@@ -210,6 +282,8 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         app.Use(_SignalWhenTheResponseCompletes);
         app.Use(_SignInAsync);
         app.MapHeadlessTus(_Route, _EndpointName);
+        app.MapGet(_Claims + "/{fileId}", _FindAsync);
+        app.MapDelete(_Claims + "/{fileId}", _FindAndDeleteAsync);
 
         // The deploy step an application runs before its hosts start: a store does not create its own storage.
         await app.Services.ProvisionResourcesAsync(AbortToken);
@@ -232,6 +306,48 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         });
 
         return next(context);
+    }
+
+    /// <summary>
+    /// The application's endpoint: it asks for the upload the request names and answers with its content.
+    /// </summary>
+    private static async Task _FindAsync(HttpContext context)
+    {
+        var upload = await _FindForRequestAsync(context);
+
+        if (upload is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+
+            return;
+        }
+
+        await using var content = await upload.OpenContentAsync(context.RequestAborted);
+        await content.CopyToAsync(context.Response.Body, context.RequestAborted);
+    }
+
+    /// <summary>The application's endpoint that deletes the upload the request names.</summary>
+    private static async Task _FindAndDeleteAsync(HttpContext context)
+    {
+        var upload = await _FindForRequestAsync(context);
+
+        if (upload is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+
+            return;
+        }
+
+        await upload.DeleteAsync(context.RequestAborted);
+        context.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+
+    private static Task<TusUpload?> _FindForRequestAsync(HttpContext context)
+    {
+        var uploads = context.RequestServices.GetRequiredService<ITusUploads>();
+        var fileId = (string)context.Request.RouteValues["fileId"]!;
+
+        return uploads.FindAsync(fileId, _EndpointName, context.RequestAborted);
     }
 
     /// <summary>
@@ -344,6 +460,17 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
     private Task<HttpResponseMessage> _HeadAsync(Caller caller, string location)
     {
         return _SendAsync(caller, HttpMethod.Head, location);
+    }
+
+    /// <summary>Asks the application's own endpoint, as <paramref name="caller"/>, for the upload at a location.</summary>
+    private Task<HttpResponseMessage> _ClaimAsync(Caller caller, string location)
+    {
+        return _SendAsync(caller, HttpMethod.Get, _ClaimUri(location));
+    }
+
+    private static string _ClaimUri(string location)
+    {
+        return $"{_Claims}/{_FileIdOf(location)}";
     }
 
     /// <summary>
