@@ -1358,8 +1358,10 @@ internal sealed class JobsExecutionTaskHandler
     }
 
     /// <summary>
-    /// Hands back, uncharged, a row claimed for an immediate run that the pool refused because it accepts no work: the
-    /// host is stopping, or processing has not started. The row is Idle and due again, so the next poll runs it.
+    /// Hands back, uncharged, a row claimed for an immediate run that the pool did not admit: the pool accepts no
+    /// work (the host is stopping, or processing has not started), the caller stopped waiting for capacity, or a
+    /// long-running admission was refused at the backlog cap or dropped while parked. The row is Idle and due again,
+    /// so the next poll runs it.
     /// </summary>
     public async Task ReleaseUndispatchedAsync(JobExecutionState context)
     {
@@ -2113,7 +2115,7 @@ internal static partial class JobsExecutionTaskHandlerLog
     [LoggerMessage(
         EventId = 3126,
         Level = LogLevel.Information,
-        Message = "Job {JobId} ({Function}) was claimed for an immediate run while the scheduler accepted no work; it "
+        Message = "Job {JobId} ({Function}) was claimed for an immediate run that the pool did not admit; it "
             + "was handed back unstarted for the next poll to run, with its retry budget unchanged."
     )]
     internal static partial void LogJobReleasedUndispatched(this ILogger logger, Guid jobId, string function);
