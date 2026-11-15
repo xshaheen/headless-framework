@@ -32,6 +32,8 @@ internal sealed class AmazonSqsConsumerClient(
     // A rejected message reappears after this many seconds, so the core's retry is not delayed by the full timeout.
     private const int _RejectVisibilitySeconds = 3;
 
+    private const string _MessageGroupIdAttribute = "MessageGroupId";
+
     // The longest visibility timeout SQS accepts: twelve hours.
     private const int _MaxVisibilityTimeoutSeconds = 43_200;
 
@@ -39,7 +41,7 @@ internal sealed class AmazonSqsConsumerClient(
     // ShutdownAsync instead.
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
 
-    // Bounds handing unsettled messages back on shutdown, so an unreachable broker cannot hold the host; what it
+    // Bounds handing unsettled messages back to the queue, so an unreachable broker cannot hold the host; what it
     // cannot release in time reappears once its visibility runs out.
     private static readonly TimeSpan _ReleaseTimeout = TimeSpan.FromSeconds(5);
 
@@ -443,11 +445,21 @@ internal sealed class AmazonSqsConsumerClient(
         CancellationToken cancellationToken
     )
     {
+        var isFifo = queueUrl.IsAwsFifoName();
         var received = new InflightSqsMessage[messages.Count];
         for (var i = 0; i < messages.Count; i++)
         {
-            received[i] = new InflightSqsMessage(queueUrl, messages[i].ReceiptHandle);
+            received[i] = new InflightSqsMessage(queueUrl, messages[i].ReceiptHandle)
+            {
+                GroupId = isFifo ? _ReadMessageGroupId(messages[i]) : null,
+            };
             _unsettled[received[i].ReceiptHandle] = received[i];
+        }
+
+        if (isFifo)
+        {
+            await _DispatchFifoAsync(messages, received, cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         var dispatched = 0;
@@ -518,6 +530,141 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
+    // SQS hands out a FIFO group's next message only while none of the group is in flight, so the order of a group
+    // holds only if this client hands its messages over one at a time and stops at the first one it does not commit:
+    // the rest goes back behind it, where SQS keeps the group until that message comes round again. Different groups
+    // carry no order between them and still run side by side when the client has a concurrency bound.
+    private async Task _DispatchFifoAsync(
+        List<Amazon.SQS.Model.Message> messages,
+        InflightSqsMessage[] received,
+        CancellationToken cancellationToken
+    )
+    {
+        int[][] groups =
+        [
+            .. Enumerable
+                .Range(0, received.Length)
+                .GroupBy(i => received[i].GroupId, StringComparer.Ordinal)
+                .Select(static group => group.ToArray()),
+        ];
+
+        if (concurrency == 0)
+        {
+            // Without a concurrency bound the client handles one message at a time, across all its queue loops.
+            var current = 0;
+            try
+            {
+                for (; current < groups.Length; current++)
+                {
+                    var run = _RunFifoGroupAsync(
+                        messages,
+                        received,
+                        groups[current],
+                        _inlineGate,
+                        null,
+                        cancellationToken
+                    );
+                    _inFlightHandlers.Track(run);
+                    await run.ConfigureAwait(false);
+                }
+            }
+            catch (Exception)
+            {
+                // The failed group gave its own rest back; the groups after it were never handed over.
+                await _ReleaseAsync([.. groups.Skip(current + 1).SelectMany(group => group).Select(i => received[i])])
+                    .ConfigureAwait(false);
+                throw;
+            }
+
+            return;
+        }
+
+        // Returns once every message has a handler slot or went back, as the standard path does, so a receive never
+        // takes more messages off the queue than the handlers can take on.
+        var slotted = new Task[groups.Length];
+        for (var g = 0; g < groups.Length; g++)
+        {
+            var groupSlotted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            slotted[g] = groupSlotted.Task;
+            var group = groups[g];
+            var run = Task.Run(
+                () => _RunFifoGroupAsync(messages, received, group, _semaphore, groupSlotted, cancellationToken),
+                CancellationToken.None // The run gives back what it did not hand over, so it must start even when cancelled.
+            );
+            _inFlightHandlers.Track(run);
+            _ObserveBackgroundHandler(run);
+        }
+
+        await Task.WhenAll(slotted).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    // Hands one group's messages over in receive order, each after the previous one settled, and gives back the rest of
+    // the group once a message is not committed, the consumer pauses, or receiving stops. A message whose handler threw
+    // is left to its visibility timeout: it was handed over, so it is not given back, but the rest still waits behind
+    // it.
+    private async Task _RunFifoGroupAsync(
+        List<Amazon.SQS.Model.Message> messages,
+        InflightSqsMessage[] received,
+        int[] group,
+        SemaphoreSlim gate,
+        TaskCompletionSource? slotted,
+        CancellationToken cancellationToken
+    )
+    {
+        var handedOver = 0;
+        try
+        {
+            while (handedOver < group.Length && !_pauseGate.IsPaused)
+            {
+                await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                var index = group[handedOver++];
+                if (handedOver == group.Length)
+                {
+                    slotted?.TrySetResult();
+                }
+
+                try
+                {
+                    await _ConsumeAsync(received[index], messages[index]).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _ReleaseGate(gate);
+                }
+
+                if (!received[index].IsCommitted)
+                {
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            slotted?.TrySetResult();
+            await _ReleaseAsync([.. group[handedOver..].Select(i => received[i])]).ConfigureAwait(false);
+        }
+    }
+
+    private static void _ReleaseGate(SemaphoreSlim gate)
+    {
+        try
+        {
+            gate.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+            // A handler that outlived the shutdown drain finishes after the gate is gone; nothing waits on it.
+        }
+    }
+
+    // A FIFO message always carries its group; one read without it shares the strictest order with every other such
+    // message of the receive.
+    private static string? _ReadMessageGroupId(Amazon.SQS.Model.Message message)
+    {
+        return message.Attributes?.TryGetValue(_MessageGroupIdAttribute, out var groupId) == true ? groupId : null;
+    }
+
     private async Task _ConsumeAsync(InflightSqsMessage inflight, Amazon.SQS.Model.Message sqsMessage)
     {
         try
@@ -569,8 +716,11 @@ internal sealed class AmazonSqsConsumerClient(
             VisibilityTimeout = (int)_amazonSqsOptions.VisibilityTimeout.TotalSeconds,
             MaxNumberOfMessages = SqsDeleteBatcher.MaxBatchSize,
             MessageAttributeNames = ["All"],
-            // Completes the send time of a raw message, which carries no Headless headers.
-            MessageSystemAttributeNames = ["SentTimestamp"],
+            // Completes the send time of a raw message, which carries no Headless headers; a FIFO queue also says
+            // which group each message belongs to, so the client can keep each group in order.
+            MessageSystemAttributeNames = queueUrl.IsAwsFifoName()
+                ? ["SentTimestamp", _MessageGroupIdAttribute]
+                : ["SentTimestamp"],
         };
         return await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
     }
@@ -666,6 +816,7 @@ internal sealed class AmazonSqsConsumerClient(
         );
 
         await batcher.DeleteAsync(inflight.ReceiptHandle, cancellationToken).ConfigureAwait(false);
+        inflight.IsCommitted = true;
     }
 
     public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
@@ -690,6 +841,7 @@ internal sealed class AmazonSqsConsumerClient(
     private async ValueTask _RejectAsync(object? sender, int hiddenSeconds, CancellationToken cancellationToken)
     {
         var inflight = _GetInflightMessage(sender);
+        inflight.IsCommitted = false;
 
         // Stop extending first, or the next heartbeat would hide the rejected message again for a full timeout.
         _unsettled.TryRemove(inflight.ReceiptHandle, out _);
@@ -1246,7 +1398,23 @@ internal sealed class AmazonSqsConsumerClient(
     #endregion
 }
 
-internal sealed record InflightSqsMessage(string QueueUrl, string ReceiptHandle);
+internal sealed record InflightSqsMessage(string QueueUrl, string ReceiptHandle)
+{
+    private volatile bool _isCommitted;
+
+    /// <summary>The FIFO group the message belongs to; <see langword="null"/> on a standard queue.</summary>
+    public string? GroupId { get; init; }
+
+    /// <summary>
+    /// Whether the delete of this delivery succeeded and no reject followed it. The core rejects a delivery whose commit
+    /// failed, so the last settlement wins.
+    /// </summary>
+    public bool IsCommitted
+    {
+        get => _isCommitted;
+        set => _isCommitted = value;
+    }
+}
 
 internal static partial class AmazonSqsConsumerClientLog
 {
@@ -1308,7 +1476,7 @@ internal static partial class AmazonSqsConsumerClientLog
     [LoggerMessage(
         EventId = 4207,
         Level = LogLevel.Warning,
-        Message = "Failed to release {MessageCount} unsettled SQS messages for subscription {SubscriptionName} on shutdown; they reappear once their visibility timeout runs out."
+        Message = "Failed to return {MessageCount} unsettled SQS messages to the queue for subscription {SubscriptionName}; they reappear once their visibility timeout runs out."
     )]
     internal static partial void SqsReleaseFailed(
         this ILogger logger,
