@@ -124,8 +124,22 @@ public sealed class JobsDispatcherTests : TestBase
         var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
 
         var ran = 0;
-        var first = _Job("fn-c", (_, _, _) => Task.FromResult(Interlocked.Increment(ref ran)));
-        var second = _Job("fn-c", (_, _, _) => Task.FromResult(Interlocked.Increment(ref ran)));
+        var first = _Job(
+            "fn-c",
+            (_, _, _) =>
+            {
+                Interlocked.Increment(ref ran);
+                return Task.CompletedTask;
+            }
+        );
+        var second = _Job(
+            "fn-c",
+            (_, _, _) =>
+            {
+                Interlocked.Increment(ref ran);
+                return Task.CompletedTask;
+            }
+        );
         using var callerCts = new CancellationTokenSource();
         await callerCts.CancelAsync();
 
