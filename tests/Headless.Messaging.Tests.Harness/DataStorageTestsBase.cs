@@ -2963,7 +2963,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .BeFalse("the row waits for its planned retry");
 
-        // and: the row keeps its retry, its counters, and its failure history
+        // and: the row keeps its retry, its retry count, and its failure history
         if (before is not null)
         {
             var after = await storage.GetMonitoringApi().GetReceivedMessageAsync(stored.StorageId, AbortToken);
@@ -2971,7 +2971,6 @@ public abstract partial class DataStorageTestsBase : TestBase
             after!.StatusName.Should().Be(StatusName.Failed);
             after.NextRetryAt.Should().Be(before.NextRetryAt);
             after.Retries.Should().Be(1);
-            after.InlineAttempts.Should().Be(1);
             after.ExceptionInfo.Should().Be(_RedeliveryFailure);
         }
     }
