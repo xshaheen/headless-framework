@@ -72,11 +72,11 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         client.OnMessageCallback = async (message, sender) =>
         {
             _started.Enqueue(message.Id);
-            if (message.Id == "B1")
+            if (string.Equals(message.Id, "B1", StringComparison.Ordinal))
             {
                 b1Started.TrySetResult();
             }
-            else if (message.Id == "A1")
+            else if (string.Equals(message.Id, "A1", StringComparison.Ordinal))
             {
                 // A1 finishes only once B1 runs beside it: a second slot spent on A2 would never let B1 start.
                 await b1Started.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -111,7 +111,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         client.OnMessageCallback = async (message, sender) =>
         {
             _started.Enqueue(message.Id);
-            if (message.Id == "A1")
+            if (string.Equals(message.Id, "A1", StringComparison.Ordinal))
             {
                 await client.RejectAsync(sender);
                 return;
@@ -145,7 +145,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         client.OnMessageCallback = async (message, sender) =>
         {
             _started.Enqueue(message.Id);
-            if (message.Id == "A1")
+            if (string.Equals(message.Id, "A1", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("handler failed");
             }
@@ -174,7 +174,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         client.OnMessageCallback = async (message, sender) =>
         {
             _started.Enqueue(message.Id);
-            if (message.Id == "A1")
+            if (string.Equals(message.Id, "A1", StringComparison.Ordinal))
             {
                 await client.RejectAsync(sender);
                 return;

@@ -49,7 +49,10 @@ public sealed class FifoGroupOrderTests(LocalStackTestFixture fixture) : TestBas
             async (message, sender) =>
             {
                 // The core rejects a delivery its inbox could not take in; the first delivery of m1 stands for that.
-                if (message.Id == "m1" && Interlocked.Exchange(ref rejectedOnce, 1) == 0)
+                if (
+                    string.Equals(message.Id, "m1", StringComparison.Ordinal)
+                    && Interlocked.Exchange(ref rejectedOnce, 1) == 0
+                )
                 {
                     await consumer.RejectAsync(sender, CancellationToken.None);
                     return;

@@ -561,7 +561,7 @@ internal sealed class AmazonSqsConsumerClient(
                         received,
                         groups[current],
                         _inlineGate,
-                        null,
+                        slotted: null,
                         cancellationToken
                     );
                     _inFlightHandlers.Track(run);
