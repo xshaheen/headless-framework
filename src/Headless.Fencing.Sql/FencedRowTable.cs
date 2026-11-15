@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Data.Common;
 using System.Globalization;
@@ -43,12 +44,20 @@ public sealed class FencedRowTable<TKey>
     // column wider than this cannot be indexed there.
     internal const int MaxHolderMaxLength = 850;
 
+    // The fragments are the consumer's, so the distinct shapes are whatever its code builds: a fixed handful in a
+    // store, but a consumer that builds fragments from data would grow the cache without bound. Past this many shapes a
+    // table renders each new one per call instead of keeping it.
+    internal const int MaxCachedTransitions = 256;
+
     // Variables a dialect declares inside the rendered transition (SQL Server's DECLARE @now and @applied); a consumer
     // parameter of the same name fails the batch's compilation.
     internal static readonly FrozenSet<string> DialectVariables = FrozenSet.ToFrozenSet(
         ["now", "applied"],
         StringComparer.OrdinalIgnoreCase
     );
+
+    private readonly ConcurrentDictionary<FencedTransitionShape, string> _transitions = new();
+    private int _cachedTransitions;
 
     private FencedRowTable(
         ISqlDialect dialect,
@@ -331,16 +340,80 @@ public sealed class FencedRowTable<TKey>
     }
 
     /// <summary>
-    /// Revokes the active attempt and applies <paramref name="set" /> in the same statement, fenced on the active state
-    /// alone, as <see cref="RevokeSql" /> is.
+    /// The statement of a fenced transition that composes a consumer's write, rendered once per distinct shape and
+    /// reused: a store writes the same few shapes once per row, and rendering one builds the whole statement text.
     /// </summary>
-    internal string RenderRevoke(string set)
+    /// <remarks>
+    /// <paramref name="set" /> and <paramref name="condition" /> are already validated; <paramref name="returning" /> is
+    /// validated as it is rendered, so a shape that throws is never kept.
+    /// </remarks>
+    internal string FencedTransition(
+        FencedTransitionKind kind,
+        string? set,
+        string? condition,
+        IReadOnlyList<string>? returning
+    )
     {
-        return RenderTransition(
-            $"{State} = {ActiveLiteral}",
-            EndAssignments(RowLeaseState.Revoked) + ", " + set,
-            [Generation]
-        );
+        var shape = new FencedTransitionShape(kind, set, condition, returning);
+
+        if (_transitions.TryGetValue(shape, out var cached))
+        {
+            return cached;
+        }
+
+        var sql = _RenderFencedTransition(shape);
+
+        if (Volatile.Read(ref _cachedTransitions) < MaxCachedTransitions && _transitions.TryAdd(shape.Detached(), sql))
+        {
+            Interlocked.Increment(ref _cachedTransitions);
+        }
+
+        return sql;
+    }
+
+    private string _RenderFencedTransition(FencedTransitionShape shape)
+    {
+        var set = shape.Set;
+        var (fence, assignments) = shape.Kind switch
+        {
+            FencedTransitionKind.Write => (Current, set),
+            FencedTransitionKind.WriteAndRenew => (Current, set + ", " + RenewAssignment),
+            FencedTransitionKind.Settle => (Current, _EndWith(RowLeaseState.Settled, set)),
+            FencedTransitionKind.Release => (Current, _EndWith(RowLeaseState.Released, set)),
+            // Revoke ends whatever attempt is active by key alone, as RevokeSql does.
+            FencedTransitionKind.Revoke => ($"{State} = {ActiveLiteral}", _EndWith(RowLeaseState.Revoked, set)),
+            _ => throw new ArgumentOutOfRangeException(nameof(shape), shape.Kind, message: null),
+        };
+
+        if (shape.Condition is not null)
+        {
+            fence = $"{fence} AND ({shape.Condition})";
+        }
+
+        return RenderTransition(fence, assignments, _Returning(shape.Returning));
+    }
+
+    private string _EndWith(RowLeaseState state, string? set)
+    {
+        return set is null ? EndAssignments(state) : EndAssignments(state) + ", " + set;
+    }
+
+    private string[] _Returning(IReadOnlyList<string>? returning)
+    {
+        if (returning is null || returning.Count == 0)
+        {
+            return [Generation];
+        }
+
+        var quoted = new string[returning.Count];
+
+        for (var i = 0; i < returning.Count; i++)
+        {
+            Argument.IsNotNullOrWhiteSpace(returning[i], paramName: "write");
+            quoted[i] = Dialect.Quote(returning[i]);
+        }
+
+        return quoted;
     }
 
     /// <summary>
