@@ -26,7 +26,8 @@ internal sealed class FieldEncryptor(DataKeyRing ring, ICurrentTenant currentTen
 
         var frame = FieldCipher.Seal(key.Key, key.KeyId, scope, context.Purpose, context.Binding.Span, plaintext.Span);
 
-        return EncryptedValue.FromBytes(frame);
+        // The sealed frame is a fresh array nothing else holds, so the value takes it over instead of copying it.
+        return EncryptedValue.FromOwnedBytes(frame);
     }
 
     public async ValueTask<FieldDecryption> DecryptAsync(

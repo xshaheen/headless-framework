@@ -9,24 +9,32 @@ namespace Headless.Encryption;
 /// SQL Server). It never decrypts: the column holds ciphertext, and the entity holds the frame.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Saving the default value throws, because it holds no frame and its empty bytes could not be read back. Map an
 /// optional column as <see cref="Nullable{T}" /> of <see cref="EncryptedValue" /> instead; EF Core stores null for it
 /// without calling the converter. Reading bytes that are not a frame throws <see cref="FormatException" />.
+/// </para>
+/// <para>
+/// The converter does not copy the frame: a value read from the provider keeps the array it was given, and the array
+/// it returns for storage is the value's own. Do not change either array afterwards.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public sealed class EncryptedValueConverter : ValueConverter<EncryptedValue, byte[]>
 {
     /// <summary>Initializes the converter.</summary>
     public EncryptedValueConverter()
-        : base(static value => _ToFrame(value), static frame => EncryptedValue.FromBytes(frame)) { }
+        : base(static value => _ToFrame(value), static frame => EncryptedValue.FromOwnedBytes(frame)) { }
 
+    // Both directions share the frame's array instead of copying it per row and column. A read wraps the array the
+    // reader allocated for this one cell, which nothing else holds. A write hands the frame to a parameter, which the
+    // provider only reads; change tracking keeps the immutable EncryptedValue, never the provider array.
     private static byte[] _ToFrame(EncryptedValue value)
     {
-        return value.IsDefault
-            ? throw new InvalidOperationException(
+        return value.GetFrameArray()
+            ?? throw new InvalidOperationException(
                 "An EncryptedValue property holds the default value, which has no frame to store. Encrypt the value "
                     + "with IFieldEncryptor before saving, or map the property as EncryptedValue? for an optional column."
-            )
-            : value.ToArray();
+            );
     }
 }
