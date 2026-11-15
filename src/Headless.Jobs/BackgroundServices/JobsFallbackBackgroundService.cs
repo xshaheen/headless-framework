@@ -118,42 +118,61 @@ internal sealed class JobsFallbackBackgroundService(
                         JobsExecutionContext.CacheFunctionReferences(function, functionRegistry);
                     }
 
-                    foreach (var function in functions.OrderBy(x => x.CachedPriority.DispatchRank()))
-                    {
-                        var semaphore = concurrencyGate.GetSemaphoreOrNull(
-                            function.FunctionName,
-                            function.CachedMaxConcurrency
-                        );
+                    var ordered = functions.OrderBy(x => x.CachedPriority.DispatchRank()).ToArray();
+                    var queued = 0;
 
-                        try
+                    try
+                    {
+                        for (; queued < ordered.Length; queued++)
                         {
-                            // The loop token governs only admission. A dispatched job follows the task scheduler's
-                            // execution lifetime, like immediate dispatch: this service's StopAsync cancels the loop
-                            // token as soon as the host stop begins, so running on it would cut the job off instead of
-                            // letting the scheduler drain it within the stop budget. Membership loss still reaches a
-                            // running job as lease loss through the handler's own MembershipLostToken registration.
-                            await jobsTaskScheduler
-                                .QueueAsync(
-                                    JobsAdmissionWorkItem.Create(
-                                        jobsTaskScheduler,
-                                        internalJobsManager,
-                                        tickerExecutionTaskHandler,
-                                        logger,
-                                        function,
-                                        isDue: true
-                                    ),
-                                    function.CachedPriority,
-                                    capacityCancellationToken: loopToken,
-                                    executionCancellationToken: jobsTaskScheduler.ExecutionCancellationToken,
-                                    concurrencyGate: semaphore
-                                )
-                                .ConfigureAwait(false);
+                            var function = ordered[queued];
+                            var semaphore = concurrencyGate.GetSemaphoreOrNull(
+                                function.FunctionName,
+                                function.CachedMaxConcurrency
+                            );
+
+                            try
+                            {
+                                // The loop token governs only admission. A dispatched job follows the task
+                                // scheduler's execution lifetime, like immediate dispatch: this service's StopAsync
+                                // cancels the loop token as soon as the host stop begins, so running on it would cut
+                                // the job off instead of letting the scheduler drain it within the stop budget.
+                                // Membership loss still reaches a running job as lease loss through the handler's own
+                                // MembershipLostToken registration.
+                                await jobsTaskScheduler
+                                    .QueueAsync(
+                                        JobsAdmissionWorkItem.Create(
+                                            jobsTaskScheduler,
+                                            internalJobsManager,
+                                            tickerExecutionTaskHandler,
+                                            logger,
+                                            function,
+                                            isDue: true
+                                        ),
+                                        function.CachedPriority,
+                                        capacityCancellationToken: loopToken,
+                                        executionCancellationToken: jobsTaskScheduler.ExecutionCancellationToken,
+                                        concurrencyGate: semaphore
+                                    )
+                                    .ConfigureAwait(false);
+                            }
+                            catch (InvalidOperationException)
+                                when (jobsTaskScheduler.IsFrozen || jobsTaskScheduler.IsDisposed)
+                            {
+                                // Scheduler is frozen/disposed – stop queuing; the finally hands the rest back.
+                                break;
+                            }
                         }
-                        catch (InvalidOperationException)
-                            when (jobsTaskScheduler.IsFrozen || jobsTaskScheduler.IsDisposed)
+                    }
+                    finally
+                    {
+                        // Every row in this batch is claimed Queued and leased to this node. A frozen pool, a stop or
+                        // membership loss cancelling the loop token, or any other fault ends the queuing early, and the
+                        // rows not yet queued would otherwise sit out a whole lease before the next sweep took them.
+                        // Hand them back now, as the scheduler loop does with its own claims.
+                        if (queued < ordered.Length)
                         {
-                            // Scheduler is frozen/disposed – ignore and let loop delay
-                            break;
+                            await _ReleaseUnqueuedClaimsAsync(ordered[queued..]).ConfigureAwait(false);
                         }
                     }
 
@@ -178,6 +197,21 @@ internal sealed class JobsFallbackBackgroundService(
         }
 
         _LogMembershipLossIfLost(stoppingToken);
+    }
+
+    // Runs on the way out of the queuing loop, possibly while an exception unwinds, so it never throws: a fault here
+    // would replace the one that ended the loop. A release that fails leaves the rows to the lease-lapse sweep. The
+    // release fences on each row's claim owner and ignores the loop token, which may be what ended the loop.
+    private async Task _ReleaseUnqueuedClaimsAsync(JobExecutionState[] unqueued)
+    {
+        try
+        {
+            await internalJobsManager.ReleaseAcquiredResources(unqueued, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            logger.LogJobsFallbackReleaseFailed(exception, unqueued.Length);
+        }
     }
 
     // The idle wait between passes: one period, or less when the scheduler's poll lands too late for its own peek and
@@ -378,4 +412,12 @@ internal static partial class JobsFallbackBackgroundServiceLog
             + "re-dispatch will not run on this node. Host startup fails with the underlying error."
     )]
     internal static partial void LogJobsFallbackStoppedOnActivationFailure(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3204,
+        Level = LogLevel.Warning,
+        Message = "Jobs fallback could not hand back {Count} claimed rows it did not queue; they stay claimed until "
+            + "their lease lapses and the next sweep takes them."
+    )]
+    internal static partial void LogJobsFallbackReleaseFailed(this ILogger logger, Exception exception, int count);
 }
