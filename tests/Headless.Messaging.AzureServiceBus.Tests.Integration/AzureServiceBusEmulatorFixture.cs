@@ -27,6 +27,12 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
     /// <summary>The topic <c>Config.json</c> declares, with <see cref="FanOutSubscriptions"/> on it.</summary>
     public const string TopicName = "emulator-topic";
 
+    /// <summary>
+    /// The queue <c>Config.json</c> declares for the key-sequencing scenario alone. The scenario's host publishes to it
+    /// by message name, which is how the provider names a Queue-lane queue, so no session hands it out.
+    /// </summary>
+    public const string KeySequencingQueueName = "emulator-queue-key-sequencing";
+
     private const string _EulaUrl =
         "https://github.com/Azure/azure-service-bus-emulator-installer/blob/main/EMULATOR_EULA.txt";
 
