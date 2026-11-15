@@ -15,6 +15,7 @@ public sealed class ConsumerRateLimitersTests : TestBase
     // limit still holds only means something while the first window lasts: a runner that stalls past it has renewed
     // the window, and the check is skipped rather than failed.
     private static readonly TimeSpan _Second = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _WindowMargin = TimeSpan.FromMilliseconds(50);
 
     [Fact]
     public async Task should_return_at_once_for_a_consumer_without_a_rate_limit()
@@ -266,8 +267,6 @@ public sealed class ConsumerRateLimitersTests : TestBase
     // Read after the value it guards, so a true result proves that value was observed inside the first window, which
     // opens no earlier than this test's start mark. The limiter renews on a coarser timer clock than this stopwatch
     // reading, so the margin keeps a renewal a few milliseconds early from counting as inside the window.
-    private static readonly TimeSpan _WindowMargin = TimeSpan.FromMilliseconds(50);
-
     private static bool _InFirstWindow(long startedAt) =>
         TimeProvider.System.GetElapsedTime(startedAt) < _Second - _WindowMargin;
 
