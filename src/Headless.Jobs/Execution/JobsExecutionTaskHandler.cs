@@ -840,6 +840,8 @@ internal sealed class JobsExecutionTaskHandler
                         canDefer,
                         async (retryCount, attemptToken) =>
                         {
+                            // Each attempt answers for itself: only the attempt that ends the pipeline sets it.
+                            success = false;
                             plannedRetryDelay = null;
                             jobFunctionContext.RetryCount = retryCount;
                             jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
@@ -848,31 +850,42 @@ internal sealed class JobsExecutionTaskHandler
                             await _OpenAttemptAsync(context, attemptStartedAt.Value, attemptToken)
                                 .ConfigureAwait(false);
                             stopWatch.Start();
-                            await using var scope = _serviceProvider.CreateAsyncScope();
-                            jobFunctionContext.SetServiceScope(scope);
-                            using var causalScope = JobCausalContext.Enter(jobFunctionContext);
-                            if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
+                            // The scope is part of the attempt: a scoped service can still fail its work when the
+                            // scope disposes (a unit of work that flushes on dispose), so the attempt succeeds only once
+                            // the scope has disposed. A failed dispose fails the attempt like any other failure.
+                            await using (var scope = _serviceProvider.CreateAsyncScope())
                             {
-                                Task terminal(CancellationToken token) =>
-                                    context.CachedDelegate(scope.ServiceProvider, jobFunctionContext, token);
-                                await _functionRegistry
-                                    .Middleware.DispatchExecuteAsync(
-                                        new(descriptor, context, jobFunctionContext, retryCount, scope.ServiceProvider),
-                                        terminal,
-                                        attemptToken
-                                    )
-                                    .ConfigureAwait(false);
-                            }
-                            else
-                            {
-                                // Older generated assemblies can still supply a cached registration without descriptor
-                                // metadata. Preserve tenant restoration even though this compatibility path cannot use
-                                // execute middleware.
-                                using (_EnterTenantScope(context))
+                                jobFunctionContext.SetServiceScope(scope);
+                                using var causalScope = JobCausalContext.Enter(jobFunctionContext);
+                                if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
                                 {
-                                    await context
-                                        .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
+                                    Task terminal(CancellationToken token) =>
+                                        context.CachedDelegate(scope.ServiceProvider, jobFunctionContext, token);
+                                    await _functionRegistry
+                                        .Middleware.DispatchExecuteAsync(
+                                            new(
+                                                descriptor,
+                                                context,
+                                                jobFunctionContext,
+                                                retryCount,
+                                                scope.ServiceProvider
+                                            ),
+                                            terminal,
+                                            attemptToken
+                                        )
                                         .ConfigureAwait(false);
+                                }
+                                else
+                                {
+                                    // Older generated assemblies can still supply a cached registration without descriptor
+                                    // metadata. Preserve tenant restoration even though this compatibility path cannot use
+                                    // execute middleware.
+                                    using (_EnterTenantScope(context))
+                                    {
+                                        await context
+                                            .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
+                                            .ConfigureAwait(false);
+                                    }
                                 }
                             }
 
