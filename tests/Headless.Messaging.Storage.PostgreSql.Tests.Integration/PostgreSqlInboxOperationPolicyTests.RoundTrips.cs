@@ -69,7 +69,10 @@ public sealed partial class PostgreSqlInboxOperationPolicyTests
                 ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
-                if (activity.Source.Name == "Npgsql" && activity.TraceId == trace)
+                if (
+                    string.Equals(activity.Source.Name, "Npgsql", StringComparison.Ordinal)
+                    && activity.TraceId == trace
+                )
                 {
                     commands.Enqueue(activity.DisplayName);
                 }

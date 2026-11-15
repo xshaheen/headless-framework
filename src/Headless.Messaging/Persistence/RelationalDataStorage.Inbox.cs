@@ -527,7 +527,7 @@ internal sealed partial class RelationalDataStorage
     {
         // The hash seeks the root-key index; the column comparisons make the match exact whatever the hash.
         return $"""
-            SELECT {string.Join(",", _InboxGenerationColumns())},{_t.Content}
+            SELECT {string.Join(',', _InboxGenerationColumns())},{_t.Content}
             FROM {_receivedTable}
             WHERE {_t.InboxKeyHash}=@InboxKeyHash
               AND {_t.TenantPresent}=@TenantPresent AND {_t.TenantId}=@TenantId AND {_t.MessageId}=@MessageId
