@@ -10,6 +10,13 @@ namespace Headless.Encryption;
 [PublicAPI]
 public static class FieldEncryptorExtensions
 {
+    // The lenient encoder turns a lone surrogate into U+FFFD, so the value would decrypt to different text than was
+    // encrypted, with no error.
+    private static readonly UTF8Encoding _StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
+
     /// <summary>Encrypts <paramref name="plaintext" /> as UTF-8 under the active data key of the context's scope.</summary>
     /// <param name="encryptor">The encryptor.</param>
     /// <param name="plaintext">The text to encrypt.</param>
@@ -19,6 +26,7 @@ public static class FieldEncryptorExtensions
     /// <exception cref="ArgumentNullException">
     /// <paramref name="encryptor" />, <paramref name="plaintext" />, or <paramref name="context" /> is <see langword="null" />.
     /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="plaintext" /> contains a lone surrogate, which UTF-8 cannot encode.</exception>
     public static async ValueTask<EncryptedValue> EncryptAsync(
         this IFieldEncryptor encryptor,
         string plaintext,
@@ -29,7 +37,20 @@ public static class FieldEncryptorExtensions
         Argument.IsNotNull(encryptor);
         Argument.IsNotNull(plaintext);
 
-        var bytes = Encoding.UTF8.GetBytes(plaintext);
+        byte[] bytes;
+
+        try
+        {
+            bytes = _StrictUtf8.GetBytes(plaintext);
+        }
+        catch (EncoderFallbackException e)
+        {
+            throw new ArgumentException(
+                "The plaintext is not valid UTF-16: it contains a lone surrogate.",
+                nameof(plaintext),
+                e
+            );
+        }
 
         try
         {

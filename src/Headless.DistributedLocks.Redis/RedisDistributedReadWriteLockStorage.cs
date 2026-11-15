@@ -417,7 +417,7 @@ internal sealed class RedisDistributedReadWriteLockStorage(
         TimeSpan? ttl
     )
     {
-        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var expiresValue = ttl.HasValue ? RedisLeaseMilliseconds.From(ttl.Value) : RedisValue.EmptyString;
 
         return new ReaderWriterReadParams(writerKey, readerKey, leaseId, expiresValue);
     }
@@ -428,7 +428,7 @@ internal sealed class RedisDistributedReadWriteLockStorage(
         TimeSpan? ttl
     )
     {
-        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var expiresValue = ttl.HasValue ? RedisLeaseMilliseconds.From(ttl.Value) : RedisValue.EmptyString;
 
         return new ReaderWriterReaderOnlyParams(readerKey, leaseId, expiresValue);
     }
@@ -442,8 +442,10 @@ internal sealed class RedisDistributedReadWriteLockStorage(
         TimeSpan? markerTtl
     )
     {
-        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
-        var markerExpiresValue = markerTtl.HasValue ? (int)markerTtl.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var expiresValue = ttl.HasValue ? RedisLeaseMilliseconds.From(ttl.Value) : RedisValue.EmptyString;
+        var markerExpiresValue = markerTtl.HasValue
+            ? RedisLeaseMilliseconds.From(markerTtl.Value)
+            : RedisValue.EmptyString;
 
         return new ReaderWriterWriteParams(writerKey, readerKey, leaseId, waitingId, expiresValue, markerExpiresValue);
     }
@@ -455,7 +457,7 @@ internal sealed class RedisDistributedReadWriteLockStorage(
         string? waitingId = null
     )
     {
-        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var expiresValue = ttl.HasValue ? RedisLeaseMilliseconds.From(ttl.Value) : RedisValue.EmptyString;
 
         return new ReaderWriterWriterOnlyParams(writerKey, leaseId, waitingId ?? string.Empty, expiresValue);
     }

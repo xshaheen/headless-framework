@@ -21,7 +21,8 @@ public sealed record MessagingProviderCapabilities
         InboxGuarantee? inboxGuarantee,
         IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null,
         bool supportsEveryInstance = false,
-        bool supportsRequestReply = false
+        bool supportsRequestReply = false,
+        bool supportsSingleActiveConsumer = false
     )
     {
         Argument.IsNotNullOrWhiteSpace(provider);
@@ -34,6 +35,7 @@ public sealed record MessagingProviderCapabilities
         RoutingAffinityRoutes = Array.AsReadOnly((routingAffinityRoutes ?? []).ToArray());
         SupportsEveryInstance = supportsEveryInstance;
         SupportsRequestReply = supportsRequestReply;
+        SupportsSingleActiveConsumer = supportsSingleActiveConsumer;
 
         if (supportsEveryInstance && !Lanes.Contains(MessageLane.Bus))
         {
@@ -111,6 +113,14 @@ public sealed record MessagingProviderCapabilities
     /// </summary>
     public bool SupportsRequestReply { get; }
 
+    /// <summary>
+    /// Whether the broker itself delivers a competing subscription to one consumer at a time and moves it to another
+    /// consumer when that one goes away, such as RabbitMQ's single active consumer. A sequential consumer on such a
+    /// transport asks the broker for it; on any other transport, one without native key routing, the messaging core
+    /// elects the one host that listens through the messaging distributed lock.
+    /// </summary>
+    public bool SupportsSingleActiveConsumer { get; }
+
     /// <summary>Creates an immutable transport capability contribution.</summary>
     /// <param name="provider">The stable provider identifier.</param>
     /// <param name="lanes">The semantic lanes the transport carries.</param>
@@ -126,6 +136,10 @@ public sealed record MessagingProviderCapabilities
     /// Whether the transport registers a reply transport and passes the request/reply conformance suite; requires the
     /// Queue lane in <paramref name="lanes"/>.
     /// </param>
+    /// <param name="supportsSingleActiveConsumer">
+    /// Whether the broker can deliver a competing subscription to one consumer at a time, so a sequential consumer
+    /// needs no distributed lock to keep a single host listening.
+    /// </param>
     /// <exception cref="ArgumentException">
     /// <paramref name="lanes"/> is empty or undefined, <paramref name="supportsEveryInstance"/> is set without the Bus
     /// lane, or <paramref name="supportsRequestReply"/> is set without the Queue lane.
@@ -136,7 +150,8 @@ public sealed record MessagingProviderCapabilities
         bool supportsIndependentLaneTopology,
         IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null,
         bool supportsEveryInstance = false,
-        bool supportsRequestReply = false
+        bool supportsRequestReply = false,
+        bool supportsSingleActiveConsumer = false
     )
     {
         Argument.IsNotNull(lanes);
@@ -149,7 +164,8 @@ public sealed record MessagingProviderCapabilities
             inboxGuarantee: null,
             routingAffinityRoutes,
             supportsEveryInstance,
-            supportsRequestReply
+            supportsRequestReply,
+            supportsSingleActiveConsumer
         );
     }
 

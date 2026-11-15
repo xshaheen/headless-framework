@@ -24,8 +24,10 @@ namespace Headless.Coordination;
 /// later of the stored beat and the clock, so a database clock that steps back never moves a beat backwards.
 /// </para>
 /// <para>
-/// Every call runs on its own connection and READ COMMITTED transaction, and retries a transient fault raised
-/// before the commit (see <see cref="SqlAutonomousTransaction" />). Every read treats a row at or past the
+/// Every write runs on its own connection and READ COMMITTED transaction, and retries a transient fault raised
+/// before the commit (see <see cref="SqlAutonomousTransaction" />). Every read is one statement on its own connection
+/// with no transaction (see <see cref="SqlAutonomousRead" />), so it pays no <c>BEGIN</c> or <c>COMMIT</c> round trip
+/// and on SQLite never takes the write lock heartbeats wait on. Every read treats a row at or past the
 /// retention cutoff as absent, so what a read returns never depends on when rows were last deleted. The snapshot
 /// read also prunes those rows, at most once a minute, in a transaction of its own whose failure is logged and
 /// left to a later read.
@@ -386,11 +388,11 @@ internal sealed class RelationalMembershipStore : IMembershipStore
 
         await _PruneAsync().ConfigureAwait(false);
 
-        var snapshots = await _RunAsync(
+        var snapshots = await _RunReadAsync(
                 "coordination.read_liveness",
-                async (connection, transaction, ct) =>
+                async (connection, ct) =>
                 {
-                    await using var command = _Command(_readLivenessSql, connection, transaction);
+                    await using var command = _Command(_readLivenessSql, connection, transaction: null);
                     _AddThresholds(command);
                     // The prune is throttled, so this cutoff, not the prune, keeps expired rows out of the snapshot.
                     _dialect.AddDuration(command, "Retention", RetentionThreshold);
@@ -421,11 +423,11 @@ internal sealed class RelationalMembershipStore : IMembershipStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _RunAsync(
+        return _RunReadAsync(
             "coordination.read_node_liveness",
-            async (connection, transaction, ct) =>
+            async (connection, ct) =>
             {
-                await using var command = _Command(_readNodeLivenessSql, connection, transaction);
+                await using var command = _Command(_readNodeLivenessSql, connection, transaction: null);
                 _AddIncarnation(command, identity);
                 _AddThresholds(command);
                 _dialect.AddDuration(command, "Retention", RetentionThreshold);
@@ -444,11 +446,11 @@ internal sealed class RelationalMembershipStore : IMembershipStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var identities = await _RunAsync(
+        var identities = await _RunReadAsync(
                 "coordination.read_live_nodes",
-                async (connection, transaction, ct) =>
+                async (connection, ct) =>
                 {
-                    await using var command = _Command(_readLiveNodesSql, connection, transaction);
+                    await using var command = _Command(_readLiveNodesSql, connection, transaction: null);
                     _dialect.AddDuration(command, "SuspicionThreshold", _options.SuspicionThreshold);
 
                     var rows = new List<NodeIdentity>();
@@ -558,7 +560,18 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         );
     }
 
-    private DbCommand _Command(string sql, DbConnection connection, DbTransaction transaction)
+    // Each read is one statement, which already reads one consistent view of the rows it joins on every engine, so a
+    // transaction around it would add only the BEGIN and COMMIT round trips, and on SQLite the write lock.
+    private ValueTask<T> _RunReadAsync<T>(
+        string operation,
+        Func<DbConnection, CancellationToken, Task<T>> body,
+        CancellationToken cancellationToken
+    )
+    {
+        return SqlAutonomousRead.RunAsync(operation, _storage.CreateConnection, body, _timeProvider, cancellationToken);
+    }
+
+    private DbCommand _Command(string sql, DbConnection connection, DbTransaction? transaction)
     {
         var command = connection.CreateCommand();
         command.CommandText = sql;

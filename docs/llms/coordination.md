@@ -234,7 +234,8 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 - Incarnations come from an `INCR`-style counter in the generation row. A database restored from a backup rolls those counters back, so incarnations issued after the backup are issued again while rows in other stores may still carry them as owners. Restore coordination together with the stores that hold its owner tags, or not at all.
 - `LeaveAsync` stamps the leave once; leaving an incarnation that already left is a no-op.
 - Every comparison runs on the database clock with exact durations; the application clock never classifies a node.
-- Every call runs on its own READ COMMITTED transaction and retries a transient fault raised before its commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection), at most 3 attempts. A fault from the commit is never retried. See the kit's [retry rule](sql.md#store-statement-kit-for-provider-authors).
+- Every write runs on its own READ COMMITTED transaction and retries a transient fault raised before its commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection), at most 3 attempts. A fault from the commit is never retried. See the kit's [retry rule](sql.md#store-statement-kit-for-provider-authors).
+- `ReadLivenessAsync`, `ReadNodeLivenessAsync`, and `ReadLiveNodesAsync` are each one statement on their own connection with no transaction (`SqlAutonomousRead`), and retry any transient fault, at most 3 attempts. One statement already reads one consistent view of the rows it joins, so the reads skip the `BEGIN` and `COMMIT` round trips every node would otherwise pay on each heartbeat tick.
 - `ReadLivenessAsync` never returns a row at or past the retention cutoff (`DeadThreshold + DeadRetentionWindow`), whether or not that row has been deleted yet. Deleting them is a separate prune of retention-expired liveness rows, then orphaned descriptors, which the read runs in a transaction of its own at most once a minute per store. A prune that still fails after its retries is logged as a warning and retried by a later read; the read itself still returns.
 
 ### Design constraints
@@ -436,7 +437,7 @@ Registers the core membership services, the SQL Server membership store, and the
 
 ### Design constraints
 
-SQLite has no row locks: every store transaction begins `IMMEDIATE` and holds the database write lock, so heartbeats and registrations of every node serialize on the file. Every node must run on the host that holds the file, which also makes the host clock the one clock all nodes judge liveness by. A writer that waits longer than the connection's `Default Timeout` (30 seconds) fails with `SQLITE_BUSY`, which the store retries in a fresh transaction. See [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
+SQLite has no row locks: every store transaction begins `IMMEDIATE` and holds the database write lock, so heartbeats and registrations of every node serialize on the file. The liveness reads run with no transaction and take only a shared lock, so they read while a heartbeat holds the write lock instead of queueing for it. Every node must run on the host that holds the file, which also makes the host clock the one clock all nodes judge liveness by. A writer that waits longer than the connection's `Default Timeout` (30 seconds) fails with `SQLITE_BUSY`, which the store retries in a fresh transaction. See [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
 
 ### Install
 

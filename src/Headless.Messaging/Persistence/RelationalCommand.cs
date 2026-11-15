@@ -93,6 +93,107 @@ internal static class RelationalCommand
         }
     }
 
+    /// <summary>
+    /// Runs <paramref name="sql"/> once per entry of <paramref name="binds"/>, in order, sending the statements together
+    /// as a <see cref="DbBatch"/> where the provider supports one, and reads each statement's result set with
+    /// <paramref name="read"/> and the entry's index.
+    /// </summary>
+    /// <remarks>
+    /// A batch never carries more than <paramref name="maxParameters"/> parameters, so a long run is split into as
+    /// many batches as that takes. A provider without batching (SQLite), or a run of one entry, runs one command per entry instead.
+    /// </remarks>
+    public static async Task ExecuteBatchReaderAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string sql,
+        int timeoutSeconds,
+        IReadOnlyList<Action<DbCommand>> binds,
+        int maxParameters,
+        Func<DbDataReader, int, CancellationToken, Task> read,
+        CancellationToken cancellationToken
+    )
+    {
+        // A single statement gains nothing from a batch, so it runs as the plain command a single store sends.
+        if (binds.Count == 1 || !connection.CanCreateBatch)
+        {
+            for (var i = 0; i < binds.Count; i++)
+            {
+                var index = i;
+                await ExecuteReaderAsync(
+                        connection,
+                        transaction,
+                        sql,
+                        timeoutSeconds,
+                        binds[i],
+                        async (reader, ct) =>
+                        {
+                            await read(reader, index, ct).ConfigureAwait(false);
+
+                            return true;
+                        },
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        if (connection.State == ConnectionState.Closed)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var next = 0;
+        while (next < binds.Count)
+        {
+            var first = next;
+            await using var batch = connection.CreateBatch();
+            batch.Transaction = transaction;
+            batch.Timeout = timeoutSeconds;
+
+            // The dialect binds parameters onto a DbCommand, so each statement is bound on a scratch command and its
+            // parameters are moved to the batch command.
+            await using (var binder = connection.CreateCommand())
+            {
+                var parameters = 0;
+                while (next < binds.Count)
+                {
+                    binder.Parameters.Clear();
+                    binds[next](binder);
+                    if (next > first && parameters + binder.Parameters.Count > maxParameters)
+                    {
+                        break;
+                    }
+
+                    var statement = batch.CreateBatchCommand();
+                    statement.CommandType = CommandType.Text;
+                    statement.CommandText = sql;
+                    var bound = new DbParameter[binder.Parameters.Count];
+                    binder.Parameters.CopyTo(bound, 0);
+                    binder.Parameters.Clear();
+                    statement.Parameters.AddRange(bound);
+                    batch.BatchCommands.Add(statement);
+                    parameters += bound.Length;
+                    next++;
+                }
+
+                binder.Parameters.Clear();
+            }
+
+            await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            for (var i = first; i < next; i++)
+            {
+                if (i > first && !await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException("The batch returned fewer result sets than it has statements.");
+                }
+
+                await read(reader, i, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
     private static async Task<DbCommand> _CreateAsync(
         DbConnection connection,
         DbTransaction? transaction,

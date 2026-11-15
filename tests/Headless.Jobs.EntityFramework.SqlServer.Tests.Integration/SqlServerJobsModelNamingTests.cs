@@ -79,7 +79,7 @@ public sealed class SqlServerJobsModelNamingTests : TestBase
             )
             .GetFilter()
             .Should()
-            .Be("\"Status\" IN ('Idle', 'Queued', 'InProgress')");
+            .Be("[Status] IN ('Idle', 'Queued', 'InProgress')");
     }
 
     [Fact]
@@ -90,5 +90,35 @@ public sealed class SqlServerJobsModelNamingTests : TestBase
         entity.GetTableName().Should().Be("TimeJobIdempotencyReservations");
         entity.FindPrimaryKey()!.GetName().Should().Be("PK_TimeJobIdempotencyReservations");
         entity.IndexNames().Should().Equal("IX_TimeJobIdempotencyReservations_ExpiresAt");
+    }
+
+    [Fact]
+    public void occurrence_status_filters_follow_a_status_column_renamed_after_the_jobs_configuration()
+    {
+        // The consumer renames the column in OnModelCreating, after the Jobs configurations ran; the filters must name
+        // the final column or the index DDL fails, and on PostgreSQL the cron insert's ON CONFLICT predicate no longer
+        // matches the unique index.
+        var model = JobsModelNaming.BuildDesignTimeModel(
+            db => db.UseSqlServer("Server=localhost;Database=model_only"),
+            modelBuilder =>
+                modelBuilder
+                    .Entity<CronJobOccurrenceEntity<CronJobEntity>>()
+                    .Property(x => x.Status)
+                    .HasColumnName("occurrence_status")
+        );
+        var occurrence = model.FindEntityType(typeof(CronJobOccurrenceEntity<CronJobEntity>))!;
+
+        string? filterOf(string indexName) =>
+            occurrence
+                .GetIndexes()
+                .Single(index => string.Equals(index.GetDatabaseName(), indexName, StringComparison.Ordinal))
+                .GetFilter();
+
+        filterOf("IX_CronJobOccurrences_ExecutionTime_Id_Claimable")
+            .Should()
+            .Be("[occurrence_status] IN ('Idle', 'Queued')");
+        filterOf("UQ_CronJobOccurrences_CronJobId_ExecutionTime")
+            .Should()
+            .Be("[occurrence_status] IN ('Idle', 'Queued', 'InProgress')");
     }
 }

@@ -11,6 +11,12 @@ public sealed class ConsumerRateLimitersTests : TestBase
     // A window this long never ends during a test, so a delivery over the limit can only wait or be cancelled.
     private static readonly TimeSpan _Hour = TimeSpan.FromHours(1);
 
+    // The tests that watch a window renew use a short one. The limiter renews on the real clock, so a check that the
+    // limit still holds only means something while the first window lasts: a runner that stalls past it has renewed
+    // the window, and the check is skipped rather than failed.
+    private static readonly TimeSpan _Second = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _WindowMargin = TimeSpan.FromMilliseconds(50);
+
     [Fact]
     public async Task should_return_at_once_for_a_consumer_without_a_rate_limit()
     {
@@ -31,11 +37,8 @@ public sealed class ConsumerRateLimitersTests : TestBase
     {
         // given
         using var sut = new ConsumerRateLimiters();
-        var consumer = _Consumer(
-            "orders.audit",
-            "orders.placed",
-            ConsumerRateLimit.FixedWindow(2, TimeSpan.FromSeconds(1))
-        );
+        var consumer = _Consumer("orders.audit", "orders.placed", ConsumerRateLimit.FixedWindow(2, _Second));
+        var startedAt = TimeProvider.System.GetTimestamp();
 
         // when
         var first = sut.WaitAsync(consumer, AbortToken).AsTask();
@@ -45,7 +48,12 @@ public sealed class ConsumerRateLimitersTests : TestBase
         // then
         first.IsCompletedSuccessfully.Should().BeTrue();
         second.IsCompletedSuccessfully.Should().BeTrue();
-        third.IsCompleted.Should().BeFalse();
+        var thirdHeld = !third.IsCompleted;
+        if (_InFirstWindow(startedAt))
+        {
+            thirdHeld.Should().BeTrue("the window has not renewed yet");
+        }
+
         await Task.WhenAll(first, second);
         await third.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
     }
@@ -156,13 +164,10 @@ public sealed class ConsumerRateLimitersTests : TestBase
     {
         // given
         using var sut = new ConsumerRateLimiters();
-        var consumer = _Consumer(
-            "orders.audit",
-            "orders.placed",
-            ConsumerRateLimit.FixedWindow(1, TimeSpan.FromSeconds(1))
-        );
+        var consumer = _Consumer("orders.audit", "orders.placed", ConsumerRateLimit.FixedWindow(1, _Second));
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
+        var startedAt = TimeProvider.System.GetTimestamp();
 
         // when
         await sut.WaitAsync(consumer, first, AbortToken);
@@ -170,7 +175,12 @@ public sealed class ConsumerRateLimitersTests : TestBase
 
         // then
         sut.IsWaiting(first).Should().BeFalse("a delivery that got its permit at once never waited");
-        sut.IsWaiting(second).Should().BeTrue();
+        var secondWaiting = sut.IsWaiting(second);
+        if (_InFirstWindow(startedAt))
+        {
+            secondWaiting.Should().BeTrue("the window has not renewed yet");
+        }
+
         await waiting.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         sut.IsWaiting(second).Should().BeFalse();
     }
@@ -218,13 +228,15 @@ public sealed class ConsumerRateLimitersTests : TestBase
     {
         // given: the permit is spent, and a refused non-waiting call queues ahead of a later waiting delivery
         using var sut = new ConsumerRateLimiters();
-        var consumer = _Consumer(
-            "orders.audit",
-            "orders.placed",
-            ConsumerRateLimit.FixedWindow(1, TimeSpan.FromSeconds(1))
-        );
+        var consumer = _Consumer("orders.audit", "orders.placed", ConsumerRateLimit.FixedWindow(1, _Second));
+        var startedAt = TimeProvider.System.GetTimestamp();
         await sut.WaitAsync(consumer, AbortToken);
-        sut.TryAcquire(consumer).Should().BeFalse();
+        var refused = !sut.TryAcquire(consumer);
+        Assert.SkipUnless(
+            _InFirstWindow(startedAt),
+            "The runner stalled past the first window, which renewed before the refusal this test needs."
+        );
+        refused.Should().BeTrue();
         var laterDelivery = sut.WaitAsync(consumer, AbortToken).AsTask();
 
         // when: two windows renew, one permit each, oldest first
@@ -251,6 +263,12 @@ public sealed class ConsumerRateLimitersTests : TestBase
         sut.TryAcquire(consumer).Should().BeFalse();
         sut.TryAcquire(late).Should().BeFalse();
     }
+
+    // Read after the value it guards, so a true result proves that value was observed inside the first window, which
+    // opens no earlier than this test's start mark. The limiter renews on a coarser timer clock than this stopwatch
+    // reading, so the margin keeps a renewal a few milliseconds early from counting as inside the window.
+    private static bool _InFirstWindow(long startedAt) =>
+        TimeProvider.System.GetElapsedTime(startedAt) < _Second - _WindowMargin;
 
     private static ConsumerExecutorDescriptor _Consumer(
         string identity,

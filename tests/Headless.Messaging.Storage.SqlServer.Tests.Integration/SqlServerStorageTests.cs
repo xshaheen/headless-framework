@@ -104,6 +104,17 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     }
 
     /// <inheritdoc />
+    protected override async Task<System.Data.Common.DbConnection?> OpenDatabaseConnectionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        return connection;
+    }
+
+    /// <inheritdoc />
     protected override IStorageTableNames GetTableNames()
     {
         _EnsureInitialized();
@@ -1042,6 +1053,18 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     public override Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()
     {
         return base.should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease();
+    }
+
+    [Fact]
+    public override Task should_return_the_rows_counters_and_history_when_a_redelivery_rewrites_a_due_row()
+    {
+        return base.should_return_the_rows_counters_and_history_when_a_redelivery_rewrites_a_due_row();
+    }
+
+    [Fact]
+    public override Task should_leave_a_row_waiting_for_its_retry_untouched_when_the_message_is_redelivered()
+    {
+        return base.should_leave_a_row_waiting_for_its_retry_untouched_when_the_message_is_redelivered();
     }
 
     [Fact]

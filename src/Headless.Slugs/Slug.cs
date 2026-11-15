@@ -41,6 +41,9 @@ public static class Slug
 
         options ??= _DefaultOptions;
 
+        // IsNormalized and Normalize throw on a lone surrogate, and a slug has no use for one, so drop it first.
+        text = _RemoveLoneSurrogates(text);
+
         // Normalizing to NFD lets diacritic marks be stripped as non-spacing marks below. Skip the allocation
         // when the input is already NFD (the common ASCII case) — IsNormalized is much cheaper than Normalize.
         if (!text.IsNormalized(NormalizationForm.FormD))
@@ -135,5 +138,51 @@ public static class Slug
         }
 
         return true;
+    }
+
+    private static string _RemoveLoneSurrogates(string text)
+    {
+        var span = text.AsSpan();
+        var firstLone = _IndexOfLoneSurrogate(span, 0);
+
+        if (firstLone < 0)
+        {
+            return text;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        var start = 0;
+
+        while (firstLone >= 0)
+        {
+            builder.Append(span[start..firstLone]);
+            start = firstLone + 1;
+            firstLone = _IndexOfLoneSurrogate(span, start);
+        }
+
+        builder.Append(span[start..]);
+
+        return builder.ToString();
+    }
+
+    private static int _IndexOfLoneSurrogate(ReadOnlySpan<char> span, int start)
+    {
+        for (var i = start; i < span.Length; i++)
+        {
+            var c = span[i];
+
+            if (char.IsHighSurrogate(c) && i + 1 < span.Length && char.IsLowSurrogate(span[i + 1]))
+            {
+                i++;
+                continue;
+            }
+
+            if (char.IsSurrogate(c))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 }

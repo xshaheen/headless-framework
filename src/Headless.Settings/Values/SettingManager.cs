@@ -79,11 +79,15 @@ public sealed class SettingManager(
         foreach (var provider in valueProviderManager.Providers)
         {
             var supportedDefinitions = settingDefinitions
-                .Where(x =>
-                    !processedNames.Contains(x.Name)
-                    && (x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
-                )
+                .Where(x => !processedNames.Contains(x.Name) && _AllowsProvider(x, provider.Name))
                 .ToArray();
+
+            // A provider that supports none of the remaining definitions has nothing to read, and the store
+            // refuses an empty name set, so asking it would fail the whole read.
+            if (supportedDefinitions.Length == 0)
+            {
+                continue;
+            }
 
             var settingValues = await provider
                 .GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken)
@@ -226,10 +230,13 @@ public sealed class SettingManager(
             (setting.IsInherited ? inherited : notInherited).Add(setting);
         }
 
+        // SkipWhile guarantees the head of the chain is the requested provider, so it takes providerKey.
+        var headProvider = providerList[0];
+        notInherited = notInherited.FindAll(setting => _AllowsProvider(setting, headProvider.Name));
+
         if (notInherited.Count != 0)
         {
-            // SkipWhile guarantees the head of the chain is the requested provider, so it takes providerKey.
-            var provider = providerList[0];
+            var provider = headProvider;
             var values = await provider
                 .GetAllAsync([.. notInherited], providerKey, cancellationToken)
                 .ConfigureAwait(false);
@@ -256,7 +263,15 @@ public sealed class SettingManager(
             }
 
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            var values = await provider.GetAllAsync([.. pending], pk, cancellationToken).ConfigureAwait(false);
+            var allowed = pending.FindAll(setting => _AllowsProvider(setting, provider.Name));
+
+            // A setting restricted to other providers skips this one rather than reading a value it may not hold.
+            if (allowed.Count == 0)
+            {
+                continue;
+            }
+
+            var values = await provider.GetAllAsync([.. allowed], pk, cancellationToken).ConfigureAwait(false);
             var resolved = _ToResolvedValues(values);
 
             if (resolved.Count == 0)
@@ -268,7 +283,7 @@ public sealed class SettingManager(
 
             foreach (var setting in pending)
             {
-                if (resolved.TryGetValue(setting.Name, out var value))
+                if (_AllowsProvider(setting, provider.Name) && resolved.TryGetValue(setting.Name, out var value))
                 {
                     await _AddSettingValueAsync(settingValues, setting, value, provider, pk, cancellationToken)
                         .ConfigureAwait(false);
@@ -296,6 +311,12 @@ public sealed class SettingManager(
         // The spread wraps the list in the compiler's throw-on-mutate read-only view, matching the previous
         // implementation's return shape — callers must not be able to downcast and mutate manager state.
         return [.. orderedValues];
+    }
+
+    /// <summary>Whether <paramref name="setting"/> may be read or written through the provider named <paramref name="providerName"/>; an empty list allows every provider.</summary>
+    private static bool _AllowsProvider(SettingDefinition setting, string providerName)
+    {
+        return setting.Providers.Count == 0 || setting.Providers.Contains(providerName, StringComparer.Ordinal);
     }
 
     /// <summary>Indexes the values a provider actually stored; a <see langword="null"/> value means "not set here".</summary>
@@ -420,6 +441,11 @@ public sealed class SettingManager(
             var setting =
                 await definitionManager.FindAsync(settingName, cancellationToken).ConfigureAwait(false)
                 ?? throw new ConflictException(errorsDescriptor.NotDefined(settingName));
+
+            if (!_AllowsProvider(setting, providerName))
+            {
+                throw new ConflictException(errorsDescriptor.ProviderNotAllowed(settingName, providerName));
+            }
 
             requested.Add(new(setting, value));
         }
@@ -748,12 +774,15 @@ public sealed class SettingManager(
             providers = providers.SkipWhile(c => !string.Equals(c.Name, providerName, StringComparison.Ordinal));
         }
 
-        if (!fallback || !definition.IsInherited)
+        // A non-inherited setting does not fall back below a provider the caller names. With no provider named the
+        // read resolves the whole chain, as the batch read does; narrowing to "providers named null" would always
+        // read nothing.
+        if (!fallback || (!definition.IsInherited && providerName is not null))
         {
             providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
         }
 
-        var chain = providers.ToArray();
+        var chain = providers.Where(provider => _AllowsProvider(definition, provider.Name)).ToArray();
         var cached = unitOfWork is null
             ? await _ReadCachedChainAsync(chain, settingName, providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false)

@@ -56,4 +56,42 @@ public sealed class MobilePhoneNumberValidatorCountryCodeTests
         result.Should().Be(expected);
         normalizedPhoneNumber.Should().Be(expectedNormalized);
     }
+
+    [Theory]
+    [InlineData("+16502530000", 20, false)]
+    [InlineData("+16502530000", 1, true)]
+    [InlineData("+201001234567", 20, true)]
+    [InlineData("+201001234567", 966, false)]
+    public void should_reject_international_number_of_another_country_when_is_valid_with_country_code(
+        string phoneNumber,
+        int countryCode,
+        bool expected
+    )
+    {
+        // given - a leading '+' makes the parser ignore the region, so the country must be checked separately
+
+        // when
+        var result = MobilePhoneNumberValidator.IsValid(phoneNumber, countryCode);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("+16502530000", "EG", false)]
+    [InlineData("+16502530000", "US", true)]
+    [InlineData("+201001234567", "EG", true)]
+    [InlineData("+201001234567", "SA", false)]
+    public void should_reject_international_number_of_another_country_when_is_valid_with_region_code(
+        string phoneNumber,
+        string regionCode,
+        bool expected
+    )
+    {
+        // when
+        var result = MobilePhoneNumberValidator.IsValid(phoneNumber, regionCode);
+
+        // then
+        result.Should().Be(expected);
+    }
 }

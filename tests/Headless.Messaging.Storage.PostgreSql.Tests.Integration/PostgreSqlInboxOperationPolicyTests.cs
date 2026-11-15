@@ -11,7 +11,7 @@ using Npgsql;
 namespace Tests;
 
 [Collection<PostgreSqlTestFixture>]
-public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fixture)
+public sealed partial class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fixture)
     : InboxOperationPolicyConformanceTests
 {
     [Theory]

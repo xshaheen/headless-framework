@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Headless.Checks;
 using Microsoft.Data.Sqlite;
 
 namespace Headless.Sql.Sqlite;
@@ -421,7 +422,10 @@ public sealed class SqliteDialect : ISqlDialect
     /// </remarks>
     public string Render(SqlTransactionLock statement)
     {
-        return $"SELECT @{statement.ResourceParameter} WHERE 0;";
+        Argument.IsNotNull(statement);
+        Argument.IsNotEmpty(statement.ResourceParameters);
+
+        return $"SELECT {string.Join(", ", statement.ResourceParameters.Select(static parameter => "@" + parameter))} WHERE 0;";
     }
 
     public SqlErrorKind Classify(Exception exception)

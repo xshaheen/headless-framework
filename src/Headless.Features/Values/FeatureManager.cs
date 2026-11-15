@@ -103,7 +103,16 @@ public sealed class FeatureManager(
                 break;
             }
 
-            var pendingForProvider = pending.Where(d => !processedNames.Contains(d.Name)).ToArray();
+            // A feature restricted to other providers never reads a value this provider holds.
+            var pendingForProvider = pending
+                .Where(d => !processedNames.Contains(d.Name) && _AllowsProvider(d, provider.Name))
+                .ToArray();
+
+            if (pendingForProvider.Length == 0)
+            {
+                continue;
+            }
+
             var values =
                 _TryAnswerFromCache(cached?[i], pendingForProvider)
                 ?? await provider
@@ -187,7 +196,14 @@ public sealed class FeatureManager(
             }
 
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            var values = await provider.GetAllAsync([.. pending], pk, cancellationToken).ConfigureAwait(false);
+            var allowed = pending.FindAll(definition => _AllowsProvider(definition, provider.Name));
+
+            if (allowed.Count == 0)
+            {
+                continue;
+            }
+
+            var values = await provider.GetAllAsync([.. allowed], pk, cancellationToken).ConfigureAwait(false);
             var resolved = _ToResolvedValues(values);
 
             if (resolved.Count == 0)
@@ -199,7 +215,7 @@ public sealed class FeatureManager(
 
             foreach (var definition in pending)
             {
-                if (resolved.TryGetValue(definition.Name, out var value))
+                if (_AllowsProvider(definition, provider.Name) && resolved.TryGetValue(definition.Name, out var value))
                 {
                     featureValues[definition.Name] = new(definition.Name, value, new(provider.Name, pk));
                 }
@@ -226,6 +242,12 @@ public sealed class FeatureManager(
         return [.. orderedValues];
     }
 
+    /// <summary>Whether <paramref name="feature"/> may be read or written through the provider named <paramref name="providerName"/>; an empty list allows every provider.</summary>
+    private static bool _AllowsProvider(FeatureDefinition feature, string providerName)
+    {
+        return feature.Providers.Count == 0 || feature.Providers.Contains(providerName, StringComparer.Ordinal);
+    }
+
     /// <summary>Indexes the values a provider actually stored; a <see langword="null"/> value means "not set here".</summary>
     private static Dictionary<string, string> _ToResolvedValues(List<FeatureValue> providerValues)
     {
@@ -244,7 +266,7 @@ public sealed class FeatureManager(
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ConflictException">The feature named <paramref name="name"/> is not defined (<c>FeatureIsNotDefined</c>), the provider named <paramref name="providerName"/> is not registered (<c>ProviderNotFound</c>), or the provider is read-only (<c>ProviderIsReadonly</c>).</exception>
+    /// <exception cref="ConflictException">The feature named <paramref name="name"/> is not defined (<c>FeatureIsNotDefined</c>), the provider named <paramref name="providerName"/> is not registered (<c>ProviderNotFound</c>), the provider is read-only (<c>ProviderIsReadonly</c>), or the feature's <c>Providers</c> list excludes the provider (<c>features:provider-not-allowed</c>).</exception>
     public Task SetAsync(
         string name,
         string? value,
@@ -263,7 +285,7 @@ public sealed class FeatureManager(
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ConflictException">A feature in <paramref name="values"/> is not defined (<c>FeatureIsNotDefined</c>), the provider named <paramref name="providerName"/> is not registered (<c>ProviderNotFound</c>), or the provider is read-only (<c>ProviderIsReadonly</c>).</exception>
+    /// <exception cref="ConflictException">A feature in <paramref name="values"/> is not defined (<c>FeatureIsNotDefined</c>), the provider named <paramref name="providerName"/> is not registered (<c>ProviderNotFound</c>), the provider is read-only (<c>ProviderIsReadonly</c>), or the feature's <c>Providers</c> list excludes the provider (<c>features:provider-not-allowed</c>).</exception>
     public Task SetAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
@@ -321,6 +343,13 @@ public sealed class FeatureManager(
             var feature =
                 await definitionManager.FindAsync(name, cancellationToken).ConfigureAwait(false)
                 ?? throw new ConflictException(errorsDescriptor.FeatureIsNotDefined(name));
+
+            // A feature that names its providers (for example only "Edition") must not take a value from another
+            // one: a tenant value would otherwise override what the plan grants.
+            if (!_AllowsProvider(feature, providerName))
+            {
+                throw new ConflictException(errorsDescriptor.ProviderNotAllowed(name, providerName));
+            }
 
             writes.Add(new(feature, value));
         }
@@ -715,7 +744,7 @@ public sealed class FeatureManager(
             providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
         }
 
-        var chain = providers.ToArray();
+        var chain = providers.Where(provider => _AllowsProvider(definition, provider.Name)).ToArray();
         var cached = unitOfWork is null
             ? await _ReadCachedChainAsync(chain, [definition], providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false)

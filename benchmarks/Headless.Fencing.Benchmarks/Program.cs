@@ -4,5 +4,5 @@ using BenchmarkDotNet.Running;
 using Headless.Fencing.Benchmarks;
 
 BenchmarkSwitcher
-    .FromTypes([typeof(StatusReadBenchmarks), typeof(StateWriteBenchmarks)])
+    .FromTypes([typeof(StatusReadBenchmarks), typeof(LivenessReadBenchmarks), typeof(StateWriteBenchmarks)])
     .Run(args, BenchmarkRunConfig.Create(args));

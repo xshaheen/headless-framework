@@ -36,7 +36,7 @@ public sealed partial class HybridCache
         if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
             var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
 
             _RunDetached(() => _BackgroundScalarUpsertAsync(key, value, expiration), key);
 
@@ -84,7 +84,7 @@ public sealed partial class HybridCache
         if (updated)
         {
             var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
 
             if (queueScalarRecovery)
             {
@@ -96,7 +96,7 @@ public sealed partial class HybridCache
         else
         {
             // Remove from local cache when upsert fails
-            await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
         }
 
         await _PublishInvalidationAsync(
@@ -264,7 +264,7 @@ public sealed partial class HybridCache
             var snapshot = new Dictionary<string, T>(value, StringComparer.Ordinal);
             var keys = snapshot.Keys.ToArray();
             var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache.UpsertAllAsync(snapshot, localExpiration, cancellationToken).ConfigureAwait(false);
+            await _L1ForAll().UpsertAllAsync(snapshot, localExpiration, cancellationToken).ConfigureAwait(false);
 
             _RunDetached(() => _BackgroundBulkUpsertAsync(snapshot, keys, expiration), keys.Length > 0 ? keys[0] : "");
 
@@ -306,12 +306,12 @@ public sealed partial class HybridCache
         if (setCount == value.Count)
         {
             var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache.UpsertAllAsync(value, localExpiration, cancellationToken).ConfigureAwait(false);
+            await _L1ForAll().UpsertAllAsync(value, localExpiration, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             // Remove all keys from local cache when set fails or partially succeeds
-            await LocalCache.RemoveAllAsync(value.Keys, cancellationToken).ConfigureAwait(false);
+            await _L1ForAll().RemoveAllAsync(value.Keys, cancellationToken).ConfigureAwait(false);
         }
 
         await _PublishInvalidationAsync(
@@ -378,7 +378,7 @@ public sealed partial class HybridCache
         if (added)
         {
             var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
 
             // An absent L2 entry does not prove every peer's L1 is empty: L2 can lose the key to eviction, a manual
             // delete, or a logical clear while a peer still serves its local copy, so peers drop it like any write.
@@ -413,7 +413,7 @@ public sealed partial class HybridCache
 
         if (!_IsDistributedCacheCircuitClosed())
         {
-            await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
@@ -430,19 +430,19 @@ public sealed partial class HybridCache
         {
             _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
-            await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
         if (replaced)
         {
             var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             // Remove from local cache when replace fails
-            await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
         }
 
         await _PublishInvalidationAsync(
@@ -480,7 +480,7 @@ public sealed partial class HybridCache
         var replaced = await _RunL2WriteWithBreakerGuardAsync(
                 key,
                 ct => l2Cache.TryReplaceIfEqualAsync(key, expected, value, expiration, ct),
-                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                async ct => await _L1For(key).RemoveAsync(key, ct).ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -490,12 +490,12 @@ public sealed partial class HybridCache
             // Use UpsertAsync instead of TryReplaceIfEqualAsync for local cache because we know
             // the distributed cache now has this exact value, and we need local cache to be in sync
             var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             // Remove from local cache when replace fails
-            await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
         }
 
         await _PublishInvalidationAsync(
@@ -527,14 +527,7 @@ public sealed partial class HybridCache
 
         return _RunNumericL2AndSyncL1Async(
             key,
-            expiration,
             ct => l2Cache.IncrementAsync(key, amount, expiration, ct),
-            // Increment always writes and returns the NEW TOTAL; 0 is a valid stored value, not a no-op signal, so
-            // L1 must always be seeded. (Contrast SetIfHigher/Lower below, whose result is a difference where 0 means
-            // "unchanged" and L1 is correctly left untouched.)
-            static _ =>
-                true,
-            static result => result,
             cancellationToken
         );
     }
@@ -559,14 +552,7 @@ public sealed partial class HybridCache
 
         return _RunNumericL2AndSyncL1Async(
             key,
-            expiration,
             ct => l2Cache.IncrementAsync(key, amount, expiration, ct),
-            // Increment always writes and returns the NEW TOTAL; 0 is a valid stored value, not a no-op signal, so
-            // L1 must always be seeded. (Contrast SetIfHigher/Lower below, whose result is a difference where 0 means
-            // "unchanged" and L1 is correctly left untouched.)
-            static _ =>
-                true,
-            static result => result,
             cancellationToken
         );
     }
@@ -591,10 +577,7 @@ public sealed partial class HybridCache
 
         return _RunNumericL2AndSyncL1Async(
             key,
-            expiration,
             ct => l2Cache.SetIfHigherAsync(key, value, expiration, ct),
-            static result => Math.Abs(result) > double.Epsilon,
-            _ => value,
             cancellationToken
         );
     }
@@ -619,10 +602,7 @@ public sealed partial class HybridCache
 
         return _RunNumericL2AndSyncL1Async(
             key,
-            expiration,
             ct => l2Cache.SetIfHigherAsync(key, value, expiration, ct),
-            static result => result != 0,
-            _ => value,
             cancellationToken
         );
     }
@@ -647,10 +627,7 @@ public sealed partial class HybridCache
 
         return _RunNumericL2AndSyncL1Async(
             key,
-            expiration,
             ct => l2Cache.SetIfLowerAsync(key, value, expiration, ct),
-            static result => Math.Abs(result) > double.Epsilon,
-            _ => value,
             cancellationToken
         );
     }
@@ -675,10 +652,7 @@ public sealed partial class HybridCache
 
         return _RunNumericL2AndSyncL1Async(
             key,
-            expiration,
             ct => l2Cache.SetIfLowerAsync(key, value, expiration, ct),
-            static result => result != 0,
-            _ => value,
             cancellationToken
         );
     }
@@ -698,25 +672,15 @@ public sealed partial class HybridCache
     }
 
     /// <summary>
-    /// Executes a numeric L2 operation, syncs the result to L1, and publishes a key invalidation. Shared by
+    /// Executes a numeric L2 operation, drops the key from L1, and publishes a key invalidation. Shared by
     /// <see cref="IncrementAsync(string,double,TimeSpan?,CancellationToken)"/>,
     /// <see cref="SetIfHigherAsync(string,double,TimeSpan?,CancellationToken)"/>,
     /// <see cref="SetIfLowerAsync(string,double,TimeSpan?,CancellationToken)"/>, and their <see langword="long"/> overloads.
     /// </summary>
     /// <typeparam name="TResult">Return type of the L2 operation (e.g. <see langword="double"/> or <see langword="long"/>).</typeparam>
-    /// <typeparam name="TL1">Type stored in L1 (equals <typeparamref name="TResult"/> for increment, equals the
-    /// input value type for set-if-higher/lower).</typeparam>
-    /// <param name="isUpdated">
-    /// Returns <see langword="true"/> when the L2 result indicates the value was actually changed and should be
-    /// populated in L1. When <see langword="false"/>, L1 is cleared instead (we don't know the actual value).
-    /// </param>
-    /// <param name="l1Value">Derives the L1 value to store from the L2 result.</param>
-    private async ValueTask<TResult> _RunNumericL2AndSyncL1Async<TResult, TL1>(
+    private async ValueTask<TResult> _RunNumericL2AndSyncL1Async<TResult>(
         string key,
-        TimeSpan? expiration,
         Func<CancellationToken, ValueTask<TResult>> l2Op,
-        Func<TResult, bool> isUpdated,
-        Func<TResult, TL1> l1Value,
         CancellationToken cancellationToken
     )
     {
@@ -726,23 +690,16 @@ public sealed partial class HybridCache
         var result = await _RunL2WriteWithBreakerGuardAsync(
                 key,
                 l2Op,
-                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                async ct => await _L1For(key).RemoveAsync(key, ct).ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (isUpdated(result))
-        {
-            var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache
-                .UpsertAsync(key, l1Value(result), localExpiration, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        else
-        {
-            // Result indicates no change — remove from L1 since we don't know the actual stored value.
-            await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-        }
+        // Drop the local copy instead of writing this op's result into it. Two concurrent ops finish in either order,
+        // so writing each result would let the earlier total (5) land after the later one (6) and stay in L1; the
+        // result also carries no TTL, so an increment with no expiration would give L1 a lifetime L2 does not have.
+        // The next read fills L1 from L2, which holds the latest total and its real expiry.
+        await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
 
         await _PublishInvalidationAsync(
                 new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
@@ -812,7 +769,7 @@ public sealed partial class HybridCache
         var addedCount = await _RunL2WriteWithBreakerGuardAsync(
                 key,
                 ct => l2Cache.SetAddAsync(key, items, expiration, ct),
-                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                async ct => await _L1For(key).RemoveAsync(key, ct).ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -820,12 +777,12 @@ public sealed partial class HybridCache
         if (addedCount == items.Length)
         {
             var localExpiration = _GetLocalExpiration(expiration);
-            await LocalCache.SetAddAsync(key, items, localExpiration, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).SetAddAsync(key, items, localExpiration, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             // Partial success - remove to force re-fetch
-            await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
         }
 
         await _PublishInvalidationAsync(
@@ -870,7 +827,7 @@ public sealed partial class HybridCache
             {
                 // Wipe L1 before surfacing the L2 failure so this node never keeps serving the value the caller
                 // asked to remove (mirrors RemoveAllAsync/TryReplaceAsync, which clear L1 first then rethrow).
-                await LocalCache.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
+                await _L1For(key).RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
 
@@ -880,7 +837,7 @@ public sealed partial class HybridCache
             removed = true;
         }
 
-        await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+        await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if the key actually existed and was removed
         if (removed)
@@ -927,7 +884,7 @@ public sealed partial class HybridCache
             {
                 // Logically expire L1 before surfacing the L2 failure so this node does not keep serving an entry
                 // the caller asked to expire (its fail-safe reserve is preserved, mirroring the success path).
-                await LocalCache.ExpireAsync(key, CancellationToken.None).ConfigureAwait(false);
+                await _L1For(key).ExpireAsync(key, CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
 
@@ -938,7 +895,7 @@ public sealed partial class HybridCache
         }
 
         // Logically expire the local copy too: a peer's reserve is preserved, and so is ours.
-        await LocalCache.ExpireAsync(key, cancellationToken).ConfigureAwait(false);
+        await _L1For(key).ExpireAsync(key, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if the key actually existed; the Expire flag tells receivers to logically
         // expire their L1 copy (preserving its fail-safe reserve) rather than remove it.
@@ -977,13 +934,13 @@ public sealed partial class HybridCache
         var removed = await _RunL2WriteWithBreakerGuardAsync(
                 key,
                 ct => l2Cache.RemoveIfEqualAsync(key, expected, ct),
-                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                async ct => await _L1For(key).RemoveAsync(key, ct).ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
         // Always remove from local cache unconditionally (local cache might have stale value)
-        await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+        await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if the key was actually removed from distributed cache
         if (removed)
@@ -1029,11 +986,11 @@ public sealed partial class HybridCache
             }
 
             _logger.LogFailedBulkL2CacheOperation(exception, items.Length);
-            await LocalCache.RemoveAllAsync(items, cancellationToken).ConfigureAwait(false);
+            await _L1ForAll().RemoveAllAsync(items, cancellationToken).ConfigureAwait(false);
             throw;
         }
 
-        await LocalCache.RemoveAllAsync(items, cancellationToken).ConfigureAwait(false);
+        await _L1ForAll().RemoveAllAsync(items, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if keys were actually removed
         if (removed > 0)
@@ -1063,12 +1020,12 @@ public sealed partial class HybridCache
         var removed = await _RunL2WriteWithBreakerGuardAsync(
                 prefix,
                 ct => l2Cache.RemoveByPrefixAsync(prefix, ct),
-                async ct => await LocalCache.RemoveByPrefixAsync(prefix, ct).ConfigureAwait(false),
+                async ct => await _L1ForAll().RemoveByPrefixAsync(prefix, ct).ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        await LocalCache.RemoveByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
+        await _L1ForAll().RemoveByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if keys were actually removed
         if (removed > 0)
@@ -1105,7 +1062,7 @@ public sealed partial class HybridCache
         }
         else
         {
-            await LocalCache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
+            await _L1ForAll().RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
         }
 
         // Broadcast carrying the timestamp so peers seed their L1/L2 from the origin clock; publish before the L2
@@ -1157,7 +1114,7 @@ public sealed partial class HybridCache
         }
         else
         {
-            await LocalCache.ClearAsync(cancellationToken).ConfigureAwait(false);
+            await _L1ForAll().ClearAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var message = new CacheInvalidationMessage
@@ -1285,19 +1242,19 @@ public sealed partial class HybridCache
         var removedCount = await _RunL2WriteWithBreakerGuardAsync(
                 key,
                 ct => l2Cache.SetRemoveAsync(key, items, expiration, ct),
-                async ct => await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false),
+                async ct => await _L1For(key).RemoveAsync(key, ct).ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
 
         if (removedCount == items.Length)
         {
-            await LocalCache.SetRemoveAsync(key, items, expiration, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).SetRemoveAsync(key, items, expiration, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             // Partial success - remove to force re-fetch
-            await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
         }
 
         // Only notify other nodes if items were actually removed
@@ -1326,7 +1283,7 @@ public sealed partial class HybridCache
         // own L1 on the FlushAll broadcast and seed their L2 remove marker from the origin timestamp.
         var invalidatedAt = _timeProvider.GetUtcNow();
 
-        await LocalCache.FlushAsync(cancellationToken).ConfigureAwait(false);
+        await _L1ForAll().FlushAsync(cancellationToken).ConfigureAwait(false);
 
         var message = new CacheInvalidationMessage
         {

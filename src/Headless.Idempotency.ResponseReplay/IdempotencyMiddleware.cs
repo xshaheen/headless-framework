@@ -2,6 +2,7 @@
 
 using System.Buffers;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Headless.Api;
 using Headless.Context;
 using Headless.Http;
@@ -11,6 +12,7 @@ using Headless.Primitives;
 using Headless.Serializer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -452,11 +454,19 @@ internal sealed partial class IdempotencyMiddleware(
             await renewalStop.CancelAsync().ConfigureAwait(false);
             await renewal.ConfigureAwait(false);
 
-            var shouldStore =
-                (options.ShouldCacheResponse ?? DefaultCachePredicate.Instance)(context)
-                && !captureStream.TruncatedCapture;
+            var cacheable = (options.ShouldCacheResponse ?? DefaultCachePredicate.Instance)(context);
 
-            if (!shouldStore)
+            if (cacheable && captureStream.TruncatedCapture)
+            {
+                // The handler succeeded and its side effects stand, but the body is too large to replay. Releasing
+                // the key here would let a retry run the handler a second time (a second charge, a second send), so
+                // the key settles on a stored 409 that says the request already ran.
+                await _CompleteAsync(admission, _UnreplayableResponse(context), request.Key, context, options)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (!cacheable)
             {
                 await _ReleaseAsync(context, admission, request.Key, options, rethrowOnFailure: true)
                     .ConfigureAwait(false);
@@ -508,33 +518,7 @@ internal sealed partial class IdempotencyMiddleware(
             );
             var payload = frame.WrittenSpan.ToArray();
 
-            try
-            {
-                // CancellationToken.None: the handler already ran, so a client disconnect must not strand the admission
-                // pending until its lease expires, which would turn every retry into a 409 for that long.
-                await operations
-                    .CompleteAsync(
-                        admission,
-                        payload,
-                        IdempotencyResponseSnapshot.Contract,
-                        cancellationToken: CancellationToken.None
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (StaleAdmissionException staleEx)
-            {
-                // The lease expired or was taken over while the handler ran; the fence refused this result so only the
-                // owning attempt's response is stored. Nothing the client can act on, so it is logged, never thrown.
-                LogCompletionRefused(request.Key, staleEx);
-            }
-            catch (Exception storeEx)
-            {
-                LogCompletionFailed(request.Key, storeEx);
-                if (_ShouldRethrowAfterHandler(context, options))
-                {
-                    throw;
-                }
-            }
+            await _CompleteAsync(admission, payload, request.Key, context, options).ConfigureAwait(false);
         }
         finally
         {
@@ -658,6 +642,67 @@ internal sealed partial class IdempotencyMiddleware(
     {
         // A cancellation the request itself asked for is not a store failure; let it propagate.
         return exception is not OperationCanceledException || !ct.IsCancellationRequested;
+    }
+
+    /// <summary>Stores a settled response for the admission; a store failure after the handler ran is logged, and rethrown only when the options ask for it.</summary>
+    private async Task _CompleteAsync(
+        IdempotentAdmission admission,
+        byte[] payload,
+        string idempotencyKey,
+        HttpContext context,
+        HttpIdempotencyOptions options
+    )
+    {
+        try
+        {
+            // CancellationToken.None: the handler already ran, so a client disconnect must not strand the admission
+            // pending until its lease expires, which would turn every retry into a 409 for that long.
+            await operations
+                .CompleteAsync(
+                    admission,
+                    payload,
+                    IdempotencyResponseSnapshot.Contract,
+                    cancellationToken: CancellationToken.None
+                )
+                .ConfigureAwait(false);
+        }
+        catch (StaleAdmissionException staleEx)
+        {
+            // The lease expired or was taken over while the handler ran; the fence refused this result so only the
+            // owning attempt's response is stored. Nothing the client can act on, so it is logged, never thrown.
+            LogCompletionRefused(idempotencyKey, staleEx);
+        }
+        catch (Exception storeEx)
+        {
+            LogCompletionFailed(idempotencyKey, storeEx);
+            if (_ShouldRethrowAfterHandler(context, options))
+            {
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The snapshot a retry replays when the original response was too large to capture: a 409 problem response
+    /// (<see cref="HttpIdempotencyErrorCodes.ResponseTooLarge"/>), stored under the same contract as any other
+    /// response so every store and the replay path handle it unchanged.
+    /// </summary>
+    private byte[] _UnreplayableResponse(HttpContext context)
+    {
+        var problem = problemDetailsCreator.Conflict(IdempotencyMessageDescriber.ResponseTooLarge());
+        var serializerOptions = context
+            .RequestServices.GetRequiredService<IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>()
+            .Value.SerializerOptions;
+        var body = JsonSerializer.SerializeToUtf8Bytes(problem, serializerOptions.GetTypeInfo(typeof(ProblemDetails)));
+        var headers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Microsoft.Net.Http.Headers.HeaderNames.ContentType] = ["application/problem+json"],
+        };
+
+        using var frame = new PooledByteBufferWriter(body.Length + 256);
+        IdempotencyResponseSnapshot.WriteTo(frame, StatusCodes.Status409Conflict, headers, body);
+
+        return frame.WrittenSpan.ToArray();
     }
 
     /// <summary>
