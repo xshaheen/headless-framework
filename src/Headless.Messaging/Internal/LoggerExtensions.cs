@@ -1275,11 +1275,11 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 4138,
-        EventName = "SequencedWaitHoldFailed",
+        EventName = "WaitingRowHoldFailed",
         Level = LogLevel.Warning,
-        Message = "Holding message {StorageId}, which waits behind its routing affinity key on a sequential consumer, failed; the hold is retried on the next pass, and a row left unheld past its dispatch grace is taken by the retry pickup, out of its key's order."
+        Message = "Holding message {StorageId}, whose delivery waits on this host behind its routing affinity key or for its consumer's rate-limit permit, failed; the hold is retried on the next pass, and a row left unheld past its dispatch grace is taken by the retry pickup, out of its key's order or ahead of its waiting delivery."
     )]
-    internal static partial void SequencedWaitHoldFailed(this ILogger logger, Exception exception, Guid storageId);
+    internal static partial void WaitingRowHoldFailed(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
         EventId = 4139,
