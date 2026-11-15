@@ -4,6 +4,7 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 using Tests.Guarantees;
+using Tests.Helpers;
 
 namespace Tests.Transport;
 
@@ -116,14 +117,16 @@ public sealed class InFlightHandlerTrackerTests : TestBase
         var first = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var late = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         tracker.Track(first.Task);
-        var drain = tracker.DrainAsync(TimeSpan.FromSeconds(30), TimeProvider.System);
+        var clock = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
+        var drain = tracker.DrainAsync(TimeSpan.FromSeconds(30), clock);
+        await clock.WaitForArmedTimerAsync();
 
         // when — a delivery that passed its shutdown check before the drain starts its handler late
         tracker.Track(late.Task);
         first.SetResult();
-        await Task.Delay(50, AbortToken);
 
-        // then
+        // then — the drain arms a second wait only once it has re-read the handlers and found the late one
+        await clock.WaitForArmedTimerAsync();
         drain.IsCompleted.Should().BeFalse();
 
         late.SetResult();
@@ -156,14 +159,16 @@ public sealed class InFlightHandlerTrackerTests : TestBase
         var faulting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var late = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         tracker.Track(faulting.Task);
-        var drain = tracker.DrainAsync(TimeSpan.FromSeconds(30), TimeProvider.System);
+        var clock = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
+        var drain = tracker.DrainAsync(TimeSpan.FromSeconds(30), clock);
+        await clock.WaitForArmedTimerAsync();
 
         // when — a delivery that passed its shutdown check starts a handler late, then the first handler faults.
         tracker.Track(late.Task);
         faulting.SetException(new InvalidOperationException("boom"));
-        await Task.Delay(50, AbortToken);
 
         // then — the client must not be disposed under the late handler, so the drain waits for it first.
+        await clock.WaitForArmedTimerAsync();
         drain.IsCompleted.Should().BeFalse();
 
         late.SetResult();

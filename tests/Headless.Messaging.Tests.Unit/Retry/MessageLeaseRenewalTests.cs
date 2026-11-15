@@ -6,6 +6,7 @@ using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Helpers;
 
 namespace Tests.Retry;
 
@@ -17,7 +18,7 @@ public sealed class MessageLeaseRenewalTests : TestBase
     private static readonly TimeSpan _Lease = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan _Interval = TimeSpan.FromSeconds(10);
 
-    private readonly FakeTimeProvider _clock = new();
+    private readonly TimerArmedSignalClock _clock = new(DateTimeOffset.UnixEpoch);
     private readonly FakeTimeProvider _backoffClock = new();
     private readonly ConcurrentQueue<Func<bool>> _outcomes = new();
     private Func<CancellationToken, Task<bool>>? _hungRenewal;
@@ -110,7 +111,6 @@ public sealed class MessageLeaseRenewalTests : TestBase
         // when
         await _TickAsync(1);
         _clock.Advance(_Interval * 3);
-        await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
 
         // then
         renewal.IsLost.Should().BeFalse();
@@ -186,17 +186,16 @@ public sealed class MessageLeaseRenewalTests : TestBase
         );
     }
 
-    /// <summary>Advances one interval per renewal and waits until each renewal call has run.</summary>
+    /// <summary>Advances one interval per renewal, each time the loop has armed its next wait, and checks each ran.</summary>
     private async Task _TickAsync(int renewals, TimeSpan? step = null)
     {
         var target = Volatile.Read(ref _calls) + renewals;
-        for (var spin = 0; spin < 2_000 && Volatile.Read(ref _calls) < target; spin++)
+        for (var tick = 0; tick < renewals; tick++)
         {
+            await _clock.WaitForArmedTimerAsync();
             _clock.Advance(step ?? _Interval);
-            await Task.Delay(TimeSpan.FromMilliseconds(2), AbortToken);
         }
 
         Volatile.Read(ref _calls).Should().BeGreaterThanOrEqualTo(target);
-        await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
     }
 }

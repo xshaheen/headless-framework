@@ -29,16 +29,15 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         // when
         var run = sut.ProcessAsync(context);
 
-        await _WaitUntilAsync(() => inner.Calls == 1 && timeProvider.DelayCount == 1, AbortToken);
+        await timeProvider.WaitForDelaysAsync(1);
         var firstDelay = timeProvider.DelayAt(0);
 
         await timeProvider.FireNextTimerAsync();
 
-        await _WaitUntilAsync(() => inner.Calls == 2 && timeProvider.DelayCount == 2, AbortToken);
+        await timeProvider.WaitForDelaysAsync(2);
         var secondDelay = timeProvider.DelayAt(1);
 
         await timeProvider.FireNextTimerAsync();
-        await _WaitUntilAsync(() => inner.Calls == 3, AbortToken);
         await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
         // then: each wait is the doubled base delay plus 0-25% jitter
@@ -71,14 +70,13 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         // when
         var run = sut.ProcessAsync(context);
 
-        await _WaitUntilAsync(() => inner.Calls == 1 && timeProvider.DelayCount == 1, AbortToken);
+        await timeProvider.WaitForDelaysAsync(1);
         await timeProvider.FireNextTimerAsync();
 
-        await _WaitUntilAsync(() => inner.Calls == 3 && timeProvider.DelayCount == 2, AbortToken);
+        await timeProvider.WaitForDelaysAsync(2);
         var secondFailureDelay = timeProvider.DelayAt(1);
 
         await timeProvider.FireNextTimerAsync();
-        await _WaitUntilAsync(() => inner.Calls == 4, AbortToken);
         await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
         // then: the post-recovery wait restarts from the initial 1s (plus 0-25% jitter)
@@ -129,7 +127,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
 
         // when
         var run = sut.ProcessAsync(context);
-        await _WaitUntilAsync(() => timeProvider.DelayCount == 1 || run.IsCompleted, AbortToken);
+        await Task.WhenAny(timeProvider.WaitForDelaysAsync(1), run);
 
         // then — it waits like any other failure instead of re-entering the processor at once.
         timeProvider.DelayCount.Should().Be(1, "a cancellation while the context runs is a failure to back off from");
@@ -139,14 +137,6 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         await timeProvider.FireNextTimerAsync();
         await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
         inner.Calls.Should().Be(2);
-    }
-
-    private static async Task _WaitUntilAsync(Func<bool> predicate, CancellationToken cancellationToken)
-    {
-        while (!predicate())
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
-        }
     }
 
     private sealed class SequenceProcessor(params Func<ProcessingContext, Task>[] actions) : IProcessor
@@ -177,6 +167,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         private readonly Lock _gate = new();
         private readonly List<TimeSpan> _delays = [];
         private readonly Queue<ControlledTimer> _timers = [];
+        private readonly List<(int Count, TaskCompletionSource Signal)> _waiters = [];
 
         public int DelayCount
         {
@@ -186,6 +177,22 @@ public sealed class InfiniteRetryProcessorTests : TestBase
                 {
                     return _delays.Count;
                 }
+            }
+        }
+
+        /// <summary>Completes once the processor has armed <paramref name="count"/> waits in total.</summary>
+        public Task WaitForDelaysAsync(int count)
+        {
+            lock (_gate)
+            {
+                if (_delays.Count >= count)
+                {
+                    return Task.CompletedTask;
+                }
+
+                var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiters.Add((count, signal));
+                return signal.Task.Bounded();
             }
         }
 
@@ -217,11 +224,20 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         {
             var timer = new ControlledTimer(callback, state);
 
+            List<TaskCompletionSource>? ready = null;
+
             lock (_gate)
             {
                 _delays.Add(dueTime);
                 _timers.Enqueue(timer);
+                foreach (var (count, signal) in _waiters.Where(waiter => waiter.Count <= _delays.Count).ToList())
+                {
+                    (ready ??= []).Add(signal);
+                    _waiters.Remove((count, signal));
+                }
             }
+
+            ready?.ForEach(signal => signal.TrySetResult());
 
             return timer;
         }

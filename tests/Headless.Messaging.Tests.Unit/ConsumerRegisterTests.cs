@@ -810,7 +810,7 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task should_wait_consumer_tasks_using_configured_timeout_not_legacy_two_seconds_when_pulse()
     {
-        var fakeTime = new FakeTimeProvider();
+        var fakeTime = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
         await using var provider = _CreateProvider(configureServices: services =>
             services.AddSingleton<TimeProvider>(fakeTime)
         );
@@ -847,8 +847,8 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // Past the legacy hardcoded 2s bound: under the configured 30s budget the wait must
         // still be pending. The old fixed 2s WaitAsync would already have expired here.
+        await fakeTime.WaitForArmedTimerAsync();
         fakeTime.Advance(TimeSpan.FromSeconds(3));
-        await Task.Delay(50, AbortToken);
         pulse.IsCompleted.Should().BeFalse("PulseAsync must honor the configured waitTimeout, not the legacy 2s");
 
         fakeTime.Advance(TimeSpan.FromSeconds(17));
@@ -1187,7 +1187,7 @@ public sealed class ConsumerRegisterTests : TestBase
         RecordingDataStorage Storage,
         Headless.Messaging.IMessageSerializer Serializer,
         ServiceProvider Provider,
-        FakeTimeProvider BackoffClock
+        TimerArmedSignalClock BackoffClock
     ) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
@@ -1526,7 +1526,7 @@ public sealed class ConsumerRegisterTests : TestBase
         configureServices?.Invoke(services);
 
         // The admission retries wait on the back-off clock, which the delivery steps through instead of sleeping.
-        var backoffClock = new FakeTimeProvider();
+        var backoffClock = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
         services.AddKeyedSingleton<TimeProvider>(MessagingOptions.BackoffClockServiceKey, backoffClock);
 
         var provider = services.BuildServiceProvider();
@@ -3058,13 +3058,24 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     /// <summary>Runs one delivery through the client's callback, advancing the back-off clock until it settles.</summary>
-    private static async Task _DeliverAsync(IConsumerClient client, TransportMessage transport, FakeTimeProvider clock)
+    private static async Task _DeliverAsync(
+        IConsumerClient client,
+        TransportMessage transport,
+        TimerArmedSignalClock clock
+    )
     {
         var delivery = client.OnMessageCallback!(transport, null);
         while (!delivery.IsCompleted)
         {
-            clock.Advance(TimeSpan.FromMilliseconds(250));
-            await Task.Delay(TimeSpan.FromMilliseconds(1), AbortToken);
+            // Each back-off wait arms its timer after the delivery decides to wait, so an advance only counts once
+            // that timer exists; one step past the longest back-off (about 2.5 s) fires it.
+            await Task.WhenAny(delivery, clock.WaitForArmedTimerAsync());
+            if (delivery.IsCompleted)
+            {
+                break;
+            }
+
+            clock.Advance(TimeSpan.FromSeconds(5));
         }
 
         await delivery;
