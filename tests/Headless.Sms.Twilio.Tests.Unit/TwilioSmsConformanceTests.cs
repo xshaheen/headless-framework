@@ -31,7 +31,9 @@ public sealed class TwilioSmsConformanceTests : SmsSenderConformanceTests
     protected override ISmsSender CreateFaultingSender()
     {
         var client = Substitute.For<ITwilioRestClient>();
-        client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(new HttpRequestException("network down"));
+        client
+            .RequestAsync(Arg.Any<Request>())
+            .ThrowsAsync(new HttpRequestException(HttpRequestError.ConnectionError, "network down"));
 
         return _CreateSender(client);
     }

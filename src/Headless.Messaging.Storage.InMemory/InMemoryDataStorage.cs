@@ -1139,8 +1139,8 @@ internal sealed partial class InMemoryDataStorage(
                     );
                 }
 
-                // Non-terminal, unleased existing row: refresh in place with the latest payload + reset to
-                // the freshly-stored Scheduled state, mirroring the SQL providers' MERGE WHEN
+                // Non-terminal, unleased, due existing row: refresh in place with the latest payload and a fresh
+                // dispatch grace, mirroring the SQL providers' MERGE WHEN
                 // MATCHED UPDATE branch. Name/ConsumerIdentity/Version are init-only on MemoryMessage; the
                 // identity is keyed on (Version, MessageId, ConsumerIdentity) so those values are pinned at
                 // insert time and never need refreshing across redeliveries of the same identity.
@@ -1164,6 +1164,16 @@ internal sealed partial class InMemoryDataStorage(
                     );
                 }
 
+                // A row whose retry back-off or circuit deferral is ahead waits for it, and one whose dispatch is put
+                // off is still held by a delivery that waits on some host; either way the redelivery gets the same
+                // unpersisted candidate and leaves the row alone.
+                if (existing.NextRetryAt is { } due && due > nowUtc)
+                {
+                    return ValueTask.FromResult(
+                        _CreateUnstoredReceivedMessage(message, serialized, added, initialNextRetryAt)
+                    );
+                }
+
                 existing.Origin = _CloneOrigin(message.Origin);
                 existing.Content = serialized;
                 existing.Lane = message.Lane;
@@ -1173,9 +1183,8 @@ internal sealed partial class InMemoryDataStorage(
                 existing.ExpiresAt = null;
                 existing.NextRetryAt = initialNextRetryAt;
                 existing.Lease = RowLeaseRules.Revoke(existing.Lease).Next;
-                existing.StatusName = StatusName.Scheduled;
-                existing.ExceptionInfo = null;
-                existing.FailureFingerprint = null;
+                // The redelivery runs the row as the attempt after its last one, so its status and failure history
+                // stay.
                 existing.SequenceKey = message.SequenceKey;
                 _StampChange(existing);
 

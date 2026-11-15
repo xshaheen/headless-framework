@@ -141,7 +141,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
             TimeSpan.FromSeconds(10),
             AbortToken
         );
-        var before = await db.KeyTimeToLiveAsync(_ReaderKey(resource));
+        var expiryBefore = (long)await db.HashGetAsync(_ReaderKey(resource), readerId);
 
         // when
         var result = await fixture.ReaderWriterLockStorage.TryExtendReadAsync(
@@ -150,13 +150,40 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
             TimeSpan.FromSeconds(1),
             AbortToken
         );
-        var after = await db.KeyTimeToLiveAsync(_ReaderKey(resource));
+        var expiryAfter = (long)await db.HashGetAsync(_ReaderKey(resource), readerId);
+
+        // then - the reader's own expiry, not just the hash key's safety TTL, keeps the later deadline
+        result.Should().BeTrue();
+        expiryAfter.Should().Be(expiryBefore);
+    }
+
+    [Fact]
+    public async Task should_extend_write_ttl_without_shortening()
+    {
+        // given
+        var resource = _NewResource();
+        var writerId = Guid.NewGuid().ToString("N");
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await fixture.ReaderWriterLockStorage.TryAcquireWriteAsync(
+            resource,
+            writerId,
+            DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
+            TimeSpan.FromSeconds(10),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        var result = await fixture.ReaderWriterLockStorage.TryExtendWriteAsync(
+            resource,
+            writerId,
+            TimeSpan.FromSeconds(1),
+            AbortToken
+        );
+        var ttl = await db.KeyTimeToLiveAsync(_WriterKey(resource));
 
         // then
         result.Should().BeTrue();
-        after.Should().NotBeNull();
-        before.Should().NotBeNull();
-        after!.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(8));
+        ttl!.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(8));
     }
 
     [Fact]

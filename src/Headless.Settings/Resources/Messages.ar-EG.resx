@@ -29,4 +29,7 @@
   <data name="setting:decryption_failed" xml:space="preserve">
     <value>تعذّر فك تشفير قيمة الإعداد {0}.</value>
   </data>
+  <data name="setting:provider_not_allowed" xml:space="preserve">
+    <value>الإعداد {0} مش بيسمح للموفر {1}.</value>
+  </data>
 </root>

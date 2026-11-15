@@ -241,7 +241,7 @@ internal sealed class RedisDistributedSemaphoreStorage(
             fenceKey,
             leaseId,
             maxCount,
-            (long)ttl.TotalMilliseconds
+            RedisLeaseMilliseconds.From(ttl)
         );
         var result = await scriptsLoader
             .EvaluateAsync(Db, TryAcquireSemaphoreWithFenceScriptDefinition.Instance, parameters, cancellationToken)
@@ -272,7 +272,7 @@ internal sealed class RedisDistributedSemaphoreStorage(
 
     private static SemaphoreSlotParams _GetSemaphoreSlotParameters(RedisKey holdersKey, string leaseId, TimeSpan? ttl)
     {
-        var expiresValue = ttl.HasValue ? (long)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var expiresValue = ttl.HasValue ? RedisLeaseMilliseconds.From(ttl.Value) : RedisValue.EmptyString;
 
         return new SemaphoreSlotParams(holdersKey, leaseId, expiresValue);
     }

@@ -483,4 +483,19 @@ public sealed class SlugTests
     }
 
     #endregion
+
+    [Fact]
+    public void should_drop_lone_surrogate_instead_of_throwing()
+    {
+        // given - string normalization throws on a lone surrogate, which turned user input into a server error.
+        // The inputs live in code, not InlineData: theory data serialization rewrites a lone surrogate to U+FFFD.
+        const string loneHigh = "a\uD800b";
+        const string loneLow = "a\uDC00b";
+        const string onlyLone = "\uD800";
+
+        // when / then
+        Slug.Create(loneHigh).Should().Be("ab");
+        Slug.Create(loneLow).Should().Be("ab");
+        Slug.Create(onlyLone).Should().BeEmpty();
+    }
 }

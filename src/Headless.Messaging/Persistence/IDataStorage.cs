@@ -599,7 +599,13 @@ public interface IDataStorage
     /// <param name="consumerIdentity">The identity of the consumer the message was delivered to; received rows are unique per message ID and consumer identity.</param>
     /// <param name="message">The received message envelope to persist. A non-empty <see cref="MediumMessage.Content"/> is the envelope the caller already serialized for <see cref="MediumMessage.Origin"/> and is stored as it is; an empty one is serialized from the origin.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
+    /// <returns>
+    /// The stored envelope with <c>StorageId</c> populated by the storage provider. A redelivery of a stored message
+    /// returns the stored row's <c>StorageId</c>, <c>Retries</c>, and <c>InlineAttempts</c>, so its attempt reservation
+    /// matches the row. It rewrites only a row that is neither terminal, leased, nor waiting for a later
+    /// <c>NextRetryAt</c>, gives it a new dispatch grace, and keeps its status and failure history. Any other
+    /// redelivery writes nothing and returns an unstored envelope with a fresh <c>StorageId</c>, which no lease can take.
+    /// </returns>
     ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string consumerIdentity,

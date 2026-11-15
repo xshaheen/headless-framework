@@ -371,7 +371,100 @@ public abstract class JobsAttemptHistoryConformanceTests<TFixture>(TFixture fixt
         );
     }
 
+    public virtual async Task retry_reclaim_charges_only_an_attempt_in_flight_when_the_run_lapses_during_an_in_process_retry_wait(
+        bool deadNode,
+        bool nextAttemptStarted
+    )
+    {
+        await _RunAsync(
+            "attempts-retry-wait",
+            async (store, owner, ct) =>
+            {
+                var job = Guid.NewGuid();
+                await _SeedRunningTimeJobAsync(job, owner, lapsed: false, NodeDeathPolicy.Retry, ct);
+                var occurrence = await _SeedRunningOccurrenceAsync(owner, NodeDeathPolicy.Retry, lapsed: false, ct);
+                var timeJobRow = JobsLeaseTables.TimeJob(job, 1);
+                var occurrenceRow = JobsLeaseTables.CronOccurrence(occurrence, 1);
+                (await store.OpenTimeJobAttemptAsync(timeJobRow, owner, _StartedAt, ct)).Should().BeTrue();
+                (await store.OpenCronJobOccurrenceAttemptAsync(occurrenceRow, owner, _StartedAt, ct)).Should().BeTrue();
+
+                // The executor's in-process retry write charges the failed attempt and closes it; the run stays
+                // InProgress through the wait.
+                var retryWrite = (Guid id) =>
+                    _State(id, owner)
+                        .SetProperty(x => x.RetryCount, 1)
+                        .SetProperty(x => x.AttemptEnd, _End(JobAttemptOutcome.Failed, "transient"));
+                (await store.UpdateTimeJobAsync(retryWrite(job), ct)).Should().Be(1);
+                (await store.UpdateCronJobOccurrenceAsync(retryWrite(occurrence), ct)).Should().Be(1);
+
+                if (nextAttemptStarted)
+                {
+                    (await store.OpenTimeJobAttemptAsync(timeJobRow, owner, _StartedAt, ct)).Should().BeTrue();
+                    (await store.OpenCronJobOccurrenceAttemptAsync(occurrenceRow, owner, _StartedAt, ct))
+                        .Should()
+                        .BeTrue();
+                }
+
+                await _ExpireLeasesAsync(owner, ct);
+                if (deadNode)
+                {
+                    (await store.ReleaseDeadNodeTimeJobResourcesAsync(owner, ct)).Total.Should().Be(1);
+                    (await store.ReleaseDeadNodeOccurrenceResourcesAsync(owner, ct)).Total.Should().Be(1);
+                }
+                else
+                {
+                    (await store.ReclaimStalledTimeJobsAsync(ct)).Total.Should().Be(1);
+                    (await store.ReclaimStalledCronJobOccurrencesAsync(ct)).Total.Should().Be(1);
+                }
+
+                var storedJob = await store.GetTimeJobByIdAsync(job, ct);
+                storedJob!.Status.Should().Be(JobStatus.Idle);
+                var storedOccurrence = (await store.GetAllCronJobOccurrencesAsync(predicate: null, ct)).Single(x =>
+                    x.Id == occurrence
+                );
+                storedOccurrence.Status.Should().Be(JobStatus.Idle);
+
+                var jobOutcomes = (await store.GetTimeJobAttemptsAsync(job, ct)).Select(x => x.Outcome);
+                var occurrenceOutcomes = (await store.GetCronJobOccurrenceAttemptsAsync(occurrence, ct)).Select(x =>
+                    x.Outcome
+                );
+                if (nextAttemptStarted)
+                {
+                    storedJob.RetryCount.Should().Be(2, "the second attempt was running when the lease lapsed");
+                    storedOccurrence.RetryCount.Should().Be(2);
+                    jobOutcomes.Should().Equal(JobAttemptOutcome.Failed, JobAttemptOutcome.Lost);
+                    occurrenceOutcomes.Should().Equal(JobAttemptOutcome.Failed, JobAttemptOutcome.Lost);
+                }
+                else
+                {
+                    storedJob
+                        .RetryCount.Should()
+                        .Be(1, "the retry write already charged the failed attempt; none was running");
+                    storedOccurrence.RetryCount.Should().Be(1);
+                    jobOutcomes.Should().Equal(JobAttemptOutcome.Failed);
+                    occurrenceOutcomes.Should().Equal(JobAttemptOutcome.Failed);
+                }
+            }
+        );
+    }
+
     #region Helpers
+
+    private async Task _ExpireLeasesAsync(string ownerId, CancellationToken cancellationToken)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        foreach (var table in new[] { fixture.QualifiedTimeJobsTable, fixture.QualifiedCronJobOccurrencesTable })
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = fixture.Sql(
+                $"UPDATE {table} SET \"LeaseExpiresAt\" = @past WHERE \"LeaseHolder\" = @owner;"
+            );
+            JobsCoordinationFixtureExtensions.AddParameter(command, "@past", DateTimeOffset.UtcNow.AddMinutes(-5));
+            JobsCoordinationFixtureExtensions.AddParameter(command, "@owner", ownerId);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
 
     private async Task _RunAsync(
         string nodeId,

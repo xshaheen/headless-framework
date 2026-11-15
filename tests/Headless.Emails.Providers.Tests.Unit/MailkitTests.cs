@@ -3,6 +3,8 @@
 using Headless.Emails;
 using Headless.Emails.Mailkit;
 using Headless.Testing.Tests;
+using MailKit;
+using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
@@ -45,7 +47,23 @@ public sealed class MailkitSmtpOptionsValidatorTests
         _validator.Validate(_Valid(timeout: TimeSpan.FromDays(30))).IsValid.Should().BeFalse();
     }
 
-    private static MailkitSmtpOptions _Valid(int maxPoolSize = 10, TimeSpan? timeout = null)
+    [Fact]
+    public void should_fail_when_negative_idle_probe_threshold()
+    {
+        _validator.Validate(_Valid(idleProbeThreshold: TimeSpan.FromSeconds(-1))).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_be_allowed_when_zero_idle_probe_threshold()
+    {
+        _validator.Validate(_Valid(idleProbeThreshold: TimeSpan.Zero)).IsValid.Should().BeTrue();
+    }
+
+    private static MailkitSmtpOptions _Valid(
+        int maxPoolSize = 10,
+        TimeSpan? timeout = null,
+        TimeSpan? idleProbeThreshold = null
+    )
     {
         return new()
         {
@@ -53,12 +71,23 @@ public sealed class MailkitSmtpOptionsValidatorTests
             Port = 587,
             MaxPoolSize = maxPoolSize,
             Timeout = timeout ?? TimeSpan.FromSeconds(30),
+            IdleProbeThreshold = idleProbeThreshold ?? TimeSpan.FromSeconds(30),
         };
     }
 }
 
 public sealed class SmtpClientPooledObjectPolicyTests
 {
+    [Fact]
+    public void should_create_a_client_that_tracks_its_last_send_when_create()
+    {
+        var policy = _Policy(TimeSpan.FromSeconds(5));
+
+        using var client = policy.Create();
+
+        client.Should().BeOfType<PooledSmtpClient>();
+    }
+
     [Fact]
     public void should_apply_the_configured_timeout_when_create()
     {
@@ -248,20 +277,203 @@ public sealed class MailkitEmailSenderTests : TestBase
         pool.Received(1).Return(client);
     }
 
-    private static MailkitEmailSender _Sender(SmtpClient client)
+    [Fact]
+    public async Task should_skip_the_noop_probe_when_the_pooled_connection_was_used_within_the_threshold()
+    {
+        // given: a pooled connection that just completed a send
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.FromMinutes(5));
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+
+        // when
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        // then
+        result.Success.Should().BeTrue();
+        client.NoOpCount.Should().Be(0);
+        client.ConnectCount.Should().Be(1);
+        client.SendCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_probe_before_every_send_when_the_idle_probe_threshold_is_zero()
+    {
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.Zero);
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+
+        client.NoOpCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_probe_when_the_pooled_connection_sat_idle_past_the_threshold()
+    {
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.FromMilliseconds(1));
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+
+        // Waiting longer than the threshold can only make the connection more idle, so the wait cannot flake.
+        await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+
+        client.NoOpCount.Should().Be(1);
+    }
+
+    [Theory]
+    [MemberData(nameof(DroppedSessionFaults))]
+    public async Task should_reconnect_and_retry_once_when_an_unprobed_connection_fails_before_the_sender_is_accepted(
+        string fault
+    )
+    {
+        // given: a recently used connection the server closed without the client noticing
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.FromMinutes(5));
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+        client.Behaviors.Enqueue(_ => throw _DroppedSessionFault(fault));
+
+        // when
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        // then
+        result.Success.Should().BeTrue();
+        client.SendCount.Should().Be(3);
+        client.ConnectCount.Should().Be(2);
+        client.DisconnectCount.Should().Be(1);
+    }
+
+    public static TheoryData<string> DroppedSessionFaults => ["io", "timeout", "protocol", "not-connected", "421"];
+
+    [Fact]
+    public async Task should_not_retry_when_the_connection_drops_after_the_server_accepted_the_sender()
+    {
+        // The server may already hold the message once MAIL FROM is accepted, so a retry could deliver it twice.
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.FromMinutes(5));
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+        client.Behaviors.Enqueue(c =>
+        {
+            c.AcceptSender();
+            throw new IOException("connection reset during DATA");
+        });
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        client.SendCount.Should().Be(2);
+        client.ConnectCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_retry_when_the_server_rejects_the_sender()
+    {
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.FromMinutes(5));
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+        client.Behaviors.Enqueue(_ =>
+            throw new SmtpCommandException(
+                SmtpErrorCode.SenderNotAccepted,
+                SmtpStatusCode.MailboxUnavailable,
+                "sender rejected"
+            )
+        );
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        client.SendCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_retry_only_once_when_the_retried_send_also_fails()
+    {
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.FromMinutes(5));
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+        client.Behaviors.Enqueue(_ => throw new IOException("connection reset"));
+        client.Behaviors.Enqueue(_ => throw new IOException("connection reset again"));
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("connection reset again");
+        client.SendCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task should_not_retry_when_a_probed_connection_fails_on_send()
+    {
+        // A connection that just answered NOOP failing on send is not a stale idle session; surface it.
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.Zero);
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+        client.Behaviors.Enqueue(_ => throw new IOException("connection reset"));
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        client.SendCount.Should().Be(2);
+        client.ConnectCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_propagate_without_retry_when_the_caller_cancels_during_send()
+    {
+        using var cts = new CancellationTokenSource();
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client, idleProbeThreshold: TimeSpan.FromMinutes(5));
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+        client.Behaviors.Enqueue(_ =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+
+        var act = async () => await sender.SendAsync(_Request(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        client.SendCount.Should().Be(2);
+    }
+
+    private static Exception _DroppedSessionFault(string fault)
+    {
+        return fault switch
+        {
+            "io" => new IOException("connection reset"),
+            "timeout" => new TimeoutException("Operation timed out after 5000 milliseconds"),
+            "protocol" => new SmtpProtocolException("The SMTP server has unexpectedly disconnected."),
+            "not-connected" => new ServiceNotConnectedException("not connected"),
+            _ => new SmtpCommandException(
+                SmtpErrorCode.SenderNotAccepted,
+                SmtpStatusCode.ServiceNotAvailable,
+                "4.4.2 idle timeout"
+            ),
+        };
+    }
+
+    private static MailkitEmailSender _Sender(SmtpClient client, TimeSpan? idleProbeThreshold = null)
     {
         var pool = Substitute.For<ObjectPool<SmtpClient>>();
         pool.Get().Returns(client);
 
-        return _Sender(pool);
+        return _Sender(pool, idleProbeThreshold);
     }
 
-    private static MailkitEmailSender _Sender(ObjectPool<SmtpClient> pool)
+    private static MailkitEmailSender _Sender(ObjectPool<SmtpClient> pool, TimeSpan? idleProbeThreshold = null)
     {
         var options = Substitute.For<IOptionsMonitor<MailkitSmtpOptions>>();
         options
             .Get(Arg.Any<string>())
-            .Returns(new MailkitSmtpOptions { Server = "smtp.example.com", Timeout = TimeSpan.FromSeconds(5) });
+            .Returns(
+                new MailkitSmtpOptions
+                {
+                    Server = "smtp.example.com",
+                    Timeout = TimeSpan.FromSeconds(5),
+                    IdleProbeThreshold = idleProbeThreshold ?? TimeSpan.FromSeconds(30),
+                }
+            );
 
         return new MailkitEmailSender(pool, options, optionsName: null, NullLogger<MailkitEmailSender>.Instance);
     }
@@ -275,6 +487,86 @@ public sealed class MailkitEmailSenderTests : TestBase
             Subject = "subject",
             MessageText = "body",
         };
+    }
+
+    // A pooled client whose sends follow a script: each queued behavior handles one send, and a send with no
+    // behavior queued succeeds after the server accepts the sender, as a live session does.
+    private sealed class ScriptedSmtpClient : PooledSmtpClient
+    {
+        private bool _connected;
+        private MimeKit.MimeMessage? _message;
+
+        public Queue<Func<ScriptedSmtpClient, string>> Behaviors { get; } = new();
+
+        public int ConnectCount { get; private set; }
+
+        public int DisconnectCount { get; private set; }
+
+        public int NoOpCount { get; private set; }
+
+        public int SendCount { get; private set; }
+
+        public override bool IsConnected => _connected;
+
+        public override Task ConnectAsync(
+            string host,
+            int port = 0,
+            SecureSocketOptions options = SecureSocketOptions.Auto,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ConnectCount++;
+            _connected = true;
+            return Task.CompletedTask;
+        }
+
+        public override Task DisconnectAsync(bool quit, CancellationToken cancellationToken = default)
+        {
+            DisconnectCount++;
+            _connected = false;
+            return Task.CompletedTask;
+        }
+
+        public override Task NoOpAsync(CancellationToken cancellationToken = default)
+        {
+            NoOpCount++;
+            return Task.CompletedTask;
+        }
+
+        public override Task<string> SendAsync(
+            MimeKit.FormatOptions options,
+            MimeKit.MimeMessage message,
+            CancellationToken cancellationToken = default,
+            MailKit.ITransferProgress? progress = null
+        )
+        {
+            SendCount++;
+            _message = message;
+
+            try
+            {
+                if (Behaviors.TryDequeue(out var behavior))
+                {
+                    return Task.FromResult(behavior(this));
+                }
+
+                AcceptSender();
+                return Task.FromResult("250 2.0.0 queued");
+            }
+            catch (Exception e)
+            {
+                return Task.FromException<string>(e);
+            }
+        }
+
+        public void AcceptSender()
+        {
+            OnSenderAccepted(
+                _message!,
+                new MimeKit.MailboxAddress("", "from@example.com"),
+                new SmtpResponse(SmtpStatusCode.Ok, "2.1.0 sender ok")
+            );
+        }
     }
 
     // A pooled client whose server closed the session while it sat idle: it still reports IsConnected, the
@@ -326,9 +618,7 @@ public sealed class MailkitEmailSenderTests : TestBase
         private Task<T> _Dropped<T>()
         {
             _connected = false;
-            return Task.FromException<T>(
-                new MailKit.Net.Smtp.SmtpProtocolException("The SMTP server has unexpectedly disconnected.")
-            );
+            return Task.FromException<T>(new SmtpProtocolException("The SMTP server has unexpectedly disconnected."));
         }
     }
 
