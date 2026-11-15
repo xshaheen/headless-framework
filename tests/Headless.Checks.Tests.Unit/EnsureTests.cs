@@ -194,8 +194,8 @@ public sealed class EnsureTests
     public void should_throw_with_invariant_interpolated_message_when_true_condition_fails()
     {
         // given
-        var ratio = 1.5;
-        var limit = 3;
+        const double ratio = 1.5;
+        const int limit = 3;
         var original = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
 
@@ -211,6 +211,30 @@ public sealed class EnsureTests
         {
             CultureInfo.CurrentCulture = original;
         }
+    }
+
+    [Fact]
+    public void should_honor_alignment_and_format_in_interpolated_message_when_true_condition_fails()
+    {
+        // given
+        object boxed = 7;
+        const string text = "ab";
+
+        // when
+        var action = () =>
+        {
+            ReadOnlySpan<char> span = "xy";
+            Ensure.True(
+                condition: false,
+                $"[{1:D2}][{2, 3}][{3, -4:D2}][{span}][{span, 3}][{text}][{text, -3}][{boxed}][{boxed, 3:D2}]"
+            );
+        };
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<InvalidOperationException>()
+            .WithMessage("[01][  2][03  ][xy][ xy][ab][ab ][7][ 07]");
     }
 
     private static int _CountFormat(ref int formatted) => ++formatted;

@@ -53,7 +53,7 @@ public static partial class Argument
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsTrue(
         [DoesNotReturnIf(false)] bool condition,
-        [InterpolatedStringHandlerArgument(nameof(condition))] ref TrueCheckInterpolatedStringHandler message,
+        [InterpolatedStringHandlerArgument(nameof(condition))] TrueCheckInterpolatedStringHandler message,
         [CallerArgumentExpression(nameof(condition))] string? paramName = null
     )
     {

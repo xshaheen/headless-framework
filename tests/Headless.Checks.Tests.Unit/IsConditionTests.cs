@@ -40,8 +40,8 @@ public sealed class IsConditionTests
     [Fact]
     public void should_throw_with_interpolated_message_and_param_name_when_is_true_condition_fails()
     {
-        var value = 5;
-        var minimum = 10;
+        const int value = 5;
+        const int minimum = 10;
         var action = () => Argument.IsTrue(value > minimum, $"{value} is below {minimum}.", nameof(value));
         var actionWithCapturedName = () => Argument.IsTrue(value > minimum, $"{value} is below {minimum}.");
 

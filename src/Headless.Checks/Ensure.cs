@@ -46,7 +46,7 @@ public static class Ensure
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void True(
         [DoesNotReturnIf(false)] bool condition,
-        [InterpolatedStringHandlerArgument(nameof(condition))] ref TrueCheckInterpolatedStringHandler message,
+        [InterpolatedStringHandlerArgument(nameof(condition))] TrueCheckInterpolatedStringHandler message,
         [CallerArgumentExpression(nameof(condition))] string? expression = null
     )
     {
