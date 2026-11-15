@@ -119,6 +119,13 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
         {
             return innerPublish(messageOptions, cancellationToken);
         }
+
+        public bool HasMiddleware<T>(
+            T? content,
+            MessageLane lane,
+            MessageOptions? options,
+            DeliveryDecision decision
+        ) => false;
     }
 
     private sealed class TestDbTransaction : DbTransaction

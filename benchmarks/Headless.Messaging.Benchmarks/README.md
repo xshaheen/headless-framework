@@ -34,3 +34,18 @@ always enabled — the **Allocated** column is the headline metric for these all
   service resolution, and delegate-chain construction without transport/storage work.
 - **`MessageHeaderBenchmarks`** — isolates **F-14**: `new MessageHeader(headers)` parameterized by header
   count (4 / 8 / 16), so the copy cost can be read independently of the rest of the dispatch path.
+
+## Database scenarios
+
+Standalone console scenarios against real databases in containers (they need Docker). They print a table instead of
+running under BenchmarkDotNet.
+
+- **`relay`** (`PostgreSqlRelayScenario`) — the durable relay against PostgreSQL: publish, lease, and succeed, at
+  publish concurrency 1 / 8 / 32.
+- **`outbox-save`** (`OutboxSaveScenario`) — an EF Core save carrying 1 / 10 / 100 integration events into the
+  enlisted outbox, on PostgreSQL and SQL Server: save latency (mean, p50, p95) and the commands the client sent per
+  save. On an ARM host SQL Server runs under emulation, so compare its rows only with each other.
+
+```bash
+dotnet run -c Release --project benchmarks/Headless.Messaging.Benchmarks -- outbox-save
+```

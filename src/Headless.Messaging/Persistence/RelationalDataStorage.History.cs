@@ -153,9 +153,9 @@ internal sealed partial class RelationalDataStorage
             }
         }
 
-        // Every sweeper takes the operation locks in ascending id order, so two sweepers over overlapping batches
-        // cannot deadlock, and a request holds only its own operation's lock. A chunk bounds how many locks one
-        // transaction holds, and so how long a request on one of them waits.
+        // Every sweeper takes a chunk's operation locks in one command, in ascending id order, so two sweepers over
+        // overlapping batches cannot deadlock, and a request holds only its own operation's lock. A chunk bounds how
+        // many locks one transaction holds, and so how long a request on one of them waits.
         var doomed = candidates
             .OrderBy(static row => row.CreatedAt)
             .ThenBy(static row => row.Id)
@@ -174,12 +174,9 @@ internal sealed partial class RelationalDataStorage
                     _CreateConnection,
                     async (connection, transaction, ct) =>
                     {
-                        foreach (var operationId in chunk)
-                        {
-                            await _LockOperationAsync(connection, transaction, operationId, ct).ConfigureAwait(false);
-                        }
+                        await _LockOperationsAsync(connection, transaction, chunk, ct).ConfigureAwait(false);
 
-                        // Runs after the last lock, so it sees the receipt and audit of any request it waited behind
+                        // Runs after the locks, so it sees the receipt and audit of any request it waited behind
                         // and checks each receipt's age and references again. Keyed by the primary key, so the
                         // type/cutoff predicate is a residual filter, not a seek.
                         var list = string.Join(

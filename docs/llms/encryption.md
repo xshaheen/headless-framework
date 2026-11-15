@@ -335,7 +335,7 @@ public sealed class Beneficiary
 
 ### Design and runtime behavior
 
-- `AddEncryptedValueConversions()` applies `EncryptedValueConverter` to every `EncryptedValue` and `EncryptedValue?` property: `bytea` on PostgreSQL, `varbinary(max)` on SQL Server. A single property can use it directly with `HasConversion<EncryptedValueConverter>()`.
+- `AddEncryptedValueConversions()` applies `EncryptedValueConverter` to every `EncryptedValue` and `EncryptedValue?` property: `bytea` on PostgreSQL, `varbinary(max)` on SQL Server. A single property can use it directly with `HasConversion<EncryptedValueConverter>()`. It shares the frame's array in both directions instead of copying it per row and column, so a caller of `ConvertFromProvider` must not change the array it passes in.
 - `BlindIndexConverter` stores a `BlindIndex` as its `ToBase64Url()` text; apply it per property with `HasConversion<BlindIndexConverter>()`, or to every `BlindIndex` and `BlindIndex?` property with `configurationBuilder.AddBlindIndexConversions()` in `ConfigureConventions`. Nothing applies it by default, because a hash column is usually binary; call the convention only when the model's lookup columns are text. Saving the default `BlindIndex` throws `InvalidOperationException`; map an optional column as `BlindIndex?`.
 - Saving the default `EncryptedValue` throws `InvalidOperationException`: it holds no frame, and the empty bytes it would store could not be read back. Encrypt before saving, or map the column as `EncryptedValue?`, which stores null.
 - Reading bytes that are not a frame throws `FormatException` when the entity is materialized.

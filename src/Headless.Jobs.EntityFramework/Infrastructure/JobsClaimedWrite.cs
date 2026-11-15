@@ -1,7 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
+using System.Globalization;
+using Headless.Checks;
 using Headless.Fencing;
 using Headless.Jobs.Internal;
+using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Jobs.Infrastructure;
@@ -135,28 +140,83 @@ internal static class JobsClaimedWrite
         return settled == LeaseSettlementStatus.Settled ? 1 : 0;
     }
 
-    /// <summary>Slides the lease of a running row forward by <paramref name="duration"/> from the database clock.</summary>
+    // Not "Lease…": FencedRows reserves that prefix for its own parameters.
+    private const string _RenewDurationParameter = "JobsRenewDuration";
+
+    private static readonly string _ActiveLiteral = ((short)RowLeaseState.Active).ToString(
+        CultureInfo.InvariantCulture
+    );
+
+    /// <summary>
+    /// Slides the lease of a running row forward by <paramref name="duration"/> from the database clock, in one
+    /// statement that commits on its own.
+    /// </summary>
+    /// <remarks>
+    /// Every running job renews on each cadence, so the renewal is a single fenced <c>UPDATE</c> rather than a probe
+    /// plus <see cref="FencedRows.RenewAsync{TKey}"/>'s transaction around a locking read: its <c>WHERE</c> carries the
+    /// whole fence (the claim's generation, an active lease not yet expired by the database clock, and the row still
+    /// <see cref="JobStatus.InProgress"/>), so the check and the write are one decision under the row's lock. A refused
+    /// renewal reports no reason, which a renewal caller never needs: any refusal is a lost lease. Success is read from
+    /// the row the statement returns, not an affected count that a dialect's clock prelude could inflate.
+    /// </remarks>
     /// <returns>1 when the lease was renewed, else 0.</returns>
-    public static async Task<int> RenewAsync(
-        FencedRowTable<Guid> table,
+    public static async Task<int> RenewRunningAsync<TEntity>(
+        ISqlDialect dialect,
         DbContext context,
         FencedRow<Guid> row,
         TimeSpan duration,
         CancellationToken cancellationToken
     )
+        where TEntity : class
     {
-        var renewed = await FencedRows
-            .RenewAsync(
-                table,
-                JobsLeaseRows.Connection(context),
-                JobsLeaseRows.Transaction(context),
-                JobsLeaseRows.On(table, row),
-                duration,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        Argument.IsPositive(duration);
 
-        return renewed.Status == LeaseRenewalStatus.Renewed ? 1 : 0;
+        var columns = JobsLeaseGrant.Columns<TEntity>(context);
+        var set = JobsRowSet.For<TEntity>(context);
+        var id = set.Parameter(nameof(TimeJobEntity.Id), row.Key);
+        var generation = set.LeaseParameter(nameof(RowLeaseSnapshot.Generation), row.Generation);
+        var running = set.Parameter(nameof(TimeJobEntity.Status), JobStatus.InProgress);
+        var deadline = dialect.ShiftByDuration(SqlDialectTokens.Now, _RenewDurationParameter);
+        var where =
+            $"{columns.Id} = {id} AND {columns.Generation} = {generation}"
+            + $" AND {columns.State} = {_ActiveLiteral} AND {columns.ExpiresAt} > {SqlDialectTokens.Now}"
+            + $" AND {set.Column(nameof(TimeJobEntity.Status))} = {running}";
+        var sql =
+            dialect is PostgreSqlDialect || JobsSqlDialects.IsSqlite(dialect)
+                ? $"UPDATE {columns.Table} SET {columns.ExpiresAt} = {deadline} WHERE {where} RETURNING {columns.Id};"
+                : $"UPDATE {columns.Table} SET {columns.ExpiresAt} = {deadline} OUTPUT inserted.{columns.Id} WHERE {where};";
+
+        var connection = JobsLeaseRows.Connection(context);
+        var openedHere = connection.State != ConnectionState.Open;
+
+        if (openedHere)
+        {
+            await context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = JobsLeaseRows.Transaction(context);
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
+            command.CommandText = dialect.Render(new SqlClockedStatement(sql));
+#pragma warning restore CA2100
+            // Only the bindings: a renewal writes the expiry alone, so it does not stamp the change marker and a
+            // running job does not read as changed on every tick.
+            set.ToWrite().Bind?.Invoke(command);
+            dialect.AddDuration(command, _RenewDurationParameter, duration);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? 1 : 0;
+        }
+        finally
+        {
+            if (openedHere)
+            {
+                await context.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>Writes <paramref name="set"/> on <paramref name="row"/> while its generation is current and it is running, keeping the lease.</summary>

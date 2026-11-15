@@ -90,4 +90,12 @@ public sealed class UnitOfWorkOutbox
     {
         return _outbox.EnqueueAsync(_unitOfWork, contentObj, options, cancellationToken);
     }
+
+    /// <summary>
+    /// Opens a store batch on the bound unit, or returns <see langword="null" /> when the outbox feature cannot batch.
+    /// </summary>
+    internal IOutboxStoreBatch? BeginStoreBatch()
+    {
+        return _outbox is IUnitOfWorkOutboxBatching batching ? batching.BeginStoreBatch(_unitOfWork) : null;
+    }
 }

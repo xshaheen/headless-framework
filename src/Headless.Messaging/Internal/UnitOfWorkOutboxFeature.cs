@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Transactions;
 using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Internal;
@@ -14,8 +15,15 @@ namespace Headless.Messaging.Internal;
 /// an argument, and the outbox writer's first registration on it is what refuses a handle that can no longer
 /// carry work — before any storage effect.
 /// </remarks>
-internal sealed class UnitOfWorkOutboxFeature(MessagePublisher publisher) : IUnitOfWorkOutbox
+internal sealed class UnitOfWorkOutboxFeature(MessagePublisher publisher) : IUnitOfWorkOutbox, IUnitOfWorkOutboxBatching
 {
+    public IOutboxStoreBatch BeginStoreBatch(IUnitOfWork unitOfWork)
+    {
+        Argument.IsNotNull(unitOfWork);
+
+        return new OutboxStoreBatch(publisher, unitOfWork);
+    }
+
     public Task<PublishReceipt> PublishAsync<T>(
         IUnitOfWork unitOfWork,
         T? contentObj,

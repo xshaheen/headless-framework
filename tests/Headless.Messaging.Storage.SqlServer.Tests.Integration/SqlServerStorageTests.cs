@@ -104,6 +104,17 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
     }
 
     /// <inheritdoc />
+    protected override async Task<System.Data.Common.DbConnection?> OpenDatabaseConnectionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        return connection;
+    }
+
+    /// <inheritdoc />
     protected override IStorageTableNames GetTableNames()
     {
         _EnsureInitialized();

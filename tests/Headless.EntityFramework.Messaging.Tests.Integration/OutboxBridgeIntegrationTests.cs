@@ -109,6 +109,59 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     }
 
     [Fact]
+    public async Task should_write_every_event_of_one_save_when_no_publish_middleware_wraps_its_events()
+    {
+        // given — no publish middleware, so the save's events are held and written together before the commit
+        const string marker = "evt-batched";
+        await using var provider = await _BuildProviderAsync(tenantPropagation: false);
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var order = new OrderEntity { Name = "batched" };
+        for (var i = 0; i < 40; i++)
+        {
+            order.EmitIntegrationEvent(new OrderShipped($"{marker}-{i:D2}"));
+        }
+
+        var occurrences = order.GetIntegrationEvents().Select(e => e.EventId).ToList();
+        db.Orders.Add(order);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+
+        // then — every event has its row, under the identity the occurrence carried
+        var rows = await _ReadPublishedAsync(provider, marker);
+        rows.Select(row => row.Id).Should().BeEquivalentTo(occurrences);
+        (await _CountOrdersAsync()).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_roll_back_the_save_with_the_driver_error_when_an_event_row_fails_to_store(
+        bool tenantPropagation
+    )
+    {
+        // given — the second event's row cannot be inserted. Without middleware the rows are held and fail at the
+        // dispatcher's flush; with tenant propagation each row is stored on its own and fails at its own publish.
+        const string marker = "evt-store-failure";
+        await using var provider = await _BuildProviderAsync(tenantPropagation: tenantPropagation);
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var order = new OrderEntity { Name = "store-failure" };
+        order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
+        order.EmitIntegrationEvent(new OverlongNamedEvent($"{marker}-2"));
+        db.Orders.Add(order);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then — the same driver error either way, raised by the save before it commits, and nothing is kept
+        await act.Should().ThrowAsync<PostgresException>();
+        (await _CountPublishedContainingAsync(marker)).Should().Be(0);
+        (await _CountOrdersAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_write_outbox_rows_identically_to_async_when_sync_save()
     {
         // given
@@ -528,7 +581,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         Action<IServiceCollection>? configureServices = null,
         Action<DbContextOptionsBuilder>? configureDbContext = null,
         bool requireTenant = false,
-        bool includeJobs = false
+        bool includeJobs = false,
+        bool tenantPropagation = true
     )
     {
         var builder = Host.CreateApplicationBuilder();
@@ -552,11 +606,18 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             messaging.Message<OrderShipped>("orders.shipped", "2");
             messaging.Message<OrderInvoiced>("orders.invoiced", "3");
             messaging.Message<ShipOrder>("orders.ship", "2");
+            // Longer than the published table's name column, so its row fails at the insert.
+            messaging.Message<OverlongNamedEvent>(new string('n', 250), "1");
             messaging.AddModule<global::Headless.EntityFramework.Messaging.Tests.Integration.MessagingModule>();
         });
 
         services.AddSingleton<EmissionEvidence>();
-        new MessagingBuilder(services).AddTenantPropagationServices();
+        if (tenantPropagation)
+        {
+            // Registers publish middleware on both lanes, so every integration event is stored on its own.
+            new MessagingBuilder(services).AddTenantPropagationServices();
+        }
+
         services.AddScoped<IDomainEventHandler<OrderShipping>, DeriveShippingFacts>();
         services.AddDbContext<BridgeTestDbContext>(options =>
         {
@@ -789,6 +850,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
     }
 
     internal sealed record OrderShipped(string UniqueId);
+
+    private sealed record OverlongNamedEvent(string UniqueId);
 
     private sealed record OrderInvoiced(string UniqueId);
 
