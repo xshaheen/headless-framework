@@ -82,8 +82,11 @@ public sealed class RequestMemoFencingTests(TusAzureFixture fixture) : TestBase
         }
 
         // when - the request appends from its earlier read
-        await using var body = new MemoryStream(Faker.Random.Bytes(200));
-        var act = () => _requestStore.AppendDataAsync(fileId, body, AbortToken);
+        var act = async () =>
+        {
+            await using var body = new MemoryStream(Faker.Random.Bytes(200));
+            await _requestStore.AppendDataAsync(fileId, body, AbortToken);
+        };
 
         // then - the commit fails instead of replacing the other writer's block list, which stays committed
         (await act.Should().ThrowExactlyAsync<RequestFailedException>())
