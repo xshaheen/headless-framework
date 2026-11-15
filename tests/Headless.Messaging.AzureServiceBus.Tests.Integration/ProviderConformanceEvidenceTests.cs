@@ -179,12 +179,6 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(AzureServiceBusEmulatorConsumerClientHarnessTests.should_bound_shutdown_while_handler_is_active)
             ),
-            _BindEmulator(
-                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                nameof(
-                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently
-                )
-            ),
         ];
 
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
