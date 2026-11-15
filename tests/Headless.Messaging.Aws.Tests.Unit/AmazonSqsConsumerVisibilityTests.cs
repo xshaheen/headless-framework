@@ -9,7 +9,6 @@ using Headless.Messaging.Aws;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Time.Testing;
 using SqsMessage = Amazon.SQS.Model.Message;
 
 namespace Tests;
@@ -22,7 +21,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
 {
     private const string _QueueUrl = "http://test/queue";
 
-    private readonly FakeTimeProvider _time = new();
+    private readonly TimerSignalingFakeTimeProvider _time = new();
     private readonly IAmazonSQS _sqs = Substitute.For<IAmazonSQS>();
     private readonly ILogger<AmazonSqsConsumerClient> _logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
     private readonly List<ChangeMessageVisibilityBatchRequestEntry[]> _visibilityChanges = [];
@@ -364,18 +363,22 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
         await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
-        // when
+        // when: shutdown reaches its drain, which arms the drain's 5 s timer, and the budget runs out
+        var drainArmed = _time.WatchForTimer(TimeSpan.FromSeconds(5));
         var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken).AsTask();
-        await _AdvanceUntilCompletedAsync(shutdown);
+        await drainArmed.Bounded();
+        _time.Advance(TimeSpan.FromSeconds(5));
+        await shutdown.Bounded();
 
-        // then: the two never handed over and the stuck one are made visible at once, then the client is disposed
+        // then: the two never handed over and the stuck one are made visible at once, then the client is disposed.
+        // The receive loop gives back the messages it never dispatched itself as it ends, so listening is awaited first.
+        await listening.Bounded();
         var released = _VisibilityChanges()
             .SelectMany(entries => entries)
             .Where(entry => entry.VisibilityTimeout == 0)
             .Select(entry => entry.ReceiptHandle);
         released.Should().BeEquivalentTo("receipt-1", "receipt-2", "receipt-3");
         _sqs.Received(1).Dispose();
-        await listening.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
     }
 
     private AmazonSqsConsumerClient _CreateClient(byte concurrency, Action<AmazonSqsMessagingOptions>? configure = null)
@@ -452,19 +455,6 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         {
             return [.. _visibilityChanges];
         }
-    }
-
-    // Shutdown registers its drain timer on the fake clock only once it reaches the drain, so time is advanced in steps
-    // until it completes.
-    private async Task _AdvanceUntilCompletedAsync(Task task)
-    {
-        for (var step = 0; step < 100 && !task.IsCompleted; step++)
-        {
-            _time.Advance(TimeSpan.FromSeconds(1));
-            _ = await Task.WhenAny(task, Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken));
-        }
-
-        await task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
     }
 
     private static async Task _IgnoreCancellationAsync(Task task)
