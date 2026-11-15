@@ -51,6 +51,74 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
         client.Should().BeOfType<RabbitMqConsumerClient>();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_declare_a_provisioned_queue_with_a_single_active_consumer_only_when_requested(
+        bool singleActiveConsumer
+    )
+    {
+        // given: a runtime subscription, whose client creates its own queue
+        var pool = Substitute.For<IConnectionChannelPool>();
+        var connection = Substitute.For<IConnection>();
+        var channel = Substitute.For<IChannel>();
+        pool.Exchange.Returns("test.exchange");
+        pool.GetConnectionAsync(Arg.Any<CancellationToken>()).Returns(connection);
+        connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
+        var factory = new RabbitMqConsumerClientFactory(
+            Options.Create(
+                new RabbitMqMessagingOptions
+                {
+                    HostName = "localhost",
+                    UserName = "test_user",
+                    Password = "test_pass",
+                }
+            ),
+            pool,
+            Substitute.For<IServiceProvider>()
+        );
+        var request = new ConsumerClientRequest("orders", 1, MessageLane.Queue)
+        {
+            ProvisionsTopology = true,
+            SingleActiveConsumer = singleActiveConsumer,
+        };
+
+        // when
+        await using var client = await factory.CreateAsync(request, AbortToken);
+        await client.SubscribeAsync(["orders"], AbortToken);
+
+        // then
+        await channel
+            .Received(1)
+            .QueueDeclareAsync(
+                "queue.orders",
+                true,
+                false,
+                false,
+                Arg.Is<IDictionary<string, object?>>(a =>
+                    a.ContainsKey("x-single-active-consumer") == singleActiveConsumer
+                ),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_declare_single_active_consumer_support_on_the_transport_capability()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.UseRabbitMq(options => options.HostName = "localhost"));
+        await using var provider = services.BuildServiceProvider();
+
+        provider
+            .GetServices<MessagingProviderCapabilities>()
+            .Single(x => x.Role == MessagingProviderRole.Transport)
+            .SupportsSingleActiveConsumer.Should()
+            .BeTrue();
+    }
+
     [Fact]
     public async Task should_declare_every_instance_support_on_the_transport_capability()
     {

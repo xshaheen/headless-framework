@@ -2,8 +2,10 @@
 
 using System.Buffers;
 using System.Text.Json;
+using Headless.DistributedLocks;
 using Headless.Hosting;
 using Headless.Messaging;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
@@ -268,6 +270,44 @@ public sealed class MessagingHostManifestTests : TestBase
 
         invoices.GetProperty("sequential").GetBoolean().Should().BeTrue();
         invoices.GetProperty("concurrency").GetInt32().Should().Be(4);
+    }
+
+    [Theory]
+    [InlineData(false, "none")]
+    [InlineData(true, "lock")]
+    public void should_print_how_one_host_at_a_time_takes_in_a_sequential_consumer(bool lockConfigured, string expected)
+    {
+        using var provider = _BuildProvider(
+            setup =>
+                setup
+                    .AddModule<BillingModule>()
+                    .Tune(TestConsumers.InvoiceProjection, consumer => consumer.Sequential()),
+            services =>
+            {
+                if (lockConfigured)
+                {
+                    services.AddKeyedSingleton(MessagingKeys.LockProvider, Substitute.For<IDistributedLock>());
+                }
+            }
+        );
+
+        var described = _Describe(provider);
+
+        _Consumer(described, TestConsumers.InvoiceProjection, "bus")
+            .GetProperty("activeHost")
+            .GetString()
+            .Should()
+            .Be(expected);
+    }
+
+    [Fact]
+    public void should_not_print_an_active_host_for_a_consumer_that_is_not_sequential()
+    {
+        using var provider = _BuildProvider(setup => setup.AddModule<BillingModule>());
+
+        var invoices = _Consumer(_Describe(provider), TestConsumers.InvoiceProjection, "bus");
+
+        invoices.TryGetProperty("activeHost", out _).Should().BeFalse();
     }
 
     [Fact]

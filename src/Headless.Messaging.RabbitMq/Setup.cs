@@ -114,7 +114,8 @@ public static class SetupMessagingRabbitMq
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsIndependentLaneTopology: true,
                     supportsEveryInstance: true,
-                    supportsRequestReply: true
+                    supportsRequestReply: true,
+                    supportsSingleActiveConsumer: true
                 )
             );
             configureOptions(services);
