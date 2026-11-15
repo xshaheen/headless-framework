@@ -80,6 +80,74 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         }
     }
 
+    // An outbox that can open a store batch: publishes are recorded into the batch, and the log shows when the
+    // batch flushed and when it was disposed.
+    private sealed class BatchingOutbox(Exception? publishFailure = null) : IUnitOfWorkOutbox, IUnitOfWorkOutboxBatching
+    {
+        public List<string> Log { get; } = [];
+
+        public List<(Type GenericType, object? Payload, OutboxOptions? Options)> Batched { get; } = [];
+
+        public Exception? PublishFailure { get; } = publishFailure;
+
+        public IOutboxStoreBatch BeginStoreBatch(IUnitOfWork unitOfWork)
+        {
+            Log.Add("begin");
+            return new RecordingBatch(this);
+        }
+
+        public Task<PublishReceipt> PublishAsync<T>(
+            IUnitOfWork unitOfWork,
+            T? contentObj,
+            OutboxOptions? options,
+            CancellationToken cancellationToken = default
+        )
+        {
+            throw new InvalidOperationException("A batching outbox publishes through its batch.");
+        }
+
+        public Task<PublishReceipt> EnqueueAsync<T>(
+            IUnitOfWork unitOfWork,
+            T? contentObj,
+            OutboxOptions? options,
+            CancellationToken cancellationToken = default
+        )
+        {
+            throw new NotSupportedException("Integration events take the bus lane.");
+        }
+
+        private sealed class RecordingBatch(BatchingOutbox owner) : IOutboxStoreBatch
+        {
+            public Task<PublishReceipt> PublishAsync<T>(
+                T? contentObj,
+                OutboxOptions? options,
+                CancellationToken cancellationToken
+            )
+            {
+                if (owner.Batched.Count == 1 && owner.PublishFailure is not null)
+                {
+                    throw owner.PublishFailure;
+                }
+
+                owner.Log.Add("publish");
+                owner.Batched.Add((typeof(T), contentObj, options));
+                return Task.FromResult(new PublishReceipt(options?.MessageId ?? "id", Guid.NewGuid()));
+            }
+
+            public Task FlushAsync(CancellationToken cancellationToken)
+            {
+                owner.Log.Add("flush");
+                return Task.CompletedTask;
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                owner.Log.Add("dispose");
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
     private sealed class ThrowingOutbox : IUnitOfWorkOutbox
     {
         public Task<PublishReceipt> PublishAsync<T>(
@@ -163,6 +231,71 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
     #endregion
 
     #region Dispatcher
+
+    [Fact]
+    public async Task should_publish_every_event_into_one_batch_and_flush_it_before_returning_when_the_outbox_batches()
+    {
+        // given
+        var outbox = new BatchingOutbox();
+        var unitOfWork = _ResourceBearingUnitOfWork(outbox);
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
+        IReadOnlyList<EventContext<object>> events =
+        [
+            new(new OrderPlaced("order-1"), "occurrence-1", "root-1"),
+            new(new PaymentCaptured("payment-1"), "occurrence-2", "root-2"),
+            new(new OrderPlaced("order-2"), "occurrence-3", "root-3"),
+        ];
+
+        // when
+        await dispatcher.DispatchAsync(unitOfWork, events, AbortToken);
+
+        // then — one batch, the events in order with their concrete types, flushed inside the call
+        outbox.Log.Should().Equal("begin", "publish", "publish", "publish", "flush", "dispose");
+        outbox
+            .Batched.Select(x => x.GenericType)
+            .Should()
+            .Equal(typeof(OrderPlaced), typeof(PaymentCaptured), typeof(OrderPlaced));
+        outbox.Batched.Select(x => x.Options!.MessageId).Should().Equal("occurrence-1", "occurrence-2", "occurrence-3");
+        outbox.Batched.Should().OnlyContain(x => x.Options!.IsRetainedForTransactionReplay);
+    }
+
+    [Fact]
+    public async Task should_not_flush_the_batch_when_a_publish_of_the_run_fails()
+    {
+        // given
+        var failure = new InvalidOperationException("Publish failed");
+        var outbox = new BatchingOutbox(failure);
+        var unitOfWork = _ResourceBearingUnitOfWork(outbox);
+        var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
+        IReadOnlyList<EventContext<object>> events =
+        [
+            new(new OrderPlaced("order-1"), "occurrence-1", "root-1"),
+            new(new OrderPlaced("order-2"), "occurrence-2", "root-2"),
+        ];
+
+        // when
+        var act = async () => await dispatcher.DispatchAsync(unitOfWork, events, AbortToken);
+
+        // then — the failure surfaces from the dispatch, and the held row is dropped, not written
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Should()
+            .BeSameAs(failure);
+        outbox.Log.Should().Equal("begin", "publish", "dispose");
+    }
+
+    [Fact]
+    public void should_cache_one_batch_invoker_per_event_type()
+    {
+        // given
+        var cache = new IntegrationEventPublishInvokerCache();
+
+        // when
+        var first = cache.GetBatchPublishInvoker(typeof(OrderPlaced));
+        var second = cache.GetBatchPublishInvoker(typeof(OrderPlaced));
+
+        // then
+        first.Should().BeSameAs(second);
+    }
 
     [Fact]
     public async Task should_be_noop_for_empty_event_list_when_dispatch_async()

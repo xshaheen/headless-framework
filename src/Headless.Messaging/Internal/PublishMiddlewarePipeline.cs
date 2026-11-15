@@ -40,16 +40,30 @@ internal sealed class PublishMiddlewarePipeline(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        await _ExecuteAsync(_CreateContext(content, lane, options, decision, cancellationToken), innerPublish)
+            .ConfigureAwait(false);
+    }
+
+    public bool HasMiddleware<T>(T? content, MessageLane lane, MessageOptions? options, DeliveryDecision decision)
+    {
+        return !_HasNoMiddleware(_CreateContext(content, lane, options, decision, CancellationToken.None));
+    }
+
+    private static PublishContext _CreateContext<T>(
+        T? content,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        CancellationToken cancellationToken
+    )
+    {
         // A callback response names its declared contract through the options; the handle was captured from
         // SetResponse's type argument, so the declared type's typed context is built without reflection.
-        PublishContext context =
-            options?.MessageType is { } declaredMessageType && declaredMessageType.Type != typeof(T)
-                ? declaredMessageType.Accept(
-                    new DeclaredContextFactory(content, lane, options, decision, cancellationToken)
-                )
-                : new PublishContext<T>(content, lane, options, decision, cancellationToken);
-
-        await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
+        return options?.MessageType is { } declaredMessageType && declaredMessageType.Type != typeof(T)
+            ? declaredMessageType.Accept(
+                new DeclaredContextFactory(content, lane, options, decision, cancellationToken)
+            )
+            : new PublishContext<T>(content, lane, options, decision, cancellationToken);
     }
 
     private async Task _ExecuteAsync(
@@ -289,4 +303,10 @@ internal interface IPublishMiddlewarePipeline
         Func<MessageOptions?, CancellationToken, Task> innerPublish,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Whether <see cref="ExecuteAsync{T}" /> with these arguments would run any publish middleware around the publish.
+    /// An implementation that cannot tell answers <see langword="true" />.
+    /// </summary>
+    bool HasMiddleware<T>(T? content, MessageLane lane, MessageOptions? options, DeliveryDecision decision) => true;
 }

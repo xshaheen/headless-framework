@@ -11,6 +11,13 @@ if (args is ["relay"])
     return;
 }
 
+if (args is ["outbox-save"])
+{
+    await OutboxSaveScenario.RunAsync();
+
+    return;
+}
+
 if (args is ["send-window"])
 {
     await ParallelSendWindowScenario.RunAsync();
