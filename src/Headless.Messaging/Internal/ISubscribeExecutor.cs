@@ -5,6 +5,7 @@ using System.Runtime.ExceptionServices;
 using Headless.Checks;
 using Headless.Fencing;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Processor;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Transport;
@@ -60,7 +61,7 @@ internal sealed class SubscribeExecutor(
     IOptions<MessagingOptions> options,
     ICircuitBreakerStateManager? circuitBreakerStateManager = null,
     MessagingTelemetry? telemetry = null
-) : ISubscribeExecutor
+) : ISubscribeExecutor, IAsyncDisposable
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly string? _hostName = HostIdentity.GetInstanceHostname();
@@ -84,8 +85,22 @@ internal sealed class SubscribeExecutor(
         provider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(TenantTagName: null);
 
     private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
+#pragma warning disable CA2213 // False positive: the container owns the host's limiters and disposes them, not this executor.
     private readonly ConsumerRateLimiters? _rateLimiters = provider.GetService<ConsumerRateLimiters>();
+#pragma warning restore CA2213
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
+
+    // A delivery waits for its permit holding no lease, so once its dispatch grace ends its row looks abandoned. A retry
+    // pickup that leased it then would refuse the delivery's own lease take when the permit arrives, spending the permit
+    // without running the handler; the row is kept out of pickup instead, as a sequential consumer's waiting rows are.
+    private readonly WaitingRows _permitWaits = new(
+        dataStorage.DeferReceivedDispatchAsync,
+        dataStorage.RenewReceiveLeaseAsync,
+        options.Value.RetryPolicy,
+        timeProvider,
+        BackoffClock.Resolve(provider),
+        logger
+    );
 
     // Singleton cache resolved once instead of per descriptor-less dispatch (the common retry-pickup shape):
     // MethodMatcherCache never changes over the executor's lifetime, so the per-message GetRequiredService was a
@@ -97,6 +112,8 @@ internal sealed class SubscribeExecutor(
     private readonly MessagingConsumeRetryPipeline _retryPipeline = new(timeProvider);
 
     private ResponderReplies? _responderReplies;
+
+    public ValueTask DisposeAsync() => new(_permitWaits.StopAsync());
 
     public Task<OperateResult> ExecuteAsync(
         MediumMessage message,
@@ -117,6 +134,36 @@ internal sealed class SubscribeExecutor(
     )
     {
         return _ExecuteAsync(message, dispatchServices, executionState, descriptor, cancellationToken);
+    }
+
+    /// <summary>
+    /// Waits for <paramref name="descriptor"/>'s permit, keeping <paramref name="message"/>'s row out of retry pickup
+    /// while it waits. The row is let go before this returns, so the lease take that follows reads a settled lease.
+    /// </summary>
+    private async ValueTask _WaitForPermitAsync(
+        ConsumerRateLimiters rateLimiters,
+        ConsumerExecutorDescriptor descriptor,
+        MediumMessage message,
+        CancellationToken cancellationToken
+    )
+    {
+        var wait = rateLimiters.WaitAsync(descriptor, message.StorageId, cancellationToken);
+        if (wait.IsCompleted)
+        {
+            await wait.ConfigureAwait(false);
+            return;
+        }
+
+        var row = new WaitingRow(message);
+        _permitWaits.Add(row);
+        try
+        {
+            await wait.ConfigureAwait(false);
+        }
+        finally
+        {
+            await _permitWaits.TakeAsync(row).ConfigureAwait(false);
+        }
     }
 
     private async Task<OperateResult> _ExecuteAsync(
@@ -369,7 +416,7 @@ internal sealed class SubscribeExecutor(
             }
             else
             {
-                await _rateLimiters.WaitAsync(descriptor, message.StorageId, cancellationToken).ConfigureAwait(false);
+                await _WaitForPermitAsync(_rateLimiters, descriptor, message, cancellationToken).ConfigureAwait(false);
             }
         }
 
