@@ -147,6 +147,38 @@ public sealed class MessagingCapabilityModelTests : TestBase
     }
 
     [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    public void should_compose_single_active_consumer_support_only_when_every_transport_contribution_declares_it(
+        bool busDeclares,
+        bool queueDeclares,
+        bool expected
+    )
+    {
+        var model = MessagingCapabilityModel.Compose([
+            MessagingProviderCapabilities.Transport(
+                "RabbitMQ",
+                [MessageLane.Bus],
+                supportsIndependentLaneTopology: true,
+                supportsSingleActiveConsumer: busDeclares
+            ),
+            MessagingProviderCapabilities.Transport(
+                "RabbitMQ",
+                [MessageLane.Queue],
+                supportsIndependentLaneTopology: true,
+                supportsSingleActiveConsumer: queueDeclares
+            ),
+            _Storage("InMemory"),
+        ]);
+
+        model
+            .Providers.Should()
+            .ContainSingle(provider => provider.Role == MessagingProviderRole.Transport)
+            .Which.SupportsSingleActiveConsumer.Should()
+            .Be(expected);
+    }
+
+    [Theory]
     [InlineData(false, "Redis", "Redis", "Bus")]
     [InlineData(true, "Redis", "Kafka", "transport provider")]
     public void should_reject_overlapping_or_different_transport_provider_contributions(
