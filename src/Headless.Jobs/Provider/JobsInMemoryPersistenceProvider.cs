@@ -1257,11 +1257,62 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             if (_TryUpdateTimeJob(row.Key, updatedTicker, job))
             {
                 _SyncReconcileCandidate(updatedTicker);
+                _SlideClaimedDescendants(row.Key, claimOwner, renewed.Next.ExpiresAt, now);
                 return Task.FromResult(1);
             }
         }
 
         return Task.FromResult(0);
+    }
+
+    // A chain's continuations wait Idle under the claim, with the deadline of the node that runs before them, until it
+    // ends. Renewal slides only the running row, so the subtree this owner still holds slides with it here; otherwise a
+    // node that runs longer than one lease leaves its descendants' leases expired and their start or skip refused.
+    // Mirrors the EF JobsSubtreeLeaseWalk.SlideClaimedDescendantsAsync: a live lease of the same holder only, through
+    // idle non-timed nodes only, down to MaxChainDepth.
+    private void _SlideClaimedDescendants(Guid nodeId, string claimOwner, DateTimeOffset? expiresAt, DateTimeOffset now)
+    {
+        var frontier = new List<Guid> { nodeId };
+
+        for (var depth = 1; frontier.Count != 0 && depth < _maxChainDepth; depth++)
+        {
+            var next = new List<Guid>();
+
+            foreach (var parentId in frontier)
+            {
+                foreach (var childId in _GetChildrenIds(parentId))
+                {
+                    if (_SlideClaimedJob(childId, claimOwner, expiresAt, now))
+                    {
+                        next.Add(childId);
+                    }
+                }
+            }
+
+            frontier = next;
+        }
+    }
+
+    private bool _SlideClaimedJob(Guid jobId, string claimOwner, DateTimeOffset? expiresAt, DateTimeOffset now)
+    {
+        while (
+            _timeJobs.TryGetValue(jobId, out var existing)
+            && existing.Status == JobStatus.Idle
+            && existing.ExecutionTime is null
+            && _IsHeldBy(existing.Lease, claimOwner)
+            && _IsLeaseLive(existing.Lease, now)
+        )
+        {
+            var slid = _CloneTicker(existing);
+            slid.Lease = existing.Lease with { ExpiresAt = expiresAt };
+
+            if (_TryUpdateTimeJob(jobId, slid, existing))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
