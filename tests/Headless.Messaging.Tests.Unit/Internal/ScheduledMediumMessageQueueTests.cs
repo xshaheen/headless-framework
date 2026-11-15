@@ -5,6 +5,7 @@ using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Helpers;
 
 namespace Tests.Internal;
 
@@ -180,26 +181,24 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
     public async Task should_wait_until_future_message_is_due_when_get_consuming_enumerable()
     {
         // given
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
+        var timeProvider = new TimerArmedSignalClock(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
         using var queue = new ScheduledMediumMessageQueue(timeProvider);
         var message = _CreateMediumMessage(7);
+        var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
+
+        // Start on an empty queue so the enqueue signal wakes the reader rather than cancelling its first timer.
+        var moveNextTask = enumerator.MoveNextAsync().AsTask();
         queue
             .TryEnqueue(message, timeProvider.GetUtcNow().Ticks + TimeSpan.FromMilliseconds(200).Ticks)
             .Should()
             .BeTrue();
-
-        var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
-
-        // when
-        var moveNextTask = enumerator.MoveNextAsync().AsTask();
-        await Task.Delay(75, AbortToken);
+        await timeProvider.WaitForArmedTimerAsync();
 
         // then
         moveNextTask.IsCompleted.Should().BeFalse();
 
-        // when: 5s bound (not 1s) — under CI scheduling pressure the continuation can take
-        // far longer than the logical work; the fake clock means it can never pass early
-        timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+        // when
+        timeProvider.Advance(TimeSpan.FromMilliseconds(200));
         await moveNextTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
@@ -213,29 +212,34 @@ public sealed class ScheduledMediumMessageQueueTests : TestBase
     public async Task should_reschedule_when_get_consuming_enumerable_earlier_message_is_enqueued()
     {
         // given
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
+        var timeProvider = new TimerArmedSignalClock(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
         using var queue = new ScheduledMediumMessageQueue(timeProvider);
         var late = _CreateMediumMessage(8);
         var early = _CreateMediumMessage(9);
         var now = timeProvider.GetUtcNow().Ticks;
-
-        queue.TryEnqueue(late, now + TimeSpan.FromSeconds(10).Ticks).Should().BeTrue();
         var enumerator = queue.GetConsumingEnumerable(AbortToken).GetAsyncEnumerator(AbortToken);
 
-        // when
+        // Start on an empty queue so each arm signal belongs to the wait the test is about to advance.
         var moveNextTask = enumerator.MoveNextAsync().AsTask();
-        await Task.Delay(25, AbortToken);
-        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        queue.TryEnqueue(late, now + TimeSpan.FromSeconds(10).Ticks).Should().BeTrue();
+        await timeProvider.AdvanceWhenArmedAsync(TimeSpan.FromSeconds(1));
         moveNextTask.IsCompleted.Should().BeFalse();
 
         queue.TryEnqueue(early, now + TimeSpan.FromSeconds(2).Ticks).Should().BeTrue();
-        await Task.Delay(25, AbortToken);
-        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        await timeProvider.AdvanceWhenArmedAsync(TimeSpan.FromSeconds(1));
         await moveNextTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         enumerator.Current.StorageId.Should().Be(_StorageGuid(9));
         queue.Count.Should().Be(1);
+
+        var lateMoveNextTask = enumerator.MoveNextAsync().AsTask();
+        await timeProvider.WaitForArmedTimerAsync();
+        lateMoveNextTask.IsCompleted.Should().BeFalse("the later message is not due yet");
+        timeProvider.Advance(TimeSpan.FromSeconds(8));
+        await lateMoveNextTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        enumerator.Current.StorageId.Should().Be(_StorageGuid(8));
+        queue.Count.Should().Be(0);
 
         await enumerator.DisposeAsync();
     }

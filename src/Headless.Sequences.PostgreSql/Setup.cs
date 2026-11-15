@@ -159,7 +159,10 @@ public static class SetupSequencesPostgreSql
                 PostgreSqlDialect.Instance,
                 sp.GetRequiredService<IOptions<PostgreSqlSequencesOptions>>().Value,
                 "Headless.Sequences.PostgreSql",
-                sp.GetRequiredService<TimeProvider>()
+                sp.GetRequiredService<TimeProvider>(),
+                // INSERT … ON CONFLICT DO UPDATE is one statement. The SQL Server and SQLite increments are batches whose
+                // statements only agree inside a transaction.
+                incrementIsOneStatement: true
             ));
         }
     }

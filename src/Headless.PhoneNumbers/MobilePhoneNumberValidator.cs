@@ -11,7 +11,7 @@ public static class MobilePhoneNumberValidator
     /// <summary>Determines whether <paramref name="phoneNumber"/> is a possible mobile number for the given <paramref name="countryCode"/>.</summary>
     /// <param name="phoneNumber">The phone number to validate.</param>
     /// <param name="countryCode">The numeric country calling code used to resolve the parsing region.</param>
-    /// <returns><see langword="true"/> when the number is a possible mobile number; otherwise <see langword="false"/>. Unparseable or blank input returns <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> when the number is a possible mobile number with calling code <paramref name="countryCode"/>; otherwise <see langword="false"/>. Unparseable or blank input, or a <c>+</c>-prefixed number from another calling code, returns <see langword="false"/>.</returns>
     public static bool IsValid(string phoneNumber, int countryCode)
     {
         if (string.IsNullOrWhiteSpace(phoneNumber))
@@ -33,13 +33,16 @@ public static class MobilePhoneNumberValidator
             return false;
         }
 
-        return util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
+        // A number written with a leading '+' carries its own country code and libphonenumber ignores the region,
+        // so a number from another country would otherwise pass as this country's.
+        return maybePhoneNumber.CountryCode == countryCode
+            && util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
     }
 
     /// <summary>Determines whether <paramref name="phoneNumber"/> is a possible mobile number for the given <paramref name="regionCode"/>.</summary>
     /// <param name="phoneNumber">The phone number to validate.</param>
     /// <param name="regionCode">The ISO 3166-1 alpha-2 region code used to parse <paramref name="phoneNumber"/>.</param>
-    /// <returns><see langword="true"/> when the number is a possible mobile number; otherwise <see langword="false"/>. Unparseable or blank input returns <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> when the number is a possible mobile number with the calling code of <paramref name="regionCode"/>; otherwise <see langword="false"/>. Unparseable or blank input, or a <c>+</c>-prefixed number from another calling code, returns <see langword="false"/>.</returns>
     public static bool IsValid(string phoneNumber, string regionCode)
     {
         if (string.IsNullOrWhiteSpace(phoneNumber))
@@ -60,7 +63,10 @@ public static class MobilePhoneNumberValidator
             return false;
         }
 
-        return util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
+        // Compare calling codes rather than regions: regions that share a calling code (such as US and CA under +1)
+        // cannot be told apart from a possible number alone, but a number from another calling code must not pass.
+        return maybePhoneNumber.CountryCode == util.GetCountryCodeForRegion(regionCode)
+            && util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
     }
 
     /// <summary>

@@ -16,7 +16,14 @@ namespace Tests;
 public static class JobsModelNaming
 {
     /// <summary>Builds the design-time model, which keeps the check constraints the runtime model drops.</summary>
-    public static IModel BuildDesignTimeModel(Action<DbContextOptionsBuilder> useProvider)
+    /// <param name="useProvider">Selects the EF provider the model targets.</param>
+    /// <param name="consumerMappings">
+    /// Mappings the consumer's <c>OnModelCreating</c> applies after the Jobs configurations, such as a renamed column.
+    /// </param>
+    public static IModel BuildDesignTimeModel(
+        Action<DbContextOptionsBuilder> useProvider,
+        Action<ModelBuilder>? consumerMappings = null
+    )
     {
         var services = new ServiceCollection();
         services.AddSingleton(new JobsStorageOptions { Schema = HeadlessStorageDefaults.Schema });
@@ -30,7 +37,7 @@ public static class JobsModelNaming
             // EF caches the model per context type; a private internal provider keeps each provider's model apart.
             .EnableServiceProviderCaching(false);
 
-        using var context = new NamingProbeDbContext(builder.Options);
+        using var context = new NamingProbeDbContext(builder.Options, consumerMappings);
 
         return context.GetService<IDesignTimeModel>().Model;
     }
@@ -55,5 +62,14 @@ public static class JobsModelNaming
             .ComplexType.FindProperty(property)!
             .GetColumnName(StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema()));
 
-    private sealed class NamingProbeDbContext(DbContextOptions<NamingProbeDbContext> options) : DbContext(options);
+    private sealed class NamingProbeDbContext(
+        DbContextOptions<NamingProbeDbContext> options,
+        Action<ModelBuilder>? consumerMappings
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            consumerMappings?.Invoke(modelBuilder);
+        }
+    }
 }

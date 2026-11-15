@@ -17,6 +17,13 @@ internal sealed class BlindIndexer(DataKeyRing ring, ICurrentTenant currentTenan
 
     // Labels the hash key apart from the cipher's subkeys. They derive from different keys already; the label keeps the
     // two uses distinct even if a key were ever shared.
+    // The lenient encoder turns every lone surrogate into U+FFFD, so two different values would share one index and a
+    // lookup for one would match the other's row.
+    private static readonly UTF8Encoding _StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
+
     private static ReadOnlySpan<byte> SubkeyInfoPrefix => "headless/blind-index/v1\0"u8;
 
     public async ValueTask<BlindIndex> ComputeAsync(
@@ -103,10 +110,24 @@ internal sealed class BlindIndexer(DataKeyRing ring, ICurrentTenant currentTenan
         SubkeyInfoPrefix.CopyTo(info);
         Encoding.UTF8.GetBytes(context.Purpose, info[SubkeyInfoPrefix.Length..]);
 
-        var inputLength = Encoding.UTF8.GetByteCount(value);
+        int inputLength;
+
+        try
+        {
+            inputLength = _StrictUtf8.GetByteCount(value);
+        }
+        catch (EncoderFallbackException e)
+        {
+            throw new ArgumentException(
+                "The value is not valid UTF-16: it contains a lone surrogate.",
+                nameof(value),
+                e
+            );
+        }
+
         var input = inputLength <= _StackBufferLength ? stackalloc byte[_StackBufferLength] : new byte[inputLength];
         input = input[..inputLength];
-        Encoding.UTF8.GetBytes(value, input);
+        _StrictUtf8.GetBytes(value, input);
         Span<byte> hashKey = stackalloc byte[HMACSHA256.HashSizeInBytes];
         Span<byte> hash = stackalloc byte[HMACSHA256.HashSizeInBytes];
 

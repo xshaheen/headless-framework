@@ -12,7 +12,8 @@ internal sealed class TryExtendReadLockScriptDefinition : RedisScriptDefinition
     private TryExtendReadLockScriptDefinition()
         : base(
             """
-            if redis.call('hexists', @readerKey, @leaseId) == 0 then
+            local existing = redis.call('hget', @readerKey, @leaseId)
+            if existing == false then
               return 0
             end
 
@@ -27,9 +28,20 @@ internal sealed class TryExtendReadLockScriptDefinition : RedisScriptDefinition
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
 
+            -- A lease that already passed is not renewed, even before an acquire prunes it, as in the in-memory
+            -- provider. '0' marks an infinite reader.
+            local existingExpiry = tonumber(existing)
+            if existingExpiry ~= 0 and existingExpiry <= nowMs then
+              return 0
+            end
+
             if (@expires ~= nil and @expires ~= '') then
               local expiryMs = nowMs + tonumber(@expires)
-              redis.call('hset', @readerKey, @leaseId, tostring(expiryMs))
+              -- Never shorten a live lease, and never turn an infinite reader finite: a shorter extend keeps the
+              -- later expiry, matching the in-memory provider and the semaphore script.
+              if existingExpiry ~= 0 and expiryMs > existingExpiry then
+                redis.call('hset', @readerKey, @leaseId, tostring(expiryMs))
+              end
               local readerTtl = redis.call('pttl', @readerKey)
               local safetyTtl = tonumber(@expires) * 2
               if readerTtl < safetyTtl then

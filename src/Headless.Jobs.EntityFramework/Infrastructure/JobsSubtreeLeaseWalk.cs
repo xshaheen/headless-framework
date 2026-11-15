@@ -1,5 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
+using Headless.Fencing;
+using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Jobs.Infrastructure;
@@ -142,6 +146,11 @@ internal static class JobsSubtreeLeaseWalk
                         // A re-acquired root's children may still carry this owner's earlier grant; the root fence is
                         // what keeps a foreign claim out of the tree.
                         reclaimOwn: true,
+                        // A root handed back unstarted, or for a retry, leaves its children under the earlier claim's
+                        // lease. That lease expires before this claim's, which came later, so it is taken over with the
+                        // root. A stale walk racing a newer claim of the same tree meets a child lease that outlives
+                        // the root deadline its own snapshot reads, and refuses it.
+                        supersededBefore: JobsLeaseGrant.StoredDeadline(columns, "jobs_superseded", rootParameter),
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -157,5 +166,88 @@ internal static class JobsSubtreeLeaseWalk
         }
 
         return claimedByRoot;
+    }
+
+    /// <summary>
+    /// Slides the lease of the non-timed idle descendants <paramref name="owner"/> still holds beneath
+    /// <paramref name="node"/>, frontier by frontier down to <c>MaxChainDepth</c>, to <paramref name="node"/>'s own
+    /// stored deadline. Called after a renewal of <paramref name="node"/> landed.
+    /// </summary>
+    /// <remarks>
+    /// A chain's continuations wait <c>Idle</c> under the claim, with the deadline of the node that runs before them,
+    /// until that node ends. Renewal slides only the running row, so without this a node that runs longer than one
+    /// lease leaves its descendants' leases expired, and their start or skip is refused once it ends. Each statement is
+    /// fenced on <paramref name="node"/>'s generation still being current, so a renewal that lost the race to a reclaim
+    /// slides nothing, and only a live lease of the same holder slides, so a descendant another claim took is left
+    /// alone. A timed descendant is claimed on its own and is never slid.
+    /// </remarks>
+    public static async Task SlideClaimedDescendantsAsync<TTimeJob>(
+        DbContext context,
+        FencedRow<Guid> node,
+        string owner,
+        int maxChainDepth,
+        CancellationToken cancellationToken
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        var table = JobsLeaseRows.TimeJobs<TTimeJob>(context);
+        var columns = JobsLeaseGrant.Columns<TTimeJob>(context);
+        var dialect = table.Dialect;
+        var connection = JobsLeaseRows.Connection(context);
+        var openedHere = connection.State != ConnectionState.Open;
+
+        if (openedHere)
+        {
+            await context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            List<Guid> frontier = [node.Key];
+
+            for (var depth = 1; frontier.Count != 0 && depth < maxChainDepth; depth++)
+            {
+                var set = JobsRowSet.For<TTimeJob>(context);
+                var nodeParameter = set.Parameter(nameof(TimeJobEntity.Id), node.Key);
+                var generationParameter = set.LeaseParameter(nameof(RowLeaseSnapshot.Generation), node.Generation);
+                var holderParameter = set.LeaseParameter(nameof(RowLeaseSnapshot.Holder), owner);
+                var where =
+                    $"{set.InIds(nameof(TimeJobEntity.ParentId), frontier)}"
+                    + $" AND {set.Column(nameof(TimeJobEntity.Status))} = {set.Parameter(nameof(TimeJobEntity.Status), JobStatus.Idle)}"
+                    + $" AND {set.Column(nameof(TimeJobEntity.ExecutionTime))} IS NULL"
+                    + $" AND {JobsLeaseGrant.HeldLive(columns, holderParameter)}"
+                    + $" AND {JobsLeaseGrant.CurrentFence(columns, "jobs_node", nodeParameter, generationParameter)}";
+                var deadline = JobsLeaseGrant.StoredDeadline(columns, "jobs_deadline", nodeParameter);
+                var sql =
+                    dialect is PostgreSqlDialect || JobsSqlDialects.IsSqlite(dialect)
+                        ? $"UPDATE {columns.Table} SET {columns.ExpiresAt} = {deadline} WHERE {where} RETURNING {columns.Id};"
+                        : $"UPDATE {columns.Table} SET {columns.ExpiresAt} = {deadline} OUTPUT inserted.{columns.Id} WHERE {where};";
+
+                await using var command = connection.CreateCommand();
+                command.Transaction = JobsLeaseRows.Transaction(context);
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
+                command.CommandText = dialect.Render(new SqlClockedStatement(sql));
+#pragma warning restore CA2100
+                // Only the bindings: the slide writes the expiry alone, so it does not stamp the change marker.
+                set.ToWrite().Bind?.Invoke(command);
+
+                var slid = new List<Guid>();
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    slid.Add(await reader.GetFieldValueAsync<Guid>(0, cancellationToken).ConfigureAwait(false));
+                }
+
+                frontier = slid;
+            }
+        }
+        finally
+        {
+            if (openedHere)
+            {
+                await context.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
+        }
     }
 }
