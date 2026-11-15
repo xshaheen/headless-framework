@@ -177,5 +177,43 @@ public sealed class EnsureTests
         action.Should().ThrowExactly<InvalidOperationException>().WithMessage("Expected \"value\" to not be null.");
     }
 
+    [Fact]
+    public void should_not_format_interpolated_message_when_true_condition_holds()
+    {
+        // given
+        var formatted = 0;
+
+        // when
+        Ensure.True(condition: true, $"never built {_CountFormat(ref formatted)}");
+
+        // then
+        formatted.Should().Be(0);
+    }
+
+    [Fact]
+    public void should_throw_with_invariant_interpolated_message_when_true_condition_fails()
+    {
+        // given
+        var ratio = 1.5;
+        var limit = 3;
+        var original = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+        try
+        {
+            // when
+            var action = () => Ensure.True(ratio > limit, $"Ratio {ratio} exceeds {limit:D2}.");
+
+            // then
+            action.Should().ThrowExactly<InvalidOperationException>().WithMessage("Ratio 1.5 exceeds 03.");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    private static int _CountFormat(ref int formatted) => ++formatted;
+
     private sealed class TestDisposableObject;
 }

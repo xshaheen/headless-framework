@@ -35,8 +35,37 @@ public static partial class Argument
     }
 
     /// <summary>
+    /// Throws an <see cref="ArgumentException"/> if <paramref name="condition"/> is <see langword="false"/>. Use this
+    /// for argument preconditions that cannot be expressed by a dedicated guard (for example a multi-clause validity
+    /// check); prefer specific guards (such as <c>IsNotNull</c> or <c>Matches</c>) when one applies.
+    /// </summary>
+    /// <param name="condition">The argument precondition that must hold.</param>
+    /// <param name="message">
+    /// A custom error message written as an interpolated string. It is formatted only when <paramref name="condition"/>
+    /// is <see langword="false"/>, so a passing check builds no string.
+    /// </param>
+    /// <param name="paramName">
+    /// The offending parameter name. Pass <c>nameof(arg)</c> explicitly; when omitted the captured text of
+    /// <paramref name="condition"/> is used.
+    /// </param>
+    /// <exception cref="ArgumentException"><paramref name="condition"/> is <see langword="false"/>.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void IsTrue(
+        [DoesNotReturnIf(false)] bool condition,
+        [InterpolatedStringHandlerArgument(nameof(condition))] ref TrueCheckInterpolatedStringHandler message,
+        [CallerArgumentExpression(nameof(condition))] string? paramName = null
+    )
+    {
+        if (!condition)
+        {
+            _ThrowForIsTrue(message.ToStringAndClear(), paramName);
+        }
+    }
+
+    /// <summary>
     /// Throws an <see cref="ArgumentException"/> if <paramref name="condition"/> is <see langword="true"/>. The mirror of
-    /// <see cref="IsTrue"/>; use it for argument preconditions expressed as a condition that must <em>not</em> hold.
+    /// <see cref="IsTrue(bool, string?, string?)"/>; use it for argument preconditions expressed as a condition that must <em>not</em> hold.
     /// </summary>
     /// <param name="condition">The argument precondition that must not hold.</param>
     /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
