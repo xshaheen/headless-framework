@@ -264,8 +264,12 @@ public sealed class ConsumerRateLimitersTests : TestBase
     }
 
     // Read after the value it guards, so a true result proves that value was observed inside the first window, which
-    // opens no earlier than this test's start mark.
-    private static bool _InFirstWindow(long startedAt) => TimeProvider.System.GetElapsedTime(startedAt) < _Second;
+    // opens no earlier than this test's start mark. The limiter renews on a coarser timer clock than this stopwatch
+    // reading, so the margin keeps a renewal a few milliseconds early from counting as inside the window.
+    private static readonly TimeSpan _WindowMargin = TimeSpan.FromMilliseconds(50);
+
+    private static bool _InFirstWindow(long startedAt) =>
+        TimeProvider.System.GetElapsedTime(startedAt) < _Second - _WindowMargin;
 
     private static ConsumerExecutorDescriptor _Consumer(
         string identity,
