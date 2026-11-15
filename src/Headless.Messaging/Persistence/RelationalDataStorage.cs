@@ -102,7 +102,7 @@ internal sealed partial class RelationalDataStorage
     private readonly string _inboxRoutabilityCondition;
     private readonly string[] _inboxRoutabilityReturning;
     private readonly string _admitInboxSql;
-    private readonly string[] _readInboxGenerationSql;
+    private readonly string _readInboxGenerationSql;
 
     public RelationalDataStorage(
         RelationalMessagingStorage storage,
@@ -216,11 +216,7 @@ internal sealed partial class RelationalDataStorage
             $"{_t.IntentType}=@IntentType AND {_t.Generation}=@Generation AND {_t.GenerationIncarnationId}=@GenerationIncarnationId AND {_t.AttemptId}=@AttemptId";
         _inboxRoutabilityReturning = [.. _t.LeaseColumnNames, _dialect.Name("NextRetryAt")];
         _admitInboxSql = _RenderAdmitInbox();
-        _readInboxGenerationSql =
-        [
-            _RenderReadInboxGeneration(withContent: false),
-            _RenderReadInboxGeneration(withContent: true),
-        ];
+        _readInboxGenerationSql = _RenderReadInboxGeneration();
     }
 
     /// <summary>

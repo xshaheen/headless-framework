@@ -80,23 +80,25 @@ internal sealed partial class RelationalDataStorage
                                 );
                                 _dialect.AddParameter(command, "SequenceKey", _SequenceKeyType, message.SequenceKey);
                             },
-                            _ReadAppliedAsync,
+                            async (reader, token) =>
+                                await reader.ReadAsync(token).ConfigureAwait(false) && reader.GetBoolean(0)
+                                    // The winner's row comes back from the insert itself, after the applied flag.
+                                    ? _ReadInboxGenerationRow(reader, offset: 1, message.Origin, content)
+                                    : ((MediumMessage Message, StatusName Status)?)null,
                             ct
                         )
                         .ConfigureAwait(false);
 
-                    var row = await _ReadInboxGenerationAsync(
-                            connection,
-                            transaction,
-                            key,
-                            keyHash,
-                            message.Origin,
-                            admitted ? content : null,
-                            ct
-                        )
+                    if (admitted is { } winner)
+                    {
+                        return (true, winner);
+                    }
+
+                    // A duplicate, or an insert that lost the race for the key, reads the generation that holds it.
+                    var row = await _ReadInboxGenerationAsync(connection, transaction, key, keyHash, message.Origin, ct)
                         .ConfigureAwait(false);
 
-                    return (admitted, row);
+                    return (false, row);
                 },
                 _timeProvider,
                 cancellationToken
@@ -189,7 +191,7 @@ internal sealed partial class RelationalDataStorage
                     "@SequenceKey",
                     SqlDialectTokens.Now,
                 ],
-                [_t.Id],
+                _InboxGenerationColumns(),
                 InboxRootPredicate
             )
         );
@@ -382,7 +384,6 @@ internal sealed partial class RelationalDataStorage
         InboxRootKey key,
         byte[] keyHash,
         Message redelivery,
-        string? admittedContent,
         CancellationToken cancellationToken
     )
     {
@@ -390,7 +391,7 @@ internal sealed partial class RelationalDataStorage
             .ExecuteReaderAsync(
                 connection,
                 transaction,
-                _readInboxGenerationSql[admittedContent is null ? 1 : 0],
+                _readInboxGenerationSql,
                 CommandTimeoutSeconds,
                 command => _BindInboxRootKey(command, key, keyHash),
                 async (reader, token) =>
@@ -402,68 +403,7 @@ internal sealed partial class RelationalDataStorage
                         );
                     }
 
-                    var lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(1));
-                    var storedTenantPresent = reader.GetBoolean(11);
-                    var storedTenant = reader.GetString(12);
-                    var storedGeneration = reader.GetInt64(17);
-                    var incarnationId = reader.GetGuid(18);
-                    // The lease's generation and state sit at 7 and 8, its expiry, holder, and takeovers at 21-23.
-                    var lease = new RowLeaseSnapshot(
-                        Convert.ToInt64(reader.GetValue(7), CultureInfo.InvariantCulture),
-                        (RowLeaseState)Convert.ToInt16(reader.GetValue(8), CultureInfo.InvariantCulture),
-                        reader.IsDBNull(21) ? null : reader.GetFieldValue<DateTimeOffset>(21),
-                        reader.IsDBNull(22) ? null : reader.GetString(22),
-                        Convert.ToInt32(reader.GetValue(23), CultureInfo.InvariantCulture)
-                    );
-                    var attemptId = reader.IsDBNull(19) ? (Guid?)null : reader.GetGuid(19);
-                    var status = Enum.Parse<StatusName>(reader.GetString(9), ignoreCase: false);
-                    var isTerminal = status is StatusName.Succeeded or StatusName.Failed && reader.IsDBNull(6);
-                    // The winner's row holds exactly the content this admission just wrote in this transaction, so
-                    // its envelope is this delivery's. A duplicate's row may hold another delivery's payload, so it is
-                    // read back as stored.
-                    var content = admittedContent ?? reader.GetString(25);
-                    // Terminal duplicates never execute. Their retained payload may be the poison that
-                    // ended the generation; use this delivery's envelope without rewriting stored evidence.
-                    var medium = new MediumMessage
-                    {
-                        StorageId = reader.GetGuid(0),
-                        Origin =
-                            admittedContent is not null || isTerminal ? redelivery : _serializer.Deserialize(content)!,
-                        Content = content,
-                        Lane = lane,
-                        Retries = reader.GetInt32(2),
-                        InlineAttempts = reader.GetInt32(3),
-                        PreEntryFailures = reader.GetInt32(24),
-                        Added = reader.GetFieldValue<DateTimeOffset>(4),
-                        ExpiresAt = reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5),
-                        NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
-                        Lease = lease,
-                        ExceptionInfo = reader.IsDBNull(10) ? null : reader.GetString(10),
-                        InboxKey = new InboxKey(
-                            storedTenantPresent ? storedTenant : null,
-                            reader.GetString(13),
-                            lane,
-                            reader.GetString(14),
-                            reader.GetString(15),
-                            reader.GetString(16),
-                            storedGeneration
-                        ),
-                        InboxGeneration = new InboxGeneration(storedGeneration, incarnationId),
-                        IsInboxOrphaned = reader.GetBoolean(20),
-                    };
-                    if (attemptId is { } persistedAttempt && lease.State == RowLeaseState.Active)
-                    {
-                        medium.InboxAttemptFence = new InboxAttemptFence(
-                            medium.StorageId,
-                            lane,
-                            storedGeneration,
-                            incarnationId,
-                            persistedAttempt,
-                            lease.Generation
-                        );
-                    }
-
-                    return (medium, status);
+                    return _ReadInboxGenerationRow(reader, offset: 0, redelivery, admittedContent: null);
                 },
                 cancellationToken
             )
@@ -471,16 +411,123 @@ internal sealed partial class RelationalDataStorage
     }
 
     /// <summary>
-    /// Renders the read-back of an inbox root generation by its key. The winner already holds the content it wrote, so
-    /// its read leaves the payload column out; a duplicate's read appends it as the last column.
+    /// The columns an admission reports for an inbox root generation, in the order
+    /// <see cref="_ReadInboxGenerationRow" /> reads them. The winner's insert returns them and a duplicate's read-back
+    /// selects them, so both build the generation from one list.
     /// </summary>
-    private string _RenderReadInboxGeneration(bool withContent)
-    {
-        var content = withContent ? $",{_t.Content}" : "";
+    private string[] _InboxGenerationColumns() =>
+        [
+            _t.Id,
+            _t.IntentType,
+            _t.Retries,
+            _t.InlineAttempts,
+            _t.Added,
+            _t.ExpiresAt,
+            _t.NextRetryAt,
+            _t.LeaseGeneration,
+            _t.LeaseState,
+            _t.StatusName,
+            _t.ExceptionInfo,
+            _t.TenantPresent,
+            _t.TenantId,
+            _t.MessageId,
+            _t.ContractIdentity,
+            _t.ContractVersion,
+            _t.ConsumerIdentity,
+            _t.Generation,
+            _t.GenerationIncarnationId,
+            _t.AttemptId,
+            _t.IsInboxOrphaned,
+            _t.LeaseExpiresAt,
+            _t.LeaseHolder,
+            _t.LeaseTakeoverCount,
+            _t.PreEntryFailures,
+        ];
 
+    /// <summary>
+    /// Builds an inbox root generation from the current row, whose <see cref="_InboxGenerationColumns" /> start at
+    /// <paramref name="offset" />. A winner passes the content it wrote; a duplicate's read-back carries the stored
+    /// payload as the column after them.
+    /// </summary>
+    private (MediumMessage Message, StatusName Status) _ReadInboxGenerationRow(
+        DbDataReader reader,
+        int offset,
+        Message redelivery,
+        string? admittedContent
+    )
+    {
+        var lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(offset + 1));
+        var storedTenantPresent = reader.GetBoolean(offset + 11);
+        var storedTenant = reader.GetString(offset + 12);
+        var storedGeneration = reader.GetInt64(offset + 17);
+        var incarnationId = reader.GetGuid(offset + 18);
+        // The lease's generation and state sit at 7 and 8, its expiry, holder, and takeovers at 21-23.
+        var lease = new RowLeaseSnapshot(
+            Convert.ToInt64(reader.GetValue(offset + 7), CultureInfo.InvariantCulture),
+            (RowLeaseState)Convert.ToInt16(reader.GetValue(offset + 8), CultureInfo.InvariantCulture),
+            reader.IsDBNull(offset + 21) ? null : reader.GetFieldValue<DateTimeOffset>(offset + 21),
+            reader.IsDBNull(offset + 22) ? null : reader.GetString(offset + 22),
+            Convert.ToInt32(reader.GetValue(offset + 23), CultureInfo.InvariantCulture)
+        );
+        var attemptId = reader.IsDBNull(offset + 19) ? (Guid?)null : reader.GetGuid(offset + 19);
+        var status = Enum.Parse<StatusName>(reader.GetString(offset + 9), ignoreCase: false);
+        var isTerminal = status is StatusName.Succeeded or StatusName.Failed && reader.IsDBNull(offset + 6);
+        // The winner's row holds exactly the content this admission just wrote in this transaction, so
+        // its envelope is this delivery's. A duplicate's row may hold another delivery's payload, so it is
+        // read back as stored.
+        var content = admittedContent ?? reader.GetString(offset + 25);
+        // Terminal duplicates never execute. Their retained payload may be the poison that
+        // ended the generation; use this delivery's envelope without rewriting stored evidence.
+        var medium = new MediumMessage
+        {
+            StorageId = reader.GetGuid(offset),
+            Origin = admittedContent is not null || isTerminal ? redelivery : _serializer.Deserialize(content)!,
+            Content = content,
+            Lane = lane,
+            Retries = reader.GetInt32(offset + 2),
+            InlineAttempts = reader.GetInt32(offset + 3),
+            PreEntryFailures = reader.GetInt32(offset + 24),
+            Added = reader.GetFieldValue<DateTimeOffset>(offset + 4),
+            ExpiresAt = reader.IsDBNull(offset + 5) ? null : reader.GetFieldValue<DateTimeOffset>(offset + 5),
+            NextRetryAt = reader.IsDBNull(offset + 6) ? null : reader.GetFieldValue<DateTimeOffset>(offset + 6),
+            Lease = lease,
+            ExceptionInfo = reader.IsDBNull(offset + 10) ? null : reader.GetString(offset + 10),
+            InboxKey = new InboxKey(
+                storedTenantPresent ? storedTenant : null,
+                reader.GetString(offset + 13),
+                lane,
+                reader.GetString(offset + 14),
+                reader.GetString(offset + 15),
+                reader.GetString(offset + 16),
+                storedGeneration
+            ),
+            InboxGeneration = new InboxGeneration(storedGeneration, incarnationId),
+            IsInboxOrphaned = reader.GetBoolean(offset + 20),
+        };
+        if (attemptId is { } persistedAttempt && lease.State == RowLeaseState.Active)
+        {
+            medium.InboxAttemptFence = new InboxAttemptFence(
+                medium.StorageId,
+                lane,
+                storedGeneration,
+                incarnationId,
+                persistedAttempt,
+                lease.Generation
+            );
+        }
+
+        return (medium, status);
+    }
+
+    /// <summary>
+    /// Renders a duplicate admission's read-back of an inbox root generation by its key, with the stored payload as
+    /// the last column. A winner never reads back: its insert returns the row.
+    /// </summary>
+    private string _RenderReadInboxGeneration()
+    {
         // The hash seeks the root-key index; the column comparisons make the match exact whatever the hash.
         return $"""
-            SELECT {_t.Id},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.LeaseGeneration},{_t.LeaseState},{_t.StatusName},{_t.ExceptionInfo},{_t.TenantPresent},{_t.TenantId},{_t.MessageId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.LeaseExpiresAt},{_t.LeaseHolder},{_t.LeaseTakeoverCount},{_t.PreEntryFailures}{content}
+            SELECT {string.Join(",", _InboxGenerationColumns())},{_t.Content}
             FROM {_receivedTable}
             WHERE {_t.InboxKeyHash}=@InboxKeyHash
               AND {_t.TenantPresent}=@TenantPresent AND {_t.TenantId}=@TenantId AND {_t.MessageId}=@MessageId
