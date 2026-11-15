@@ -227,7 +227,12 @@ public sealed class JobsTaskSchedulerTests : TestBase
         await started.Task.WaitAsync(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken);
         var dispose = scheduler.DisposeAsync().AsTask();
 
-        (await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken))).Should().NotBe(dispose);
+        // Nothing signals that disposal reached its wait for the running job, and a check made right away passes whether
+        // or not it waits; only elapsed time shows the task stays pending while the job holds its slot.
+        // real-wait: the absence of a completion can only be shown over elapsed time
+        (await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken)))
+            .Should()
+            .NotBe(dispose);
 
         release.TrySetResult();
         await dispose.WaitAsync(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken);
@@ -415,8 +420,9 @@ public sealed class JobsTaskSchedulerTests : TestBase
         }
 
         await twoStarted.Task.WaitAsync(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken);
-        await Task.Delay(100, AbortToken);
 
+        // The cap is also checked after the release below: every start samples the active count, so a third worker
+        // that started late would still push the maximum past two.
         startedCount.Should().Be(2);
         maxObservedActive.Should().BeLessThanOrEqualTo(2);
 
@@ -466,8 +472,8 @@ public sealed class JobsTaskSchedulerTests : TestBase
 
         // The third admission parks on the detached lane; QueueAsync itself returns immediately.
         await scheduler.QueueAsync(Work, JobPriority.LongRunning, AbortToken);
-        await Task.Delay(100, AbortToken);
 
+        // The cap is also checked after the release below, which samples every start.
         startedCount.Should().Be(2);
         maxObservedActive.Should().Be(2);
 
@@ -514,8 +520,8 @@ public sealed class JobsTaskSchedulerTests : TestBase
             capacityCts.Token
         );
         await capacityCts.CancelAsync();
-        await Task.Delay(100, AbortToken);
 
+        // Draining below waits until the parked admission is dropped, so a run of it would land before the check.
         release.SetResult();
         (await scheduler.WaitForRunningTasksAsync(HeadlessTestTaskExtensions.DefaultTimeout)).Should().BeTrue();
 
@@ -616,7 +622,6 @@ public sealed class JobsTaskSchedulerTests : TestBase
             JobPriority.LongRunning,
             AbortToken
         );
-        await Task.Delay(100, AbortToken);
 
         // Disposal cancels the shutdown token; the parked admission is dropped, never runs, and cannot block
         // disposal. Release the occupying delegate so the active-task drain can finish.
@@ -624,7 +629,10 @@ public sealed class JobsTaskSchedulerTests : TestBase
         release.SetResult();
         await dispose.WaitAsync(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken);
 
-        await Task.Delay(100, AbortToken);
+        // The drain returns true once no admission is pending, so the dropped one has resolved by now.
+        (await scheduler.WaitForRunningTasksAsync(HeadlessTestTaskExtensions.DefaultTimeout))
+            .Should()
+            .BeTrue();
         droppedRan.Should().BeFalse();
     }
 
@@ -730,8 +738,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
         }
 
         release.SetResult();
-        (await scheduler.WaitForRunningTasksAsync(HeadlessTestTaskExtensions.DefaultTimeout)).Should().BeTrue();
-        await Task.Delay(100, AbortToken);
+
+        // Drained means nothing is queued, running, or parked, so no later run of a rejected admission can follow.
+        (await scheduler.WaitForRunningTasksAsync(HeadlessTestTaskExtensions.DefaultTimeout))
+            .Should()
+            .BeTrue();
 
         executedCount.Should().Be(2);
     }
@@ -951,7 +962,8 @@ public sealed class JobsTaskSchedulerTests : TestBase
         // token. DisposeAsync cancels that token; the resulting OperationCanceledException must
         // not escape the worker's thread-start delegate — an unhandled exception on a manually
         // created thread terminates the whole process.
-        var scheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
+        var clock = new TimerSignalingTimeProvider();
+        var scheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: clock);
         var executed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await scheduler.QueueAsync(
@@ -967,14 +979,10 @@ public sealed class JobsTaskSchedulerTests : TestBase
 
         await executed.Task.WaitAsync(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken);
 
-        // Give the now-idle worker time to enter the backoff delay await.
-        await Task.Delay(100, AbortToken);
+        // An idle worker arms one timer when it parks in the backoff delay; the clock is frozen, so it stays parked.
+        await clock.NextTimerAsync(AbortToken).Bounded();
 
-        var dispose = scheduler.DisposeAsync().AsTask();
-        var finished = await Task.WhenAny(dispose, Task.Delay(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken));
-
-        finished.Should().Be(dispose);
-        await dispose;
+        await scheduler.DisposeAsync().AsTask().Bounded();
         scheduler.ActiveWorkers.Should().Be(0);
     }
 
@@ -985,6 +993,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
         var logger = Substitute.For<ILogger<JobsTaskScheduler>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var faultTimestamps = new ConcurrentQueue<long>();
+        var secondFault = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         logger
             .When(log =>
                 log.Log(
@@ -1000,6 +1009,11 @@ public sealed class JobsTaskSchedulerTests : TestBase
                 if (call.Arg<EventId>().Id == 3300)
                 {
                     faultTimestamps.Enqueue(Stopwatch.GetTimestamp());
+
+                    if (faultTimestamps.Count >= 2)
+                    {
+                        secondFault.TrySetResult();
+                    }
                 }
             });
         await using var scheduler = new JobsTaskScheduler(
@@ -1019,7 +1033,7 @@ public sealed class JobsTaskSchedulerTests : TestBase
             AbortToken
         );
 
-        await _WaitUntilAsync(() => faultTimestamps.Count >= 2, HeadlessTestTaskExtensions.DefaultTimeout);
+        await secondFault.Task.Bounded();
         var timestamps = faultTimestamps.ToArray();
         Stopwatch
             .GetElapsedTime(timestamps[0], timestamps[1])

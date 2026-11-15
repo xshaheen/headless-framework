@@ -1536,13 +1536,19 @@ public sealed class RetryBehaviorTests : TestBase
             Retries = 0,
             RetryCount = 0,
             Status = JobStatus.Idle,
-        };
-        context.CachedDelegate = async (_, _, _) =>
-        {
-            while (!context.LeaseLost)
+            CachedDelegate = async (_, _, attemptToken) =>
             {
-                await Task.Delay(5, AbortToken);
-            }
+                // Lease loss is flagged before the attempt token is cancelled; the job then carries on as if the
+                // cancellation had not happened.
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, attemptToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Ignored on purpose: this is the job that ignores cancellation.
+                }
+            },
         };
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);

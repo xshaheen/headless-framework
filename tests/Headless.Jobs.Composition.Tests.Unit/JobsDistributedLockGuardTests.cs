@@ -35,14 +35,14 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     };
 
     /// <summary>A real lock over in-memory storage. Two calls sharing one storage instance simulate two nodes.</summary>
-    private static IDistributedLock _CreateLock(InMemoryDistributedLockStorage storage)
+    private static IDistributedLock _CreateLock(InMemoryDistributedLockStorage storage, TimeProvider? clock = null)
     {
         return new DistributedLock(
             storage,
             Substitute.For<IDistributedLockReleaseSignal>(), // lock-released notifications are not needed for these guard tests
             new DistributedLockOptions(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            TimeProvider.System,
+            clock ?? TimeProvider.System,
             NullLogger<DistributedLock>.Instance
         );
     }
@@ -386,6 +386,7 @@ public sealed class JobsDistributedLockGuardTests : TestBase
     public async Task seed_waits_out_a_lease_released_during_the_wait_and_runs()
     {
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
+        var nodeBClock = new TimerSignalingTimeProvider();
         var nodeA = _CreateLock(storage);
         var held = await nodeA.TryAcquireAsync(JobsKeys.CronSeedMigrationResource, _HoldOptions, AbortToken);
         held.Should().NotBeNull();
@@ -396,13 +397,17 @@ public sealed class JobsDistributedLockGuardTests : TestBase
         var seeding = _InvokeSeedAsync(
             manager,
             options,
-            _CreateLock(storage),
+            _CreateLock(storage, nodeBClock),
             AbortToken,
             seedLockWait: TimeSpan.FromSeconds(10)
         );
-        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+
+        // Node B arms its acquire timeout, then its backoff delay once the first attempt found the lock held.
+        await nodeBClock.NextTimerAsync(AbortToken).Bounded();
+        var backoff = await nodeBClock.NextTimerAsync(AbortToken).Bounded();
         await held!.DisposeAsync();
-        await seeding;
+        nodeBClock.Advance(backoff);
+        await seeding.Bounded();
 
         // then
         await manager

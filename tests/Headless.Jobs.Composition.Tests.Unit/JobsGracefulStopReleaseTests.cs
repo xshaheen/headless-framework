@@ -170,6 +170,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         // when: ApplicationStopping records the budget origin, the budget then elapses on the real clock the scheduler
         // measures it on (a loaded runner only lengthens this wait), and the scheduler stop begins
         host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+        // real-wait: the scheduler's stop measures its budget on TimeProvider.System, which no injected clock moves
         await Task.Delay(budget + TimeSpan.FromMilliseconds(50), AbortToken);
         var stop = host.Services.GetRequiredService<JobsSchedulerBackgroundService>().StopAsync(AbortToken);
 

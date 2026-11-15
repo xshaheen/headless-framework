@@ -22,7 +22,7 @@ public sealed class JobsCoordinationSlowStartupTests : TestBase
     public async Task should_keep_membership_through_a_starting_async_longer_than_the_dead_threshold()
     {
         // given
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new TimerSignalingTimeProvider();
         var options = new CoordinationOptions();
         var store = new ClockedMembershipStore(timeProvider, options.DeadThreshold);
         var builder = Host.CreateApplicationBuilder();
@@ -34,6 +34,7 @@ public sealed class JobsCoordinationSlowStartupTests : TestBase
         builder.Services.AddHostedService<JobsCoordinationStartupGate>();
         builder.Services.AddHostedService(_ => new SlowStartingService(
             timeProvider,
+            options.HeartbeatInterval,
             options.DeadThreshold + TimeSpan.FromSeconds(10)
         ));
 
@@ -59,17 +60,24 @@ public sealed class JobsCoordinationSlowStartupTests : TestBase
         }
     }
 
-    /// <summary>Steps the app clock in small increments, yielding so the heartbeat loop runs between them.</summary>
-    private sealed class SlowStartingService(FakeTimeProvider timeProvider, TimeSpan duration) : IHostedLifecycleService
+    /// <summary>
+    /// Steps the app clock one beat interval at a time and waits for the heartbeat loop to park on its next delay
+    /// before stepping again, so every step fires exactly one beat.
+    /// </summary>
+    private sealed class SlowStartingService(
+        TimerSignalingTimeProvider timeProvider,
+        TimeSpan heartbeatInterval,
+        TimeSpan duration
+    ) : IHostedLifecycleService
     {
         public async Task StartingAsync(CancellationToken cancellationToken)
         {
-            var step = TimeSpan.FromMilliseconds(500);
+            await timeProvider.WaitForTimerAsync(heartbeatInterval, cancellationToken).Bounded();
 
-            for (var elapsed = TimeSpan.Zero; elapsed < duration; elapsed += step)
+            for (var elapsed = TimeSpan.Zero; elapsed < duration; elapsed += heartbeatInterval)
             {
-                timeProvider.Advance(step);
-                await Task.Delay(5, cancellationToken);
+                timeProvider.Advance(heartbeatInterval);
+                await timeProvider.WaitForTimerAsync(heartbeatInterval, cancellationToken).Bounded();
             }
         }
 
