@@ -36,6 +36,31 @@ public sealed class EncryptedValueTests : TestBase
     }
 
     [Fact]
+    public void should_take_an_owned_frame_over_without_copying_it()
+    {
+        var frame = _Frame(Guid.CreateVersion7(), ciphertextLength: 3);
+
+        var value = EncryptedValue.FromOwnedBytes(frame);
+
+        value.GetFrameArray().Should().BeSameAs(frame);
+        value.Should().Be(EncryptedValue.FromBytes(frame));
+        default(EncryptedValue).GetFrameArray().Should().BeNull();
+    }
+
+    [Fact]
+    public void should_refuse_an_owned_array_that_is_not_a_frame()
+    {
+        var wrongVersion = _Frame(Guid.CreateVersion7(), ciphertextLength: 0);
+        wrongVersion[0] = 0x02;
+
+        var tooShort = () => EncryptedValue.FromOwnedBytes(new byte[EncryptedValue.Overhead - 1]);
+        var unknownVersion = () => EncryptedValue.FromOwnedBytes(wrongVersion);
+
+        tooShort.Should().Throw<FormatException>();
+        unknownVersion.Should().Throw<FormatException>();
+    }
+
+    [Fact]
     public void should_refuse_bytes_shorter_than_a_frame()
     {
         var act = () => EncryptedValue.FromBytes(new byte[EncryptedValue.Overhead - 1]);

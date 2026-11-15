@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Sql;
 using Headless.Sql.PostgreSql;
+using Headless.Sql.Sqlite;
 using Headless.Sql.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
+using Microsoft.Data.Sqlite;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -79,9 +82,41 @@ public sealed class DialectRuntimeTests : TestBase
         PostgreSqlDialect.Instance.AddParameter(command, "K", SqlColumnType.KeyText(10), "key");
 
         ((DateTimeOffset)command.Parameters["T"].Value!).Offset.Should().Be(TimeSpan.Zero);
-        command.Parameters["B"].Value.Should().BeEquivalentTo(new byte[] { 1, 2 });
+        ((ReadOnlyMemory<byte>)command.Parameters["B"].Value!).ToArray().Should().Equal(1, 2);
         command.Parameters["N"].Value.Should().Be(DBNull.Value);
         command.Parameters["K"].NpgsqlDbType.Should().Be(NpgsqlDbType.Varchar);
+    }
+
+    [Fact]
+    public void should_bind_binary_memory_without_copying_its_array_and_copy_only_a_slice()
+    {
+        using var postgreSql = new NpgsqlCommand();
+        using var sqlServer = new SqlCommand();
+        using var sqlite = new SqliteCommand();
+        byte[] bytes = [1, 2, 3, 4];
+        ReadOnlyMemory<byte> slice = bytes.AsMemory(1, 2);
+        var dialects = new (ISqlDialect Dialect, DbCommand Command)[]
+        {
+            (PostgreSqlDialect.Instance, postgreSql),
+            (SqlServerDialect.Instance, sqlServer),
+            (SqliteDialect.Instance, sqlite),
+        };
+
+        foreach (var (dialect, command) in dialects)
+        {
+            dialect.AddParameter(command, "Whole", SqlColumnType.Binary, new ReadOnlyMemory<byte>(bytes));
+            dialect.AddParameter(command, "Slice", SqlColumnType.Binary, slice);
+        }
+
+        // PostgreSQL keeps the memory itself; Npgsql writes it, slice or not, without a copy.
+        postgreSql.Parameters["Whole"].Value.Should().Be(new ReadOnlyMemory<byte>(bytes));
+        postgreSql.Parameters["Slice"].Value.Should().Be(slice);
+
+        foreach (var command in new DbCommand[] { sqlServer, sqlite })
+        {
+            command.Parameters["Whole"].Value.Should().BeSameAs(bytes);
+            command.Parameters["Slice"].Value.Should().BeOfType<byte[]>().Which.Should().Equal(2, 3);
+        }
     }
 
     [Fact]

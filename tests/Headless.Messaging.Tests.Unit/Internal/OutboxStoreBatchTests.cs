@@ -315,7 +315,7 @@ public sealed class OutboxStoreBatchTests : TestBase
             Origin = envelope.Origin,
             Content = "{}",
             Lane = envelope.Lane,
-            Added = DateTimeOffset.UtcNow,
+            Added = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
         };
     }
 

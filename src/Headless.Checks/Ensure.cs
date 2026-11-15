@@ -34,6 +34,30 @@ public static class Ensure
         }
     }
 
+    /// <summary>Throws an <see cref="InvalidOperationException"/> when <paramref name="condition"/> is <see langword="false"/>.</summary>
+    /// <param name="condition">The condition that must hold.</param>
+    /// <param name="message">
+    /// A custom error message written as an interpolated string. It is formatted only when <paramref name="condition"/>
+    /// is <see langword="false"/>, so a passing check builds no string.
+    /// </param>
+    /// <param name="expression">The source text of <paramref name="condition"/>. Captured automatically by the compiler.</param>
+    /// <exception cref="InvalidOperationException"><paramref name="condition"/> is <see langword="false"/>.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void True(
+        [DoesNotReturnIf(false)] bool condition,
+#pragma warning disable CA1045 // The fix makes it worse: passing the handler by value copies it on every passing check (about 1 ns more in the Checks benchmarks); Debug.Assert takes its handler by ref for the same reason.
+        [InterpolatedStringHandlerArgument(nameof(condition))] ref TrueCheckInterpolatedStringHandler message,
+#pragma warning restore CA1045
+        [CallerArgumentExpression(nameof(condition))] string? expression = null
+    )
+    {
+        if (!condition)
+        {
+            _ThrowForTrue(message.ToStringAndClear(), expression);
+        }
+    }
+
     /// <summary>Throws an <see cref="InvalidOperationException"/> when <paramref name="condition"/> is <see langword="true"/>.</summary>
     /// <param name="condition">The condition that must not hold.</param>
     /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>

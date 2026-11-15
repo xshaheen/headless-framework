@@ -508,10 +508,7 @@ internal sealed class DistributedSemaphoreProvider(
             {
                 if (_maxWaitersPerResource is { } max)
                 {
-                    Ensure.True(
-                        existing.RefCount < max,
-                        string.Create(CultureInfo.InvariantCulture, $"Maximum waiters per resource ({max}) exceeded")
-                    );
+                    Ensure.True(existing.RefCount < max, $"Maximum waiters per resource ({max}) exceeded");
                 }
 
                 existing.Increment();
@@ -523,10 +520,7 @@ internal sealed class DistributedSemaphoreProvider(
             {
                 Ensure.True(
                     _autoResetEvents.Count < maxResources,
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Maximum concurrent waiting resources ({maxResources}) exceeded"
-                    )
+                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
                 );
             }
 

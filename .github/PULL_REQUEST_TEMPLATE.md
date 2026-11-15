@@ -71,13 +71,14 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 | Surface | Change | Who breaks, and the migration |
 | --- | --- | --- |
 
-<!-- Then each added, changed, or removed member as a bare declaration marked // Added, // Removed, or // Changed
-     (with a before and an after line), and the registration and call a consumer writes, copied from a test or docs
-     sample that compiles. Keep it expanded: this block is already collapsed. -->
+<!-- Then one diff block per owning type: each affected member as a bare declaration (no body or doc comments)
+     inside its unchanged enclosing declaration, + for added, - for removed, and a changed member as a - line then a
+     + line. Then the registration and call a consumer writes, copied from a test or docs sample that compiles. Keep
+     it expanded: this block is already collapsed. -->
 
-**Full public API**
+**Surface**
 
-```csharp
+```diff
 ```
 
 </details>
@@ -85,28 +86,25 @@ follow a signature change, generated code, lockfiles. Delete if nothing. -->
 <details><summary><h2>Verification</h2></summary>
 
 <!-- One collapsed block holding one table: nest no other collapsible or table inside it. When any check failed, add
-     `open` to the tag above so the failure shows without a click. Every row describes the head commit against the
-     same base: an earlier commit does not prove the head, and an unchanged gate reuses its earlier pass in seconds.
-     Replace the table below with artifacts/proof/<run>/summary.md from `make verify-affected`, as it is: its table
-     opens with a verdict row naming the head commit, the base, and the totals, then has one row per stage, and its
-     notes follow the table. Add rows at the end of that table, above its notes, never in a second table, and leave
-     out a row kind that does not apply:
-     - `make test-affected-integration` when the affected set has integration projects: copy its table rows, verdict
-       row first, and put its notes under the table; or one row saying why it did not run. CI runs no integration
-       suites. Integration environment: the databases, brokers, or services it used.
-     - Regression: the behavior the new tests hold that fails or does not compile on the base. For new behavior with
-       no base to fail, the one behavior that matters most. Name behavior, not test files.
-     - Also checked: evidence no gate shows, one row each, at most three: a parity corpus, an EXPLAIN plan, a
-       benchmark, or a run against a real service.
+     `open` to the tag above. Open with a line naming the head commit and the base: only checks on the head commit
+     count, and an unchanged gate reuses its earlier pass in seconds. Condense each gate run to one row; never paste
+     its summary.md, whose stage timings, whole-assembly coverage, and module lists bury what a reviewer approves on.
+     The row gives the command, verdict, tests passed, failed, and skipped (with each skip's reason), compiler and
+     analyzer findings, and changed-line coverage against the floor. A stage gets its own row only when it failed,
+     warned, or fell below a floor, quoting its first error line or figure. Then a row each, leaving out any that
+     does not apply:
+     - `make test-affected-integration` when the affected set has integration projects, condensed the same way and
+       naming the databases, brokers, or services it used; or why it did not run. CI runs no integration suites.
+     - Regression: for a fix, `make prove`'s base and head results and the behavior the new tests hold. For new
+       behavior with no base to fail, the one behavior that matters most. Name behavior, not test files.
+     - Also checked: evidence no gate shows, at most three rows: a parity corpus, an EXPLAIN plan, a benchmark, or a
+       run against a real service.
      - Not verified: each claim in Solution or Contract changes that no check exercised, and what would prove it.
-     - Coverage below floor: one row per warning from the proof's coverage gate, giving the package, files and lines,
-       figure against the floor, accepted reason from AGENTS.md, and one-sentence rationale. For integration-only
-       behavior, name the integration test. For a whole-assembly warning on unchanged code, give this PR's
-       changed-line figure and say the shortfall predates it.
-     - Unrelated failure: one row per failed test, with its first error line, why this PR cannot reach it, and the
-       issue tracking the flake. A passing rerun establishes a flake, not that this PR is innocent.
-     A FAIL row stays FAIL: add a row under it for `make test-failed` on the head commit, naming the modules it reran,
-     then the rows of the final run. -->
+     - Coverage below floor: per warning, the package, lines, figure against the floor, and the AGENTS.md reason with
+       one sentence of rationale (name the integration test for integration-only behavior).
+     - Unrelated failure: per failed test, its first error line, why this PR cannot reach it, and the issue tracking
+       the flake. A passing rerun establishes a flake, not that this PR is innocent.
+     A FAIL row stays FAIL: add the `make test-failed` row on the head commit under it, then the final run's row. -->
 
 | Check | Result |
 | --- | --- |

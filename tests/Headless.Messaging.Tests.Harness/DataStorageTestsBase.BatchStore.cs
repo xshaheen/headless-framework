@@ -27,6 +27,7 @@ public abstract partial class DataStorageTestsBase
         // scheduled row in the middle
         var (store, connection) = await _BatchStoreAsync();
         await using var _ = connection;
+        // wall-clock: the real storage classifies a row as scheduled against its system clock.
         var publishAt = DateTimeOffset.UtcNow.AddMinutes(30);
         var rows = Enumerable
             .Range(0, 301)
