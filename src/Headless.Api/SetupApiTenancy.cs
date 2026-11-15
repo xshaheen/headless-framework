@@ -810,6 +810,8 @@ public sealed class HeadlessAuthorizationTenancyBuilder
     /// </remarks>
     public HeadlessAuthorizationTenancyBuilder RequireTenant()
     {
+        // The handler falls back to the accessor when authorization passes the Endpoint as its resource.
+        _builder.Services.AddHttpContextAccessor();
         _builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IAuthorizationHandler, TenantRequirementHandler>()
         );

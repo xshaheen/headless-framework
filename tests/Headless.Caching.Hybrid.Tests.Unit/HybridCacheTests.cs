@@ -1086,12 +1086,10 @@ public sealed class HybridCacheTests : TestBase
     #region Numeric Operations
 
     [Fact]
-    public async Task should_seed_l1_with_zero_when_increment_total_reaches_zero()
+    public async Task should_serve_a_zero_total_after_an_increment_reaches_zero()
     {
-        // given — a decrement that brings the running total back to exactly 0 must keep 0 in L1, not evict it.
-        // Guards against treating the increment's new total of 0 as a "no-op" (the SetIfHigher/Lower difference
-        // convention) and removing the key from L1.
-        var (cache, l1, _, _) = _CreateCache();
+        // given - a decrement that brings the running total back to exactly 0 still reads 0, not a miss
+        var (cache, _, _, _) = _CreateCache();
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
@@ -1102,10 +1100,9 @@ public sealed class HybridCacheTests : TestBase
 
         // then
         result.Should().Be(0L);
-
-        var l1Result = await l1.GetAsync<long>(key, AbortToken);
-        l1Result.HasValue.Should().BeTrue("a 0 total is a valid stored value, not a no-op signal");
-        l1Result.Value.Should().Be(0L);
+        var read = await cache.GetAsync<long>(key, AbortToken);
+        read.HasValue.Should().BeTrue("a 0 total is a valid stored value, not a no-op signal");
+        read.Value.Should().Be(0L);
     }
 
     #endregion
@@ -1679,6 +1676,7 @@ public sealed class HybridCacheTests : TestBase
 
         var key = Faker.Random.AlphaNumeric(10);
         await cache.IncrementAsync(key, 7L, TimeSpan.FromMinutes(5), AbortToken);
+        (await cache.GetAsync<long>(key, AbortToken)).Value.Should().Be(7L); // the read fills L1 from L2
         (await l1.GetAsync<long>(key, AbortToken)).HasValue.Should().BeTrue();
 
         l2.FailWrites = true;

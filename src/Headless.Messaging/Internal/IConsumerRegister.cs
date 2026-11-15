@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Headless.DistributedLocks;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
@@ -32,6 +33,14 @@ internal sealed partial class ConsumerRegister(
 {
     private static readonly TimeSpan _RestartShutdownTimeout = TimeSpan.FromSeconds(2);
 
+    // The lease a sequential subscription's listening host holds. Renewed at a third of it while the host listens, so it
+    // bounds only how long a host that died without releasing keeps the others waiting.
+    internal static readonly TimeSpan ActiveHostLeaseDuration = TimeSpan.FromSeconds(30);
+
+    // How often a host that does not hold a sequential subscription's lock tries for it again. A holder that stops
+    // releases the lock, so this is the usual takeover delay; one acquire per interval per subscription is cheap.
+    internal static readonly TimeSpan ActiveHostRetryInterval = TimeSpan.FromSeconds(5);
+
     private readonly ConcurrentDictionary<string, SubscriptionHandle> _subscriptionHandles = new(
         StringComparer.Ordinal
     );
@@ -55,6 +64,12 @@ internal sealed partial class ConsumerRegister(
         serviceProvider.GetRequiredService<IMessagingCapabilityModel>();
 
     private readonly TransportConnectivity _connectivity = serviceProvider.GetRequiredService<TransportConnectivity>();
+
+    // The subscriptions already warned that every host listens to them, so a restart does not repeat the warning.
+    private readonly ConcurrentDictionary<string, byte> _unguardedSequentialLogged = new(StringComparer.Ordinal);
+
+    // Resolved on start, beside the other pipeline services; null only in a host built without messaging's setup.
+    private IDistributedLock? _lockProvider;
 
 #pragma warning disable CA2213 // False positive: the container owns the shared singleton and disposes it with the host.
     private readonly ConsumerRateLimiters? _rateLimiters = serviceProvider.GetService<ConsumerRateLimiters>();
@@ -151,6 +166,7 @@ internal sealed partial class ConsumerRegister(
         _consumerClientFactory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
         _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
         _subscribeInvoker = serviceProvider.GetRequiredService<ISubscribeInvoker>();
+        _lockProvider = serviceProvider.GetKeyedService<IDistributedLock>(MessagingKeys.LockProvider);
 
         try
         {
@@ -887,6 +903,14 @@ internal sealed partial class ConsumerRegister(
             var sequential = !everyInstance && descriptors.Any(static d => d.Sequential);
             var limit = sequential ? (byte)1 : _selector.GetSubscriptionConcurrentLimit(subscriptionKey);
 
+            // Across hosts, one at a time must take the subscription in, or each would order only its share.
+            var intake = _ResolveSequentialIntake(subscriptionKey, descriptors);
+            var singleActiveConsumer = intake is SequentialIntake.BrokerSingleActiveConsumer;
+            if (intake is SequentialIntake.Unguarded && _unguardedSequentialLogged.TryAdd(handleName, 0))
+            {
+                _logger.LogSequentialIntakeUnguarded(handleName);
+            }
+
             // A runtime subscription carries a handler id; no deploy step knows it, so its client creates its topology.
             var provisionsTopology = descriptors.Any(static d => d.HandlerId is not null);
 
@@ -897,6 +921,7 @@ internal sealed partial class ConsumerRegister(
                         subscriptionKey,
                         limit,
                         provisionsTopology,
+                        singleActiveConsumer,
                         _stoppingCts.Token
                     )
                     .ConfigureAwait(false);
@@ -960,6 +985,33 @@ internal sealed partial class ConsumerRegister(
             // A second client on a sequential subscription would compete for its deliveries and admit them out of order.
             var clientCount = everyInstance || sequential ? 1 : _options.ConsumerThreadCount;
 
+            if (intake is SequentialIntake.DistributedLock)
+            {
+                var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var task = Task
+                    .Factory.StartNew(
+                        () =>
+                            _ListenWhileHoldingLockAsync(
+                                subscriptionKey,
+                                handle,
+                                limit,
+                                provisionsTopology,
+                                messageNames,
+                                startupReady,
+                                groupCts.Token
+                            ),
+                        CancellationToken.None,
+                        TaskCreationOptions.LongRunning,
+                        TaskScheduler.Default
+                    )
+                    .Unwrap();
+
+                handle.ConsumerTasks.Add(task);
+                startupTasks ??= [];
+                startupTasks.Add(startupReady.Task);
+                continue;
+            }
+
             for (var i = 0; i < clientCount; i++)
             {
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -974,6 +1026,7 @@ internal sealed partial class ConsumerRegister(
                                         subscriptionKey,
                                         limit,
                                         provisionsTopology,
+                                        singleActiveConsumer,
                                         groupCts.Token
                                     )
                                     .ConfigureAwait(false);
@@ -1047,10 +1100,207 @@ internal sealed partial class ConsumerRegister(
         return establishments;
     }
 
+    private SequentialIntake _ResolveSequentialIntake(
+        ConsumerSubscriptionKey subscriptionKey,
+        IReadOnlyList<ConsumerExecutorDescriptor> descriptors
+    )
+    {
+        return SequentialIntakeResolver.Resolve(
+            subscriptionKey,
+            descriptors,
+            _capabilityModel.Providers.FirstOrDefault(static p => p.Role is MessagingProviderRole.Transport),
+            _lockProvider is not null && SequentialIntakeResolver.IsDistributedLockConfigured(_lockProvider)
+        );
+    }
+
+    /// <summary>
+    /// Runs a sequential subscription's one client on this host only while the host holds the subscription's lock, so
+    /// one host at a time takes its deliveries in. A host without the lock creates no client and tries again every
+    /// <see cref="ActiveHostRetryInterval"/>. A holder that loses the lease stops its client and competes again; the
+    /// handlers it already admitted finish, because they run on <paramref name="stoppingToken"/>, not on the lease.
+    /// </summary>
+    private async Task _ListenWhileHoldingLockAsync(
+        ConsumerSubscriptionKey subscriptionKey,
+        SubscriptionHandle handle,
+        byte limit,
+        bool provisionsTopology,
+        ICollection<string> messageNames,
+        TaskCompletionSource startupReady,
+        CancellationToken stoppingToken
+    )
+    {
+        var lockProvider = _lockProvider!;
+        var resource = MessagingKeys.SequentialIntakeResource(
+            _options.Version,
+            subscriptionKey.Lane,
+            subscriptionKey.SubscriptionName
+        );
+
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                var lease = await _TryAcquireActiveHostAsync(lockProvider, resource, handle, stoppingToken)
+                    .ConfigureAwait(false);
+
+                if (lease is null)
+                {
+                    // Another host listens, so this host's start does not wait for the subscription. The next try is
+                    // scheduled before the start completes, so a started host is always already waiting for it.
+                    var retry = Task.Delay(ActiveHostRetryInterval, _backoffClock, stoppingToken);
+                    startupReady.TrySetResult();
+                    await retry.ConfigureAwait(false);
+                    continue;
+                }
+
+                bool lost;
+
+                await using (lease.ConfigureAwait(false))
+                {
+                    _logger.LogSequentialIntakeAcquired(handle.SubscriptionName, resource);
+                    await _ListenUnderLeaseAsync(
+                            subscriptionKey,
+                            handle,
+                            limit,
+                            provisionsTopology,
+                            messageNames,
+                            startupReady,
+                            lease,
+                            stoppingToken
+                        )
+                        .ConfigureAwait(false);
+
+                    // Read while the lease is alive: a disposed lease owes its caller no loss state.
+                    lost = lease.IsLost;
+                }
+
+                if (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                if (lost)
+                {
+                    _logger.LogSequentialIntakeLost(handle.SubscriptionName, resource);
+                    continue;
+                }
+
+                // The client stopped listening on its own and the lock is released, so another host can take over;
+                // this one competes again after the interval instead of rebuilding a client that just stopped.
+                await Task.Delay(ActiveHostRetryInterval, _backoffClock, stoppingToken).ConfigureAwait(false);
+            }
+
+            startupReady.TrySetCanceled(stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            startupReady.TrySetCanceled(stoppingToken);
+        }
+        catch (BrokerConnectionException e)
+        {
+            startupReady.TrySetException(e);
+            handle.MarkClientLoopFailed();
+            _connectivity.ReportBrokerFailure();
+            _logger.FailedToConnectToBroker(e);
+        }
+        catch (Exception e)
+        {
+            startupReady.TrySetException(e);
+            handle.MarkClientLoopFailed();
+            _logger.ConsumerProcessingLoopFailed(e);
+        }
+    }
+
+    private async Task<IDistributedLease?> _TryAcquireActiveHostAsync(
+        IDistributedLock lockProvider,
+        string resource,
+        SubscriptionHandle handle,
+        CancellationToken stoppingToken
+    )
+    {
+        try
+        {
+            return await lockProvider
+                .TryAcquireAsync(
+                    resource,
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = ActiveHostLeaseDuration,
+                        AcquireTimeout = TimeSpan.Zero,
+                        Monitoring = LockMonitoringMode.AutoExtend,
+                        // Every other host tries once per interval and never waits, so a release wake-up would reach no
+                        // one.
+                        NotifyWaitersOnRelease = false,
+                    },
+                    stoppingToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // A lock store outage leaves the subscription to whichever host still holds it; this one keeps trying.
+            _logger.LogSequentialIntakeAcquireFailed(e, handle.SubscriptionName, resource, ActiveHostRetryInterval);
+            return null;
+        }
+    }
+
+    private async Task _ListenUnderLeaseAsync(
+        ConsumerSubscriptionKey subscriptionKey,
+        SubscriptionHandle handle,
+        byte limit,
+        bool provisionsTopology,
+        ICollection<string> messageNames,
+        TaskCompletionSource startupReady,
+        IDistributedLease lease,
+        CancellationToken stoppingToken
+    )
+    {
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, lease.LostToken);
+        IConsumerClient? client = null;
+
+        try
+        {
+            var failureMark = _connectivity.FailureMark;
+            client = await _CreateConsumerClientAsync(
+                    subscriptionKey,
+                    limit,
+                    provisionsTopology,
+                    singleActiveConsumer: false,
+                    listening.Token
+                )
+                .ConfigureAwait(false);
+
+            await handle.AddClientAsync(client).ConfigureAwait(false);
+
+            _serverAddress = client.BrokerAddress;
+
+            // Admitted deliveries run on the host's token, so losing the lease stops intake but not their handlers.
+            _RegisterMessageProcessor(client, subscriptionKey, handle, stoppingToken);
+
+            await client.SubscribeAsync(messageNames, listening.Token).ConfigureAwait(false);
+            await _AwaitConsumerReadyThenListenAsync(client, startupReady, onReady: null, failureMark, listening.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (lease.IsLost && !stoppingToken.IsCancellationRequested)
+        {
+            // The lease is gone: stop taking deliveries in, below, and let the caller compete again.
+        }
+        finally
+        {
+            // A handle being disposed shuts its own clients down; otherwise this client is no longer the handle's to
+            // report on, so it leaves the handle before it closes, and a late event from it cannot degrade the handle.
+            if (client is not null && handle.TryRetireClient(client))
+            {
+                await client.ShutdownAsync(_RestartShutdownTimeout, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+    }
+
     private Task<IConsumerClient> _CreateConsumerClientAsync(
         ConsumerSubscriptionKey subscriptionKey,
         byte groupConcurrent,
         bool provisionsTopology,
+        bool singleActiveConsumer,
         CancellationToken cancellationToken
     )
     {
@@ -1064,6 +1314,7 @@ internal sealed partial class ConsumerRegister(
             )
             {
                 ProvisionsTopology = provisionsTopology,
+                SingleActiveConsumer = singleActiveConsumer,
             },
             cancellationToken
         );
@@ -1647,12 +1898,42 @@ internal sealed partial class ConsumerRegister(
         /// </summary>
         public bool IsPausedForEvent => Volatile.Read(ref _isPaused);
 
+        // Clients a sequential subscription stopped when its host lost the lock: they no longer belong to the handle, so
+        // the events they raise while closing must not degrade it.
+        private readonly HashSet<IConsumerClient> _retired = new(ReferenceEqualityComparer.Instance);
+
         public void MarkClientDegraded(IConsumerClient client)
         {
             lock (_healthLock)
             {
-                _degraded.Add(client);
+                if (!_retired.Contains(client))
+                {
+                    _degraded.Add(client);
+                }
             }
+        }
+
+        /// <summary>
+        /// Takes <paramref name="client"/> out of the handle, so its caller shuts it down. Returns
+        /// <see langword="false"/> when the handle is being disposed, which shuts the client down itself.
+        /// </summary>
+        public bool TryRetireClient(IConsumerClient client)
+        {
+            lock (_clientsLock)
+            {
+                if (_disposing || !_clients.Remove(client))
+                {
+                    return false;
+                }
+            }
+
+            lock (_healthLock)
+            {
+                _retired.Add(client);
+                _degraded.Remove(client);
+            }
+
+            return true;
         }
 
         public void MarkClientHealthy(IConsumerClient client)
@@ -1871,6 +2152,48 @@ internal static partial class ConsumerRegisterLog
         string? messageId,
         int retry,
         int retries,
+        TimeSpan delay
+    );
+
+    [LoggerMessage(
+        EventId = 4142,
+        EventName = "SequentialIntakeUnguarded",
+        Level = LogLevel.Warning,
+        Message = "Sequential consumer subscription '{SubscriptionName}' is listened to by every host: its transport does not route each key to one consumer or deliver the subscription to one consumer at a time, and messaging has no distributed lock (UseDistributedLock) to elect one host. Each host orders only the deliveries it receives; run one host, or configure a messaging distributed lock."
+    )]
+    internal static partial void LogSequentialIntakeUnguarded(this ILogger logger, string subscriptionName);
+
+    [LoggerMessage(
+        EventId = 4143,
+        EventName = "SequentialIntakeAcquired",
+        Level = LogLevel.Information,
+        Message = "This host holds lock '{Resource}' and takes in sequential consumer subscription '{SubscriptionName}'."
+    )]
+    internal static partial void LogSequentialIntakeAcquired(
+        this ILogger logger,
+        string subscriptionName,
+        string resource
+    );
+
+    [LoggerMessage(
+        EventId = 4144,
+        EventName = "SequentialIntakeLost",
+        Level = LogLevel.Warning,
+        Message = "This host lost lock '{Resource}' and stopped taking in sequential consumer subscription '{SubscriptionName}'; handlers already running finish, and the host competes for the lock again."
+    )]
+    internal static partial void LogSequentialIntakeLost(this ILogger logger, string subscriptionName, string resource);
+
+    [LoggerMessage(
+        EventId = 4145,
+        EventName = "SequentialIntakeAcquireFailed",
+        Level = LogLevel.Warning,
+        Message = "Acquiring lock '{Resource}' for sequential consumer subscription '{SubscriptionName}' failed; the host tries again in {Delay}."
+    )]
+    internal static partial void LogSequentialIntakeAcquireFailed(
+        this ILogger logger,
+        Exception exception,
+        string subscriptionName,
+        string resource,
         TimeSpan delay
     );
 }

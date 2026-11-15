@@ -363,6 +363,10 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
         var supportsRequestReply =
             queueContributions.Length != 0 && queueContributions.All(static x => x.SupportsRequestReply);
 
+        // The composed descriptor carries one flag for every lane, so a broker hands a sequential subscription to one
+        // consumer only when every contribution says it can; otherwise the core falls back to the distributed lock.
+        var supportsSingleActiveConsumer = contributions.All(static x => x.SupportsSingleActiveConsumer);
+
         var topologyValues = contributions
             .Select(static capability => capability.SupportsIndependentLaneTopology)
             .Distinct()
@@ -381,7 +385,8 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
                 topologyValues[0],
                 contributions.SelectMany(static contribution => contribution.RoutingAffinityRoutes).ToArray(),
                 supportsEveryInstance,
-                supportsRequestReply
+                supportsRequestReply,
+                supportsSingleActiveConsumer
             )
         );
     }

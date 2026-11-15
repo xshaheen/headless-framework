@@ -7,18 +7,22 @@ using Microsoft.AspNetCore.Http;
 
 namespace Headless.Api;
 
-internal sealed class TenantRequirementHandler(ICurrentTenant currentTenant) : AuthorizationHandler<TenantRequirement>
+internal sealed class TenantRequirementHandler(ICurrentTenant currentTenant, IHttpContextAccessor httpContextAccessor)
+    : AuthorizationHandler<TenantRequirement>
 {
     private readonly ICurrentTenant _currentTenant = Argument.IsNotNull(currentTenant);
+    private readonly IHttpContextAccessor _httpContextAccessor = Argument.IsNotNull(httpContextAccessor);
 
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, TenantRequirement requirement)
     {
-        var httpContext = context.Resource as HttpContext;
+        // AuthorizationMiddleware passes the HttpContext as the resource by default, but the
+        // Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource AppContext switch makes it
+        // pass the Endpoint instead. Reading both shapes keeps [AllowMissingTenant] and the g:tenant_required
+        // rejection working under either.
+        var httpContext = context.Resource as HttpContext ?? _httpContextAccessor.HttpContext;
+        var endpoint = context.Resource as Endpoint ?? httpContext?.GetEndpoint();
 
-        if (
-            !string.IsNullOrWhiteSpace(_currentTenant.Id)
-            || (httpContext is not null && _AllowsMissingTenant(httpContext.GetEndpoint()))
-        )
+        if (!string.IsNullOrWhiteSpace(_currentTenant.Id) || _AllowsMissingTenant(endpoint))
         {
             context.Succeed(requirement);
 

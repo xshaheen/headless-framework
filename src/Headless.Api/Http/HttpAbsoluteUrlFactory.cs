@@ -78,7 +78,11 @@ internal sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor accessor) : IA
 
         var request = context.Request;
 
-        return $"{request.Scheme}://{request.Host.ToUriComponent()}{request.PathBase.ToUriComponent()}{path}";
+        // A relative path without a leading '/' ("users/1") would otherwise be glued onto the host
+        // ("https://example.comusers/1"), which names a different host.
+        var separator = path.StartsWith('/') ? "" : "/";
+
+        return $"{request.Scheme}://{request.Host.ToUriComponent()}{request.PathBase.ToUriComponent()}{separator}{path}";
     }
 
     private static (bool process, string? result) _ShouldProcessPath(string? path)

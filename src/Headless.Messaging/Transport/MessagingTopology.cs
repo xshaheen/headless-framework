@@ -36,7 +36,16 @@ public sealed record TopologySubscription(
     MessageLane Lane,
     ConsumerSubscriptionKind Kind,
     IReadOnlyList<string> MessageNames
-);
+)
+{
+    /// <summary>
+    /// Whether the broker must deliver the subscription to one consumer at a time, for a sequential consumer on a
+    /// transport that declares <see cref="MessagingProviderCapabilities.SupportsSingleActiveConsumer"/>. A provisioner
+    /// creates the subscription with that setting; the same flag reaches a client that provisions through
+    /// <see cref="ConsumerClientRequest.SingleActiveConsumer"/>.
+    /// </summary>
+    public bool SingleActiveConsumer { get; init; }
+}
 
 /// <summary>One registered message on one lane.</summary>
 /// <param name="MessageName">The message name the transport routes by.</param>

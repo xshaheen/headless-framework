@@ -143,7 +143,6 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
     [Fact]
     public void should_return_invalid_and_warn_once_when_a_template_match_times_out()
     {
-        HostTenantIdentifierSource.ResetTemplateTimeoutWarningForTesting();
         var logger = new RecordingLogger();
         // Test seams, not production settings: a 1-tick match timeout only fires on an input far
         // beyond the 253-character DNS guard, so the host cap is raised too. Together they force
@@ -175,26 +174,30 @@ public sealed class HostTenantIdentifierSourceTests : TestBase
     }
 
     [Fact]
-    public void should_warn_again_after_the_once_guard_is_reset_for_testing()
+    public void should_warn_once_per_source_instance_so_each_host_gets_its_own_warning()
     {
-        HostTenantIdentifierSource.ResetTemplateTimeoutWarningForTesting();
-        var logger = new RecordingLogger();
-        var source = new HostTenantIdentifierSource(
-            Options.Create(new HostTenantIdentifierSourceOptions { Templates = ["*.{tenant}.example.com"] }),
-            logger,
-            matchTimeout: TimeSpan.FromTicks(1),
-            maxHostLength: int.MaxValue
-        );
+        // The guard used to be static, so the first host in a process silenced the warning for every later host.
+        static HostTenantIdentifierSource createSource(RecordingLogger logger) =>
+            new(
+                Options.Create(new HostTenantIdentifierSourceOptions { Templates = ["*.{tenant}.example.com"] }),
+                logger,
+                matchTimeout: TimeSpan.FromTicks(1),
+                maxHostLength: int.MaxValue
+            );
+
+        var firstHostLogger = new RecordingLogger();
+        var secondHostLogger = new RecordingLogger();
+        var firstHost = createSource(firstHostLogger);
+        var secondHost = createSource(secondHostLogger);
         var context = new DefaultHttpContext();
         context.Request.Host = new HostString(string.Join('.', Enumerable.Repeat("b", 50_000)) + ".example.com");
 
-        _ = source.GetIdentifier(context);
-        logger.Entries.Should().ContainSingle();
+        _ = firstHost.GetIdentifier(context);
+        _ = firstHost.GetIdentifier(context);
+        _ = secondHost.GetIdentifier(context);
 
-        HostTenantIdentifierSource.ResetTemplateTimeoutWarningForTesting();
-        _ = source.GetIdentifier(context);
-
-        logger.Entries.Should().HaveCount(2);
+        firstHostLogger.Entries.Should().ContainSingle();
+        secondHostLogger.Entries.Should().ContainSingle();
     }
 
     [Fact]
