@@ -77,6 +77,54 @@ public sealed class TurnstileSiteVerifyTests : TestBase
         result.ChallengeTimestamp.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("other.com", null, "hostname-mismatch")]
+    [InlineData(null, "checkout", "action-mismatch")]
+    public async Task should_refuse_a_token_solved_on_another_host_or_for_another_action(
+        string? expectedHostName,
+        string? expectedAction,
+        string expectedError
+    )
+    {
+        // given - Cloudflare's success only says the token fits the site key; reCAPTCHA already checked these
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        var verifier = _fixture.CreateTurnstileVerifier(
+            stub,
+            options =>
+            {
+                options.ExpectedHostName = expectedHostName;
+                options.ExpectedAction = expectedAction;
+            }
+        );
+
+        // when
+        var result = await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" }, AbortToken);
+
+        // then
+        result.Success.Should().BeFalse();
+        result.ErrorCodes.Should().Contain(expectedError);
+    }
+
+    [Fact]
+    public async Task should_accept_a_token_whose_host_and_action_match_ignoring_host_case()
+    {
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        var verifier = _fixture.CreateTurnstileVerifier(
+            stub,
+            static options =>
+            {
+                options.ExpectedHostName = "EXAMPLE.com";
+                options.ExpectedAction = "login";
+            }
+        );
+
+        var result = await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" }, AbortToken);
+
+        result.Success.Should().BeTrue();
+    }
+
     // -- ICaptchaVerifier explicit-impl idempotency key forwarding (Finding #7) ---------------------------------
 
     [Fact]

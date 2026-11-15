@@ -26,7 +26,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (argument.CompareTo(expected) > 0)
+        if (_IsUnordered(argument, expected) || argument.CompareTo(expected) > 0)
         {
             _ThrowForIsLessThanOrEqualTo(expected, message, paramName);
         }
@@ -51,7 +51,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (argument.CompareTo(expected) < 0)
+        if (_IsUnordered(argument, expected) || argument.CompareTo(expected) < 0)
         {
             _ThrowForIsGreaterThanOrEqualTo(expected, message, paramName);
         }
@@ -76,7 +76,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (argument.CompareTo(expected) >= 0)
+        if (_IsUnordered(argument, expected) || argument.CompareTo(expected) >= 0)
         {
             _ThrowForIsLessThan(expected, message, paramName);
         }
@@ -101,7 +101,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (argument.CompareTo(expected) <= 0)
+        if (_IsUnordered(argument, expected) || argument.CompareTo(expected) <= 0)
         {
             _ThrowForIsGreaterThan(expected, message, paramName);
         }
@@ -445,5 +445,19 @@ public static partial class Argument
             message
                 ?? $"The argument {argumentParamName.ToAssertString()} had out of range item(s). (Range [{minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}])"
         );
+    }
+
+    // IComparable orders NaN below every number, so NaN would pass the "less than" guards while failing the
+    // "greater than" ones. A comparison with NaN has no answer, so every comparison guard refuses it.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool _IsUnordered<T>(T argument, T expected)
+    {
+        return argument switch
+        {
+            double d => double.IsNaN(d) || (expected is double e && double.IsNaN(e)),
+            float f => float.IsNaN(f) || (expected is float e && float.IsNaN(e)),
+            Half h => Half.IsNaN(h) || (expected is Half e && Half.IsNaN(e)),
+            _ => false,
+        };
     }
 }

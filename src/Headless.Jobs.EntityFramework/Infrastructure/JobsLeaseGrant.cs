@@ -64,6 +64,10 @@ internal static class JobsLeaseGrant
     /// Whether a row <paramref name="holder"/> already holds may be granted again. The new generation fences off the
     /// earlier attempt, so a node re-picking its own rows never runs one twice.
     /// </param>
+    /// <param name="supersededBefore">
+    /// Trusted SQL for a deadline, or <see langword="null"/>. A row whose live lease, held by anyone, expires before it
+    /// may be granted too: its grant came from an earlier claim the caller's condition already proved superseded.
+    /// </param>
     /// <param name="cancellationToken">The token to observe.</param>
     /// <returns>The rows granted.</returns>
     public static async Task<List<JobsGrantedRow>> GrantAsync<TEntity>(
@@ -76,6 +80,7 @@ internal static class JobsLeaseGrant
         TimeSpan duration,
         string holder,
         bool reclaimOwn,
+        string? supersededBefore,
         CancellationToken cancellationToken
     )
         where TEntity : class
@@ -100,10 +105,19 @@ internal static class JobsLeaseGrant
         }
 
         var notLive = $"NOT ({columns.State} = {_ActiveLiteral} AND {columns.ExpiresAt} > {SqlDialectTokens.Now})";
-        var fence = reclaimOwn
-            ? $"({notLive} OR ({columns.State} = {_ActiveLiteral} AND {columns.Holder} = @{scope.Prefix}Holder))"
-            : notLive;
-        var where = $"{inIds} AND {fence}" + (condition is null ? string.Empty : $" AND ({condition})");
+        var fence = notLive;
+
+        if (reclaimOwn)
+        {
+            fence += $" OR ({columns.State} = {_ActiveLiteral} AND {columns.Holder} = @{scope.Prefix}Holder)";
+        }
+
+        if (supersededBefore is not null)
+        {
+            fence += $" OR {columns.ExpiresAt} < {supersededBefore}";
+        }
+
+        var where = $"{inIds} AND ({fence})" + (condition is null ? string.Empty : $" AND ({condition})");
 
         var dialect = table.Dialect;
         var sql =
@@ -179,6 +193,15 @@ internal static class JobsLeaseGrant
     public static string StoredDeadline(JobsGrantColumns columns, string alias, string idParameter)
     {
         return $"(SELECT {alias}.{columns.ExpiresAt} FROM {columns.Table} AS {alias} WHERE {alias}.{columns.Id} = {idParameter})";
+    }
+
+    /// <summary>
+    /// The SQL fence that the updated row's own lease is active, held by <paramref name="holderParameter"/>, and not
+    /// yet expired by the database clock.
+    /// </summary>
+    public static string HeldLive(JobsGrantColumns columns, string holderParameter)
+    {
+        return $"{columns.State} = {_ActiveLiteral} AND {columns.Holder} = {holderParameter} AND {columns.ExpiresAt} > {SqlDialectTokens.Now}";
     }
 
     /// <summary>

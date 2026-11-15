@@ -19,7 +19,7 @@ namespace Tests;
 /// </summary>
 public sealed class JobsOrphanedOwnerSweepTests : TestBase
 {
-    private static readonly TimeSpan _waitBudget = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _waitBudget = HeadlessTestTaskExtensions.DefaultTimeout;
 
     [Fact]
     public async Task reclaims_owners_absent_from_the_liveness_snapshot_and_leaves_observable_owners_alone()

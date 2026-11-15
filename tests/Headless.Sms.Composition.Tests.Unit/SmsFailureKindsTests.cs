@@ -11,20 +11,36 @@ namespace Tests;
 public sealed class SmsFailureKindsTests
 {
     [Fact]
-    public void should_classify_transport_exceptions_as_transient()
+    public void should_classify_faults_before_the_request_was_sent_as_transient()
     {
-        SmsFailureKinds.FromException(new HttpRequestException("x")).Should().Be(SmsFailureKind.Transient);
-        SmsFailureKinds.FromException(new TimeoutException()).Should().Be(SmsFailureKind.Transient);
-        SmsFailureKinds.FromException(new IOException()).Should().Be(SmsFailureKind.Transient);
-        SmsFailureKinds.FromException(new SocketException()).Should().Be(SmsFailureKind.Transient);
+        SmsFailureKinds
+            .FromException(new HttpRequestException(HttpRequestError.ConnectionError))
+            .Should()
+            .Be(SmsFailureKind.Transient);
+        SmsFailureKinds
+            .FromException(new HttpRequestException(HttpRequestError.NameResolutionError))
+            .Should()
+            .Be(SmsFailureKind.Transient);
+        SmsFailureKinds
+            .FromException(new SocketException((int)SocketError.ConnectionRefused))
+            .Should()
+            .Be(SmsFailureKind.Transient);
+        SmsFailureKinds.FromException(new BrokenCircuitException()).Should().Be(SmsFailureKind.Transient);
+        SmsFailureKinds.FromException(new RateLimiterRejectedException()).Should().Be(SmsFailureKind.Transient);
     }
 
     [Fact]
-    public void should_classify_resilience_pipeline_rejections_as_transient()
+    public void should_classify_faults_that_may_follow_delivery_as_unknown()
     {
-        SmsFailureKinds.FromException(new TimeoutRejectedException()).Should().Be(SmsFailureKind.Transient);
-        SmsFailureKinds.FromException(new BrokenCircuitException()).Should().Be(SmsFailureKind.Transient);
-        SmsFailureKinds.FromException(new RateLimiterRejectedException()).Should().Be(SmsFailureKind.Transient);
+        // A timeout or reset can come after the provider accepted the message; a retry could send the SMS twice.
+        SmsFailureKinds.FromException(new TimeoutRejectedException()).Should().Be(SmsFailureKind.Unknown);
+        SmsFailureKinds.FromException(new TimeoutException()).Should().Be(SmsFailureKind.Unknown);
+        SmsFailureKinds.FromException(new IOException()).Should().Be(SmsFailureKind.Unknown);
+        SmsFailureKinds.FromException(new HttpRequestException("x")).Should().Be(SmsFailureKind.Unknown);
+        SmsFailureKinds
+            .FromException(new SocketException((int)SocketError.ConnectionReset))
+            .Should()
+            .Be(SmsFailureKind.Unknown);
     }
 
     [Fact]

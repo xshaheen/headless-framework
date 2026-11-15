@@ -57,6 +57,12 @@ public sealed class InMemoryDistributedSemaphoreTests : DistributedSemaphoreStor
     }
 
     [Fact]
+    public override Task should_fail_to_extend_an_expired_slot_that_no_acquire_has_pruned_yet()
+    {
+        return base.should_fail_to_extend_an_expired_slot_that_no_acquire_has_pruned_yet();
+    }
+
+    [Fact]
     public override Task should_extend_live_slot_and_not_re_add_expired_slot()
     {
         return base.should_extend_live_slot_and_not_re_add_expired_slot();
@@ -84,22 +90,6 @@ public sealed class InMemoryDistributedSemaphoreTests : DistributedSemaphoreStor
     public override Task should_allow_exactly_max_count_concurrent_holders_under_parallel_load()
     {
         return base.should_allow_exactly_max_count_concurrent_holders_under_parallel_load();
-    }
-
-    // In-memory-specific: extend prunes expired holders eagerly, so extending an already-expired slot
-    // fails. The Redis provider uses soft-expiry on extend (reclamation is the acquire script's job), so
-    // this assertion is intentionally not portable and is kept here rather than in the shared base.
-    [Fact]
-    public async Task should_fail_to_extend_an_already_expired_slot()
-    {
-        var resource = Faker.Random.AlphaNumeric(10);
-        await _storage.TryAcquireAsync(resource, "lock-1", 1, TimeSpan.FromMilliseconds(100), AbortToken);
-
-        await AdvanceTimeAsync(TimeSpan.FromMilliseconds(250), AbortToken);
-        var expiredExtend = await _storage.TryExtendAsync(resource, "lock-1", TimeSpan.FromSeconds(10), AbortToken);
-
-        expiredExtend.Should().BeFalse();
-        (await _storage.GetCountAsync(resource, AbortToken)).Should().Be(0);
     }
 
     [Fact]

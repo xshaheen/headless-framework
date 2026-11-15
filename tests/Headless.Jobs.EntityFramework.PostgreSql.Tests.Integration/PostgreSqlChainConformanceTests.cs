@@ -163,6 +163,18 @@ public abstract class PostgreSqlChainConformanceTestsBase<TFixture>(TFixture fix
     }
 
     [Fact]
+    public override Task cas_claim_takes_the_children_a_released_root_left_leased_to_its_previous_owner()
+    {
+        return base.cas_claim_takes_the_children_a_released_root_left_leased_to_its_previous_owner();
+    }
+
+    [Fact]
+    public override Task renewing_a_running_root_slides_its_claimed_subtree()
+    {
+        return base.renewing_a_running_root_slides_its_claimed_subtree();
+    }
+
+    [Fact]
     public override Task native_claim_contention_gives_one_owner_the_whole_subtree()
     {
         return base.native_claim_contention_gives_one_owner_the_whole_subtree();

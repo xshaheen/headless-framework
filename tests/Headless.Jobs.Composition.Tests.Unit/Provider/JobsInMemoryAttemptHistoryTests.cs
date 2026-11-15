@@ -257,6 +257,100 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         (await store.GetTimeJobAttemptsAsync(job.Id, AbortToken)).Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task should_charge_a_retry_reclaim_only_for_an_attempt_in_flight_when_the_run_lapses_during_an_in_process_retry_wait(
+        bool deadNode,
+        bool nextAttemptStarted
+    )
+    {
+        var store = _Create();
+        var job = await _AddRunningTimeJobAsync(store, lapsed: false, NodeDeathPolicy.Retry);
+        var occurrence = await _AddRunningOccurrenceAsync(store, lapsed: false, NodeDeathPolicy.Retry);
+        (await store.OpenTimeJobAttemptAsync(JobsLeaseTables.TimeJob(job.Id, 1), _Owner, _Now.UtcDateTime, AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await store.OpenCronJobOccurrenceAttemptAsync(
+                JobsLeaseTables.CronOccurrence(occurrence.Id, 1),
+                _Owner,
+                _Now.UtcDateTime,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        // The executor's in-process retry write: it charges the failed attempt and closes it, the run still InProgress.
+        (await store.UpdateTimeJobAsync(_RetryWrite(job.Id), AbortToken))
+            .Should()
+            .Be(1);
+        (await store.UpdateCronJobOccurrenceAsync(_RetryWrite(occurrence.Id), AbortToken)).Should().Be(1);
+
+        if (nextAttemptStarted)
+        {
+            (
+                await store.OpenTimeJobAttemptAsync(
+                    JobsLeaseTables.TimeJob(job.Id, 1),
+                    _Owner,
+                    _Now.UtcDateTime,
+                    AbortToken
+                )
+            )
+                .Should()
+                .BeTrue();
+            (
+                await store.OpenCronJobOccurrenceAttemptAsync(
+                    JobsLeaseTables.CronOccurrence(occurrence.Id, 1),
+                    _Owner,
+                    _Now.UtcDateTime,
+                    AbortToken
+                )
+            )
+                .Should()
+                .BeTrue();
+        }
+
+        _time.Advance(TimeSpan.FromMinutes(10));
+        if (deadNode)
+        {
+            (await store.ReleaseDeadNodeTimeJobResourcesAsync(_Owner, AbortToken)).Total.Should().Be(1);
+            (await store.ReleaseDeadNodeOccurrenceResourcesAsync(_Owner, AbortToken)).Total.Should().Be(1);
+        }
+        else
+        {
+            (await store.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(1);
+            (await store.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Total.Should().Be(1);
+        }
+
+        var storedJob = await store.GetTimeJobByIdAsync(job.Id, AbortToken);
+        storedJob!.Status.Should().Be(JobStatus.Idle);
+        var storedOccurrence = (await store.GetAllCronJobOccurrencesAsync(predicate: null, AbortToken)).Single(x =>
+            x.Id == occurrence.Id
+        );
+        storedOccurrence.Status.Should().Be(JobStatus.Idle);
+
+        var jobAttempts = await store.GetTimeJobAttemptsAsync(job.Id, AbortToken);
+        var occurrenceAttempts = await store.GetCronJobOccurrenceAttemptsAsync(occurrence.Id, AbortToken);
+        if (nextAttemptStarted)
+        {
+            storedJob.RetryCount.Should().Be(2, "the second attempt was running when the lease lapsed");
+            storedOccurrence.RetryCount.Should().Be(2);
+            jobAttempts.Select(x => x.Outcome).Should().Equal(JobAttemptOutcome.Failed, JobAttemptOutcome.Lost);
+            occurrenceAttempts.Select(x => x.Outcome).Should().Equal(JobAttemptOutcome.Failed, JobAttemptOutcome.Lost);
+        }
+        else
+        {
+            storedJob.RetryCount.Should().Be(1, "the retry write already charged the failed attempt; none was running");
+            storedOccurrence.RetryCount.Should().Be(1);
+            jobAttempts.Select(x => x.Outcome).Should().Equal(JobAttemptOutcome.Failed);
+            occurrenceAttempts.Select(x => x.Outcome).Should().Equal(JobAttemptOutcome.Failed);
+        }
+    }
+
     private async Task<TimeJobAttemptEntity> _OnlyAttemptAsync(
         JobsInMemoryPersistenceProvider<FakeTimeJob, FakeCronJob> store,
         Guid id
@@ -328,6 +422,22 @@ public sealed class JobsInMemoryAttemptHistoryTests : TestBase
         await store.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
 
         return occurrence;
+    }
+
+    private static JobExecutionState _RetryWrite(Guid id)
+    {
+        return _State(id)
+            .SetProperty(x => x.RetryCount, 1)
+            .SetProperty(
+                x => x.AttemptEnd,
+                new JobAttemptEnd
+                {
+                    Outcome = JobAttemptOutcome.Failed,
+                    StartedAt = _Now.UtcDateTime,
+                    EndedAt = _Now.UtcDateTime,
+                    ExceptionMessage = "transient",
+                }
+            );
     }
 
     private static JobExecutionState _State(Guid id)

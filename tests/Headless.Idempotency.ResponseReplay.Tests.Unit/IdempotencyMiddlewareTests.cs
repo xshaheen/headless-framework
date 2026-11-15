@@ -314,16 +314,29 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
-    public async Task should_release_when_response_body_exceeds_capture_cap()
+    public async Task should_settle_the_key_on_a_stored_409_when_a_successful_response_exceeds_the_capture_cap()
     {
+        // given - releasing the key here let a retry run the handler again after its side effects had committed
         var operations = CreateAdmittingOperations();
+        ReadOnlyMemory<byte> stored = default;
+        operations
+            .CompleteAsync(
+                Arg.Any<IdempotentAdmission>(),
+                Arg.Do<ReadOnlyMemory<byte>>(payload => stored = payload.ToArray()),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
         var middleware = CreateMiddleware(
             options: Monitor(new HttpIdempotencyOptions { MaxBodySizeForHashing = 8 }),
             operations: operations
         );
+        var context = CreateContext(idempotencyKey: "k1");
 
+        // when
         await middleware.InvokeAsync(
-            CreateContext(idempotencyKey: "k1"),
+            context,
             async ctx =>
             {
                 ctx.Response.StatusCode = 200;
@@ -331,6 +344,36 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             }
         );
 
+        // then - the caller still gets its 200, and the key holds a 409 a retry will replay
+        context.Response.StatusCode.Should().Be(200);
+        CallCount(operations, nameof(IIdempotentOperations.ReleaseAsync)).Should().Be(0);
+        CallCount(operations, nameof(IIdempotentOperations.CompleteAsync)).Should().Be(1);
+        var snapshot = IdempotencyResponseSnapshot.Decode(stored);
+        snapshot.StatusCode.Should().Be(409);
+        System.Text.Encoding.UTF8.GetString(snapshot.Body).Should().Contain(HttpIdempotencyErrorCodes.ResponseTooLarge);
+    }
+
+    [Fact]
+    public async Task should_release_when_an_unsuccessful_response_exceeds_the_capture_cap()
+    {
+        // given - a failed request has nothing to protect, so its key is freed for a retry as before
+        var operations = CreateAdmittingOperations();
+        var middleware = CreateMiddleware(
+            options: Monitor(new HttpIdempotencyOptions { MaxBodySizeForHashing = 8 }),
+            operations: operations
+        );
+
+        // when
+        await middleware.InvokeAsync(
+            CreateContext(idempotencyKey: "k1"),
+            async ctx =>
+            {
+                ctx.Response.StatusCode = 503;
+                await ctx.Response.WriteAsync(new string('x', 64), AbortToken);
+            }
+        );
+
+        // then
         CallCount(operations, nameof(IIdempotentOperations.ReleaseAsync)).Should().Be(1);
         CallCount(operations, nameof(IIdempotentOperations.CompleteAsync)).Should().Be(0);
     }
