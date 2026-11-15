@@ -134,6 +134,12 @@ public sealed class SqliteDialectConformanceTests : SqlDialectConformanceTests
     }
 
     [Fact]
+    public override Task should_hold_every_name_one_transaction_lock_statement_takes()
+    {
+        return base.should_hold_every_name_one_transaction_lock_statement_takes();
+    }
+
+    [Fact]
     public override Task should_render_portable_expressions()
     {
         return base.should_render_portable_expressions();

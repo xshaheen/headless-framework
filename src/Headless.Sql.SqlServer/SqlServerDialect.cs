@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Headless.Checks;
 using Microsoft.Data.SqlClient;
 
 namespace Headless.Sql.SqlServer;
@@ -401,13 +402,20 @@ public sealed class SqlServerDialect : ISqlDialect
 
     public string Render(SqlTransactionLock statement)
     {
+        Argument.IsNotNull(statement);
+        Argument.IsNotEmpty(statement.ResourceParameters);
+
         // A transaction-owned application lock ends with the transaction. The wait is left to the command timeout; a
-        // refusal (a deadlock, or a cancelled wait) is raised so it cannot pass for an acquired lock.
-        return $"""
-            DECLARE @lockResult int;
-            EXEC @lockResult = sp_getapplock @Resource = @{statement.ResourceParameter}, @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = -1;
-            IF @lockResult < 0 THROW 51000, N'The application lock was not granted.', 1;
-            """;
+        // refusal (a deadlock, or a cancelled wait) is raised so it cannot pass for an acquired lock, and THROW ends the
+        // batch, so no later name is locked after a refused one. The result variable is declared once per batch.
+        var locks = statement.ResourceParameters.Select(static parameter =>
+            $"""
+                EXEC @lockResult = sp_getapplock @Resource = @{parameter}, @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = -1;
+                IF @lockResult < 0 THROW 51000, N'The application lock was not granted.', 1;
+                """
+        );
+
+        return "DECLARE @lockResult int;\n" + string.Join('\n', locks);
     }
 
     public SqlErrorKind Classify(Exception exception)

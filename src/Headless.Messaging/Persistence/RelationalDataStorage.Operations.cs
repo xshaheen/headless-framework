@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Globalization;
 using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Primitives;
@@ -431,26 +432,52 @@ internal sealed partial class RelationalDataStorage
     /// Takes the lock every request under <paramref name="operationId"/> shares, until the transaction ends. The
     /// receipt cleanup takes it too, so a receipt is never deleted under a request replaying it.
     /// </summary>
-    private async Task _LockOperationAsync(
+    private Task _LockOperationAsync(
         DbConnection connection,
         DbTransaction transaction,
         Guid operationId,
         CancellationToken cancellationToken
     )
     {
+        return _LockOperationsAsync(connection, transaction, [operationId], cancellationToken);
+    }
+
+    /// <summary>
+    /// Takes the operation locks of <paramref name="operationIds"/> in the order given, in one command, until the
+    /// transaction ends. Callers that lock several operations pass them in ascending order, so two such callers over
+    /// overlapping sets cannot deadlock.
+    /// </summary>
+    private async Task _LockOperationsAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        Guid[] operationIds,
+        CancellationToken cancellationToken
+    )
+    {
+        var parameters = new string[operationIds.Length];
+        for (var i = 0; i < parameters.Length; i++)
+        {
+            parameters[i] = "Resource" + i.ToString(CultureInfo.InvariantCulture);
+        }
+
         await RelationalCommand
             .ExecuteNonQueryAsync(
                 connection,
                 transaction,
-                _dialect.Render(new SqlTransactionLock("Resource")),
+                _dialect.Render(new SqlTransactionLock(parameters)),
                 CommandTimeoutSeconds,
                 command =>
-                    _dialect.AddParameter(
-                        command,
-                        "Resource",
-                        SqlColumnType.Text(_ResourceMaxLength),
-                        $"headless.messaging.inbox.operation.{operationId:D}"
-                    ),
+                {
+                    for (var i = 0; i < parameters.Length; i++)
+                    {
+                        _dialect.AddParameter(
+                            command,
+                            parameters[i],
+                            SqlColumnType.Text(_ResourceMaxLength),
+                            $"headless.messaging.inbox.operation.{operationIds[i]:D}"
+                        );
+                    }
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
