@@ -92,6 +92,7 @@ public sealed class DialectStatementTests : TestBase
             _Upsert(dialect, guard: $"{SqlDialectTokens.Stored}.{dialect.Quote("v")} < @Limit")
         );
         yield return dialect.Render(_Upsert(dialect, guard: null));
+        yield return dialect.Render(new SqlTransactionLock(["A", "B"]));
         yield return dialect.Render(
             new SqlClockedStatement(
                 $"DELETE FROM {dialect.Qualify("s", "t")} WHERE {dialect.Quote("v")} < {SqlDialectTokens.Now}"
@@ -165,6 +166,39 @@ public sealed class DialectStatementTests : TestBase
             .Be("[k] IN (SELECT [value] FROM OPENJSON(@Keys) WITH ([value] nvarchar(64) '$'))");
         SqlServerDialect.Instance.InList("[k]", "Ids", SqlColumnType.Guid).Should().Contain("uniqueidentifier");
         SqlServerDialect.Instance.InList("[k]", "Texts", SqlColumnType.Text(0)).Should().Contain("nvarchar(max)");
+    }
+
+    [Fact]
+    public void should_take_each_transaction_lock_in_list_order_in_one_batch()
+    {
+        var statement = new SqlTransactionLock(["A", "B"]);
+
+        PostgreSqlDialect
+            .Instance.Render(statement)
+            .Should()
+            .Be(
+                "SELECT pg_advisory_xact_lock(hashtextextended(@A, 0));\nSELECT pg_advisory_xact_lock(hashtextextended(@B, 0));"
+            );
+
+        var sqlServer = SqlServerDialect.Instance.Render(statement);
+        sqlServer.Should().StartWith("DECLARE @lockResult int;").And.Contain("@Resource = @A");
+        sqlServer
+            .IndexOf("@Resource = @A", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(sqlServer.IndexOf("@Resource = @B", StringComparison.Ordinal));
+        sqlServer.Split("DECLARE").Should().HaveCount(2, "a batch declares the result variable once");
+        sqlServer.Split("THROW").Should().HaveCount(3, "every refused lock ends the batch");
+    }
+
+    [Theory]
+    [MemberData(nameof(Dialects))]
+    public void should_refuse_a_transaction_lock_without_a_name(string name)
+    {
+        var dialect = _Dialect(name);
+
+        var act = () => dialect.Render(new SqlTransactionLock([]));
+
+        act.Should().Throw<ArgumentException>();
     }
 
     [Theory]

@@ -27,7 +27,7 @@ public sealed partial class PostgreSqlInboxOperationPolicyTests
     [Theory]
     [InlineData(10)]
     [InlineData(250)]
-    public async Task should_sweep_expired_receipts_with_one_lock_per_receipt_and_one_delete_per_chunk(int receipts)
+    public async Task should_sweep_expired_receipts_with_one_lock_command_and_one_delete_per_chunk(int receipts)
     {
         await using var provider = _CreateProvider();
         await provider.ApplyMessagingSchemaAsync(AbortToken);
@@ -46,11 +46,9 @@ public sealed partial class PostgreSqlInboxOperationPolicyTests
         );
 
         deleted.Should().Be(receipts);
-        // One discovery query per operation type, one operation lock per receipt, and one set-based delete for each
-        // transaction of up to 100 receipts.
-        commands
-            .Should()
-            .HaveCount(Enum.GetValues<MessagingOperationType>().Length + receipts + ((receipts + 99) / 100));
+        // One discovery query per operation type, then, for each transaction of up to 100 receipts, one command that
+        // takes all of its operation locks and one set-based delete.
+        commands.Should().HaveCount(Enum.GetValues<MessagingOperationType>().Length + (2 * ((receipts + 99) / 100)));
     }
 
     /// <summary>

@@ -364,6 +364,22 @@ public abstract class SqlDialectConformanceTests : TestBase
         await waiting;
     }
 
+    public virtual async Task should_hold_every_name_one_transaction_lock_statement_takes()
+    {
+        var resources = Enumerable.Range(0, 3).Select(_ => $"conformance.{Guid.NewGuid():N}").ToArray();
+        await using var first = await _OpenAsync();
+        await using var firstTransaction = await first.BeginTransactionAsync(AbortToken);
+        await _TakeTransactionLockAsync(first, firstTransaction, resources);
+
+        // The last name, so a statement that locked only its first name would let the second holder through.
+        var waiting = Task.Run(() => _TakeTransactionLockInOwnTransactionAsync(resources[^1]), AbortToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
+        waiting.IsCompleted.Should().BeFalse("one statement holds every name it lists until the transaction ends");
+
+        await firstTransaction.CommitAsync(AbortToken);
+        await waiting;
+    }
+
     public virtual async Task should_step_a_change_marker_past_a_previous_marker_the_clock_has_not_passed()
     {
         // given: one marker a day ahead of the database clock and one long behind it
@@ -926,12 +942,21 @@ public abstract class SqlDialectConformanceTests : TestBase
         return locked;
     }
 
-    private async Task _TakeTransactionLockAsync(DbConnection connection, DbTransaction transaction, string resource)
+    private async Task _TakeTransactionLockAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        params string[] resources
+    )
     {
+        var parameters = resources.Select((_, i) => "r" + i.ToString(CultureInfo.InvariantCulture)).ToArray();
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = Dialect.Render(new SqlTransactionLock("r"));
-        Dialect.AddParameter(command, "r", SqlColumnType.Text(255), resource);
+        command.CommandText = Dialect.Render(new SqlTransactionLock(parameters));
+        for (var i = 0; i < resources.Length; i++)
+        {
+            Dialect.AddParameter(command, parameters[i], SqlColumnType.Text(255), resources[i]);
+        }
+
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 

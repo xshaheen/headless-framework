@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Headless.Checks;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -385,9 +386,18 @@ public sealed class PostgreSqlDialect : ISqlDialect
 
     public string Render(SqlTransactionLock statement)
     {
+        Argument.IsNotNull(statement);
+        Argument.IsNotEmpty(statement.ResourceParameters);
+
         // hashtextextended maps the name onto the 64-bit advisory-lock key space; a transaction-level lock ends with
-        // the transaction, so no release can be forgotten.
-        return $"SELECT pg_advisory_xact_lock(hashtextextended(@{statement.ResourceParameter}, 0));";
+        // the transaction, so no release can be forgotten. One statement per name, rather than one SELECT over a list,
+        // because only separate statements fix the order the locks are taken in.
+        return string.Join(
+            '\n',
+            statement.ResourceParameters.Select(static parameter =>
+                $"SELECT pg_advisory_xact_lock(hashtextextended(@{parameter}, 0));"
+            )
+        );
     }
 
     public SqlErrorKind Classify(Exception exception)
