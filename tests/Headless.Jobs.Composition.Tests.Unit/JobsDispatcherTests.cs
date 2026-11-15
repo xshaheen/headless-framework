@@ -12,7 +12,7 @@ namespace Tests;
 
 public sealed class JobsDispatcherTests : TestBase
 {
-    private static readonly TimeSpan _waitBudget = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _waitBudget = HeadlessTestTaskExtensions.DefaultTimeout;
 
     [Fact]
     public async Task dispatched_job_keeps_running_when_the_enqueuers_token_is_cancelled_after_dispatch()

@@ -18,7 +18,7 @@ namespace Tests.Coordination;
 /// </summary>
 public sealed class JobsDrainParticipantTests : TestBase
 {
-    private static readonly TimeSpan _WaitBudget = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _WaitBudget = HeadlessTestTaskExtensions.DefaultTimeout;
 
     [Fact]
     public async Task should_complete_at_once_when_the_scheduler_never_started()

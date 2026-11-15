@@ -1452,7 +1452,7 @@ public sealed class RetryBehaviorTests : TestBase
             // which hangs. The app clock never moves again.
             timeProvider.Advance(TimeSpan.FromMilliseconds(100));
 
-            await execution.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            await execution.WaitAsync(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken);
         }
         finally
         {

@@ -12,7 +12,9 @@ namespace Tests;
 
 /// <summary>
 /// A graceful host stop is not a crash: work that has not started stays unstarted, a job the stop interrupts is
-/// settled by its node-death policy without spending a retry, and every release lands before the stop returns.
+/// settled by its node-death policy without spending a retry, and a release lands before the stop returns while the
+/// stop budget lasts. Once the budget is spent the stop returns without waiting for the write, so a test that checks
+/// only the settled row awaits it: a loaded runner can spend a short budget before the release lands.
 /// Each test runs the real scheduler, dispatcher, manager, and in-memory store, and reads the stored row back.
 /// </summary>
 public sealed class JobsGracefulStopReleaseTests : TestBase
@@ -41,8 +43,8 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
         // then
         var store = _Store(first);
-        var released = await store.GetTimeJobByIdAsync(id, AbortToken);
-        released!.Status.Should().Be(JobStatus.Idle);
+        var released = await _WaitForAsync(store, id, row => row.Status is not JobStatus.InProgress);
+        released.Status.Should().Be(JobStatus.Idle);
         released.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
         released.Lease.State.Should().NotBe(RowLeaseState.Active);
         probe.Invocations.Should().Be(1);
@@ -84,8 +86,8 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         await host.StopAsync(AbortToken);
 
         // then
-        var stored = await _Store(host).GetTimeJobByIdAsync(id, AbortToken);
-        stored!.Status.Should().Be(expected);
+        var stored = await _WaitForAsync(_Store(host), id, row => row.Status is not JobStatus.InProgress);
+        stored.Status.Should().Be(expected);
         stored.RetryCount.Should().Be(0);
         stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         (expected == JobStatus.Failed ? stored.ExceptionMessage : stored.SkippedReason).Should().Be(_ShutdownReason);
@@ -111,8 +113,8 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var store = _Store(host);
         foreach (var id in new[] { running, queued })
         {
-            var stored = await store.GetTimeJobByIdAsync(id, AbortToken);
-            stored!.Status.Should().Be(JobStatus.Idle);
+            var stored = await _WaitForAsync(store, id, row => row.Status is not JobStatus.InProgress);
+            stored.Status.Should().Be(JobStatus.Idle);
             stored.RetryCount.Should().Be(0);
             stored.Lease.State.Should().NotBe(RowLeaseState.Active);
         }
@@ -276,8 +278,8 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
         // then
         probe.Invocations.Should().Be(1, "the waiting run must not start once the stop began");
-        var stored = await store.GetTimeJobByIdAsync(waiting, AbortToken);
-        stored!.Status.Should().Be(JobStatus.Idle);
+        var stored = await _WaitForAsync(store, waiting, row => row.Status is not JobStatus.InProgress);
+        stored.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
         stored.Lease.State.Should().NotBe(RowLeaseState.Active);
     }
