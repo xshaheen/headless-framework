@@ -51,8 +51,8 @@ public sealed class InMemoryEveryInstanceHostTests : TestBase
             }
         }
 
-        firstProbe.Recorded += CheckDelivered;
-        secondProbe.Recorded += CheckDelivered;
+        firstProbe.Recorded += (_, _) => CheckDelivered();
+        secondProbe.Recorded += (_, _) => CheckDelivered();
 
         // when
         await bus.PublishAsync(new RateChanged("EUR"), cancellationToken: AbortToken);
@@ -104,18 +104,18 @@ public sealed class HostProbe
     public ConcurrentQueue<string> Competing { get; } = new();
 
     /// <summary>Raised after a consumer records a message, so a test waits on deliveries instead of polling.</summary>
-    public event Action? Recorded;
+    public event EventHandler? Recorded;
 
     public void RecordEveryInstance(string currency)
     {
         EveryInstance.Enqueue(currency);
-        Recorded?.Invoke();
+        Recorded?.Invoke(this, EventArgs.Empty);
     }
 
     public void RecordCompeting(string currency)
     {
         Competing.Enqueue(currency);
-        Recorded?.Invoke();
+        Recorded?.Invoke(this, EventArgs.Empty);
     }
 }
 

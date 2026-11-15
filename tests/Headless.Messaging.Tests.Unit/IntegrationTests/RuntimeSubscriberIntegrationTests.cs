@@ -225,7 +225,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         // 30-second health check, until the restart observes its deadline.
         for (var advanced = 0; advanced < 10 && !restartTask.IsCompleted; advanced++)
         {
-            await Task.WhenAny(restartTask, timeProvider.WaitForArmedTimerAsync());
+            _ = await Task.WhenAny(restartTask, timeProvider.WaitForArmedTimerAsync());
             if (restartTask.IsCompleted)
             {
                 break;
@@ -277,7 +277,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         // As above: advance each time a timer is armed until the restart observes its deadline.
         for (var advanced = 0; advanced < 10 && !restartTask.IsCompleted; advanced++)
         {
-            await Task.WhenAny(restartTask, timeProvider.WaitForArmedTimerAsync());
+            _ = await Task.WhenAny(restartTask, timeProvider.WaitForArmedTimerAsync());
             if (restartTask.IsCompleted)
             {
                 break;

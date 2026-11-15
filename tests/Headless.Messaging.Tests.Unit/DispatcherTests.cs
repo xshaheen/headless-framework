@@ -2257,7 +2257,7 @@ public sealed class DispatcherTests : TestBase
         {
             // The shutdown wait arms its timer after it reads its remaining budget, so one advance can land between
             // the two; each armed timer gets an advance past the whole budget until the dispose returns.
-            await Task.WhenAny(firstDispose, timeProvider.WaitForArmedTimerAsync());
+            _ = await Task.WhenAny(firstDispose, timeProvider.WaitForArmedTimerAsync());
             if (firstDispose.IsCompleted)
             {
                 break;

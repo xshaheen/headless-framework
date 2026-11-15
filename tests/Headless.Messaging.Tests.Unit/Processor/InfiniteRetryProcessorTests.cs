@@ -127,7 +127,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
 
         // when
         var run = sut.ProcessAsync(context);
-        await Task.WhenAny(timeProvider.WaitForDelaysAsync(1), run);
+        _ = await Task.WhenAny(timeProvider.WaitForDelaysAsync(1), run);
 
         // then — it waits like any other failure instead of re-entering the processor at once.
         timeProvider.DelayCount.Should().Be(1, "a cancellation while the context runs is a failure to back off from");

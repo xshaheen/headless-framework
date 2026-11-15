@@ -3078,7 +3078,7 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             // Each back-off wait arms its timer after the delivery decides to wait, so an advance only counts once
             // that timer exists; one step past the longest back-off (about 2.5 s) fires it.
-            await Task.WhenAny(delivery, clock.WaitForArmedTimerAsync());
+            _ = await Task.WhenAny(delivery, clock.WaitForArmedTimerAsync());
             if (delivery.IsCompleted)
             {
                 break;

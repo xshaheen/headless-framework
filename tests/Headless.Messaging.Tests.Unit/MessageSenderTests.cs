@@ -1847,7 +1847,7 @@ public sealed class MessageSenderTests : TestBase
         var sending = sender.SendAsync(_CreateMediumMessage());
         while (!sending.IsCompleted)
         {
-            await Task.WhenAny(sending, clock.WaitForArmedTimerAsync());
+            _ = await Task.WhenAny(sending, clock.WaitForArmedTimerAsync());
             if (sending.IsCompleted)
             {
                 break;
