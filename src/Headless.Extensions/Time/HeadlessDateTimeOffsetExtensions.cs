@@ -45,10 +45,15 @@ public static class HeadlessDateTimeOffsetExtensions
         return dateTimeOffset.ToOffset(offset).ClearTime();
     }
 
-    /// <summary>Returns the last representable instant of the day (one millisecond before the next midnight) that contains <paramref name="dateTimeOffset"/> at the given UTC <paramref name="offset"/>.</summary>
+    /// <summary>Returns the last millisecond of the day (<c>23:59:59.999</c>, one millisecond before the next midnight) that contains <paramref name="dateTimeOffset"/> at the given UTC <paramref name="offset"/>.</summary>
     /// <param name="dateTimeOffset">The instant to evaluate.</param>
     /// <param name="offset">The UTC offset whose local calendar day defines the day boundary.</param>
     /// <returns>A <see cref="DateTimeOffset"/> at <c>23:59:59.999</c> of the day, using <paramref name="offset"/>.</returns>
+    /// <remarks>
+    /// An instant with sub-millisecond ticks after this value, such as <c>23:59:59.9995</c>, still belongs to the day.
+    /// For a range filter, compare with an exclusive bound on the next day's start instead of
+    /// <c>&lt;= GetEndOfDay(...)</c>. The month and year variants share this precision.
+    /// </remarks>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset GetEndOfDay(this DateTimeOffset dateTimeOffset, TimeSpan offset)
@@ -69,7 +74,7 @@ public static class HeadlessDateTimeOffsetExtensions
         return new DateTimeOffset(d.Year, d.Month, 1, 0, 0, 0, d.Offset);
     }
 
-    /// <summary>Returns the last representable instant of the month that contains <paramref name="dateTime"/> at the given UTC <paramref name="offset"/>.</summary>
+    /// <summary>Returns the last millisecond of the month (<c>23:59:59.999</c> on its last day) that contains <paramref name="dateTime"/> at the given UTC <paramref name="offset"/>.</summary>
     /// <param name="dateTime">The instant to evaluate.</param>
     /// <param name="offset">The UTC offset whose local calendar defines the month boundary.</param>
     /// <returns>A <see cref="DateTimeOffset"/> at <c>23:59:59.999</c> on the last day of the month, using <paramref name="offset"/>.</returns>
@@ -97,7 +102,7 @@ public static class HeadlessDateTimeOffsetExtensions
         return new DateTimeOffset(d.Year, 1, 1, 0, 0, 0, d.Offset);
     }
 
-    /// <summary>Returns the last representable instant of the year that contains <paramref name="dateTime"/> at the given UTC <paramref name="offset"/>.</summary>
+    /// <summary>Returns the last millisecond of the year (<c>23:59:59.999</c> on December 31) that contains <paramref name="dateTime"/> at the given UTC <paramref name="offset"/>.</summary>
     /// <param name="dateTime">The instant to evaluate.</param>
     /// <param name="offset">The UTC offset whose local calendar defines the year boundary.</param>
     /// <returns>A <see cref="DateTimeOffset"/> at <c>23:59:59.999</c> on December 31 of the year, using <paramref name="offset"/>.</returns>
@@ -229,7 +234,10 @@ public static class HeadlessDateTimeOffsetExtensions
     [JetBrainsPure]
     public static DateTimeOffset Ceiling(this DateTimeOffset date, TimeSpan interval)
     {
-        return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
+        var remainder = date.Ticks % interval.Ticks;
+
+        // A value already on the boundary is its own ceiling; adding a whole interval would skip a slot.
+        return remainder == 0 ? date : date.AddTicks(interval.Ticks - remainder);
     }
 
     /// <summary>Extracts the local (offset-relative) date portion of <paramref name="date"/> as a <see cref="DateOnly"/>.</summary>
