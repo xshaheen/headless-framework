@@ -161,6 +161,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
             catch (NatsException)
             {
                 await connection.DisposeAsync();
+                // real-wait: back-off while a freshly started broker container's listener comes up; a refused connection has no readiness event
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt));
             }
         }
