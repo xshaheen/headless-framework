@@ -692,4 +692,49 @@ public sealed class FeatureManagerTests : TestBase
         await cache.ReceivedWithAnyArgs(1).GetAllAsync<FeatureValueCacheItem>(default!, AbortToken);
         await cache.DidNotReceiveWithAnyArgs().GetAsync<FeatureValueCacheItem>(default!, AbortToken);
     }
+
+    [Fact]
+    public async Task should_refuse_a_write_through_a_provider_the_feature_excludes()
+    {
+        // given - a seat count only the plan sets must not take a tenant value that overrides the plan
+        var seats = new FeatureDefinition("Billing.Seats");
+        seats.Providers.Add("Edition");
+        _definitionManager.FindAsync("Billing.Seats", AbortToken).Returns(seats);
+        var tenant = Substitute.For<IFeatureValueProvider>();
+        tenant.Name.Returns("Tenant");
+        _valueProviderManager.ValueProviders.Returns([tenant]);
+
+        // when
+        var act = () => _sut.SetAsync("Billing.Seats", "500", "Tenant", "tenant-1", cancellationToken: AbortToken);
+
+        // then
+        var error = (await act.Should().ThrowExactlyAsync<ConflictException>())
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which;
+        error.Code.Should().Be("features:provider-not-allowed");
+        await tenant.DidNotReceiveWithAnyArgs().SetAsync(default!, default!, default, default);
+    }
+
+    [Fact]
+    public async Task should_ignore_a_value_from_a_provider_the_feature_excludes_on_read()
+    {
+        // given
+        var seats = new FeatureDefinition("Billing.Seats");
+        seats.Providers.Add("Edition");
+        _definitionManager.FindAsync("Billing.Seats", AbortToken).Returns(seats);
+        var tenant = Substitute.For<IFeatureValueProvider>();
+        tenant.Name.Returns("Tenant");
+        tenant.GetOrDefaultAsync(seats, Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns("500");
+        var edition = Substitute.For<IFeatureValueProvider>();
+        edition.Name.Returns("Edition");
+        edition.GetOrDefaultAsync(seats, Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns("10");
+        _valueProviderManager.ValueProviders.Returns([tenant, edition]);
+
+        // when
+        var result = await _sut.GetAsync("Billing.Seats", cancellationToken: AbortToken);
+
+        // then
+        result.Value.Should().Be("10");
+    }
 }
