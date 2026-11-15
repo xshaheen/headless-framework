@@ -114,7 +114,8 @@ internal sealed partial class SshBlobStorage(
 
     /// <summary>
     /// Replaces the blob at <paramref name="blobPath"/> and its sidecar through temporary siblings that
-    /// <paramref name="writeAsync"/> fills; it returns whether it wrote a sidecar.
+    /// <paramref name="writeAsync"/> fills; it returns whether it wrote a sidecar, and returning
+    /// <see langword="false"/> means it never created the sidecar temporary.
     /// </summary>
     /// <remarks>
     /// Each temporary is renamed over its final path only after every write succeeded, so a fault or cancellation
@@ -132,18 +133,26 @@ internal sealed partial class SshBlobStorage(
         var contentTemp = BlobStorageHelpers.BuildTempUploadPath(blobPath);
         var sidecarTemp = BlobStorageHelpers.BuildTempUploadPath(blobPath);
 
+        // Each temporary counts as present until its rename returns, so a failure at any step still removes every
+        // partial write, while a successful replace spends no remove request on a path that is already gone.
+        var contentTempPending = true;
+        var sidecarTempPending = true;
+
         try
         {
             var hasSidecar = await writeAsync(contentTemp, sidecarTemp, cancellationToken).ConfigureAwait(false);
+            sidecarTempPending = hasSidecar;
 
             // Content rename first, then sidecar: a crash between the two pairs the new content with the old
             // metadata rather than the reverse. Once the content is replaced the sidecar must follow, so its
             // rename or removal ignores cancellation.
             await _ReplaceFileAsync(client, contentTemp, blobPath, cancellationToken).ConfigureAwait(false);
+            contentTempPending = false;
 
             if (hasSidecar)
             {
                 await _ReplaceFileAsync(client, sidecarTemp, sidecarPath, CancellationToken.None).ConfigureAwait(false);
+                sidecarTempPending = false;
             }
             else
             {
@@ -153,10 +162,17 @@ internal sealed partial class SshBlobStorage(
         }
         finally
         {
-            // A no-op after the renames. After a failure it removes the partial write; the request token may already
-            // be cancelled, so the cleanup does not use it.
-            await _DeleteTempFileAsync(client, contentTemp).ConfigureAwait(false);
-            await _DeleteTempFileAsync(client, sidecarTemp).ConfigureAwait(false);
+            // After a failure, remove the partial writes; the request token may already be cancelled, so the
+            // cleanup does not use it.
+            if (contentTempPending)
+            {
+                await _DeleteTempFileAsync(client, contentTemp).ConfigureAwait(false);
+            }
+
+            if (sidecarTempPending)
+            {
+                await _DeleteTempFileAsync(client, sidecarTemp).ConfigureAwait(false);
+            }
         }
     }
 
