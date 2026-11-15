@@ -845,18 +845,27 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var pulse = register.PulseAsync(removeCircuitState: true, waitTimeout: TimeSpan.FromSeconds(30));
 
-        // Past the legacy hardcoded 2s bound: under the configured 30s budget the wait must
-        // still be pending. The old fixed 2s WaitAsync would already have expired here.
-        await fakeTime.WaitForArmedTimerAsync();
-        fakeTime.Advance(TimeSpan.FromSeconds(3));
-        pulse.IsCompleted.Should().BeFalse("PulseAsync must honor the configured waitTimeout, not the legacy 2s");
+        try
+        {
+            // Past the legacy hardcoded 2s bound: under the configured 30s budget the wait must
+            // still be pending. The old fixed 2s WaitAsync would already have expired here.
+            await fakeTime.WaitForArmedTimerAsync();
+            fakeTime.Advance(TimeSpan.FromSeconds(3));
+            pulse.IsCompleted.Should().BeFalse("PulseAsync must honor the configured waitTimeout, not the legacy 2s");
 
-        fakeTime.Advance(TimeSpan.FromSeconds(17));
-        stillRunning.TrySetResult();
-        await pulse.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            fakeTime.Advance(TimeSpan.FromSeconds(17));
+            stillRunning.TrySetResult();
+            await pulse.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        receivedShutdownTimeout.Should().Be(TimeSpan.FromSeconds(10));
-        await client.Received(1).ShutdownAsync(Arg.Is(TimeSpan.FromSeconds(10)), Arg.Any<CancellationToken>());
+            receivedShutdownTimeout.Should().Be(TimeSpan.FromSeconds(10));
+            await client.Received(1).ShutdownAsync(Arg.Is(TimeSpan.FromSeconds(10)), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            // A failed assertion must not leave the consumer task pending: disposing the register waits on it, and
+            // nothing advances the fake clock by then, so the failure would hang the run instead of failing the test.
+            stillRunning.TrySetResult();
+        }
     }
 
     [Fact]
