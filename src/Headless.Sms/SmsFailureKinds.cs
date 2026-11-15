@@ -27,6 +27,10 @@ public static class SmsFailureKinds
     /// and the resilience pipeline's open-circuit and rate-limiter rejections, which refuse before sending. A timeout,
     /// a reset, or any other I/O fault can happen after the provider accepted the message, so it is
     /// <see cref="SmsFailureKind.Unknown"/>: the message may have been delivered, and a blind retry can deliver it twice.
+    /// </remarks>
+    /// <param name="exception">The caught exception.</param>
+    /// <returns>The classified <see cref="SmsFailureKind"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
     public static SmsFailureKind FromException(Exception exception)
     {
         Argument.IsNotNull(exception);
