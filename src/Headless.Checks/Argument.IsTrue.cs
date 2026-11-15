@@ -53,7 +53,9 @@ public static partial class Argument
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsTrue(
         [DoesNotReturnIf(false)] bool condition,
-        [InterpolatedStringHandlerArgument(nameof(condition))] TrueCheckInterpolatedStringHandler message,
+#pragma warning disable CA1045 // The fix makes it worse: passing the handler by value copies it on every passing check (about 1 ns more in the Checks benchmarks); Debug.Assert takes its handler by ref for the same reason.
+        [InterpolatedStringHandlerArgument(nameof(condition))] ref TrueCheckInterpolatedStringHandler message,
+#pragma warning restore CA1045
         [CallerArgumentExpression(nameof(condition))] string? paramName = null
     )
     {

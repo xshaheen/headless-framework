@@ -6,8 +6,8 @@ using System.Runtime.CompilerServices;
 namespace Headless.Checks;
 
 /// <summary>
-/// Builds the custom message of <see cref="Ensure.True(bool, TrueCheckInterpolatedStringHandler, string?)"/> and
-/// <see cref="Argument.IsTrue(bool, TrueCheckInterpolatedStringHandler, string?)"/> only when the condition is
+/// Builds the custom message of <see cref="Ensure.True(bool, ref TrueCheckInterpolatedStringHandler, string?)"/> and
+/// <see cref="Argument.IsTrue(bool, ref TrueCheckInterpolatedStringHandler, string?)"/> only when the condition is
 /// <see langword="false"/>, so a passing check formats and allocates nothing.
 /// </summary>
 /// <remarks>
