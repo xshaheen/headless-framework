@@ -1296,6 +1296,127 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_drain_the_inline_handler_before_completing_when_shutdown_async()
+    {
+        // given — a sequential client (no concurrency) runs its handler inline in the consume loop
+        var msg = _Message();
+        var consumer = Substitute.For<INatsJSConsumer>();
+        _OnConsume(consumer, (_, token) => _Deliver(token, messages: msg));
+
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            0,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        )
+        {
+            OnMessageCallback = async (_, _) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task.Bounded();
+            },
+            OnLogCallback = _ => { },
+        };
+
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // The core cancels the listener and shuts the client down without awaiting the listening task.
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+
+        try
+        {
+            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // when
+            await cts.CancelAsync();
+            var shutdownTask = client.ShutdownAsync(TimeSpan.FromSeconds(30), AbortToken).AsTask();
+            var first = await Task.WhenAny(shutdownTask, Task.Delay(300, AbortToken));
+
+            // then — shutdown waits for the inline handler instead of disposing the connection under it
+            first.Should().NotBe(shutdownTask, "ShutdownAsync must not complete while the inline handler runs");
+
+            releaseHandler.TrySetResult();
+            await shutdownTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        }
+        finally
+        {
+            releaseHandler.TrySetResult();
+            await _StopListeningIgnoringOutcomeAsync(listeningTask, cts);
+        }
+    }
+
+    [Fact]
+    public async Task should_hand_back_a_delivery_waiting_for_a_handler_slot_when_shutdown_async()
+    {
+        // given — one handler holds the only slot while the loop has already read a second message
+        var running = _Message();
+        var waiting = _Message();
+        var consumer = Substitute.For<INatsJSConsumer>();
+        _OnConsume(consumer, (_, token) => _Deliver(token, messages: [running, waiting]));
+
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        waiting
+            .NakAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                released.TrySetResult();
+                return ValueTask.CompletedTask;
+            });
+
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var dispatched = 0;
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        )
+        {
+            OnMessageCallback = async (_, _) =>
+            {
+                Interlocked.Increment(ref dispatched);
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task.Bounded();
+            },
+            OnLogCallback = _ => { },
+        };
+
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // The listener token stays live: the core cancels it, but a slot wait must not depend on that.
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+
+        try
+        {
+            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // when
+            var shutdownTask = client.ShutdownAsync(TimeSpan.FromSeconds(30), AbortToken).AsTask();
+            await released.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            releaseHandler.TrySetResult();
+            await shutdownTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then — the waiting delivery went back to the stream and never reached a handler
+            Volatile.Read(ref dispatched).Should().Be(1);
+            await waiting.Received(1).NakAsync(null, CancellationToken.None);
+        }
+        finally
+        {
+            releaseHandler.TrySetResult();
+            await _StopListeningIgnoringOutcomeAsync(listeningTask, cts);
+        }
+    }
+
+    [Fact]
     public async Task should_cap_in_flight_drain_to_remaining_shared_budget_when_shutdown_async()
     {
         var timeProvider = new FakeTimeProvider();
