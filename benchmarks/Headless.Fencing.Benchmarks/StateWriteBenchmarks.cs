@@ -183,12 +183,12 @@ public class StateWriteBenchmarks
         _dialect.AddParameter(command, "Retries", SqlColumnType.Int32, 1);
         _dialect.AddParameter(command, "InlineAttempts", SqlColumnType.Int32, 1);
         _dialect.AddParameter(command, "ExpiresAt", SqlColumnType.Timestamp, (DateTimeOffset?)null);
-        _dialect.AddParameter(command, "KeepLease", SqlColumnType.Boolean, true);
+        _dialect.AddParameter(command, "KeepLease", SqlColumnType.Boolean, value: true);
         _dialect.AddParameter(command, "StatusName", SqlColumnType.Text(-1), "Scheduled");
         _dialect.AddParameter(command, "ExceptionInfo", SqlColumnType.Text(-1), (string?)null);
         _dialect.AddParameter(command, "FailureFingerprint", SqlColumnType.Text(-1), (string?)null);
         _dialect.AddParameter(command, "PreEntryFailures", SqlColumnType.Int32, 0);
-        _dialect.AddParameter(command, "IsTerminal", SqlColumnType.Boolean, false);
+        _dialect.AddParameter(command, "IsTerminal", SqlColumnType.Boolean, value: false);
     }
 
     private static void _ExpectAccepted(bool accepted)
