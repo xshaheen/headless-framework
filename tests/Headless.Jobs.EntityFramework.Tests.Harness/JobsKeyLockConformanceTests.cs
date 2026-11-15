@@ -164,6 +164,7 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
 
         async Task releaseFirstAsync()
         {
+            // real-wait: the budget is counted by the database server's own lock-timeout clock, and the first lock must free at half of it; no host fake moves the server's timer
             await Task.Delay(budget / 2, AbortToken);
             await firstTransaction.RollbackAsync(AbortToken);
         }

@@ -2,7 +2,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Diagnostics;
 using Headless.Jobs;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -195,8 +194,8 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 );
                 // The commit callback only hands JobsPostCommitSignalService a signal (JobsPostCommitSignal.cs); the
                 // scheduler restart itself runs on that hosted worker's own channel-drain loop, off the commit path.
-                // Poll instead of asserting immediately after the commit returns.
-                await _WaitUntilAsync(() => scheduler.Failures >= 1, TimeSpan.FromSeconds(5), AbortToken);
+                // Wait for that restart instead of asserting immediately after the commit returns.
+                await scheduler.FailureObserved.Bounded(TimeSpan.FromSeconds(5));
                 scheduler.Failures.Should().Be(1);
                 (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(1);
                 (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1);
@@ -262,28 +261,6 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             clock: new FastNodeClock()
         );
 
-    // The post-commit signal worker (JobsPostCommitSignalService) drains its channel off the commit path, so a
-    // side effect like a scheduler restart can lag a moment behind the commit that queued it. Poll instead of
-    // asserting immediately.
-    private static async Task _WaitUntilAsync(
-        Func<bool> condition,
-        TimeSpan timeout,
-        CancellationToken cancellationToken
-    )
-    {
-        var stopwatch = Stopwatch.StartNew();
-
-        while (stopwatch.Elapsed < timeout)
-        {
-            if (condition())
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
-        }
-    }
-
     private async Task<DateTimeOffset> _ReadStoreUtcNowAsync()
     {
         await using var connection = fixture.CreateConnection();
@@ -344,8 +321,16 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
 
     private sealed class ThrowingRestartScheduler : IJobsHostScheduler
     {
+        private readonly TaskCompletionSource _failureObserved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
         public bool Armed { get; set; }
         public int Failures { get; private set; }
+
+        // Completes once the post-commit worker has called the throwing restart.
+        public Task FailureObserved => _failureObserved.Task;
+
         public bool IsRunning => false;
 
         public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -359,6 +344,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             if (Armed)
             {
                 Failures++;
+                _failureObserved.TrySetResult();
                 throw new InjectedFailureException();
             }
         }
