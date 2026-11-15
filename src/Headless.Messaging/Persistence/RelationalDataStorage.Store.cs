@@ -15,6 +15,9 @@ internal sealed partial class RelationalDataStorage
     /// </summary>
     private const int _ReceivedStoreAttempts = 3;
 
+    private const string _NoTransactionConnection =
+        "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back.";
+
     /// <summary>
     /// Persists a published outbox message to the published table. When <paramref name="transaction"/>
     /// is supplied the INSERT participates in the caller's database transaction (transactional outbox).
@@ -111,15 +114,9 @@ internal sealed partial class RelationalDataStorage
         );
     }
 
-    private async ValueTask<MediumMessage> _StoreMessageAsync(
-        string name,
-        MediumMessage message,
-        DateTimeOffset? publishAt,
-        DbTransaction? transaction,
-        CancellationToken cancellationToken
-    )
+    public MediumMessage CreatePublishedMessage(MediumMessage message, DateTimeOffset? publishAt)
     {
-        var stored = new MediumMessage
+        return new MediumMessage
         {
             StorageId = _guidGenerator.Create(),
             Origin = message.Origin,
@@ -129,14 +126,71 @@ internal sealed partial class RelationalDataStorage
             Retries = 0,
             InlineAttempts = 0,
         };
+    }
+
+    /// <summary>
+    /// Inserts published rows of one transaction as one insert statement each, sent together where the provider
+    /// batches commands, so a run of rows costs one round trip instead of one per row.
+    /// </summary>
+    /// <remarks>
+    /// Each row stays its own statement, so it reads the database clock exactly as a single store does, and the
+    /// rows are written in the order given. A provider that cannot batch runs the statements one by one.
+    /// </remarks>
+    public async ValueTask StorePublishedMessagesAsync(
+        IReadOnlyList<(string Name, MediumMessage Message)> rows,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(rows);
+        Argument.IsNotNull(transaction);
+
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var connection = transaction.Connection ?? throw new InvalidOperationException(_NoTransactionConnection);
+        var binds = new Action<DbCommand>[rows.Count];
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var (name, message) = rows[i];
+            binds[i] = command => _BindStorePublished(command, name, message);
+        }
+
+        await RelationalCommand
+            .ExecuteBatchReaderAsync(
+                connection,
+                transaction,
+                _storePublishedSql,
+                CommandTimeoutSeconds,
+                binds,
+                _MaxCommandParameters,
+                async (reader, index, ct) =>
+                {
+                    var (added, nextRetryAt) = await _ReadStoredPublishedAsync(reader, ct).ConfigureAwait(false);
+                    var message = rows[index].Message;
+                    message.Added = added;
+                    message.NextRetryAt = nextRetryAt;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<MediumMessage> _StoreMessageAsync(
+        string name,
+        MediumMessage message,
+        DateTimeOffset? publishAt,
+        DbTransaction? transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        var stored = CreatePublishedMessage(message, publishAt);
 
         await using var ownedConnection = transaction is null ? _CreateConnection() : null;
         var connection =
-            transaction?.Connection
-            ?? ownedConnection
-            ?? throw new InvalidOperationException(
-                "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
-            );
+            transaction?.Connection ?? ownedConnection ?? throw new InvalidOperationException(_NoTransactionConnection);
 
         var (added, nextRetryAt) = await RelationalCommand
             .ExecuteReaderAsync(
@@ -144,35 +198,8 @@ internal sealed partial class RelationalDataStorage
                 transaction,
                 _storePublishedSql,
                 CommandTimeoutSeconds,
-                command =>
-                {
-                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, stored.StorageId);
-                    _BindVersion(command);
-                    _dialect.AddParameter(command, "Name", _NameType, name);
-                    _dialect.AddParameter(command, "Content", _ContentType, stored.Content);
-                    _dialect.AddParameter(
-                        command,
-                        "IntentType",
-                        SqlColumnType.Int16,
-                        MessageLaneCompatibility.ToPersistedValue(stored.Lane)
-                    );
-                    _dialect.AddParameter(command, "ExpiresAt", SqlColumnType.Timestamp, publishAt);
-                    _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
-                    _dialect.AddDuration(command, "QueueWindow", TimeSpan.FromMinutes(1));
-                    _dialect.AddParameter(command, "MessageId", _MessageIdType, message.Origin.Id);
-                },
-                static async (reader, ct) =>
-                {
-                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        throw new InvalidOperationException("The message insert returned no row.");
-                    }
-
-                    return (
-                        await reader.GetFieldValueAsync<DateTimeOffset>(0, ct).ConfigureAwait(false),
-                        await _ReadInstantAsync(reader, 1, ct).ConfigureAwait(false)
-                    );
-                },
+                command => _BindStorePublished(command, name, stored),
+                _ReadStoredPublishedAsync,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -181,6 +208,40 @@ internal sealed partial class RelationalDataStorage
         stored.NextRetryAt = nextRetryAt;
 
         return stored;
+    }
+
+    private void _BindStorePublished(DbCommand command, string name, MediumMessage stored)
+    {
+        _dialect.AddParameter(command, "Id", SqlColumnType.Guid, stored.StorageId);
+        _BindVersion(command);
+        _dialect.AddParameter(command, "Name", _NameType, name);
+        _dialect.AddParameter(command, "Content", _ContentType, stored.Content);
+        _dialect.AddParameter(
+            command,
+            "IntentType",
+            SqlColumnType.Int16,
+            MessageLaneCompatibility.ToPersistedValue(stored.Lane)
+        );
+        _dialect.AddParameter(command, "ExpiresAt", SqlColumnType.Timestamp, stored.ExpiresAt);
+        _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
+        _dialect.AddDuration(command, "QueueWindow", TimeSpan.FromMinutes(1));
+        _dialect.AddParameter(command, "MessageId", _MessageIdType, stored.Origin.Id);
+    }
+
+    private static async Task<(DateTimeOffset Added, DateTimeOffset? NextRetryAt)> _ReadStoredPublishedAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The message insert returned no row.");
+        }
+
+        return (
+            await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false),
+            await _ReadInstantAsync(reader, 1, cancellationToken).ConfigureAwait(false)
+        );
     }
 
     /// <summary>

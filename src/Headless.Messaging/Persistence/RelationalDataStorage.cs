@@ -33,7 +33,8 @@ internal sealed partial class RelationalDataStorage
         IScheduledDeliveryOperationsApi,
         IDeliveryCoordinationResolver,
         IRelationalOutboxStorage,
-        IMessageRevocationStorage
+        IMessageRevocationStorage,
+        IBatchPublishedMessageStore
 {
     /// <summary>
     /// Delayed messages due within this window are claimed ahead of time for scheduling. The delayed-message poll must

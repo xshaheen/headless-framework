@@ -20,6 +20,16 @@ internal sealed class IntegrationEventPublishInvokerCache
         Func<UnitOfWorkOutbox, object, OutboxOptions, CancellationToken, Task>
     > _invokers = new();
 
+    private readonly ConcurrentDictionary<
+        Type,
+        Func<IOutboxStoreBatch, object, OutboxOptions, CancellationToken, Task>
+    > _batchInvokers = new();
+
+    private static readonly MethodInfo _GenericBatchPublishAsync = typeof(IOutboxStoreBatch).GetMethod(
+        nameof(IOutboxStoreBatch.PublishAsync),
+        BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+    )!;
+
     // The three-parameter overload: the two-parameter one takes no options, and the enqueue pair belongs to the
     // queue lane. Matching on the options type rather than on the parameter count alone keeps this selection
     // unambiguous if the binding ever gains another three-parameter publish.
@@ -33,12 +43,29 @@ internal sealed class IntegrationEventPublishInvokerCache
 
     public Func<UnitOfWorkOutbox, object, OutboxOptions, CancellationToken, Task> GetPublishInvoker(Type eventType)
     {
-        return _invokers.GetOrAdd(eventType, _CreateInvoker);
+        return _invokers.GetOrAdd(
+            eventType,
+            static type => _CreateInvoker<UnitOfWorkOutbox>(_GenericPublishAsync.MakeGenericMethod(type), type)
+        );
     }
 
-    private static Func<UnitOfWorkOutbox, object, OutboxOptions, CancellationToken, Task> _CreateInvoker(Type eventType)
+    /// <summary>The same publish, issued on a store batch opened on the unit's outbox.</summary>
+    public Func<IOutboxStoreBatch, object, OutboxOptions, CancellationToken, Task> GetBatchPublishInvoker(
+        Type eventType
+    )
     {
-        var outbox = Expression.Parameter(typeof(UnitOfWorkOutbox), "outbox");
+        return _batchInvokers.GetOrAdd(
+            eventType,
+            static type => _CreateInvoker<IOutboxStoreBatch>(_GenericBatchPublishAsync.MakeGenericMethod(type), type)
+        );
+    }
+
+    private static Func<TTarget, object, OutboxOptions, CancellationToken, Task> _CreateInvoker<TTarget>(
+        MethodInfo publish,
+        Type eventType
+    )
+    {
+        var outbox = Expression.Parameter(typeof(TTarget), "outbox");
         var integrationEvent = Expression.Parameter(typeof(object), "integrationEvent");
         var options = Expression.Parameter(typeof(OutboxOptions), "options");
         var cancellationToken = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
@@ -46,14 +73,14 @@ internal sealed class IntegrationEventPublishInvokerCache
         // Keep concrete contract resolution while supplying the emission snapshot for each individual publish.
         var call = Expression.Call(
             outbox,
-            _GenericPublishAsync.MakeGenericMethod(eventType),
+            publish,
             Expression.Convert(integrationEvent, eventType),
             options,
             cancellationToken
         );
 
         return Expression
-            .Lambda<Func<UnitOfWorkOutbox, object, OutboxOptions, CancellationToken, Task>>(
+            .Lambda<Func<TTarget, object, OutboxOptions, CancellationToken, Task>>(
                 call,
                 outbox,
                 integrationEvent,

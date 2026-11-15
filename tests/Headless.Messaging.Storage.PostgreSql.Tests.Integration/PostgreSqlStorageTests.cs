@@ -108,6 +108,17 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     }
 
     /// <inheritdoc />
+    protected override async Task<System.Data.Common.DbConnection?> OpenDatabaseConnectionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        return connection;
+    }
+
+    /// <inheritdoc />
     protected override IStorageTableNames GetTableNames()
     {
         _EnsureInitialized();
