@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Headless.Checks;
+using Headless.DistributedLocks;
 using Headless.Hosting;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -46,6 +47,13 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
         writer.WriteStartObject();
         writer.WriteStartArray("consumers");
 
+        var transport = _services
+            .GetService<IMessagingCapabilityModel>()
+            ?.Providers.FirstOrDefault(static p => p.Role is MessagingProviderRole.Transport);
+        var lockProvider = _services.GetKeyedService<IDistributedLock>(MessagingKeys.LockProvider);
+        var lockConfigured =
+            lockProvider is not null && SequentialIntakeResolver.IsDistributedLockConfigured(lockProvider);
+
         foreach (
             var entry in consumers
                 .GroupBy(static x => (x.ConsumerIdentity, x.Lane))
@@ -53,7 +61,7 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
                 .ThenBy(static x => x.Key.Lane)
         )
         {
-            _WriteConsumer(writer, [.. entry], filter);
+            _WriteConsumer(writer, [.. entry], filter, transport, lockConfigured);
         }
 
         writer.WriteEndArray();
@@ -174,7 +182,9 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
     private static void _WriteConsumer(
         Utf8JsonWriter writer,
         IReadOnlyList<ConsumerMetadata> entries,
-        MessagingConsumeFilter filter
+        MessagingConsumeFilter filter,
+        MessagingProviderCapabilities? transport,
+        bool lockConfigured
     )
     {
         // Tuning applies by identity, so every message entry of one identity and lane carries the same settings.
@@ -233,6 +243,20 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
         if (first.Sequential)
         {
             writer.WriteBoolean("sequential", value: true);
+
+            // How hosts share it: by the transport's key routing, by the broker delivering it to one consumer at a
+            // time, by the host that holds the messaging lock, or not at all ("none": every host listens).
+            var intake = SequentialIntakeResolver.Resolve(
+                first.Lane,
+                sequential: !first.EveryInstance,
+                entries.Select(static x => x.MessageName),
+                transport,
+                lockConfigured
+            );
+            if (SequentialIntakeResolver.ManifestValue(intake) is { } activeHost)
+            {
+                writer.WriteString("activeHost", activeHost);
+            }
         }
 
         if (first.CircuitBreakerOverride is { } circuitBreaker)

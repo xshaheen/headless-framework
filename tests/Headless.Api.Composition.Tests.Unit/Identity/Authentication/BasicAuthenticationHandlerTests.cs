@@ -307,6 +307,34 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_name_the_registered_scheme_on_the_ticket_when_registered_under_a_custom_name()
+    {
+        // given - the ticket used to carry the options' constant "Basic" whatever name the scheme was registered under
+        var handler = _CreateHandler();
+        var context = _CreateContext();
+        var user = new TestUser("user-1", "testuser", "test@example.com");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "testuser")]));
+        context.Request.Headers.Authorization = $"Basic {"testuser:correctpassword".ToBase64()}";
+        _userManager.FindByNameAsync("testuser").Returns(Task.FromResult<TestUser?>(user));
+        _signInManager
+            .CheckPasswordSignInAsync(user, "correctpassword", lockoutOnFailure: true)
+            .Returns(Task.FromResult(SignInResult.Success));
+        _signInManager.CreateUserPrincipalAsync(user).Returns(Task.FromResult(principal));
+
+        await handler.InitializeAsync(
+            new AuthenticationScheme("partner-basic", null, typeof(BasicAuthenticationHandler<TestUser, string>)),
+            context
+        );
+
+        // when
+        var result = await handler.AuthenticateAsync();
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        result.Ticket!.AuthenticationScheme.Should().Be("partner-basic");
+    }
+
+    [Fact]
     public async Task should_use_generic_error_message_to_prevent_enumeration()
     {
         // given

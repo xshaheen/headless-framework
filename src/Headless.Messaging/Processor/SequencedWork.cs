@@ -14,9 +14,6 @@ internal sealed record SequencedWork(
     RetryDispatchAttempt? RetryAttempt
 )
 {
-    /// <summary>Whether a pass already saw this work waiting; its row is first held on the pass after.</summary>
-    internal bool SeenWaiting { get; set; }
-
-    /// <summary>The passes left before this work's row is held again.</summary>
-    internal int PassesUntilHold { get; set; }
+    /// <summary>How the row is kept out of retry pickup while this work waits for its key or a slot.</summary>
+    internal WaitingRow Waiting { get; } = new(Message);
 }

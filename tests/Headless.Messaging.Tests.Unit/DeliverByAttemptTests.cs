@@ -193,7 +193,7 @@ public sealed class DeliverByAttemptTests : TestBase
         // given — the same executor wired to a circuit breaker
         await using var host = ResponderExecutorHost.Create();
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        var executor = new SubscribeExecutor(
+        await using var executor = new SubscribeExecutor(
             host.Provider,
             host.Storage,
             host.Invoker,

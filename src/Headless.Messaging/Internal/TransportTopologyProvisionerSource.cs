@@ -23,7 +23,11 @@ internal sealed class TransportTopologyProvisionerSource(
     public Task<IReadOnlyList<IResourceProvisioner>> GetProvisionersAsync(CancellationToken cancellationToken)
     {
         var topology = new Lazy<MessagingTopology>(() =>
-            BuildTopology(services.GetRequiredService<MethodMatcherCache>(), messages)
+            BuildTopology(
+                services.GetRequiredService<MethodMatcherCache>(),
+                messages,
+                services.GetService<IMessagingCapabilityModel>()
+            )
         );
         IReadOnlyList<IResourceProvisioner> resources =
         [
@@ -37,9 +41,14 @@ internal sealed class TransportTopologyProvisionerSource(
     /// Builds the shared topology the registered consumers and messages need. It reads only registrations frozen with
     /// the container, so every caller of one host sees the same topology.
     /// </summary>
-    internal static MessagingTopology BuildTopology(MethodMatcherCache selector, IMessageMetadataRegistry? messages)
+    internal static MessagingTopology BuildTopology(
+        MethodMatcherCache selector,
+        IMessageMetadataRegistry? messages,
+        IMessagingCapabilityModel? capabilities = null
+    )
     {
         var subscriptions = new List<TopologySubscription>();
+        var transport = capabilities?.Providers.FirstOrDefault(static p => p.Role is MessagingProviderRole.Transport);
 
         foreach (var (key, descriptors) in selector.GetCandidatesBySubscription())
         {
@@ -53,7 +62,21 @@ internal sealed class TransportTopologyProvisionerSource(
 
             if (names.Count > 0)
             {
-                subscriptions.Add(new TopologySubscription(key.SubscriptionName, key.Lane, key.Kind, names));
+                // Whether a lock is configured plays no part here: only the broker's own single active consumer is a
+                // setting of the subscription's broker objects.
+                var intake = SequentialIntakeResolver.Resolve(
+                    key,
+                    descriptors,
+                    transport,
+                    distributedLockConfigured: false
+                );
+
+                subscriptions.Add(
+                    new TopologySubscription(key.SubscriptionName, key.Lane, key.Kind, names)
+                    {
+                        SingleActiveConsumer = intake is SequentialIntake.BrokerSingleActiveConsumer,
+                    }
+                );
             }
         }
 

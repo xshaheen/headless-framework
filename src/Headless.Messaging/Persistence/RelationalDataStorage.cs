@@ -92,6 +92,7 @@ internal sealed partial class RelationalDataStorage
     private readonly ChangeStateSql[] _changeStateSql;
     private readonly string _storePublishedSql;
     private readonly ReceivedStoreSql[] _storeReceivedSql;
+    private readonly ReceivedStoreSql _storeDeliverySql;
     private readonly string[] _reserveAttemptCondition;
     private readonly string[] _releaseLeaseCondition;
     private readonly string[] _leaseSql;
@@ -162,6 +163,7 @@ internal sealed partial class RelationalDataStorage
             _RenderStoreReceived(hasExpiry: true, hasDue: false),
             _RenderStoreReceived(hasExpiry: true, hasDue: true),
         ];
+        _storeDeliverySql = _RenderStoreReceived(hasExpiry: false, hasDue: true, delivery: true);
         _reserveAttemptCondition =
         [
             _RenderReserveAttemptCondition(received: false),

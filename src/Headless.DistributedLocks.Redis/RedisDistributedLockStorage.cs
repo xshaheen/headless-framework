@@ -432,7 +432,7 @@ internal sealed class RedisDistributedLockStorage(
     {
         // Use empty string as sentinel for null expected (key should not exist).
         var expectedValue = expected ?? string.Empty;
-        var expiresValue = expires.HasValue ? (int)expires.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var expiresValue = expires.HasValue ? RedisLeaseMilliseconds.From(expires.Value) : RedisValue.EmptyString;
 
         return new ReplaceIfEqualParams(key, value, expectedValue, expiresValue);
     }
@@ -444,7 +444,7 @@ internal sealed class RedisDistributedLockStorage(
         TimeSpan? expires
     )
     {
-        var expiresValue = expires.HasValue ? (int)expires.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var expiresValue = expires.HasValue ? RedisLeaseMilliseconds.From(expires.Value) : RedisValue.EmptyString;
 
         return new AcquireLockParams(key, fenceKey, leaseId, expiresValue);
     }

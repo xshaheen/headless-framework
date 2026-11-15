@@ -61,7 +61,9 @@ public sealed class AuthenticationRegistrationTests
         // when
         services
             .AddAuthentication()
-            .AddBasicSchema<RegistrationUser, string>(configureOptions: options => options.Scheme = "InternalBasic");
+            .AddBasicSchema<RegistrationUser, string>(configureOptions: options =>
+                options.ClaimsIssuer = "InternalBasic"
+            );
         await using var provider = services.BuildServiceProvider();
 
         // then
@@ -74,8 +76,47 @@ public sealed class AuthenticationRegistrationTests
         scheme.Should().NotBeNull();
         scheme!.DisplayName.Should().Be(BasicAuthenticationOptions.DefaultScheme);
         scheme.HandlerType.Should().Be<BasicAuthenticationHandler<RegistrationUser, string>>();
-        options.Scheme.Should().Be("InternalBasic");
+        options.ClaimsIssuer.Should().Be("InternalBasic");
     }
+
+    [Fact]
+    public async Task should_replace_the_stock_scheme_provider_with_the_dynamic_one()
+    {
+        // given
+        IServiceCollection services = new ServiceCollection();
+
+        // when
+        services.AddAuthentication().AddBasicSchema<RegistrationUser, string>();
+        await using var provider = services.BuildServiceProvider();
+
+        // then
+        provider
+            .GetRequiredService<IAuthenticationSchemeProvider>()
+            .Should()
+            .BeOfType<DynamicAuthenticationSchemeProvider>();
+    }
+
+    [Fact]
+    public async Task should_keep_a_scheme_provider_the_application_registered_before_the_header_schemes()
+    {
+        // given - the provider used to be replaced unconditionally, so the outcome depended on call order
+        IServiceCollection services = new ServiceCollection();
+        services.AddAuthentication();
+        services.AddSingleton<IAuthenticationSchemeProvider, CustomSchemeProvider>();
+
+        // when
+        services
+            .AddAuthentication()
+            .AddBasicSchema<RegistrationUser, string>()
+            .AddApiKey<RegistrationUser, string, RegistrationApiKeyStore>();
+        await using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IAuthenticationSchemeProvider>().Should().BeOfType<CustomSchemeProvider>();
+    }
+
+    private sealed class CustomSchemeProvider(IOptions<AuthenticationOptions> options)
+        : AuthenticationSchemeProvider(options);
 
     private sealed class RegistrationUser : IdentityUser<string>;
 

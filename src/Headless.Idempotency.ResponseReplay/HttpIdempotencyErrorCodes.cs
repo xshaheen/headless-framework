@@ -23,6 +23,12 @@ public static class HttpIdempotencyErrorCodes
     public const string BodyTooLarge = "g:idempotency_body_too_large";
 
     /// <summary>
+    /// The request with this key already ran and succeeded, but its response exceeded the capture cap, so it cannot be
+    /// replayed. Maps to 409; the handler does not run again.
+    /// </summary>
+    public const string ResponseTooLarge = "g:idempotency_response_too_large";
+
+    /// <summary>
     /// Idempotency-Key header value is malformed (length over 255, contains control characters,
     /// or multi-valued). Maps to 400.
     /// </summary>

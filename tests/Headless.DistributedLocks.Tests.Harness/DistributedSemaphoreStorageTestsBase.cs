@@ -131,6 +131,25 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
         (await SemaphoreStorage.GetCountAsync(resource, AbortToken)).Should().Be(0);
     }
 
+    public virtual async Task should_fail_to_extend_an_expired_slot_that_no_acquire_has_pruned_yet()
+    {
+        // A second, long-lived holder keeps the set alive, so the expired slot is still stored when the extend runs.
+        var resource = Faker.Random.AlphaNumeric(10);
+        await SemaphoreStorage.TryAcquireAsync(resource, "lock-1", 2, TimeSpan.FromMilliseconds(100), AbortToken);
+        await SemaphoreStorage.TryAcquireAsync(resource, "lock-2", 2, TimeSpan.FromMinutes(5), AbortToken);
+
+        await AdvanceTimeAsync(TimeSpan.FromMilliseconds(250), AbortToken);
+        var expiredExtend = await SemaphoreStorage.TryExtendAsync(
+            resource,
+            "lock-1",
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
+
+        expiredExtend.Should().BeFalse();
+        (await SemaphoreStorage.ValidateAsync(resource, "lock-1", AbortToken)).Should().BeFalse();
+    }
+
     public virtual async Task should_not_shorten_live_slot_on_shorter_extend()
     {
         var resource = Faker.Random.AlphaNumeric(10);

@@ -85,6 +85,16 @@ public sealed record ConsumerClientRequest
     /// knows about. Per-process objects, such as an every-instance subscription's, are always the client's to create.
     /// </summary>
     public bool ProvisionsTopology { get; init; }
+
+    /// <summary>
+    /// Whether the broker must deliver this competing subscription to one consumer at a time, across every process
+    /// that opens it, so a sequential consumer admits its deliveries in the order the broker holds them. The core sets
+    /// it only for a sequential consumer on a transport whose capabilities declare
+    /// <see cref="MessagingProviderCapabilities.SupportsSingleActiveConsumer"/>; such a transport creates the
+    /// subscription with that setting when it provisions it, as <see cref="TopologySubscription.SingleActiveConsumer"/>
+    /// asks the deploy step to.
+    /// </summary>
+    public bool SingleActiveConsumer { get; init; }
 }
 
 /// <summary>How the processes that open one subscription share its messages.</summary>

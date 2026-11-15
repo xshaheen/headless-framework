@@ -32,7 +32,7 @@ public static partial class StorageIdentifier
         /// reading raw DDL.
         /// </summary>
         [GeneratedRegex(
-            pattern: "^[A-Za-z_][A-Za-z0-9_@$#]*$",
+            pattern: @"^[A-Za-z_][A-Za-z0-9_@$#]*\z",
             options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
             matchTimeoutMilliseconds: RegexPatterns.MatchTimeoutMilliseconds
         )]
@@ -50,7 +50,7 @@ public static partial class StorageIdentifier
         /// digits, and underscores.
         /// </summary>
         [GeneratedRegex(
-            pattern: "^[A-Za-z_][A-Za-z0-9_]*$",
+            pattern: @"^[A-Za-z_][A-Za-z0-9_]*\z",
             options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
             matchTimeoutMilliseconds: RegexPatterns.MatchTimeoutMilliseconds
         )]
