@@ -231,7 +231,7 @@ public sealed class InMemoryCache
         // the hot write path previously fetched the clock three times.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var expiresAt = expiration.HasValue
-            ? new DateTime(nowTicks, DateTimeKind.Utc).Add(expiration.Value)
+            ? _ExpiresAt(new DateTime(nowTicks, DateTimeKind.Utc), expiration.Value)
             : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
@@ -317,7 +317,7 @@ public sealed class InMemoryCache
         // N Interlocked.Add calls, and N maintenance checks.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var expiresAt = expiration.HasValue
-            ? new DateTime(nowTicks, DateTimeKind.Utc).Add(expiration.Value)
+            ? _ExpiresAt(new DateTime(nowTicks, DateTimeKind.Utc), expiration.Value)
             : (DateTime?)null;
 
         var count = 0;
@@ -423,7 +423,7 @@ public sealed class InMemoryCache
         // scheduling — mirrors UpsertAsync so the add-only write path fetches the clock once, not three times.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var expiresAt = expiration.HasValue
-            ? new DateTime(nowTicks, DateTimeKind.Utc).Add(expiration.Value)
+            ? _ExpiresAt(new DateTime(nowTicks, DateTimeKind.Utc), expiration.Value)
             : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
@@ -469,7 +469,7 @@ public sealed class InMemoryCache
         // birth time can never land after its own expiry under an advancing clock.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var now = new DateTime(nowTicks, DateTimeKind.Utc);
-        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _ExpiresAt(now, expiration.Value) : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
         if (!_ValidateEntrySize(entrySize))
@@ -554,7 +554,7 @@ public sealed class InMemoryCache
         // birth time can never land after its own expiry under an advancing clock.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var now = new DateTime(nowTicks, DateTimeKind.Utc);
-        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _ExpiresAt(now, expiration.Value) : (DateTime?)null;
         var newSize = _CalculateEntrySize(value);
 
         if (!_ValidateEntrySize(newSize))
@@ -776,7 +776,7 @@ public sealed class InMemoryCache
         // birth/last-access stamp — mirrors the other write paths, which fetch the clock once per call.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var now = new DateTime(nowTicks, DateTimeKind.Utc);
-        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _ExpiresAt(now, expiration.Value) : (DateTime?)null;
 
         long sizeDelta = 0;
         var inserted = false;
@@ -903,7 +903,7 @@ public sealed class InMemoryCache
         key = _GetKey(key);
 
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        var expiresAt = expiration.HasValue ? utcNow.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _ExpiresAt(utcNow, expiration.Value) : (DateTime?)null;
 
         long result;
 
@@ -3313,6 +3313,18 @@ public sealed class InMemoryCache
     }
 
     #endregion
+
+    /// <summary>
+    /// The instant an entry written at <paramref name="now"/> expires, or <see langword="null"/> when the sum passes
+    /// <see cref="DateTime.MaxValue"/>: an expiration that long means no expiry, as the Redis provider treats it, rather
+    /// than the <see cref="ArgumentOutOfRangeException"/> <see cref="DateTime.Add(TimeSpan)"/> throws.
+    /// </summary>
+    private static DateTime? _ExpiresAt(DateTime now, TimeSpan expiration)
+    {
+        var expiresAt = now.SafeAdd(expiration);
+
+        return expiresAt == DateTime.MaxValue ? null : expiresAt;
+    }
 }
 
 internal static partial class InMemoryCacheLog
