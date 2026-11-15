@@ -229,7 +229,10 @@ public sealed class CredentialAuthenticationCacheTests : TestBase
 
         // then
         firstHit.Principal.Should().NotBeSameAs(secondHit.Principal);
-        secondHit.Principal!.HasClaim(c => c.Type == "added_by_request").Should().BeFalse();
+        secondHit
+            .Principal!.HasClaim(c => string.Equals(c.Type, "added_by_request", StringComparison.Ordinal))
+            .Should()
+            .BeFalse();
         secondHit.Principal.FindFirst(UserClaimTypes.UserId)!.Value.Should().Be(_UserId);
     }
 

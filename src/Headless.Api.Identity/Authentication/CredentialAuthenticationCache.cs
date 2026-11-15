@@ -28,7 +28,7 @@ namespace Headless.Api.Identity;
 /// scheme's <c>CredentialCacheMaxEntries</c>.
 /// </para>
 /// </remarks>
-internal sealed class CredentialAuthenticationCache : IDisposable
+internal sealed class CredentialAuthenticationCache(TimeProvider timeProvider) : IDisposable
 {
     /// <summary>Longest lifetime a scheme may configure; a revoked credential keeps working for up to this long.</summary>
     internal static readonly TimeSpan MaxDuration = TimeSpan.FromHours(1);
@@ -37,12 +37,7 @@ internal sealed class CredentialAuthenticationCache : IDisposable
 
     private readonly byte[] _hmacKey = RandomNumberGenerator.GetBytes(32);
     private readonly ConcurrentDictionary<string, MemoryCache> _schemes = new(StringComparer.Ordinal);
-    private readonly ISystemClock _clock;
-
-    public CredentialAuthenticationCache(TimeProvider timeProvider)
-    {
-        _clock = new TimeProviderClock(timeProvider);
-    }
+    private readonly ISystemClock _clock = new TimeProviderClock(timeProvider);
 
     /// <summary>Whether <paramref name="options"/> turn the cache on.</summary>
     public static bool IsEnabled(ICredentialCacheOptions options) => options.CredentialCacheDuration > TimeSpan.Zero;
