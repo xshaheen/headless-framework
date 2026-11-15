@@ -326,7 +326,6 @@ real-wait 18 tests/Headless.Messaging.InMemory.Tests.Unit/InMemoryConsumerClient
 wall-clock 2 tests/Headless.Messaging.InMemory.Tests.Unit/InMemoryConsumerClientTests.cs
 real-wait 2 tests/Headless.Messaging.InMemory.Tests.Unit/InMemoryEveryInstanceHostTests.cs
 real-wait 1 tests/Headless.Messaging.InMemory.Tests.Unit/InMemoryQueueTransportTests.cs
-real-wait 13 tests/Headless.Messaging.InMemory.Tests.Unit/MemoryQueueTests.cs
 real-wait 1 tests/Headless.Messaging.Kafka.Tests.Integration/KafkaBrokerFaultTests.cs
 wall-clock 2 tests/Headless.Messaging.Kafka.Tests.Integration/KafkaBrokerFaultTests.cs
 real-wait 1 tests/Headless.Messaging.Kafka.Tests.Integration/KafkaConsumerClientConformanceTests.cs
