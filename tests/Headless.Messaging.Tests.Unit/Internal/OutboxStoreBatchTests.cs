@@ -29,7 +29,7 @@ public sealed class OutboxStoreBatchTests : TestBase
         // given
         var harness = _CreateHarness();
         await using var unitOfWork = harness.CreateUnit();
-        var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
+        await using var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
 
         // when
         var receipts = new List<PublishReceipt>();
@@ -45,10 +45,7 @@ public sealed class OutboxStoreBatchTests : TestBase
         // then
         heldBeforeFlush.Should().Be(0, "a held row is written only by the flush");
         harness.Log.Should().Equal("batch:3");
-        harness
-            .BatchedRows.Select(row => row.Message.StorageId)
-            .Should()
-            .Equal(receipts.Select(r => r.StorageId!.Value));
+        harness.BatchedRows.Should().Equal(receipts, (row, receipt) => row.Message.StorageId == receipt.StorageId);
         harness.BatchedTransactions.Should().ContainSingle().Which.Should().BeSameAs(harness.Transaction);
         harness.Dispatcher.CommittedMessages.Should().Equal(harness.BatchedRows.Select(row => row.Message));
     }
@@ -62,7 +59,7 @@ public sealed class OutboxStoreBatchTests : TestBase
             services.AddScoped<IPublishMiddleware<PublishContext<WrappedMessage>>, RecordingMiddleware>()
         );
         await using var unitOfWork = harness.CreateUnit();
-        var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
+        await using var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
 
         // when
         await batch.PublishAsync(new BatchMessage("a"), options: null, AbortToken);
@@ -96,7 +93,7 @@ public sealed class OutboxStoreBatchTests : TestBase
             new MessagingBuilder(services).AddPublishMiddlewareFor<RecordingMiddleware, WrappedMessage>(MessageLane.Bus)
         );
         await using var unitOfWork = harness.CreateUnit();
-        var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
+        await using var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
 
         // when
         await batch.PublishAsync(new BatchMessage("a"), options: null, AbortToken);
@@ -114,7 +111,7 @@ public sealed class OutboxStoreBatchTests : TestBase
         var failure = new InvalidOperationException("duplicate key");
         var harness = _CreateHarness(batchFailure: failure);
         await using var unitOfWork = harness.CreateUnit();
-        var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
+        await using var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
         await batch.PublishAsync(new BatchMessage("a"), options: null, AbortToken);
 
         // when
@@ -129,12 +126,50 @@ public sealed class OutboxStoreBatchTests : TestBase
     }
 
     [Fact]
+    public async Task should_rethrow_a_cancelled_flush_and_hand_off_no_row()
+    {
+        // given
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        var harness = _CreateHarness(batchFailure: new OperationCanceledException(cancelled.Token));
+        await using var unitOfWork = harness.CreateUnit();
+        await using var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
+        await batch.PublishAsync(new BatchMessage("a"), options: null, AbortToken);
+
+        // when
+        var act = async () => await batch.FlushAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await unitOfWork.CompleteAsync(AbortToken);
+        harness.Dispatcher.CommittedMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_flush_held_rows_before_holding_a_row_of_another_transaction()
+    {
+        // given — the unit's resource reports a new transaction for each publish
+        var harness = _CreateHarness();
+        await using var unitOfWork = harness.CreateUnit(transactionPerRead: true);
+        await using var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
+
+        // when
+        await batch.PublishAsync(new BatchMessage("a"), options: null, AbortToken);
+        await batch.PublishAsync(new BatchMessage("b"), options: null, AbortToken);
+        await batch.FlushAsync(AbortToken);
+
+        // then — each transaction's rows are written in that transaction, in publish order
+        harness.Log.Should().Equal("batch:1", "batch:1");
+        harness.BatchedTransactions.Should().HaveCount(2).And.OnlyHaveUniqueItems();
+    }
+
+    [Fact]
     public async Task should_drop_held_rows_when_disposed_without_a_flush()
     {
         // given
         var harness = _CreateHarness();
         await using var unitOfWork = harness.CreateUnit();
-        var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
+        await using var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
         await batch.PublishAsync(new BatchMessage("a"), options: null, AbortToken);
 
         // when
@@ -153,7 +188,7 @@ public sealed class OutboxStoreBatchTests : TestBase
         // given
         var harness = _CreateHarness(storageBatches: false);
         await using var unitOfWork = harness.CreateUnit();
-        var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
+        await using var batch = new OutboxStoreBatch(harness.Publisher, unitOfWork);
 
         // when
         await batch.PublishAsync(new BatchMessage("a"), options: null, AbortToken);
@@ -223,6 +258,7 @@ public sealed class OutboxStoreBatchTests : TestBase
         var provider = services.BuildServiceProvider();
         var pipeline = new PublishMiddlewarePipeline(provider, provider.GetService<IMiddlewareDescriptorRegistry>());
 
+#pragma warning disable CA2000 // The dispatcher and transaction own nothing to release; the harness record holds them for the test's lifetime.
         var dispatcher = new RecordingCommittedDispatcher();
         var optionsAccessor = Options.Create(new MessagingOptions());
         var writer = new OutboxMessageWriter(
@@ -265,7 +301,10 @@ public sealed class OutboxStoreBatchTests : TestBase
             () => writer
         );
 
-        return new Harness(publisher, dispatcher, new TestDbTransaction(), log, batchedRows, batchedTransactions);
+        var transaction = new TestDbTransaction();
+#pragma warning restore CA2000
+
+        return new Harness(publisher, dispatcher, transaction, log, batchedRows, batchedTransactions);
     }
 
     private static MediumMessage _Stored(MediumMessage envelope)
@@ -289,10 +328,19 @@ public sealed class OutboxStoreBatchTests : TestBase
         List<DbTransaction> BatchedTransactions
     )
     {
-        public FakeUnitOfWork CreateUnit()
+        public FakeUnitOfWork CreateUnit(bool transactionPerRead = false)
         {
             var resource = Substitute.For<IRelationalUnitOfWorkResource>();
-            resource.Transaction.Returns(Transaction);
+            if (transactionPerRead)
+            {
+#pragma warning disable CA2000 // The fake transaction owns nothing to release.
+                resource.Transaction.Returns(_ => new TestDbTransaction());
+#pragma warning restore CA2000
+            }
+            else
+            {
+                resource.Transaction.Returns(Transaction);
+            }
 
             return new FakeUnitOfWork { Resource = resource };
         }

@@ -308,5 +308,5 @@ internal interface IPublishMiddlewarePipeline
     /// Whether <see cref="ExecuteAsync{T}" /> with these arguments would run any publish middleware around the publish.
     /// An implementation that cannot tell answers <see langword="true" />.
     /// </summary>
-    bool HasMiddleware<T>(T? content, MessageLane lane, MessageOptions? options, DeliveryDecision decision) => true;
+    bool HasMiddleware<T>(T? content, MessageLane lane, MessageOptions? options, DeliveryDecision decision);
 }

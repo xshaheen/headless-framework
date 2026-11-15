@@ -43,7 +43,7 @@ public abstract partial class DataStorageTestsBase
         }
 
         // then
-        rows.Select(row => row.Message.StorageId).Should().OnlyHaveUniqueItems();
+        rows.Should().OnlyHaveUniqueItems(row => row.Message.StorageId);
         foreach (var (_, message) in rows)
         {
             message.Added.Should().NotBe(default);

@@ -40,21 +40,26 @@ internal static class OutboxSaveScenario
             $"{"provider", -11} {"events", 6} {"saves", 6} {"mean ms", 8} {"p50 ms", 8} {"p95 ms", 8} {"trips/save", 11}"
         );
 
-        await using (var postgreSql = new PostgreSqlBuilder(_PostgreSqlImage).Build())
-        {
-            await postgreSql.StartAsync();
-            await _RunProviderAsync("PostgreSQL", postgreSql.GetConnectionString(), Provider.PostgreSql);
-        }
+        await _RunPostgreSqlAsync();
+        await _RunSqlServerAsync();
+    }
 
-        await using (var sqlServer = new MsSqlBuilder(_SqlServerImage).Build())
+    private static async Task _RunPostgreSqlAsync()
+    {
+        await using var postgreSql = new PostgreSqlBuilder(_PostgreSqlImage).Build();
+        await postgreSql.StartAsync();
+        await _RunProviderAsync("PostgreSQL", postgreSql.GetConnectionString(), Provider.PostgreSql);
+    }
+
+    private static async Task _RunSqlServerAsync()
+    {
+        await using var sqlServer = new MsSqlBuilder(_SqlServerImage).Build();
+        await sqlServer.StartAsync();
+        var connectionString = new SqlConnectionStringBuilder(sqlServer.GetConnectionString())
         {
-            await sqlServer.StartAsync();
-            var connectionString = new SqlConnectionStringBuilder(sqlServer.GetConnectionString())
-            {
-                TrustServerCertificate = true,
-            }.ConnectionString;
-            await _RunProviderAsync("SQL Server", connectionString, Provider.SqlServer);
-        }
+            TrustServerCertificate = true,
+        }.ConnectionString;
+        await _RunProviderAsync("SQL Server", connectionString, Provider.SqlServer);
     }
 
     private enum Provider
@@ -160,7 +165,7 @@ internal static class OutboxSaveScenario
         {
             _npgsql = new ActivityListener
             {
-                ShouldListenTo = source => source.Name == "Npgsql",
+                ShouldListenTo = source => string.Equals(source.Name, "Npgsql", StringComparison.Ordinal),
                 Sample = static (ref _) => ActivitySamplingResult.AllData,
                 ActivityStarted = _ => Interlocked.Increment(ref _count),
             };
@@ -174,7 +179,7 @@ internal static class OutboxSaveScenario
 
         public void OnNext(DiagnosticListener value)
         {
-            if (value.Name == "SqlClientDiagnosticListener")
+            if (string.Equals(value.Name, "SqlClientDiagnosticListener", StringComparison.Ordinal))
             {
                 _subscriptions.Add(value.Subscribe(this));
             }

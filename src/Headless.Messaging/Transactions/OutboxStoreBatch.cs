@@ -17,8 +17,6 @@ internal sealed class OutboxStoreBatch(MessagePublisher publisher, IUnitOfWork u
     private readonly List<OutboxMessageWriter.PendingRow> _pending = [];
     private OutboxMessageWriter? _writer;
 
-    internal bool HasPending => _pending.Count > 0;
-
     /// <summary>The transaction the held rows are written in, or <see langword="null" /> when none is held.</summary>
     internal System.Data.Common.DbTransaction? PendingTransaction =>
         _pending.Count > 0 ? _pending[0].Transaction : null;
