@@ -86,13 +86,13 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
             .HasIndex("Status", "ExecutionTime")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Status", "ExecutionTime"));
 
-        // The peek and every claim filter to the not-yet-started rows and read them in (ExecutionTime, Id) order. Filtered
-        // to those rows, the index stays the size of the backlog instead of the whole history, and the scan reads it in
-        // order and stops at its page instead of skipping past every finished row.
-        builder
-            .HasIndex("ExecutionTime", "Id")
-            .HasFilter($"{JobsStorageNaming.QuotedColumn(style, "Status")} IN ('Idle', 'Queued')")
-            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "ExecutionTime", "Id", "Claimable"));
+        // Declared over the default column name so a model that skips finalization still has them; every finalizing path
+        // restates them from the final column name, which a consumer may have changed since.
+        JobsOccurrenceModelConfiguration.ConfigureStatusIndexes(
+            builder,
+            style,
+            JobsStorageNaming.QuotedColumn(style, nameof(CronJobOccurrenceEntity<>.Status))
+        );
 
         builder
             .HasOne(x => x.CronJob)
@@ -100,12 +100,6 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
             .HasForeignKey(x => x.CronJobId)
             .OnDelete(DeleteBehavior.Cascade)
             .HasConstraintName(JobsStorageNaming.Name(style, "FK", table, JobsStorageNaming.CronJobs, "CronJobId"));
-
-        builder
-            .HasIndex("CronJobId", "ExecutionTime")
-            .IsUnique()
-            .HasFilter($"{JobsStorageNaming.QuotedColumn(style, "Status")} IN ('Idle', 'Queued', 'InProgress')")
-            .HasDatabaseName(JobsStorageNaming.Name(style, "UQ", table, "CronJobId", "ExecutionTime"));
 
         // Failures group by cause per function: the dashboard counts and lists failed runs by this key.
         builder.Property(x => x.FailureFingerprint).HasMaxLength(JobFailureFingerprints.MaxLength);

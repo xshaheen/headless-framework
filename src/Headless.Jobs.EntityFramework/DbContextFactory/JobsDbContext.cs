@@ -29,6 +29,7 @@ public class JobsDbContext<TTimeJob, TCronJob> : DbContext
         );
         base.OnModelCreating(modelBuilder);
         JobsKeyedModelConfiguration.Configure<TTimeJob>(modelBuilder, this);
+        JobsOccurrenceModelConfiguration.Configure(modelBuilder, typeof(CronJobOccurrenceEntity<TCronJob>), this);
         JobsAttemptModelConfiguration.Configure(
             modelBuilder,
             typeof(TTimeJob),
