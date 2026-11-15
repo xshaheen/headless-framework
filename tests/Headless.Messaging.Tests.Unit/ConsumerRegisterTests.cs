@@ -1401,6 +1401,22 @@ public sealed class ConsumerRegisterTests : TestBase
     private sealed class OrderedReceiveMiddlewareC(ReceiveMiddlewareRecorder recorder)
         : OrderedReceiveMiddleware(recorder, "C");
 
+    private sealed class OrderedReceiveMiddlewareD(ReceiveMiddlewareRecorder recorder)
+        : OrderedReceiveMiddleware(recorder, "D");
+
+    private sealed class OrderedReceiveMiddlewareE(ReceiveMiddlewareRecorder recorder)
+        : OrderedReceiveMiddleware(recorder, "E");
+
+    private sealed class SkippingReceiveMiddleware(ReceiveMiddlewareRecorder recorder) : IReceiveMiddleware
+    {
+        public ValueTask InvokeAsync(ReceiveContext context, Func<ValueTask> next)
+        {
+            recorder.Invoked("skip");
+            context.Skip("filtered");
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class RecordingReceiveMiddleware : IReceiveMiddleware
     {
         public Func<ReceiveContext, Func<ValueTask>, ValueTask> Behavior { get; set; } = static (_, next) => next();
@@ -1590,8 +1606,70 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // then
         recorder.Constructions.Should().BeEquivalentTo(["A", "B", "C"]);
-        recorder.Invocations.Should().BeEquivalentTo(["A", "B", "C"]);
+        recorder.Invocations.Should().Equal("B", "C", "A");
         run.Client.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_run_global_receive_middleware_by_ascending_priority_before_per_message_middleware()
+    {
+        // given: global middleware out of priority order with a tie (B then E at 10), and a per-message
+        // middleware whose priority is lower than every global one
+        var recorder = new ReceiveMiddlewareRecorder();
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware: null,
+            "receive-order",
+            "{}"u8.ToArray(),
+            configureServices: services =>
+            {
+                services.AddSingleton(recorder);
+                var builder = new MessagingBuilder(services);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareA>().WithPriority(30);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareB>().WithPriority(10);
+                builder
+                    .AddReceiveMiddlewareFor<OrderedReceiveMiddlewareD, BootstrapReadyMessage>(MessageLane.Bus)
+                    .WithPriority(-100);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareC>().WithPriority(20);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareE>().WithPriority(10);
+            }
+        );
+
+        // then: lower priority runs first and wraps the rest; ties keep registration order; global
+        // middleware wraps per-message middleware whatever their priorities
+        recorder.Invocations.Should().Equal("B", "E", "C", "A", "D");
+        run.Client.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_log_the_receive_middleware_that_skipped_when_an_outer_middleware_called_next()
+    {
+        // given: an outer middleware that calls next and an inner one that skips
+        var recorder = new ReceiveMiddlewareRecorder();
+        var logs = new List<(LogLevel Level, EventId EventId, string Message)>();
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware: null,
+            "receive-skip-named",
+            "{}"u8.ToArray(),
+            configureServices: services =>
+            {
+                services.AddSingleton(recorder);
+                services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs));
+                var builder = new MessagingBuilder(services);
+                builder.AddReceiveMiddleware<SkippingReceiveMiddleware>().WithPriority(20);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareA>().WithPriority(10);
+            }
+        );
+
+        // then
+        recorder.Invocations.Should().Equal("A", "skip");
+        run.Client.CommitCount.Should().Be(1);
+        var skipped = logs.Should().ContainSingle(entry => entry.EventId.Id == 99).Subject;
+        skipped.Message.Should().Contain(typeof(SkippingReceiveMiddleware).FullName!);
+        skipped.Message.Should().NotContain(typeof(OrderedReceiveMiddlewareA).FullName!);
     }
 
     [Fact]

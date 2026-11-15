@@ -475,4 +475,17 @@ public sealed class FieldEncryptorTests : TestBase
             o.Keys[EncryptionTestHost.KeyTwo] = EncryptionTestHost.KeyTwoValue;
             o.ActiveKeyId = active;
         };
+
+    [Fact]
+    public async Task should_refuse_plaintext_with_lone_surrogate_instead_of_changing_it()
+    {
+        // given - the lenient UTF-8 encoder rewrote a lone surrogate to U+FFFD, so decryption returned other text
+        using var host = new EncryptionTestHost(_store);
+
+        // when
+        var act = async () => await host.Encryptor.EncryptAsync("a\uD800", new FieldContext(_Purpose), AbortToken);
+
+        // then
+        await act.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("plaintext");
+    }
 }

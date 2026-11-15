@@ -598,8 +598,9 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 var consumerIdentity = message.Origin.GetConsumerIdentity();
                 var rateLimited = _GetRateLimitedConsumer(message, descriptor, consumerIdentity, context);
 
-                // The row's own delivery is still alive on this host, waiting for its permit without a lease. It runs
-                // the row; a dispatch from here would take the lease that delivery needs and waste its permit.
+                // The row's own delivery is still alive on this host, waiting for its permit without a lease. That
+                // delivery keeps putting the row's pickup off, so a claim lands here only when it could not, such as
+                // after a failed hold. The delivery runs the row; a dispatch from here would take the lease it needs.
                 if (rateLimited is not null && _rateLimiters!.IsWaiting(message.StorageId))
                 {
                     throttled.Add(new ThrottledRetryWork(message, consumerIdentity, _initialDispatchGrace));
@@ -688,8 +689,9 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             throw;
         }
 
-        // Before the dispatch below: a waiting delivery can get its permit at any moment, and must find its row
-        // unleased.
+        // Before the dispatch below, so a waiting delivery's row is leased no longer than it must be. A permit that
+        // arrives while this claim still holds the row is spent: the delivery's lease take is refused, and the row runs
+        // from a later pickup.
         foreach (var work in throttled)
         {
             await _DeferThrottledClaimAsync(connection, work).ConfigureAwait(false);

@@ -55,6 +55,7 @@ public static class SetupSequences
             // Document numbers take their date, and so their reset period, from this clock.
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<SequenceRequestResolver>();
+            services.TryAddSingleton<SequenceBlocks>();
             services.TryAddSingleton<ISequenceGenerator, SequenceGenerator>();
             services.TryAddSingleton<IUnitOfWorkSequences, UnitOfWorkSequencesFeature>();
 

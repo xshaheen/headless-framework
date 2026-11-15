@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using MailKit;
+using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
@@ -12,16 +14,20 @@ namespace Headless.Emails.Mailkit;
 /// Sends email messages through MailKit over SMTP.
 /// </summary>
 /// <remarks>
-/// SMTP clients are pooled through <see cref="ObjectPool{T}"/>. Before a pooled connection is reused it is
-/// probed with <c>NOOP</c>, and a client found disconnected, or whose session the server dropped while it sat
-/// idle, is reconnected automatically. Only a client that just completed a send is returned to the pool; a
-/// client whose send failed or was canceled is disposed, and disconnected or connected-but-unauthenticated
+/// SMTP clients are pooled through <see cref="ObjectPool{T}"/>. A pooled connection idle for longer than
+/// <see cref="MailkitSmtpOptions.IdleProbeThreshold"/> is probed with <c>NOOP</c> before it is reused, and a
+/// client found disconnected, or whose session the server dropped while it sat idle, is reconnected
+/// automatically. A connection used more recently is trusted without the probe; if the server dropped it
+/// anyway, the send reconnects and retries once, but only when the failure came before the server accepted
+/// <c>MAIL FROM</c>, so the message never reached <c>DATA</c> and cannot be delivered twice. Only a client that
+/// just completed a send is returned to the pool; a client whose send failed or was canceled is disposed, and
+/// disconnected or connected-but-unauthenticated
 /// clients are never pooled, so a pooled connection is never reused in a state that would skip
 /// authentication. The pool size is governed by <see cref="MailkitSmtpOptions.MaxPoolSize"/>.
 /// <para>
 /// Every send failure is surfaced as a failed <see cref="SendSingleEmailResponse"/> rather than thrown, per
 /// the <see cref="IEmailSender"/> contract: SMTP command and protocol errors
-/// (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>, <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>),
+/// (<see cref="SmtpCommandException"/>, <see cref="SmtpProtocolException"/>),
 /// authentication failures (<see cref="AuthenticationException"/>), and connect, TLS, and transport faults
 /// (for example <see cref="IOException"/>, socket errors, TLS handshake failures, and connect timeouts).
 /// Authentication failures are additionally logged at critical level because they signal a configuration
@@ -72,10 +78,32 @@ internal sealed class MailkitEmailSender(
         string serverResponse;
         try
         {
-            await _EnsureConnectedAsync(client, settings, cancellationToken).ConfigureAwait(false);
+            var connection = await _EnsureConnectedAsync(client, settings, cancellationToken).ConfigureAwait(false);
 
-            // MailKit returns the SMTP server's final free-form response (typically embedding the queue id).
-            serverResponse = await client.SendAsync(mimeMessage, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                serverResponse = await _SendAsync(client, mimeMessage, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+                when (connection == ConnectionReadiness.TrustedWithoutProbe
+                    && !cancellationToken.IsCancellationRequested
+                    && client is PooledSmtpClient { SenderAccepted: false }
+                    && _IsDroppedSession(ex)
+                )
+            {
+                // The unprobed connection was dead. The server had not accepted MAIL FROM, so MailKit never sent
+                // DATA and the server holds no part of the message: one retry on a fresh session cannot duplicate
+                // it. A failure after that point is surfaced instead, because the message may already be queued.
+                if (logger.IsEnabled(LogLevel.Debug))
+                {
+                    logger.LogPooledSmtpSessionDroppedOnSend(ex.GetType().Name);
+                }
+
+                await _ConnectAsync(client, settings, cancellationToken).ConfigureAwait(false);
+                serverResponse = await _SendAsync(client, mimeMessage, cancellationToken).ConfigureAwait(false);
+            }
+
+            (client as PooledSmtpClient)?.MarkSendCompleted();
             reusable = true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -85,12 +113,12 @@ internal sealed class MailkitEmailSender(
             // to the general handler below.
             throw;
         }
-        catch (MailKit.Net.Smtp.SmtpCommandException ex)
+        catch (SmtpCommandException ex)
         {
             logger.LogSmtpCommandFailed(ex, ex.StatusCode);
             return SendSingleEmailResponse.Failed($"SMTP error: {ex.Message}");
         }
-        catch (MailKit.Net.Smtp.SmtpProtocolException ex)
+        catch (SmtpProtocolException ex)
         {
             logger.LogSmtpProtocolError(ex);
             return SendSingleEmailResponse.Failed($"Protocol error: {ex.Message}");
@@ -128,7 +156,19 @@ internal sealed class MailkitEmailSender(
         return SendSingleEmailResponse.Succeeded(string.IsNullOrWhiteSpace(serverResponse) ? null : serverResponse);
     }
 
-    private async Task _EnsureConnectedAsync(
+    private static async Task<string> _SendAsync(
+        SmtpClient client,
+        MimeKit.MimeMessage message,
+        CancellationToken cancellationToken
+    )
+    {
+        (client as PooledSmtpClient)?.BeginSend();
+
+        // MailKit returns the SMTP server's final free-form response (typically embedding the queue id).
+        return await client.SendAsync(message, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ConnectionReadiness> _EnsureConnectedAsync(
         SmtpClient client,
         MailkitSmtpOptions options,
         CancellationToken cancellationToken
@@ -136,23 +176,40 @@ internal sealed class MailkitEmailSender(
     {
         // A pooled client that is connected and (when required) authenticated is reusable only while the
         // server still holds the session. IsConnected does not observe a remote close, and relays drop idle
-        // sessions within minutes, so a failed NOOP probe means reconnect rather than a failed send.
-        if (
-            client.IsConnected
-            && (!options.HasCredentials || client.IsAuthenticated)
-            && await _IsSessionAliveAsync(client, options, cancellationToken).ConfigureAwait(false)
-        )
+        // sessions within minutes, so a connection idle past the threshold is probed, and a failed NOOP probe
+        // means reconnect rather than a failed send. A client that is not a PooledSmtpClient has no usage
+        // record, so it is always probed.
+        if (client.IsConnected && (!options.HasCredentials || client.IsAuthenticated))
         {
-            return;
+            if (client is PooledSmtpClient pooled && pooled.WasUsedWithin(options.IdleProbeThreshold))
+            {
+                return ConnectionReadiness.TrustedWithoutProbe;
+            }
+
+            if (await _IsSessionAliveAsync(client, options, cancellationToken).ConfigureAwait(false))
+            {
+                return ConnectionReadiness.Probed;
+            }
         }
 
+        await _ConnectAsync(client, options, cancellationToken).ConfigureAwait(false);
+
+        return ConnectionReadiness.Fresh;
+    }
+
+    private static async Task _ConnectAsync(
+        SmtpClient client,
+        MailkitSmtpOptions options,
+        CancellationToken cancellationToken
+    )
+    {
         // Bound the connect/authenticate phase by the configured timeout. SmtpClient.Timeout only
         // governs subsequent read/write operations, not the initial TCP/TLS connect.
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(options.Timeout);
 
-        // A stale or connected-but-unauthenticated client must be reset first. Skip QUIT: on a dropped
-        // session it can only fail.
+        // A stale or connected-but-unauthenticated client must be reset first, and so must a client whose send
+        // got a 421, which MailKit leaves connected. Skip QUIT: on a dropped session it can only fail.
         if (client.IsConnected)
         {
             await client.DisconnectAsync(quit: false, timeoutCts.Token).ConfigureAwait(false);
@@ -171,6 +228,35 @@ internal sealed class MailkitEmailSender(
         {
             await client.AuthenticateAsync(options.User!, options.Password!, timeoutCts.Token).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>How <see cref="_EnsureConnectedAsync"/> made a client ready to send.</summary>
+    private enum ConnectionReadiness
+    {
+        /// <summary>The client connected (and authenticated) for this send.</summary>
+        Fresh,
+
+        /// <summary>The pooled session answered a <c>NOOP</c> probe.</summary>
+        Probed,
+
+        /// <summary>The pooled session was used within the idle threshold and was not probed.</summary>
+        TrustedWithoutProbe,
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="exception"/> shows the session was gone: a closed or reset socket, a read or
+    /// write timeout on a connection that went silent, an unexpected disconnect, or a <c>421</c>
+    /// service-not-available reply, which servers send when they time out an idle session.
+    /// </summary>
+    private static bool _IsDroppedSession(Exception exception)
+    {
+        return exception
+            is ServiceNotConnectedException
+                or SmtpProtocolException
+                or IOException
+                or TimeoutException
+                or System.Net.Sockets.SocketException
+                or SmtpCommandException { StatusCode: SmtpStatusCode.ServiceNotAvailable };
     }
 
     private async Task<bool> _IsSessionAliveAsync(
@@ -217,7 +303,7 @@ internal static partial class MailkitEmailSenderLoggerExtensions
     internal static partial void LogSmtpCommandFailed(
         this ILogger logger,
         Exception exception,
-        MailKit.Net.Smtp.SmtpStatusCode statusCode
+        SmtpStatusCode statusCode
     );
 
     [LoggerMessage(
@@ -251,4 +337,12 @@ internal static partial class MailkitEmailSenderLoggerExtensions
         Message = "Pooled SMTP session failed its NOOP probe; reconnecting. ExceptionType={ExceptionType}"
     )]
     internal static partial void LogPooledSmtpSessionDropped(this ILogger logger, string exceptionType);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "PooledSmtpSessionDroppedOnSend",
+        Level = LogLevel.Debug,
+        Message = "Pooled SMTP session was gone before the server accepted the sender; reconnecting and retrying once. ExceptionType={ExceptionType}"
+    )]
+    internal static partial void LogPooledSmtpSessionDroppedOnSend(this ILogger logger, string exceptionType);
 }

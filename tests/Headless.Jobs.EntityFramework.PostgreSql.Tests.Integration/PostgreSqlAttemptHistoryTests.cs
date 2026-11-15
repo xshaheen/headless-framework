@@ -60,4 +60,20 @@ public sealed class PostgreSqlAttemptHistoryTests(PostgreSqlJobsCoordinationFixt
     {
         return base.an_attempt_closes_once_when_two_writers_race_to_end_a_run();
     }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public override Task retry_reclaim_charges_only_an_attempt_in_flight_when_the_run_lapses_during_an_in_process_retry_wait(
+        bool deadNode,
+        bool nextAttemptStarted
+    )
+    {
+        return base.retry_reclaim_charges_only_an_attempt_in_flight_when_the_run_lapses_during_an_in_process_retry_wait(
+            deadNode,
+            nextAttemptStarted
+        );
+    }
 }
