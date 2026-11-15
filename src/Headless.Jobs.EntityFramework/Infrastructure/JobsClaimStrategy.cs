@@ -560,7 +560,17 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                                 .Select(x => x.CronJobId)
                                 .ToHashSet();
 
-                    for (var index = 0; index < cronJobOccurrences.Items.Length; index++)
+                    // Fence the definitions in one global order (by id), not in the order the wave lists them: each fence
+                    // holds its definition's row lock until the commit, and the manager appends a stored occurrence after
+                    // the advanced candidates, so two nodes walking the same definitions in their own orders could each
+                    // hold the lock the other waits for. Results still land at their input position, because the caller
+                    // dispatches in the order it passed.
+                    var fenceOrder = Enumerable
+                        .Range(0, cronJobOccurrences.Items.Length)
+                        .OrderBy(i => cronJobOccurrences.Items[i].Id)
+                        .ToArray();
+
+                    foreach (var index in fenceOrder)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var item = cronJobOccurrences.Items[index];

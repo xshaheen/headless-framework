@@ -20,7 +20,11 @@ internal sealed class AmazonSqsQueueTransport(
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
-    public BrokerAddress BrokerAddress => new("aws_sqs", _GetBrokerEndpoint());
+    // The options are a singleton snapshot, so the endpoint never changes; resolve it once instead of on every send.
+    // Built on first use so constructing the transport does not read the options.
+    private string? _brokerEndpoint;
+
+    public BrokerAddress BrokerAddress => new("aws_sqs", _brokerEndpoint ??= _GetBrokerEndpoint());
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -31,12 +35,9 @@ internal sealed class AmazonSqsQueueTransport(
 
         try
         {
-            if (!message.Name.IsAwsFifoName())
-            {
-                MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
-            }
-
-            var affinityKey = AwsRoutingAffinity.Mapping.ResolveKey(message);
+            // Only a FIFO destination has a message group to map the key to; a standard one carries the key in the
+            // header bag, where the group's length and character limits do not apply.
+            var affinityKey = message.Name.IsAwsFifoName() ? AwsRoutingAffinity.Mapping.ResolveKey(message) : null;
             var queueName = AwsPhysicalAddress.QueueDestination(message.Name);
             var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
             var attributes = SqsHeaderCodec.Encode(message);

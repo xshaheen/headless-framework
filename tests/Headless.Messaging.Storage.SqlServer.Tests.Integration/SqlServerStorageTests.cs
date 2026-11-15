@@ -2050,6 +2050,49 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
             .And.Contain("(1)", "the filter must keep only active leases");
     }
 
+    [Fact]
+    public async Task should_key_the_sequence_index_on_consumer_key_and_admission_order_of_keyed_rows()
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var columns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT c.name
+                FROM sys.indexes i
+                JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                JOIN sys.objects o ON o.object_id = i.object_id
+                JOIN sys.schemas s ON s.schema_id = o.schema_id
+                WHERE s.name = N'headless'
+                  AND o.name = N'MessagingReceived'
+                  AND i.name = N'IX_MessagingReceived_Sequence'
+                  AND ic.is_included_column = 0
+                ORDER BY ic.key_ordinal;
+                """
+            )
+        ).ToList();
+
+        columns
+            .Should()
+            .BeEquivalentTo(["ConsumerIdentity", "SequenceKey", "SequenceNo"], opts => opts.WithStrictOrdering());
+
+        var filterDefinition = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT i.filter_definition
+            FROM sys.indexes i
+            JOIN sys.objects o ON o.object_id = i.object_id
+            JOIN sys.schemas s ON s.schema_id = o.schema_id
+            WHERE s.name = N'headless'
+              AND o.name = N'MessagingReceived'
+              AND i.name = N'IX_MessagingReceived_Sequence';
+            """
+        );
+
+        filterDefinition.Should().NotBeNull().And.Contain("SequenceKey").And.Contain("IS NOT NULL");
+    }
+
     private RelationalDataStorage _CreateStorage(MessagingOptions messagingOptions)
     {
         return _CreateStorage(messagingOptions, fixture.ConnectionString);

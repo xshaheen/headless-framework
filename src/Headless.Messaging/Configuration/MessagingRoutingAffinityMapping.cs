@@ -5,7 +5,10 @@ using Headless.Checks;
 namespace Headless.Messaging;
 
 /// <summary>Immutable native key mapping for a locally verified destination configuration.</summary>
-/// <remarks>Affinity requires stable broker topology. It does not promise ordering or handler exclusivity.</remarks>
+/// <remarks>
+/// Affinity requires stable broker topology. On its own it promises neither ordering nor handler exclusivity; a
+/// consumer tuned <see cref="ConsumerTuningBuilder.Sequential"/> handles one key's messages one at a time.
+/// </remarks>
 [PublicAPI]
 public sealed class MessagingRoutingAffinityMapping
 {
@@ -54,10 +57,9 @@ public sealed class MessagingRoutingAffinityMapping
     /// <summary>Rejects invalid keys or conflicting raw adapters before any persistence or broker effects.</summary>
     public void Validate(string key, IDictionary<string, string?> headers)
     {
-        Argument.IsNotNullOrWhiteSpace(key);
+        ValidateKey(key);
         if (
-            key.Any(char.IsControl)
-            || (MaximumKeyLength is { } maximum && key.Length > maximum)
+            (MaximumKeyLength is { } maximum && key.Length > maximum)
             || (PrintableAsciiOnly && key.Any(static character => character is < '!' or > '~'))
         )
         {
@@ -73,12 +75,19 @@ public sealed class MessagingRoutingAffinityMapping
         }
     }
 
-    /// <summary>Rejects a typed key when the current transport topology has no native affinity mapping.</summary>
-    public static void RejectUnsupported(TransportMessage message, string provider)
+    /// <summary>
+    /// Rejects a key no route accepts: blank, or holding a control character. A route with no native mapping carries
+    /// the key as an envelope header only, so these are the only rules it applies.
+    /// </summary>
+    /// <param name="key">The routing affinity key.</param>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is empty or white space.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="key"/> holds a control character.</exception>
+    public static void ValidateKey(string key)
     {
-        if (message.RoutingAffinityKey is not null)
+        Argument.IsNotNullOrWhiteSpace(key);
+        if (key.Any(char.IsControl))
         {
-            throw new InvalidOperationException($"Routing affinity is unsupported by {provider} for '{message.Name}'.");
+            throw new InvalidOperationException("Routing affinity key must not contain control characters.");
         }
     }
 }

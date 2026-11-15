@@ -9,6 +9,7 @@ using FluentValidation;
 using Headless.Checks;
 using Headless.Tus.Internal;
 using Headless.Tus.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using tusdotnet.Interfaces;
@@ -53,8 +54,11 @@ namespace Headless.Tus;
 /// while the untranslated exception surfaces as a 500 that tus clients retry by issuing HEAD and
 /// resuming from the committed offset. The exception also aborts the request before tusdotnet
 /// writes <c>Upload-Offset</c>, so a client never sees a success offset for bytes that did not land.
-/// Each store call fences from its own read: the checksum header flow's verify step re-reads the
-/// blob, and its digest comparison is what rejects blocks a different writer staged in between.
+/// The calls of one tus request share one read: with an <c>IHttpContextAccessor</c>, the store keeps
+/// the blob's properties and committed block list it loaded for the rest of the HTTP request, so every
+/// write of that request fences on the request's first read and the ETags its own writes returned.
+/// A failed write drops the kept state, so a retry reads the blob again. Without an accessor, or
+/// outside an HTTP request, each store call fences from its own read.
 /// </para>
 /// <para>
 /// The store never creates its container. <c>UseAzure</c> registers it as a provisioned
@@ -64,7 +68,7 @@ namespace Headless.Tus;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed partial class TusAzureStore
+public sealed partial class TusAzureStore : ITusRequestSnapshotStore
 {
     private static readonly GuidFileIdProvider _DefaultFileIdProvider = new();
 
@@ -83,6 +87,8 @@ public sealed partial class TusAzureStore
     // are never reused.
     private readonly ArrayPool<byte> _chunkPool;
 
+    private readonly TusRequestMemo<TusAzureFile> _memo;
+
     /// <summary>
     /// Initializes a new <c>TusAzureStore</c> over an existing Blob Storage container. Construction
     /// makes no network call.
@@ -99,6 +105,10 @@ public sealed partial class TusAzureStore
     /// </param>
     /// <param name="loggerFactory">optional logger factory; defaults to the null logger</param>
     /// <param name="timeProvider">optional time abstraction; defaults to <c>TimeProvider.System</c></param>
+    /// <param name="httpContextAccessor">
+    /// optional accessor that lets the store read a blob's properties and block list once per tus request; without
+    /// it the store reads them on every call and stays correct
+    /// </param>
     /// <remarks>
     /// A store constructed here keeps every upload outside any tenant, whatever the application's tenancy setup
     /// says. Only the store <c>UseAzure</c> registers keeps each tenant's uploads under a path segment of their
@@ -110,7 +120,8 @@ public sealed partial class TusAzureStore
         ITusAzureBlobHttpHeadersProvider? blobHttpHeadersProvider = null,
         ITusFileIdProvider? fileIdProvider = null,
         ILoggerFactory? loggerFactory = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        IHttpContextAccessor? httpContextAccessor = null
     )
         : this(
             blobServiceClient,
@@ -119,7 +130,8 @@ public sealed partial class TusAzureStore
             blobHttpHeadersProvider,
             fileIdProvider,
             loggerFactory,
-            timeProvider
+            timeProvider,
+            httpContextAccessor
         ) { }
 
     /// <summary>
@@ -133,7 +145,8 @@ public sealed partial class TusAzureStore
         ITusAzureBlobHttpHeadersProvider? blobHttpHeadersProvider,
         ITusFileIdProvider? fileIdProvider,
         ILoggerFactory? loggerFactory,
-        TimeProvider? timeProvider
+        TimeProvider? timeProvider,
+        IHttpContextAccessor? httpContextAccessor
     )
     {
         Argument.IsNotNull(options);
@@ -149,6 +162,7 @@ public sealed partial class TusAzureStore
         _fileIdProvider = fileIdProvider ?? _DefaultFileIdProvider;
         _logger = _loggerFactory.CreateLogger<TusAzureStore>();
         _chunkPool = ArrayPool<byte>.Create(_options.BlobMaxChunkSize, maxArraysPerBucket: 8);
+        _memo = new TusRequestMemo<TusAzureFile>(httpContextAccessor);
 
         _containerClient = blobServiceClient.GetBlobContainerClient(_options.ContainerName);
     }
@@ -166,10 +180,11 @@ public sealed partial class TusAzureStore
                 .ConfigureAwait(false);
 
             file.ETag = response.Value.ETag;
+            _memo.Set(file.BlobName, file);
         }
-        catch (RequestFailedException e) when (e.Status == 412)
+        catch (Exception e)
         {
-            _logger.StaleWriteRejected(file.FileId);
+            _ForgetAfterFailedWrite(file, e);
 
             throw;
         }
@@ -177,7 +192,8 @@ public sealed partial class TusAzureStore
 
     /// <summary>
     /// Commits <paramref name="blockIds"/> together with <paramref name="file"/>'s metadata, only if
-    /// the blob still carries the ETag this request last observed, then records the new ETag.
+    /// the blob still carries the ETag this request last observed, then records the new ETag and
+    /// <paramref name="committedLength"/>, the length the new list commits.
     /// </summary>
     /// <remarks>
     /// The HTTP headers must be re-supplied: Put Block List clears any <c>x-ms-blob-*</c> property
@@ -188,6 +204,7 @@ public sealed partial class TusAzureStore
         BlockBlobClient client,
         TusAzureFile file,
         IEnumerable<string> blockIds,
+        long? committedLength,
         CancellationToken token
     )
     {
@@ -203,23 +220,45 @@ public sealed partial class TusAzureStore
             var response = await client.CommitBlockListAsync(blockIds, options, token).ConfigureAwait(false);
 
             file.ETag = response.Value.ETag;
+            file.CommittedBlocks = null;
+            file.PendingChunkLength = null;
+
+            if (committedLength is { } length)
+            {
+                file.CurrentContentLength = length;
+                _memo.Set(file.BlobName, file);
+            }
+            else
+            {
+                // The commit does not report the new length, so the next call of this request reads the blob.
+                _memo.Remove(file.BlobName);
+            }
         }
-        catch (RequestFailedException e) when (e.Status == 412)
+        catch (Exception e)
         {
-            _logger.StaleWriteRejected(file.FileId);
+            _ForgetAfterFailedWrite(file, e);
 
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Drops what this request remembers about an upload after a write failed: the caller changed the kept state for
+    /// a write that did not land, so the next call, a retry included, must read the blob again.
+    /// </summary>
+    private void _ForgetAfterFailedWrite(TusAzureFile file, Exception e)
+    {
+        _memo.Remove(file.BlobName);
+
+        if (e is RequestFailedException { Status: 412 })
+        {
+            _logger.StaleWriteRejected(file.FileId);
         }
     }
 
     private static BlobRequestConditions _IfUnchanged(TusAzureFile file)
     {
         return new BlobRequestConditions { IfMatch = file.ETag };
-    }
-
-    private Task<List<BlobBlock>> _GetCommittedBlocksAsync(string fileId, CancellationToken token)
-    {
-        return _GetCommittedBlocksAsync(_GetBlockBlobClient(fileId), token);
     }
 
     private static async Task<List<BlobBlock>> _GetCommittedBlocksAsync(BlockBlobClient client, CancellationToken token)
@@ -238,18 +277,48 @@ public sealed partial class TusAzureStore
         }
     }
 
-    private async Task<TusAzureFile?> _GetTusFileInfoAsync(string fileId, CancellationToken token)
+    /// <summary>
+    /// Returns the blob's properties as this request last saw them, reading them only on the request's first call,
+    /// or <see langword="null"/> when the blob does not exist.
+    /// </summary>
+    private Task<TusAzureFile?> _LoadFileAsync(string fileId, CancellationToken token)
     {
-        var blobClient = _GetBlobClient(fileId);
-
-        return await _GetTusFileInfoAsync(blobClient, fileId, token).ConfigureAwait(false);
+        return _LoadFileAsync(_GetBlobClient(fileId), fileId, token);
     }
 
-    private static async Task<TusAzureFile?> _GetTusFileInfoAsync(
-        BlobClient client,
-        string fileId,
+    private async Task<TusAzureFile?> _LoadFileAsync(BlobClient client, string fileId, CancellationToken token)
+    {
+        // Keyed by blob name, not file id: the name holds the tenant, so a request that changes the ambient tenant
+        // is never handed the blob another tenant keeps under the same id.
+        if (_memo.TryGet(client.Name, out var memoized))
+        {
+            return memoized;
+        }
+
+        var file = await _ReadFileAsync(client, fileId, token).ConfigureAwait(false);
+
+        if (file is not null)
+        {
+            _memo.Set(client.Name, file);
+        }
+
+        return file;
+    }
+
+    /// <summary>
+    /// Returns the committed block list of <paramref name="file"/>, reading it only once per request and always after
+    /// the properties the file holds (see <see cref="TusAzureFile.CommittedBlocks"/>).
+    /// </summary>
+    private static async Task<List<BlobBlock>> _LoadCommittedBlocksAsync(
+        BlockBlobClient client,
+        TusAzureFile file,
         CancellationToken token
     )
+    {
+        return file.CommittedBlocks ??= await _GetCommittedBlocksAsync(client, token).ConfigureAwait(false);
+    }
+
+    private static async Task<TusAzureFile?> _ReadFileAsync(BlobClient client, string fileId, CancellationToken token)
     {
         try
         {
@@ -332,6 +401,12 @@ public sealed partial class TusAzureStore
     private string _GetBlobName(string fileId)
     {
         return TusBlobName.Build(_options.BlobPrefix, fileId, _tenantScope?.GetSegment());
+    }
+
+    /// <inheritdoc />
+    void ITusRequestSnapshotStore.ForgetRequestSnapshot(string fileId)
+    {
+        _memo.Remove(_GetBlobName(fileId));
     }
 }
 

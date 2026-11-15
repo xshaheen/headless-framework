@@ -734,10 +734,10 @@ public sealed class InternalJobsManagerTests : TestBase
         var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
         provider
             .ReleaseDeadNodeTimeJobResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(0));
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         provider
             .ReleaseDeadNodeOccurrenceResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(0));
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         provider
             .ApplyParentTerminalRunConditionsAsync(parentId: null, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<DateTime?>(null));
@@ -752,6 +752,85 @@ public sealed class InternalJobsManagerTests : TestBase
         }
 
         await provider.Received(1).ApplyParentTerminalRunConditionsAsync(parentId: null, AbortToken);
+    }
+
+    [Fact]
+    public async Task release_dead_node_resources_batch_carries_the_rows_moved_when_one_owner_fails()
+    {
+        // given: node-b's time-job sweep fails; every other sweep moves rows
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        provider
+            .ReleaseDeadNodeTimeJobResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+                string.Equals(call.Arg<string>(), "node-b@1", StringComparison.Ordinal)
+                    ? Task.FromException<JobReclaimCounts>(new InvalidOperationException("store blip"))
+                    : Task.FromResult(new JobReclaimCounts { Released = 2 })
+            );
+        provider
+            .ReleaseDeadNodeOccurrenceResourcesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new JobReclaimCounts { Skipped = 1 }));
+        provider
+            .ApplyParentTerminalRunConditionsAsync(parentId: null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<DateTime?>(null));
+        var manager = _CreateManager(provider);
+
+        // when
+        var act = () => manager.ReleaseDeadNodeResources(["node-a@1", "node-b@1", "node-c@1"], AbortToken);
+
+        // then
+        var thrown = await act.Should().ThrowAsync<JobReclaimException>();
+        thrown.Which.Reclaimed.Should().Be(new JobReclaimCounts { Released = 4, Skipped = 3 });
+        thrown.Which.InnerExceptions.Should().ContainSingle().Which.Should().BeOfType<InvalidOperationException>();
+        await provider.Received(1).ApplyParentTerminalRunConditionsAsync(parentId: null, AbortToken);
+    }
+
+    [Fact]
+    public async Task reclaim_stalled_resources_carries_the_other_stores_rows_when_one_store_fails()
+    {
+        // given
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        provider
+            .ReclaimStalledTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<JobReclaimCounts>(new InvalidOperationException("store blip")));
+        provider
+            .ReclaimStalledCronJobOccurrencesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new JobReclaimCounts { Released = 1, MarkedFailed = 2 }));
+        provider
+            .ApplyParentTerminalRunConditionsAsync(parentId: null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<DateTime?>(null));
+        var manager = _CreateManager(provider);
+
+        // when
+        var act = () => manager.ReclaimStalledResources(AbortToken);
+
+        // then
+        var thrown = await act.Should().ThrowAsync<JobReclaimException>();
+        thrown.Which.Reclaimed.Should().Be(new JobReclaimCounts { Released = 1, MarkedFailed = 2 });
+        await provider.Received(1).ApplyParentTerminalRunConditionsAsync(parentId: null, AbortToken);
+    }
+
+    [Fact]
+    public async Task reclaim_stalled_resources_carries_the_moved_rows_when_the_reconcile_fails()
+    {
+        // given: both sweeps moved rows, then the terminal-children reconcile throws
+        var provider = Substitute.For<IJobPersistenceProvider<FakeTimeJob, FakeCronJob>>();
+        provider
+            .ReclaimStalledTimeJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new JobReclaimCounts { Skipped = 1 }));
+        provider
+            .ReclaimStalledCronJobOccurrencesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new JobReclaimCounts { Released = 1 }));
+        provider
+            .ApplyParentTerminalRunConditionsAsync(parentId: null, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<DateTime?>(new InvalidOperationException("reconcile failed")));
+        var manager = _CreateManager(provider);
+
+        // when
+        var act = () => manager.ReclaimStalledResources(AbortToken);
+
+        // then
+        var thrown = await act.Should().ThrowAsync<JobReclaimException>();
+        thrown.Which.Reclaimed.Should().Be(new JobReclaimCounts { Released = 1, Skipped = 1 });
     }
 
     private const string _ClaimOwner = "node-a@1";

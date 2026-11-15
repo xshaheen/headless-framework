@@ -200,6 +200,7 @@ public sealed class MessagingHostManifestTests : TestBase
 
         invoices.TryGetProperty("circuitBreaker", out _).Should().BeFalse();
         invoices.TryGetProperty("rateLimit", out _).Should().BeFalse();
+        invoices.TryGetProperty("sequential", out _).Should().BeFalse();
         invoices.TryGetProperty("middleware", out _).Should().BeFalse();
         invoices.GetProperty("concurrency").GetInt32().Should().Be(1);
         invoices.GetProperty("inboxRetentionSeconds").GetInt64().Should().Be(30 * 24 * 60 * 60);
@@ -252,6 +253,21 @@ public sealed class MessagingHostManifestTests : TestBase
         rateLimit.GetProperty("permitLimit").GetInt32().Should().Be(100);
         rateLimit.GetProperty("windowSeconds").GetDouble().Should().Be(10);
         rateLimit.TryGetProperty("tokenLimit", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_print_that_a_consumer_is_sequential()
+    {
+        using var provider = _BuildProvider(setup =>
+            setup
+                .AddModule<BillingModule>()
+                .Tune(TestConsumers.InvoiceProjection, consumer => consumer.Concurrency(4).Sequential())
+        );
+
+        var invoices = _Consumer(_Describe(provider), TestConsumers.InvoiceProjection, "bus");
+
+        invoices.GetProperty("sequential").GetBoolean().Should().BeTrue();
+        invoices.GetProperty("concurrency").GetInt32().Should().Be(4);
     }
 
     [Fact]

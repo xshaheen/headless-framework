@@ -241,7 +241,9 @@ internal sealed partial class RelationalDataStorage
             exceptionInfo,
             message.FailureFingerprint ?? MessagingFailureFingerprints.Poison,
             ExpiresAfter: TimeSpan.FromSeconds(Options.FailedMessageExpiredAfter),
-            DueAfter: null
+            DueAfter: null,
+            // Written terminal, so it never holds its key.
+            SequenceKey: null
         );
 
         var stored = await _StoreReceivedAsync("messaging.store_received_exception_message", row, cancellationToken)
@@ -277,6 +279,7 @@ internal sealed partial class RelationalDataStorage
             NextRetryAt = added.Add(Options.RetryPolicy.InitialDispatchGrace),
             Retries = 0,
             InlineAttempts = 0,
+            SequenceKey = message.SequenceKey,
         };
 
         var row = new ReceivedRow(
@@ -292,7 +295,8 @@ internal sealed partial class RelationalDataStorage
             ExceptionInfo: null,
             FailureFingerprint: null,
             ExpiresAfter: null,
-            DueAfter: Options.RetryPolicy.InitialDispatchGrace
+            DueAfter: Options.RetryPolicy.InitialDispatchGrace,
+            message.SequenceKey
         );
 
         // Adopt the authoritative persisted row id: a redelivery that rewrites an existing row keeps that row's id, so
@@ -340,6 +344,7 @@ internal sealed partial class RelationalDataStorage
     /// <summary>A received row as a store writes it.</summary>
     /// <param name="ExpiresAfter">How long past the database clock the row expires, or <see langword="null"/> for never.</param>
     /// <param name="DueAfter">How long past the database clock the row falls due, or <see langword="null"/> for never.</param>
+    /// <param name="SequenceKey">The sequential consumer's key, or <see langword="null"/> when the row holds none.</param>
     private sealed record ReceivedRow(
         Guid Id,
         string Name,
@@ -353,7 +358,8 @@ internal sealed partial class RelationalDataStorage
         string? ExceptionInfo,
         string? FailureFingerprint,
         TimeSpan? ExpiresAfter,
-        TimeSpan? DueAfter
+        TimeSpan? DueAfter,
+        string? SequenceKey
     );
 
     /// <summary>
@@ -388,6 +394,7 @@ internal sealed partial class RelationalDataStorage
                     _t.ExceptionInfo,
                     _t.FailureFingerprint,
                     _t.ConsumerKeyHash,
+                    _t.SequenceKey,
                     _t.ChangedAt,
                 ],
                 [
@@ -407,6 +414,7 @@ internal sealed partial class RelationalDataStorage
                     "@ExceptionInfo",
                     "@FailureFingerprint",
                     "@ConsumerKeyHash",
+                    "@SequenceKey",
                     SqlDialectTokens.Now,
                 ],
                 [_t.Id, _t.Added, _t.NextRetryAt],
@@ -419,7 +427,7 @@ internal sealed partial class RelationalDataStorage
                 _receivedTable,
                 [new SqlKeyColumn(_t.Id, "Id")],
                 $"{nonInbox} AND {_terminalGuard} AND ({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= {SqlDialectTokens.Now})",
-                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}",
+                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_t.SequenceKey}=@SequenceKey, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}",
                 [_t.Id, _t.Added, _t.NextRetryAt]
             )
         );
@@ -476,6 +484,7 @@ internal sealed partial class RelationalDataStorage
             _dialect.AddParameter(command, "StatusName", _StatusType, row.Status.ToString("G"));
             _dialect.AddParameter(command, "ExceptionInfo", _ContentType, row.ExceptionInfo);
             _dialect.AddParameter(command, "FailureFingerprint", _FingerprintType, row.FailureFingerprint);
+            _dialect.AddParameter(command, "SequenceKey", _SequenceKeyType, row.SequenceKey);
 
             if (row.ExpiresAfter is { } expiresAfter)
             {

@@ -32,28 +32,48 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         var traceParent = JobTraceParent.Capture(scheduleActivity);
         var now = timeProvider.GetUtcNow();
         _StampTimeJobTree(entity, now, assignIds: true, traceParent);
-        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
-        _StampTimeJobTree(entity, now, assignIds: false, traceParent);
-        _ResolveChainTenants(entity);
-        if (!_functionRegistry.Functions.ContainsKey(entity.Function))
-        {
-            throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
-        }
 
-        JobIntentFingerprint.Normalize(entity);
+        // Same contract as the ordinary add path: a call that fails before the store answers leaves the caller's tree
+        // with the tenants it passed, so a retry under another ambient tenant resolves them afresh instead of reading
+        // the first attempt's resolution as explicit tenants.
+        var tenantSnapshot = _SnapshotTreeTenants([entity]);
         JobScheduleResult result;
-        if (coordinated is { } context)
+
+        try
         {
-            _PrepareCoordinatedWrite(context);
-            result = await context
-                .Writer.WriteKeyedTimeJobAsync(key, entity, expectedGeneration, context.Relational, cancellationToken)
-                .ConfigureAwait(false);
+            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+            _StampTimeJobTree(entity, now, assignIds: false, traceParent);
+            _ResolveChainTenants(entity);
+            if (!_functionRegistry.Functions.ContainsKey(entity.Function))
+            {
+                throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
+            }
+
+            JobIntentFingerprint.Normalize(entity);
+            if (coordinated is { } context)
+            {
+                _PrepareCoordinatedWrite(context);
+                result = await context
+                    .Writer.WriteKeyedTimeJobAsync(
+                        key,
+                        entity,
+                        expectedGeneration,
+                        context.Relational,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                result = await persistenceProvider
+                    .ScheduleKeyedTimeJobAsync(key, entity, expectedGeneration, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
-        else
+        catch
         {
-            result = await persistenceProvider
-                .ScheduleKeyedTimeJobAsync(key, entity, expectedGeneration, cancellationToken)
-                .ConfigureAwait(false);
+            _RestoreTreeTenants(tenantSnapshot);
+            throw;
         }
 
         return _CompleteKeyedOperation(result, coordinated);

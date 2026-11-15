@@ -5,6 +5,7 @@ using Azure.Storage.Blobs.Models;
 using Headless.Hosting;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -65,6 +66,18 @@ public sealed class SetupTusAzureStoreTests : TestBase
         provider.GetRequiredService<TusAzureStore>().Should().BeSameAs(store);
         provider.GetRequiredService<ITusStore>().Should().BeSameAs(store);
         provider.GetRequiredService<IOptions<TusAzureStoreOptions>>().Value.ContainerName.Should().Be("my-uploads");
+    }
+
+    [Fact]
+    public void should_register_http_context_accessor()
+    {
+        // given
+        var services = _Services();
+        services.AddHeadlessTus(tus => tus.UseAzure(_ => { }));
+        using var provider = services.BuildServiceProvider();
+
+        // when / then
+        provider.GetService<IHttpContextAccessor>().Should().NotBeNull();
     }
 
     [Fact]

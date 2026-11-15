@@ -98,12 +98,12 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         // disconnected before sending it; the store must discard the chunk unconditionally.
         var isFallback = ChecksumTrailerHelper.IsFallback(algorithm, checksum);
 
-        // 404 is already mapped to null inside _GetTusFileInfoAsync, so any exception it throws is a
+        // 404 is already mapped to null inside _LoadFileAsync, so any exception it throws is a
         // genuine infrastructure failure (throttling / network / 500), NOT a checksum outcome — let it
         // propagate so the client retries. Returning false here would map to HTTP 460 (tusdotnet),
         // telling the client its correctly-checksummed data was corrupt and discarding it. This mirrors
         // the commit and trailer-verify branches below, deliberately kept outside any infra catch.
-        var file = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None).ConfigureAwait(false);
+        var file = await _LoadFileAsync(blobClient, fileId, CancellationToken.None).ConfigureAwait(false);
 
         if (file is null)
         {
@@ -271,7 +271,8 @@ public sealed partial class TusAzureStore : ITusChecksumStore
     /// </remarks>
     private async Task _RollbackLastChunkAsync(BlockBlobClient client, TusAzureFile file, long chunkStartOffset)
     {
-        var committedBlocks = await _GetCommittedBlocksAsync(client, CancellationToken.None).ConfigureAwait(false);
+        var committedBlocks = await _LoadCommittedBlocksAsync(client, file, CancellationToken.None)
+            .ConfigureAwait(false);
 
         var prefix = new List<string>(committedBlocks.Count);
         var cumulative = 0L;
@@ -308,7 +309,8 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         // Fenced on the ETag read with the file: the prefix and the recorded chunk start describe the
         // blob this request saw, so a rollback over a block list another request has since committed
         // must fail rather than truncate that request's data.
-        await _CommitBlockListAsync(client, file, prefix, CancellationToken.None).ConfigureAwait(false);
+        await _CommitBlockListAsync(client, file, prefix, committedLength: cumulative, CancellationToken.None)
+            .ConfigureAwait(false);
 
         _logger.LastChunkRolledBack(file.FileId, chunkStartOffset);
     }
@@ -453,7 +455,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
         try
         {
-            var committedBlocks = await _GetCommittedBlocksAsync(client, token).ConfigureAwait(false);
+            var committedBlocks = await _LoadCommittedBlocksAsync(client, file, token).ConfigureAwait(false);
 
             // Build complete block list BEFORE clearing metadata: the staged IDs are reconstructed
             // from the persisted (token, firstIndex, count) triple — see TusStagedBlocks.
@@ -471,6 +473,11 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
             _EnsureWithinBlockLimit(allBlockIds.Count);
 
+            // The staged chunk's size is known only when this request staged it.
+            long? committedLength = file.PendingChunkLength is { } pending
+                ? committedBlocks.Sum(block => block.SizeLong) + pending
+                : null;
+
             // NOW clear chunk tracking metadata (after we've used it)
             file.Metadata.LastChunkBlocks = null;
             file.Metadata.LastChunkChecksum = null;
@@ -478,7 +485,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
             // ATOMIC: Commit blocks + update metadata in single operation, fenced on the ETag read with
             // the file so a staged range another request has since replaced or committed is never
             // committed over that request's block list.
-            await _CommitBlockListAsync(client, file, allBlockIds, token).ConfigureAwait(false);
+            await _CommitBlockListAsync(client, file, allBlockIds, committedLength, token).ConfigureAwait(false);
 
             _logger.LastChunkCommitted(file.FileId, allBlockIds.Count);
         }

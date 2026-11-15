@@ -232,14 +232,14 @@ internal sealed class MessagePublishRequestFactory(
                 );
             }
 
-            capabilityGate.EnsureRoutingAffinitySupported(messageName, lane, affinityKey, headers);
+            capabilityGate.ValidateRoutingAffinityKey(messageName, lane, affinityKey, headers);
             headers[Headers.RoutingAffinityKey] = affinityKey;
         }
 
         _ApplyProviderHeaderContributions(headers, metadata, contentObj, declaredMessageType, messageName, lane);
         if (options?.RoutingAffinityKey is { } contributedAffinityKey)
         {
-            capabilityGate!.EnsureRoutingAffinitySupported(messageName, lane, contributedAffinityKey, headers);
+            capabilityGate!.ValidateRoutingAffinityKey(messageName, lane, contributedAffinityKey, headers);
         }
 
         headers[Headers.SentTime] = publishAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);

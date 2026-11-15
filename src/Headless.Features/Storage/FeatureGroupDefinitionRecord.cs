@@ -24,17 +24,11 @@ public sealed class FeatureGroupDefinitionRecord : AggregateRoot<Guid>, IHasExtr
     /// <param name="displayName">The human-readable display name of the feature group.</param>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="displayName"/> is <see langword="null"/> or white space.</exception>
     /// <exception cref="ArgumentException"><paramref name="name"/> or <paramref name="displayName"/> is empty or white space.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="name"/> exceeds <see cref="FeatureGroupDefinitionRecordConstants.NameMaxLength"/> characters,
-    /// or <paramref name="displayName"/> exceeds <see cref="FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength"/> characters.
-    /// </exception>
     [SetsRequiredMembers]
     public FeatureGroupDefinitionRecord(Guid id, string name, string displayName)
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, FeatureGroupDefinitionRecordConstants.NameMaxLength);
         Argument.IsNotNullOrWhiteSpace(displayName);
-        Argument.IsLessThanOrEqualTo(displayName.Length, FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength);
 
         Id = id;
         Name = name;

@@ -892,6 +892,8 @@ export interface MessagingConsumer {
   /** Each message it consumes, with the type that implements it and the method that handles it, when the host says. */
   messages: { name: string; contractVersion: string; consumerType?: string | null; handlerMethod?: string | null }[]
   concurrency: number
+  /** Whether it handles the messages that share a routing affinity key one at a time; missing when it does not. */
+  sequential?: boolean
   inboxRetentionSeconds?: number
   rateLimit?:
     | { algorithm: 'token-bucket'; tokenLimit: number; tokensPerPeriod: number; replenishmentPeriodSeconds: number }

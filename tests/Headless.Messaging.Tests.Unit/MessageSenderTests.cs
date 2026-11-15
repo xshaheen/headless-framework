@@ -82,7 +82,7 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task should_reject_stored_affinity_when_current_configuration_has_no_mapping_before_resolving_transport()
+    public async Task should_reject_a_stored_affinity_key_no_route_accepts_before_resolving_transport()
     {
         var transportFactoryCalls = 0;
         var services = new ServiceCollection();
@@ -106,7 +106,7 @@ public sealed class MessageSenderTests : TestBase
         await using var provider = services.BuildServiceProvider();
         var stored = _CreateMediumMessage();
         stored.Lane = MessageLane.Queue;
-        stored.Origin.Headers[Headers.RoutingAffinityKey] = "order-42";
+        stored.Origin.Headers[Headers.RoutingAffinityKey] = "order\u000042";
 
         var act = async () =>
         {
@@ -114,9 +114,7 @@ public sealed class MessageSenderTests : TestBase
             await sender.SendAsync(stored);
         };
 
-        await act.Should()
-            .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage("*affinity*unsupported*unverifiable*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*control characters*");
         transportFactoryCalls.Should().Be(0);
         storage
             .ReceivedCalls()

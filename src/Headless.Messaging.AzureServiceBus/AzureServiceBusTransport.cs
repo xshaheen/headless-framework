@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,12 @@ internal sealed class AzureServiceBusTransport(
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
+    // The options are a singleton snapshot, so the broker endpoint and the custom-producer map never change; build each
+    // once instead of on every send. Both are built on first use, not in the constructor, so constructing the transport
+    // neither reads the options nor throws for an unparsable connection string.
+    private string? _brokerEndpoint;
+    private FrozenDictionary<string, IServiceBusProducerDescriptor>? _customProducers;
+
     /// <summary>
     /// Creates a producer descriptor for the given message. If there's no custom producer configuration for the
     /// message type, one will be created using defaults configured in the AzureServiceBusMessagingOptions (e.g. TopicPath).
@@ -29,13 +36,25 @@ internal sealed class AzureServiceBusTransport(
     /// <returns></returns>
     public IServiceBusProducerDescriptor CreateProducerForMessage(TransportMessage transportMessage)
     {
-        return busOptions.Value.CustomProducers.SingleOrDefault(p =>
-                string.Equals(p.MessageTypeName, transportMessage.Name, StringComparison.Ordinal)
-            ) ?? new ServiceBusProducerDescriptor(transportMessage.Name, busOptions.Value.TopicPath);
+        // The options validator rejects two producers for one message type, so the map holds one entry per name.
+        var customProducers = _customProducers ??= busOptions.Value.CustomProducers.ToFrozenDictionary(
+            static producer => producer.MessageTypeName,
+            StringComparer.Ordinal
+        );
+
+        return customProducers.TryGetValue(transportMessage.Name, out var producer)
+            ? producer
+            : new ServiceBusProducerDescriptor(transportMessage.Name, busOptions.Value.TopicPath);
     }
 
     public BrokerAddress BrokerAddress =>
-        ServiceBusHelpers.GetBrokerAddress(busOptions.Value.ConnectionString, busOptions.Value.Namespace);
+        new(
+            ServiceBusHelpers.BrokerName,
+            _brokerEndpoint ??= ServiceBusHelpers.GetBrokerEndpoint(
+                busOptions.Value.ConnectionString,
+                busOptions.Value.Namespace
+            )
+        );
 
     public async Task<OperateResult> SendAsync(
         TransportMessage transportMessage,

@@ -29,6 +29,9 @@ internal sealed class Dispatcher
     private readonly IDataStorage _storage;
     private readonly TimeProvider _timeProvider;
     private readonly IHostApplicationLifetime? _hostApplicationLifetime;
+    private readonly MethodMatcherCache? _methodMatcherCache;
+    private readonly TimeProvider _backoffClock;
+    private readonly ICircuitBreakerStateManager? _circuitBreaker;
 #pragma warning disable CA2213 // Disposed by deadline-bounded asynchronous finalization.
     private readonly ScheduledMediumMessageQueue _schedulerQueue;
 #pragma warning restore CA2213
@@ -47,6 +50,9 @@ internal sealed class Dispatcher
     private Task? _schedulerTask;
     private Task? _eventualCleanupTask;
     private Task? _quiesceTask;
+
+    // One set per start: a restarted dispatcher gets fresh sequencers, as it gets fresh channels.
+    private ConsumerKeySequencers? _sequencers;
 
     // Volatile because writers (DisposeAsync, _ResetStateIfNeeded) race readers on channel-writer
     // and processing-loop threads. Without the barrier, a stale `false` read can slip past the
@@ -93,7 +99,9 @@ internal sealed class Dispatcher
         IDataStorage storage,
         TimeProvider timeProvider,
         IServiceScopeFactory scopeFactory,
-        IHostApplicationLifetime? hostApplicationLifetime = null
+        IHostApplicationLifetime? hostApplicationLifetime = null,
+        MethodMatcherCache? methodMatcherCache = null,
+        IServiceProvider? serviceProvider = null
     )
     {
         _logger = logger;
@@ -104,6 +112,10 @@ internal sealed class Dispatcher
         _timeProvider = timeProvider;
         _scopeFactory = scopeFactory;
         _hostApplicationLifetime = hostApplicationLifetime;
+        _methodMatcherCache = methodMatcherCache;
+        // The bound on a lease call waits out a store that stopped answering, so it runs apart from the app clock.
+        _backoffClock = serviceProvider is null ? TimeProvider.System : BackoffClock.Resolve(serviceProvider);
+        _circuitBreaker = serviceProvider?.GetService<ICircuitBreakerStateManager>();
         _schedulerQueue = new ScheduledMediumMessageQueue(timeProvider, _options.SchedulerBatchSize);
         _enableParallelExecute = _options.EnableSubscriberParallelExecute;
         _enableParallelSend = _options.EnablePublishParallelSend;
@@ -130,6 +142,16 @@ internal sealed class Dispatcher
                 _InitializeReceivedChannel();
                 _StartProcessingTasks();
             }
+
+            _sequencers = new ConsumerKeySequencers(
+                _RunSequencedAsync,
+                _storage.DeferReceivedDispatchAsync,
+                _storage.RenewReceiveLeaseAsync,
+                _options.RetryPolicy,
+                _timeProvider,
+                _backoffClock,
+                _logger
+            );
 
             _schedulerTask = _StartSchedulerTaskAsync();
             lock (_retryDispatchGate)
@@ -348,7 +370,16 @@ internal sealed class Dispatcher
                 return;
             }
 
-            if (_ShouldUseParallelExecute(message))
+            if (descriptor is { Sequential: true } && _sequencers is { } sequencers)
+            {
+                // The hand-over returns once the message is queued behind its key, so the transport callback that
+                // admitted it is free to admit the next one; a full sequencer makes it wait here instead.
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(TasksCts.Token, cancellationToken);
+                await sequencers
+                    .EnqueueAsync(new SequencedWork(message, descriptor, RetryAttempt: null), linked.Token)
+                    .ConfigureAwait(false);
+            }
+            else if (_ShouldUseParallelExecute(message))
             {
                 await _WriteToChannelAsync(
                         ReceivedChannel,
@@ -439,6 +470,9 @@ internal sealed class Dispatcher
         CancellationToken cancellationToken
     )
     {
+        // A retry of a sequential consumer takes its turn behind whatever its key has queued, so it never runs beside
+        // another message of that key on this host.
+        var sequential = _ResolveSequentialConsumer(message);
         var attempt = RetryDispatchAttempt.TryCreate(
             _storage,
             MessageType.Subscribe,
@@ -447,7 +481,7 @@ internal sealed class Dispatcher
         );
         if (attempt is null)
         {
-            await EnqueueToExecute(message, descriptor: null, cancellationToken).ConfigureAwait(false);
+            await EnqueueToExecute(message, sequential, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -460,6 +494,12 @@ internal sealed class Dispatcher
                 return false;
             }
 
+            if (sequential is not null && _sequencers is { } sequencers)
+            {
+                return await _EnqueueSequencedRetryAsync(sequencers, message, sequential, attempt, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             if (_ShouldUseParallelExecute(message))
             {
                 return await _WriteReceivedRetryAsync(message, attempt, cancellationToken).ConfigureAwait(false);
@@ -470,7 +510,7 @@ internal sealed class Dispatcher
                 return false;
             }
 
-            var executionState = new RetryExecutionState();
+            var executionState = new RetryExecutionState { RunsOnPickupTask = true };
             try
             {
                 await using var dispatchScope = _scopeFactory.CreateAsyncScope();
@@ -696,6 +736,7 @@ internal sealed class Dispatcher
             _sendingTask = null;
             _processingTasks = [];
             _schedulerTask = null;
+            _sequencers = null;
             _eventualCleanupTask = null;
             _quiesceTask = null;
             _disposed = false;
@@ -836,11 +877,19 @@ internal sealed class Dispatcher
             // snapshot also removes the read-after-await pattern outright).
             var tasksCts = _tasksCts;
             var backgroundTasks = _GetBackgroundTasks();
+            var sequencers = _sequencers;
 
             if (tasksCts is not null)
             {
                 var cancellationTask = _quiesceTask ?? tasksCts.CancelAsync();
                 await _AbandonUnreadRetryWorkAsync().ConfigureAwait(false);
+                if (sequencers is not null)
+                {
+                    await _AbandonSequencedWorkAsync(sequencers).ConfigureAwait(false);
+
+                    // The messages that had started observe the cancelled token and finish with the other loops.
+                    backgroundTasks.Add(sequencers.Completion);
+                }
 
                 await cancellationTask.ConfigureAwait(false);
 
@@ -1158,6 +1207,118 @@ internal sealed class Dispatcher
         }
     }
 
+    /// <summary>Completes once every message handed to a sequential consumer's sequencer has finished.</summary>
+    internal Task WhenSequencedWorkIdleAsync()
+    {
+        return _sequencers?.WhenIdleAsync() ?? Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Runs one message a sequential consumer's sequencer hands over, unless an earlier message of its key is still
+    /// unfinished in the store, on this host or another: queued, running, or waiting for a delayed retry.
+    /// </summary>
+    /// <remarks>
+    /// A blocked message does not run and reserves no attempt. It goes back to the store, due when its blocker is (at
+    /// least one dispatch grace from now), and the sequencer moves on to the key's next work as if it had finished;
+    /// the retry pickup brings it back and it asks again. A message without a key never asks.
+    /// </remarks>
+    private async Task _RunSequencedAsync(SequencedWork work)
+    {
+        if (work.Message.RoutingAffinityKey is not null && await _HoldBehindSequenceAsync(work).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await _ProcessReceivedMessageAsync(new ReceivedDispatchWork(work.Message, work.Descriptor, work.RetryAttempt))
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Puts <paramref name="work"/> back when an earlier message of its key is unfinished.</summary>
+    /// <returns><see langword="true"/> when the work must not run now.</returns>
+    private async ValueTask<bool> _HoldBehindSequenceAsync(SequencedWork work)
+    {
+        var message = work.Message;
+        var grace = _options.RetryPolicy.InitialDispatchGrace;
+        TimeSpan wait;
+        try
+        {
+            if (await _storage.GetSequenceBlockAsync(message, TasksCts.Token).ConfigureAwait(false) is not { } block)
+            {
+                return false;
+            }
+
+            var untilDue = block.DueAt is { } dueAt ? dueAt - _timeProvider.GetUtcNow() : TimeSpan.Zero;
+            wait = untilDue > grace ? untilDue : grace;
+        }
+        catch (OperationCanceledException) when (TasksCts.IsCancellationRequested)
+        {
+            // Stopping: a first dispatch falls due on its own, and a claimed retry gives its claim back now.
+            if (work.RetryAttempt is { } stopping)
+            {
+                await stopping.AbandonAsync().ConfigureAwait(false);
+            }
+
+            return true;
+        }
+        catch (Exception e)
+        {
+            // Without the answer the message may run out of its key's order, so it waits one grace and asks again.
+            _logger.SequenceGateReadFailed(e, message.StorageId);
+            wait = grace;
+        }
+
+        // A message that carried the HalfOpen probe gives the slot back, so the circuit can admit another probe.
+        _circuitBreaker?.ReleaseHalfOpenProbe(CircuitBreakerKeys.For(message), message.ProbeEpoch);
+
+        if (work.RetryAttempt is not { } attempt)
+        {
+            await _PutBackFirstDispatchAsync(message, wait).ConfigureAwait(false);
+            return true;
+        }
+
+        if (_storage is not ICircuitRetryDeferralStorage deferral)
+        {
+            // Without a deferral the claim is released, and the retry pickup claims the row again on its next poll.
+            await attempt.AbandonAsync().ConfigureAwait(false);
+            return true;
+        }
+
+        if (!await _TryStartRetryAsync(attempt).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        try
+        {
+            // Not cancellable: a deferral cut off by shutdown would leave the row claimed for the whole claim timeout.
+            _ = await deferral
+                .DeferReceivedRetryAsync(new CircuitRetryDeferral(attempt.Identity, wait), CancellationToken.None)
+                .ConfigureAwait(false);
+            await attempt.CompleteAsync(leaseClearedByTransition: true).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _logger.SequenceGatePutBackFailed(e, message.StorageId);
+            await attempt.CompleteAsync(leaseClearedByTransition: false).ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
+    private async ValueTask _PutBackFirstDispatchAsync(MediumMessage message, TimeSpan wait)
+    {
+        try
+        {
+            // A refused write means another attempt touched the row since, and that attempt asks the store itself.
+            _ = await _storage.DeferReceivedDispatchAsync(message, wait, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            // The row keeps its earlier due time, so the retry pickup still takes it, and asks again.
+            _logger.SequenceGatePutBackFailed(e, message.StorageId);
+        }
+    }
+
     #endregion
 
     #region Helper Methods
@@ -1253,6 +1414,77 @@ internal sealed class Dispatcher
 
         await attempt.AbandonQueuedAsync().ConfigureAwait(false);
         return false;
+    }
+
+    /// <summary>
+    /// The sequential consumer a stored row belongs to, or <see langword="null"/> when its consumer is not sequential
+    /// or is no longer registered.
+    /// </summary>
+    private ConsumerExecutorDescriptor? _ResolveSequentialConsumer(MediumMessage message)
+    {
+        return
+            _methodMatcherCache is not null
+            && _methodMatcherCache.TryGetStoredMessageExecutor(message, out var descriptor)
+            && descriptor.Sequential
+            ? descriptor
+            : null;
+    }
+
+    private async ValueTask<bool> _EnqueueSequencedRetryAsync(
+        ConsumerKeySequencers sequencers,
+        MediumMessage message,
+        ConsumerExecutorDescriptor descriptor,
+        RetryDispatchAttempt attempt,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!attempt.TryQueue())
+        {
+            return false;
+        }
+
+        try
+        {
+            bool accepting;
+            lock (_retryDispatchGate)
+            {
+                accepting = _acceptingRetryDispatch;
+            }
+
+            if (accepting)
+            {
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(TasksCts.Token, cancellationToken);
+                if (
+                    await sequencers
+                        .EnqueueAsync(new SequencedWork(message, descriptor, attempt), linked.Token)
+                        .ConfigureAwait(false)
+                )
+                {
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            await attempt.AbandonQueuedAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        await attempt.AbandonQueuedAsync().ConfigureAwait(false);
+        return false;
+    }
+
+    /// <summary>
+    /// Stops the sequencers and releases the claims of their unstarted retries, so another host or the next start
+    /// picks those rows up without waiting out the claim. An unstarted first dispatch holds nothing: its row falls due
+    /// when the last deferral runs out.
+    /// </summary>
+    private async Task _AbandonSequencedWorkAsync(ConsumerKeySequencers sequencers)
+    {
+        var unstarted = await sequencers.StopAsync().ConfigureAwait(false);
+
+        await _ReleaseAbandonedAsync(unstarted.Select(static work => work.RetryAttempt).OfType<RetryDispatchAttempt>())
+            .ConfigureAwait(false);
     }
 
     private async ValueTask<bool> _TryStartRetryAsync(RetryDispatchAttempt attempt)

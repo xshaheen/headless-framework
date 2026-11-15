@@ -35,7 +35,7 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
 
             // Check if file exists
             var blobInfo =
-                await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
+                await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
                 ?? throw new TusStoreException($"File {fileId} does not exist");
 
             // Update metadata

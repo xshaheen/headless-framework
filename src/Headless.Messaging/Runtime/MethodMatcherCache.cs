@@ -254,6 +254,32 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         );
     }
 
+    /// <summary>
+    /// Finds the consumer of a stored received row: by its inbox identity when it has one, else by the consumer
+    /// identity its envelope carries.
+    /// </summary>
+    internal bool TryGetStoredMessageExecutor(
+        MediumMessage message,
+        [NotNullWhen(true)] out ConsumerExecutorDescriptor? descriptor
+    )
+    {
+        if (message.InboxKey is { } inboxKey)
+        {
+            return TryGetInboxExecutor(
+                inboxKey.ConsumerIdentity,
+                inboxKey.ContractIdentity,
+                inboxKey.ContractVersion,
+                inboxKey.Lane,
+                out descriptor
+            );
+        }
+
+        descriptor = null;
+
+        return message.Origin.GetConsumerIdentity() is { } consumerIdentity
+            && TryGetConsumerIdentityExecutor(message.Origin.Name, consumerIdentity, message.Lane, out descriptor);
+    }
+
     /// <summary>Discards the cached topology so the next access rebuilds it from the consumer selector.</summary>
     public void Invalidate()
     {

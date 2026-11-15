@@ -64,6 +64,9 @@ internal sealed partial class RelationalDataStorage
     private static readonly SqlColumnType _MessageIdType = SqlColumnType.KeyText(_NameMaxLength);
 
     private static readonly SqlColumnType _IdentityType = SqlColumnType.KeyText(_NameMaxLength);
+
+    // A sequence key is a lowercase hex SHA-256, so its width is fixed and its comparison ordinal.
+    private static readonly SqlColumnType _SequenceKeyType = SqlColumnType.KeyText(64);
     private static readonly SqlColumnType _StatusType = SqlColumnType.Text(_StatusMaxLength);
     private static readonly SqlColumnType _FingerprintType = SqlColumnType.Text(MessagingFailureFingerprints.MaxLength);
 
@@ -93,6 +96,8 @@ internal sealed partial class RelationalDataStorage
     private readonly string[] _releaseLeaseCondition;
     private readonly string[] _leaseSql;
     private readonly string _deferReceivedRetrySet;
+    private readonly string _deferReceivedDispatchSql;
+    private readonly string _sequenceBlockSql;
     private readonly string[] _inboxRoutabilitySet;
     private readonly string _inboxRoutabilityCondition;
     private readonly string[] _inboxRoutabilityReturning;
@@ -176,6 +181,32 @@ internal sealed partial class RelationalDataStorage
         ];
         _deferReceivedRetrySet =
             $"{_t.NextRetryAt}={_dialect.ShiftByDuration(SqlDialectTokens.Now, "RetryDelay")}, {_t.StampChange}";
+
+        // One statement, so the due time moves only while no attempt holds the row: a claim that leased it first makes
+        // this a no-op, and a claim that runs after it sees the new due time.
+        _deferReceivedDispatchSql = _dialect.Render(
+            new SqlClockedStatement(
+                $"UPDATE {_receivedTable} SET {_deferReceivedRetrySet} WHERE {_t.Id}=@Id AND NOT ({_t.LeaseState} = {_t.ActiveLease} AND {_t.LeaseExpiresAt} > {SqlDialectTokens.Now}) AND {_terminalGuard} AND {_t.Retries}=@Retries AND {_t.InlineAttempts}=@InlineAttempts;"
+            )
+        );
+        // The earliest row of the same consumer and key admitted before this one that has not finished. The explicit
+        // IS NOT NULL lets the planner use the filtered sequence index, which holds only keyed rows.
+        _sequenceBlockSql = $"""
+            SELECT 1, b.{_t.NextRetryAt}
+            FROM {_receivedTable} m
+            JOIN {_receivedTable} b
+              ON b.{_t.ConsumerIdentity} = m.{_t.ConsumerIdentity}
+             AND b.{_t.SequenceKey} = m.{_t.SequenceKey}
+             AND b.{_t.SequenceNo} < m.{_t.SequenceNo}
+            WHERE m.{_t.Id} = @Id
+              AND m.{_t.SequenceKey} IS NOT NULL
+              AND b.{_t.SequenceKey} IS NOT NULL
+              AND NOT (b.{_t.StatusName} IN ('{nameof(StatusName.Succeeded)}','{nameof(
+                StatusName.Failed
+            )}') AND b.{_t.NextRetryAt} IS NULL)
+            ORDER BY b.{_t.SequenceNo}
+            {_dialect.Limit("Limit")};
+            """;
         _inboxRoutabilitySet =
         [
             _RenderInboxRoutabilitySet(orphaned: false),

@@ -242,6 +242,111 @@ public abstract class JobsIdempotentEnqueueConformanceTests<TFixture>(TFixture f
         }
     }
 
+    public virtual async Task sweep_deletes_expired_reservations_and_keeps_live_ones()
+    {
+        var ct = AbortToken;
+        using var host = await _StartHostAsync("idem-sweep", ct);
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var manager = host.Services.GetRequiredService<IInternalJobManager>();
+            await scheduler.EnqueueAsync(
+                new CoordinatedFacadeRequest(Guid.NewGuid(), "a"),
+                _Options("sweep-expired"),
+                ct
+            );
+            var live = await scheduler.EnqueueAsync(
+                new CoordinatedFacadeRequest(Guid.NewGuid(), "b"),
+                _Options("sweep-live"),
+                ct
+            );
+            await _BackdateReservationAsync(host, "sweep-expired", ct);
+
+            // The host's own fallback sweep may get there first, so the outcome is the remaining keys, not the count.
+            await manager.DeleteExpiredIdempotencyReservationsAsync(ct);
+
+            (await _ReservationKeysAsync(host, ct)).Should().Equal("sweep-live");
+            var repeat = await scheduler.EnqueueAsync(
+                new CoordinatedFacadeRequest(Guid.NewGuid(), "b-again"),
+                _Options("sweep-live"),
+                ct
+            );
+            repeat.Should().Be(live, "the sweep left the live reservation in force");
+            (await manager.DeleteExpiredIdempotencyReservationsAsync(ct)).Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task expired_reservation_replacement_survives_a_concurrent_sweep()
+    {
+        var ct = AbortToken;
+        using var host = await _StartHostAsync("idem-sweep-race", ct);
+        try
+        {
+            var scheduler = host.Services.GetRequiredService<IJobScheduler>();
+            var manager = host.Services.GetRequiredService<IInternalJobManager>();
+            var first = await scheduler.EnqueueAsync(
+                new CoordinatedFacadeRequest(Guid.NewGuid(), "first"),
+                _Options("sweep-race"),
+                ct
+            );
+            await _BackdateReservationAsync(host, "sweep-race", ct);
+
+            // Enqueuers that replace the expired row race sweeps that delete it: whichever deletes it first, every
+            // enqueue must succeed and agree on one new job.
+            const int callers = 6;
+            var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var results = new Guid[callers];
+            var enqueues = Enumerable
+                .Range(0, callers)
+                .Select(async i =>
+                {
+                    await barrier.Task.WaitAsync(ct);
+                    results[i] = await scheduler.EnqueueAsync(
+                        new CoordinatedFacadeRequest(Guid.NewGuid(), $"race-{i}"),
+                        _Options("sweep-race"),
+                        ct
+                    );
+                });
+            var sweeps = Enumerable
+                .Range(0, 3)
+                .Select(async _ =>
+                {
+                    await barrier.Task.WaitAsync(ct);
+                    await manager.DeleteExpiredIdempotencyReservationsAsync(ct);
+                });
+            var all = enqueues.Concat(sweeps).ToArray();
+            barrier.SetResult();
+            await Task.WhenAll(all);
+
+            var distinct = results.Distinct().ToArray();
+            distinct.Should().ContainSingle("every contender observes the one replacement");
+            distinct[0].Should().NotBe(first);
+            (await _ReservationKeysAsync(host, ct)).Should().Equal("sweep-race");
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(2, "first job + exactly one replacement");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    private static async Task<string[]> _ReservationKeysAsync(IHost host, CancellationToken ct)
+    {
+        await using var db = await host
+            .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+            .CreateDbContextAsync(ct);
+
+        return await db.Set<JobIdempotencyReservationEntity>()
+            .AsNoTracking()
+            .Select(row => row.IdempotencyKey)
+            .OrderBy(key => key)
+            .ToArrayAsync(ct);
+    }
+
     private async Task _BackdateReservationAsync(IHost host, string idempotencyKey, CancellationToken ct)
     {
         await using var db = await host

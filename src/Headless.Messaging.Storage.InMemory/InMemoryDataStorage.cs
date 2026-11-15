@@ -536,6 +536,12 @@ internal sealed partial class InMemoryDataStorage(
                     current.EffectiveExpiresAt = terminalAt.Add(current.InboxRetention);
                 }
 
+                // A finished row stops holding its sequential consumer's key in the same write.
+                if (MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt))
+                {
+                    current.SequenceKey = null;
+                }
+
                 _WriteContent(current, message, contentWrite);
                 current.ExceptionInfo = message.ExceptionInfo;
                 current.FailureFingerprint = message.FailureFingerprint;
@@ -544,6 +550,72 @@ internal sealed partial class InMemoryDataStorage(
             }
 
             return ValueTask.FromResult(updated);
+        }
+    }
+
+    public ValueTask<bool> DeferReceivedDispatchAsync(
+        MediumMessage message,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_receivedUpsertLock)
+        {
+            if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            lock (current)
+            {
+                var now = timeProvider.GetUtcNow();
+                if (
+                    MessageTerminalState.IsTerminal(current.StatusName, current.NextRetryAt)
+                    || current.Retries != message.Retries
+                    || current.InlineAttempts != message.InlineAttempts
+                    || (current.Lease.State is RowLeaseState.Active && current.Lease.ExpiresAt > now)
+                )
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                current.NextRetryAt = now.Add(delay);
+                _StampChange(current);
+                return ValueTask.FromResult(true);
+            }
+        }
+    }
+
+    public ValueTask<SequenceBlock?> GetSequenceBlockAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_receivedUpsertLock)
+        {
+            if (!ReceivedMessages.TryGetValue(message.StorageId, out var row) || row.SequenceKey is not { } key)
+            {
+                return ValueTask.FromResult<SequenceBlock?>(null);
+            }
+
+            // A scan, where the SQL providers seek a filtered index: the in-memory store holds a test-sized backlog.
+            MemoryMessage? earliest = null;
+            foreach (var candidate in ReceivedMessages.Values)
+            {
+                if (
+                    candidate.SequenceNo < row.SequenceNo
+                    && (earliest is null || candidate.SequenceNo < earliest.SequenceNo)
+                    && string.Equals(candidate.SequenceKey, key, StringComparison.Ordinal)
+                    && string.Equals(candidate.ConsumerIdentity, row.ConsumerIdentity, StringComparison.Ordinal)
+                    && !MessageTerminalState.IsTerminal(candidate.StatusName, candidate.NextRetryAt)
+                )
+                {
+                    earliest = candidate;
+                }
+            }
+
+            return ValueTask.FromResult<SequenceBlock?>(
+                earliest is null ? null : new SequenceBlock(earliest.NextRetryAt)
+            );
         }
     }
 
@@ -658,6 +730,7 @@ internal sealed partial class InMemoryDataStorage(
                 InboxGeneration = new InboxGeneration(key.Generation, incarnationId),
                 LifecycleId = incarnationId,
                 InboxRetention = retention,
+                SequenceKey = message.SequenceKey,
             };
             _StampChange(stored);
 
@@ -958,6 +1031,7 @@ internal sealed partial class InMemoryDataStorage(
                 existing.Content = content;
                 existing.ExceptionInfo = exceptionInfo;
                 existing.FailureFingerprint = failureFingerprint;
+                existing.SequenceKey = null;
                 _StampChange(existing);
 
                 return ValueTask.FromResult(true);
@@ -1102,6 +1176,7 @@ internal sealed partial class InMemoryDataStorage(
                 existing.StatusName = StatusName.Scheduled;
                 existing.ExceptionInfo = null;
                 existing.FailureFingerprint = null;
+                existing.SequenceKey = message.SequenceKey;
                 _StampChange(existing);
 
                 return ValueTask.FromResult(_ToSnapshot(existing));
@@ -1191,6 +1266,7 @@ internal sealed partial class InMemoryDataStorage(
             NextRetryAt = mdMessage.NextRetryAt,
             StatusName = StatusName.Scheduled,
             Version = version,
+            SequenceKey = message.SequenceKey,
         };
         _StampChange(row);
         ReceivedMessages[mdMessage.StorageId] = row;

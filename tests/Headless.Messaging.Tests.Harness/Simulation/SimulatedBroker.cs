@@ -774,7 +774,6 @@ internal static class SimulatedTransportCore
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        MessagingRoutingAffinityMapping.RejectUnsupported(message, SimulatedBroker.ProviderName);
 
         return broker.TakePublishFault(message) switch
         {

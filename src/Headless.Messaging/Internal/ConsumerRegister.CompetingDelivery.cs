@@ -567,6 +567,7 @@ internal sealed partial class ConsumerRegister
                                 Origin = message,
                                 Content = _serializer.Serialize(message, messageBody),
                                 Lane = lane,
+                                SequenceKey = MessageSequenceKey.For(executor, message),
                             },
                             CancellationToken.None
                         )
@@ -604,6 +605,7 @@ internal sealed partial class ConsumerRegister
                                     Origin = message,
                                     Content = admittedContent,
                                     Lane = lane,
+                                    SequenceKey = MessageSequenceKey.For(executor, message),
                                 },
                                 inboxRetention: executor.InboxRetention,
                                 cancellationToken: CancellationToken.None

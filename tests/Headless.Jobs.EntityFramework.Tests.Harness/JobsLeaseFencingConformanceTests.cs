@@ -169,7 +169,7 @@ public abstract class JobsLeaseFencingConformanceTests<TFixture>(TFixture fixtur
                     onNodeDeath: NodeDeathPolicy.MarkFailed
                 );
 
-                (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(_DeadOwner, ct)).Should().Be(2);
+                (await persistence.ReleaseDeadNodeTimeJobResourcesAsync(_DeadOwner, ct)).Total.Should().Be(2);
 
                 await _AssertTimeJobCompletionRefusedAsync(persistence, retried, JobStatus.Idle, ct);
                 await _AssertTimeJobCompletionRefusedAsync(persistence, failed, JobStatus.Failed, ct);
@@ -204,7 +204,7 @@ public abstract class JobsLeaseFencingConformanceTests<TFixture>(TFixture fixtur
                     onNodeDeath: NodeDeathPolicy.MarkFailed
                 );
 
-                (await persistence.ReclaimStalledTimeJobsAsync(ct)).Should().Be(2);
+                (await persistence.ReclaimStalledTimeJobsAsync(ct)).Total.Should().Be(2);
 
                 await _AssertTimeJobCompletionRefusedAsync(persistence, retried, JobStatus.Idle, ct);
                 await _AssertTimeJobCompletionRefusedAsync(persistence, failed, JobStatus.Failed, ct);
@@ -223,7 +223,7 @@ public abstract class JobsLeaseFencingConformanceTests<TFixture>(TFixture fixtur
             {
                 var (retried, failed) = await _SeedLapsedOccurrencesAsync("fencing-dead-cron", ct);
 
-                (await persistence.ReleaseDeadNodeOccurrenceResourcesAsync(_DeadOwner, ct)).Should().Be(2);
+                (await persistence.ReleaseDeadNodeOccurrenceResourcesAsync(_DeadOwner, ct)).Total.Should().Be(2);
 
                 await _AssertOccurrenceCompletionRefusedAsync(persistence, retried, JobStatus.Idle, ct);
                 await _AssertOccurrenceCompletionRefusedAsync(persistence, failed, JobStatus.Failed, ct);
@@ -242,7 +242,7 @@ public abstract class JobsLeaseFencingConformanceTests<TFixture>(TFixture fixtur
             {
                 var (retried, failed) = await _SeedLapsedOccurrencesAsync("fencing-stalled-cron", ct);
 
-                (await persistence.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(2);
+                (await persistence.ReclaimStalledCronJobOccurrencesAsync(ct)).Total.Should().Be(2);
 
                 await _AssertOccurrenceCompletionRefusedAsync(persistence, retried, JobStatus.Idle, ct);
                 await _AssertOccurrenceCompletionRefusedAsync(persistence, failed, JobStatus.Failed, ct);

@@ -138,7 +138,12 @@ public sealed partial class TusS3Store
         _timeProvider = timeProvider ?? TimeProvider.System;
         _unscopedKeys = new TusS3Keys(options.NormalizedPrefix);
         _tenantScope = tenantScope;
-        _stateStore = new TusS3StateStore(s3, options, new TusS3RequestMemo(httpContextAccessor), _logger);
+        _stateStore = new TusS3StateStore(
+            s3,
+            options,
+            new TusRequestMemo<TusS3LoadedUpload>(httpContextAccessor),
+            _logger
+        );
         _appendServices = new TusS3AppendServices(
             s3,
             options,

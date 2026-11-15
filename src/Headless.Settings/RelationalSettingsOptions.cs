@@ -43,5 +43,6 @@ internal sealed class RelationalSettingsStorageOptionsValidator : AbstractValida
             .IsValidIdentifierFor(provider)
             .FitsDerivedPostgreSqlNames(SettingsStorageNames.DefinitionsIndexes)
             .When(x => x.SettingDefinitionsTableName is not null);
+        this.AddColumnLengthRules();
     }
 }

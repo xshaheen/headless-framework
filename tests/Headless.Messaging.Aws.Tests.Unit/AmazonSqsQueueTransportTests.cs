@@ -145,8 +145,47 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         restored.Should().BeEquivalentTo(headers);
     }
 
+    [Fact]
+    public async Task should_carry_affinity_in_the_header_bag_without_a_message_group_on_a_standard_queue()
+    {
+        await using var transport = new AmazonSqsQueueTransport(
+            Substitute.For<ILogger<AmazonSqsQueueTransport>>(),
+            _CreateOptions()
+        );
+        var client = Substitute.For<IAmazonSQS>();
+        _SetSqsClient(transport, client);
+        _SetQueueUrl(transport, "queue-orders", "https://sqs.local/orders");
+        SendMessageRequest? sent = null;
+        client
+            .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                sent = call.Arg<SendMessageRequest>();
+                return new SendMessageResponse();
+            });
+
+        // A key a FIFO message group would refuse: a standard queue has no group, so its limits do not apply.
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "message-1",
+            [Headers.MessageName] = "orders",
+            [Headers.RoutingAffinityKey] = "order 42",
+        };
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "payload"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeTrue();
+        sent.Should().NotBeNull();
+        sent!.MessageGroupId.Should().BeNull();
+        JsonSerializer
+            .Deserialize<Dictionary<string, string?>>(sent.MessageAttributes["headless-aws-headers-v1"].StringValue)![
+                Headers.RoutingAffinityKey
+            ]
+            .Should()
+            .Be("order 42");
+    }
+
     [Theory]
-    [InlineData("orders", "order-42", null)]
     [InlineData("orders.fifo", "order 42", null)]
     [InlineData("orders.fifo", "order-42", "other")]
     public async Task should_reject_invalid_affinity_before_aws_effects(string destination, string key, string? raw)

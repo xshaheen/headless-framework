@@ -211,6 +211,28 @@ public sealed class LoggerInstrumentationTests : TestBase
         activity.GetTagItem("exception.message").Should().Be("boom");
     }
 
+    [Fact]
+    public void log_job_failed_bounds_a_huge_exception_message_on_the_span()
+    {
+        // given
+        var instrumentation = new LoggerInstrumentation(
+            Substitute.For<ILogger<LoggerInstrumentation>>(),
+            new StubOwnerIdentity()
+        );
+        var activities = new ConcurrentBag<Activity>();
+        using var listener = _StartListener(activities.Add);
+        var exception = new InvalidOperationException(new string('x', 1024 * 1024));
+
+        // when
+        instrumentation.LogJobFailed(Guid.NewGuid(), "SendEmail", exception, retryCount: 0);
+
+        // then
+        var activity = activities.Should().ContainSingle(a => a.OperationName == "job.fail").Subject;
+        var message = activity.GetTagItem("exception.message").Should().BeOfType<string>().Subject;
+        message.Should().HaveLength(JobExceptionText.TagMaxLength).And.EndWith(JobExceptionText.TruncationMarker);
+        activity.StatusDescription.Should().HaveLength(JobExceptionText.TagMaxLength);
+    }
+
     private static ActivityListener _StartListener(Action<Activity>? onStopped = null)
     {
         var listener = new ActivityListener

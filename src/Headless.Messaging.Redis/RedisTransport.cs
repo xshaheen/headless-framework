@@ -27,7 +27,6 @@ internal sealed class RedisTransport(
             return OperateResult.Failed(new ObjectDisposedException(nameof(RedisTransport)));
         }
 
-        MessagingRoutingAffinityMapping.RejectUnsupported(message, "Redis");
         cancellationToken.ThrowIfCancellationRequested();
         try
         {

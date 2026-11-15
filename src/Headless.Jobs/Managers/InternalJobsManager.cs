@@ -1913,61 +1913,59 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    public async Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default)
+    public async Task<JobReclaimCounts> ReleaseDeadNodeResources(
+        string instanceIdentifier,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
+        List<Exception> failures = [];
+        var counts = await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, failures, cancellationToken)
+            .ConfigureAwait(false);
 
         // The dead-node sweep terminalizes parents in bulk (MarkFailed/Skip) and reports only counts, so a
         // per-parent reconcile cannot reach them — reconcile every terminal parent's timed children set-based here.
-        await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+        await _ReconcileAfterReclaimAsync(failures, cancellationToken).ConfigureAwait(false);
+
+        return _CountsOrThrow(counts, failures);
     }
 
-    public async Task ReleaseDeadNodeResources(
+    public async Task<JobReclaimCounts> ReleaseDeadNodeResources(
         IReadOnlyCollection<string> instanceIdentifiers,
         CancellationToken cancellationToken = default
     )
     {
-        List<Exception>? failures = null;
+        List<Exception> failures = [];
+        var counts = default(JobReclaimCounts);
 
+        // Every owner is attempted even when an earlier one fails, and each keeps the rows it moved.
         foreach (var instanceIdentifier in instanceIdentifiers)
         {
-            try
-            {
-                await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception)
-            {
-                (failures ??= []).Add(exception);
-            }
+            counts += await _ReleaseDeadNodeResourcesAsync(instanceIdentifier, failures, cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        try
-        {
-            // All owners share one set-based terminal-child reconciliation. Running it after every owner multiplies
-            // an unbounded global scan during the exact fleet disruption this batch path is meant to recover from.
-            await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            (failures ??= []).Add(exception);
-        }
+        // All owners share one set-based terminal-child reconciliation. Running it after every owner multiplies
+        // an unbounded global scan during the exact fleet disruption this batch path is meant to recover from.
+        await _ReconcileAfterReclaimAsync(failures, cancellationToken).ConfigureAwait(false);
 
-        if (failures is not null)
-        {
-            throw new AggregateException("One or more dead-owner resource releases failed.", failures);
-        }
+        return _CountsOrThrow(counts, failures);
     }
 
-    private async Task _ReleaseDeadNodeResourcesAsync(string instanceIdentifier, CancellationToken cancellationToken)
+    private Task<JobReclaimCounts> _ReleaseDeadNodeResourcesAsync(
+        string instanceIdentifier,
+        List<Exception> failures,
+        CancellationToken cancellationToken
+    )
     {
-        var cronOccurrence = persistenceProvider.ReleaseDeadNodeOccurrenceResourcesAsync(
-            instanceIdentifier,
-            cancellationToken
+        return _SumSweepsAsync(
+            failures,
+            _Sweep(() =>
+                persistenceProvider.ReleaseDeadNodeOccurrenceResourcesAsync(instanceIdentifier, cancellationToken)
+            ),
+            _Sweep(() =>
+                persistenceProvider.ReleaseDeadNodeTimeJobResourcesAsync(instanceIdentifier, cancellationToken)
+            )
         );
-
-        var timeJobs = persistenceProvider.ReleaseDeadNodeTimeJobResourcesAsync(instanceIdentifier, cancellationToken);
-
-        await Task.WhenAll(cronOccurrence, timeJobs).ConfigureAwait(false);
     }
 
     public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
@@ -1975,21 +1973,82 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         return persistenceProvider.GetActiveOwnerIdsAsync(cancellationToken);
     }
 
-    public async Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default)
+    public Task<int> DeleteExpiredIdempotencyReservationsAsync(CancellationToken cancellationToken = default)
     {
-        var timeJobsTask = persistenceProvider.ReclaimStalledTimeJobsAsync(cancellationToken);
-        var cronOccurrencesTask = persistenceProvider.ReclaimStalledCronJobOccurrencesAsync(cancellationToken);
+        return persistenceProvider.DeleteExpiredIdempotencyReservationsAsync(cancellationToken);
+    }
 
-        // WhenAll of two Task<int> yields the results array in one await — concurrent, no double-await, and a double
-        // fault surfaces as AggregateException rather than collapsing to the first task's exception.
-        var results = await Task.WhenAll(timeJobsTask, cronOccurrencesTask).ConfigureAwait(false);
+    public async Task<JobReclaimCounts> ReclaimStalledResources(CancellationToken cancellationToken = default)
+    {
+        List<Exception> failures = [];
+        var counts = await _SumSweepsAsync(
+                failures,
+                _Sweep(() => persistenceProvider.ReclaimStalledTimeJobsAsync(cancellationToken)),
+                _Sweep(() => persistenceProvider.ReclaimStalledCronJobOccurrencesAsync(cancellationToken))
+            )
+            .ConfigureAwait(false);
 
         // The stalled-lease sweep terminalizes parents in bulk (reporting only counts), so reconcile every
         // terminal parent's timed children set-based right after — release matching (re-stamp past-due) / skip
         // non-matching + subtree — mirroring the dead-node path.
-        await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+        await _ReconcileAfterReclaimAsync(failures, cancellationToken).ConfigureAwait(false);
 
-        return results[0] + results[1];
+        return _CountsOrThrow(counts, failures);
+    }
+
+    // Starts one store sweep, turning a synchronous throw into a faulted task, so both sweeps start and are awaited.
+    private static Task<JobReclaimCounts> _Sweep(Func<Task<JobReclaimCounts>> sweep)
+    {
+        try
+        {
+            return sweep();
+        }
+        catch (Exception exception)
+        {
+            return Task.FromException<JobReclaimCounts>(exception);
+        }
+    }
+
+    // Both stores sweep at once. A sweep that faults adds its error and moved nothing that its transaction kept, so the
+    // other sweep's rows still count. Cancellation propagates, as it did before the counts were kept.
+    private static async Task<JobReclaimCounts> _SumSweepsAsync(
+        List<Exception> failures,
+        Task<JobReclaimCounts> first,
+        Task<JobReclaimCounts> second
+    )
+    {
+        var counts = default(JobReclaimCounts);
+        foreach (var sweep in (Task<JobReclaimCounts>[])[first, second])
+        {
+            try
+            {
+                counts += await sweep.ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                failures.Add(exception);
+            }
+        }
+
+        return counts;
+    }
+
+    // The reconcile follows rows that already moved, so its failure joins the others instead of hiding their counts.
+    private async Task _ReconcileAfterReclaimAsync(List<Exception> failures, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _ReconcileAllTerminalTimedChildrenAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            failures.Add(exception);
+        }
+    }
+
+    private static JobReclaimCounts _CountsOrThrow(JobReclaimCounts counts, List<Exception> failures)
+    {
+        return failures.Count == 0 ? counts : throw new JobReclaimException(counts, failures);
     }
 
     public async Task ApplyParentTerminalRunConditionsAsync(

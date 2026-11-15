@@ -152,23 +152,7 @@ internal sealed class SubscribeExecutor(
 
         if (descriptor == null)
         {
-            var selector = _methodMatcherCache;
-            var found = message.InboxKey is { } inboxKey
-                ? selector.TryGetInboxExecutor(
-                    inboxKey.ConsumerIdentity,
-                    inboxKey.ContractIdentity,
-                    inboxKey.ContractVersion,
-                    inboxKey.Lane,
-                    out descriptor
-                )
-                : message.Origin.GetConsumerIdentity() is { } consumerIdentity
-                    && selector.TryGetConsumerIdentityExecutor(
-                        message.Origin.Name,
-                        consumerIdentity,
-                        message.Lane,
-                        out descriptor
-                    );
-            if (!found)
+            if (!_methodMatcherCache.TryGetStoredMessageExecutor(message, out descriptor))
             {
                 var safeName = LogSanitizer.Sanitize(message.Origin.Name);
                 var safeConsumer = LogSanitizer.Sanitize(message.Origin.GetConsumerIdentity());
@@ -357,14 +341,36 @@ internal sealed class SubscribeExecutor(
         // so a throttled delivery holds neither a database connection nor lease time while it waits. Each attempt, a
         // retry included, runs the handler again, so each one takes a permit. A message already past its request or
         // delivery deadline will not run the handler, so it skips the wait and leaves the permit to live work; the
-        // checks after the reservation below end it.
-        if (
+        // checks after the reservation below end it. A retry pickup that cannot wait takes the permit before it
+        // dispatches the row, and the first attempt runs on that one.
+        if (message.HoldsRateLimitPermit)
+        {
+            message.HoldsRateLimitPermit = false;
+        }
+        else if (
             _rateLimiters is not null
             && !RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, timeProvider.GetUtcNow())
             && !DeliverByEnvelope.IsExpired(message.Origin.Headers, timeProvider.GetUtcNow())
         )
         {
-            await _rateLimiters.WaitAsync(descriptor, cancellationToken).ConfigureAwait(false);
+            // An immediate retry of a row the pickup dispatched lands here with the pickup's permit already spent.
+            if (
+                executionState is { RunsOnPickupTask: true }
+                && descriptor.RateLimit is { } rateLimit
+                && dataStorage is ICircuitRetryDeferralStorage deferralStorage
+                && message.Lease.State is RowLeaseState.Active
+            )
+            {
+                if (!_rateLimiters.TryAcquire(descriptor))
+                {
+                    return await _DeferForRateLimitAsync(message, rateLimit, deferralStorage, executionState)
+                        .ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                await _rateLimiters.WaitAsync(descriptor, message.StorageId, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         if (needsLease)
@@ -724,6 +730,44 @@ internal sealed class SubscribeExecutor(
             var circuitKey = CircuitBreakerKeys.For(message);
             await circuitBreakerStateManager.ReportSuccessAsync(circuitKey, message.ProbeEpoch).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Ends this dispatch without running the handler and puts the row back unleased, due again once the rate adds
+    /// permits. The attempt is not reserved yet, so the row keeps its retry budget and a later pickup goes on with the
+    /// immediate retries it has left.
+    /// </summary>
+    private async Task<MessagingRetryAttempt> _DeferForRateLimitAsync(
+        MediumMessage message,
+        ConsumerRateLimit rateLimit,
+        ICircuitRetryDeferralStorage deferralStorage,
+        RetryExecutionState executionState
+    )
+    {
+        logger.RetryAttemptDeferredForRateLimit(message.StorageId);
+        _ReleaseHalfOpenProbe(message);
+
+        var identity = new MessageLeaseIdentity(
+            message.StorageId,
+            message.Lease.Generation,
+            message.Lane,
+            message.InboxAttemptFence
+        );
+        var delay = ConsumerRateLimiters.DeferralFor(rateLimit, _retryPolicy.InitialDispatchGrace);
+
+        // Not cancellable: a deferral cut off by shutdown would leave the row leased for the whole dispatch timeout.
+        var deferred = await deferralStorage
+            .DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, delay), CancellationToken.None)
+            .ConfigureAwait(false);
+
+        // A refused deferral means the lease is no longer this attempt's, so there is nothing left to release either.
+        executionState.RecordLeaseTransition(affected: true, keepLease: false);
+        if (deferred)
+        {
+            _stateObservers.Notify(MessageType.Subscribe, message);
+        }
+
+        return MessagingRetryAttempt.Completed(OperateResult.Success);
     }
 
     private async Task<bool> _HandleRetryAsync(

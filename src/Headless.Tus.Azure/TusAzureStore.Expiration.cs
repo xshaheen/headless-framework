@@ -47,8 +47,8 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             // an error response.
             for (var attempt = 1; ; attempt++)
             {
-                var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None)
-                    .ConfigureAwait(false);
+                // A rejected write drops what the request kept, so a retry reads the blob's current metadata.
+                var azureFile = await _LoadFileAsync(blobClient, fileId, CancellationToken.None).ConfigureAwait(false);
 
                 if (azureFile == null)
                 {
@@ -101,7 +101,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
-        var azureFile = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var azureFile = await _LoadFileAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         if (azureFile is null)
         {

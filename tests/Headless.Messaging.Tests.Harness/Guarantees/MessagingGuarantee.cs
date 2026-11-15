@@ -455,6 +455,30 @@ public static class MessagingGuarantees
             realSystem: true,
             "On a broker that orders by key, messages that share a routing affinity key arrive in publish order."
         ),
+        _Scenarios(
+            "MSG-LANE-04",
+            GuaranteeArea.Lanes,
+            "A sequential consumer runs the messages that share a routing affinity key one at a time, in the order one host admitted them, while other keys run beside them.",
+            TransportConformanceScenario.KeySequencing
+        ),
+        _Bound(
+            "MSG-LANE-05",
+            GuaranteeArea.Lanes,
+            realSystem: false,
+            "A row that waits behind its key on a sequential consumer is held from retry pickup until it runs."
+        ),
+        _Bound(
+            "MSG-LANE-06",
+            GuaranteeArea.Lanes,
+            realSystem: false,
+            "A message waiting for a delayed retry holds its key until it finishes: later messages of the key wait, other keys run, and the key moves on in admission order once the message succeeds or fails for good."
+        ),
+        _Bound(
+            "MSG-LANE-07",
+            GuaranteeArea.Lanes,
+            realSystem: false,
+            "Hosts that share one store never start a sequential consumer's message while a message of its key admitted earlier is unfinished on another host."
+        ),
         // Envelope
         _Bound(
             "MSG-ENV-01",

@@ -32,7 +32,11 @@ internal sealed class AmazonSnsBusTransport(
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
-    public BrokerAddress BrokerAddress => new("aws.sns", _GetBrokerEndpoint());
+    // The options are a singleton snapshot, so the endpoint never changes; resolve it once instead of on every send.
+    // Built on first use so constructing the transport does not read the options.
+    private string? _brokerEndpoint;
+
+    public BrokerAddress BrokerAddress => new("aws.sns", _brokerEndpoint ??= _GetBrokerEndpoint());
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -43,12 +47,9 @@ internal sealed class AmazonSnsBusTransport(
 
         try
         {
-            if (!message.Name.IsAwsFifoName())
-            {
-                MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
-            }
-
-            var affinityKey = AwsRoutingAffinity.Mapping.ResolveKey(message);
+            // Only a FIFO destination has a message group to map the key to; a standard one carries the key in the
+            // header bag, where the group's length and character limits do not apply.
+            var affinityKey = message.Name.IsAwsFifoName() ? AwsRoutingAffinity.Mapping.ResolveKey(message) : null;
             await _FetchExistingTopicArns(cancellationToken).ConfigureAwait(false);
 
             var normalizeForAws = AwsPhysicalAddress.BusTopic(message.Name);

@@ -114,7 +114,7 @@ public sealed class SimulatedConsumerClient : IConsumerClient
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; private set; }
 
-    internal ConsumerClientRequest Request { get; }
+    public ConsumerClientRequest Request { get; }
 
     public void AttachCallbacks(Func<TransportMessage, object?, Task>? onMessage, Action<LogMessageEventArgs>? onLog)
     {

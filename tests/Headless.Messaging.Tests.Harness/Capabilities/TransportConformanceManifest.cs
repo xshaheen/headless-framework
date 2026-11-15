@@ -9,7 +9,7 @@ namespace Tests.Capabilities;
 [PublicAPI]
 public enum TransportConformanceScenario
 {
-    RoutingAffinityMappingOrRejection,
+    RoutingAffinityMappingOrHeader,
     QueueRoundTrip,
     BusRoundTrip,
     HeaderRoundTrip,
@@ -40,6 +40,7 @@ public enum TransportConformanceScenario
     StandardHeaderRoundTrip,
     HandlerConcurrencyCap,
     PerKeyOrdering,
+    KeySequencing,
     BodySizeLimit,
     MessageExpiry,
 }
@@ -256,7 +257,7 @@ public static class TransportConformanceManifest
 
     private static readonly TransportConformanceScenario[] _MandatoryBaselineScenarios =
     [
-        TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+        TransportConformanceScenario.RoutingAffinityMappingOrHeader,
         TransportConformanceScenario.QueueRoundTrip,
         TransportConformanceScenario.HeaderRoundTrip,
         TransportConformanceScenario.CommitSettlement,
@@ -271,10 +272,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                    ConformanceSupport.Supported
-                )
+                .WithScenario(TransportConformanceScenario.RoutingAffinityMappingOrHeader, ConformanceSupport.Supported)
                 .WithRuntimeCapabilities(
                     "NATS JetStream",
                     supportsBus: true,
@@ -318,9 +316,10 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.PerKeyOrdering,
                     ConformanceSupport.NotApplicable(
-                        "NATS rejects a routing affinity key at publish, so it orders no messages by key."
+                        "NATS carries a routing affinity key as a header and does not order its deliveries by it; KeySequencing covers the order a sequential consumer keeps."
                     )
                 )
+                .WithScenario(TransportConformanceScenario.KeySequencing, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.MessageExpiry, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
@@ -329,10 +328,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                    ConformanceSupport.Supported
-                )
+                .WithScenario(TransportConformanceScenario.RoutingAffinityMappingOrHeader, ConformanceSupport.Supported)
                 .WithRuntimeCapabilities(
                     "RabbitMQ",
                     supportsBus: true,
@@ -371,9 +367,10 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.PerKeyOrdering,
                     ConformanceSupport.NotApplicable(
-                        "RabbitMQ rejects a routing affinity key at publish, so it orders no messages by key."
+                        "RabbitMQ carries a routing affinity key as a header and does not order its deliveries by it; KeySequencing covers the order a sequential consumer keeps."
                     )
                 )
+                .WithScenario(TransportConformanceScenario.KeySequencing, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.MessageExpiry, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
@@ -382,10 +379,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                    ConformanceSupport.Supported
-                )
+                .WithScenario(TransportConformanceScenario.RoutingAffinityMappingOrHeader, ConformanceSupport.Supported)
                 .WithRuntimeCapabilities(
                     "Amazon SQS",
                     supportsBus: true,
@@ -433,6 +427,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.PerKeyOrdering, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.KeySequencing, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.MessageExpiry,
@@ -446,10 +441,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                    ConformanceSupport.Supported
-                )
+                .WithScenario(TransportConformanceScenario.RoutingAffinityMappingOrHeader, ConformanceSupport.Supported)
                 .WithRuntimeCapabilities(
                     "Kafka",
                     supportsBus: false,
@@ -521,6 +513,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.PerKeyOrdering, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.KeySequencing, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BodySizeLimit, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.MessageExpiry,
@@ -532,10 +525,7 @@ public static class TransportConformanceManifest
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                    ConformanceSupport.Supported
-                )
+                .WithScenario(TransportConformanceScenario.RoutingAffinityMappingOrHeader, ConformanceSupport.Supported)
                 .WithRuntimeCapabilities(
                     "Azure Service Bus",
                     supportsBus: true,
@@ -605,10 +595,7 @@ public static class TransportConformanceManifest
                         "The in-memory transport carries only messages Headless publishes; no foreign producer can reach it."
                     )
                 )
-                .WithScenario(
-                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                    ConformanceSupport.Supported
-                )
+                .WithScenario(TransportConformanceScenario.RoutingAffinityMappingOrHeader, ConformanceSupport.Supported)
                 .WithRuntimeCapabilities(
                     "InMemory",
                     supportsBus: true,
@@ -647,9 +634,10 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.PerKeyOrdering,
                     ConformanceSupport.NotApplicable(
-                        "InMemory rejects a routing affinity key at publish, so it orders no messages by key."
+                        "InMemory carries a routing affinity key as a header and does not order its deliveries by it; KeySequencing covers the order a sequential consumer keeps."
                     )
                 )
+                .WithScenario(TransportConformanceScenario.KeySequencing, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.BodySizeLimit,
                     ConformanceSupport.NotApplicable("InMemory keeps bodies in process memory and has no size limit.")
@@ -663,10 +651,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.PublishDuringOutage, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RawPayloadConsumption, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.RoutingAffinityMappingOrRejection,
-                    ConformanceSupport.Supported
-                )
+                .WithScenario(TransportConformanceScenario.RoutingAffinityMappingOrHeader, ConformanceSupport.Supported)
                 .WithRuntimeCapabilities(
                     "Redis",
                     supportsBus: true,
@@ -716,9 +701,10 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.PerKeyOrdering,
                     ConformanceSupport.NotApplicable(
-                        "Redis rejects a routing affinity key at publish, so it orders no messages by key."
+                        "Redis carries a routing affinity key as a header and does not order its deliveries by it; KeySequencing covers the order a sequential consumer keeps."
                     )
                 )
+                .WithScenario(TransportConformanceScenario.KeySequencing, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.BodySizeLimit,
                     ConformanceSupport.NotApplicable(
@@ -853,7 +839,7 @@ public static class TransportConformanceManifest
     {
         TransportConformanceScenario[] supported =
         [
-            TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+            TransportConformanceScenario.RoutingAffinityMappingOrHeader,
             TransportConformanceScenario.QueueRoundTrip,
             TransportConformanceScenario.BusRoundTrip,
             TransportConformanceScenario.HeaderRoundTrip,
@@ -929,9 +915,10 @@ public static class TransportConformanceManifest
             .WithScenario(
                 TransportConformanceScenario.PerKeyOrdering,
                 ConformanceSupport.NotApplicable(
-                    "The simulator rejects a routing affinity key at publish, so it orders no messages by key."
+                    "The simulator carries a routing affinity key as a header and does not order its deliveries by it; KeySequencing covers the order a sequential consumer keeps."
                 )
             )
+            .WithScenario(TransportConformanceScenario.KeySequencing, ConformanceSupport.Supported)
             .WithScenario(
                 TransportConformanceScenario.BodySizeLimit,
                 ConformanceSupport.NotApplicable("The simulator keeps bodies in memory and has no size limit.")
@@ -967,7 +954,7 @@ public static class TransportConformanceManifest
 
         TransportConformanceScenario[] provisioned =
         [
-            TransportConformanceScenario.RoutingAffinityMappingOrRejection,
+            TransportConformanceScenario.RoutingAffinityMappingOrHeader,
             TransportConformanceScenario.BusConsumerIdentityFanOut,
             TransportConformanceScenario.BusReplicaCompetition,
             TransportConformanceScenario.QueueOwnership,

@@ -5,6 +5,7 @@ using Headless.EntityFramework;
 using Headless.Features;
 using Headless.Primitives;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Definitions;
 
@@ -16,7 +17,7 @@ public sealed class FeatureDefinitionSerializerTests : TestBase
     {
         var guidGenerator = Substitute.For<IGuidGenerator>();
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
-        _sut = new FeatureDefinitionSerializer(guidGenerator);
+        _sut = new FeatureDefinitionSerializer(guidGenerator, Options.Create(new FeaturesStorageOptions()));
     }
 
     [Fact]

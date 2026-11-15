@@ -26,7 +26,8 @@ public sealed class SimulationStallException(string message) : Exception(message
 /// </para>
 /// <para>
 /// Hosts started on one broker share its messages and its clock, as processes share a broker. Each host keeps its own
-/// store, faulted by its own <see cref="Faults"/>; a host that created its broker shares one script with it.
+/// store, faulted by its own <see cref="Faults"/>, unless <see cref="StartBesideAsync"/> started it on another host's
+/// store; a host that created its broker shares one script with it.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -120,6 +121,37 @@ public sealed class SimulationHost : IAsyncDisposable
         );
     }
 
+    /// <summary>
+    /// Starts a host beside <paramref name="running"/>, as a second process of the same application: on the same broker
+    /// and the same store with every row it holds, with its own pipeline and its own fault plan.
+    /// </summary>
+    /// <remarks>
+    /// Dispose this host before <paramref name="running"/>: the running host owns the store and disposes it with itself.
+    /// </remarks>
+    /// <param name="running">The host whose broker and store the new host shares.</param>
+    /// <param name="configure">Registers consumers and sets messaging options, as the second process does.</param>
+    /// <param name="configureServices">Adds the services the consumers need.</param>
+    /// <param name="cancellationToken">Cancels startup.</param>
+    public static Task<SimulationHost> StartBesideAsync(
+        SimulationHost running,
+        Action<MessagingSetupBuilder> configure,
+        Action<IServiceCollection>? configureServices = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(running);
+        Argument.IsNotNull(configure);
+
+        return _StartAsync(
+            configure,
+            configureServices,
+            running.Broker,
+            new FaultScript(),
+            running.Storage.Inner,
+            cancellationToken
+        );
+    }
+
     private static async Task<SimulationHost> _StartAsync(
         Action<MessagingSetupBuilder> configure,
         Action<IServiceCollection>? configureServices,
@@ -147,7 +179,8 @@ public sealed class SimulationHost : IAsyncDisposable
 
         if (survivingStore is not null)
         {
-            // Registered as an instance, so the new provider decorates it and never disposes the rows it outlives.
+            // Registered as an instance, so the new provider decorates it and never disposes the rows another host
+            // shares or that this host outlives.
             services.AddSingleton(survivingStore);
         }
 

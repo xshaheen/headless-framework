@@ -21,7 +21,7 @@ public sealed partial class TusAzureStore : ITusReadableStore
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
         var blobClient = _GetBlobClient(fileId);
-        var tusFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
+        var tusFile = await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
         return tusFile == null ? null : new TusAzureFileWrapper(tusFile, blobClient, _logger);
     }

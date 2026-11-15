@@ -26,21 +26,24 @@ internal static class SqlServerSettingsSchemaContribution
         var definitionsName = tables.DefinitionsName;
         var valuesTable = tables.Values;
         var definitionsTable = tables.Definitions;
+        var lengths = tables.Options;
         var valuesObject = $"{schema}.{valuesName}";
         var definitionsObject = $"{schema}.{definitionsName}";
 
-        var tablesSql = $"""
+        var tablesSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
             IF OBJECT_ID(N'{definitionsObject}', N'U') IS NULL
                 CREATE TABLE {definitionsTable} (
                     [Id] uniqueidentifier NOT NULL,
-                    [Name] nvarchar({SettingDefinitionRecordConstants.NameMaxLength}) NOT NULL,
-                    [DisplayName] nvarchar({SettingDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
-                    [Description] nvarchar({SettingDefinitionRecordConstants.DescriptionMaxLength}) NULL,
-                    [DefaultValue] nvarchar({SettingDefinitionRecordConstants.DefaultValueMaxLength}) NULL,
+                    [Name] nvarchar({lengths.SettingDefinitionsNameMaxLength}) NOT NULL,
+                    [DisplayName] nvarchar({lengths.SettingDefinitionsDisplayNameMaxLength}) NOT NULL,
+                    [Description] nvarchar({lengths.SettingDefinitionsDescriptionMaxLength}) NULL,
+                    [DefaultValue] nvarchar({lengths.SettingDefinitionsDefaultValueMaxLength}) NULL,
                     [IsVisibleToClients] bit NOT NULL,
                     [IsInherited] bit NOT NULL,
                     [IsEncrypted] bit NOT NULL,
-                    [Providers] nvarchar({SettingDefinitionRecordConstants.ProvidersMaxLength}) NULL,
+                    [Providers] nvarchar({lengths.SettingDefinitionsProvidersMaxLength}) NULL,
                     [ExtraProperties] nvarchar(max) NOT NULL,
                     CONSTRAINT [PK_{definitionsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
@@ -48,15 +51,16 @@ internal static class SqlServerSettingsSchemaContribution
             IF OBJECT_ID(N'{valuesObject}', N'U') IS NULL
                 CREATE TABLE {valuesTable} (
                     [Id] uniqueidentifier NOT NULL,
-                    [Name] nvarchar({SettingValueRecordConstants.NameMaxLength}) NOT NULL,
-                    [Value] nvarchar({SettingValueRecordConstants.ValueMaxLength}) NOT NULL,
-                    [ProviderName] nvarchar({SettingValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
-                    [ProviderKey] nvarchar({SettingValueRecordConstants.ProviderKeyMaxLength}) NULL,
+                    [Name] nvarchar({lengths.SettingValuesNameMaxLength}) NOT NULL,
+                    [Value] nvarchar({lengths.SettingValuesValueMaxLength}) NOT NULL,
+                    [ProviderName] nvarchar({lengths.SettingValuesProviderNameMaxLength}) NOT NULL,
+                    [ProviderKey] nvarchar({lengths.SettingValuesProviderKeyMaxLength}) NULL,
                     [CreatedAt] datetimeoffset NOT NULL,
                     [UpdatedAt] datetimeoffset NULL,
                     CONSTRAINT [PK_{valuesName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
-            """;
+            """
+        );
 
         // Mirror the PG sibling: two filtered unique indexes split on (ProviderKey IS NOT NULL) and
         // (ProviderKey IS NULL). SqlServer's standard NULL-distinct semantics let duplicate (Name, ProviderName)

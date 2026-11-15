@@ -211,5 +211,14 @@ internal sealed class AzureServiceBusMessagingOptionsValidator : AbstractValidat
         RuleFor(x => x.TopicPath).NotEmpty();
         RuleFor(x => x.PrefetchCount).GreaterThanOrEqualTo(0);
         RuleFor(x => x.SubscriptionMaxDeliveryCount).GreaterThanOrEqualTo(1);
+
+        // A send picks its producer by message name, so a second producer for one name would leave the topic ambiguous.
+        RuleFor(x => x.CustomProducers)
+            .Must(producers =>
+            {
+                var names = new HashSet<string>(StringComparer.Ordinal);
+                return producers.All(producer => names.Add(producer.MessageTypeName));
+            })
+            .WithMessage("Each message type can have only one custom producer.");
     }
 }

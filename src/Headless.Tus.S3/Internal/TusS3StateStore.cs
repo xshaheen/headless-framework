@@ -12,7 +12,12 @@ namespace Headless.Tus.Internal;
 /// conditional on the ETag the request holds. Every call names the keys of the tenant the upload belongs to, so one
 /// instance serves every tenant.
 /// </summary>
-internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, TusS3RequestMemo memo, ILogger logger)
+internal sealed class TusS3StateStore(
+    IAmazonS3 s3,
+    TusS3StoreOptions options,
+    TusRequestMemo<TusS3LoadedUpload> memo,
+    ILogger logger
+)
 {
     private const string _JsonContentType = "application/json";
 
@@ -22,7 +27,7 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
     /// </summary>
     public async Task<TusS3LoadedUpload?> LoadAsync(TusS3Keys keys, string fileId, CancellationToken cancellationToken)
     {
-        if (memo.TryGet(keys.Tenant, fileId, out var memoized))
+        if (memo.TryGet(_MemoKey(keys, fileId), out var memoized))
         {
             return memoized;
         }
@@ -46,7 +51,7 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
             upload = TusS3LoadedUpload.Finished(TusS3CompletedRecord.FromJson(record.Value.Content));
         }
 
-        memo.Set(keys.Tenant, fileId, upload);
+        memo.Set(_MemoKey(keys, fileId), upload);
 
         return upload;
     }
@@ -72,7 +77,7 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
     /// <summary>Drops what this request remembers about an upload, after its objects were removed.</summary>
     public void Forget(TusS3Keys keys, string fileId)
     {
-        memo.Remove(keys.Tenant, fileId);
+        memo.Remove(_MemoKey(keys, fileId));
     }
 
     /// <summary>Writes a new upload's state, failing if any state already exists under its id.</summary>
@@ -88,7 +93,7 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
             .ConfigureAwait(false);
 
         // Creation-with-upload runs its append in the same request, which then needs no read.
-        memo.Set(keys.Tenant, fileId, TusS3LoadedUpload.Incomplete(state, etag));
+        memo.Set(_MemoKey(keys, fileId), TusS3LoadedUpload.Incomplete(state, etag));
     }
 
     /// <summary>
@@ -121,14 +126,14 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
                 .ConfigureAwait(false);
 
             var written = TusS3LoadedUpload.Incomplete(state, etag);
-            memo.Set(keys.Tenant, fileId, written);
+            memo.Set(_MemoKey(keys, fileId), written);
 
             return written;
         }
         catch (Exception e)
         {
             // The caller changed the memoized state for a write that did not land, so the next call must re-read.
-            memo.Remove(keys.Tenant, fileId);
+            memo.Remove(_MemoKey(keys, fileId));
 
             if (e is AmazonS3Exception s3Exception && IsStaleWrite(s3Exception))
             {
@@ -150,7 +155,7 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
         await _PutAsync(keys.CompletedRecord(fileId), record.ToJson(), PutCondition.Create, cancellationToken)
             .ConfigureAwait(false);
 
-        memo.Set(keys.Tenant, fileId, TusS3LoadedUpload.Finished(record));
+        memo.Set(_MemoKey(keys, fileId), TusS3LoadedUpload.Finished(record));
     }
 
     /// <summary>
@@ -179,7 +184,7 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
             )
             .ConfigureAwait(false);
 
-        memo.Set(keys.Tenant, fileId, TusS3LoadedUpload.Finished(record));
+        memo.Set(_MemoKey(keys, fileId), TusS3LoadedUpload.Finished(record));
     }
 
     /// <summary>
@@ -255,6 +260,15 @@ internal sealed class TusS3StateStore(IAmazonS3 s3, TusS3StoreOptions options, T
         var response = await s3.PutObjectAsync(request, cancellationToken).ConfigureAwait(false);
 
         return response.ETag;
+    }
+
+    /// <summary>
+    /// The memo key of one tenant's upload. Neither a tenant id nor a file id can hold a slash, so the two parts
+    /// cannot run into each other.
+    /// </summary>
+    private static string _MemoKey(TusS3Keys keys, string fileId)
+    {
+        return keys.Tenant is null ? fileId : keys.Tenant + "/" + fileId;
     }
 
     private readonly record struct PutCondition(bool IsCreate, string? ETag)

@@ -8,6 +8,9 @@ namespace Headless.Messaging.AzureServiceBus.Helpers;
 /// <summary>Utility helpers for Azure Service Bus connection and address resolution.</summary>
 internal static class ServiceBusHelpers
 {
+    /// <summary>The <see cref="BrokerAddress.Name"/> every Azure Service Bus address carries.</summary>
+    public const string BrokerName = "servicebus";
+
     /// <summary>
     /// Creates a <see cref="ServiceBusClient"/> from the configured authentication mode: token
     /// credential + namespace when <see cref="AzureServiceBusMessagingOptions.TokenCredential"/> is
@@ -47,7 +50,19 @@ internal static class ServiceBusHelpers
     /// <returns>A <c>BrokerAddress</c> suitable for telemetry and health checks.</returns>
     /// <exception cref="ArgumentException">Both parameters are null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">The namespace cannot be extracted from the connection string.</exception>
-    public static BrokerAddress GetBrokerAddress(string? connectionString, string? @namespace)
+    public static BrokerAddress GetBrokerAddress(string? connectionString, string? @namespace) =>
+        new(BrokerName, GetBrokerEndpoint(connectionString, @namespace));
+
+    /// <summary>
+    /// Resolves the endpoint of <see cref="GetBrokerAddress"/>, for a caller that caches it instead of parsing the
+    /// connection string again.
+    /// </summary>
+    /// <param name="connectionString">A Service Bus SAS connection string, or <see langword="null"/>.</param>
+    /// <param name="namespace">The fully-qualified Service Bus namespace hostname, or <see langword="null"/>.</param>
+    /// <returns>The namespace, or the endpoint extracted from the connection string.</returns>
+    /// <exception cref="ArgumentException">Both parameters are null or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">The namespace cannot be extracted from the connection string.</exception>
+    public static string? GetBrokerEndpoint(string? connectionString, string? @namespace)
     {
         var host = (@namespace, connectionString) switch
         {
@@ -68,7 +83,7 @@ internal static class ServiceBusHelpers
             _ => throw new InvalidOperationException("Unhandled case in switch expression."),
         };
 
-        return new BrokerAddress("servicebus", host);
+        return host;
     }
 
     private static bool _TryGetEndpointFromConnectionString(string? connectionString, out string? @namespace)

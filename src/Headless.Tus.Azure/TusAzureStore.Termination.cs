@@ -59,6 +59,11 @@ public sealed partial class TusAzureStore : ITusTerminationStore
 
             throw;
         }
+        finally
+        {
+            // Whether or not the blob went, nothing this request read about it still holds.
+            _memo.Remove(blobClient.Name);
+        }
 
         if (deleted)
         {

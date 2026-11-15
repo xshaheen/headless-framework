@@ -118,7 +118,7 @@ public sealed class LeaseFencingProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _Now.UtcDateTime.AddMinutes(-1), policy);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        (await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken)).Should().Be(1);
+        (await provider.ReleaseDeadNodeTimeJobResourcesAsync(_NodeA, AbortToken)).Total.Should().Be(1);
 
         await _AssertTimeJobCompletionRefusedAsync(provider, job.Id, swept, expectedLease: null);
     }
@@ -135,7 +135,7 @@ public sealed class LeaseFencingProviderTests : TestBase
         var job = _TimeJob(JobStatus.InProgress, _Now.UtcDateTime.AddMinutes(-1), policy);
         await provider.AddTimeJobsAsync([job], AbortToken);
 
-        (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Should().Be(1);
+        (await provider.ReclaimStalledTimeJobsAsync(AbortToken)).Total.Should().Be(1);
 
         await _AssertTimeJobCompletionRefusedAsync(provider, job.Id, swept, expectedLease: null);
     }
@@ -151,7 +151,7 @@ public sealed class LeaseFencingProviderTests : TestBase
         var (provider, _) = _Create();
         var id = await _SeedLapsedOccurrenceAsync(provider, policy);
 
-        (await provider.ReleaseDeadNodeOccurrenceResourcesAsync(_NodeA, AbortToken)).Should().Be(1);
+        (await provider.ReleaseDeadNodeOccurrenceResourcesAsync(_NodeA, AbortToken)).Total.Should().Be(1);
 
         await _AssertOccurrenceCompletionRefusedAsync(provider, id, swept);
     }
@@ -167,7 +167,7 @@ public sealed class LeaseFencingProviderTests : TestBase
         var (provider, _) = _Create();
         var id = await _SeedLapsedOccurrenceAsync(provider, policy);
 
-        (await provider.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Should().Be(1);
+        (await provider.ReclaimStalledCronJobOccurrencesAsync(AbortToken)).Total.Should().Be(1);
 
         await _AssertOccurrenceCompletionRefusedAsync(provider, id, swept);
     }

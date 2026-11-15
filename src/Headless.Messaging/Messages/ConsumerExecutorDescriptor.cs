@@ -132,4 +132,10 @@ public sealed class ConsumerExecutorDescriptor
     /// throttled. Every descriptor of one consumer identity carries the same instance.
     /// </summary>
     internal ConsumerRateLimit? RateLimit { get; init; }
+
+    /// <summary>
+    /// Whether this consumer handles the messages that share a routing affinity key one at a time, in the order this
+    /// host admitted them. Every descriptor of one consumer identity carries the same value.
+    /// </summary>
+    internal bool Sequential { get; init; }
 }

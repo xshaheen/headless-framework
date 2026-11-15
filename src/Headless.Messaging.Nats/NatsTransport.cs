@@ -34,7 +34,6 @@ internal sealed class NatsTransport(
             return OperateResult.Failed(new ObjectDisposedException(nameof(NatsTransport)));
         }
 
-        MessagingRoutingAffinityMapping.RejectUnsupported(message, "Nats");
         string? subject = null;
 
         try
