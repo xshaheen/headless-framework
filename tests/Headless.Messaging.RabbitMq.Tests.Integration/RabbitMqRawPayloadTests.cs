@@ -303,6 +303,8 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
 
     public sealed class RawRunConsumer : IConsume<RawRun>
     {
+        private readonly ChangeSignal _arrived = new();
+
         public ConcurrentQueue<RawRunReceipt> Received { get; } = new();
 
         public ValueTask ConsumeAsync(ConsumeContext<RawRun> context, CancellationToken cancellationToken)
@@ -317,18 +319,15 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
                     context.Message.Value
                 )
             );
+            _arrived.Notify();
             return ValueTask.CompletedTask;
         }
 
         public async Task WaitForCountAsync(int count, TimeSpan timeout, CancellationToken cancellationToken)
         {
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(timeout);
+            var reached = await _arrived.WaitUntilAsync(() => Received.Count >= count, timeout, cancellationToken);
 
-            while (Received.Count < count)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(50), deadline.Token);
-            }
+            reached.Should().BeTrue("{0} message(s) should have been consumed within {1}", count, timeout);
         }
     }
 }

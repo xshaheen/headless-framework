@@ -200,6 +200,7 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         var destination = $"malformed-{Guid.NewGuid():N}";
         var group = $"group-{Guid.NewGuid():N}";
         var consumeErrors = 0;
+        var reported = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var session = await fixture.CreateSessionAsync(
             MessageLane.Queue,
             destination,
@@ -208,6 +209,7 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
             onConsumeError: _ =>
             {
                 Interlocked.Increment(ref consumeErrors);
+                reported.TrySetResult();
                 return Task.CompletedTask;
             }
         );
@@ -226,23 +228,12 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         );
         await database.StreamAddAsync(stream, malformed.AsStreamEntries());
 
-        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
-        {
-            while (Volatile.Read(ref consumeErrors) == 0)
-            {
-                await Task.Delay(20, timeout.Token);
-            }
+        await reported.Task.Bounded();
 
-            // The client reports the error before it sends XACK, and XPENDING runs on another connection, so wait for
-            // the acknowledgement rather than reading the pending count once.
-            while ((await database.StreamPendingAsync(stream, group)).PendingMessageCount != 0)
-            {
-                await Task.Delay(20, timeout.Token);
-            }
-        }
-
-        (await database.StreamPendingAsync(stream, group)).PendingMessageCount.Should().Be(0);
+        // The client reports the error before it sends XACK, so the acknowledgement is only certain once shutdown has
+        // drained the in-flight handler that sends it.
         await session.StopAsync(TimeSpan.FromSeconds(2));
+        (await database.StreamPendingAsync(stream, group)).PendingMessageCount.Should().Be(0);
         await using var replacement = await session.CreateReplacementAsync(AbortToken);
         await replacement.StartAsync(cancellationToken: AbortToken);
 
@@ -258,6 +249,7 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         var group = $"group-{Guid.NewGuid():N}";
         var attempts = 0;
         var consumeErrors = 0;
+        var reported = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var session = await fixture.CreateSessionAsync(
             MessageLane.Queue,
             destination,
@@ -266,6 +258,7 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
             onConsumeError: _ =>
             {
                 Interlocked.Increment(ref consumeErrors);
+                reported.TrySetResult();
                 return Task.CompletedTask;
             },
             configure: redis =>
@@ -292,13 +285,7 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         (await session.PublishAsync(message, AbortToken))
             .Succeeded.Should()
             .BeTrue();
-        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
-        {
-            while (Volatile.Read(ref consumeErrors) == 0)
-            {
-                await Task.Delay(20, timeout.Token);
-            }
-        }
+        await reported.Task.Bounded();
 
         // then: the failure acknowledged nothing, and the claim pass hands the same entry over again
         (await database.StreamPendingAsync(stream, group))
