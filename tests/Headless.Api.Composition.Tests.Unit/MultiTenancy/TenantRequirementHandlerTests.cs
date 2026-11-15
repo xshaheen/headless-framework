@@ -16,7 +16,10 @@ public sealed class TenantRequirementHandlerTests
         // given
         var requirement = new TenantRequirement();
         var context = _CreateContext(requirement, new DefaultHttpContext());
-        var handler = new TenantRequirementHandler(new TestCurrentTenant { Id = "tenant-a" });
+        var handler = new TenantRequirementHandler(
+            new TestCurrentTenant { Id = "tenant-a" },
+            new HttpContextAccessor()
+        );
 
         // when
         await handler.HandleAsync(context);
@@ -39,7 +42,7 @@ public sealed class TenantRequirementHandlerTests
             )
         );
         var context = _CreateContext(requirement, httpContext);
-        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+        var handler = new TenantRequirementHandler(new TestCurrentTenant(), new HttpContextAccessor());
 
         // when
         await handler.HandleAsync(context);
@@ -63,7 +66,7 @@ public sealed class TenantRequirementHandlerTests
             )
         );
         var context = _CreateContext(requirement, httpContext);
-        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+        var handler = new TenantRequirementHandler(new TestCurrentTenant(), new HttpContextAccessor());
 
         // when
         await handler.HandleAsync(context);
@@ -87,7 +90,7 @@ public sealed class TenantRequirementHandlerTests
             )
         );
         var context = _CreateContext(requirement, httpContext);
-        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+        var handler = new TenantRequirementHandler(new TestCurrentTenant(), new HttpContextAccessor());
 
         // when
         await handler.HandleAsync(context);
@@ -106,7 +109,7 @@ public sealed class TenantRequirementHandlerTests
         // given
         var requirement = new TenantRequirement();
         var context = _CreateContext(requirement, new DefaultHttpContext());
-        var handler = new TenantRequirementHandler(new TestCurrentTenant { Id = tenantId });
+        var handler = new TenantRequirementHandler(new TestCurrentTenant { Id = tenantId }, new HttpContextAccessor());
 
         // when
         await handler.HandleAsync(context);
@@ -127,7 +130,7 @@ public sealed class TenantRequirementHandlerTests
         var requirement = new TenantRequirement();
         var httpContext = new DefaultHttpContext();
         var context = _CreateContext(requirement, httpContext);
-        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+        var handler = new TenantRequirementHandler(new TestCurrentTenant(), new HttpContextAccessor());
 
         // when
         await handler.HandleAsync(context);
@@ -149,7 +152,7 @@ public sealed class TenantRequirementHandlerTests
         var earlier = Substitute.For<IStatusCodeRejectionFeature>();
         httpContext.Features.Set(earlier);
         var context = _CreateContext(requirement, httpContext);
-        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+        var handler = new TenantRequirementHandler(new TestCurrentTenant(), new HttpContextAccessor());
 
         // when
         await handler.HandleAsync(context);
@@ -166,7 +169,10 @@ public sealed class TenantRequirementHandlerTests
         var requirement = new TenantRequirement();
         var httpContext = new DefaultHttpContext();
         var context = _CreateContext(requirement, httpContext);
-        var handler = new TenantRequirementHandler(new TestCurrentTenant { Id = "tenant-a" });
+        var handler = new TenantRequirementHandler(
+            new TestCurrentTenant { Id = "tenant-a" },
+            new HttpContextAccessor()
+        );
 
         // when
         await handler.HandleAsync(context);
@@ -182,7 +188,7 @@ public sealed class TenantRequirementHandlerTests
         // given
         var requirement = new TenantRequirement();
         var context = new AuthorizationHandlerContext([requirement], _CreatePrincipal(), resource: new object());
-        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+        var handler = new TenantRequirementHandler(new TestCurrentTenant(), new HttpContextAccessor());
 
         // when
         var act = () => handler.HandleAsync(context);
@@ -190,6 +196,54 @@ public sealed class TenantRequirementHandlerTests
         // then
         await act.Should().NotThrowAsync();
         context.HasFailed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_succeed_when_endpoint_is_the_resource_and_allows_missing_tenant()
+    {
+        // given - SuppressUseHttpContextAsAuthorizationResource makes authorization pass the Endpoint, not the context
+        var requirement = new TenantRequirement();
+        var endpoint = new Endpoint(
+            _ => Task.CompletedTask,
+            new EndpointMetadataCollection(new AllowMissingTenantAttribute()),
+            displayName: "allowed"
+        );
+        var httpContext = new DefaultHttpContext();
+        httpContext.SetEndpoint(endpoint);
+        var context = new AuthorizationHandlerContext([requirement], _CreatePrincipal(), resource: endpoint);
+        var handler = new TenantRequirementHandler(
+            new TestCurrentTenant(),
+            new HttpContextAccessor { HttpContext = httpContext }
+        );
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasSucceeded.Should().BeTrue();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_set_tenant_required_rejection_when_endpoint_is_the_resource_and_tenant_is_missing()
+    {
+        // given
+        var requirement = new TenantRequirement();
+        var endpoint = new Endpoint(_ => Task.CompletedTask, EndpointMetadataCollection.Empty, displayName: "plain");
+        var httpContext = new DefaultHttpContext();
+        httpContext.SetEndpoint(endpoint);
+        var context = new AuthorizationHandlerContext([requirement], _CreatePrincipal(), resource: endpoint);
+        var handler = new TenantRequirementHandler(
+            new TestCurrentTenant(),
+            new HttpContextAccessor { HttpContext = httpContext }
+        );
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasFailed.Should().BeTrue();
+        httpContext.Features.Get<IStatusCodeRejectionFeature>().Should().NotBeNull();
     }
 
     private static AuthorizationHandlerContext _CreateContext(TenantRequirement requirement, HttpContext httpContext)

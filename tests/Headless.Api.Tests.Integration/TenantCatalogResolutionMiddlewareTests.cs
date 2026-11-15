@@ -222,7 +222,6 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     [Fact]
     public async Task should_not_run_resolution_for_skip_tenant_resolution_endpoint_and_emit_no_warning()
     {
-        TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(loggerProvider: loggerProvider);
         using var client = HttpTenancyTestHarness.CreateClient(app);
@@ -239,7 +238,6 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
     [Fact]
     public async Task should_resolve_and_emit_ordering_warning_once_when_endpoint_is_null_before_use_routing()
     {
-        TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(loggerProvider: loggerProvider, applyBeforeUseRouting: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
@@ -410,7 +408,6 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         // An ordinary 404 probe also reaches this middleware with a null endpoint. That must not be
         // mistaken for a misordered pipeline, nor consume the one-shot warning slot a genuinely
         // misordered host depends on.
-        TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(loggerProvider: loggerProvider);
         using var client = HttpTenancyTestHarness.CreateClient(app);

@@ -45,10 +45,10 @@ internal sealed partial class HostTenantIdentifierSource(
     int maxHostLength = 253
 ) : ITenantIdentifierSource
 {
-    // Fires exactly once per process for HEADLESS_TENANT_HOST_TEMPLATE_TIMEOUT. 0 = not yet warned,
+    // Fires exactly once per host for HEADLESS_TENANT_HOST_TEMPLATE_TIMEOUT. 0 = not yet warned,
     // 1 = warned. CompareExchange ensures the warning is emitted by at most one request, so a
     // hostile workload cannot flood the log.
-    private static int _templateTimeoutWarningEmitted;
+    private int _templateTimeoutWarningEmitted;
 
     private readonly int _maxHostLength = maxHostLength;
 
@@ -102,15 +102,6 @@ internal sealed partial class HostTenantIdentifierSource(
         return TenantIdentifierSourceResult.None;
     }
 
-    /// <summary>
-    /// Test seam: resets the once-per-process template-timeout warning flag so tests asserting on
-    /// the HEADLESS_TENANT_HOST_TEMPLATE_TIMEOUT log entry can run in any order.
-    /// </summary>
-    internal static void ResetTemplateTimeoutWarningForTesting()
-    {
-        Volatile.Write(ref _templateTimeoutWarningEmitted, 0);
-    }
-
     private static (string Template, HostTemplate Compiled)[] _CompileTemplates(
         IList<string> templates,
         TimeSpan? matchTimeout
@@ -157,7 +148,7 @@ internal sealed partial class HostTenantIdentifierSource(
         Message = "A host tenant identifier source template exceeded its match timeout and the request "
             + "was rejected as invalid. The non-backtracking compiled templates make this practically "
             + "unreachable; if it recurs, shorten or split the template. Template: '{Template}'. "
-            + "This warning is emitted once per process and never logs the request host."
+            + "This warning is emitted once per host and never logs the request host."
     )]
     private static partial void LogTemplateTimeoutWarning(ILogger logger, string template);
 }
