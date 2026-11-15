@@ -1374,6 +1374,111 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
+    /// A released root leaves its non-timed children Idle under the releasing owner's still-live lease. The next
+    /// owner's generic-EF tree claim must take them with the root, as the native recursive-CTE claim does: the root
+    /// fence alone decides who owns the tree. Otherwise the new owner runs the root alone and the children wait Idle
+    /// under a lease nobody renews, with no execution time any claim could pick them up by.
+    /// </summary>
+    public virtual async Task cas_claim_takes_the_children_a_released_root_left_leased_to_its_previous_owner()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("cas-release");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var root = _NewJob("release-root", DateTime.UtcNow.AddSeconds(1));
+            var child = _NewChild(root.Id, RunCondition.OnSuccess, executionTime: null);
+            var grandchild = _NewChild(child.Id, RunCondition.OnSuccess, executionTime: null);
+            await persistence.AddTimeJobsAsync([root, child, grandchild], ct);
+
+            var ownerA = _BuildCas(host, "owner-a@1");
+            var claimedByA = await ownerA
+                .ClaimTimeJobsAsync(await _PollEarliestUntilPresentAsync(persistence, root.Id, ct), ct)
+                .ToArrayAsync(ct);
+            _FlattenIds(claimedByA.Should().ContainSingle().Subject)
+                .Should()
+                .BeEquivalentTo([root.Id, child.Id, grandchild.Id]);
+
+            // Owner A's tick fails before it starts the root, so it hands back what it claimed but did not start.
+            await persistence.ReleaseAcquiredTimeJobsAsync([], "owner-a@1", ct);
+            (await _ReadNodeAsync(root.Id, ct)).Status.Should().Be(JobStatus.Idle);
+
+            var ownerB = _BuildCas(host, "owner-b@1");
+            var claimedByB = await ownerB
+                .ClaimTimeJobsAsync(await _PollEarliestUntilPresentAsync(persistence, root.Id, ct), ct)
+                .ToArrayAsync(ct);
+
+            _FlattenIds(claimedByB.Should().ContainSingle().Subject)
+                .Should()
+                .BeEquivalentTo([root.Id, child.Id, grandchild.Id], "the new owner runs the whole tree");
+            (await _ReadNodeAsync(child.Id, ct)).ActiveHolder.Should().Be("owner-b@1");
+            (await _ReadNodeAsync(grandchild.Id, ct)).ActiveHolder.Should().Be("owner-b@1");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// A chain's non-timed children wait Idle under the root's claim, with the root's deadline, until the root ends.
+    /// The root's renewal must slide that deadline for its whole claimed subtree: a root that runs longer than one
+    /// lease would otherwise leave its children's leases expired, and their start or skip write would be refused.
+    /// </summary>
+    public virtual async Task renewing_a_running_root_slides_its_claimed_subtree()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("chain-renew");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+        await _StopBackgroundRecoveryAsync(host, ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var root = _NewJob("renew-root", DateTime.UtcNow.AddSeconds(1));
+            var child = _NewChild(root.Id, RunCondition.OnSuccess, executionTime: null);
+            var grandchild = _NewChild(child.Id, RunCondition.OnSuccess, executionTime: null);
+            var timedChild = _NewChild(root.Id, RunCondition.OnFailure, DateTime.UtcNow.AddHours(1));
+            await persistence.AddTimeJobsAsync([root, child, grandchild, timedChild], ct);
+
+            var claimed = await _ClaimRootAsync(persistence, root.Id, ct);
+            var owner = claimed.Lease.Holder!;
+            var rootRow = JobsLeaseTables.TimeJob(root.Id, claimed.Lease.Generation);
+            var start = new JobExecutionState { FunctionName = "chain", ClaimOwner = owner }.SetProperty(
+                x => x.Status,
+                JobStatus.InProgress
+            );
+            (await persistence.UpdateTimeJobsWithUnifiedContextAsync([rootRow], start, ct)).Should().Equal(root.Id);
+
+            var claimTimeDeadline = (await _ReadNodeAsync(child.Id, ct)).Lease.ExpiresAt;
+
+            (await persistence.RenewTimeJobLeaseAsync(rootRow, owner, ct)).Should().Be(1);
+
+            var renewedRoot = await _ReadNodeAsync(root.Id, ct);
+            renewedRoot.Lease.ExpiresAt.Should().BeAfter(claimTimeDeadline!.Value);
+            (await _ReadNodeAsync(child.Id, ct))
+                .Lease.ExpiresAt.Should()
+                .Be(renewedRoot.Lease.ExpiresAt, "the renewal slides the claimed child with its root");
+            (await _ReadNodeAsync(grandchild.Id, ct)).Lease.ExpiresAt.Should().Be(renewedRoot.Lease.ExpiresAt);
+            (await _ReadNodeAsync(timedChild.Id, ct))
+                .ActiveHolder.Should()
+                .BeNull("a timed child is claimed on its own, never with the root's tree");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
     /// Native-CTE contention. Two nodes race the same ≥2-node chain root through the fixtures' NORMAL strategy
     /// selection — i.e. the provider's recursive-CTE claim (<c>PostgreSqlJobsClaimStrategy</c> /
     /// <c>SqlServerJobsClaimStrategy</c>), not the generic-EF frontier. The CTE claim is one atomic statement, so

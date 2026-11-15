@@ -1353,9 +1353,9 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .EndLease(RowLeaseState.Revoked)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
-                                    .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                            _StoreAttemptEnd(JobAttemptOutcome.Lost, _NodeNotAliveReason)
+                            _StoreAttemptEnd(JobAttemptOutcome.Lost, _NodeNotAliveReason),
+                            chargeAttemptInFlight: true
                         )
                         .ConfigureAwait(false);
 
@@ -1501,6 +1501,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                         // Mirrors the acquire predicate's owner arm: a node re-picking a row it claimed but has not
                         // started takes a new generation, which fences off the earlier dispatch.
                         reclaimOwn: true,
+                        supersededBefore: null,
                         cancellationToken
                     )
                     .ConfigureAwait(false)
@@ -1611,9 +1612,19 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             return 0;
         }
 
-        return await JobsClaimedWrite
+        var renewed = await JobsClaimedWrite
             .RenewAsync(JobsLeaseRows.TimeJobs<TTimeJob>(dbContext), dbContext, row, LeaseDuration, cancellationToken)
             .ConfigureAwait(false);
+
+        if (renewed == 1)
+        {
+            // The continuations still waiting under this run's claim expire with it, so they slide with it.
+            await JobsSubtreeLeaseWalk
+                .SlideClaimedDescendantsAsync<TTimeJob>(dbContext, row, claimOwner, MaxChainDepth, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return renewed;
     }
 
     // A progress report, stamped with the database clock so every node's writes share one time authority.
@@ -1686,7 +1697,9 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                     // represents a STARTED attempt that was lost, and NodeDeathPolicy.Retry documents that such
                     // attempts count toward the retry budget. Without the increment a handler that reliably kills or
                     // wedges its host is reclaimed and re-run forever with a fresh budget each cycle; the executor's
-                    // exhaustion gate terminalizes the row once the persisted count passes the budget.
+                    // exhaustion gate terminalizes the row once the persisted count passes the budget. A run that
+                    // lapsed while its holder waited between in-process retries has no attempt in flight (the retry
+                    // write already charged the failed one), so it goes back uncharged.
                     var released = await _MoveRunningRowsAsync<TTimeJob, TimeJobAttemptEntity>(
                             dbContext,
                             set.WhereLeaseExpiredUsingDatabaseClock()
@@ -1696,9 +1709,9 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .EndLease(RowLeaseState.Abandoned)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
-                                    .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                            _StoreAttemptEnd(JobAttemptOutcome.Lost, _LeaseLapsedReason)
+                            _StoreAttemptEnd(JobAttemptOutcome.Lost, _LeaseLapsedReason),
+                            chargeAttemptInFlight: true
                         )
                         .ConfigureAwait(false);
 
@@ -3126,9 +3139,9 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .EndLease(RowLeaseState.Revoked)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
-                                    .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                            _StoreAttemptEnd(JobAttemptOutcome.Lost, _NodeNotAliveReason)
+                            _StoreAttemptEnd(JobAttemptOutcome.Lost, _NodeNotAliveReason),
+                            chargeAttemptInFlight: true
                         )
                         .ConfigureAwait(false);
 
@@ -3300,9 +3313,9 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .EndLease(RowLeaseState.Abandoned)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
-                                    .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                            _StoreAttemptEnd(JobAttemptOutcome.Lost, _LeaseLapsedReason)
+                            _StoreAttemptEnd(JobAttemptOutcome.Lost, _LeaseLapsedReason),
+                            chargeAttemptInFlight: true
                         )
                         .ConfigureAwait(false);
 

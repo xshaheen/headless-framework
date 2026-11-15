@@ -284,6 +284,19 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
+    public void should_keep_value_when_ceiling_already_on_boundary()
+    {
+        // given
+        var dateTimeOffset = new DateTimeOffset(2021, 1, 1, 12, 0, 0, _Offset);
+
+        // when
+        var result = dateTimeOffset.Ceiling(TimeSpan.FromHours(1));
+
+        // then
+        result.Should().Be(dateTimeOffset);
+    }
+
+    [Fact]
     public void should_convert_correctly_when_to_date_only()
     {
         // given

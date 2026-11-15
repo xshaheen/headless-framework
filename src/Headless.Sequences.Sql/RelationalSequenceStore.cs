@@ -21,7 +21,8 @@ internal sealed class RelationalSequenceStore(
     ISqlDialect dialect,
     RelationalSequencesOptions options,
     string packageName,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    bool incrementIsOneStatement = false
 ) : ISequenceStore
 {
     private const string _Operation = "gap-free sequence";
@@ -41,6 +42,21 @@ internal sealed class RelationalSequenceStore(
         CancellationToken cancellationToken = default
     )
     {
+        if (incrementIsOneStatement)
+        {
+            // One statement is atomic on its own, so it runs autocommit: no BEGIN or COMMIT round trip, and the row lock
+            // ends with the statement instead of after a separate commit, which is what concurrent callers of one counter
+            // queue on. No attempt marks a commit as started, so a fault raised after the server applied the statement
+            // is retried too; the value it wrote was never returned, so the retry leaves a gap, never a duplicate.
+            return SqlAutonomousTransaction.RetryAsync(
+                "sequences.increment",
+                (_, ct) => _IncrementAutocommitAsync(key, insertValue, delta, ct),
+                _timeProvider,
+                onRetry: null,
+                cancellationToken
+            );
+        }
+
         // Each attempt opens its own connection and READ COMMITTED transaction, so a failed attempt's rolled-back
         // transaction is already gone when the retry starts. A stricter server default would turn a concurrent first
         // use into a serialization failure.
@@ -51,6 +67,20 @@ internal sealed class RelationalSequenceStore(
             _timeProvider,
             cancellationToken
         );
+    }
+
+    private async Task<long> _IncrementAutocommitAsync(
+        SequenceKey key,
+        long insertValue,
+        long delta,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = _dialect.CreateConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        return await _ExecuteAsync(connection, transaction: null, key, insertValue, delta, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public void ValidateEnlistment(IUnitOfWork unitOfWork)
@@ -128,7 +158,7 @@ internal sealed class RelationalSequenceStore(
             );
     }
 
-    private DbCommand _Command(DbConnection connection, DbTransaction transaction, string sql, SequenceKey key)
+    private DbCommand _Command(DbConnection connection, DbTransaction? transaction, string sql, SequenceKey key)
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -153,7 +183,7 @@ internal sealed class RelationalSequenceStore(
 
     private async Task<long> _ExecuteAsync(
         DbConnection connection,
-        DbTransaction transaction,
+        DbTransaction? transaction,
         SequenceKey key,
         long insertValue,
         long delta,

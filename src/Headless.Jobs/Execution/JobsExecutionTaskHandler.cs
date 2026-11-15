@@ -840,6 +840,8 @@ internal sealed class JobsExecutionTaskHandler
                         canDefer,
                         async (retryCount, attemptToken) =>
                         {
+                            // Each attempt answers for itself: only the attempt that ends the pipeline sets it.
+                            success = false;
                             plannedRetryDelay = null;
                             jobFunctionContext.RetryCount = retryCount;
                             jobActivity?.SetTag("headless.job.current_attempt", retryCount + 1);
@@ -848,31 +850,42 @@ internal sealed class JobsExecutionTaskHandler
                             await _OpenAttemptAsync(context, attemptStartedAt.Value, attemptToken)
                                 .ConfigureAwait(false);
                             stopWatch.Start();
-                            await using var scope = _serviceProvider.CreateAsyncScope();
-                            jobFunctionContext.SetServiceScope(scope);
-                            using var causalScope = JobCausalContext.Enter(jobFunctionContext);
-                            if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
+                            // The scope is part of the attempt: a scoped service can still fail its work when the
+                            // scope disposes (a unit of work that flushes on dispose), so the attempt succeeds only once
+                            // the scope has disposed. A failed dispose fails the attempt like any other failure.
+                            await using (var scope = _serviceProvider.CreateAsyncScope())
                             {
-                                Task terminal(CancellationToken token) =>
-                                    context.CachedDelegate(scope.ServiceProvider, jobFunctionContext, token);
-                                await _functionRegistry
-                                    .Middleware.DispatchExecuteAsync(
-                                        new(descriptor, context, jobFunctionContext, retryCount, scope.ServiceProvider),
-                                        terminal,
-                                        attemptToken
-                                    )
-                                    .ConfigureAwait(false);
-                            }
-                            else
-                            {
-                                // Older generated assemblies can still supply a cached registration without descriptor
-                                // metadata. Preserve tenant restoration even though this compatibility path cannot use
-                                // execute middleware.
-                                using (_EnterTenantScope(context))
+                                jobFunctionContext.SetServiceScope(scope);
+                                using var causalScope = JobCausalContext.Enter(jobFunctionContext);
+                                if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
                                 {
-                                    await context
-                                        .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
+                                    Task terminal(CancellationToken token) =>
+                                        context.CachedDelegate(scope.ServiceProvider, jobFunctionContext, token);
+                                    await _functionRegistry
+                                        .Middleware.DispatchExecuteAsync(
+                                            new(
+                                                descriptor,
+                                                context,
+                                                jobFunctionContext,
+                                                retryCount,
+                                                scope.ServiceProvider
+                                            ),
+                                            terminal,
+                                            attemptToken
+                                        )
                                         .ConfigureAwait(false);
+                                }
+                                else
+                                {
+                                    // Older generated assemblies can still supply a cached registration without descriptor
+                                    // metadata. Preserve tenant restoration even though this compatibility path cannot use
+                                    // execute middleware.
+                                    using (_EnterTenantScope(context))
+                                    {
+                                        await context
+                                            .CachedDelegate(scope.ServiceProvider, jobFunctionContext, attemptToken)
+                                            .ConfigureAwait(false);
+                                    }
                                 }
                             }
 
@@ -1358,8 +1371,10 @@ internal sealed class JobsExecutionTaskHandler
     }
 
     /// <summary>
-    /// Hands back, uncharged, a row claimed for an immediate run that the pool refused because it accepts no work: the
-    /// host is stopping, or processing has not started. The row is Idle and due again, so the next poll runs it.
+    /// Hands back, uncharged, a row claimed for an immediate run that the pool did not admit: the pool accepts no
+    /// work (the host is stopping, or processing has not started), the caller stopped waiting for capacity, or a
+    /// long-running admission was refused at the backlog cap or dropped while parked. The row is Idle and due again,
+    /// so the next poll runs it.
     /// </summary>
     public async Task ReleaseUndispatchedAsync(JobExecutionState context)
     {
@@ -2113,7 +2128,7 @@ internal static partial class JobsExecutionTaskHandlerLog
     [LoggerMessage(
         EventId = 3126,
         Level = LogLevel.Information,
-        Message = "Job {JobId} ({Function}) was claimed for an immediate run while the scheduler accepted no work; it "
+        Message = "Job {JobId} ({Function}) was claimed for an immediate run that the pool did not admit; it "
             + "was handed back unstarted for the next poll to run, with its retry budget unchanged."
     )]
     internal static partial void LogJobReleasedUndispatched(this ILogger logger, Guid jobId, string function);

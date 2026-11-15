@@ -18,6 +18,9 @@ internal interface IJobsDispatcher
     /// Submits the acquired job contexts to the Jobs thread pool for concurrent execution.
     /// </summary>
     /// <param name="contexts">The acquired job contexts to dispatch.</param>
-    /// <param name="cancellationToken">Token that can abort dispatch.</param>
+    /// <param name="cancellationToken">
+    /// Bounds only the wait for pool capacity. A context the pool does not admit, because this token fired, the pool is
+    /// frozen, or a long-running admission was refused or dropped, is handed back uncharged and due instead of running.
+    /// </param>
     Task DispatchAsync(JobExecutionState[] contexts, CancellationToken cancellationToken = default);
 }

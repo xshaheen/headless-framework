@@ -217,6 +217,30 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
     }
 
+    // A Retry reclaim charges the budget for the attempt the lapse interrupted. A run whose holder was waiting between
+    // in-process retries has none: the executor's retry write already charged the failed attempt and closed it, so
+    // charging again would spend one attempt twice. Its last attempt is then a Failed one the same holder closed, and no
+    // attempt is open; any other history counts as an attempt in flight. An open that failed right after a retry write
+    // looks like the wait and goes uncharged; charging resumes with the next attempt whose open lands, or the first one
+    // another owner runs.
+    private bool _HasAttemptInFlight<TAttempt>(Dictionary<Guid, List<TAttempt>> store, Guid runId, string? holder)
+        where TAttempt : JobAttemptEntity
+    {
+        lock (_attemptsLock)
+        {
+            if (!store.TryGetValue(runId, out var attempts) || attempts.Count == 0)
+            {
+                return true;
+            }
+
+            var last = attempts[^1];
+
+            return last.EndedAt is null
+                || last.Outcome != JobAttemptOutcome.Failed
+                || !string.Equals(last.OwnerId, holder, StringComparison.Ordinal);
+        }
+    }
+
     private static List<TAttempt> _AttemptsOf<TAttempt>(Dictionary<Guid, List<TAttempt>> store, Guid runId)
     {
         if (!store.TryGetValue(runId, out var attempts))

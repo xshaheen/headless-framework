@@ -160,6 +160,12 @@ internal sealed partial class ConsumerRegister
         Message? innerMessage = null;
         ReadOnlyMemory<byte> innerBody = default;
 
+        // The first middleware to return without the inner steps having run is the one that ended the
+        // delivery early: it declared Skip/Reject, or returned without an outcome. Inner middleware
+        // returns before outer middleware, and the context turns read-only at that first return, so no
+        // outer middleware can declare the outcome afterwards.
+        Type? stoppedBy = null;
+
         Func<ValueTask> next = async () =>
         {
             // Single-shot: a second invocation would re-run version stamping and deserialization on
@@ -193,6 +199,12 @@ internal sealed partial class ConsumerRegister
             try
             {
                 await middleware.InvokeAsync(context, innerNext).ConfigureAwait(false);
+
+                if (!innerCompleted.Value)
+                {
+                    stoppedBy ??= middleware.GetType();
+                }
+
                 context.MarkCompleted();
             }
             catch (Exception ex) when (innerCompleted.Value)
@@ -216,15 +228,19 @@ internal sealed partial class ConsumerRegister
         // per-delivery state; the ring (and the scope) complete before any storage write or dispatch.
         await using var scope = serviceScopeFactory.CreateAsyncScope();
 
+        // Descriptors arrive sorted by ascending priority (global before per-message), and the first one
+        // runs outermost. Wrap from the last descriptor inward so each lower-priority middleware wraps
+        // every later one, as the publish and consume pipelines do.
+        var resolved = MiddlewareDescriptorResolver.Resolve(scope.ServiceProvider, descriptors!);
         IReceiveMiddleware? outermost = null;
-        foreach (var middleware in MiddlewareDescriptorResolver.Resolve(scope.ServiceProvider, descriptors!))
+        for (var i = resolved.Count - 1; i >= 0; i--)
         {
-            if (middleware is not IReceiveMiddleware matched)
+            if (resolved[i] is not IReceiveMiddleware matched)
             {
                 continue;
             }
 
-            outermost ??= matched;
+            outermost = matched;
             var current = matched;
             var innerNext = next;
             next = () => InvokeMiddleware(current, innerNext);
@@ -300,13 +316,15 @@ internal sealed partial class ConsumerRegister
             );
         }
 
-        // The ring returned without reaching the inner steps.
+        // The ring returned without reaching the inner steps: name the middleware that stopped it.
+        var stoppedByType = stoppedBy ?? outermostType;
+
         if (context.Outcome == ReceiveOutcome.Skip)
         {
             return new ReceiveRingOutcome(
                 ReceiveRingResult.Skipped,
                 Context: context,
-                MiddlewareType: outermostType.FullName ?? outermostType.Name,
+                MiddlewareType: stoppedByType.FullName ?? stoppedByType.Name,
                 OutcomeReason: context.OutcomeReason
             );
         }
@@ -314,13 +332,13 @@ internal sealed partial class ConsumerRegister
         var isPolicyReject = context.Outcome == ReceiveOutcome.Reject;
         var rejectException = isPolicyReject
             ? context.RejectCause ?? new ReceiveMessageRejectedException(context.OutcomeReason!)
-            : new ReceiveOutcomeUndeclaredException(outermostType);
+            : new ReceiveOutcomeUndeclaredException(stoppedByType);
 
         return new ReceiveRingOutcome(
             ReceiveRingResult.Rejected,
             Exception: rejectException,
             Context: context,
-            MiddlewareType: outermostType.FullName ?? outermostType.Name,
+            MiddlewareType: stoppedByType.FullName ?? stoppedByType.Name,
             OutcomeReason: context.OutcomeReason,
             IsPolicyReject: isPolicyReject
         );

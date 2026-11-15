@@ -11,6 +11,8 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Fencing.SqlServer\Headless.Fencing.SqlServer.csproj" />
   </ItemGroup>
