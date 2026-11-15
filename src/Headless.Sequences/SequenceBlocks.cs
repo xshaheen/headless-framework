@@ -115,6 +115,7 @@ internal sealed class SequenceBlocks(ISequenceStore store, IOptionsMonitor<Seque
             var target = max - (max / 10);
             var excess = _entries.Count - target;
 
+            // Another caller trimmed while this one waited for the lock.
             if (excess <= 0)
             {
                 return;
@@ -135,7 +136,7 @@ internal sealed class SequenceBlocks(ISequenceStore store, IOptionsMonitor<Seque
         }
     }
 
-    private static string _LockKey(SequenceKey key) => string.Concat(key.TenantId, "\0", key.Name, "\0", key.Partition);
+    private static string _LockKey(SequenceKey key) => $"{key.TenantId}\0{key.Name}\0{key.Partition}";
 
     private sealed class Entry
     {
@@ -155,7 +156,7 @@ internal sealed class SequenceBlocks(ISequenceStore store, IOptionsMonitor<Seque
 
             // A block reserved under another step or block size is dropped: its values become a gap, and the next block
             // follows the policy now in force.
-            if (block is not null && block.Matches(policy) && block.TryTake(out value))
+            if (block?.Matches(policy) == true && block.TryTake(out value))
             {
                 return true;
             }

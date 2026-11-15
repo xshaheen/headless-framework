@@ -21,10 +21,10 @@ public class NextBenchmarks
     private const int _Operations = _Callers * _CallsPerCaller;
     private const string _Name = "bench";
 
-    private static readonly string[] _Partitions = Enumerable
-        .Range(0, _Callers)
-        .Select(static i => string.Create(CultureInfo.InvariantCulture, $"p{i:D2}"))
-        .ToArray();
+    private static readonly string[] _Partitions =
+    [
+        .. Enumerable.Range(0, _Callers).Select(static i => string.Create(CultureInfo.InvariantCulture, $"p{i:D2}")),
+    ];
 
     private BenchmarkDatabase _database = null!;
     private ServiceProvider _services = null!;
