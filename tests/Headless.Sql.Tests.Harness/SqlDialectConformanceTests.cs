@@ -263,6 +263,7 @@ public abstract class SqlDialectConformanceTests : TestBase
         }
 
         // Far beyond every engine's timestamp precision, so the clock has moved past the stamp by the next statement.
+        // real-wait: the stamp comes from the database server's clock, which no fake time provider can advance.
         await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
 
         await using var read = connection.CreateCommand();
@@ -326,6 +327,7 @@ public abstract class SqlDialectConformanceTests : TestBase
             await using var holding = await holder.BeginTransactionAsync(AbortToken);
             var held = await _LockBatchAsync(holder, holding, table, batch: 2);
             var waiting = Task.Run(() => _LockBatchInOwnTransactionAsync(table, batch: 2), AbortToken);
+            // real-wait: a waiter blocked on a database lock raises no signal, so only a bounded wait shows it still waits.
             await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
 
             held.Should().Equal("row-00", "row-01");
@@ -358,6 +360,7 @@ public abstract class SqlDialectConformanceTests : TestBase
 
         // On a thread of its own: SQLite's driver waits for the write lock synchronously inside the begin.
         var waiting = Task.Run(() => _TakeTransactionLockInOwnTransactionAsync(resource), AbortToken);
+        // real-wait: a waiter blocked on a database lock raises no signal, so only a bounded wait shows it still waits.
         await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
         waiting.IsCompleted.Should().BeFalse("the lock is held until the first transaction ends");
 
@@ -374,6 +377,7 @@ public abstract class SqlDialectConformanceTests : TestBase
 
         // The last name, so a statement that locked only its first name would let the second holder through.
         var waiting = Task.Run(() => _TakeTransactionLockInOwnTransactionAsync(resources[^1]), AbortToken);
+        // real-wait: a waiter blocked on a database lock raises no signal, so only a bounded wait shows it still waits.
         await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
         waiting.IsCompleted.Should().BeFalse("one statement holds every name it lists until the transaction ends");
 

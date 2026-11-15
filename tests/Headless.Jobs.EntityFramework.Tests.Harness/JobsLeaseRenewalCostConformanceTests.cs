@@ -39,6 +39,7 @@ public abstract class JobsLeaseRenewalCostConformanceTests<TFixture>(TFixture fi
                 (int)JobStatus.InProgress,
                 owner,
                 ct,
+                // wall-clock: the real host renews against the system clock, so the seeded lease must lie in its future.
                 lockedUntil: DateTime.UtcNow.AddMinutes(5)
             );
             var store = _Store(host);
@@ -99,8 +100,9 @@ public abstract class JobsLeaseRenewalCostConformanceTests<TFixture>(TFixture fi
                 (int)JobStatus.InProgress,
                 owner,
                 NodeDeathPolicy.Retry,
+                // wall-clock: the real host renews against the system clock, so the seeded lease must lie in its future.
                 DateTime.UtcNow.AddMinutes(5),
-                DateTime.UtcNow.AddHours(-1),
+                DateTime.UtcNow.AddHours(-1), // wall-clock: an occurrence already due on the host's system clock.
                 ct
             );
             var store = _Store(host);

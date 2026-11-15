@@ -514,7 +514,6 @@ real-wait 1 tests/Headless.Sql.SqlServer.Tests.Integration/UnitOfWork/SqlServerU
 real-wait 1 tests/Headless.Sql.Sqlite.Tests.Integration/SqliteDialectTests.cs
 wall-clock 2 tests/Headless.Sql.Sqlite.Tests.Integration/SqliteDialectTests.cs
 real-wait 1 tests/Headless.Sql.Sqlite.Tests.Integration/UnitOfWork/SqliteUnitOfWorkResourceConformanceTests.cs
-real-wait 3 tests/Headless.Sql.Tests.Harness/SqlDialectConformanceTests.cs
 wall-clock 2 tests/Headless.Sql.Tests.Harness/SqlDialectConformanceTests.cs
 real-wait 1 tests/Headless.Storage.SharedSchema.Tests.Integration/PostgreSqlForeignSchemaCreatorTests.cs
 real-wait 1 tests/Headless.Testing.AspNetCore.Tests.Unit/HeadlessTestServerTests.cs
