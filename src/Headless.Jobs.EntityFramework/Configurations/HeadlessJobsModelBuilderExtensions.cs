@@ -10,9 +10,9 @@ namespace Microsoft.EntityFrameworkCore;
 public static class HeadlessJobsModelBuilderExtensions
 {
     /// <summary>
-    /// Builds keyed Jobs indexes and check constraints from the final table and column mappings, and maps the
-    /// idempotency reservation table and the attempt history tables, and registers the database clock that judges job
-    /// leases. Names follow the <paramref name="context"/>'s database provider: snake_case on PostgreSQL, PascalCase
+    /// Builds keyed Jobs indexes, check constraints, and the cron-occurrence status filters from the final table and
+    /// column mappings, maps the idempotency reservation table and the attempt history tables, and registers the
+    /// database clock that judges job leases. Names follow the <paramref name="context"/>'s database provider: snake_case on PostgreSQL, PascalCase
     /// elsewhere, matching the style passed to the Jobs entity configurations.
     /// </summary>
     /// <remarks>
@@ -35,6 +35,10 @@ public static class HeadlessJobsModelBuilderExtensions
         var style = JobsStorageNaming.StyleOf(context);
 
         JobsKeyedModelConfiguration.Configure<TTimeJob>(builder, context);
+        // The occurrence type closes over the consumer's cron entity, which this method does not name, so it is read
+        // from the mapped model.
+        var occurrenceType = JobsAttemptModelConfiguration.FindOccurrenceType(builder);
+        JobsOccurrenceModelConfiguration.Configure(builder, occurrenceType, context);
         JobsLeaseModelConfiguration.Configure(builder, context);
         // The reservation table is not generic, so this is the one place a consumer-managed model maps it. It takes
         // its schema from the same option as every other Jobs table so an override cannot strand it in the default
@@ -45,15 +49,7 @@ public static class HeadlessJobsModelBuilderExtensions
             style,
             JobsContractCollation.TryResolve(context.Database.ProviderName)
         );
-        // The occurrence type closes over the consumer's cron entity, which this method does not name, so it is read
-        // from the mapped model.
-        JobsAttemptModelConfiguration.Configure(
-            builder,
-            typeof(TTimeJob),
-            JobsAttemptModelConfiguration.FindOccurrenceType(builder),
-            schema,
-            style
-        );
+        JobsAttemptModelConfiguration.Configure(builder, typeof(TTimeJob), occurrenceType, schema, style);
         return builder;
     }
 }
