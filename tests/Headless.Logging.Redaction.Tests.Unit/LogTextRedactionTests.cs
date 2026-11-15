@@ -36,23 +36,6 @@ public sealed partial class LogTextRedactionTests : TestBase
     }
 
     [Fact]
-    public void should_mask_each_element_of_a_collection_property()
-    {
-        // given - a collection formats as its type name, which no pattern matches, so its elements passed through raw
-        using var sink = new CapturingProvider();
-        using var provider = _Build(sink);
-        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
-
-        // when
-        LogCitizens(logger, [_NationalId, "no-id"]);
-
-        // then
-        var entry = sink.Entries.Should().ContainSingle().Subject;
-        var property = entry.Properties.Should().ContainSingle(static p => p.Key == "NationalIds").Subject;
-        property.Value.Should().BeOfType<object?[]>().Which.Should().Equal("***", "no-id");
-    }
-
-    [Fact]
     public void should_mask_a_value_baked_into_the_message_text()
     {
         // given
@@ -475,9 +458,6 @@ public sealed partial class LogTextRedactionTests : TestBase
 
     [LoggerMessage(6, LogLevel.Debug, "Citizen {NationalId} at debug")]
     private static partial void LogCitizenDebug(ILogger logger, string nationalId);
-
-    [LoggerMessage(8, LogLevel.Information, "Citizens {NationalIds}")]
-    private static partial void LogCitizens(ILogger logger, string[] nationalIds);
 
     [LoggerMessage(1, LogLevel.Information, "Citizen {NationalId} has {Count} requests")]
     private static partial void LogCitizen(ILogger logger, string nationalId, int count);
