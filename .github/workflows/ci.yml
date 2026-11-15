@@ -92,6 +92,15 @@ jobs:
       - name: "Check package dependency direction"
         run: make check-layering
 
+      # Same reasoning: stdlib Python over tracked test files, about a second. It holds every test file to
+      # eng/test-discipline-baseline.txt, so a real wait or an unreasoned skip cannot land through a path the
+      # local gate did not check.
+      - name: "Check test waits, clocks, timeouts, and skips"
+        run: make test-discipline
+
+      - name: "Verify test-discipline ratchet"
+        run: bash tests/scripts/test-test-discipline.sh
+
       - name: "Select checks from changed paths"
         id: changes
         env:
