@@ -16,8 +16,8 @@ run them. messaging-integration.yml runs them beside those checks, and this scri
 The leg list lives here, once: the Makefile reads it through `projects`, and the workflow takes its matrix from
 `select`. A transport and its storage combinations share one leg: each leg pays a fixed checkout, restore, and build
 cost that is often longer than a combination suite's tests, so the combinations run after their transport on the same
-runner. A leg's projects run in order and each writes its own TRX file and conformance bindings, so the drift report
-sees them as it would from separate legs. A base that is empty or does not resolve to a commit (a new branch, history rewritten) selects every leg.
+runner. A leg's projects run in order, each writes its own TRX file named by assembly, and the drift report keys its
+results by assembly, so it reads a shared leg as it would separate legs. A base that is empty or does not resolve to a commit (a new branch, history rewritten) selects every leg.
 
 Exit codes: 0 selection printed; 1 the affected-set computation failed; 2 usage error.
 """
