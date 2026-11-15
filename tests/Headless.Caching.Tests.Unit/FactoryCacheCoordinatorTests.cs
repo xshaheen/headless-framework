@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -1670,8 +1671,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
-        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var logger = new SignalingLogger();
         var coordinator = _CreateCoordinator(logger);
         var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
@@ -1706,23 +1706,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         abandonedFactoryGate.SetException(new InvalidOperationException("late factory failure"));
 
         // then: the abandoned task's fault is observed and logged, not lost (the #4 fix).
-        var observed = false;
-        for (var attempt = 0; attempt < 200 && !observed; attempt++)
-        {
-            observed = logger
-                .ReceivedCalls()
-                .Any(call =>
-                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
-                    && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
-                );
-
-            if (!observed)
-            {
-                await Task.Delay(25, AbortToken);
-            }
-        }
-
-        observed.Should().BeTrue("the fault observer attached to the abandoned factory must log its failure");
+        await logger.WhenLoggedAsync("CacheBackgroundCompletionFailed").Bounded();
     }
 
     [Fact]
@@ -1730,8 +1714,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     {
         // given: cold cache, hard timeout, a token-ignoring factory that keeps running and later faults
         var key = Faker.Random.AlphaNumeric(8);
-        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var logger = new SignalingLogger();
         var coordinator = _CreateCoordinator(logger);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1757,25 +1740,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         abandonedFactoryGate.SetException(new InvalidOperationException("late factory failure"));
 
         // then: the abandoned task's fault is observed and logged, not lost.
-        var observed = false;
-        for (var attempt = 0; attempt < 200 && !observed; attempt++)
-        {
-            observed = logger
-                .ReceivedCalls()
-                .Any(call =>
-                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
-                    && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
-                );
-
-            if (!observed)
-            {
-                await Task.Delay(25, AbortToken);
-            }
-        }
-
-        observed
-            .Should()
-            .BeTrue("the fault observer attached to the abandoned hard-timeout factory must log its failure");
+        await logger.WhenLoggedAsync("CacheBackgroundCompletionFailed").Bounded();
     }
 
     [Fact]
@@ -2920,8 +2885,8 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _timeProvider.Advance(TimeSpan.FromMinutes(3));
 
         // a normal GetOrAdd caller arrives: it must block on the keyed lock held by the eager refresh
+        // The fake store completes synchronously, so the call returns only once the joiner is parked on the lock.
         var second = coordinator.GetOrAddAsync(_store, key, factory, options, AbortToken).AsTask();
-        await Task.Delay(50, AbortToken); // give the joiner real time to park on the lock
         second.IsCompleted.Should().BeFalse("the joiner must wait for the in-flight eager refresh");
 
         factoryGate.SetResult("fresh");
@@ -2982,13 +2947,37 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         }
 
         // when — ~500 concurrent cold callers stampede one key
+        const int callerCount = 500;
+        var parked = 0;
+        var allParked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tasks = Enumerable
-            .Range(0, 500)
-            .Select(_ => Task.Run(() => coordinator.GetOrAddAsync(store, key, factory, options, AbortToken).AsTask()))
+            .Range(0, callerCount)
+            .Select(_ =>
+                Task.Run(() =>
+                {
+                    // The fake store completes synchronously, so each call returns once it holds the factory run
+                    // or is parked behind it.
+                    var call = coordinator.GetOrAddAsync(store, key, factory, options, AbortToken).AsTask();
+
+                    if (Interlocked.Increment(ref parked) == callerCount)
+                    {
+                        allParked.TrySetResult();
+                    }
+
+                    return call;
+                })
+            )
             .ToArray();
 
-        await Task.Delay(100, AbortToken); // let the pack pile up on the keyed lock before the factory completes
-        gate.SetResult("fresh");
+        try
+        {
+            await allParked.Task.Bounded();
+        }
+        finally
+        {
+            gate.TrySetResult("fresh");
+        }
+
         var results = await Task.WhenAll(tasks);
 
         // then — single flight: exactly one factory call; every caller got the fresh value
@@ -3310,8 +3299,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
-        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var logger = new SignalingLogger();
         var coordinator = _CreateCoordinator(logger);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -3344,27 +3332,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // now let the factory complete successfully (it ignored cancellation)
         factoryGate.SetResult("discarded-fresh");
-        // poll briefly for the ContinueWith continuation to run (OnlyOnRanToCompletion on TaskScheduler.Default)
-        var observed = false;
-        for (var attempt = 0; attempt < 200 && !observed; attempt++)
-        {
-            observed = logger
-                .ReceivedCalls()
-                .Any(call =>
-                    string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
-                    && call.GetArguments()[1] is EventId { Id: 16, Name: "CacheFactoryDiscardedSuccess" }
-                );
+        // the ContinueWith observer (OnlyOnRanToCompletion on TaskScheduler.Default) logs EventId 16 once it runs
+        await logger.WhenLoggedAsync("CacheFactoryDiscardedSuccess").Bounded();
 
-            if (!observed)
-            {
-                await Task.Delay(25, AbortToken);
-            }
-        }
-
-        // EventId 16 must fire (DiscardedSuccess observer)
-        observed
-            .Should()
-            .BeTrue("LogCacheFactoryDiscardedSuccess (EventId 16) must fire when the abandoned factory later resolves");
         // No additional write must have occurred after the factory's discarded success — the discard path
         // must not call SetEntryAsync. Any writes before this point are the coordinator's own restamp.
         _store
@@ -3729,5 +3699,35 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     private static Func<CancellationToken, ValueTask<string?>> _FactoryReturns(string value)
     {
         return _ => ValueTask.FromResult<string?>(value);
+    }
+
+    /// <summary>Completes a signal per log event name, so a test awaits the coordinator's own log line.</summary>
+    private sealed class SignalingLogger : ILogger<FactoryCacheCoordinator>
+    {
+        private readonly ConcurrentDictionary<string, TaskCompletionSource> _signals = new(StringComparer.Ordinal);
+
+        public Task WhenLoggedAsync(string eventName) => _SignalFor(eventName).Task;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (eventId.Name is { } name)
+            {
+                _SignalFor(name).TrySetResult();
+            }
+        }
+
+        private TaskCompletionSource _SignalFor(string eventName) =>
+            _signals.GetOrAdd(eventName, static _ => new(TaskCreationOptions.RunContinuationsAsynchronously));
     }
 }

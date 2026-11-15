@@ -157,7 +157,18 @@ public sealed class InMemoryCacheTests : TestBase
 
         var task = (Task)method!.Invoke(cache, [true])!;
         await task;
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+
+        // The call above only schedules the background sweep on a pool thread and exposes no completion signal, so
+        // run the same sweep here and await it: the expired entries are gone once this returns.
+        var sweep = typeof(InMemoryCache).GetMethod(
+            "_DoMaintenanceAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
+        );
+        sweep.Should().NotBeNull();
+        await (Task)sweep!.Invoke(cache, null)!;
     }
 
     private static T? _GetEntryProperty<T>(object entry, string propertyName)
@@ -2429,8 +2440,8 @@ public sealed class InMemoryCacheTests : TestBase
 
         await Task.WhenAll(tasks);
 
-        // Allow LRU background eviction to settle (eviction is async maintenance)
-        await Task.Delay(200, AbortToken);
+        // Eviction runs inline in each write (the write awaits its compaction), so it has settled once every write
+        // has returned.
 
         // then — CurrentMemorySize must be non-negative
         var reportedSize = cache.CurrentMemorySize;
