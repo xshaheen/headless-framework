@@ -49,16 +49,12 @@ public sealed class SqlServerLeaseRenewalCostTests(SqlServerJobsCoordinationFixt
 
         public override async Task<JobsStoreCost> MeasureAsync(Func<Task<int>> call)
         {
-            var before = _Totals();
+            var (executionsBefore, roundTripsBefore) = _Totals();
             var result = await call();
-            var after = _Totals();
+            var (executionsAfter, roundTripsAfter) = _Totals();
             _connections.Should().NotBeEmpty("the meter must see the connections the Jobs context creates");
 
-            return new JobsStoreCost(
-                result,
-                after.Executions - before.Executions,
-                after.RoundTrips - before.RoundTrips
-            );
+            return new JobsStoreCost(result, executionsAfter - executionsBefore, roundTripsAfter - roundTripsBefore);
         }
 
         private (long Executions, long RoundTrips) _Totals()
