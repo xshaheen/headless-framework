@@ -39,8 +39,7 @@ public static class ApiKeyAuthenticationExtensions
         where TApiKeyStore : class, IApiKeyStore<TUser, TUserId>
     {
         builder.Services.AddTransient<IApiKeyStore<TUser, TUserId>, TApiKeyStore>();
-        builder.Services.AddHttpContextAccessor();
-        builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
+        builder.Services.UseDynamicAuthenticationSchemeProvider();
         // The handler builds its principal through Identity's claims factory; make it write the claim types
         // ICurrentUser reads, or the caller authenticates with no user id and no roles.
         builder.Services.ConfigureOptions<HeadlessIdentityClaimTypesSetup>();

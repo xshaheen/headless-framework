@@ -74,7 +74,8 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
         }
 
         var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user).ConfigureAwait(false);
-        var ticket = new AuthenticationTicket(claimsPrincipal, Options.Scheme);
+        // The ticket names the scheme it was registered under, as AddBasicSchema("partner-basic") expects.
+        var ticket = new AuthenticationTicket(claimsPrincipal, Scheme.Name);
 
         return AuthenticateResult.Success(ticket);
     }
