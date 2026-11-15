@@ -2264,7 +2264,7 @@ Receive middleware intercepts the raw transport envelope (`ReceiveContext.Header
 - **Outcomes:** Middleware controls execution via `next()`, `context.Skip(reason)`, or `context.Reject(reason, cause)`.
 - **Outcome ownership:** `ConsumerRegister` owns all transport settlement, storage writes, and circuit-breaker signals:
   - `Accept`: `next()` completes; persists admitted message, commits transport, dispatches to consumer.
-  - `Skip`: commits transport, drops message without storage rows or `OnTerminal`.
+  - `Skip`: commits transport, drops message without storage rows or `OnTerminal`. The Skip and Reject logs name the middleware that ended the delivery: the one that declared the outcome, or returned without calling `next()` or declaring one.
   - `Reject`: stores received-exception poison row (`data:` URI), dead-letters the transport message with reason `ReceiveRejected` (`IConsumerClient.DeadLetterAsync`, which commits on a transport without a dead-letter destination; a redelivery of a message whose row already exists is committed instead), fires `OnTerminal` with `PermanentFailure`. Explicit policy `Reject(reason, cause)` releases the circuit-breaker probe without reporting failure; thrown exceptions or undeclared outcomes report breaker failures.
   - `Cancelled`: bound `OperationCanceledException` requeues delivery without storage rows.
   - `Post-success throw`: exception after `next()` succeeds is logged and suppressed, preserving the accepted delivery.
@@ -2280,7 +2280,7 @@ Receive middleware intercepts the raw transport envelope (`ReceiveContext.Header
 - `AddReceiveMiddlewareFor<TMiddleware, TMessage>(lane)`: typed receive middleware for one message type and lane, for every consumer of that message.
 - `AddConsumeMiddlewareFor<TMiddleware, TMessage>(lane)`: typed consume middleware for one message type and lane, for every consumer of that message.
 - `Tune(identity, c => c.UseMiddleware<TMiddleware>())`: consume middleware for one consumer, on the `AddHeadlessMessaging` setup or `services.ConfigureMessaging(...)`. It implements the untyped `IConsumeMiddleware<ConsumeContext>` because one consumer may handle several messages, runs innermost (inside the global and per-message consume middleware), and is resolved from the delivery scope, registered as scoped when not already registered. Several `Tune` calls accumulate middleware; the same type tuned twice runs once.
-- Each `MessagingBuilder` call returns a registration handle with `.WithPriority(int)`. Lower priority runs first and wraps later middleware. Ties use registration order. Default priority is `0`; first-party tenant propagation uses `-1000`.
+- Each `MessagingBuilder` call returns a registration handle with `.WithPriority(int)`. Lower priority runs first and wraps later middleware. Ties use registration order. Default priority is `0`; first-party tenant propagation uses `-1000`. Priority orders middleware within one scope: global (lane-wide) middleware always wraps per-message middleware, whatever their priorities. Publish, receive, and consume middleware follow the same rule.
 
 **Framework guarantees:**
 
