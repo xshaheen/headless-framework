@@ -411,8 +411,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         await writer.RemoveByTagAsync(tag, AbortToken);
 
         // After the reader's refresh window elapses it re-resolves the marker and sees the invalidation.
+        // A one-tick window would let the marker-cache prune hide a broken freshness check, so this one keeps real time.
         // real-wait: RedisCache ages the reader's marker snapshot on its own Stopwatch, which no test clock reaches
-        // (a one-tick window would let the marker-cache prune hide a broken freshness check)
         await Task.Delay(window + TimeSpan.FromMilliseconds(50), AbortToken);
 
         (await reader.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
