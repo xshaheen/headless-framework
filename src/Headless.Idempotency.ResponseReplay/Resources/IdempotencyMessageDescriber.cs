@@ -34,6 +34,14 @@ internal static class IdempotencyMessageDescriber
         return new(code: HttpIdempotencyErrorCodes.BodyTooLarge, description: Messages.g_idempotency_body_too_large);
     }
 
+    public static ErrorDescriptor ResponseTooLarge()
+    {
+        return new(
+            code: HttpIdempotencyErrorCodes.ResponseTooLarge,
+            description: Messages.g_idempotency_response_too_large
+        );
+    }
+
     public static ErrorDescriptor KeyMalformed()
     {
         return new(code: HttpIdempotencyErrorCodes.KeyMalformed, description: Messages.g_idempotency_key_malformed);

@@ -84,6 +84,40 @@ public sealed class SequenceNumberTests : TestBase
         result.Errors.Should().Contain(e => e.PropertyName.EndsWith("FiscalYearStartMonth", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("INV-{yyyy}", SequenceReset.Never)] // no {seq}: every call prints the same text
+    [InlineData("INV-{seq}-{seq}", SequenceReset.Never)]
+    [InlineData("INV-{yyyy}-{seq:D4}", SequenceReset.Month)] // January and February both issue INV-2026-0001
+    [InlineData("{seq}", SequenceReset.Year)]
+    [InlineData("{fy}-{seq:D4}", SequenceReset.Year)] // July 2025 and January 2026 share fiscal year 2025
+    [InlineData("{yyyy}{MM}-{seq}", SequenceReset.Day)]
+    [InlineData("{yyyy}-{seq}", SequenceReset.FiscalYear)]
+    public void should_refuse_a_format_that_issues_the_same_number_in_two_partitions(string format, SequenceReset reset)
+    {
+        var options = new SequencesOptions();
+        options.Policies["invoice"] = new SequencePolicy { Format = format, Reset = reset };
+
+        var result = new SequencesOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("INV-{seq}", SequenceReset.Never)]
+    [InlineData("INV-{yy}-{seq:D4}", SequenceReset.Year)]
+    [InlineData("INV-{yyyy}{MM}-{seq:D4}", SequenceReset.Month)]
+    [InlineData("{yyyy}{MM}{dd}-{seq}", SequenceReset.Day)]
+    [InlineData("REC-{fy}-{seq:D5}", SequenceReset.FiscalYear)]
+    public void should_accept_a_format_that_names_its_reset_period(string format, SequenceReset reset)
+    {
+        var options = new SequencesOptions();
+        options.Policies["invoice"] = new SequencePolicy { Format = format, Reset = reset };
+
+        var result = new SequencesOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeTrue();
+    }
+
     [Fact]
     public async Task should_take_a_fast_document_number_in_the_period_partition_and_format_it()
     {
