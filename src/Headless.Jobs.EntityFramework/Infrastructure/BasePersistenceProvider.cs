@@ -1596,24 +1596,15 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             .ConfigureAwait(false);
 
         // Renewal slides a RUNNING lease only: a claimed row that has not started would read as "lease held" and
-        // suppress cancel-on-loss. The read and the renewal need no shared lock: while the generation is current only
-        // this run moves the row, and every out-of-band write ends the lease.
-        var running = await dbContext
-            .Set<TTimeJob>()
-            .AsNoTracking()
-            .AnyAsync(
-                x => x.Id == row.Key && x.Lease.Generation == row.Generation && x.Status == JobStatus.InProgress,
+        // suppress cancel-on-loss, so the renewal's own fence requires InProgress.
+        var renewed = await JobsClaimedWrite
+            .RenewRunningAsync<TTimeJob>(
+                JobsSqlDialects.Resolve(dbContext),
+                dbContext,
+                row,
+                LeaseDuration,
                 cancellationToken
             )
-            .ConfigureAwait(false);
-
-        if (!running)
-        {
-            return 0;
-        }
-
-        var renewed = await JobsClaimedWrite
-            .RenewAsync(JobsLeaseRows.TimeJobs<TTimeJob>(dbContext), dbContext, row, LeaseDuration, cancellationToken)
             .ConfigureAwait(false);
 
         if (renewed == 1)
@@ -3255,23 +3246,9 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var running = await dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .AsNoTracking()
-            .AnyAsync(
-                x => x.Id == row.Key && x.Lease.Generation == row.Generation && x.Status == JobStatus.InProgress,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (!running)
-        {
-            return 0;
-        }
-
         return await JobsClaimedWrite
-            .RenewAsync(
-                JobsLeaseRows.CronOccurrences<TCronJob>(dbContext),
+            .RenewRunningAsync<CronJobOccurrenceEntity<TCronJob>>(
+                JobsSqlDialects.Resolve(dbContext),
                 dbContext,
                 row,
                 LeaseDuration,
