@@ -887,6 +887,8 @@ ASP.NET Core Identity integration for Headless APIs. Apps that do not use ASP.NE
 ### Design constraints
 
 - Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
+- Basic and API-key authentication can reuse a successful result for a short time. `BasicAuthenticationOptions.CredentialCacheDuration` and `ApiKeyAuthenticationSchemeOptions.CredentialCacheDuration` default to `null` (off), and every request runs the full check: the user or key lookup, the password hash for Basic (PBKDF2, about 35 ms of CPU per request), the sign-in and lockout checks, and the claims and role queries. Set a lifetime per scheme (above zero, at most one hour) to answer a repeated credential from an in-process cache instead: a hit makes no store call and costs microseconds. The trade-off is revocation delay: until its entry expires, a revoked or deactivated key, an old password, and a user who has since been locked out or disabled, or whose roles or claims changed, keep authenticating with the principal the first request built. A Basic hit also skips the reset of the user's failed-attempt count that a successful password check makes, so failures from elsewhere add up toward lockout until the next full check.
+- The credential cache stores only successes; a failed credential always runs the full check, so it still counts toward lockout and the cache answers no guess. Entries expire a fixed time after the request that created them (hits do not extend them), and each scheme holds at most `CredentialCacheMaxEntries` (default 1000) in a private `MemoryCache`, not the application's `IMemoryCache`. Keys are an HMAC-SHA256 of the scheme and the credential under a random per-process key, so the cache never holds the secret and empties on restart. Each request gets its own copy of the cached principal. Expiry follows the registered `TimeProvider`.
 - `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format their durations with Humanizer's `TimeSpan.Humanize()` in the current UI culture. The package ships `Humanizer.Core.ar` beside its Arabic `Messages.ar.resx` and `Messages.ar-EG.resx`, so any Arabic request, `ar-EG` included, gets Arabic durations; any other culture falls back to English unless the application references the matching `Humanizer.Core.<culture>` package.
 
 ### Install
@@ -910,12 +912,24 @@ builder.Services
     .AddBasicSchema<AppUser, Guid>();
 ```
 
+To skip the store and the password hash for a client that repeats the same credential, opt a scheme into the credential cache. A revoked credential then keeps working until its entry expires, so keep the lifetime short:
+
+```csharp
+builder.Services
+    .AddAuthentication(AuthenticationConstants.Schemas.Bearer)
+    .AddApiKey<AppUser, Guid, AppApiKeyStore>(configureOptions: options =>
+        options.CredentialCacheDuration = TimeSpan.FromMinutes(1))
+    .AddBasicSchema<AppUser, Guid>(configureOptions: options =>
+        options.CredentialCacheDuration = TimeSpan.FromMinutes(1));
+```
+
 `AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`. Both options classes implement `IHttpCredentialSchemeOptions`, so Headless.OpenApi publishes each registered scheme from its own options: an `apiKey` header scheme named after the scheme, an `apiKey` query scheme (`{scheme}Query`) while the query fallback is on, and an HTTP `basic` scheme for `AddBasicSchema()`.
 
 ### Runtime behavior
 
 - `AddHeadless()` registers none of these services. `AddHeadlessLookupNormalizer()` removes any earlier `ILookupNormalizer` registration, so it wins whether it runs before or after `AddIdentityCore`.
 - `AddApiKey()` and `AddBasicSchema()` set `IdentityOptions.ClaimsIdentity.UserIdClaimType` to `user_id` (`UserClaimTypes.UserId`) and `RoleClaimType` to `role` (`UserClaimTypes.Roles`), so the principal Identity builds for a Basic or API-key caller carries the user id and roles `ICurrentUser` reads (idempotency scoping, permission grants, audit actor). They replace only Identity's defaults (`ClaimTypes.NameIdentifier`, `ClaimTypes.Role`); a claim type the application set explicitly is kept in either registration order, and then `ICurrentUser` does not see that claim. The setting is global to Identity, so cookie sign-ins through the same `SignInManager` carry the same claim types.
+- `AddApiKey()` and `AddBasicSchema()` validate their scheme's options with FluentValidation on start: a negative or over-one-hour `CredentialCacheDuration`, or a `CredentialCacheMaxEntries` below 1, fails the host. They also register the credential cache as a singleton and `TimeProvider.System` when no `TimeProvider` is registered; a scheme with the cache off never resolves it.
 - `AddApiKey()` and `AddBasicSchema()` replace `IAuthenticationSchemeProvider` with `DynamicAuthenticationSchemeProvider` and register `IHttpContextAccessor`, which it reads. A host that uses only a bearer scheme keeps ASP.NET Core's provider and selects the scheme through `AddAuthentication(defaultScheme)`.
 
 ---

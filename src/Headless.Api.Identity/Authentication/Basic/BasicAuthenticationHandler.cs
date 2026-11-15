@@ -4,6 +4,7 @@ using System.Text.Encodings.Web;
 using Headless.Http;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -22,6 +23,8 @@ namespace Headless.Api.Identity;
 ///   <item><description>If the header value cannot be Base64-decoded or parsed as <c>username:password</c>, <c>Fail</c> is returned.</description></item>
 ///   <item><description>If the user is not found, cannot sign in, is locked out, or the password is wrong, <c>Fail</c> is returned.</description></item>
 /// </list>
+/// When <see cref="BasicAuthenticationOptions.CredentialCacheDuration"/> is set, a credential that succeeded within that
+/// lifetime is answered from an in-process cache without these checks; see that option for what a cached hit skips.
 /// </remarks>
 /// <typeparam name="TUser">The user type, derived from <see cref="IdentityUser{TKey}"/>.</typeparam>
 /// <typeparam name="TUserId">The type of the user's primary key.</typeparam>
@@ -52,9 +55,20 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
             return AuthenticateResult.NoResult();
         }
 
-        if (!_TryDecodeCredentials(encodedCredentials, out var userName, out var password))
+        if (!_TryDecodeCredentials(encodedCredentials, out var credentials, out var userName, out var password))
         {
             return AuthenticateResult.Fail("Invalid Authorization header value.");
+        }
+
+        // Resolved only when the scheme opts in, so a scheme without a cache lifetime runs exactly as before.
+        var credentialCache = CredentialAuthenticationCache.IsEnabled(Options)
+            ? Context.RequestServices.GetRequiredService<CredentialAuthenticationCache>()
+            : null;
+        var cacheKey = credentialCache?.ComputeKey(Scheme.Name, credentials);
+
+        if (cacheKey is not null && credentialCache!.TryGet(Scheme.Name, cacheKey) is { } cachedPrincipal)
+        {
+            return AuthenticateResult.Success(new AuthenticationTicket(cachedPrincipal, Options.Scheme));
         }
 
         var user = await userManager.FindByNameAsync(userName).ConfigureAwait(false);
@@ -74,6 +88,12 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
         }
 
         var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user).ConfigureAwait(false);
+
+        if (cacheKey is not null)
+        {
+            credentialCache!.Set(Scheme.Name, cacheKey, claimsPrincipal, Options);
+        }
+
         var ticket = new AuthenticationTicket(claimsPrincipal, Options.Scheme);
 
         return AuthenticateResult.Success(ticket);
@@ -101,10 +121,12 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
 
     private bool _TryDecodeCredentials(
         string encodedCredentials,
+        [NotNullWhen(true)] out string? credentials,
         [NotNullWhen(true)] out string? userName,
         [NotNullWhen(true)] out string? password
     )
     {
+        credentials = null;
         userName = null;
         password = null;
 
@@ -115,6 +137,7 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
 
             if (separatorPosition >= 0)
             {
+                credentials = decodedCredentials;
                 userName = decodedCredentials[..separatorPosition];
                 password = decodedCredentials[(separatorPosition + 1)..];
             }
@@ -127,7 +150,7 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
             }
         }
 
-        return userName is not null && password is not null;
+        return credentials is not null && userName is not null && password is not null;
     }
 
     #endregion

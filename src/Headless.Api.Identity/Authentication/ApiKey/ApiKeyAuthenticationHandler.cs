@@ -3,6 +3,7 @@
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,6 +22,8 @@ namespace Headless.Api.Identity;
 ///   <item><description>If the key is blank or not found in the store, <c>NoResult</c> is returned.</description></item>
 ///   <item><description>If the user cannot sign in (email not confirmed, locked out, etc.) <c>Fail</c> is returned.</description></item>
 /// </list>
+/// When <see cref="ApiKeyAuthenticationSchemeOptions.CredentialCacheDuration"/> is set, a key that succeeded within that
+/// lifetime is answered from an in-process cache without these checks; see that option for what a cached hit skips.
 /// </remarks>
 /// <typeparam name="TUser">The user type, derived from <see cref="IdentityUser{TKey}"/>.</typeparam>
 /// <typeparam name="TUserId">The type of the user's primary key.</typeparam>
@@ -64,6 +67,17 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
             return AuthenticateResult.NoResult();
         }
 
+        // Resolved only when the scheme opts in, so a scheme without a cache lifetime runs exactly as before.
+        var credentialCache = CredentialAuthenticationCache.IsEnabled(Options)
+            ? Context.RequestServices.GetRequiredService<CredentialAuthenticationCache>()
+            : null;
+        var cacheKey = credentialCache?.ComputeKey(Scheme.Name, providedApiKey);
+
+        if (cacheKey is not null && credentialCache!.TryGet(Scheme.Name, cacheKey) is { } cachedPrincipal)
+        {
+            return AuthenticateResult.Success(new AuthenticationTicket(cachedPrincipal, Scheme.Name));
+        }
+
         var apiKeyUser = await store
             .GetActiveApiKeyUserAsync(providedApiKey, Context.RequestAborted)
             .ConfigureAwait(false);
@@ -84,6 +98,12 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
         }
 
         var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(apiKeyUser).ConfigureAwait(false);
+
+        if (cacheKey is not null)
+        {
+            credentialCache!.Set(Scheme.Name, cacheKey, claimsPrincipal, Options);
+        }
+
         var ticket = new AuthenticationTicket(claimsPrincipal, Scheme.Name);
 
         return AuthenticateResult.Success(ticket);
