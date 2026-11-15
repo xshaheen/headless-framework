@@ -13,6 +13,9 @@ public sealed class FakeSettingValueProvider : ISettingValueProvider
     /// <summary>Number of batch reads served, so tests can assert the manager does not fan out per definition.</summary>
     public int GetAllCallCount { get; private set; }
 
+    /// <summary>Refuses an empty batch the way the store-backed providers do.</summary>
+    public bool RefuseEmptyBatch { get; init; }
+
     public Task<string?> GetOrDefaultAsync(
         SettingDefinition setting,
         string? providerKey = null,
@@ -50,6 +53,11 @@ public sealed class FakeSettingValueProvider : ISettingValueProvider
     )
     {
         GetAllCallCount++;
+
+        if (RefuseEmptyBatch && settings.Length == 0)
+        {
+            throw new ArgumentException("The batch must name at least one setting.", nameof(settings));
+        }
 
         return Task.FromResult(
             settings.Select(d => new SettingValue(d.Name, _values.GetValueOrDefault((d.Name, providerKey)))).ToList()

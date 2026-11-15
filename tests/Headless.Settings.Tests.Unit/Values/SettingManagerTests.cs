@@ -49,6 +49,87 @@ public sealed class SettingManagerTests : TestBase
         );
     }
 
+    #region Provider restrictions
+
+    [Fact]
+    public async Task should_skip_a_provider_the_remaining_settings_exclude_in_batch_read()
+    {
+        // given - the user provider supports none of the names, and a store refuses an empty batch
+        var theme = new SettingDefinition("App.Theme");
+        theme.Providers.Add("Global");
+        var userProvider = new FakeSettingValueProvider { Name = "User", RefuseEmptyBatch = true };
+        var globalProvider = new FakeSettingValueProvider { Name = "Global", RefuseEmptyBatch = true };
+        globalProvider.SetValue("App.Theme", "dark");
+        _definitionManager.GetAllAsync(AbortToken).Returns([theme]);
+        _valueProviderManager.Providers.Returns([userProvider, globalProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(["App.Theme"], AbortToken);
+
+        // then
+        result["App.Theme"].Value.Should().Be("dark");
+        userProvider.GetAllCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_write_through_a_provider_the_setting_excludes()
+    {
+        // given
+        var theme = new SettingDefinition("App.Theme");
+        theme.Providers.Add("Global");
+        _definitionManager.FindAsync("App.Theme", AbortToken).Returns(theme);
+        _valueProviderManager.Providers.Returns([new FakeSettingValueProvider { Name = "Tenant" }]);
+
+        // when
+        var act = () => _sut.SetAsync("App.Theme", "dark", "Tenant", "tenant-1", cancellationToken: AbortToken);
+
+        // then
+        var error = (await act.Should().ThrowExactlyAsync<ConflictException>())
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which;
+        error.Code.Should().Be("setting:provider_not_allowed");
+    }
+
+    [Fact]
+    public async Task should_ignore_a_value_from_a_provider_the_setting_excludes_on_single_read()
+    {
+        // given
+        var theme = new SettingDefinition("App.Theme");
+        theme.Providers.Add("Global");
+        var tenantProvider = new FakeSettingValueProvider { Name = "Tenant" };
+        tenantProvider.SetValue("App.Theme", "stray");
+        var globalProvider = new FakeSettingValueProvider { Name = "Global" };
+        globalProvider.SetValue("App.Theme", "dark");
+        _definitionManager.FindAsync("App.Theme", AbortToken).Returns(theme);
+        _valueProviderManager.Providers.Returns([tenantProvider, globalProvider]);
+
+        // when
+        var result = await _sut.GetAsync("App.Theme", cancellationToken: AbortToken);
+
+        // then
+        result.Value.Should().Be("dark");
+    }
+
+    [Fact]
+    public async Task should_read_a_non_inherited_setting_when_no_provider_is_named()
+    {
+        // given - narrowing to "the provider named null" used to read nothing at all
+        var password = new SettingDefinition("Smtp.Password", isInherited: false);
+        var globalProvider = new FakeSettingValueProvider { Name = "Global" };
+        globalProvider.SetValue("Smtp.Password", "secret");
+        _definitionManager.FindAsync("Smtp.Password", AbortToken).Returns(password);
+        _valueProviderManager.Providers.Returns([new FakeSettingValueProvider { Name = "User" }, globalProvider]);
+
+        // when
+        var result = await _sut.GetAsync("Smtp.Password", cancellationToken: AbortToken);
+
+        // then
+        result.Value.Should().Be("secret");
+    }
+
+    #endregion
+
     #region GetAsync
 
     [Fact]

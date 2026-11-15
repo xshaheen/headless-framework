@@ -173,11 +173,16 @@ public sealed class GrantedPoliciesReaderTests : TestBase
             .AuthorizeAsync(context.Principal, null, "Orders.Edit")
             .Returns(AuthorizationResult.Failed());
 
-        // when
-        await sut.GetAsync(context, ["Orders.Edit"], AbortToken);
+        _permissionManager
+            .GetAllAsync(Arg.Any<ICurrentUser>(), Arg.Any<string?>(), AbortToken)
+            .Returns([new GrantedPermissionResult("Orders.Edit", true)]);
 
-        // then
+        // when
+        var granted = await sut.GetAsync(context, ["Orders.Edit"], AbortToken);
+
+        // then - the failed policy stays refused even though the permission of the same name is granted
         await _authorizationService.Received(1).AuthorizeAsync(context.Principal, null, "Orders.Edit");
+        granted.Should().NotContain("Orders.Edit");
     }
 
     private GrantedPoliciesReader _CreateSut(AuthorizationOptions? authorizationOptions = null)

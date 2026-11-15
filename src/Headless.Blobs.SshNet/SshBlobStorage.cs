@@ -770,8 +770,8 @@ internal sealed partial class SshBlobStorage(
     /// <remarks>
     /// SFTP's own rename fails when the destination exists, so the replace uses OpenSSH's <c>posix-rename</c>
     /// extension, which swaps the file in one step: a reader sees the old content or the new, never neither. A server
-    /// without the extension gets delete-then-rename, which leaves a short window in which the blob is absent but
-    /// never exposes a partial write.
+    /// without the extension gets move-aside-then-rename, which leaves a short window in which the blob is absent but
+    /// never exposes a partial write and never loses the previous blob when the rename fails.
     /// </remarks>
     private static async Task _ReplaceFileAsync(
         SftpClient client,
@@ -790,8 +790,45 @@ internal sealed partial class SshBlobStorage(
         }
         catch (NotSupportedException)
         {
-            await _DeleteFileIfExistsAsync(client, destination, cancellationToken).ConfigureAwait(false);
-            await client.RenameFileAsync(source, destination, cancellationToken).ConfigureAwait(false);
+            await _ReplaceWithBackupAsync(client, source, destination).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Replaces <paramref name="destination"/> on a server without <c>posix-rename</c>. Deleting the old file before the
+    /// rename lost both copies when the rename failed (the caller then deletes the temp file too), so the old file is
+    /// moved aside first and put back if the new one cannot take its place. Once the swap starts it runs to the end,
+    /// so the request token is not used.
+    /// </summary>
+    private static async Task _ReplaceWithBackupAsync(SftpClient client, string source, string destination)
+    {
+        var backup = BlobStorageHelpers.BuildTempUploadPath(destination);
+        bool hasBackup;
+
+        try
+        {
+            await client.RenameFileAsync(destination, backup, CancellationToken.None).ConfigureAwait(false);
+            hasBackup = true;
+        }
+        catch (SftpPathNotFoundException)
+        {
+            hasBackup = false;
+        }
+
+        try
+        {
+            await client.RenameFileAsync(source, destination, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch when (hasBackup)
+        {
+            await client.RenameFileAsync(backup, destination, CancellationToken.None).ConfigureAwait(false);
+
+            throw;
+        }
+
+        if (hasBackup)
+        {
+            await _DeleteFileIfExistsAsync(client, backup, CancellationToken.None).ConfigureAwait(false);
         }
     }
 

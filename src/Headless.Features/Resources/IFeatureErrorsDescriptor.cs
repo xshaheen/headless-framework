@@ -21,6 +21,17 @@ public interface IFeatureErrorsDescriptor
     /// <param name="providerKey">The key identifying the read-only provider.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
     ErrorDescriptor ProviderIsReadonly(string providerKey);
+
+    /// <summary>
+    /// Returns an error descriptor indicating that a write named a provider that the feature's
+    /// <c>Providers</c> list does not include.
+    /// </summary>
+    /// <param name="featureName">The name of the feature.</param>
+    /// <param name="providerName">The name of the provider the feature does not allow.</param>
+    /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
+    /// <remarks>A default member, so an existing implementation keeps compiling and returns the built-in message.</remarks>
+    ErrorDescriptor ProviderNotAllowed(string featureName, string providerName) =>
+        DefaultFeatureErrorsDescriptor.CreateProviderNotAllowed(featureName, providerName);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
@@ -68,5 +79,23 @@ public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
         );
 
         return error;
+    }
+
+    /// <inheritdoc/>
+    public ErrorDescriptor ProviderNotAllowed(string featureName, string providerName) =>
+        CreateProviderNotAllowed(featureName, providerName);
+
+    internal static ErrorDescriptor CreateProviderNotAllowed(string featureName, string providerName)
+    {
+        var description = string.Format(
+            CultureInfo.InvariantCulture,
+            FeatureMessages.features_provider_not_allowed,
+            featureName,
+            providerName
+        );
+
+        return new ErrorDescriptor("features:provider-not-allowed", description)
+            .WithParam("featureName", featureName)
+            .WithParam("providerName", providerName);
     }
 }

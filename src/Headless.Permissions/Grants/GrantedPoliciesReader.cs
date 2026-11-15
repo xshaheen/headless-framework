@@ -38,6 +38,7 @@ internal sealed class GrantedPoliciesReader(
 
         var granted = new HashSet<string>(StringComparer.Ordinal);
         var grantedPermissions = new HashSet<string>(StringComparer.Ordinal);
+        var evaluatedPolicies = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var permission in permissions)
         {
@@ -67,6 +68,7 @@ internal sealed class GrantedPoliciesReader(
                 continue;
             }
 
+            evaluatedPolicies.Add(policyName);
             var result = await authorizationService.AuthorizeAsync(context.Principal, policyName).ConfigureAwait(false);
 
             if (result.Succeeded)
@@ -75,7 +77,9 @@ internal sealed class GrantedPoliciesReader(
             }
         }
 
-        granted.UnionWith(grantedPermissions);
+        // A registered policy that shadows a permission name was decided above by its own requirements; adding the
+        // permission name back would report the policy granted after it failed.
+        granted.UnionWith(grantedPermissions.Where(name => !evaluatedPolicies.Contains(name)));
 
         return granted;
     }
