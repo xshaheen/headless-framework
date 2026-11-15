@@ -22,7 +22,7 @@ namespace Tests;
 /// </summary>
 public sealed class JobsSchedulerShutdownDisposeRaceTests : TestBase
 {
-    private static readonly TimeSpan _waitBudget = HeadlessTestTaskExtensions.DefaultTimeout;
+    private static readonly TimeSpan _waitBudget = TimeSpan.FromSeconds(10);
 
     [Fact]
     public async Task stop_completes_when_the_scheduler_is_disposed_mid_drain()

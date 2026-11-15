@@ -13,7 +13,7 @@ namespace Tests;
 
 public sealed class JobsSchedulerShutdownDrainTests : TestBase
 {
-    private static readonly TimeSpan _waitBudget = HeadlessTestTaskExtensions.DefaultTimeout;
+    private static readonly TimeSpan _waitBudget = TimeSpan.FromSeconds(10);
 
     // Fixed store anchor for the stubbed wake schedules below; only the distance to the wake matters here.
     private static readonly DateTime _StoreNow = new(2026, 8, 15, 12, 0, 0, DateTimeKind.Utc);

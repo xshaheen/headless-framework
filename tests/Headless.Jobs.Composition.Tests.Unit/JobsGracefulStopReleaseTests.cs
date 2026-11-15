@@ -43,7 +43,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
         // then
         var store = _Store(first);
-        var released = await _WaitForAsync(store, id, row => row.Status is not JobStatus.InProgress);
+        var released = await _WaitForAsync(store, id, _IsSettled);
         released.Status.Should().Be(JobStatus.Idle);
         released.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
         released.Lease.State.Should().NotBe(RowLeaseState.Active);
@@ -86,7 +86,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         await host.StopAsync(AbortToken);
 
         // then
-        var stored = await _WaitForAsync(_Store(host), id, row => row.Status is not JobStatus.InProgress);
+        var stored = await _WaitForAsync(_Store(host), id, _IsSettled);
         stored.Status.Should().Be(expected);
         stored.RetryCount.Should().Be(0);
         stored.Lease.State.Should().NotBe(RowLeaseState.Active);
@@ -113,7 +113,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var store = _Store(host);
         foreach (var id in new[] { running, queued })
         {
-            var stored = await _WaitForAsync(store, id, row => row.Status is not JobStatus.InProgress);
+            var stored = await _WaitForAsync(store, id, _IsSettled);
             stored.Status.Should().Be(JobStatus.Idle);
             stored.RetryCount.Should().Be(0);
             stored.Lease.State.Should().NotBe(RowLeaseState.Active);
@@ -182,7 +182,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
         // and the cancelled job's uncharged release lands. With the budget already spent the scheduler's stop returns
         // without waiting for that write, so the row is awaited here instead of read the moment the stop returns.
-        var stored = await _WaitForAsync(_Store(host), id, row => row.Status is not JobStatus.InProgress);
+        var stored = await _WaitForAsync(_Store(host), id, _IsSettled);
         stored.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0);
         stored.Lease.State.Should().NotBe(RowLeaseState.Active);
@@ -251,6 +251,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         var scheduler = _Scheduler(host);
         var store = _Store(host);
         var waiting = Guid.Empty;
+        TimeJobEntity stored;
         try
         {
             if (waitsOnFunctionGate)
@@ -270,6 +271,10 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
             // when
             await host.StopAsync(AbortToken);
+
+            // The hand-back is read while the running job still holds its slot or permit: releasing it first would let
+            // the waiting run reach its own drain check and hand itself back, hiding a stop that failed to free it.
+            stored = await _WaitForAsync(store, waiting, _IsSettled);
         }
         finally
         {
@@ -278,7 +283,6 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
         // then
         probe.Invocations.Should().Be(1, "the waiting run must not start once the stop began");
-        var stored = await _WaitForAsync(store, waiting, row => row.Status is not JobStatus.InProgress);
         stored.Status.Should().Be(JobStatus.Idle);
         stored.RetryCount.Should().Be(0, "a graceful stop is not an attempt the job used up");
         stored.Lease.State.Should().NotBe(RowLeaseState.Active);
@@ -363,6 +367,10 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+    // A row the stop is still releasing reads InProgress, or Queued when the scheduler's claim took it; any other status
+    // is the settled outcome the test checks.
+    private static bool _IsSettled(TimeJobEntity row) => row.Status is not (JobStatus.InProgress or JobStatus.Queued);
 
     private static async Task<TimeJobEntity> _WaitForAsync(
         IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
