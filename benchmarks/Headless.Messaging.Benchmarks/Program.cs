@@ -26,5 +26,6 @@ BenchmarkSwitcher
         typeof(DelayedSchedulingBenchmarks),
         typeof(RetryEngineBenchmarks),
         typeof(ContentRefreshBenchmarks),
+        typeof(TransportSendMetadataBenchmarks),
     ])
     .Run(args, BenchmarkRunConfig.Create());

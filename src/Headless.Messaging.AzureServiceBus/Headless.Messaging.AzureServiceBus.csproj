@@ -7,6 +7,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Messaging.Benchmarks" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>

@@ -19,8 +19,19 @@ internal sealed class AzureServiceBusQueueTransport(
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
+    // The options are a singleton snapshot, so the endpoint never changes; parse the connection string once instead of
+    // on every send. Built on first use so constructing the transport neither reads the options nor throws for an
+    // unparsable connection string.
+    private string? _brokerEndpoint;
+
     public BrokerAddress BrokerAddress =>
-        ServiceBusHelpers.GetBrokerAddress(busOptions.Value.ConnectionString, busOptions.Value.Namespace);
+        new(
+            ServiceBusHelpers.BrokerName,
+            _brokerEndpoint ??= ServiceBusHelpers.GetBrokerEndpoint(
+                busOptions.Value.ConnectionString,
+                busOptions.Value.Namespace
+            )
+        );
 
     public async Task<OperateResult> SendAsync(
         TransportMessage transportMessage,
