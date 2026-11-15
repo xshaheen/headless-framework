@@ -32,13 +32,7 @@ internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int?
             {
                 if (maxWaitersPerResource is { } maxPerResource)
                 {
-                    Ensure.True(
-                        existing < maxPerResource,
-                        string.Create(
-                            CultureInfo.InvariantCulture,
-                            $"Maximum waiters per resource ({maxPerResource}) exceeded"
-                        )
-                    );
+                    Ensure.True(existing < maxPerResource, $"Maximum waiters per resource ({maxPerResource}) exceeded");
                 }
 
                 _waitersByResource[resource] = existing + 1;
@@ -50,10 +44,7 @@ internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int?
             {
                 Ensure.True(
                     _waitersByResource.Count < maxResources,
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Maximum concurrent waiting resources ({maxResources}) exceeded"
-                    )
+                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
                 );
             }
 
