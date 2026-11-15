@@ -184,9 +184,9 @@ public abstract class ConsumerClientTestsBase : TestBase
         // when
         await cts.CancelAsync();
 
-        // then - should complete without hanging
-        var completed = await Task.WhenAny(listeningTask, Task.Delay(TimeSpan.FromSeconds(5), AbortToken));
-        completed.Should().Be(listeningTask, "Consumer should shutdown gracefully within timeout");
+        // then - should complete without hanging. WhenAny waits for the listener to end without rethrowing what it
+        // ended with: graceful shutdown promises the listener stops, not how a broker's teardown reports it.
+        await Task.WhenAny(listeningTask).Bounded(TimeSpan.FromSeconds(5));
     }
 
     // Delivery under concurrency is covered by the transport conformance suites; this checks only that one client

@@ -4267,13 +4267,9 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         // Hard timeout — if the secondary-index path regresses to an O(N) scan inside an
         // exclusive lock the storm would either deadlock or take orders of magnitude longer
-        // than 30 seconds. Failing fast surfaces the regression.
-        var stormCompletion = Task.WhenAll(workers);
-        var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
-        var winner = await Task.WhenAny(stormCompletion, timeout);
-        winner
-            .Should()
-            .BeSameAs(stormCompletion, "storm must finish well under 30s — lock starvation suspected otherwise");
+        // than 30 seconds. Failing fast surfaces the regression: a storm that outlives the
+        // 30 s bound fails here with a TimeoutException naming it.
+        await Task.WhenAll(workers).Bounded();
 
         // Exactly one writer should report true (the inserter); all others observe the existing
         // terminal-NULL row and return false. The single-row invariant is then verified via a
@@ -4351,15 +4347,10 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .ToArray();
 
             startGate.Set();
-            var stormCompletion = Task.WhenAll(workers);
-            var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
-            var winner = await Task.WhenAny(stormCompletion, timeout);
-            winner
-                .Should()
-                .BeSameAs(
-                    stormCompletion,
-                    $"storm for consumer={consumerIdentity} must finish well under 30s — lock starvation or deadlock suspected"
-                );
+
+            // A storm that outlives the 30 s bound fails with a TimeoutException naming it: lock starvation or a
+            // deadlock is suspected.
+            await Task.WhenAll(workers).Bounded();
 
             exceptions
                 .Should()
@@ -4443,15 +4434,10 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .ToArray();
 
             startGate.Set();
-            var stormCompletion = Task.WhenAll(workers);
-            var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
-            var winner = await Task.WhenAny(stormCompletion, timeout);
-            winner
-                .Should()
-                .BeSameAs(
-                    stormCompletion,
-                    $"storm for consumer={consumerIdentity} must finish well under 30s — lock starvation or deadlock suspected"
-                );
+
+            // A storm that outlives the 30 s bound fails with a TimeoutException naming it: lock starvation or a
+            // deadlock is suspected.
+            await Task.WhenAll(workers).Bounded();
 
             exceptions
                 .Should()

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
+using System.Collections;
 using Headless.Messaging;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -192,8 +192,8 @@ public static class TransportProviderConformance
         var run = Guid.NewGuid().ToString("N");
         var shortIdentity = $"conformance.{run}-a";
         var longIdentity = $"conformance.{run}-b.".PadRight(120, 'x');
-        var shortDeliveries = new ConcurrentBag<TransportConformanceDelivery>();
-        var longDeliveries = new ConcurrentBag<TransportConformanceDelivery>();
+        var shortDeliveries = new DeliveryLog();
+        var longDeliveries = new DeliveryLog();
 
         await using var shortFirst = await driver.CreateSessionAsync(
             new TransportConformanceEndpoint(MessageLane.Bus, logicalName, shortIdentity, "replica-1"),
@@ -224,7 +224,7 @@ public static class TransportProviderConformance
 
         await _WaitForCountAsync(shortDeliveries, 1, cancellationToken);
         await _WaitForCountAsync(longDeliveries, 1, cancellationToken);
-        await Task.Delay(_NegativeObservationWindow(driver), cancellationToken);
+        await shortFirst.TimeProvider.Delay(_NegativeObservationWindow(driver), cancellationToken);
 
         shortDeliveries.Should().ContainSingle("replicas of one consumer identity must compete for one copy");
         longDeliveries
@@ -250,14 +250,14 @@ public static class TransportProviderConformance
 
         var logicalName = $"conformance-{Guid.NewGuid():N}";
         var identity = $"conformance.{Guid.NewGuid():N}-every";
-        var deliveries = new ConcurrentBag<TransportConformanceDelivery>[replicas];
+        var deliveries = new DeliveryLog[replicas];
         var sessions = new List<TransportConsumerConformanceSession>(replicas);
 
         try
         {
             for (var i = 0; i < replicas; i++)
             {
-                deliveries[i] = [];
+                deliveries[i] = new DeliveryLog();
                 sessions.Add(
                     await driver.CreateSessionAsync(
                         new TransportConformanceEndpoint(MessageLane.Bus, logicalName, identity, $"replica-{i + 1}")
@@ -284,7 +284,7 @@ public static class TransportProviderConformance
                 await _WaitForCountAsync(replica, 2, cancellationToken);
             }
 
-            await Task.Delay(_NegativeObservationWindow(driver), cancellationToken);
+            await sessions[0].TimeProvider.Delay(_NegativeObservationWindow(driver), cancellationToken);
 
             foreach (var replica in deliveries)
             {
@@ -312,7 +312,7 @@ public static class TransportProviderConformance
     )
     {
         var logicalName = $"conformance-{Guid.NewGuid():N}";
-        var deliveries = new ConcurrentBag<TransportConformanceDelivery>();
+        var deliveries = new DeliveryLog();
         await using var first = await driver.CreateSessionAsync(
             new TransportConformanceEndpoint(MessageLane.Queue, logicalName, logicalName, "replica-1"),
             cancellationToken
@@ -331,7 +331,7 @@ public static class TransportProviderConformance
         result.Succeeded.Should().BeTrue();
 
         await _WaitForCountAsync(deliveries, 1, cancellationToken);
-        await Task.Delay(_NegativeObservationWindow(driver), cancellationToken);
+        await first.TimeProvider.Delay(_NegativeObservationWindow(driver), cancellationToken);
         deliveries.Should().ContainSingle("Queue replicas must compete for one owned copy");
     }
 
@@ -341,8 +341,8 @@ public static class TransportProviderConformance
     )
     {
         var logicalName = $"conformance-{Guid.NewGuid():N}";
-        var busDeliveries = new ConcurrentBag<TransportConformanceDelivery>();
-        var queueDeliveries = new ConcurrentBag<TransportConformanceDelivery>();
+        var busDeliveries = new DeliveryLog();
+        var queueDeliveries = new DeliveryLog();
         await using var bus = await driver.CreateSessionAsync(
             new TransportConformanceEndpoint(MessageLane.Bus, logicalName, "conformance.lane-isolation", "replica-1"),
             cancellationToken
@@ -365,7 +365,7 @@ public static class TransportProviderConformance
             .Succeeded.Should()
             .BeTrue();
         await _WaitForCountAsync(queueDeliveries, 1, cancellationToken);
-        await Task.Delay(_NegativeObservationWindow(driver), cancellationToken);
+        await queue.TimeProvider.Delay(_NegativeObservationWindow(driver), cancellationToken);
 
         busDeliveries.Should().ContainSingle("the Queue send cannot cross-deliver into the Bus subscription");
         queueDeliveries.Should().ContainSingle();
@@ -409,7 +409,7 @@ public static class TransportProviderConformance
 
     private static async Task _StartAndCommitAsync(
         TransportConsumerConformanceSession session,
-        ConcurrentBag<TransportConformanceDelivery> deliveries,
+        DeliveryLog deliveries,
         CancellationToken cancellationToken
     )
     {
@@ -424,16 +424,12 @@ public static class TransportProviderConformance
     }
 
     private static async Task _WaitForCountAsync(
-        ConcurrentBag<TransportConformanceDelivery> deliveries,
+        DeliveryLog deliveries,
         int expected,
         CancellationToken cancellationToken
     )
     {
-        using var timeout = TimeSpan.FromSeconds(20).ToCancellationTokenSource(cancellationToken);
-        while (deliveries.Count < expected)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
-        }
+        await deliveries.WaitForCountAsync(expected).WaitAsync(cancellationToken).Bounded(TimeSpan.FromSeconds(20));
     }
 
     private static TimeSpan _NegativeObservationWindow(TransportProviderConformanceDriver driver)
@@ -452,5 +448,63 @@ public static class TransportProviderConformance
         };
 
         return new TransportMessage(headers, "provider-conformance"u8.ToArray());
+    }
+
+    /// <summary>
+    /// The deliveries a session handed to its handler, with a signal for the moment a count is reached, so a test
+    /// waits on the delivery itself instead of polling the count.
+    /// </summary>
+    private sealed class DeliveryLog : IEnumerable<TransportConformanceDelivery>
+    {
+        private readonly Lock _gate = new();
+        private readonly List<TransportConformanceDelivery> _deliveries = [];
+        private readonly List<(int Count, TaskCompletionSource Reached)> _waiters = [];
+
+        public void Add(TransportConformanceDelivery delivery)
+        {
+            List<TaskCompletionSource>? reached = null;
+
+            lock (_gate)
+            {
+                _deliveries.Add(delivery);
+
+                for (var i = _waiters.Count - 1; i >= 0; i--)
+                {
+                    if (_deliveries.Count >= _waiters[i].Count)
+                    {
+                        (reached ??= []).Add(_waiters[i].Reached);
+                        _waiters.RemoveAt(i);
+                    }
+                }
+            }
+
+            reached?.ForEach(static signal => signal.TrySetResult());
+        }
+
+        public Task WaitForCountAsync(int count)
+        {
+            lock (_gate)
+            {
+                if (_deliveries.Count >= count)
+                {
+                    return Task.CompletedTask;
+                }
+
+                var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiters.Add((count, reached));
+
+                return reached.Task;
+            }
+        }
+
+        public IEnumerator<TransportConformanceDelivery> GetEnumerator()
+        {
+            lock (_gate)
+            {
+                return _deliveries.ToList().GetEnumerator();
+            }
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
