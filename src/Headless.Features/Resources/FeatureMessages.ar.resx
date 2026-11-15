@@ -17,4 +17,7 @@
   <data name="features:provider-readonly" xml:space="preserve">
     <value>موفر المميزات {0} للقراءة فقط ولا يمكن تعديله.</value>
   </data>
+  <data name="features:provider-not-allowed" xml:space="preserve">
+    <value>الميزة {0} لا تسمح للموفر {1}.</value>
+  </data>
 </root>

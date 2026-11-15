@@ -34,6 +34,17 @@ public interface ISettingErrorsDescriptor
     /// <param name="settingName">The name of the setting whose value could not be decrypted.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
     ErrorDescriptor DecryptionFailed(string settingName);
+
+    /// <summary>
+    /// Returns an error descriptor when a write names a provider that the setting's
+    /// <see cref="Headless.Settings.SettingDefinition.Providers"/> list does not include.
+    /// </summary>
+    /// <param name="settingName">The name of the setting.</param>
+    /// <param name="providerName">The name of the provider the setting does not allow.</param>
+    /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
+    /// <remarks>A default member, so an existing implementation keeps compiling and returns the built-in message.</remarks>
+    ErrorDescriptor ProviderNotAllowed(string settingName, string providerName) =>
+        DefaultSettingErrorsDescriptor.CreateProviderNotAllowed(settingName, providerName);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
@@ -97,6 +108,24 @@ public sealed class DefaultSettingErrorsDescriptor : ISettingErrorsDescriptor
         var error = new ErrorDescriptor("setting:tenant_not_available", Messages.setting_tenant_not_available);
 
         return error;
+    }
+
+    /// <inheritdoc/>
+    public ErrorDescriptor ProviderNotAllowed(string settingName, string providerName) =>
+        CreateProviderNotAllowed(settingName, providerName);
+
+    internal static ErrorDescriptor CreateProviderNotAllowed(string settingName, string providerName)
+    {
+        var description = string.Format(
+            CultureInfo.InvariantCulture,
+            Messages.setting_provider_not_allowed,
+            settingName,
+            providerName
+        );
+
+        return new ErrorDescriptor("setting:provider_not_allowed", description)
+            .WithParam("settingName", settingName)
+            .WithParam("providerName", providerName);
     }
 
     /// <inheritdoc/>
