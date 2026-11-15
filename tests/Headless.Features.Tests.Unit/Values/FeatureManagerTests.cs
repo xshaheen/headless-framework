@@ -713,7 +713,7 @@ public sealed class FeatureManagerTests : TestBase
             .ContainSingle()
             .Which;
         error.Code.Should().Be("features:provider-not-allowed");
-        await tenant.DidNotReceiveWithAnyArgs().SetAsync(default!, default!, default, default);
+        await tenant.DidNotReceiveWithAnyArgs().SetAsync(default!, default!, default, AbortToken);
     }
 
     [Fact]
