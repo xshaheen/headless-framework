@@ -203,7 +203,7 @@ internal static class JobsSubtreeLeaseWalk
 
         try
         {
-            IReadOnlyCollection<Guid> frontier = [node.Key];
+            List<Guid> frontier = [node.Key];
 
             for (var depth = 1; frontier.Count != 0 && depth < maxChainDepth; depth++)
             {
