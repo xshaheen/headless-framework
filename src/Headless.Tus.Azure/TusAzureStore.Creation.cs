@@ -44,16 +44,24 @@ public sealed partial class TusAzureStore : ITusCreationStore
             // This ensures the blob exists and has the correct metadata from the start
             // The actual data (blocks) will be uploaded in subsequent requests
             var blockBlobClient = _GetBlockBlobClient(fileId);
-            await blockBlobClient
+            var httpHeaders = await _blobHttpHeadersProvider
+                .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
+                .ConfigureAwait(false);
+            var created = await blockBlobClient
                 .UploadAsync(
                     content: Stream.Null,
-                    httpHeaders: await _blobHttpHeadersProvider
-                        .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
-                        .ConfigureAwait(false),
+                    httpHeaders: httpHeaders,
                     metadata: blobMetadata.ToAzure(),
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
+
+            // tusdotnet sets the expiration, and creation-with-upload appends, in the same request: both start from
+            // the blob just written instead of reading it back.
+            _memo.Set(
+                fileId,
+                TusAzureFile.Created(fileId, blockBlobClient.Name, created.Value.ETag, blobMetadata, httpHeaders)
+            );
 
             _logger.FileCreated(fileId, uploadLength);
 
@@ -85,7 +93,7 @@ public sealed partial class TusAzureStore : ITusCreationStore
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
-        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var blobInfo = await _LoadFileAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return blobInfo?.Metadata.ToTusString();
     }

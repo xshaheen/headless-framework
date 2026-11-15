@@ -15,7 +15,7 @@ internal sealed class TusS3StateStore(
     IAmazonS3 s3,
     TusS3StoreOptions options,
     TusS3Keys keys,
-    TusS3RequestMemo memo,
+    TusRequestMemo<TusS3LoadedUpload> memo,
     ILogger logger
 )
 {
