@@ -56,6 +56,12 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
     }
 
     [Fact]
+    public override Task should_fail_to_extend_an_expired_slot_that_no_acquire_has_pruned_yet()
+    {
+        return base.should_fail_to_extend_an_expired_slot_that_no_acquire_has_pruned_yet();
+    }
+
+    [Fact]
     public override Task should_extend_live_slot_and_not_re_add_expired_slot()
     {
         return base.should_extend_live_slot_and_not_re_add_expired_slot();

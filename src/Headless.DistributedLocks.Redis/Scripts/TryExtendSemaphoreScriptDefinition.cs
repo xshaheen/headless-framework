@@ -18,11 +18,9 @@ internal sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition
             // on the extending holder's own slot (whose score is simply updated). Expired-slot
             // reclamation is the acquire script's job, where it is correctness-critical.
             //
-            // Soft expiry: XX matches any existing member, including one whose score has already
-            // lapsed but has not yet been pruned by a competing acquire. Such a holder reclaims its
-            // own slot on extend rather than losing it — standard lease-renewal semantics, and
-            // capacity-safe because script atomicity orders this extend against any acquire that
-            // would prune-then-take the slot. "Expired" is therefore soft until an acquire prunes.
+            // Hard expiry: a member whose score has lapsed is refused even before a competing acquire
+            // prunes it, so Redis agrees with the in-memory provider and with ValidateAsync, which already
+            // reports such a lease lost.
             """
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
@@ -34,7 +32,9 @@ internal sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition
             -- non-holder cannot create a slot; existence is reasserted via zscore because GT suppresses the
             -- CH "changed" signal when the new score is not greater, which we must not read as "missing".
             local existing = redis.call('zscore', @holdersKey, @leaseId)
-            if existing == false then
+            -- A slot whose lease already passed is not renewed, even before an acquire prunes it, as in the
+            -- in-memory provider: its holder was told the lease was lost.
+            if existing == false or tonumber(existing) <= nowMs then
               return 0
             end
             redis.call('zadd', @holdersKey, 'XX', 'GT', expiryMs, @leaseId)
