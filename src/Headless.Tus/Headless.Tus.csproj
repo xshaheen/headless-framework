@@ -11,6 +11,9 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Tus.DistributedLocks" />
+    <!-- The stores share the per-request memo of loaded upload state. -->
+    <InternalsVisibleTo Include="Headless.Tus.Azure" />
+    <InternalsVisibleTo Include="Headless.Tus.S3" />
     <InternalsVisibleTo Include="Headless.Tus.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

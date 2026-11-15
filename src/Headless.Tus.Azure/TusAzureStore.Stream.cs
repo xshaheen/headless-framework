@@ -55,10 +55,11 @@ public sealed partial class TusAzureStore
         var blockBlobClient = _GetBlockBlobClient(fileId);
 
         var azureFile =
-            await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
+            await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
             ?? throw new TusStoreException($"File {fileId} does not exist");
 
-        var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
+        var committedBlocks = await _LoadCommittedBlocksAsync(blockBlobClient, azureFile, cancellationToken)
+            .ConfigureAwait(false);
         var currentOffset = committedBlocks.Sum(b => b.SizeLong);
         using var hasher = await _GetHasher(stream, cancellationToken).ConfigureAwait(false);
 
@@ -94,6 +95,7 @@ public sealed partial class TusAzureStore
                 chunkBlockIds,
                 blockToken,
                 chunkStartOffset: currentOffset,
+                chunkLength: bytesWritten,
                 hasher,
                 checksumAlgorithm: hasher is null ? null : stream.GetUploadChecksumInfo()!.Algorithm
             )
@@ -126,6 +128,7 @@ public sealed partial class TusAzureStore
         List<string> chunkBlockIds,
         string blockToken,
         long chunkStartOffset,
+        long chunkLength,
         IncrementalHash? hasher,
         string? checksumAlgorithm
     )
@@ -150,7 +153,13 @@ public sealed partial class TusAzureStore
             // allBlockIds was built from the committed list this request read, so the commit is fenced
             // on the ETag read alongside it: if another request committed in between, this commit
             // would replace that request's blocks and must fail instead.
-            await _CommitBlockListAsync(blockBlobClient, azureFile, allBlockIds, CancellationToken.None)
+            await _CommitBlockListAsync(
+                    blockBlobClient,
+                    azureFile,
+                    allBlockIds,
+                    committedLength: chunkStartOffset + chunkLength,
+                    CancellationToken.None
+                )
                 .ConfigureAwait(false);
 
             return false;
@@ -169,6 +178,8 @@ public sealed partial class TusAzureStore
         azureFile.Metadata.LastChunkChecksum = $"{checksumAlgorithm}:{hasher.GetHashAndReset().ToBase64()}";
         azureFile.Metadata.LastChunkOffset = chunkStartOffset;
         await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
+        // Set after the write: a failed write drops the file, and a verify in this request needs the length.
+        azureFile.PendingChunkLength = chunkLength;
 
         return true;
     }

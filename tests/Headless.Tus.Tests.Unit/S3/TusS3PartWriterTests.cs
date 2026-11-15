@@ -25,7 +25,8 @@ public sealed class TusS3PartWriterTests : TestBase
     private readonly TusS3StoreOptions _options = new() { Bucket = "bucket", Prefix = "uploads/" };
     private readonly TusS3Keys _keys = new("uploads/");
 
-    private TusS3StateStore _StateStore => new(_s3.Client, _options, _keys, new TusS3RequestMemo(null), Logger);
+    private TusS3StateStore _StateStore =>
+        new(_s3.Client, _options, _keys, new TusRequestMemo<TusS3LoadedUpload>(null), Logger);
 
     [Fact]
     public async Task should_store_a_body_below_one_part_as_one_segment_without_reading_anything_back()

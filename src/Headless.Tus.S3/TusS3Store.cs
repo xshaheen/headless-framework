@@ -105,7 +105,13 @@ public sealed partial class TusS3Store
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<TusS3Store>();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _keys = new TusS3Keys(options.NormalizedPrefix);
-        _stateStore = new TusS3StateStore(s3, options, _keys, new TusS3RequestMemo(httpContextAccessor), _logger);
+        _stateStore = new TusS3StateStore(
+            s3,
+            options,
+            _keys,
+            new TusRequestMemo<TusS3LoadedUpload>(httpContextAccessor),
+            _logger
+        );
         _appendServices = new TusS3AppendServices(
             s3,
             options,

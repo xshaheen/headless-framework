@@ -53,10 +53,11 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         var blockBlobClient = _GetBlockBlobClient(fileId);
 
         var azureFile =
-            await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
+            await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
             ?? throw new TusStoreException($"File {fileId} does not exist");
 
-        var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
+        var committedBlocks = await _LoadCommittedBlocksAsync(blockBlobClient, azureFile, cancellationToken)
+            .ConfigureAwait(false);
         var currentOffset = committedBlocks.Sum(b => b.SizeLong);
         // currentOffset advances per staged chunk below; keep the pre-append offset as the
         // rollback point recorded with the commit (see the Stream overload for the rationale).
@@ -196,6 +197,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                     chunkBlockIds,
                     blockToken,
                     chunkStartOffset: appendStartOffset,
+                    chunkLength: bytesWrittenThisRequest,
                     hasher,
                     checksumAlgorithm: checksumInfo?.Algorithm
                 )
