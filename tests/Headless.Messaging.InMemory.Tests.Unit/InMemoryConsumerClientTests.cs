@@ -682,24 +682,27 @@ public sealed class InMemoryConsumerClientTests : TestBase
     {
         // given
         var logger = Substitute.For<ILogger<MemoryQueue>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var queue = new MemoryQueue(logger);
         var client = new InMemoryConsumerClient(queue, "dispose-group", 1);
         await client.SubscribeAsync(["dispose-messageName"], AbortToken);
 
-        TransportMessage? receivedMessage = null;
-        client.OnMessageCallback = (msg, _) =>
-        {
-            receivedMessage = msg;
-            return Task.CompletedTask;
-        };
-
         // when
         await client.DisposeAsync();
 
-        // then - disposed client removes the binding; send is a silent no-op (real-broker semantics)
+        // then - disposed client removes the binding; send is a silent no-op (real-broker semantics). A disposed
+        // client's channel is closed either way, so the queue reporting that nobody subscribes is what shows the
+        // binding went (event 3008, NoSubscribersBus); a binding left behind would be delivered to a closed channel.
         var act = () => queue.SendBus(_CreateTestMessage("msg-1", "dispose-messageName"));
         act.Should().NotThrow();
-        receivedMessage.Should().BeNull();
+        logger
+            .ReceivedCalls()
+            .Should()
+            .Contain(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
+                && call.GetArguments()[1] is EventId
+                && ((EventId)call.GetArguments()[1]!).Id == 3008
+            );
     }
 
     [Fact]
