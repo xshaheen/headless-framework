@@ -255,10 +255,10 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 		fi; \
 		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(PROOF_ERROR_LOG_ARGS) $(MSBUILD_ARGS) || status=1; \
 	fi;
-# An analyzer finding sends the change back for an edit, and that edit re-runs every suite, so the integration gate
-# analyzes right after the build (it reads the build's compiler logs) and skips its suites on a finding instead of finding out from
-# verify-affected after the suites already ran. The skip goes through `status`, as a failed build's does.
-AFFECTED_INTEGRATION_ANALYZER_STAGE = if [ $$status -eq 0 ]; then \
+# An analyzer finding sends the change back for an edit, and that edit re-runs every suite, so verify-affected and
+# the integration gate analyze right after the build (the stage reads the build's compiler logs) and skip their suites
+# on a finding instead of finding out after the suites already ran. The skip goes through `status`, as a failed build's does.
+AFFECTED_FAIL_FAST_ANALYZER_STAGE = if [ $$status -eq 0 ]; then \
 		$(AFFECTED_ANALYZER_STAGE) \
 		$(PROOF) analyzers-clean --dir "$$run" || { status=1; printf '\033[31m[affected]\033[0m analyzer findings in the changed projects; fix them before the suites run.\n' >&2; }; \
 	fi;
@@ -339,7 +339,7 @@ help: ## Show available commands.
 	@printf "  make dashboard-jobs-test       # lint, type-check, unit-test, and build one dashboard SPA\n"
 	@printf "  make build-affected             # compile the change; the proof names each compiler error\n"
 	@printf "  make test-affected              # before the gate: every affected unit-test project, minutes when Jobs is in it\n"
-	@printf "  make verify-affected            # the pre-PR proof: format, build, unit tests, analyzers, changed dashboards\n"
+	@printf "  make verify-affected            # the pre-PR proof: format, build, analyzers, unit tests, changed dashboards\n"
 	@printf "  make test-affected-integration  # agent-only, needs Docker: integration suites; gates changed lines of packages with an integration project\n"
 	@printf "  make mutation PROJECT=src/Headless.Checks/Headless.Checks.csproj   # Stryker.NET mutation score; reported, never gated\n"
 	@printf "  make test-failed                # after a narrow fix: only the modules the last proof failed; then verify-affected once\n"
@@ -761,6 +761,18 @@ quality-analyzers-affected: ## Analyze the projects changed vs AFFECTED_BASE; wr
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
+# The build does not report every finding verify-affected fails on (info-level analyzer suggestions, a formatting
+# drift, a new test wait), so a change can compile, pass its tests, and still fail the gate after the suites ran.
+# lint-affected is that gate's static stages alone, run before each commit: it builds only the changed projects and
+# runs no test. Every stage runs and every failure is reported, so one edit fixes them all.
+LINT_AFFECTED_STAGES ?= format-check-changed test-discipline quality-analyzers-affected
+
+.PHONY: lint-affected
+lint-affected: ## Before each commit: verify-affected's static stages alone (format-check-changed, test-discipline, quality-analyzers-affected), building only the changed projects and running no test; every failure is reported.
+	@failed=""; for stage in $(LINT_AFFECTED_STAGES); do $(MAKE) --no-print-directory $$stage || failed="$$failed $$stage"; done; \
+	if [ -n "$$failed" ]; then printf '[lint-affected] failed:%s\n' "$$failed" >&2; exit 1; fi; \
+	printf '[lint-affected] passed: %s\n' "$(LINT_AFFECTED_STAGES)"
+
 .PHONY: quality-references
 quality-references: ## Report package and project references nothing uses (ReferenceTrimmer) in PROJECT, else the solution; exits 3 on findings.
 	@mkdir -p "$(ARTIFACTS_DIR)"; target="$(if $(PROJECT),$(PROJECT),$(SOLUTION))"; \
@@ -1177,7 +1189,8 @@ test-project-fast: ## Run one prebuilt test project without restore/build.
 # directory names: changed projects plus their direct dependents (every transitive one with
 # AFFECTED_TRANSITIVE=true), and every unit- or integration-test project that is in that set or
 # references a member of it directly. A change to a build-wide file (global.json, Directory.*.props,
-# .editorconfig, eng/DashboardSpa.targets) selects every project below it.
+# .editorconfig) selects every project below it; a build file a project file <Import>s, such as
+# eng/DashboardSpa.targets, selects its importers.
 # All selected projects build in one invocation of a generated solution filter, all test modules run
 # to completion (one failure no longer hides the rest), and the results land in a proof bundle.
 .PHONY: affected
@@ -1213,7 +1226,7 @@ test-affected-integration: ## Build the affected set, run its integration tests,
 	$(PROOF_REUSE_STAGE) \
 	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
 	$(AFFECTED_BUILD_STAGES) \
-	$(AFFECTED_INTEGRATION_ANALYZER_STAGE) \
+	$(AFFECTED_FAIL_FAST_ANALYZER_STAGE) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_INTEGRATION_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
@@ -1221,16 +1234,16 @@ test-affected-integration: ## Build the affected set, run its integration tests,
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: verify-affected
-verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), gate unit coverage, and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
+verify-affected: ## Format-check the changed files, then build and analyze the affected set, unit-test it (with coverage) and gate unit coverage, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(PROOF_REUSE_STAGE) \
 	$(AFFECTED_FORMAT_STAGE) \
 	$(AFFECTED_TEST_DISCIPLINE_STAGE) \
 	$(AFFECTED_BUILD_STAGES) \
+	$(AFFECTED_FAIL_FAST_ANALYZER_STAGE) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
-	$(AFFECTED_ANALYZER_STAGE) \
 	$(AFFECTED_DASHBOARD_STAGE) \
 	$(PROOF) summarize --dir "$$run" --input-key "$$key" $(if $(filter true,$(VERIFY_COVERAGE)),--coverage-gate unit $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
@@ -1248,7 +1261,7 @@ verify-affected: ## Format-check the changed files, then build, unit-test (with 
 CHECK_GATES ?= check-layering test-discipline verify-affected
 
 .PHONY: check
-check: ## CI gate over the affected scope: check-layering, test-discipline over every test file, then verify-affected (format, build, tests, analyzers, changed dashboards); every failure is reported.
+check: ## CI gate over the affected scope: check-layering, test-discipline over every test file, then verify-affected (format, build, analyzers, tests, changed dashboards); every failure is reported.
 	@failed=""; for gate in $(CHECK_GATES); do $(MAKE) $$gate || failed="$$failed $$gate"; done; \
 	if [ -n "$$failed" ]; then printf '[check] failed:%s\n' "$$failed" >&2; exit 1; fi; \
 	printf '[check] passed: %s\n' "$(CHECK_GATES)"

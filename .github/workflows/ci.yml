@@ -77,6 +77,9 @@ jobs:
       - name: "Verify package-version scoping"
         run: bash tests/scripts/test-affected-package-versions.sh
 
+      - name: "Verify imported build-file scoping"
+        run: bash tests/scripts/test-affected-imports.sh
+
       - name: "Verify proof analyzer stage"
         run: bash tests/scripts/test-proof-analyzers.sh
 
