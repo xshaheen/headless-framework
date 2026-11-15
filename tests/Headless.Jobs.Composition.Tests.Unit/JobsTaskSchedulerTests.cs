@@ -228,8 +228,8 @@ public sealed class JobsTaskSchedulerTests : TestBase
         var dispose = scheduler.DisposeAsync().AsTask();
 
         // Nothing signals that disposal reached its wait for the running job, and a check made right away passes whether
-        // or not it waits; only elapsed time shows the task stays pending while the job holds its slot.
-        // real-wait: the absence of a completion can only be shown over elapsed time
+        // or not it waits; only elapsed time shows the task stays pending while the job holds its slot. This stays a
+        // counted wait: it is a quiet window, not real time under test, and needs a production hook to observe.
         (await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken)))
             .Should()
             .NotBe(dispose);
