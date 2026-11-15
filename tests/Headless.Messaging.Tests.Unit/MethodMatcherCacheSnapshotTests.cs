@@ -17,7 +17,7 @@ public sealed class MethodMatcherCacheSnapshotTests : TestBase
     {
         // given: a registered consumer whose topology never changes, so every lookup must find it no matter how often
         // the cache drops and rebuilds its snapshot underneath the readers.
-        using var provider = _CreateProvider();
+        await using var provider = _CreateProvider();
         var cache = provider.GetRequiredService<MethodMatcherCache>();
         var subscription = new ConsumerSubscriptionKey(_ConsumerIdentity, MessageLane.Bus);
 

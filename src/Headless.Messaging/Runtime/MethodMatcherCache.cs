@@ -261,7 +261,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             // finds its consumer by identity.
             var identityEntries = executorCollection
                 .GroupBy(x => new ConsumerIdentityKey(x.ResolvedConsumerIdentity, x.Lane))
-                .ToFrozenDictionary(item => item.Key, item => (IReadOnlyList<ConsumerExecutorDescriptor>)item.ToList());
+                .ToFrozenDictionary(item => item.Key, IReadOnlyList<ConsumerExecutorDescriptor> (item) => [.. item]);
 
             // Persisted inbox identities must not use subscription wildcards or their subscription-level caches, so an
             // inbox row finds its consumer by exact identity, contract version, and message name. Walking the lane
