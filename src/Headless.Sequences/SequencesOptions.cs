@@ -18,6 +18,16 @@ public sealed class SequencesOptions
     public IDictionary<string, SequencePolicy> Policies { get; } =
         new Dictionary<string, SequencePolicy>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Gets or sets the most counter keys one host holds a reserved block for, across every name with a
+    /// <see cref="SequencePolicy.BlockSize" /> above 1; at least 1. The default is 10,000.
+    /// </summary>
+    /// <remarks>
+    /// A key past the bound drops the least recently used tenth of the held blocks. Their unused values become gaps,
+    /// and each dropped key reserves a fresh block on its next call.
+    /// </remarks>
+    public int MaxCachedBlocks { get; set; } = 10_000;
+
     internal SequencePolicy GetPolicy(string name)
     {
         return Policies.TryGetValue(name, out var policy) ? policy : DefaultPolicy;
@@ -29,6 +39,7 @@ internal sealed class SequencesOptionsValidator : AbstractValidator<SequencesOpt
     public SequencesOptionsValidator()
     {
         RuleFor(x => x.DefaultPolicy).NotNull().SetValidator(new SequencePolicyValidator());
+        RuleFor(x => x.MaxCachedBlocks).GreaterThan(0);
 
         RuleForEach(x => x.Policies)
             .ChildRules(entry =>
@@ -55,6 +66,14 @@ internal sealed class SequencesOptionsValidator : AbstractValidator<SequencesOpt
         {
             RuleFor(x => x.Step).GreaterThan(0);
             RuleFor(x => x.Mode).IsInEnum();
+            RuleFor(x => x.BlockSize).GreaterThan(0);
+            RuleFor(x => x.BlockSize)
+                .Equal(1)
+                .When(static x => x.Mode != SequenceMode.Fast)
+                .WithMessage(
+                    "Only a fast-mode sequence can reserve values in blocks: a gap-free or reported counter takes each "
+                        + "value inside the caller's unit of work, so its BlockSize must be 1."
+                );
             RuleFor(x => x.Reset).IsInEnum();
             RuleFor(x => x.FiscalYearStartMonth).InclusiveBetween(1, 12);
             RuleFor(x => x.TimeZone).NotNull();

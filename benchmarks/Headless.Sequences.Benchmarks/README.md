@@ -5,7 +5,8 @@ Measures fast-mode `ISequenceGenerator.NextAsync` at 32 concurrent callers on Po
 - One key: every caller takes numbers from the same counter, so they queue on its row.
 - A key per caller: each caller takes numbers from its own partition, so callers never contend.
 
-Every row exists before the measured calls, so they take the update branch, as a warm counter does. One operation is
+Each case runs with `BlockSize` 1 (a database call per number, the default) and 50 (fifty numbers reserved per call
+and handed out from memory). Every row exists before the measured calls, so they take the update branch, as a warm counter does. One operation is
 one number; the `Op/s` column is numbers per second across all callers.
 
 ```bash

@@ -5,7 +5,7 @@ packages: Sequences.Abstractions, Sequences, Sequences.Sql, Sequences.PostgreSql
 
 # Sequences
 
-> Tenant-scoped, named, monotonic counters in a relational table. The fast mode takes a number in its own short transaction. The gap-free mode takes it inside the caller's unit of work, so a rollback returns the number. Document numbers (`REC-2026-000042`) add a template and a yearly, monthly, daily, or fiscal-year reset. The reported mode follows numbers a device sends, as a replay guard.
+> Tenant-scoped, named counters in a relational table that never issue a number twice, in call order unless a fast name opts into block reservation. The fast mode takes a number in its own short write, or from a block of numbers reserved in one write. The gap-free mode takes it inside the caller's unit of work, so a rollback returns the number. Document numbers (`REC-2026-000042`) add a template and a yearly, monthly, daily, or fiscal-year reset. The reported mode follows numbers a device sends, as a replay guard.
 
 ## Orientation
 
@@ -23,7 +23,7 @@ builder.Services.AddHeadlessSequences(setup =>
 
 A counter is identified by the current tenant (`ICurrentTenant.Id`), a name, and an optional partition. Each counter name has one mode:
 
-- **Fast** (the default): inject `ISequenceGenerator` and call `NextAsync` or `ReserveAsync`. The number is committed in its own transaction before it returns. If the caller's own transaction later rolls back, that number is simply never used, which leaves a gap.
+- **Fast** (the default): inject `ISequenceGenerator` and call `NextAsync` or `ReserveAsync`. The number is committed on its own connection before it returns. If the caller's own transaction later rolls back, that number is simply never used, which leaves a gap. A fast name can set `BlockSize` to reserve many numbers per database call; see [Blocks](#blocks).
 - **Gap-free**: register the name with `Mode = SequenceMode.GapFree` and call `unit.Sequences.NextAsync` on the unit of work that writes the number. The increment runs in the unit's transaction and holds the counter's row lock until the unit ends. A rolled-back unit returns its number to the next caller.
 - **Reported**: register the name with `Mode = SequenceMode.Reported` and call `unit.Sequences.AdvanceToAsync(name, value, partition)` with the number a device stamped on its request. The counter keeps the highest value accepted and reports each new one as `Next`, `Skipped` (a gap), or `Stale` (a replay). See [Reported counters](#reported-counters).
 
@@ -70,6 +70,7 @@ SequenceNumber receipt = await unit.Sequences.NextNumberAsync("receipt", ct); //
 - Gap-free calls require a unit on the same database the provider is configured for, with a transaction from that provider. Any other unit is refused before a statement runs.
 - In an observed-mode unit (a gap-free call from a domain-event handler during the EF save pipeline's own save), the call marks the unit non-retryable, as `unit.Outbox` and `unit.Jobs` do. A replay would restore a tracked entity carrying a number that the rolled-back counter hands out again. Inside your own `RunAsync(db, …)` block the unit stays replayable, because the replay takes the number again.
 - A fast call cancelled or cut off during its commit may still have consumed a number. Treat that as an ordinary fast-mode gap.
+- Set `BlockSize` above 1 only on a fast name whose numbers may come out of call order across hosts and may skip values. Numbers stay unique, but each host hands out its own block, so two hosts interleave, and every unused value of a block is lost on restart, eviction, a policy change, or a period reset. Keep the default 1 for a number readers expect to rise with time. A gap-free or reported policy with a `BlockSize` above 1 fails options validation at startup.
 - The tenant is read from `ICurrentTenant` on every call. There is no tenant argument; host code numbering on behalf of a tenant switches with `ICurrentTenant.Change(...)`. With no tenant (`Id` is `null`), calls use the host counter. An empty or whitespace tenant id is refused, so it can never fall into the host counter.
 - Names and partitions compare ordinally and case-sensitively: `"INV"` and `"inv"` are two counters. A name may be at most 128 characters, a partition at most 64, and a tenant id at most 128 (`SequenceFieldLimits`). Longer values, a blank name, a whitespace-only partition, and any key part that starts or ends with whitespace throw `ArgumentException` before any SQL runs. The whitespace rule exists because SQL Server ignores trailing spaces when comparing keys, so `"acme"` and `"acme "` would otherwise share one counter there. A key part with a NUL character or an unpaired UTF-16 surrogate throws the same way: PostgreSQL cannot store NUL, and SqlClient sends a lone surrogate as U+FFFD, so SQL Server would share one counter between keys that differ only in which lone surrogate they carry (`Argument.IsPortableKey`). A `null` or empty partition means no partition.
 - The deployment creates the table by running `resources provision`, which applies the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) step; a host start only verifies it and fails fast when it is missing (see [Resource provisioning](utilities.md#resource-provisioning)). A call against a missing table fails, and on PostgreSQL that failure aborts the caller's unit.
@@ -121,6 +122,21 @@ The counter stores the highest value accepted, starting one `Step` below `Start`
 ### Ranges
 
 `ReserveAsync(name, count)` atomically advances the counter by `count * step` and returns a `SequenceRange` with `First`, `Count`, `Step` and `Last`. Enumerating it yields `First, First + Step, …, Last` without allocating. `count` must be at least 1. A `count * step` that cannot fit in a `long` throws `OverflowException` before the database is called. Reserve is fast-mode only.
+
+### Blocks
+
+A fast policy's `BlockSize` (default 1) sets how many values `NextAsync` and `NextNumberAsync` reserve per database call. With `BlockSize = 50`, the first call on a key reserves 50 consecutive values in one write (the same atomic increment `ReserveAsync` uses) and returns the first; the next 49 calls on that key on this host return the rest from memory, without touching the database. Callers racing on an exhausted block wait for one reservation instead of each making their own.
+
+```csharp
+setup.Policy("ticket", new SequencePolicy { BlockSize = 50 });
+```
+
+- **Unique, not ordered.** A block is reserved atomically, so no other host or block can issue its values. Each host holds its own block of a key, so host A may issue 51 while host B is still issuing 3: across hosts, numbers interleave rather than rise in call order.
+- **Unused values become gaps.** A block's remaining values are lost when the process stops, when its key is evicted, when the name's `Step` or `BlockSize` changes, and when a document-number period ends.
+- **Never across a reset.** Each reset period is its own partition and so its own key, so a block never spans a reset; the new period's first call reserves a fresh block starting at `Start`.
+- **Bounded memory.** `SequencesOptions.MaxCachedBlocks` (default 10,000) caps the keys one host holds a block for. Adding a key past the cap drops the least recently used tenth; each dropped key reserves a fresh block on its next call.
+- `ReserveAsync` always reserves its own range from the database, whatever the block size.
+- `BlockSize` must be at least 1, and exactly 1 on a gap-free or reported policy: those take each value inside the caller's unit of work.
 
 ### Overflow
 
@@ -176,9 +192,11 @@ Applications reach it through a provider package; call `AddHeadlessSequences` as
 | --- | --- |
 | `Policy(name, SequencePolicy)` | Sets one name's start, step, mode, and document-number format, reset, fiscal-year start month, and time zone |
 | `DefaultPolicy(SequencePolicy)` | Sets the policy of every unregistered name (default: fast, start 1, step 1) |
-| `ConfigureOptions(Action<SequencesOptions>)` | Mutates `SequencesOptions` (`DefaultPolicy`, `Policies`) directly |
+| `ConfigureOptions(Action<SequencesOptions>)` | Mutates `SequencesOptions` (`DefaultPolicy`, `Policies`, `MaxCachedBlocks`) directly |
 
-A policy with `Step` of 0 or less, an unknown `Format` token or unbalanced brace, or a `FiscalYearStartMonth` outside 1 to 12 fails options validation at startup.
+`SequencePolicy.BlockSize` (default 1) and `SequencesOptions.MaxCachedBlocks` (default 10,000) control block reservation; see [Blocks](#blocks).
+
+A policy with `Step` of 0 or less, a `BlockSize` below 1 or, on a gap-free or reported policy, above 1, an unknown `Format` token or unbalanced brace, or a `FiscalYearStartMonth` outside 1 to 12 fails options validation at startup, as does a `MaxCachedBlocks` below 1.
 
 ### Design and runtime behavior
 
@@ -240,7 +258,7 @@ Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddUnit
 ### Design and runtime behavior
 
 - Each call is one `INSERT … ON CONFLICT (tenant_id, name, partition) DO UPDATE … RETURNING`, so concurrent first calls on a new key never collide. Key columns use `COLLATE "C"`.
-- The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a transient fault raised before the commit (a deadlock, `40P01`, a serialization conflict, `40001`, or anything Npgsql reports as transient; never a fault from the commit) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
+- The fast path opens its own connection and runs the one statement with no explicit transaction, so it commits on its own: no `BEGIN` or `COMMIT` round trip, and concurrent callers of one counter wait only for the statement, not for a separate commit. That took 32 concurrent callers on one counter from about 5,200 to 23,500 numbers per second. It retries a transient fault (a deadlock, `40P01`, a serialization conflict, `40001`, or anything Npgsql reports as transient) on a fresh connection up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them. A retried fault may come after the server applied the statement; that value was never returned, so the retry leaves a gap, never a duplicate. The statement runs at the server's default isolation level; a stricter default than READ COMMITTED can turn racing first calls on a new key into `40001`, which the retry absorbs within its 3 attempts.
 - The gap-free path runs on the unit's own connection and transaction, with no retry. A failed or cancelled statement aborts the caller's PostgreSQL transaction, so the unit can then only roll back.
 - The table is a step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one advisory lock per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
 

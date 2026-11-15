@@ -11,7 +11,8 @@ namespace Headless.Sequences.Benchmarks;
 /// <summary>
 /// Fast-mode <see cref="ISequenceGenerator.NextAsync" /> at 32 concurrent callers, all on one counter (they queue on
 /// its row) or each on its own partition (they never contend). One operation is one number; Op/s is numbers per second
-/// across all callers.
+/// across all callers. <see cref="BlockSize" /> 1 is a database call per number; 50 reserves fifty numbers per call
+/// and hands them out from memory.
 /// </summary>
 public class NextBenchmarks
 {
@@ -32,6 +33,9 @@ public class NextBenchmarks
     [Params(SequencesProvider.PostgreSql, SequencesProvider.SqlServer)]
     public SequencesProvider Provider { get; set; }
 
+    [Params(1, 50)]
+    public int BlockSize { get; set; }
+
     [GlobalSetup]
     public async Task SetupAsync()
     {
@@ -41,6 +45,8 @@ public class NextBenchmarks
         services.AddLogging();
         services.AddHeadlessSequences(setup =>
         {
+            setup.DefaultPolicy(new SequencePolicy { BlockSize = BlockSize });
+
             if (Provider == SequencesProvider.PostgreSql)
             {
                 setup.UsePostgreSql(_database.ConnectionString);
