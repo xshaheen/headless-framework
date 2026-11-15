@@ -42,6 +42,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     // a client declares nothing for it and a missing queue surfaces when the client consumes. A runtime subscription,
     // which no deploy step knows, creates its own.
     private readonly bool _provisionsTopology;
+
+    // Declared with the queue when this client provisions it, so a runtime sequential subscription gets the same queue
+    // arguments that 'resources provision' gives a registered one.
+    private readonly bool _singleActiveConsumer;
     private readonly TransportEnvelopeGate _envelopeGate;
 
     // Written only while subscribing, before the consumer starts, and read by every delivery afterwards.
@@ -69,7 +73,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         RabbitMqConsumerConfig? consumerConfig = null,
         MessageLane lane = MessageLane.Bus,
         Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? lifecycleCheckpointAsync = null,
-        ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing
+        ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing,
+        bool singleActiveConsumer = false
     )
     {
         // The subscription name is a consumer identity or a message name, not a queue name; the queue name derived from
@@ -89,6 +94,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _lifecycleCheckpointAsync = lifecycleCheckpointAsync;
         _kind = Argument.IsInEnum(kind);
         _provisionsTopology = provisionsTopology;
+        _singleActiveConsumer = singleActiveConsumer;
 
         if (kind is ConsumerSubscriptionKind.EveryInstance && lane is not MessageLane.Bus)
         {
@@ -786,7 +792,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 _exchangeName,
                 queueName,
                 routingKey: null,
-                cancellationToken
+                cancellationToken,
+                _singleActiveConsumer
             )
             : Task.CompletedTask;
     }

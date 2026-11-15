@@ -17,6 +17,7 @@ public sealed class EgyptianNationalIdValidatorTests
     [InlineData("29512311112345")] // 1995-12-31, Damietta (11)
     [InlineData("30206152112345")] // 2002-06-15, Giza (21)
     [InlineData("29901010123456")] // 1999-01-01, Cairo (01)
+    [InlineData("29001012612345")] // 1990-01-01, Sohag (26)
     public void should_return_true_for_valid_id(string nationalId)
     {
         var result = EgyptianNationalIdValidator.IsValid(nationalId);

@@ -72,6 +72,7 @@ real-wait 4 tests/Headless.Coordination.PostgreSql.Tests.Integration/PostgreSqlM
 real-wait 1 tests/Headless.Coordination.Redis.Tests.Integration/RedisMembershipConformanceTests.cs
 real-wait 6 tests/Headless.Coordination.Redis.Tests.Integration/RedisMembershipLuaTests.cs
 real-wait 3 tests/Headless.Coordination.SqlServer.Tests.Integration/SqlServerMembershipNativeTests.cs
+real-wait 1 tests/Headless.Coordination.Sqlite.Tests.Integration/SqliteMembershipReadLockTests.cs
 real-wait 14 tests/Headless.Coordination.Tests.Harness/MembershipConformanceTests.cs
 wall-clock 2 tests/Headless.Coordination.Tests.Harness/MembershipConformanceTests.cs
 wall-clock 1 tests/Headless.Coordination.Tests.Harness/MembershipOracleTests.cs
@@ -130,6 +131,7 @@ real-wait 7 tests/Headless.DistributedLocks.Tests.Harness/DistributedLockTestsBa
 wall-clock 6 tests/Headless.DistributedLocks.Tests.Harness/DistributedLockTestsBase.cs
 real-wait 3 tests/Headless.DistributedLocks.Tests.Harness/DistributedReadWriteLockTestsBase.cs
 wall-clock 1 tests/Headless.DistributedLocks.Tests.Harness/DistributedReadWriteLockTestsBase.cs
+real-wait 1 tests/Headless.Emails.Providers.Tests.Unit/MailkitTests.cs
 wall-clock 1 tests/Headless.Encryption.Tests.Harness/EncryptionFixture.cs
 wall-clock 1 tests/Headless.Encryption.Tests.Harness/InMemoryDataKeyStore.cs
 wall-clock 1 tests/Headless.EntityFramework.Messaging.Tests.Integration/OutboxBridgeIntegrationTests.CoordinatedRetry.cs
@@ -202,6 +204,7 @@ real-wait 1 tests/Headless.Jobs.Composition.Tests.Unit/JobsDurableRetryTests.cs
 wall-clock 3 tests/Headless.Jobs.Composition.Tests.Unit/JobsDurableRetryTests.cs
 real-wait 1 tests/Headless.Jobs.Composition.Tests.Unit/JobsExecutionCancellationRegistryTests.cs
 wall-clock 1 tests/Headless.Jobs.Composition.Tests.Unit/JobsExecutionCancellationRegistryTests.cs
+wall-clock 1 tests/Headless.Jobs.Composition.Tests.Unit/JobsFallbackClaimReleaseTests.cs
 real-wait 1 tests/Headless.Jobs.Composition.Tests.Unit/JobsFallbackMembershipFencingTests.cs
 wall-clock 2 tests/Headless.Jobs.Composition.Tests.Unit/JobsFallbackMembershipFencingTests.cs
 real-wait 3 tests/Headless.Jobs.Composition.Tests.Unit/JobsGracefulStopReleaseTests.cs
@@ -222,7 +225,7 @@ wall-clock 3 tests/Headless.Jobs.Composition.Tests.Unit/Managers/InternalJobsMan
 wall-clock 4 tests/Headless.Jobs.Composition.Tests.Unit/MultiTenancy/JobsExecutionTaskHandlerTenancyTests.cs
 wall-clock 3 tests/Headless.Jobs.Composition.Tests.Unit/MultiTenancy/JobsTenancyChainPropagationTests.cs
 real-wait 1 tests/Headless.Jobs.Composition.Tests.Unit/RetryBehaviorTests.cs
-wall-clock 12 tests/Headless.Jobs.Composition.Tests.Unit/RetryBehaviorTests.cs
+wall-clock 13 tests/Headless.Jobs.Composition.Tests.Unit/RetryBehaviorTests.cs
 wall-clock 1 tests/Headless.Jobs.Composition.Tests.Unit/Transactions/JobsManagerChainAtomicTests.cs
 wall-clock 5 tests/Headless.Jobs.Composition.Tests.Unit/Transactions/JobsManagerCoordinatedRoutingTests.cs
 real-wait 1 tests/Headless.Jobs.Composition.Tests.Unit/Transactions/PostCommitTestSupport.cs
@@ -239,9 +242,9 @@ wall-clock 1 tests/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration/Po
 wall-clock 10 tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/SqlServerClaimStrategyTests.cs
 real-wait 1 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsApplicationConfigurationConformanceTests.cs
 wall-clock 3 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsApplicationConfigurationConformanceTests.cs
-wall-clock 5 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsAttemptHistoryConformanceTests.cs
+wall-clock 6 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsAttemptHistoryConformanceTests.cs
 real-wait 2 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChainConformanceTests.cs
-wall-clock 43 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChainConformanceTests.cs
+wall-clock 46 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChainConformanceTests.cs
 real-wait 6 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChangeMarkerConformanceTests.cs
 wall-clock 26 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChangeMarkerConformanceTests.cs
 wall-clock 32 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsClaimConformanceTests.cs
@@ -300,6 +303,7 @@ wall-clock 7 tests/Headless.Messaging.Abstractions.Tests.Unit/ConsumeContextTest
 real-wait 3 tests/Headless.Messaging.Aws.Tests.Integration/AmazonSqsRawPayloadTests.cs
 real-wait 1 tests/Headless.Messaging.Aws.Tests.Integration/VisibilityAndTopologyTests.cs
 real-wait 4 tests/Headless.Messaging.Aws.Tests.Unit/AmazonSqsConsumerClientTests.cs
+real-wait 1 tests/Headless.Messaging.Aws.Tests.Unit/AmazonSqsConsumerFifoOrderTests.cs
 real-wait 6 tests/Headless.Messaging.Aws.Tests.Unit/AmazonSqsConsumerReceiveLoopTests.cs
 real-wait 1 tests/Headless.Messaging.Aws.Tests.Unit/AmazonSqsConsumerVisibilityTests.cs
 real-wait 1 tests/Headless.Messaging.Aws.Tests.Unit/SqsRejectBatcherTests.cs
@@ -341,7 +345,7 @@ real-wait 3 tests/Headless.Messaging.Nats.Tests.Integration/NatsRawPayloadTests.
 wall-clock 1 tests/Headless.Messaging.Nats.Tests.Integration/NatsRawPayloadTests.cs
 real-wait 1 tests/Headless.Messaging.Nats.Tests.Integration/NatsReplyTransportTests.cs
 wall-clock 1 tests/Headless.Messaging.Nats.Tests.Integration/NatsReplyTransportTests.cs
-real-wait 5 tests/Headless.Messaging.Nats.Tests.Unit/NatsConsumerClientTests.cs
+real-wait 6 tests/Headless.Messaging.Nats.Tests.Unit/NatsConsumerClientTests.cs
 real-wait 1 tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/NatsPostgreSqlFixture.cs
 real-wait 1 tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/NatsPostgreSqlMessagingIntegrationTests.cs
 wall-clock 2 tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/NatsPostgreSqlMessagingIntegrationTests.cs
@@ -441,12 +445,12 @@ wall-clock 12 tests/Headless.Messaging.Tests.Unit/Internal/CommitCoordinatorOutb
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/ConsumeContextAccessorTests.cs
 wall-clock 2 tests/Headless.Messaging.Tests.Unit/Internal/ConsumeMiddlewarePipelineMigratedTests.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/ConsumeMiddlewarePipelineTests.cs
+wall-clock 3 tests/Headless.Messaging.Tests.Unit/Internal/ConsumerRateLimitersTests.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/CorrelationPrecedenceTests.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/DropSignalRelayRecoveryTests.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/InboxTransactionRunnerTests.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/IsTransactionalPropagationTests.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/ScheduledDeliveryOperationEvaluatorTests.cs
-real-wait 3 tests/Headless.Messaging.Tests.Unit/Internal/ScheduledMediumMessageQueueTests.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/ScheduledMediumMessageQueueTests.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Unit/Internal/ScheduledRevocationTests.cs
 real-wait 1 tests/Headless.Messaging.Tests.Unit/MessageSenderTests.cs

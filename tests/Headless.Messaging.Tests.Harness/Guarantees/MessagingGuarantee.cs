@@ -479,6 +479,12 @@ public static class MessagingGuarantees
             realSystem: false,
             "Hosts that share one store never start a sequential consumer's message while a message of its key admitted earlier is unfinished on another host."
         ),
+        _Bound(
+            "MSG-LANE-08",
+            GuaranteeArea.Lanes,
+            realSystem: false,
+            "On a transport without key routing or a single active consumer, only the host holding a sequential consumer's lock listens, and another host takes over its backlog in publish order when it stops or loses the lock."
+        ),
         // Envelope
         _Bound(
             "MSG-ENV-01",

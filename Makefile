@@ -1300,13 +1300,13 @@ test-messaging-chaos: ## Run the messaging chaos and soak suite on PostgreSQL an
 # brokers apart from one provider failing. The results directory is cleared first: a stale TRX would be judged as this
 # run's.
 .PHONY: test-messaging-integration
-test-messaging-integration: ## Run the messaging integration suites with no retries, then the drift report (needs Docker; long). MESSAGING_INTEGRATION_PROJECTS narrows the set; MESSAGING_INTEGRATION_REPORT=false skips the report.
+test-messaging-integration: ## Run the messaging integration suites with no retries, then the drift report (needs Docker; long). Each suite stops after TEST_TIMEOUT. MESSAGING_INTEGRATION_PROJECTS narrows the set; MESSAGING_INTEGRATION_REPORT=false skips the report.
 	@$(ASSERT_RESTORED); for project in $(MESSAGING_INTEGRATION_PROJECTS); do assert_restored "$$project"; done
 	@test -n "$(MESSAGING_INTEGRATION_RESULTS_DIR)" || { echo "MESSAGING_INTEGRATION_RESULTS_DIR is empty." >&2; exit 2; }; rm -rf "$(MESSAGING_INTEGRATION_RESULTS_DIR)"; mkdir -p "$(MESSAGING_INTEGRATION_RESULTS_DIR)"
 	@status=0; for project in $(MESSAGING_INTEGRATION_PROJECTS); do \
 		printf '\033[36m[integration]\033[0m %s\n' "$$project"; \
 		HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_INTEGRATION_RESULTS_DIR))/conformance" \
-			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_INTEGRATION_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS) || status=1; \
+			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_INTEGRATION_RESULTS_DIR)" $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS) || status=1; \
 	done; \
 	if [ "$(MESSAGING_INTEGRATION_REPORT)" = "true" ]; then $(MAKE) --no-print-directory messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT="$(MESSAGING_INTEGRATION_RESULTS_DIR)" || status=1; fi; \
 	exit $$status

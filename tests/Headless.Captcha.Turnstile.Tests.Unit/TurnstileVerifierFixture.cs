@@ -43,6 +43,12 @@ public sealed class TurnstileVerifierFixture : ICaptchaVerifierFixture, IDisposa
         return _Build(handler).GetRequiredService<ITurnstileVerifier>();
     }
 
+    public ITurnstileVerifier CreateTurnstileVerifier(StubSiteVerifyHandler handler, Action<TurnstileOptions> configure)
+    {
+        return _Build(handler, services => services.PostConfigureAll(configure))
+            .GetRequiredService<ITurnstileVerifier>();
+    }
+
     private ServiceProvider _Build(StubSiteVerifyHandler handler, Action<IServiceCollection>? configureServices = null)
     {
         var services = new ServiceCollection();

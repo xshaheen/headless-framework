@@ -450,9 +450,99 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
-    public override Task failed_overwrite_keeps_the_previous_blob_and_metadata()
+    public override async Task failed_overwrite_keeps_the_previous_blob_and_metadata()
     {
-        return base.failed_overwrite_keeps_the_previous_blob_and_metadata();
+        await base.failed_overwrite_keeps_the_previous_blob_and_metadata();
+
+        // Listings hide the temporaries (they end in the sidecar suffix), so only the raw directory shows whether
+        // the failed write's partial temporaries were removed.
+        (await _ListRegularFilesAsync($"{ContainerName}/kept"))
+            .Should()
+            .BeEquivalentTo("report.txt", "report.txt.hlmeta");
+    }
+
+    [Fact]
+    public async Task should_leave_no_temporary_files_when_uploads_and_copies_succeed()
+    {
+        // given
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+        var withMetadata = new BlobLocation(ContainerName, "clean", "with-metadata.txt");
+        var withoutSidecar = new BlobLocation(ContainerName, "clean", "copy-without-sidecar.txt");
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["version"] = "1" };
+
+        await using (var body = new MemoryStream("content"u8.ToArray()))
+        {
+            await storage.UploadAsync(withMetadata, body, metadata: metadata, cancellationToken: AbortToken);
+        }
+
+        var client = await fixture.Pool.AcquireAsync(AbortToken);
+
+        try
+        {
+            await using var raw = await client.OpenAsync(
+                $"{ContainerName}/clean/raw-source.txt",
+                FileMode.Create,
+                FileAccess.Write,
+                AbortToken
+            );
+
+            await raw.WriteAsync("raw"u8.ToArray(), AbortToken);
+        }
+        finally
+        {
+            await fixture.Pool.ReleaseAsync(client);
+        }
+
+        // when: an upload that writes a sidecar, and a copy whose source has none
+        await using (var body = new MemoryStream("replacement"u8.ToArray()))
+        {
+            await storage.UploadAsync(withMetadata, body, metadata: metadata, cancellationToken: AbortToken);
+        }
+
+        (
+            await storage.CopyAsync(
+                new BlobLocation(ContainerName, "clean", "raw-source.txt"),
+                withoutSidecar,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+
+        // then
+        (await _ListRegularFilesAsync($"{ContainerName}/clean"))
+            .Should()
+            .BeEquivalentTo(
+                "with-metadata.txt",
+                "with-metadata.txt.hlmeta",
+                "raw-source.txt",
+                "copy-without-sidecar.txt"
+            );
+    }
+
+    private async Task<List<string>> _ListRegularFilesAsync(string directory)
+    {
+        var client = await fixture.Pool.AcquireAsync(AbortToken);
+
+        try
+        {
+            var names = new List<string>();
+
+            await foreach (var file in client.ListDirectoryAsync(directory, AbortToken))
+            {
+                if (file.IsRegularFile)
+                {
+                    names.Add(file.Name);
+                }
+            }
+
+            return names;
+        }
+        finally
+        {
+            await fixture.Pool.ReleaseAsync(client);
+        }
     }
 
     [Fact]

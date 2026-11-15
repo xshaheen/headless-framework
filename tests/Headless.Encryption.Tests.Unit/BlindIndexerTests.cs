@@ -318,6 +318,22 @@ public sealed class BlindIndexerTests : TestBase
         default(BlindIndex).Should().Be(default(BlindIndex));
     }
 
+    [Fact]
+    public async Task should_refuse_value_with_lone_surrogate_instead_of_sharing_an_index()
+    {
+        // given - the lenient UTF-8 encoder mapped both lone surrogates to U+FFFD, so the two values hashed alike
+        using var host = new EncryptionTestHost(_store);
+        var context = _Tenant("charity-a");
+
+        // when
+        var high = async () => await host.BlindIndexer.ComputeAsync(context, "a\uD800", AbortToken);
+        var low = async () => await host.BlindIndexer.ComputeAsync(context, "a\uDC00", AbortToken);
+
+        // then
+        await high.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("value");
+        await low.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("value");
+    }
+
     private static BlindIndexContext _Tenant(string tenantId) => new(_Purpose) { Scope = tenantId };
 
     private sealed class CapturingLoggerProvider : ILoggerProvider

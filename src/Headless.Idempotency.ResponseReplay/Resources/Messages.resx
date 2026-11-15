@@ -37,4 +37,7 @@
   <data name="g:idempotency_key_required" xml:space="preserve">
     <value>This endpoint requires an Idempotency-Key header.</value>
   </data>
+  <data name="g:idempotency_response_too_large" xml:space="preserve">
+    <value>The request already ran, but its response was too large to store, so a retry with this Idempotency-Key cannot replay it.</value>
+  </data>
 </root>

@@ -42,6 +42,27 @@ public sealed class AzureServiceBusEmulatorTransportTests(AzureServiceBusEmulato
         await second.Consumer.CommitAsync(secondDelivery.SettlementValue, AbortToken);
     }
 
+    [Fact]
+    public Task should_run_one_key_at_a_time_on_a_sequential_consumer()
+    {
+        AzureServiceBusEmulatorFixture.RequireEulaAccepted();
+        var connectionString = fixture.ConnectionString;
+
+        // A plain queue, so the key travels as a header and the sequential consumer alone keeps each key in order.
+        return TransportKeySequencingConformance.AssertAsync(
+            setup =>
+                setup.UseAzureServiceBus(options =>
+                {
+                    options.ConnectionString = connectionString;
+                    options.AutoProvision = false;
+                }),
+            static _ => { },
+            AzureServiceBusEmulatorFixture.KeySequencingQueueName,
+            deliversInPublishOrder: true,
+            AbortToken
+        );
+    }
+
     private static TransportMessage _CreateMessage(string messageName, string messageId)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)

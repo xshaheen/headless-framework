@@ -38,6 +38,17 @@ internal static class MessagingKeys
         return $"messaging.receive-retry-{_LaneSegment(lane)}-{version}";
     }
 
+    /// <summary>
+    /// Builds the lock resource name whose holder is the one host that takes in a sequential consumer subscription's
+    /// deliveries. It names the lane and the subscription (the consumer identity on the Bus lane, the message name on
+    /// the Queue lane), and the <paramref name="version"/> isolates deployments that share one lock store, as for the
+    /// retry locks.
+    /// </summary>
+    public static string SequentialIntakeResource(string version, MessageLane lane, string subscriptionName)
+    {
+        return $"messaging.sequential-intake-{_LaneSegment(lane)}-{version}-{subscriptionName}";
+    }
+
     private static string _LaneSegment(MessageLane lane)
     {
         return lane switch

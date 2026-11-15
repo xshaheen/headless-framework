@@ -14,7 +14,10 @@ run them. messaging-integration.yml runs them beside those checks, and this scri
 - workflow_dispatch: everything, at the requested chaos sizes.
 
 The leg list lives here, once: the Makefile reads it through `projects`, and the workflow takes its matrix from
-`select`. A base that is empty or does not resolve to a commit (a new branch, history rewritten) selects every leg.
+`select`. A transport and its storage combinations share one leg: each leg pays a fixed checkout, restore, and build
+cost that is often longer than a combination suite's tests, so the combinations run after their transport on the same
+runner. A leg's projects run in order, each writes its own TRX file named by assembly, and the drift report keys its
+results by assembly, so it reads a shared leg as it would separate legs. A base that is empty or does not resolve to a commit (a new branch, history rewritten) selects every leg.
 
 Exit codes: 0 selection printed; 1 the affected-set computation failed; 2 usage error.
 """
@@ -34,28 +37,27 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 @dataclass(frozen=True)
 class Leg:
     name: str
-    project: str
+    projects: tuple[str, ...]
     tz: str = "UTC"
 
 
-def _integration(project: str) -> str:
-    return f"tests/{project}.Tests.Integration/{project}.Tests.Integration.csproj"
+def _integration(*projects: str) -> tuple[str, ...]:
+    return tuple(f"tests/{project}.Tests.Integration/{project}.Tests.Integration.csproj" for project in projects)
 
 
 LEGS: tuple[Leg, ...] = (
     # Runs for its emulator profile; the real-namespace tests need a credential and have their own dispatch workflow.
     Leg("azure-service-bus-emulator", _integration("Headless.Messaging.AzureServiceBus")),
-    Leg("aws", _integration("Headless.Messaging.Aws")),
-    Leg("aws-postgresql", _integration("Headless.Messaging.AwsPostgreSql")),
-    Leg("kafka", _integration("Headless.Messaging.Kafka")),
-    Leg("kafka-postgresql", _integration("Headless.Messaging.KafkaPostgreSql")),
-    Leg("nats", _integration("Headless.Messaging.Nats")),
-    Leg("nats-postgresql", _integration("Headless.Messaging.NatsPostgreSql")),
-    Leg("rabbitmq", _integration("Headless.Messaging.RabbitMq")),
-    Leg("rabbitmq-postgresql", _integration("Headless.Messaging.RabbitMqPostgreSql")),
-    Leg("rabbitmq-sqlserver", _integration("Headless.Messaging.RabbitMqSqlServer")),
-    Leg("redis", _integration("Headless.Messaging.Redis")),
-    Leg("redis-postgresql", _integration("Headless.Messaging.RedisPostgreSql")),
+    Leg("aws", _integration("Headless.Messaging.Aws", "Headless.Messaging.AwsPostgreSql")),
+    Leg("kafka", _integration("Headless.Messaging.Kafka", "Headless.Messaging.KafkaPostgreSql")),
+    Leg("nats", _integration("Headless.Messaging.Nats", "Headless.Messaging.NatsPostgreSql")),
+    Leg(
+        "rabbitmq",
+        _integration(
+            "Headless.Messaging.RabbitMq", "Headless.Messaging.RabbitMqPostgreSql", "Headless.Messaging.RabbitMqSqlServer"
+        ),
+    ),
+    Leg("redis", _integration("Headless.Messaging.Redis", "Headless.Messaging.RedisPostgreSql")),
     Leg("storage-postgresql", _integration("Headless.Messaging.Storage.PostgreSql")),
     # Runners are UTC, which hides code that trusts DateTime.Kind or a local offset. Schedules, leases and retry times
     # are stored here, so this suite runs a second time in a DST-observing zone east of UTC.
@@ -131,7 +133,7 @@ def select(event: str, base: str, chaos_profile: str, affected: dict | None) -> 
     if affected is None:
         affected = _affected_report(base_commit)
     tests = set(affected.get("integration_tests", []))
-    reached = [leg.name for leg in LEGS if leg.project in tests]
+    reached = [leg.name for leg in LEGS if any(project in tests for project in leg.projects)]
     if not reached:
         return Selection("none", f"no messaging suite affected since {base_commit[:12]}", (), False, "smoke", False)
     return Selection("legs", f"affected since {base_commit[:12]}: {', '.join(reached)}", LEGS, False, "smoke", False)
@@ -155,7 +157,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "projects":
-        for project in dict.fromkeys(leg.project for leg in LEGS):
+        for project in dict.fromkeys(project for leg in LEGS for project in leg.projects):
             print(project)
         return 0
 

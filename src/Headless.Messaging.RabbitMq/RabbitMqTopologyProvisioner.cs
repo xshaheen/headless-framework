@@ -53,7 +53,8 @@ internal sealed class RabbitMqTopologyProvisioner(
                             laneExchange,
                             queue.Name,
                             routingKey: null,
-                            cancellationToken
+                            cancellationToken,
+                            queue.SingleActiveConsumer
                         )
                         .ConfigureAwait(false);
 
@@ -169,13 +170,16 @@ internal sealed class RabbitMqTopologyProvisioner(
 
             foreach (var messageName in subscription.MessageNames)
             {
-                _Add(
+                var queue = _Add(
                     queues,
                     RabbitMqPhysicalAddress.Queue(subscription.Lane, subscription.SubscriptionName, messageName),
                     subscription.Lane,
                     messageName,
                     owned: true
                 );
+
+                // A Queue-lane consumer's queue is also the one its publishers declare, so the flag merges into it.
+                queue.SingleActiveConsumer |= subscription.SingleActiveConsumer;
             }
         }
 
@@ -193,7 +197,7 @@ internal sealed class RabbitMqTopologyProvisioner(
         return [.. queues.Values];
     }
 
-    private static void _Add(
+    private static RabbitMqTopologyQueue _Add(
         SortedDictionary<string, RabbitMqTopologyQueue> queues,
         string name,
         MessageLane lane,
@@ -209,6 +213,8 @@ internal sealed class RabbitMqTopologyProvisioner(
 
         queue.Owned |= owned;
         queue.RoutingKeys.Add(RabbitMqPhysicalAddress.RoutingKey(lane, messageName));
+
+        return queue;
     }
 
     private IEnumerable<string> _OwnedQueues(MessagingTopology topology) =>
@@ -248,4 +254,10 @@ internal sealed record RabbitMqTopologyQueue(string Name, MessageLane Lane, Sort
     /// a queue this host only publishes to is set up and checked, never purged or deleted.
     /// </summary>
     public bool Owned { get; set; }
+
+    /// <summary>
+    /// Whether a sequential consumer of this host reads the queue, so the broker must deliver it to one consumer at a
+    /// time (<c>x-single-active-consumer</c>).
+    /// </summary>
+    public bool SingleActiveConsumer { get; set; }
 }

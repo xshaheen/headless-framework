@@ -39,7 +39,7 @@ public sealed class AwsSnsSmsConformanceTests : SmsSenderConformanceTests
         var client = Substitute.For<IAmazonSimpleNotificationService>();
         client
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new HttpRequestException("network down"));
+            .ThrowsAsync(new HttpRequestException(HttpRequestError.ConnectionError, "network down"));
 
         return _CreateSender(client);
     }

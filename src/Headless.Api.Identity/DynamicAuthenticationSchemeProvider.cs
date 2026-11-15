@@ -29,6 +29,15 @@ namespace Headless.Api.Identity;
 ///     No auth credentials present → falls through to the registered default scheme.
 ///   </description></item>
 /// </list>
+/// <para>
+/// Only the authenticate, challenge, and forbid defaults follow the request. The sign-in and sign-out defaults stay the
+/// configured ones: none of the header schemes can sign in or out, so a <c>SignOutAsync()</c> on a request that
+/// happens to carry an API key or bearer token would otherwise fail.
+/// </para>
+/// <para>
+/// <c>AddBasicSchema</c> and <c>AddApiKey</c> register this provider only in place of the stock
+/// <see cref="AuthenticationSchemeProvider"/>; a scheme provider the application registered itself is kept.
+/// </para>
 /// </remarks>
 public sealed class DynamicAuthenticationSchemeProvider(
     IHttpContextAccessor httpContextAccessor,
@@ -58,22 +67,6 @@ public sealed class DynamicAuthenticationSchemeProvider(
     {
         return await _GetRequestSchemeAsync().ConfigureAwait(false)
             ?? await base.GetDefaultForbidSchemeAsync().ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
-    public override async Task<AuthenticationScheme?> GetDefaultSignInSchemeAsync()
-    {
-        return await _GetRequestSchemeAsync().ConfigureAwait(false)
-            ?? await base.GetDefaultSignInSchemeAsync().ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
-    public override async Task<AuthenticationScheme?> GetDefaultSignOutSchemeAsync()
-    {
-        return await _GetRequestSchemeAsync().ConfigureAwait(false)
-            ?? await base.GetDefaultSignOutSchemeAsync().ConfigureAwait(false);
     }
 
     private async ValueTask<AuthenticationScheme?> _GetRequestSchemeAsync()

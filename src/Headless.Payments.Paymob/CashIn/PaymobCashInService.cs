@@ -185,6 +185,8 @@ internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Pa
     )
     {
         Argument.IsNotNull(request);
+        // A zero or negative refund was sent to Paymob as is; refuse it here.
+        Argument.IsPositive(request.Amount);
 
         var amountCents = (long)Math.Ceiling(request.Amount * 100);
 
@@ -205,6 +207,9 @@ internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Pa
         CancellationToken cancellationToken
     )
     {
+        // A zero or negative charge was sent to Paymob as is; refuse it here.
+        Argument.IsPositive(amount);
+
         var amountCents = (long)Math.Ceiling(amount * 100);
         var orderResponse = await _CreateOrderAsync(amountCents, merchantOrderId, cancellationToken)
             .ConfigureAwait(false);

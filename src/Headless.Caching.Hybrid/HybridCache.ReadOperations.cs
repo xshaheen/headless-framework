@@ -109,6 +109,8 @@ public sealed partial class HybridCache
         // tag metadata, so it would seed a tagless L1 entry that RemoveByTagAsync could never invalidate (stale).
         if (l2Cache is IFactoryCacheStore l2Store && LocalCache is IFactoryCacheStore l1Store)
         {
+            var l1Generation = _CaptureL1Generation(key);
+
             var l2EntryRead = await _ReadFromL2Async(
                     key,
                     ct => l2Store.TryGetEntryAsync<T>(key, cancellationToken: ct),
@@ -135,7 +137,7 @@ public sealed partial class HybridCache
 
             // Promote into L1 preserving Tags + CreatedAt via _SetLocalEntryAsync (mirrors the buffer cold path and
             // the generic TryGetEntryAsync promotion gate), so the local copy is version-pinned for invalidation.
-            await _SetLocalEntryAsync(l1Store, key, l2Entry, expectedConcurrencyStamp: null, cancellationToken)
+            await _PromoteReadToLocalAsync(l1Store, key, l2Entry, l1Generation, cancellationToken)
                 .ConfigureAwait(false);
 
             return l2Entry.IsNull ? CacheValue<T>.Null : new CacheValue<T>(l2Entry.Value, hasValue: true);
@@ -252,6 +254,8 @@ public sealed partial class HybridCache
                 .ConfigureAwait(false);
         }
 
+        var l1Generations = _CaptureL1Generations(missedKeys);
+
         var distributedRead = await _ReadFromL2Async(
                 // Diagnostic-only label: _ReadFromL2Async uses this key solely for timeout/circuit log fields, not
                 // for the read itself (the read is the delegate below). A synthetic bulk marker keeps the logs from
@@ -289,7 +293,14 @@ public sealed partial class HybridCache
                 var localExpiration = _GetLocalExpiration(kvp.Value.Expiration);
                 _logger.LogSettingLocalCacheKey(kvp.Key, localExpiration);
                 (localUpserts ??= []).Add(
-                    LocalCache.UpsertAsync(kvp.Key, kvp.Value.Value.Value, localExpiration, cancellationToken).AsTask()
+                    _PromoteValueToLocalAsync(
+                            kvp.Key,
+                            kvp.Value.Value.Value,
+                            localExpiration,
+                            l1Generations[kvp.Key],
+                            cancellationToken
+                        )
+                        .AsTask()
                 );
             }
         }
@@ -324,6 +335,8 @@ public sealed partial class HybridCache
         // boundary) so the whole batch degrades together to the partial L1 result on fault/timeout. The store
         // returns entries position-aligned with missedKeys so the freshness/seed loop below can index them directly,
         // and resolves the batch's clear/remove/tag markers in a single prefetch — O(1) marker round-trips.
+        var l1Generations = _CaptureL1Generations(missedKeys);
+
         var distributedRead = await _ReadFromL2Async(
                 // Diagnostic-only label: _ReadFromL2Async uses this key solely for timeout/circuit log fields.
                 $"[bulk:{missedKeys.Count}]",
@@ -361,7 +374,7 @@ public sealed partial class HybridCache
 
             // Promote into L1 preserving Tags + CreatedAt (mirrors the generic TryGetEntryAsync promotion gate).
             (localSeeds ??= []).Add(
-                _SetLocalEntryAsync(l1Store, key, entry, expectedConcurrencyStamp: null, cancellationToken).AsTask()
+                _PromoteReadToLocalAsync(l1Store, key, entry, l1Generations[key], cancellationToken).AsTask()
             );
         }
 

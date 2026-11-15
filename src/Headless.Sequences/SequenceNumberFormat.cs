@@ -41,6 +41,66 @@ internal sealed class SequenceNumberFormat
         }
     }
 
+    /// <summary>
+    /// Reports whether <paramref name="template" /> parses and names every number it issues under
+    /// <paramref name="reset" /> once, and why not.
+    /// </summary>
+    /// <remarks>
+    /// A counter restarts in each partition, so the text must carry what tells partitions apart: exactly one
+    /// <c>{seq}</c>, and the date tokens of the reset period. Without them, January's <c>INV-2026-0001</c> and
+    /// February's <c>INV-2026-0001</c> are the same number. A calendar-year reset needs <c>{yyyy}</c> or <c>{yy}</c>,
+    /// because <c>{fy}</c> repeats across a calendar-year boundary inside one fiscal year.
+    /// </remarks>
+    public static bool TryValidate(string template, SequenceReset reset, out string error)
+    {
+        List<Segment> segments;
+
+        try
+        {
+            segments = _Parse(template);
+        }
+        catch (FormatException e)
+        {
+            error = e.Message;
+
+            return false;
+        }
+
+        if (segments.Where(static segment => segment.Kind == SegmentKind.Sequence).Take(2).Count() != 1)
+        {
+            error = $"The sequence number template '{template}' must contain exactly one {{seq}} token.";
+
+            return false;
+        }
+
+        var hasYear = segments.Exists(static s => s is { Kind: SegmentKind.Date, Text: "yyyy" or "yy" });
+        var hasMonth = segments.Exists(static s => s is { Kind: SegmentKind.Date, Text: "MM" });
+        var hasDay = segments.Exists(static s => s is { Kind: SegmentKind.Date, Text: "dd" });
+        var hasFiscalYear = segments.Exists(static s => s.Kind == SegmentKind.FiscalYear);
+
+        var (identified, required) = reset switch
+        {
+            SequenceReset.Year => (hasYear, "{yyyy} or {yy}"),
+            SequenceReset.Month => (hasYear && hasMonth, "{yyyy} or {yy}, and {MM}"),
+            SequenceReset.Day => (hasYear && hasMonth && hasDay, "{yyyy} or {yy}, {MM}, and {dd}"),
+            SequenceReset.FiscalYear => (hasFiscalYear, "{fy}"),
+            _ => (true, ""),
+        };
+
+        if (!identified)
+        {
+            error =
+                $"The sequence number template '{template}' resets every {reset} but does not contain {required}, "
+                + "so two partitions would issue the same number.";
+
+            return false;
+        }
+
+        error = string.Empty;
+
+        return true;
+    }
+
     /// <summary>The counter partition the policy's reset chooses for <paramref name="issuedOn" />.</summary>
     public static string? Partition(SequencePolicy policy, DateOnly issuedOn)
     {

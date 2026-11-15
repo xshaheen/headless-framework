@@ -203,4 +203,53 @@ public sealed class RegexPatternsTests
         // then
         result.Should().Be(isMatch);
     }
+
+    public static TheoryData<string, string> FullMatchPatternsWithValidInput =>
+        new()
+        {
+            { nameof(RegexPatterns.EmailAddress), "test@example.com" },
+            { nameof(RegexPatterns.EgyptianNationalId), "29001011234567" },
+            { nameof(RegexPatterns.Ip4), "192.168.1.1" },
+            { nameof(RegexPatterns.Ip6), "2001:db8::1" },
+            { nameof(RegexPatterns.Url), "example.com" },
+            { nameof(RegexPatterns.HttpUrl), "https://example.com" },
+            { nameof(RegexPatterns.YoutubeVideoUrl), "https://youtu.be/abc" },
+            { nameof(RegexPatterns.ZipCode), "12345" },
+            { nameof(RegexPatterns.Username), "john_doe" },
+            { nameof(RegexPatterns.Slug), "hello-world" },
+            { nameof(RegexPatterns.IntegerNumber), "123" },
+            { nameof(RegexPatterns.DecimalNumber), "1.5" },
+            { nameof(RegexPatterns.HexNumber), "#ffffff" },
+            { nameof(RegexPatterns.Date), "01/01/2020" },
+            { nameof(RegexPatterns.IpAddressRange), "10.0.0.1-20" },
+        };
+
+    [Theory]
+    [MemberData(nameof(FullMatchPatternsWithValidInput))]
+    public void should_reject_trailing_line_feed_when_full_match_pattern(string patternName, string validInput)
+    {
+        // given - in .NET, '$' also matches before a final line feed, so a value that ends in one would pass
+        var regex = (System.Text.RegularExpressions.Regex)
+            typeof(RegexPatterns).GetProperty(patternName)!.GetValue(null)!;
+
+        // when
+        var acceptsValid = regex.IsMatch(validInput);
+        var acceptsTrailingLineFeed = regex.IsMatch(validInput + "\n");
+
+        // then
+        acceptsValid.Should().BeTrue();
+        acceptsTrailingLineFeed.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("audit")]
+    [InlineData("_schema1")]
+    public void should_reject_trailing_line_feed_when_storage_identifier(string identifier)
+    {
+        // when / then
+        Headless.StorageIdentifier.PostgreSql.IdentifierPattern.IsMatch(identifier).Should().BeTrue();
+        Headless.StorageIdentifier.PostgreSql.IdentifierPattern.IsMatch(identifier + "\n").Should().BeFalse();
+        Headless.StorageIdentifier.SqlServer.IdentifierPattern.IsMatch(identifier).Should().BeTrue();
+        Headless.StorageIdentifier.SqlServer.IdentifierPattern.IsMatch(identifier + "\n").Should().BeFalse();
+    }
 }

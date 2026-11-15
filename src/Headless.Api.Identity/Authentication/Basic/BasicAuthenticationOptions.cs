@@ -12,12 +12,6 @@ public sealed class BasicAuthenticationOptions : AuthenticationSchemeOptions, IH
     /// <summary>Default scheme name used when none is specified during registration.</summary>
     public const string DefaultScheme = AuthenticationConstants.Schemas.Basic;
 
-    /// <summary>
-    /// Scheme name included in the <see cref="Microsoft.AspNetCore.Authentication.AuthenticationTicket"/>.
-    /// Defaults to <see cref="DefaultScheme"/>.
-    /// </summary>
-    public string Scheme { get; set; } = DefaultScheme;
-
     /// <inheritdoc/>
     /// <remarks>The <c>Authorization</c> header under the <c>Basic</c> scheme (RFC 7617).</remarks>
     public IReadOnlyList<HttpCredentialDescription> Credentials { get; } =

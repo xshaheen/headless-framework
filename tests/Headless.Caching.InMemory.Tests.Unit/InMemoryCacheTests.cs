@@ -3835,4 +3835,21 @@ public sealed class InMemoryCacheTests : TestBase
     {
         public int Value { get; set; }
     }
+
+    [Fact]
+    public async Task should_store_without_expiry_when_expiration_passes_the_largest_date()
+    {
+        // given - DateTime.Add throws past DateTime.MaxValue, while Redis treats such an expiration as no expiry
+        using var cache = _CreateCache();
+
+        // when
+        var upserted = await cache.UpsertAsync("key", "value", TimeSpan.MaxValue, AbortToken);
+        var incremented = await cache.IncrementAsync("counter", 2L, TimeSpan.MaxValue, AbortToken);
+
+        // then
+        upserted.Should().BeTrue();
+        incremented.Should().Be(2L);
+        (await cache.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
+        (await cache.GetExpirationAsync("key", AbortToken)).Should().BeNull();
+    }
 }

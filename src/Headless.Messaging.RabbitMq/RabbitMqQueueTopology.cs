@@ -38,10 +38,19 @@ internal static class RabbitMqQueueTopology
     }
 
     /// <summary>The <c>x-arguments</c> of a shared queue.</summary>
+    /// <param name="options">The transport options that carry the queue arguments.</param>
+    /// <param name="laneExchange">The lane exchange the queue is bound to.</param>
+    /// <param name="queueName">The queue.</param>
+    /// <param name="singleActiveConsumer">
+    /// Whether the broker delivers the queue to one consumer at a time, for a sequential consumer. RabbitMQ refuses to
+    /// change it on a queue that exists, so turning a consumer's sequential setting on or off means deleting the queue
+    /// and provisioning it again.
+    /// </param>
     public static Dictionary<string, object?> BuildQueueArguments(
         RabbitMqMessagingOptions options,
         string laneExchange,
-        string queueName
+        string queueName,
+        bool singleActiveConsumer = false
     )
     {
         var queueArguments = options.QueueArguments;
@@ -63,6 +72,11 @@ internal static class RabbitMqQueueTopology
         if (queueArguments.DeliveryLimit is { } deliveryLimit)
         {
             arguments.Add("x-delivery-limit", deliveryLimit);
+        }
+
+        if (singleActiveConsumer)
+        {
+            arguments.Add("x-single-active-consumer", value: true);
         }
 
         if (queueArguments.EnableDeadLettering)
@@ -111,13 +125,18 @@ internal static class RabbitMqQueueTopology
     /// Declares a shared queue, its dead-letter topology when enabled, and (when <paramref name="routingKey"/> is set)
     /// its binding to <paramref name="laneExchange"/>: what <c>resources provision</c> and a runtime subscription do.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="singleActiveConsumer"/> is a queue argument, so it follows the rule in
+    /// <see cref="BuildQueueArguments"/>.
+    /// </remarks>
     public static async Task EnsureQueueAsync(
         IChannel channel,
         RabbitMqMessagingOptions options,
         string laneExchange,
         string queueName,
         string? routingKey,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool singleActiveConsumer = false
     )
     {
         if (options.QueueArguments.EnableDeadLettering)
@@ -135,7 +154,7 @@ internal static class RabbitMqQueueTopology
                 durable: true,
                 exclusive: false,
                 autoDelete: false,
-                BuildQueueArguments(options, laneExchange, queueName),
+                BuildQueueArguments(options, laneExchange, queueName, singleActiveConsumer),
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);

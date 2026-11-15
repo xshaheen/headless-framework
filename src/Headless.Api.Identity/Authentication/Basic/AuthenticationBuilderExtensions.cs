@@ -33,8 +33,7 @@ public static class AuthenticationBuilderExtensions
         where TUser : IdentityUser<TUserId>
         where TUserId : IEquatable<TUserId>
     {
-        builder.Services.AddHttpContextAccessor();
-        builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
+        builder.Services.UseDynamicAuthenticationSchemeProvider();
         // The handler builds its principal through Identity's claims factory; make it write the claim types
         // ICurrentUser reads, or the caller authenticates with no user id and no roles.
         builder.Services.ConfigureOptions<HeadlessIdentityClaimTypesSetup>();

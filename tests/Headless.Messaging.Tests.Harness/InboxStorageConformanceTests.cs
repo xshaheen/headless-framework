@@ -525,6 +525,30 @@ public abstract class InboxStorageConformanceTests : TestBase
         tenant.Message.StorageId.Should().NotBe(first.Message.StorageId);
     }
 
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_report_the_winner_generation_as_a_duplicate_reads_it_back(MessageLane lane)
+    {
+        await using var provider = _CreateProvider();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
+        var storage = provider.GetRequiredService<IDataStorage>();
+        var envelope = _CreateMessage(lane);
+
+        var winner = await _AdmitAsync(storage, envelope);
+        var duplicate = await _AdmitAsync(storage, envelope);
+
+        winner.Disposition.Should().Be(InboxAdmissionDisposition.Winner);
+        duplicate.Disposition.Should().Be(InboxAdmissionDisposition.InFlightDuplicate);
+        // The winner's generation comes from its own insert and the duplicate's from a read of the stored row, so
+        // every stored field must agree; the envelope is this delivery's for the winner and decoded for the duplicate.
+        duplicate
+            .Message.Should()
+            .BeEquivalentTo(winner.Message, options => options.Excluding(message => message.Origin));
+        winner.Message.InboxGeneration.Should().NotBeNull();
+        winner.Message.InboxKey.Should().NotBeNull();
+    }
+
     private ServiceProvider _CreateProvider(Action<MessagingOptions>? configure = null)
     {
         var services = new ServiceCollection();

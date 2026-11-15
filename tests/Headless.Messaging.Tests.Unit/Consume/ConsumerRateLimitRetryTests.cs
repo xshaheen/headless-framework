@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Tests.Simulation;
 
 namespace Tests.Consume;
@@ -84,7 +85,8 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
             AbortToken
         );
 
-        // when: one pickup claims the waiting delivery's row, past its dispatch grace, and the due retry behind it
+        // when: one pickup claims the waiting delivery's row, past its dispatch grace, and the due retry behind it. The
+        // clock jumps past the grace at once, before the delivery could put the row's pickup off, so the claim lands.
         await host.RunRetryPickupAsync(_PastRetryDelay, AbortToken);
 
         // then: the retry ran, and the pickup finished without the throttled row
@@ -96,6 +98,80 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
         var throttledRows = await _ThrottledRowsAsync(host);
         var waiting = throttledRows.Should().ContainSingle(row => row.StatusName == StatusName.Scheduled).Subject;
         waiting.NextRetryAt.Should().BeAfter(host.Clock.GetUtcNow());
+        waiting.LockedUntil.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_keep_retry_pickup_off_a_row_whose_delivery_waits_for_its_permit()
+    {
+        // given: one permit and no second one for an hour, so the second delivery waits for its permit all test long.
+        // A pickup that leased its row could not let it go before that permit might arrive, and the delivery's own
+        // lease take would then be refused, spending the permit without running the handler.
+        var probe = new PipelineProbe();
+        await using var host = await PipelineHosts.StartAsync(
+            probe,
+            AbortToken,
+            static setup =>
+            {
+                setup.AddConsumer<ThrottledPipelineOrderConsumer>();
+                setup.Tune(
+                    ThrottledPipelineOrderConsumer.Identity,
+                    consumer =>
+                        consumer.Concurrency(4).RateLimit(ConsumerRateLimit.TokenBucket(1, 1, TimeSpan.FromHours(1)))
+                );
+            },
+            configureServices: _ConfigureServices
+        );
+        var policy = host.GetRequiredService<IOptions<MessagingOptions>>().Value.RetryPolicy;
+        var grace = policy.InitialDispatchGrace;
+        var quarterGrace = grace / 4;
+        var renewal = policy.ResolveLeaseRenewalInterval();
+        var keeperTick = quarterGrace < renewal ? quarterGrace : renewal;
+
+        await _EnqueueThrottledAsync(host, _FirstThrottled);
+        await host.WithinBoundAsync(probe.WhenCompletedAsync(_FirstThrottled, 1), AbortToken);
+        var beforeWait = host.Clock.WaitMark;
+        await _EnqueueThrottledAsync(host, _WaitingThrottled);
+        await _WaitForThrottledRowAsync(host, static row => row.StatusName == StatusName.Scheduled);
+
+        // and: the delivery waits for its permit, and the keeper of its row has armed its first pass. The clock does
+        // not move before then, so every pass falls where the test expects it.
+        await _WaitForArmedAsync(host, beforeWait, keeperTick);
+        var storedAt = host.Clock.GetUtcNow();
+
+        // when: time runs pass by pass past its dispatch grace and several graces further, with a pickup on each pass
+        while (host.Clock.GetUtcNow() - storedAt < grace * 4)
+        {
+            var mark = host.Clock.WaitMark;
+            host.Advance(keeperTick);
+
+            // A pass arms the next one only once its hold is written, so the pickup this advance fired never meets a
+            // hold in flight.
+            await _WaitForArmedAsync(host, mark, keeperTick);
+            await host.WhenRetryPickupParkedAsync(AbortToken);
+
+            if (host.Clock.GetUtcNow() - storedAt >= grace)
+            {
+                host.Storage.CallsFinished(StorageOperation.DeferReceivedDispatch)
+                    .Should()
+                    .BePositive("the row must be held before its dispatch grace runs out");
+            }
+        }
+
+        // then: no pickup claimed the row, so none had to hand it back, and no host can claim it now
+        host.Storage.CallsFinished(StorageOperation.DeferReceivedRetry).Should().Be(0);
+        var claimable = await host.Storage.Inner.GetReceivedMessagesOfNeedRetryAsync(
+            MessageLane.Queue,
+            consumerIdentities: null,
+            AbortToken
+        );
+        claimable.Should().BeEmpty("the pickup of a row whose delivery waits for its permit keeps being put off");
+        probe.Attempts(_WaitingThrottled).Should().Be(0);
+
+        var waiting = (await _ThrottledRowsAsync(host))
+            .Should()
+            .ContainSingle(static row => row.StatusName == StatusName.Scheduled)
+            .Subject;
         waiting.LockedUntil.Should().BeNull();
     }
 
@@ -211,6 +287,21 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
             }
 
             await host.WithinBoundAsync(host.Storage.WhenCallFinishedAsync(mark, AbortToken), AbortToken);
+        }
+    }
+
+    // Waits are armed only by the code under test, so the clock's arm mark is waited on instead of time.
+    private static async Task _WaitForArmedAsync(SimulationHost host, long mark, TimeSpan due)
+    {
+        while (true)
+        {
+            var next = host.Clock.WaitMark;
+            if (host.Clock.PendingWaitsArmedSince(mark).Contains(due))
+            {
+                return;
+            }
+
+            await host.WithinBoundAsync(host.Clock.WhenWaitArmedAsync(next, AbortToken), AbortToken);
         }
     }
 

@@ -84,7 +84,65 @@ public sealed class TransportTopologyProvisionerTests : TestBase
         (await _ResourcesAsync(provider)).Should().BeEmpty();
     }
 
-    private static ServiceProvider _Build(RecordingProvisioner? provisioner)
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_ask_for_a_single_active_consumer_only_for_a_sequential_competing_subscription(
+        bool transportSupportsIt
+    )
+    {
+        // given: a sequential competing consumer beside an every-instance consumer and a queue consumer that are not
+        var provisioner = new RecordingProvisioner();
+        await using var provider = _Build(
+            provisioner,
+            setup => setup.Tune(TestConsumers.InvoiceProjection, consumer => consumer.Sequential()),
+            services => _ReplaceTransportCapability(services, transportSupportsIt)
+        );
+
+        // when
+        await (await _ResourcesAsync(provider)).Single().ProvisionAsync(AbortToken);
+
+        // then
+        string[] expected = transportSupportsIt ? [TestConsumers.InvoiceProjection] : [];
+        var topology = provisioner.Calls.Should().ContainSingle().Which.Topology;
+        topology
+            .Subscriptions.Where(s => s.SingleActiveConsumer)
+            .Select(s => s.SubscriptionName)
+            .Should()
+            .Equal(expected);
+    }
+
+    // Stands in for a transport that declares a single active consumer, which the in-memory transport does not.
+    private static void _ReplaceTransportCapability(IServiceCollection services, bool supportsSingleActiveConsumer)
+    {
+        var declared = services
+            .Where(static d =>
+                d.ServiceType == typeof(MessagingProviderCapabilities)
+                && d.ImplementationInstance is MessagingProviderCapabilities { Role: MessagingProviderRole.Transport }
+            )
+            .ToList();
+        foreach (var descriptor in declared)
+        {
+            services.Remove(descriptor);
+        }
+
+        services.AddMessagingProviderCapabilities(
+            MessagingProviderCapabilities.Transport(
+                "InMemory",
+                [MessageLane.Bus, MessageLane.Queue],
+                supportsIndependentLaneTopology: true,
+                supportsEveryInstance: true,
+                supportsRequestReply: true,
+                supportsSingleActiveConsumer: supportsSingleActiveConsumer
+            )
+        );
+    }
+
+    private static ServiceProvider _Build(
+        RecordingProvisioner? provisioner,
+        Action<MessagingSetupBuilder>? configure = null,
+        Action<IServiceCollection>? configureServices = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -99,7 +157,9 @@ public sealed class TransportTopologyProvisionerTests : TestBase
         {
             setup.UseInMemory();
             setup.AddModule<BillingModule>().AddModule<BillingPriceCacheModule>().AddModule<BillingQueueModule>();
+            configure?.Invoke(setup);
         });
+        configureServices?.Invoke(services);
 
         return services.BuildServiceProvider();
     }

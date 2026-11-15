@@ -8,7 +8,9 @@ namespace Headless.Sequences;
 /// <remarks>
 /// A singleton that never joins the caller's transaction: every call commits its increment on its own connection
 /// before it returns. A number is therefore never issued twice, even across processes, but a caller that fails
-/// after taking one leaves a gap. Counters registered as <see cref="SequenceMode.GapFree" /> or
+/// after taking one leaves a gap. A policy with a <c>BlockSize</c> above 1 reserves that many values per database
+/// call and hands them out from memory: values stay unique but interleave across hosts instead of following call
+/// order, and a block's unused values become gaps. Counters registered as <see cref="SequenceMode.GapFree" /> or
 /// <see cref="SequenceMode.Reported" /> are refused here; take them through <c>unit.Sequences</c> on the unit of work
 /// that writes the number.
 /// </remarks>

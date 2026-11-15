@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Threading.Channels;
 using Headless.Fencing;
 using Headless.Messaging;
@@ -459,6 +460,40 @@ public sealed class ConsumerKeySequencersTests : TestBase
         await _FinishAsync(sut, running, waiting);
     }
 
+    [Fact]
+    public async Task should_report_the_messages_that_wait_behind_their_key_or_for_a_slot()
+    {
+        // given: one slot, so a second key waits for it and the running key's next message waits behind it
+        var identity = $"orders.waiting.{Guid.NewGuid():N}";
+        var sut = _CreateSut();
+        var first = _Work("a-1", key: "a", concurrency: 1, identity);
+        var second = _Work("a-2", key: "a", concurrency: 1, identity);
+        var other = _Work("b-1", key: "b", concurrency: 1, identity);
+        await sut.EnqueueAsync(first, AbortToken);
+        await _Gate(first).Started.Task.Bounded();
+
+        // when
+        await sut.EnqueueAsync(second, AbortToken);
+        await sut.EnqueueAsync(other, AbortToken);
+
+        // then: the running message is not counted
+        _ReadWaiting(identity).Should().Be(2);
+
+        // and: the waiting key takes the slot, and the busy key's next message still waits
+        _Gate(first).Release.TrySetResult();
+        await _Gate(other).Started.Task.Bounded();
+        _ReadWaiting(identity).Should().Be(1);
+
+        // and: nothing waits once every message ran, and a stopped sequencer reports nothing
+        _Gate(other).Release.TrySetResult();
+        _Gate(second).Release.TrySetResult();
+        await Task.WhenAll(_Gate(first).Finished.Task, _Gate(other).Finished.Task, _Gate(second).Finished.Task)
+            .Bounded();
+        _ReadWaiting(identity).Should().Be(0);
+        (await sut.StopAsync().Bounded()).Should().BeEmpty();
+        _ReadWaiting(identity).Should().BeNull();
+    }
+
     private ConsumerKeySequencers _CreateSut(Func<SequencedWork, Task>? run = null)
     {
         return new ConsumerKeySequencers(
@@ -549,6 +584,41 @@ public sealed class ConsumerKeySequencersTests : TestBase
 
     private static RowLeaseSnapshot _ActiveLease() =>
         new(1, RowLeaseState.Active, DateTimeOffset.UtcNow.AddSeconds(90), "node-a", 0);
+
+    // Collects the gauge once and keeps only this test's consumer, so sequencers of tests running beside it do not count.
+    private static long? _ReadWaiting(string identity)
+    {
+        long? waiting = null;
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = static (instrument, meterListener) =>
+            {
+                if (instrument.Name is MessagingMetrics.SequentialWaitingName)
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, measurement, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (
+                        string.Equals(tag.Key, MessagingMetrics.TagConsumerGroupName, StringComparison.Ordinal)
+                        && string.Equals(tag.Value as string, identity, StringComparison.Ordinal)
+                    )
+                    {
+                        waiting = measurement;
+                    }
+                }
+            }
+        );
+        listener.Start();
+        listener.RecordObservableInstruments();
+
+        return waiting;
+    }
 
     private sealed class Gate
     {

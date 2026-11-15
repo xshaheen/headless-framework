@@ -92,7 +92,7 @@ public sealed class PostgreSqlJobsModelNamingTests : TestBase
                 )
             );
 
-        unique.GetFilter().Should().Be("\"status\" IN ('Idle', 'Queued', 'InProgress')");
+        unique.GetFilter().Should().Be("status IN ('Idle', 'Queued', 'InProgress')");
     }
 
     [Fact]
@@ -104,5 +104,35 @@ public sealed class PostgreSqlJobsModelNamingTests : TestBase
         entity.ColumnName(nameof(JobIdempotencyReservationEntity.IdempotencyKey)).Should().Be("idempotency_key");
         entity.FindPrimaryKey()!.GetName().Should().Be("pk_time_job_idempotency_reservations");
         entity.IndexNames().Should().Equal("ix_time_job_idempotency_reservations_expires_at");
+    }
+
+    [Fact]
+    public void occurrence_status_filters_follow_a_status_column_renamed_after_the_jobs_configuration()
+    {
+        // The consumer renames the column in OnModelCreating, after the Jobs configurations ran; the filters must name
+        // the final column or the index DDL fails, and on PostgreSQL the cron insert's ON CONFLICT predicate no longer
+        // matches the unique index.
+        var model = JobsModelNaming.BuildDesignTimeModel(
+            db => db.UseNpgsql("Host=localhost;Database=model_only"),
+            modelBuilder =>
+                modelBuilder
+                    .Entity<CronJobOccurrenceEntity<CronJobEntity>>()
+                    .Property(x => x.Status)
+                    .HasColumnName("occurrence_status")
+        );
+        var occurrence = model.FindEntityType(typeof(CronJobOccurrenceEntity<CronJobEntity>))!;
+
+        string? filterOf(string indexName) =>
+            occurrence
+                .GetIndexes()
+                .Single(index => string.Equals(index.GetDatabaseName(), indexName, StringComparison.Ordinal))
+                .GetFilter();
+
+        filterOf("ix_cron_job_occurrences_execution_time_id_claimable")
+            .Should()
+            .Be("occurrence_status IN ('Idle', 'Queued')");
+        filterOf("uq_cron_job_occurrences_cron_job_id_execution_time")
+            .Should()
+            .Be("occurrence_status IN ('Idle', 'Queued', 'InProgress')");
     }
 }
