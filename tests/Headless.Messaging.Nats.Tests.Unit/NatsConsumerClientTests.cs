@@ -1416,6 +1416,70 @@ public sealed class NatsConsumerClientTests : TestBase
         }
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task should_hand_back_a_delivery_without_starting_a_handler_when_dispatched_after_shutdown(
+        byte groupConcurrent
+    )
+    {
+        // given — a delivery the loop read just before shutdown, dispatched once the drain has started
+        var msg = _Message();
+        var dispatched = false;
+        await using var client = new NatsConsumerClient("test-group", groupConcurrent, _options, _serviceProvider)
+        {
+            OnMessageCallback = (_, _) =>
+            {
+                dispatched = true;
+                return Task.CompletedTask;
+            },
+            OnLogCallback = _ => { },
+        };
+        await client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        await client.DispatchEnvelopeAsync(
+            "orders.created",
+            msg.Headers,
+            msg.Data,
+            msg,
+            msg,
+            AbortToken,
+            TimeSpan.FromSeconds(30)
+        );
+
+        // then — no handler ran, and the message went straight back to the stream
+        dispatched.Should().BeFalse();
+        await msg.Received(1).NakAsync(null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_drop_a_core_delivery_without_starting_a_handler_when_dispatched_after_shutdown()
+    {
+        var dispatched = false;
+        await using var client = new NatsConsumerClient("test-group", 0, _options, _serviceProvider)
+        {
+            OnMessageCallback = (_, _) =>
+            {
+                dispatched = true;
+                return Task.CompletedTask;
+            },
+            OnLogCallback = _ => { },
+        };
+        await client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        await client.DispatchEnvelopeAsync(
+            "orders.created",
+            _CreateHeaders(),
+            new ReadOnlyMemory<byte>("test"u8.ToArray()),
+            jsMsg: null,
+            settlement: new object(),
+            AbortToken
+        );
+
+        dispatched.Should().BeFalse();
+    }
+
     [Fact]
     public async Task should_cap_in_flight_drain_to_remaining_shared_budget_when_shutdown_async()
     {
