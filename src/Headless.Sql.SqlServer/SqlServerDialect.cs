@@ -161,7 +161,7 @@ public sealed class SqlServerDialect : ISqlDialect
         sqlParameter.Value = value switch
         {
             null => DBNull.Value,
-            ReadOnlyMemory<byte> bytes => bytes.ToArray(),
+            ReadOnlyMemory<byte> bytes => SqlBinaryValue.ToArray(bytes),
             _ => value,
         };
 

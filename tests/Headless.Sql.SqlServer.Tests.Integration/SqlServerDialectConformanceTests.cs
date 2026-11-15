@@ -122,6 +122,12 @@ public sealed class SqlServerDialectConformanceTests(SqlServerTestFixture fixtur
     }
 
     [Fact]
+    public override Task should_round_trip_binary_memory_whether_it_spans_its_array_or_not()
+    {
+        return base.should_round_trip_binary_memory_whether_it_spans_its_array_or_not();
+    }
+
+    [Fact]
     public override Task should_step_a_change_marker_past_a_previous_marker_the_clock_has_not_passed()
     {
         return base.should_step_a_change_marker_past_a_previous_marker_the_clock_has_not_passed();

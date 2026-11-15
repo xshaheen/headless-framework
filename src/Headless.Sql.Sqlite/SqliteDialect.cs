@@ -471,7 +471,7 @@ public sealed class SqliteDialect : ISqlDialect
             // Upper-case text, the form EF Core's SQLite provider writes, so either can read the other's rows.
             Guid id => id.ToString("D").ToUpperInvariant(),
             bool flag => flag ? 1L : 0L,
-            ReadOnlyMemory<byte> bytes => bytes.ToArray(),
+            ReadOnlyMemory<byte> bytes => SqlBinaryValue.ToArray(bytes),
             _ => value,
         };
     }
