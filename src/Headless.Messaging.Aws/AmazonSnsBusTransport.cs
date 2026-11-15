@@ -32,7 +32,11 @@ internal sealed class AmazonSnsBusTransport(
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
-    public BrokerAddress BrokerAddress => new("aws.sns", _GetBrokerEndpoint());
+    // The options are a singleton snapshot, so the endpoint never changes; resolve it once instead of on every send.
+    // Built on first use so constructing the transport does not read the options.
+    private string? _brokerEndpoint;
+
+    public BrokerAddress BrokerAddress => new("aws.sns", _brokerEndpoint ??= _GetBrokerEndpoint());
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {

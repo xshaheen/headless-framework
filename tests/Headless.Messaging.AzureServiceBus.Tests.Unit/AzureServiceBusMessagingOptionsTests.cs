@@ -94,4 +94,45 @@ public sealed class AzureServiceBusMessagingOptionsTests
             .Errors.Should()
             .ContainSingle(e => e.PropertyName == nameof(AzureServiceBusMessagingOptions.PrefetchCount));
     }
+
+    [Fact]
+    public void should_reject_two_custom_producers_for_one_message_type()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            ConnectionString = "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=v",
+        };
+        options
+            .ConfigureCustomProducer<EntityCreated>(cfg => cfg.UseTopic("entity-created"))
+            .ConfigureCustomProducer<EntityCreated>(cfg => cfg.UseTopic("entity-created-again"));
+
+        // when
+        var result = new AzureServiceBusMessagingOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result
+            .Errors.Should()
+            .ContainSingle(e => e.PropertyName == nameof(AzureServiceBusMessagingOptions.CustomProducers));
+    }
+
+    [Fact]
+    public void should_accept_custom_producers_for_distinct_message_types()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            ConnectionString = "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=v",
+        };
+        options
+            .ConfigureCustomProducer<EntityCreated>(cfg => cfg.UseTopic("entity-created"))
+            .ConfigureCustomProducer<EntityDeleted>(cfg => cfg.UseTopic("entity-deleted"));
+
+        // when
+        var result = new AzureServiceBusMessagingOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
 }

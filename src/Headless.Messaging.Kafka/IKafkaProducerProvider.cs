@@ -54,13 +54,16 @@ internal sealed class KafkaProducerProvider : IKafkaProducerProvider, IDisposabl
         _logger = logger;
         _producerFactory = producerFactory ?? (static config => new ProducerBuilder<string, byte[]>(config).Build());
 
+        // Every send reads it for the broker address, and the servers never change after construction.
+        ServersAddress = BrokerAddressDisplay.FormatMany(_options.Servers);
+
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogKafkaServersConfigured(BrokerAddressDisplay.FormatMany(_options.Servers));
+            logger.LogKafkaServersConfigured(ServersAddress);
         }
     }
 
-    public string ServersAddress => BrokerAddressDisplay.FormatMany(_options.Servers);
+    public string ServersAddress { get; }
 
     public IProducer<string, byte[]> GetProducer()
     {
