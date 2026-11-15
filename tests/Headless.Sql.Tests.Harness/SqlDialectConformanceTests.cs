@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Data.Common;
 using System.Globalization;
 using Headless.Sql;
@@ -513,6 +514,32 @@ public abstract class SqlDialectConformanceTests : TestBase
         )
             .Should()
             .BeEquivalentTo(bytes);
+    }
+
+    public virtual async Task should_round_trip_binary_memory_whether_it_spans_its_array_or_not()
+    {
+        // Over 8,000 bytes, so SQL Server binds varbinary(max) rather than a sized varbinary.
+        var backing = new byte[9000];
+        Random.Shared.NextBytes(backing);
+        ReadOnlyMemory<byte> whole = backing;
+        var cases = new (string Name, ReadOnlyMemory<byte> Value)[]
+        {
+            ("whole array", whole),
+            ("slice past the start", whole[100..]),
+            ("prefix shorter than its array", whole[..100]),
+            ("slice inside the array", whole[10..20]),
+            ("not backed by an array", new NativeMemory(backing.AsSpan(0, 50)).Memory),
+        };
+
+        foreach (var (name, value) in cases)
+        {
+            var read = await _ScalarObjectAsync(
+                "SELECT @b",
+                command => Dialect.AddParameter(command, "b", SqlColumnType.Binary, value)
+            );
+
+            read.Should().BeOfType<byte[]>(name).Which.Should().Equal(value.ToArray(), name);
+        }
     }
 
     public virtual async Task should_read_without_waiting_on_a_row_another_transaction_holds()
@@ -1102,5 +1129,32 @@ public abstract class SqlDialectConformanceTests : TestBase
         await connection.OpenAsync(AbortToken);
 
         return connection;
+    }
+
+    /// <summary>Memory whose bytes live outside any managed array, so a dialect cannot bind an array it does not have.</summary>
+    private sealed class NativeMemory : MemoryManager<byte>
+    {
+        private readonly byte[] _bytes;
+
+        public NativeMemory(ReadOnlySpan<byte> bytes)
+        {
+            _bytes = bytes.ToArray();
+        }
+
+        public override Span<byte> GetSpan() => _bytes;
+
+        public override MemoryHandle Pin(int elementIndex = 0) => throw new NotSupportedException();
+
+        public override void Unpin() { }
+
+        protected override void Dispose(bool disposing) { }
+
+        // Reports no array, so MemoryMarshal.TryGetArray fails as it does for native or pooled unmanaged memory.
+        protected override bool TryGetArray(out ArraySegment<byte> segment)
+        {
+            segment = default;
+
+            return false;
+        }
     }
 }

@@ -125,7 +125,7 @@ public sealed class PostgreSqlDialect : ISqlDialect
                     null => DBNull.Value,
                     // timestamptz accepts only UTC offsets.
                     DateTimeOffset instant => instant.ToUniversalTime(),
-                    ReadOnlyMemory<byte> bytes => bytes.ToArray(),
+                    // ReadOnlyMemory<byte> stays as it is: Npgsql writes it to bytea in place, slices included.
                     _ => value,
                 },
             }
