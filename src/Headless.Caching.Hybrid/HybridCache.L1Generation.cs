@@ -81,7 +81,7 @@ public sealed partial class HybridCache
         }
     }
 
-    private Dictionary<string, (long Global, long Key)> _CaptureL1Generations(IReadOnlyCollection<string> keys)
+    private Dictionary<string, (long Global, long Key)> _CaptureL1Generations(List<string> keys)
     {
         var generations = new Dictionary<string, (long Global, long Key)>(keys.Count, StringComparer.Ordinal);
 
