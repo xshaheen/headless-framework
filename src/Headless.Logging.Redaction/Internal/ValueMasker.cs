@@ -29,6 +29,13 @@ internal static class ValueMasker
             return value;
         }
 
+        // A collection formats as its type name ("System.String[]"), which no pattern matches, so the elements would
+        // reach the providers unmasked. Scan each element instead; raw bytes carry no text to scan.
+        if (value is System.Collections.IEnumerable items and not byte[])
+        {
+            return _MaskElements(items, value, mask, state);
+        }
+
         var formatted = Convert.ToString(value, CultureInfo.InvariantCulture);
 
         if (formatted is null)
@@ -39,5 +46,26 @@ internal static class ValueMasker
         var scrubbed = mask(formatted, state);
 
         return string.Equals(scrubbed, formatted, StringComparison.Ordinal) ? value : scrubbed;
+    }
+
+    /// <summary>Masks each element, returning <paramref name="original"/> unless some element changed.</summary>
+    private static object _MaskElements<TState>(
+        System.Collections.IEnumerable items,
+        object original,
+        Func<string, TState, string> mask,
+        TState state
+    )
+    {
+        var masked = new List<object?>();
+        var changed = false;
+
+        foreach (var item in items)
+        {
+            var maskedItem = Mask(item, mask, state);
+            changed |= !ReferenceEquals(maskedItem, item);
+            masked.Add(maskedItem);
+        }
+
+        return changed ? masked.ToArray() : original;
     }
 }

@@ -4,7 +4,6 @@ using System.Net.Sockets;
 using Headless.Checks;
 using Polly.CircuitBreaker;
 using Polly.RateLimiting;
-using Polly.Timeout;
 
 namespace Headless.Sms;
 
@@ -21,28 +20,33 @@ public static class SmsFailureKinds
 {
     /// <summary>Classifies an exception caught while dispatching an SMS send.</summary>
     /// <remarks>
-    /// Network and transport faults (<see cref="HttpRequestException"/>, <see cref="IOException"/>,
-    /// <see cref="TimeoutException"/>, <see cref="SocketException"/>) and the standard resilience pipeline's
-    /// rejections (<see cref="TimeoutRejectedException"/>, <see cref="BrokenCircuitException"/>,
-    /// <see cref="RateLimiterRejectedException"/>) are reported as <see cref="SmsFailureKind.Transient"/>
-    /// because a retry may succeed. Everything else (deserialization errors, provider-SDK contract
-    /// violations, programming errors) is <see cref="SmsFailureKind.Unknown"/>, since blindly retrying it
-    /// is unlikely to help.
-    /// </remarks>
-    /// <param name="exception">The caught exception.</param>
-    /// <returns>The classified <see cref="SmsFailureKind"/>.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
+    /// <see cref="SmsFailureKind.Transient"/> is reserved for failures that happened before the request left this
+    /// process, so a retry cannot send the message twice: a connection that could not be opened (an
+    /// <see cref="HttpRequestException"/> whose <see cref="HttpRequestException.HttpRequestError"/> is a connection,
+    /// name-resolution, or TLS-handshake error, or a <see cref="SocketException"/> for a refused or unreachable host),
+    /// and the resilience pipeline's open-circuit and rate-limiter rejections, which refuse before sending. A timeout,
+    /// a reset, or any other I/O fault can happen after the provider accepted the message, so it is
+    /// <see cref="SmsFailureKind.Unknown"/>: the message may have been delivered, and a blind retry can deliver it twice.
     public static SmsFailureKind FromException(Exception exception)
     {
         Argument.IsNotNull(exception);
 
         return exception switch
         {
-            HttpRequestException or IOException or TimeoutException or SocketException => SmsFailureKind.Transient,
-            // The standard resilience pipeline surfaces its timeout, open-circuit, and rate-limiter
-            // rejections as Polly-specific exceptions; all are transport faults a retry may clear.
-            TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException =>
-                SmsFailureKind.Transient,
+            BrokenCircuitException or RateLimiterRejectedException => SmsFailureKind.Transient,
+            HttpRequestException
+            {
+                HttpRequestError: HttpRequestError.ConnectionError
+                    or HttpRequestError.NameResolutionError
+                    or HttpRequestError.SecureConnectionError,
+            } => SmsFailureKind.Transient,
+            SocketException
+            {
+                SocketErrorCode: SocketError.ConnectionRefused
+                    or SocketError.HostNotFound
+                    or SocketError.HostUnreachable
+                    or SocketError.NetworkUnreachable,
+            } => SmsFailureKind.Transient,
             _ => SmsFailureKind.Unknown,
         };
     }
