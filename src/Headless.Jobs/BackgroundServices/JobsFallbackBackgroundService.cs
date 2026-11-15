@@ -212,7 +212,17 @@ internal sealed class JobsFallbackBackgroundService(
 
         _lastStallSweepTimestamp = timeProvider.GetTimestamp();
 
-        await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var reclaimed = await internalJobsManager.ReclaimStalledResources(cancellationToken).ConfigureAwait(false);
+            JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonLeaseExpired, reclaimed);
+        }
+        catch (JobReclaimException exception)
+        {
+            // The rows that moved before the failure stay moved, and no retry finds them again, so count them now.
+            JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonLeaseExpired, exception.Reclaimed);
+            throw;
+        }
     }
 
     // Idempotency reservations are only reused when their own key returns, so with distinct keys the store would keep
@@ -310,9 +320,19 @@ internal sealed class JobsFallbackBackgroundService(
 
         // Final membership fence immediately before the must-complete durable transition. Once started, the release
         // deliberately uses None so host shutdown cannot interrupt only part of the owner batch.
-        await internalJobsManager
-            .ReleaseDeadNodeResources(orphanedOwners, CancellationToken.None)
-            .ConfigureAwait(false);
+        try
+        {
+            var reclaimed = await internalJobsManager
+                .ReleaseDeadNodeResources(orphanedOwners, CancellationToken.None)
+                .ConfigureAwait(false);
+            JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonOrphanedOwner, reclaimed);
+        }
+        catch (JobReclaimException exception)
+        {
+            // The rows that moved before the failure stay moved, and no retry finds them again, so count them now.
+            JobsMetrics.Reclaims(JobsMetrics.ReclaimReasonOrphanedOwner, exception.Reclaimed);
+            throw;
+        }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

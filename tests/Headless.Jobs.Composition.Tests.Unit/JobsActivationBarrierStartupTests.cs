@@ -413,7 +413,7 @@ public sealed class JobsActivationBarrierStartupTests : TestBase
                 {
                     _RecordSelection();
 
-                    return 0;
+                    return default(JobReclaimCounts);
                 });
 
             Manager = manager;

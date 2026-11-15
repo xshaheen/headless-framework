@@ -72,8 +72,8 @@ public abstract class JobsFailureFingerprintConformanceTests<TFixture>(TFixture 
                 await _SeedRunningTimeJobAsync(job, owner, lapsed: true, ct);
                 var occurrence = await _SeedRunningOccurrenceAsync(owner, NodeDeathPolicy.MarkFailed, lapsed: true, ct);
 
-                (await store.ReclaimStalledTimeJobsAsync(ct)).Should().Be(1);
-                (await store.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(1);
+                (await store.ReclaimStalledTimeJobsAsync(ct)).Total.Should().Be(1);
+                (await store.ReclaimStalledCronJobOccurrencesAsync(ct)).Total.Should().Be(1);
 
                 (await _FingerprintAsync(fixture.QualifiedTimeJobsTable, job, ct))
                     .Should()
@@ -96,8 +96,8 @@ public abstract class JobsFailureFingerprintConformanceTests<TFixture>(TFixture 
                 await _SeedRunningTimeJobAsync(job, dead, lapsed: true, ct);
                 var occurrence = await _SeedRunningOccurrenceAsync(dead, NodeDeathPolicy.MarkFailed, lapsed: true, ct);
 
-                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Should().Be(1);
-                (await store.ReleaseDeadNodeOccurrenceResourcesAsync(dead, ct)).Should().Be(1);
+                (await store.ReleaseDeadNodeTimeJobResourcesAsync(dead, ct)).Total.Should().Be(1);
+                (await store.ReleaseDeadNodeOccurrenceResourcesAsync(dead, ct)).Total.Should().Be(1);
 
                 (await _FingerprintAsync(fixture.QualifiedTimeJobsTable, job, ct))
                     .Should()
@@ -166,7 +166,7 @@ public abstract class JobsFailureFingerprintConformanceTests<TFixture>(TFixture 
                     var executor = Task.Run(() => store.UpdateTimeJobAsync(failure, ct), ct);
                     var sweep = Task.Run(() => store.ReclaimStalledTimeJobsAsync(ct), ct);
                     var executorWrote = await executor;
-                    var sweepWrote = await sweep;
+                    var sweepWrote = (await sweep).Total;
 
                     (executorWrote + sweepWrote).Should().Be(1, "exactly one writer ends the run");
                     (await _FingerprintAsync(fixture.QualifiedTimeJobsTable, job, ct))
@@ -185,7 +185,7 @@ public abstract class JobsFailureFingerprintConformanceTests<TFixture>(TFixture 
             {
                 var job = Guid.NewGuid();
                 await _SeedRunningTimeJobAsync(job, owner, lapsed: true, ct);
-                (await store.ReclaimStalledTimeJobsAsync(ct)).Should().Be(1);
+                (await store.ReclaimStalledTimeJobsAsync(ct)).Total.Should().Be(1);
                 (await _FingerprintAsync(fixture.QualifiedTimeJobsTable, job, ct))
                     .Should()
                     .Be(JobFailureFingerprints.LeaseLapsed);

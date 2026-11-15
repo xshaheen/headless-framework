@@ -308,7 +308,16 @@ public sealed class InMemoryCronOccurrenceLifecycleTests : TestBase
 
         var affected = await fixture.Provider.ReleaseDeadNodeOccurrenceResourcesAsync(_NodeA, AbortToken);
 
-        affected.Should().Be(4);
+        affected
+            .Should()
+            .Be(
+                new JobReclaimCounts
+                {
+                    Released = 2,
+                    MarkedFailed = 1,
+                    Skipped = 1,
+                }
+            );
         var stored = (await fixture.Provider.GetAllCronJobOccurrencesAsync(predicate: null, AbortToken)).ToDictionary(
             occurrence => occurrence.Id
         );

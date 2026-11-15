@@ -148,9 +148,26 @@ internal interface IInternalJobManager
     );
 
     Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default);
-    Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default);
 
-    Task ReleaseDeadNodeResources(
+    /// <summary>
+    /// Recovers the time jobs and cron occurrences one dead owner held, applying each row's <c>OnNodeDeath</c> policy.
+    /// </summary>
+    /// <returns>The rows moved, by transition.</returns>
+    /// <exception cref="JobReclaimException">A store sweep or the reconcile failed; it carries the rows that moved.</exception>
+    Task<JobReclaimCounts> ReleaseDeadNodeResources(
+        string instanceIdentifier,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Recovers the rows several dead owners held, applying each row's <c>OnNodeDeath</c> policy. Every owner is
+    /// attempted; failures surface together once the rest ran.
+    /// </summary>
+    /// <returns>The rows moved across every owner, by transition.</returns>
+    /// <exception cref="JobReclaimException">
+    /// An owner's sweep or the reconcile failed; it carries the rows every owner moved.
+    /// </exception>
+    Task<JobReclaimCounts> ReleaseDeadNodeResources(
         IReadOnlyCollection<string> instanceIdentifiers,
         CancellationToken cancellationToken = default
     );
@@ -162,7 +179,9 @@ internal interface IInternalJobManager
     /// Reclaims jobs stuck <c>InProgress</c> whose lease lapsed, independent of node death (#316). Runs on the
     /// fallback cadence so a job stalled on a still-live node is recovered within ≈ one lease TTL.
     /// </summary>
-    Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default);
+    /// <returns>The rows moved, by transition.</returns>
+    /// <exception cref="JobReclaimException">A store sweep or the reconcile failed; it carries the rows that moved.</exception>
+    Task<JobReclaimCounts> ReclaimStalledResources(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes expired idempotency reservations (see the provider SPI counterpart). Runs on the fallback cadence so

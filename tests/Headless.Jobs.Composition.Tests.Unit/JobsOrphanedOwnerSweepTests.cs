@@ -469,13 +469,15 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
     private static IInternalJobManager _Manager()
     {
         var manager = Substitute.For<IInternalJobManager>();
-        manager.ReclaimStalledResources(Arg.Any<CancellationToken>()).Returns(Task.FromResult(0));
+        manager
+            .ReclaimStalledResources(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         manager
             .RunTimedOutTickers(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(Array.Empty<JobExecutionState>()));
         manager
             .ReleaseDeadNodeResources(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
         manager.GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(Array.Empty<string>()));
         return manager;
     }
