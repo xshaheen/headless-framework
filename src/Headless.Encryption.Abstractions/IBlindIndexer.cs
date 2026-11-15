@@ -32,6 +32,7 @@ public interface IBlindIndexer
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The hash and the key version that produced it; store both.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="context" /> or <paramref name="value" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value" /> contains a lone surrogate, which UTF-8 cannot encode.</exception>
     /// <exception cref="DataKeyScopeShreddedException">The scope was shredded.</exception>
     ValueTask<BlindIndex> ComputeAsync(
         BlindIndexContext context,
@@ -54,6 +55,7 @@ public interface IBlindIndexer
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The hash to store under the active version, or <see langword="null" /> when the stored one is current.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="context" /> or <paramref name="value" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value" /> contains a lone surrogate, which UTF-8 cannot encode.</exception>
     /// <exception cref="DataKeyScopeShreddedException">The scope was shredded.</exception>
     ValueTask<BlindIndex?> RehashAsync(
         BlindIndexContext context,
@@ -74,6 +76,7 @@ public interface IBlindIndexer
     /// matches nothing.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="context" /> or <paramref name="value" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value" /> contains a lone surrogate, which UTF-8 cannot encode.</exception>
     ValueTask<IReadOnlyList<BlindIndex>> ComputeCandidatesAsync(
         BlindIndexContext context,
         string value,

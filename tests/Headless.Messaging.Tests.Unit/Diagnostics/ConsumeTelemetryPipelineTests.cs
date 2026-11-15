@@ -87,7 +87,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
                 )
             );
 
-        var executor = new SubscribeExecutor(
+        await using var executor = new SubscribeExecutor(
             provider,
             storage,
             invoker,

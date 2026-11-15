@@ -160,7 +160,7 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 | `RequestReplyCallerCleanup` | S | S | N/A | N/A | U | U | S | S | S |
 | `RequestReplyStartupRejection` | N/A | N/A | S | S | S† | U | N/A | N/A | N/A |
 | `RawPayloadConsumption` | S | S | S | S | S† | U | N/A | S | N/A |
-| `HeaderBuilderFailureRedelivery` | S | S | S | U | S† | S‡ | N/A | U | N/A |
+| `HeaderBuilderFailureRedelivery` | S | S | S | U | S† | U | N/A | U | N/A |
 | `DeadLetterSingleCopy` | N/A | S | N/A | N/A | U | U | U | N/A | S |
 | `StandardHeaderRoundTrip` | S | S | S | S | U | U | U | S | S |
 | `HandlerConcurrencyCap` | S | S | S | S | U | U | U | S | S |
@@ -182,7 +182,7 @@ Evidence anchors:
 - Redis Streams Bus/Queue routing, group fan-out, replica competition, lane isolation, settlement, shutdown, and poison handling: `RedisConsumerConformanceTests` against Testcontainers Redis.
 - InMemory Bus/Queue group fan-out, replica competition, ownership, and lane isolation: `InMemoryProviderConformanceTests` using the shared provider driver.
 - Azure Service Bus group fan-out, replica competition, Queue ownership, and lane isolation: `AzureServiceBusConsumerClientHarnessTests` on the credential-gated managed-service tier.
-- Azure Service Bus emulator round trip, settlement, stale settlement, callback failure, bounded shutdown, and header-builder failure: `AzureServiceBusEmulatorConsumerClientHarnessTests`, whose header-builder session reads the `Config.json` queue declared with a max delivery count of 3; topic fan-out to the two `Config.json` subscriptions: `AzureServiceBusEmulatorTransportTests`; pause and broker restart: `AzureServiceBusEmulatorBrokerFaultTests`.
+- Azure Service Bus emulator round trip, settlement, stale settlement, callback failure, and bounded shutdown: `AzureServiceBusEmulatorConsumerClientHarnessTests`. Its header-builder failure test, on the `Config.json` queue declared with a max delivery count of 3, skips while the cell is quarantined: the emulator intermittently dead-letters two copies (#1672). Topic fan-out to the two `Config.json` subscriptions: `AzureServiceBusEmulatorTransportTests`; pause and broker restart: `AzureServiceBusEmulatorBrokerFaultTests`.
 - Kafka Queue ownership and terminal poison-offset handling: `KafkaConsumerClientConformanceTests`; Bus startup rejection before storage initialization: `SetupTests`.
 - NATS lane isolation, consumer-identity/replica semantics, terminal malformed acknowledgement, and legacy drain/roll-forward proof: `NatsConsumerClientTests` against Testcontainers NATS JetStream.
 - RabbitMQ lane isolation, consumer-identity/replica semantics, terminal malformed rejection, and legacy drain/roll-forward proof: `RabbitMqConsumerClientConformanceTests` against Testcontainers RabbitMQ.

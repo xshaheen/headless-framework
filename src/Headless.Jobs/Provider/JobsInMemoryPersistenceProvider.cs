@@ -1257,11 +1257,62 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             if (_TryUpdateTimeJob(row.Key, updatedTicker, job))
             {
                 _SyncReconcileCandidate(updatedTicker);
+                _SlideClaimedDescendants(row.Key, claimOwner, renewed.Next.ExpiresAt, now);
                 return Task.FromResult(1);
             }
         }
 
         return Task.FromResult(0);
+    }
+
+    // A chain's continuations wait Idle under the claim, with the deadline of the node that runs before them, until it
+    // ends. Renewal slides only the running row, so the subtree this owner still holds slides with it here; otherwise a
+    // node that runs longer than one lease leaves its descendants' leases expired and their start or skip refused.
+    // Mirrors the EF JobsSubtreeLeaseWalk.SlideClaimedDescendantsAsync: a live lease of the same holder only, through
+    // idle non-timed nodes only, down to MaxChainDepth.
+    private void _SlideClaimedDescendants(Guid nodeId, string claimOwner, DateTimeOffset? expiresAt, DateTimeOffset now)
+    {
+        var frontier = new List<Guid> { nodeId };
+
+        for (var depth = 1; frontier.Count != 0 && depth < _maxChainDepth; depth++)
+        {
+            var next = new List<Guid>();
+
+            foreach (var parentId in frontier)
+            {
+                foreach (var childId in _GetChildrenIds(parentId))
+                {
+                    if (_SlideClaimedJob(childId, claimOwner, expiresAt, now))
+                    {
+                        next.Add(childId);
+                    }
+                }
+            }
+
+            frontier = next;
+        }
+    }
+
+    private bool _SlideClaimedJob(Guid jobId, string claimOwner, DateTimeOffset? expiresAt, DateTimeOffset now)
+    {
+        while (
+            _timeJobs.TryGetValue(jobId, out var existing)
+            && existing.Status == JobStatus.Idle
+            && existing.ExecutionTime is null
+            && _IsHeldBy(existing.Lease, claimOwner)
+            && _IsLeaseLive(existing.Lease, now)
+        )
+        {
+            var slid = _CloneTicker(existing);
+            slid.Lease = existing.Lease with { ExpiresAt = expiresAt };
+
+            if (_TryUpdateTimeJob(jobId, slid, existing))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
@@ -1295,7 +1346,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // Swap against the row the decision was made on, not a fresh read: a terminal write or a lease renewal that
         // lands after the scan replaces the row, so the swap fails and the job is left alone, as the EF reclaim's
         // predicate-guarded UPDATE leaves it.
-        bool tryApply(TTimeJob decidedOn, JobAttemptEnd attemptEnd, Action<TTimeJob> mutate)
+        bool tryApply(TTimeJob decidedOn, JobAttemptEnd? attemptEnd, Action<TTimeJob> mutate)
         {
             var updated = _CloneTicker(decidedOn);
             mutate(updated);
@@ -1306,7 +1357,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return false;
             }
 
-            _CloseAttempt(_timeJobAttempts, decidedOn.Id, decidedOn.Lease.Holder, attemptEnd, insertWhenMissing: true);
+            // A run handed back between in-process retries has no attempt in flight, so none is closed or inserted.
+            if (attemptEnd is not null)
+            {
+                _CloseAttempt(
+                    _timeJobAttempts,
+                    decidedOn.Id,
+                    decidedOn.Lease.Holder,
+                    attemptEnd,
+                    insertWhenMissing: true
+                );
+            }
+
             _SyncReconcileCandidate(updated);
             return true;
         }
@@ -1317,20 +1379,27 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         foreach (var job in stalled)
         {
+            // Read after the scan: an open that lands later changes the row, so the swap below refuses it.
+            var attemptInFlight = _HasAttemptInFlight(_timeJobAttempts, job.Id, job.Lease.Holder);
+
             switch (job.OnNodeDeath)
             {
-                // The Retry arm consumes one retry-budget unit (RetryCount + 1): a lapsed-lease InProgress row is
-                // a STARTED attempt that was lost — mirrors the EF reclaim so a crash-looping job cannot re-run
-                // forever with a fresh budget each cycle.
+                // The Retry arm consumes one retry-budget unit (RetryCount + 1) for the attempt in flight: a
+                // lapsed-lease InProgress row is a STARTED attempt that was lost — mirrors the EF reclaim so a
+                // crash-looping job cannot re-run forever with a fresh budget each cycle. A run lapsed between
+                // in-process retries was already charged by the retry write, so it goes back uncharged.
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         job,
-                        _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _LeaseLapsedReason),
+                        attemptInFlight ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _LeaseLapsedReason) : null,
                         t =>
                         {
                             t.Lease = _Abandoned(t.Lease, now);
                             t.Status = JobStatus.Idle;
-                            t.RetryCount++;
+                            if (attemptInFlight)
+                            {
+                                t.RetryCount++;
+                            }
                         }
                     ):
                     released++;
@@ -1977,13 +2046,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (release)
             {
-                // Only a started (InProgress) attempt consumes a retry-budget unit; Idle/Queued rows never
-                // invoked user code — mirrors the EF dead-node split.
-                var consumesBudget = inProgressLapsed;
+                // Only an attempt in flight consumes a retry-budget unit; Idle/Queued rows never invoked user code,
+                // and a run waiting between in-process retries was already charged by the retry write — mirrors the
+                // EF dead-node split.
+                var consumesBudget =
+                    inProgressLapsed && _HasAttemptInFlight(_timeJobAttempts, job.Id, job.Lease.Holder);
                 if (
                     tryApply(
                         job,
-                        inProgressLapsed ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _NodeNotAliveReason) : null,
+                        consumesBudget ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _NodeNotAliveReason) : null,
                         t =>
                         {
                             t.Lease = _Revoked(t.Lease);
@@ -3775,7 +3846,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // Swap against the row the decision was made on, not a fresh read (see the time-job reclaim).
         bool tryApply(
             CronJobOccurrenceEntity<TCronJob> decidedOn,
-            JobAttemptEnd attemptEnd,
+            JobAttemptEnd? attemptEnd,
             Action<CronJobOccurrenceEntity<TCronJob>> mutate
         )
         {
@@ -3788,13 +3859,18 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return false;
             }
 
-            _CloseAttempt(
-                _occurrenceAttempts,
-                decidedOn.Id,
-                decidedOn.Lease.Holder,
-                attemptEnd,
-                insertWhenMissing: true
-            );
+            // A run handed back between in-process retries has no attempt in flight, so none is closed or inserted.
+            if (attemptEnd is not null)
+            {
+                _CloseAttempt(
+                    _occurrenceAttempts,
+                    decidedOn.Id,
+                    decidedOn.Lease.Holder,
+                    attemptEnd,
+                    insertWhenMissing: true
+                );
+            }
+
             return true;
         }
 
@@ -3804,18 +3880,24 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         foreach (var occurrence in stalled)
         {
+            var attemptInFlight = _HasAttemptInFlight(_occurrenceAttempts, occurrence.Id, occurrence.Lease.Holder);
+
             switch (occurrence.OnNodeDeath)
             {
-                // Started attempt lost to a lapsed lease — consumes one retry-budget unit (mirrors EF).
+                // Started attempt lost to a lapsed lease — consumes one retry-budget unit (mirrors EF); a run lapsed
+                // between in-process retries was already charged by the retry write.
                 case NodeDeathPolicy.Retry
                     when tryApply(
                         occurrence,
-                        _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _LeaseLapsedReason),
+                        attemptInFlight ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _LeaseLapsedReason) : null,
                         t =>
                         {
                             t.Lease = _Abandoned(t.Lease, now);
                             t.Status = JobStatus.Idle;
-                            t.RetryCount++;
+                            if (attemptInFlight)
+                            {
+                                t.RetryCount++;
+                            }
                         }
                     ):
                     released++;
@@ -4126,12 +4208,15 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             if (release)
             {
-                // Only a started (InProgress) attempt consumes a retry-budget unit (mirrors the EF split).
-                var consumesBudget = inProgressLapsed;
+                // Only an attempt in flight consumes a retry-budget unit (mirrors the EF split); a run waiting
+                // between in-process retries was already charged by the retry write.
+                var consumesBudget =
+                    inProgressLapsed
+                    && _HasAttemptInFlight(_occurrenceAttempts, occurrence.Id, occurrence.Lease.Holder);
                 if (
                     tryApply(
                         occurrence,
-                        inProgressLapsed ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _NodeNotAliveReason) : null,
+                        consumesBudget ? _StoreAttemptEnd(JobAttemptOutcome.Lost, now, _NodeNotAliveReason) : null,
                         o =>
                         {
                             o.Lease = _Revoked(o.Lease);

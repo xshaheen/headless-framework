@@ -609,6 +609,7 @@
         <Project Path="src\Headless.Sequences.PostgreSql\Headless.Sequences.PostgreSql.csproj" />
         <Project Path="src\Headless.Sequences.SqlServer\Headless.Sequences.SqlServer.csproj" />
         <Project Path="src\Headless.Sequences.Sqlite\Headless.Sequences.Sqlite.csproj" />
+        <Project Path="benchmarks\Headless.Sequences.Benchmarks\Headless.Sequences.Benchmarks.csproj" />
     </Folder>
     <Folder Name="/Sequences/Tests/">
         <Project Path="tests\Headless.Sequences.Tests.Unit\Headless.Sequences.Tests.Unit.csproj" />

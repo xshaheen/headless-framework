@@ -249,6 +249,10 @@ public static class TransportConformanceManifest
     /// <summary>The open issue that tracks a delivery budget for the brokers that have none, Kafka and Redis.</summary>
     private const string _DeliveryBudgetIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1288";
 
+    /// <summary>The open issue that tracks the emulator dead-lettering two copies of one message.</summary>
+    private const string _EmulatorDeadLetterDuplicateIssueUrl =
+        "https://github.com/xshaheen/headless-framework/issues/1672";
+
     /// <summary>An Azure Service Bus cell that only the protected, credential-gated workflow can prove.</summary>
     private static readonly ConformanceSupport _AzureWorkflowGap = ConformanceSupport.Unsupported(
         "Needs the protected Azure workflow to execute; no run has proven it yet.",
@@ -949,7 +953,6 @@ public static class TransportConformanceManifest
             TransportConformanceScenario.StaleSettlement,
             TransportConformanceScenario.HandlerFailureRedelivery,
             TransportConformanceScenario.BoundedGracefulShutdown,
-            TransportConformanceScenario.HeaderBuilderFailureRedelivery,
             TransportConformanceScenario.KeySequencing,
         ];
 
@@ -986,6 +989,14 @@ public static class TransportConformanceManifest
                 )
             );
         }
+
+        profile = profile.WithScenario(
+            TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+            ConformanceSupport.Unsupported(
+                "The emulator intermittently dead-letters two copies of a message whose header builder keeps failing; the cause is not yet known.",
+                _EmulatorDeadLetterDuplicateIssueUrl
+            )
+        );
 
         return profile.WithRequestReplyScenarios(
             ConformanceSupport.Unsupported(

@@ -51,6 +51,39 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         (await Fixture.ReadValueAsync(new SequenceKey(tenant, name, ""), AbortToken)).Should().Be(100);
     }
 
+    public virtual async Task should_never_issue_a_value_twice_when_two_hosts_take_values_from_blocks()
+    {
+        var name = CreateName("blocked");
+        const int blockSize = 7;
+        await using var hostA = await Fixture.CreateHostAsync(
+            setup => setup.Policy(name, new SequencePolicy { BlockSize = blockSize }),
+            AbortToken
+        );
+        await using var hostB = await Fixture.CreateHostAsync(
+            setup => setup.Policy(name, new SequencePolicy { BlockSize = blockSize }),
+            AbortToken
+        );
+
+        var values = await Task.WhenAll(
+            Enumerable
+                .Range(0, 100)
+                .Select(i =>
+                    Task.Run(
+                        async () =>
+                            await (i % 2 == 0 ? hostA : hostB).Generator.NextAsync(name, cancellationToken: AbortToken),
+                        AbortToken
+                    )
+                )
+        );
+
+        // Each host holds its own block, so the values interleave and the last block of each host is partly unused,
+        // but no value is ever issued twice and every one lies inside a block the counter reserved.
+        var stored = await Fixture.ReadValueAsync(new SequenceKey("", name, ""), AbortToken);
+        values.Should().OnlyHaveUniqueItems().And.OnlyContain(v => v >= 1 && v <= stored);
+        (stored % blockSize).Should().Be(0);
+        stored.Should().BeLessThanOrEqualTo(100 + (2 * blockSize));
+    }
+
     public virtual async Task should_create_the_counter_once_when_first_calls_race_on_a_new_key()
     {
         var name = CreateName("first-use");

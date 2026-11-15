@@ -116,6 +116,19 @@ public sealed class DateTimeExtensionsTests
         result.Should().Be(new DateTime(2021, 1, 1, 12, 45, 0));
     }
 
+    [Fact]
+    public void should_keep_value_when_ceiling_already_on_boundary()
+    {
+        // given
+        var dateTime = new DateTime(2021, 1, 1, 12, 0, 0);
+
+        // when
+        var result = dateTime.Ceiling(TimeSpan.FromHours(1));
+
+        // then
+        result.Should().Be(dateTime);
+    }
+
     [Theory]
     [InlineData(DateTimeKind.Utc)]
     [InlineData(DateTimeKind.Local)]

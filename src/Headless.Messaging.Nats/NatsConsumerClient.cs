@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Sockets;
 using System.Threading.Channels;
 using Headless.Checks;
@@ -44,9 +45,14 @@ internal sealed class NatsConsumerClient(
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
 
-    // Tracks in-flight fire-and-forget handler tasks on the concurrent (groupConcurrent > 0) path so
-    // DisposeAsync can drain them before disposing the semaphore and connection.
+    // Tracks every running handler, the inline one included, so shutdown drains them before it disposes the semaphore
+    // and the connection their settlement needs. The core stops a client without awaiting its listening task, so an
+    // untracked inline handler would acknowledge on a disposed connection and its message would run again.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
+
+    // Cancelled when shutdown starts, so a delivery waiting for a handler slot gives up instead of starting a handler
+    // after the drain looked.
+    private readonly CancellationTokenSource _stopping = new();
 
     // Bounded drain budget on shutdown. Aligned with the default AckWait (30s): a handler still
     // running past this would have its message redelivered by JetStream anyway (at-least-once).
@@ -824,15 +830,28 @@ internal sealed class NatsConsumerClient(
 
         if (_semaphore is not null)
         {
+            bool entered;
             try
             {
-                await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                entered = await _TryEnterSlotAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (delivery is not null)
             {
-                await delivery.DisposeAsync().ConfigureAwait(false);
-                await _ReleaseUndispatchedAsync(delivery.Msg).ConfigureAwait(false);
+                await _RefuseUndispatchedAsync(delivery).ConfigureAwait(false);
                 throw;
+            }
+
+            if (!entered)
+            {
+                await _RefuseUndispatchedAsync(delivery).ConfigureAwait(false);
+                return;
+            }
+
+            if (!_TryBeginHandler(out var handlerDone))
+            {
+                _ReleaseSemaphore();
+                await _RefuseUndispatchedAsync(delivery).ConfigureAwait(false);
+                return;
             }
 
             var handlerTask = Task.Run(
@@ -851,16 +870,22 @@ internal sealed class NatsConsumerClient(
                         }
 
                         _ReleaseSemaphore();
+                        handlerDone.TrySetResult();
                     }
                 },
                 CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
             );
 
-            _inFlightHandlers.Track(handlerTask);
             _ObserveBackgroundHandler(handlerTask);
         }
         else
         {
+            if (!_TryBeginHandler(out var handlerDone))
+            {
+                await _RefuseUndispatchedAsync(delivery).ConfigureAwait(false);
+                return;
+            }
+
             try
             {
                 await _ProcessEnvelopeAsync(subject, natsHeaders, data, delivery, delivery ?? settlement)
@@ -872,8 +897,63 @@ internal sealed class NatsConsumerClient(
                 {
                     await delivery.DisposeAsync().ConfigureAwait(false);
                 }
+
+                handlerDone.TrySetResult();
             }
         }
+    }
+
+    // Waits for a handler slot until shutdown starts; false when shutdown refused the delivery.
+    private async ValueTask<bool> _TryEnterSlotAsync(CancellationToken cancellationToken)
+    {
+        if (_stopping.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stopping.Token);
+            await _semaphore!.WaitAsync(linked.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            // Shutdown already disposed the slot semaphore or the stopping token: it stopped dispatching.
+            return false;
+        }
+    }
+
+    // A completion source stands in for the handler, so the shutdown drain sees it before any of the handler runs; it
+    // always completes successfully, and the handler's own faults surface where they already do.
+    private bool _TryBeginHandler([NotNullWhen(true)] out TaskCompletionSource? handlerDone)
+    {
+        var candidate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_inFlightHandlers.TryTrack(candidate.Task))
+        {
+            handlerDone = null;
+            return false;
+        }
+
+        handlerDone = candidate;
+        return true;
+    }
+
+    // A delivery shutdown refused goes back to the stream at once, so it redelivers now instead of after AckWait. A core
+    // delivery has nothing to hand back.
+    private async Task _RefuseUndispatchedAsync(NatsJSDelivery? delivery)
+    {
+        if (delivery is null)
+        {
+            return;
+        }
+
+        await delivery.DisposeAsync().ConfigureAwait(false);
+        await _ReleaseUndispatchedAsync(delivery.Msg).ConfigureAwait(false);
     }
 
     private void _LogTransportWarning(string reason)
@@ -1342,25 +1422,27 @@ internal sealed class NatsConsumerClient(
 
         PauseGate.Release();
         Ready.TrySetCanceled(CancellationToken.None);
+        await _stopping.CancelAsync().ConfigureAwait(false);
         await _CancelReceives().ConfigureAwait(false);
 
-        // Drain in-flight concurrent handlers before disposing the semaphore and connection, so a
-        // running handler does not Ack/Nak on a disposed connection. Bounded so a stuck handler cannot
-        // block shutdown indefinitely; any handler still running past the budget has its Ack/Nak
-        // swallowed and the message is redelivered (at-least-once).
+        // Drain every running handler, inline or concurrent, before disposing the semaphore and connection, so a
+        // running handler does not Ack/Nak on a disposed connection. The drain also refuses any handler that has not
+        // started yet; its delivery goes back to the stream. Bounded so a stuck handler cannot block shutdown
+        // indefinitely; any handler still running past the budget has its Ack/Nak swallowed and the message is
+        // redelivered (at-least-once).
         try
         {
             await _inFlightHandlers.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            // Handler faults are already surfaced via _ObserveBackgroundHandler; on a drain timeout
-            // or fault, log and proceed — disposal must never block or throw.
+            // The tracked stand-ins never fault (handler faults surface where they run), so this is a drain timeout:
+            // log and proceed, because disposal must never block or throw.
             OnLogCallback?.Invoke(
                 new LogMessageEventArgs
                 {
                     LogType = MqLogType.ExceptionReceived,
-                    Reason = $"Timed out or faulted draining in-flight handlers during shutdown: {ex}",
+                    Reason = $"Timed out draining in-flight handlers during shutdown: {ex}",
                 }
             );
         }
@@ -1377,6 +1459,7 @@ internal sealed class NatsConsumerClient(
 
         receiveTokenStateToDispose?.Dispose();
         _semaphore?.Dispose();
+        _stopping.Dispose();
 
         if (_connection is { } connection)
         {

@@ -60,6 +60,18 @@ public sealed class MailkitSmtpOptions
     public int MaxPoolSize { get; set; } = 10;
 
     /// <summary>
+    /// Gets or sets how long a pooled connection may sit unused before the next send probes it with
+    /// <c>NOOP</c>. The default is 30 seconds. <see cref="TimeSpan.Zero"/> probes before every send.
+    /// </summary>
+    /// <remarks>
+    /// A connection used more recently than this skips the probe, which saves one SMTP round trip per send. If
+    /// the server dropped that connection anyway, the send reconnects and retries once, but only when the
+    /// failure came before the server accepted <c>MAIL FROM</c>, so the message never reached <c>DATA</c> and
+    /// cannot be delivered twice. Set it below the server's idle timeout, which is commonly several minutes.
+    /// </remarks>
+    public TimeSpan IdleProbeThreshold { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets a value indicating whether both <see cref="User"/> and <see cref="Password"/> are non-empty,
     /// which means authenticated SMTP is used.
     /// </summary>
@@ -83,5 +95,6 @@ internal sealed class MailkitSmtpOptionsValidator : AbstractValidator<MailkitSmt
         // SmtpClient.Timeout is set from (int)Timeout.TotalMilliseconds; cap it to avoid int overflow.
         RuleFor(x => x.Timeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromMilliseconds(int.MaxValue));
         RuleFor(x => x.MaxPoolSize).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.IdleProbeThreshold).GreaterThanOrEqualTo(TimeSpan.Zero);
     }
 }
