@@ -248,6 +248,7 @@ public static class TransportConformanceManifest
 
     /// <summary>The open issue that tracks a delivery budget for the brokers that have none, Kafka and Redis.</summary>
     private const string _DeliveryBudgetIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1288";
+
     private const string _EmulatorDeadLetterDuplicateIssueUrl =
         "https://github.com/xshaheen/headless-framework/issues/1672";
 
