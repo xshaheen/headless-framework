@@ -27,7 +27,7 @@ namespace Tests;
 /// the fail-closed unknown rejection with <c>Cache-Control: no-store</c>, and the misorder
 /// escalation — a route source on a middleware placed before <c>UseRouting()</c> finds
 /// nothing, every request runs as host context, and the deferred misorder path escalates to the
-/// Error-level <c>HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED</c> event once per process with
+/// Error-level <c>HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED</c> event once per host with
 /// no request data.
 /// </summary>
 [Collection(TenantCatalogOrderingWarningCollection.Name)]
@@ -101,9 +101,8 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
     {
         // Routing has not run when the middleware consults its sources, so the route value
         // is absent, resolution finds nothing, and the endpoint executes as host context. The
-        // deferred misorder path escalates to the Error-level dedicated event — once per process
+        // deferred misorder path escalates to the Error-level dedicated event — once per host
         // even across two requests — and its message carries no path or route value.
-        TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(loggerProvider: loggerProvider, applyBeforeUseRouting: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);
@@ -130,7 +129,6 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
     {
         // The Warning event stays exactly as it was for hosts with no route source; only a registered
         // route source escalates to the Error event.
-        TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(
             loggerProvider: loggerProvider,
@@ -152,7 +150,6 @@ public sealed class RouteTenantIdentifierSourceTests : TestBase
         // A 404 probe on a misordered host leaves the endpoint null before AND after next(), so the
         // deferred detection cannot distinguish it from a correctly ordered pipeline and must not
         // burn the once-per-process slot — the subsequent matched request still gets the Error.
-        TenantCatalogResolutionMiddleware.ResetOrderingWarningForTesting();
         using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(loggerProvider: loggerProvider, applyBeforeUseRouting: true);
         using var client = HttpTenancyTestHarness.CreateClient(app);

@@ -162,6 +162,25 @@ public sealed class HttpAbsoluteUrlFactoryTests : TestBase
     }
 
     [Fact]
+    public void should_keep_the_host_when_relative_path_has_no_leading_slash()
+    {
+        // given - "users/1" used to be glued onto the host as "https://api.example.comusers/1", another host
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "https";
+        httpContext.Request.Host = new HostString("api.example.com");
+        httpContext.Request.PathBase = "/app";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(httpContext);
+        var sut = new HttpAbsoluteUrlFactory(accessor);
+
+        // when
+        var result = sut.GetAbsoluteUrl("users/123");
+
+        // then
+        result.Should().Be("https://api.example.com/app/users/123");
+    }
+
+    [Fact]
     public void should_preserve_query_string()
     {
         // given

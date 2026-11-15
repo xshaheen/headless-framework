@@ -37,4 +37,7 @@
   <data name="g:idempotency_key_required" xml:space="preserve">
     <value>تتطلب نقطة النهاية هذه ترويسة Idempotency-Key.</value>
   </data>
+  <data name="g:idempotency_response_too_large" xml:space="preserve">
+    <value>تم تنفيذ الطلب بالفعل، لكن استجابته أكبر من أن تُخزَّن، لذلك لا يمكن إعادة عرضها عند تكرار الطلب بمفتاح Idempotency-Key نفسه.</value>
+  </data>
 </root>

@@ -196,9 +196,7 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
     [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultAuthenticateSchemeAsync))]
     [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultChallengeSchemeAsync))]
     [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultForbidSchemeAsync))]
-    [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignInSchemeAsync))]
-    [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignOutSchemeAsync))]
-    public async Task should_work_for_all_get_default_methods(string methodName)
+    public async Task should_select_the_request_scheme_for_authenticate_challenge_and_forbid(string methodName)
     {
         // given
         var context = _CreateContext();
@@ -215,16 +213,30 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
                 await provider.GetDefaultChallengeSchemeAsync(),
             nameof(DynamicAuthenticationSchemeProvider.GetDefaultForbidSchemeAsync) =>
                 await provider.GetDefaultForbidSchemeAsync(),
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignInSchemeAsync) =>
-                await provider.GetDefaultSignInSchemeAsync(),
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignOutSchemeAsync) =>
-                await provider.GetDefaultSignOutSchemeAsync(),
             _ => throw new ArgumentOutOfRangeException(nameof(methodName)),
         };
 
         // then
         result.Should().NotBeNull();
         result!.Name.Should().Be(AuthenticationConstants.Schemas.ApiKey);
+    }
+
+    [Fact]
+    public async Task should_keep_the_configured_sign_in_and_sign_out_schemes_when_request_carries_header_credentials()
+    {
+        // given - none of the header schemes can sign in or out, so selecting one made SignOutAsync() throw
+        var context = _CreateContext();
+        context.Request.Headers[HttpHeaderNames.ApiKey] = "test-api-key";
+        _httpContextAccessor.HttpContext.Returns(context);
+        var provider = _CreateProvider();
+
+        // when
+        var signIn = await provider.GetDefaultSignInSchemeAsync();
+        var signOut = await provider.GetDefaultSignOutSchemeAsync();
+
+        // then
+        signIn!.Name.Should().Be(AuthenticationConstants.Schemas.Bearer);
+        signOut!.Name.Should().Be(AuthenticationConstants.Schemas.Bearer);
     }
 
     #region Helpers

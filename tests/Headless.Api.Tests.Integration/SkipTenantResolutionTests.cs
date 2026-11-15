@@ -83,7 +83,6 @@ public sealed class SkipTenantResolutionTests : TestBase
     [Fact]
     public async Task should_not_emit_middleware_ordering_warning_when_endpoint_marked_skip_resolution_and_unauthenticated()
     {
-        TenantResolutionMiddleware.ResetOrderingWarningForTesting();
         var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(options =>
         {
