@@ -162,6 +162,11 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 )
             ),
             new(
+                TransportConformanceScenario.KeySequencing,
+                typeof(AzureServiceBusEmulatorTransportTests),
+                nameof(AzureServiceBusEmulatorTransportTests.should_run_one_key_at_a_time_on_a_sequential_consumer)
+            ),
+            new(
                 TransportConformanceScenario.ConsumerPauseRecovery,
                 typeof(AzureServiceBusEmulatorBrokerFaultTests),
                 nameof(AzureServiceBusEmulatorBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)

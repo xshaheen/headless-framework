@@ -953,6 +953,7 @@ public static class TransportConformanceManifest
             TransportConformanceScenario.StaleSettlement,
             TransportConformanceScenario.HandlerFailureRedelivery,
             TransportConformanceScenario.BoundedGracefulShutdown,
+            TransportConformanceScenario.KeySequencing,
         ];
 
         TransportConformanceScenario[] provisioned =
