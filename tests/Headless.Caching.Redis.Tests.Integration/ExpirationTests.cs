@@ -64,6 +64,7 @@ public sealed class ExpirationTests(RedisCacheFixture fixture) : RedisCacheTestB
         await cache.UpsertAsync(key, "value", TimeSpan.FromMilliseconds(100), AbortToken);
 
         // when
+        // real-wait: Redis expires the key on its own server clock, which no app clock can advance
         await Task.Delay(200, AbortToken);
 
         // then

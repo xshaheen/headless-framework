@@ -251,6 +251,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
         await cache.SetAddAsync(key, [2], TimeSpan.FromMinutes(5), AbortToken);
 
         // when - the short member expires on Redis's clock
+        // real-wait: the member's expiry is decided by the Redis server clock (the app clock here is deliberately skewed years away), so only real time moves it
         await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(700), AbortToken);
         var result = await cache.GetSetAsync<int>(key, cancellationToken: AbortToken);
 

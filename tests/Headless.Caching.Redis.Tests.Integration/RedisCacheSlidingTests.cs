@@ -19,11 +19,13 @@ public sealed class RedisCacheSlidingTests(RedisCacheFixture fixture) : RedisCac
         };
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(225), AbortToken);
 
         var firstRead = await cache.GetAsync<string>(key, AbortToken);
         var ttlAfterRearm = await Fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(key);
 
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(150), AbortToken);
         var afterOriginalLogicalDeadline = await cache.GetAsync<string>(key, AbortToken);
 
@@ -46,6 +48,7 @@ public sealed class RedisCacheSlidingTests(RedisCacheFixture fixture) : RedisCac
         };
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(225), AbortToken);
 
         var ttlBefore = await Fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(key);
@@ -76,10 +79,12 @@ public sealed class RedisCacheSlidingTests(RedisCacheFixture fixture) : RedisCac
 
         for (var i = 0; i < 3; i++)
         {
+            // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
             await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(150), AbortToken);
             (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue();
         }
 
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(175), AbortToken);
         var capped = await cache.GetAsync<string>(key, AbortToken);
 
