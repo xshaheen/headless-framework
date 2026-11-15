@@ -76,6 +76,7 @@ internal sealed class ConsumerKeySequencers
         _run = run;
         _logger = logger;
         _waiting = new WaitingRows(defer, renew, policy, clock, backoffClock, logger);
+        MessagingMetrics.RegisterSequencers(this);
     }
 #pragma warning restore IDE0290
 
@@ -98,6 +99,18 @@ internal sealed class ConsumerKeySequencers
 
             _idle ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             return _idle.Task;
+        }
+    }
+
+    /// <summary>
+    /// The messages each consumer holds that have not started: queued behind an earlier message of their key, or
+    /// waiting for a concurrency slot. A consumer appears once it has been handed work.
+    /// </summary>
+    public IEnumerable<(string ConsumerIdentity, int Waiting)> WaitingByConsumer()
+    {
+        foreach (var (consumerIdentity, sequencer) in _sequencers)
+        {
+            yield return (consumerIdentity, sequencer.Waiting);
         }
     }
 
@@ -139,12 +152,14 @@ internal sealed class ConsumerKeySequencers
             if (key is not null && sequencer.Keys.TryGetValue(key, out var active))
             {
                 active.Pending.Enqueue(work);
+                sequencer.AddWaiting();
                 _waiting.Add(work.Waiting);
                 return true;
             }
 
             var queue = new KeyQueue(key);
             queue.Pending.Enqueue(work);
+            sequencer.AddWaiting();
             if (key is not null)
             {
                 sequencer.Keys.Add(key, queue);
@@ -177,6 +192,7 @@ internal sealed class ConsumerKeySequencers
     public async Task<IReadOnlyList<SequencedWork>> StopAsync()
     {
         _stopped = true;
+        MessagingMetrics.UnregisterSequencers(this);
 
         var unstarted = new List<SequencedWork>();
         foreach (var sequencer in _sequencers.Values)
@@ -216,6 +232,7 @@ internal sealed class ConsumerKeySequencers
     {
         while (queue.Pending.TryDequeue(out var work))
         {
+            sequencer.RemoveWaiting();
             unstarted.Add(work);
             sequencer.Room.Release();
         }
@@ -250,6 +267,8 @@ internal sealed class ConsumerKeySequencers
                         sequencer.Running--;
                         return;
                     }
+
+                    sequencer.RemoveWaiting();
                 }
 
                 try
@@ -327,6 +346,20 @@ internal sealed class ConsumerKeySequencers
         public Queue<KeyQueue> Ready { get; } = new();
 
         public int Running { get; set; }
+
+        private int _waiting;
+
+        /// <summary>
+        /// The messages queued and not yet started. Changed under <see cref="Sync"/>; a metric collection reads it
+        /// without taking the lock.
+        /// </summary>
+        public int Waiting => Volatile.Read(ref _waiting);
+
+        /// <summary>Counts a message queued; call under <see cref="Sync"/>.</summary>
+        public void AddWaiting() => _waiting++;
+
+        /// <summary>Counts a queued message that started or was returned; call under <see cref="Sync"/>.</summary>
+        public void RemoveWaiting() => _waiting--;
 
         /// <summary>
         /// The room left in the buffer. Never disposed: a hand-over may still wait on it when the host stops, and it
