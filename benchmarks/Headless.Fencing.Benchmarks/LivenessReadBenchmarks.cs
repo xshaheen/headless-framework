@@ -153,7 +153,9 @@ public class LivenessReadBenchmarks
     {
         if (count != _Nodes)
         {
-            throw new InvalidOperationException($"Expected {_Nodes} live nodes, read {count}.");
+            throw new InvalidOperationException(
+                string.Create(CultureInfo.InvariantCulture, $"Expected {_Nodes} live nodes, read {count}.")
+            );
         }
     }
 }
