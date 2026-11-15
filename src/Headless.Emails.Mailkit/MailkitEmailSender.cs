@@ -115,7 +115,7 @@ internal sealed class MailkitEmailSender(
         }
         catch (SmtpCommandException ex)
         {
-            logger.LogSmtpCommandFailed(ex, ex.StatusCode);
+            logger.LogSmtpCommandFailed(ex.StatusCode, ex.ErrorCode);
             return SendSingleEmailResponse.Failed($"SMTP error: {ex.Message}");
         }
         catch (SmtpProtocolException ex)
@@ -298,12 +298,14 @@ internal static partial class MailkitEmailSenderLoggerExtensions
         EventId = 1,
         EventName = "SmtpCommandFailed",
         Level = LogLevel.Warning,
-        Message = "SMTP command failed: {StatusCode}"
+        Message = "SMTP command failed: {StatusCode} ({ErrorCode})"
     )]
+    // No exception argument: an SmtpCommandException's message is the server's reply, which usually names the
+    // rejected recipient ("550 5.1.1 <user@example.com>: Recipient address rejected"), and a log sink must not get it.
     internal static partial void LogSmtpCommandFailed(
         this ILogger logger,
-        Exception exception,
-        SmtpStatusCode statusCode
+        SmtpStatusCode statusCode,
+        SmtpErrorCode errorCode
     );
 
     [LoggerMessage(
