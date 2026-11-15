@@ -66,7 +66,7 @@ internal sealed class SequenceNumberFormat
             return false;
         }
 
-        if (segments.Count(static segment => segment.Kind == SegmentKind.Sequence) != 1)
+        if (segments.Where(static segment => segment.Kind == SegmentKind.Sequence).Take(2).Count() != 1)
         {
             error = $"The sequence number template '{template}' must contain exactly one {{seq}} token.";
 
