@@ -91,7 +91,7 @@ The stored key is (tenant id, name, partition). The host tenant and "no partitio
 
 | Policy member | Default | Effect |
 | --- | --- | --- |
-| `Format` | `null` (the bare value) | Template. `{seq}` is the value and `{seq:D6}` pads it to six digits (widths 1 to 19). `{yyyy}`, `{yy}`, `{MM}`, `{dd}` are the issue date. `{fy}` is the year the fiscal year starts in. `{{` and `}}` write a brace. An unknown token fails options validation at startup. |
+| `Format` | `null` (the bare value) | Template. `{seq}` is the value and `{seq:D6}` pads it to six digits (widths 1 to 19). `{yyyy}`, `{yy}`, `{MM}`, `{dd}` are the issue date. `{fy}` is the year the fiscal year starts in. `{{` and `}}` write a brace. An unknown token fails options validation at startup, and so does a template that would print one number twice: it must hold exactly one `{seq}`, and the tokens of its reset period (`Year`: `{yyyy}` or `{yy}`; `Month`: also `{MM}`; `Day`: also `{dd}`; `FiscalYear`: `{fy}`). |
 | `Reset` | `Never` | `Year`, `Month`, `Day`, or `FiscalYear`. Each period is its own partition (`2026`, `2026-10`, `2026-10-08`, `FY2026`), so the counter starts again from `Start` in each one. |
 | `FiscalYearStartMonth` | 1 | The month (1 to 12) the fiscal year starts in, for `Reset = FiscalYear` and `{fy}`. With 7, 8 October 2026 is in `FY2026` and 8 March 2027 too. |
 | `TimeZone` | UTC | The zone the issue date and period are decided in, so a daily counter starts again at the business's local midnight. |
@@ -196,7 +196,7 @@ Applications reach it through a provider package; call `AddHeadlessSequences` as
 
 `SequencePolicy.BlockSize` (default 1) and `SequencesOptions.MaxCachedBlocks` (default 10,000) control block reservation; see [Blocks](#blocks).
 
-A policy with `Step` of 0 or less, a `BlockSize` below 1 or, on a gap-free or reported policy, above 1, an unknown `Format` token or unbalanced brace, or a `FiscalYearStartMonth` outside 1 to 12 fails options validation at startup, as does a `MaxCachedBlocks` below 1.
+A policy with `Step` of 0 or less, a `BlockSize` below 1 or, on a gap-free or reported policy, above 1, an unknown `Format` token or unbalanced brace, a `Format` without exactly one `{seq}` or without its reset period's date tokens, or a `FiscalYearStartMonth` outside 1 to 12 fails options validation at startup, as does a `MaxCachedBlocks` below 1.
 
 ### Design and runtime behavior
 

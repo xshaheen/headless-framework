@@ -79,9 +79,9 @@ internal sealed class SequencesOptionsValidator : AbstractValidator<SequencesOpt
             RuleFor(x => x.TimeZone).NotNull();
             RuleFor(x => x.Format)
                 .Must(
-                    static (_, format, context) =>
+                    static (policy, format, context) =>
                     {
-                        if (format is null || SequenceNumberFormat.TryValidate(format, out var error))
+                        if (format is null || SequenceNumberFormat.TryValidate(format, policy.Reset, out var error))
                         {
                             return true;
                         }
