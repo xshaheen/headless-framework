@@ -173,6 +173,88 @@ public sealed class SlidingLeaseProviderTests : TestBase
     }
 
     [Fact]
+    public async Task renewing_a_running_root_keeps_its_claimed_children_writable_past_the_claim_time_lease()
+    {
+        // A non-timed child waits Idle under the root's claim until the root ends. The root runs longer than one lease,
+        // so the child's start and its skip must still find a live lease once the root's renewals carried it past the
+        // claim-time deadline.
+        var (provider, time) = _Create();
+        var root = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        var onSuccess = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        onSuccess.ParentId = root.Id;
+        onSuccess.ExecutionTime = null;
+        onSuccess.RunCondition = RunCondition.OnSuccess;
+        var onFailure = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        onFailure.ParentId = root.Id;
+        onFailure.ExecutionTime = null;
+        onFailure.RunCondition = RunCondition.OnFailure;
+        var grandChild = _TimeJob(JobStatus.Idle, owner: null, lockedUntil: null);
+        grandChild.ParentId = onSuccess.Id;
+        grandChild.ExecutionTime = null;
+        await provider.AddTimeJobsAsync([root, onSuccess, onFailure, grandChild], AbortToken);
+
+        var claimed = await provider.QueueTimedOutTimeJobsAsync(AbortToken).ToListAsync(AbortToken);
+        claimed.Should().ContainSingle().Which.Id.Should().Be(root.Id);
+        var rootRow = JobsLeaseTables.TimeJob(root.Id, claimed[0].Lease.Generation);
+        var start = new JobExecutionState { FunctionName = "fn", ClaimOwner = _NodeA }.SetProperty(
+            x => x.Status,
+            JobStatus.InProgress
+        );
+        (await provider.UpdateTimeJobsWithUnifiedContextAsync([rootRow], start, AbortToken)).Should().Equal(root.Id);
+
+        // Six minutes of renewals, each well inside the lease, as the executor's renewal loop does.
+        for (var minute = 0; minute < 6; minute++)
+        {
+            time.Advance(TimeSpan.FromMinutes(1));
+            (await provider.RenewTimeJobLeaseAsync(rootRow, _NodeA, AbortToken)).Should().Be(1);
+        }
+
+        var renewedRoot = await provider.GetTimeJobByIdAsync(root.Id, AbortToken);
+        foreach (var id in new[] { onSuccess.Id, onFailure.Id, grandChild.Id })
+        {
+            var stored = await provider.GetTimeJobByIdAsync(id, AbortToken);
+            stored!.Lease.ExpiresAt.Should().Be(renewedRoot!.Lease.ExpiresAt, "the root's renewal slides its subtree");
+        }
+
+        var rootDone = new JobExecutionState
+        {
+            FunctionName = "fn",
+            JobId = root.Id,
+            ClaimOwner = _NodeA,
+            ClaimGeneration = rootRow.Generation,
+        }.SetProperty(x => x.Status, JobStatus.Succeeded);
+        (await provider.UpdateTimeJobAsync(rootDone, AbortToken)).Should().Be(1);
+
+        var onSuccessLease = (await provider.GetTimeJobByIdAsync(onSuccess.Id, AbortToken))!.Lease;
+        var childStart = new JobExecutionState
+        {
+            FunctionName = "fn",
+            JobId = onSuccess.Id,
+            ClaimOwner = _NodeA,
+            ClaimGeneration = onSuccessLease.Generation,
+        }.SetProperty(x => x.Status, JobStatus.InProgress);
+        (await provider.UpdateTimeJobAsync(childStart, AbortToken))
+            .Should()
+            .Be(1, "the child's start write must find its lease still current");
+        (await provider.RenewTimeJobLeaseAsync(childStart.ClaimedRow!, _NodeA, AbortToken)).Should().Be(1);
+
+        var onFailureLease = (await provider.GetTimeJobByIdAsync(onFailure.Id, AbortToken))!.Lease;
+        var skip = new JobExecutionState { FunctionName = "fn", ClaimOwner = _NodeA }.SetProperty(
+            x => x.Status,
+            JobStatus.Skipped
+        );
+        (
+            await provider.UpdateTimeJobsWithUnifiedContextAsync(
+                [JobsLeaseTables.TimeJob(onFailure.Id, onFailureLease.Generation)],
+                skip,
+                AbortToken
+            )
+        )
+            .Should()
+            .Equal([onFailure.Id], "the skip of the unmatched branch must find its lease still current");
+    }
+
+    [Fact]
     public async Task queue_timed_out_time_jobs_does_not_steal_a_live_main_scheduler_claim()
     {
         var (provider, time) = _Create();

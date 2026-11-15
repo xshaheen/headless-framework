@@ -1501,6 +1501,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                         // Mirrors the acquire predicate's owner arm: a node re-picking a row it claimed but has not
                         // started takes a new generation, which fences off the earlier dispatch.
                         reclaimOwn: true,
+                        supersededBefore: null,
                         cancellationToken
                     )
                     .ConfigureAwait(false)
@@ -1611,9 +1612,19 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
             return 0;
         }
 
-        return await JobsClaimedWrite
+        var renewed = await JobsClaimedWrite
             .RenewAsync(JobsLeaseRows.TimeJobs<TTimeJob>(dbContext), dbContext, row, LeaseDuration, cancellationToken)
             .ConfigureAwait(false);
+
+        if (renewed == 1)
+        {
+            // The continuations still waiting under this run's claim expire with it, so they slide with it.
+            await JobsSubtreeLeaseWalk
+                .SlideClaimedDescendantsAsync<TTimeJob>(dbContext, row, claimOwner, MaxChainDepth, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return renewed;
     }
 
     // A progress report, stamped with the database clock so every node's writes share one time authority.
