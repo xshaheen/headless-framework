@@ -530,10 +530,10 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    // SQS hands out a FIFO group's next message only while none of the group is in flight, so the order of a group
-    // holds only if this client hands its messages over one at a time and stops at the first one it does not commit:
-    // the rest goes back behind it, where SQS keeps the group until that message comes round again. Different groups
-    // carry no order between them and still run side by side when the client has a concurrency bound.
+    // A FIFO group keeps its order only if this client hands its messages over one at a time and stops at the first
+    // one it does not commit: the rest of the group's batch is hidden for as long as that message, so all of them come
+    // back together and SQS hands them out again in sequence order. Different groups carry no order between them and
+    // still run side by side when the client has a concurrency bound.
     private async Task _DispatchFifoAsync(
         List<Amazon.SQS.Model.Message> messages,
         InflightSqsMessage[] received,
@@ -600,9 +600,10 @@ internal sealed class AmazonSqsConsumerClient(
     }
 
     // Hands one group's messages over in receive order, each after the previous one settled, and gives back the rest of
-    // the group once a message is not committed, the consumer pauses, or receiving stops. A message whose handler threw
-    // is left to its visibility timeout: it was handed over, so it is not given back, but the rest still waits behind
-    // it.
+    // the group once a message is not committed, the consumer pauses, or receiving stops. The rest is hidden for as long
+    // as the message that stopped the group: its reject delay, or a full visibility timeout for one whose handler threw
+    // or never settled. Releasing it at once relies on SQS holding a group while one of its messages is in flight, which
+    // emulators do not all do; hidden as long, it can never come back ahead of that message.
     private async Task _RunFifoGroupAsync(
         List<Amazon.SQS.Model.Message> messages,
         InflightSqsMessage[] received,
@@ -642,7 +643,17 @@ internal sealed class AmazonSqsConsumerClient(
         finally
         {
             slotted?.TrySetResult();
-            await _ReleaseAsync([.. group[handedOver..].Select(i => received[i])]).ConfigureAwait(false);
+
+            var holdSeconds = 0;
+            if (handedOver > 0 && received[group[handedOver - 1]] is { IsCommitted: false } blocker)
+            {
+                holdSeconds =
+                    blocker.RejectedForSeconds > 0
+                        ? blocker.RejectedForSeconds
+                        : (int)_amazonSqsOptions.VisibilityTimeout.TotalSeconds;
+            }
+
+            await _ReleaseAsync([.. group[handedOver..].Select(i => received[i])], holdSeconds).ConfigureAwait(false);
         }
     }
 
@@ -842,6 +853,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         var inflight = _GetInflightMessage(sender);
         inflight.IsCommitted = false;
+        inflight.RejectedForSeconds = hiddenSeconds;
 
         // Stop extending first, or the next heartbeat would hide the rejected message again for a full timeout.
         _unsettled.TryRemove(inflight.ReceiptHandle, out _);
@@ -1044,7 +1056,7 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    private async Task _ReleaseAsync(InflightSqsMessage[] messages)
+    private async Task _ReleaseAsync(InflightSqsMessage[] messages, int visibilitySeconds = 0)
     {
         if (messages.Length == 0 || _sqsClient is null)
         {
@@ -1067,7 +1079,7 @@ internal sealed class AmazonSqsConsumerClient(
                     await _visibilityGate.WaitAsync(timeout.Token).ConfigureAwait(false);
                     try
                     {
-                        await _ChangeVisibilityAsync(queue.Key, chunk, visibilitySeconds: 0, timeout.Token)
+                        await _ChangeVisibilityAsync(queue.Key, chunk, visibilitySeconds, timeout.Token)
                             .ConfigureAwait(false);
                     }
                     finally
@@ -1401,6 +1413,7 @@ internal sealed class AmazonSqsConsumerClient(
 internal sealed record InflightSqsMessage(string QueueUrl, string ReceiptHandle)
 {
     private volatile bool _isCommitted;
+    private volatile int _rejectedForSeconds;
 
     /// <summary>The FIFO group the message belongs to; <see langword="null"/> on a standard queue.</summary>
     public string? GroupId { get; init; }
@@ -1413,6 +1426,13 @@ internal sealed record InflightSqsMessage(string QueueUrl, string ReceiptHandle)
     {
         get => _isCommitted;
         set => _isCommitted = value;
+    }
+
+    /// <summary>How long the last reject hid the delivery, in seconds; 0 when it was never rejected.</summary>
+    public int RejectedForSeconds
+    {
+        get => _rejectedForSeconds;
+        set => _rejectedForSeconds = value;
     }
 }
 

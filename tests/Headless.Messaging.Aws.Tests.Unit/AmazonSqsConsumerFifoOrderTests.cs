@@ -125,12 +125,37 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         // when
         var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
 
-        // then: the other group is handled, and A2 and A3 go back to the queue behind A1 without reaching the handler
+        // then: the other group is handled, and A2 and A3 go back to the queue hidden as long as A1's reject delay, so
+        // they cannot come back ahead of it, without reaching the handler
         await _WaitUntilAsync(
-            () => _committed.Contains("B1") && _VisibilityResetTo0("A2") && _VisibilityResetTo0("A3"),
+            () => _committed.Contains("B1") && _HiddenFor("A2", 3) && _HiddenFor("A3", 3),
             "the rest of the rejected message's group is returned to the queue"
         );
         _started.Should().NotContain(["A2", "A3"]);
+
+        await cts.CancelAsync();
+        await _IgnoreCancellationAsync(listening);
+    }
+
+    [Fact]
+    public async Task should_hide_the_rest_of_a_group_as_long_as_a_delayed_reject()
+    {
+        // given: the core rejects A1 with a redelivery delay, as it does after a failed inbox write
+        _ReceiveOnce(_FifoUrl, ("A1", "A"), ("A2", "A"));
+        await using var client = _CreateClient(concurrency: 2, _FifoUrl);
+        client.OnMessageCallback = async (message, sender) =>
+        {
+            _started.Enqueue(message.Id);
+            await client.RejectAsync(sender, TimeSpan.FromSeconds(20), CancellationToken.None);
+        };
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+
+        // then
+        await _WaitUntilAsync(() => _HiddenFor("A2", 20), "the rest of the group waits out A1's redelivery delay");
+        _started.Should().Equal("A1");
 
         await cts.CancelAsync();
         await _IgnoreCancellationAsync(listening);
@@ -158,7 +183,8 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
 
         // then
-        await _WaitUntilAsync(() => _VisibilityResetTo0("A2"), "the unsettled message's group is returned");
+        // A1 reappears only after its visibility timeout (30 s by default), so A2 stays hidden as long.
+        await _WaitUntilAsync(() => _HiddenFor("A2", 30), "the unsettled message's group is returned behind it");
         _started.Should().Equal("A1");
 
         await cts.CancelAsync();
@@ -223,7 +249,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         await _IgnoreCancellationAsync(listening);
     }
 
-    private bool _VisibilityResetTo0(string receiptHandle)
+    private bool _HiddenFor(string receiptHandle, int seconds)
     {
         return _sqs.ReceivedCalls()
             .Where(call =>
@@ -236,7 +262,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
             .SelectMany(call => (List<ChangeMessageVisibilityBatchRequestEntry>)call.GetArguments()[1]!)
             .Any(entry =>
                 string.Equals(entry.ReceiptHandle, receiptHandle, StringComparison.Ordinal)
-                && entry.VisibilityTimeout == 0
+                && entry.VisibilityTimeout == seconds
             );
     }
 
