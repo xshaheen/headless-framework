@@ -293,6 +293,10 @@ AFFECTED_COVERAGE_MERGE_STAGE = reports=(); \
 # command, not shell text.
 AFFECTED_FORMAT_STAGE = $(FORMAT_CHANGED_FN); \
 	$(PROOF) run --dir "$$run" --name format -- bash -c "$$(declare -f format_changed); format_changed worktree" || true;
+# Test code may not add a real wait, a wall-clock read, a per-test timeout or retry, or a skip without an issue or
+# capability (scripts/test-discipline.py). The stage checks the changed test files against eng/test-discipline-baseline.txt
+# and fails the bundle without blocking the build or the tests, as the format stage does.
+AFFECTED_TEST_DISCIPLINE_STAGE = $(PROOF) run --dir "$$run" --name test-discipline -- $(PYTHON) -I scripts/test-discipline.py check --base "$(AFFECTED_BASE)" || true;
 # A change under a dashboard's wwwroot/ is a change to its Dashboard project, so the build stage already runs
 # `npm run build` through eng/DashboardSpa.targets, but nothing else lints or unit-tests the SPA. This stage runs
 # dashboard-<name>-test for each SPA changed_dashboards selects.
@@ -310,7 +314,7 @@ PROOF_KEY_SETTINGS = $(subst ",,$(subst ',,$(CONFIGURATION) $(TEST_ARGS) $(TEST_
 # Sets `key` for the bundle in `run`, then exits the recipe with the reused bundle's report when one matches.
 PROOF_REUSE_STAGE = key="$$($(GRAPH) input-key --dir "$$run" --salt "$${run\#\#*-} $(PROOF_KEY_SETTINGS)")" || key=""; \
 	if [ "$(PROOF_REUSE)" = true ] && $(PROOF) reuse --dir "$$run" --root "$${run%/*}" --key "$$key"; then $(PROOF_REPORT) "$$run"; exit 0; fi;
-PROOF_REPORT = report() { cat "$$1/summary.md"; printf '\033[36mProof bundle:\033[0m %s (summary.md for the PR body, summary.json for tools)\n' "$$1"; }; report
+PROOF_REPORT = report() { cat "$$1/summary.md"; printf '\033[36mProof bundle:\033[0m %s (condense summary.md into a Verification row of the PR body; summary.json for tools)\n' "$$1"; }; report
 DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
 DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
 NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories" --scan vulnerable --include-transitive
@@ -339,7 +343,8 @@ help: ## Show available commands.
 	@printf "  make test-affected-integration  # agent-only, needs Docker: integration suites; gates changed lines of packages with an integration project\n"
 	@printf "  make mutation PROJECT=src/Headless.Checks/Headless.Checks.csproj   # Stryker.NET mutation score; reported, never gated\n"
 	@printf "  make test-failed                # after a narrow fix: only the modules the last proof failed; then verify-affected once\n"
-	@printf "  make check                      # the CI gate over the affected scope: check-layering, verify-affected\n"
+	@printf "  make prove TEST='*SlugTests' TEST_PROJECT=tests/Headless.Slugs.Tests.Unit/Headless.Slugs.Tests.Unit.csproj   # a fix's tests fail on origin/main, pass here\n"
+	@printf "  make check                      # the CI gate over the affected scope: check-layering, test-discipline, verify-affected\n"
 	@printf "  make quality-analyzers-affected\n"
 	@printf "  make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main\n"
 	@printf "  make coverage-json\n"
@@ -461,6 +466,39 @@ test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unle
 	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Extensions.Tests.Unit/Tests.Core/CultureHelperTests/*'" && exit 2)
 	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number." >&2; exit 2;; esac
 	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
+
+# Regression proof for a fix: the tests TEST selects (an MTP class filter by default; PROVE_FILTER=--filter-method
+# selects by method) inside TEST_PROJECT must fail on the merge base with BASE and pass here. The base checkout gets
+# this checkout's changed and new test files copied in, because the new test is the probe and the fix is what the base
+# lacks; a test that does not compile on the base counts as failing there. A base run can also fail for a reason that
+# is not the bug, so the tail of its log is printed for the author to read. The base checkout is a detached worktree
+# under CLI_DIR, removed on exit; --force re-adds it over a registration whose folder an earlier run lost, which a
+# prune would otherwise clear. It restores and builds TEST_PROJECT's closure from cold, so expect minutes. BASE is
+# read with a fallback rather than given a default because bench-compare and messaging-integration-scope read it too.
+PROVE_FILTER ?= --filter-class
+PROVE_PATHS ?= tests
+PROVE_TEST = $(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --results-directory "$(TEST_RESULTS_DIR)/prove" $(TEST_ARGS) $(PROVE_FILTER) '$(TEST)' $(MSBUILD_ARGS)
+
+.PHONY: prove
+prove: ## Prove a fix: the tests TEST selects in TEST_PROJECT fail on the merge base with BASE (default origin/main) and pass here; exit 3 when they also pass on the base.
+	@[ -n "$(TEST)" ] && [ -n "$(TEST_PROJECT)" ] || { echo "TEST and TEST_PROJECT select the tests that hold the fix. Example: make prove TEST='*SlugTests' TEST_PROJECT=tests/Headless.Slugs.Tests.Unit/Headless.Slugs.Tests.Unit.csproj BASE=origin/main" >&2; exit 2; }
+	@if [ -n "$(findstring n,$(subst -,,$(filter-out --%,$(foreach w,$(MAKEFLAGS),$(if $(findstring =,$(w)),,$(w))))))" ]; then echo "prove: dry run; would run TEST=$(TEST) on the merge base with BASE=$(BASE) and here"; exit 0; fi; \
+	base=$$(git merge-base "$(or $(BASE),origin/main)" HEAD) || { echo "prove: cannot resolve the merge base with BASE=$(or $(BASE),origin/main)" >&2; exit 1; }; \
+	logs='$(CLI_DIR)/prove'; dir="$$logs/base"; mkdir -p "$$logs"; \
+	git worktree remove --force "$$dir" 2>/dev/null || true; \
+	git worktree add --force --detach --quiet "$$dir" "$$base"; \
+	trap 'git worktree remove --force "$$dir" 2>/dev/null || true' EXIT; \
+	{ git diff --name-only --diff-filter=AM "$$base" -- $(PROVE_PATHS); git ls-files --others --exclude-standard -- $(PROVE_PATHS); } | sort -u | \
+	while IFS= read -r f; do mkdir -p "$$dir/$$(dirname "$$f")"; cp "$$f" "$$dir/$$f"; done; \
+	if (cd "$$dir" && $(PROVE_TEST)) > "$$logs/base.log" 2>&1; then b=pass; else b=fail; fi; \
+	if $(PROVE_TEST) > "$$logs/head.log" 2>&1; then h=pass; else h=fail; fi; \
+	printf '| Commit | %s |\n| --- | --- |\n| base %s | %s |\n| head %s | %s |\n' "$(TEST)" "$$(git rev-parse --short "$$base")" "$$b" "$$(git rev-parse --short HEAD)" "$$h"; \
+	echo "Logs: $$logs/base.log $$logs/head.log"; \
+	case "$$b$$h" in \
+	  failpass) echo "prove: fails on base, passes on head. Confirm the base failure is the bug:"; tail -n 15 "$$logs/base.log"; exit 0 ;; \
+	  passpass) echo "prove: the tests pass on base too, so they do not hold the fix" >&2; exit 3 ;; \
+	  *) echo "prove: the tests fail on head" >&2; tail -n 15 "$$logs/head.log" >&2; exit 1 ;; \
+	esac
 
 # A narrow fix after a failed verify-affected proves itself on the modules that failed, in seconds to a minute,
 # instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify, -test, or
@@ -1188,6 +1226,7 @@ verify-affected: ## Format-check the changed files, then build, unit-test (with 
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(PROOF_REUSE_STAGE) \
 	$(AFFECTED_FORMAT_STAGE) \
+	$(AFFECTED_TEST_DISCIPLINE_STAGE) \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
@@ -1196,7 +1235,7 @@ verify-affected: ## Format-check the changed files, then build, unit-test (with 
 	$(PROOF) summarize --dir "$$run" --input-key "$$key" $(if $(filter true,$(VERIFY_COVERAGE)),--coverage-gate unit $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
-# The CI gate (project CLI contract v1), over the affected scope. CI runs check-layering, format-check, a
+# The CI gate (project CLI contract v1), over the affected scope. CI runs check-layering, test-discipline, format-check, a
 # clean rebuild with analyzers, quality-analyzers-affected, and the unit suite; verify-affected is the
 # build, analyzer, and unit stages of that for the projects this branch changed, which is what a local run
 # finishes in minutes (the whole-solution version is ci-build, far past ten minutes on ~430 projects).
@@ -1206,10 +1245,10 @@ verify-affected: ## Format-check the changed files, then build, unit-test (with 
 # dashboard-<name>-test CI's dashboard job runs.
 # The gates run one after another through a sub-make so a failed gate does not hide the next, and a dry
 # run still only prints because the sub-make inherits -n.
-CHECK_GATES ?= check-layering verify-affected
+CHECK_GATES ?= check-layering test-discipline verify-affected
 
 .PHONY: check
-check: ## CI gate over the affected scope: check-layering, then verify-affected (format, build, tests, analyzers, changed dashboards); every failure is reported.
+check: ## CI gate over the affected scope: check-layering, test-discipline over every test file, then verify-affected (format, build, tests, analyzers, changed dashboards); every failure is reported.
 	@failed=""; for gate in $(CHECK_GATES); do $(MAKE) $$gate || failed="$$failed $$gate"; done; \
 	if [ -n "$$failed" ]; then printf '[check] failed:%s\n' "$$failed" >&2; exit 1; fi; \
 	printf '[check] passed: %s\n' "$(CHECK_GATES)"
@@ -1217,6 +1256,14 @@ check: ## CI gate over the affected scope: check-layering, then verify-affected 
 .PHONY: check-layering
 check-layering: ## Check package dependency direction under src/ (Abstractions and Core packages).
 	@$(GRAPH) layering
+
+.PHONY: test-discipline
+test-discipline: ## Fail when a test file gains a real wait, wall-clock read, per-test timeout or retry, or unreasoned skip, or drops below eng/test-discipline-baseline.txt; exit 3 naming the file, rule, and fix.
+	@$(PYTHON) -I scripts/test-discipline.py check
+
+.PHONY: test-discipline-baseline
+test-discipline-baseline: ## Write the lower counts back to eng/test-discipline-baseline.txt after removing waits, clock reads, or skips; a count never rises.
+	@$(PYTHON) -I scripts/test-discipline.py baseline
 
 # The contract's invariants entry point. A library has no database to hold the wiki's business-rule files
 # against, so the invariants here are the repository-level rules; layering is the one scripted today and
@@ -1412,7 +1459,7 @@ BENCH_DIR ?= $(ARTIFACTS_DIR)/benchmark-runs
 BENCH_ARGS = --filter '$(BENCH_FILTER)' --job $(BENCH_JOB) --exporters json
 BENCH_RUN = bench_run() { \
 	local ref="$$1" out="$$2" tree rc; tree="$$(mktemp -d "$${TMPDIR:-/tmp}/headless-bench.XXXXXX")"; \
-	git worktree add --detach "$$tree" "$$ref" >/dev/null || return 1; \
+	git worktree add --force --detach "$$tree" "$$ref" >/dev/null || return 1; \
 	printf '\033[36m[bench]\033[0m %s in %s\n' "$$ref" "$$tree"; \
 	(cd "$$tree" && $(DOTNET) run --configuration Release --project "benchmarks/Headless.$(BENCH_AREA).Benchmarks" -- $(BENCH_ARGS) --artifacts "$$out") && rc=0 || rc=$$?; \
 	git worktree remove --force "$$tree" >/dev/null 2>&1 || rm -rf "$$tree"; return $$rc; }; \
