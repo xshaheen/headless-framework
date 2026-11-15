@@ -198,28 +198,22 @@ public sealed class RedisStreamWakeTests : TestBase
         await using var wake = _CreateWake();
         await wake.EnsureSubscribedAsync(AbortToken);
         var readStartedAt = _timeProvider.GetTimestamp();
+        var readTook = TimeSpan.FromMilliseconds(3);
+        _timeProvider.Advance(readTook);
         _onWake!(_WakeChannel, RedisValue.EmptyString);
 
-        // when: the wait finishes on a pool thread after the test regains control, so it can arm its final delay
-        // after any single advance; step the clock until it completes, staying short of the uncapped interval so a
-        // missing cap still fails
+        // when: the wait arms its hold timer on a pool thread after the test regains control, so advance the clock
+        // only once that timer exists. The read took a while, so the hold's length (the interval left since the read
+        // started) tells a capped interval from an uncapped one, and differs from the poll delay's own timer.
+        var cappedHold = _timeProvider.WatchForTimer(pollDelay - readTook);
+        var uncappedHold = _timeProvider.WatchForTimer(RedisStreamWake.MinWokenReadInterval - readTook);
         var wait = wake.WaitAsync(pollDelay, readStartedAt, AbortToken);
-        var advanced = TimeSpan.Zero;
-        var step = TimeSpan.FromMilliseconds(1);
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-
-        while (
-            !wait.IsCompleted && advanced < RedisStreamWake.MinWokenReadInterval - step && DateTime.UtcNow < deadline
-        )
-        {
-            _timeProvider.Advance(step);
-            advanced += step;
-            await Task.Delay(TimeSpan.FromMilliseconds(5), AbortToken);
-        }
+        var armedHold = await Task.WhenAny(cappedHold, uncappedHold).Bounded();
 
         // then
-        await wait.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-        advanced.Should().BeLessThan(RedisStreamWake.MinWokenReadInterval, "the woken read waits only the poll delay");
+        ReferenceEquals(armedHold, cappedHold).Should().BeTrue("the woken read waits only the poll delay");
+        _timeProvider.Advance(pollDelay - readTook);
+        await wait.Bounded();
     }
 
     [Fact]

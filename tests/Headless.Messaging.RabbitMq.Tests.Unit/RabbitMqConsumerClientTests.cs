@@ -1205,9 +1205,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
         try
         {
-            // then - startup remains gated while paused
-            await Task.Delay(100, AbortToken);
-
+            // then - startup remains gated while paused. The channel fakes complete at once, so ListeningAsync has run
+            // synchronously up to its pause gate by now: it has set the prefetch and, being gated, not yet consumed.
+            _channel.ReceivedCalls().Should().Contain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicQosAsync));
             _channel
                 .ReceivedCalls()
                 .Should()

@@ -425,9 +425,8 @@ public sealed class ConnectionChannelPoolTests : TestBase
         var allRentTasks = Task.WhenAll(rentTasks);
 
         // then - all should complete (with failures) without deadlock within timeout
-        var completedTask = await Task.WhenAny(allRentTasks, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
-        completedTask.Should().Be(allRentTasks);
-        await allRentTasks.Invoking(static task => task).Should().ThrowAsync<Exception>();
+        var failure = await allRentTasks.Invoking(static task => task.Bounded()).Should().ThrowAsync<Exception>();
+        failure.Which.Should().NotBeOfType<TimeoutException>("every rent must fail on its own instead of hanging");
 
         // Verify pool is still usable
         await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
@@ -491,13 +490,12 @@ public sealed class ConnectionChannelPoolTests : TestBase
 
         // when
         var second = sut.Rent(AbortToken);
-        await Task.Delay(100, AbortToken);
-        var waitedWhileFull = !second.IsCompleted;
         sut.Return(first);
 
-        // then
-        waitedWhileFull.Should().BeTrue();
-        var rented = await second.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        // then: a pool that handed out a second channel while the first was out would open a connection instead of
+        // waiting for the returned one
+        var rented = await second.Bounded();
+        rented.Should().BeSameAs(first);
         sut.Return(rented);
     }
 
