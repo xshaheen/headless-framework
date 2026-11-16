@@ -235,7 +235,8 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(timeProvider: clock);
         var keys = new List<string>();
         for (var i = 0; i < 5; i++)
         {
@@ -244,8 +245,8 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
             await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         }
 
-        // Small delay so the logical remove-generation marker postdates the writes (both are ms-precision).
-        await Task.Delay(5, AbortToken);
+        // The logical remove-generation marker must postdate the writes (both are ms on the app clock).
+        clock.Advance(TimeSpan.FromMilliseconds(1));
 
         // when
         await cache.FlushAsync(AbortToken);

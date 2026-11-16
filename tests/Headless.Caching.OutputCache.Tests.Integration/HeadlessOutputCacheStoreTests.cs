@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -17,6 +18,9 @@ namespace Tests;
 [Collection(nameof(OutputCacheRedisFixture))]
 public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixture) : TestBase
 {
+    // The app clock stamps each entry's CreatedAt and each tag marker; Redis alone enforces TTLs on its own clock.
+    private readonly FakeTimeProvider _timeProvider = new();
+
     [Fact]
     public async Task set_then_get_round_trips_a_byte_identical_blob_and_misses_on_unknown_key()
     {
@@ -76,6 +80,7 @@ public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixtur
         await store.SetAsync(key, [1, 2, 3], tags: null, TimeSpan.FromSeconds(1), AbortToken);
         (await store.GetAsync(key, AbortToken)).Should().NotBeNull();
 
+        // real-wait: Redis expires the key after its 1 s relative TTL on the server's own clock, which no fake clock moves
         await Task.Delay(TimeSpan.FromMilliseconds(1500), AbortToken);
 
         (await store.GetAsync(key, AbortToken)).Should().BeNull();
@@ -94,7 +99,7 @@ public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixtur
 
         // The tag marker invalidates entries whose CreatedAt strictly predates it; both are millisecond-precision,
         // so cross a millisecond boundary before evicting to keep the assertion deterministic on fast Redis.
-        await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(50));
         await store.EvictByTagAsync("a", AbortToken);
 
         // the entry tagged "a" is gone; the entry tagged only "b" survives
@@ -131,6 +136,7 @@ public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixtur
         var keyPrefix = $"{cacheName}:";
 
         var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton<TimeProvider>(_timeProvider);
         builder.Services.AddOutputCache();
         builder.Services.AddHeadlessCaching(setup =>
         {

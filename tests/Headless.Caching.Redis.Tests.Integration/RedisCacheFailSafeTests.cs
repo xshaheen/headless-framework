@@ -7,7 +7,8 @@ namespace Tests;
 
 /// <summary>
 /// Integration tests for Redis fail-safe behavior.
-/// Uses real durations in the 1–3 s range so waits are short but Redis TTLs are observable.
+/// Uses real durations in the 1–3 s range so Redis TTLs are observable. The logical window is read off the app clock,
+/// so those tests move a fake clock; only the physical window, which is the key's Redis TTL, waits real time.
 /// </summary>
 public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
 {
@@ -30,12 +31,6 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
         };
     }
 
-    private async Task _AdvanceAsync(TimeSpan duration)
-    {
-        // Integration tests run against the real wall clock; advance by actually waiting.
-        await TimeProvider.System.Delay(duration, AbortToken);
-    }
-
     // ---------- tests ----------
 
     /// <summary>
@@ -46,14 +41,15 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var options = _FailSafeOptions();
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("original"), options, AbortToken);
 
         // advance past logical but still within physical window
-        await _AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(250));
+        clock.Advance(options.Duration + TimeSpan.FromMilliseconds(250));
 
         // when
         var result = await cache.GetOrAddAsync<string>(
@@ -78,14 +74,15 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var options = _FailSafeOptions();
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("redis-safe"), options, AbortToken);
 
         // advance past logical but within physical window
-        await _AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(250));
+        clock.Advance(options.Duration + TimeSpan.FromMilliseconds(250));
 
         // when – factory throws a RedisException (simulates e.g. a downstream Redis call in the factory)
         var result = await cache.GetOrAddAsync<string>(
@@ -167,14 +164,15 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var options = _FailSafeOptions();
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("logical-expired"), options, AbortToken);
 
         // advance past logical expiry but within physical window
-        await _AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(250));
+        clock.Advance(options.Duration + TimeSpan.FromMilliseconds(250));
 
         // when – direct GetAsync bypasses the coordinator and sees the frame's logical expiry
         var result = await cache.GetAsync<string>(key, AbortToken);
@@ -203,7 +201,8 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("gone"), options, AbortToken);
 
         // advance past physical window so the Redis key has expired
-        await _AdvanceAsync(options.FailSafeMaxDuration + TimeSpan.FromMilliseconds(400));
+        // real-wait: the physical window is the key's Redis TTL, which Redis enforces on its own server clock, so no app clock can expire it
+        await Task.Delay(options.FailSafeMaxDuration + TimeSpan.FromMilliseconds(400), AbortToken);
 
         // when
         var act = async () =>
@@ -226,7 +225,8 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var options = _FailSafeOptions();
 
@@ -236,7 +236,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
         var beforeExpiry = await cache.ExistsAsync(key, AbortToken);
 
         // advance past logical expiry but remain within physical window
-        await _AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(250));
+        clock.Advance(options.Duration + TimeSpan.FromMilliseconds(250));
 
         // when
         var afterLogicalExpiry = await cache.ExistsAsync(key, AbortToken);
@@ -255,7 +255,8 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var options = _FailSafeOptions(
             duration: TimeSpan.FromSeconds(2),
@@ -269,7 +270,7 @@ public sealed class RedisCacheFailSafeTests(RedisCacheFixture fixture) : RedisCa
         var beforeExpiry = await cache.GetExpirationAsync(key, AbortToken);
 
         // advance past logical expiry but within physical window
-        await _AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(250));
+        clock.Advance(options.Duration + TimeSpan.FromMilliseconds(250));
 
         var afterLogicalExpiry = await cache.GetExpirationAsync(key, AbortToken);
 

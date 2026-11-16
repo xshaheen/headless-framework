@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Caching;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
@@ -21,11 +23,14 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         return publisher;
     }
 
-    private (HybridCache cache, InMemoryCache l1, GatedRemoteCache l2) _CreateGatedCache(HybridCacheOptions options)
+    private (HybridCache cache, InMemoryCache l1, GatedRemoteCache l2) _CreateGatedCache(
+        HybridCacheOptions options,
+        ILogger<HybridCache>? logger = null
+    )
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new GatedRemoteCache(_timeProvider);
-        var cache = new HybridCache(l1, l2, _CreateNoopPublisher(), options, timeProvider: _timeProvider);
+        var cache = new HybridCache(l1, l2, _CreateNoopPublisher(), options, logger, _timeProvider);
         return (cache, l1, l2);
     }
 
@@ -34,31 +39,13 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         InMemoryCache l1,
         TogglableRemoteCache l2,
         IHybridCacheBackplane publisher
-    ) _CreateTogglableCache(HybridCacheOptions options)
+    ) _CreateTogglableCache(HybridCacheOptions options, ILogger<HybridCache>? logger = null)
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new TogglableRemoteCache(_timeProvider);
         var publisher = _CreateNoopPublisher();
-        var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
+        var cache = new HybridCache(l1, l2, publisher, options, logger, _timeProvider);
         return (cache, l1, l2, publisher);
-    }
-
-    /// <summary>Spins until the predicate holds or the real-time budget elapses, polling the background tail.</summary>
-    private static async Task _WaitUntilAsync(Func<ValueTask<bool>> predicate)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-
-        while (DateTime.UtcNow < deadline)
-        {
-            if (await predicate())
-            {
-                return;
-            }
-
-            await Task.Delay(10);
-        }
-
-        throw new TimeoutException("Background L2 operation did not complete within the budget.");
     }
 
     [Fact]
@@ -86,7 +73,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
         // when — the gate is released the background write lands the value in L2
         gate.SetResult();
-        await _WaitUntilAsync(async () => (await l2.GetAsync<int>(key, AbortToken)).HasValue);
+        await l2.UpsertCompleted.Task.Bounded();
 
         // then
         (await l2.GetAsync<int>(key, AbortToken))
@@ -124,7 +111,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
         // when — releasing the gate lets the background write-through land in L2
         gate.SetResult();
-        await _WaitUntilAsync(async () => (await l2.GetAsync<int>(key, AbortToken)).HasValue);
+        await l2.WriteCompleted.Task.Bounded();
 
         // then
         (await l2.GetAsync<int>(key, AbortToken))
@@ -157,7 +144,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
         // when — releasing the gate lets the background bulk write land
         gate.SetResult();
-        await _WaitUntilAsync(async () => (await l2.GetAsync<int>("a", AbortToken)).HasValue);
+        await l2.UpsertCompleted.Task.Bounded();
 
         // then
         (await l2.GetAsync<int>("b", AbortToken))
@@ -169,8 +156,10 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
     public async Task should_queue_failed_background_write_for_replay_when_auto_recovery_on()
     {
         // given — background ops AND auto-recovery on; L2 writes fail
+        var logger = new SignalingLogger();
         var (cache, l1, l2, publisher) = _CreateTogglableCache(
-            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true, EnableAutoRecovery = true }
+            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true, EnableAutoRecovery = true },
+            logger
         );
         await using var _ = cache;
 
@@ -184,7 +173,8 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         // then — the caller succeeded and L1 has the value; the failed background write was queued
         updated.Should().BeTrue();
         (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(value);
-        await _WaitUntilAsync(() => new ValueTask<bool>(cache.RecoveryQueue!.Count == 1));
+        await logger.WhenLoggedAsync("AutoRecoveryItemQueued").Bounded();
+        cache.RecoveryQueue!.Count.Should().Be(1);
         (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
 
         // when — L2 recovers and the replay pass runs
@@ -206,22 +196,25 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
     public async Task should_replay_failed_background_write_with_the_l1_write_time_so_a_later_clear_still_wins()
     {
         // given — background ops AND auto-recovery on; the background L2 upsert parks on a gate
+        var logger = new SignalingLogger();
         var (cache, _, l2) = _CreateGatedCache(
-            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true, EnableAutoRecovery = true }
+            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true, EnableAutoRecovery = true },
+            logger
         );
         await using var _ = cache;
         l2.UpsertGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "v", TimeSpan.FromMinutes(5), AbortToken);
-        await l2.UpsertStarted.Task.WaitAsync(AbortToken);
+        await l2.UpsertStarted.Task.Bounded();
 
         // when — L2 is cleared after the L1 write, and only then does the parked L2 write fail and queue for replay
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         await l2.ClearAsync(AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         l2.UpsertGate.SetException(new InvalidOperationException("L2 write failed"));
-        await _WaitUntilAsync(() => new ValueTask<bool>(cache.RecoveryQueue!.Count == 1));
+        await logger.WhenLoggedAsync("AutoRecoveryItemQueued").Bounded();
+        cache.RecoveryQueue!.Count.Should().Be(1);
 
         // and — the replay runs
         _timeProvider.Advance(_Delay);
@@ -238,8 +231,10 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
     public async Task should_succeed_and_log_when_background_write_fails_and_auto_recovery_off()
     {
         // given — background ops on, auto-recovery OFF; L2 writes fail
+        var logger = new SignalingLogger();
         var (cache, l1, l2, _) = _CreateTogglableCache(
-            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true }
+            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true },
+            logger
         );
         await using var _ = cache;
 
@@ -256,7 +251,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         cache.RecoveryQueue.Should().BeNull();
 
         // and — let the background tail run to completion so a swallowed-vs-unobserved difference would surface
-        await _WaitUntilAsync(() => new ValueTask<bool>(l2.UpsertAttempts > 0));
+        await logger.WhenLoggedAsync("FailedToWriteToL2Cache").Bounded();
         l2.UpsertAttempts.Should().BePositive("the background write was attempted against L2");
     }
 
@@ -343,7 +338,6 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
         // when — releasing the gate lets the background publish complete
         publishGate.SetResult();
-        await _WaitUntilAsync(() => new ValueTask<bool>(publishGate.Task.IsCompleted));
 
         // then — exactly one key invalidation was broadcast from the background tail
         await publisher
@@ -355,5 +349,35 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
     {
         started.TrySetResult();
         await gate.Task.Bounded();
+    }
+
+    /// <summary>Completes a signal per log event name, so a test awaits the background tail's own log line.</summary>
+    private sealed class SignalingLogger : ILogger<HybridCache>
+    {
+        private readonly ConcurrentDictionary<string, TaskCompletionSource> _signals = new(StringComparer.Ordinal);
+
+        public Task WhenLoggedAsync(string eventName) => _SignalFor(eventName).Task;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (eventId.Name is { } name)
+            {
+                _SignalFor(name).TrySetResult();
+            }
+        }
+
+        private TaskCompletionSource _SignalFor(string eventName) =>
+            _signals.GetOrAdd(eventName, static _ => new(TaskCreationOptions.RunContinuationsAsynchronously));
     }
 }
