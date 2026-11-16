@@ -22,6 +22,7 @@
         <Project Path="src\Headless.Api.UserAgent\Headless.Api.UserAgent.csproj" />
     </Folder>
     <Folder Name="/Api/Tests/">
+        <Project Path="benchmarks/Headless.Api.Identity.Benchmarks/Headless.Api.Identity.Benchmarks.csproj" />
         <Project Path="benchmarks/Headless.Idempotency.ResponseReplay.Benchmarks/Headless.Idempotency.ResponseReplay.Benchmarks.csproj" />
         <Project Path="tests/Headless.Api.Abstractions.Tests.Unit/Headless.Api.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Api.MinimalApi.Tests.Unit/Headless.Api.MinimalApi.Tests.Unit.csproj" />
