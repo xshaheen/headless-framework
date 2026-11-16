@@ -39,13 +39,13 @@ public sealed class PostgresReaderWriterLockConformanceTests : DistributedReadWr
 
     protected override TimeProvider TimeProvider => TimeProvider.System;
 
-    protected override async Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken)
+    protected override Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken)
     {
         // Postgres advisory locks are session-scoped and have no TTL lease, so there is no fake clock to
-        // bridge. The acquire-timeout, however, is a real wall-clock timeout that fires on its own; the
-        // exposed "throw when blocked" scenarios call this only to let that real timeout elapse, so a real
-        // delay (plus slack) is the correct hook. TTL/auto-extend lease scenarios are not exposed here.
-        await Task.Delay(amount + TimeSpan.FromMilliseconds(50), TimeProvider.System, cancellationToken);
+        // bridge. The acquire-timeout, however, is a real wall-clock deadline the lock enforces on its own; the
+        // exposed "throw when blocked" scenarios await the acquire itself, which completes when that real
+        // deadline passes, so nothing here has to move time. TTL/auto-extend lease scenarios are not exposed here.
+        return Task.CompletedTask;
     }
 
     protected override async ValueTask DisposeAsyncCore()

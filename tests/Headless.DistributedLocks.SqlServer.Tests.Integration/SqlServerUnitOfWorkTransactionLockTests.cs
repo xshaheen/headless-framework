@@ -296,6 +296,9 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
         var releaseFirst = Task.Run(
             async () =>
             {
+                // Releasing the first holder 1 s into the contender's 2 s budget is what tells one shared budget
+                // (2 s in all) from a fresh budget per resource (3 s).
+                // real-wait: the budget is spent against SQL Server's lock wait, a server clock no fake moves
                 await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
                 await firstHolder.CompleteAsync(AbortToken);
             },

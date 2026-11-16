@@ -52,16 +52,15 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgreSqlDistributedLock
         // Terminate exactly that backend from a separate admin connection and assert it was actually killed.
         await _TerminateBackendAsync(pid);
 
-        // Wait for BOTH tokens to fire, bounded by a 15s deadline and linked to AbortToken. The active monitoring
-        // probe (a server-side sleep with a bounded command timeout) is what surfaces the death on an otherwise-idle
-        // holder — not a fixed sleep here. A genuine timeout falls through to the assertions so the test fails loudly.
-        using var both = CancellationTokenSource.CreateLinkedTokenSource(first.LostToken, second.LostToken);
+        // Wait for BOTH tokens to fire, bounded by a 15s ceiling. The active monitoring probe (a server-side sleep
+        // with a bounded command timeout) is what surfaces the death on an otherwise-idle holder; each token's own
+        // cancellation completes the wait, so detection ends it immediately.
+        var firstLost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondLost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var firstRegistration = first.LostToken.Register(() => firstLost.TrySetResult());
+        await using var secondRegistration = second.LostToken.Register(() => secondLost.TrySetResult());
 
-        await _WaitUntilAsync(
-            () => first.LostToken.IsCancellationRequested && second.LostToken.IsCancellationRequested,
-            timeout: TimeSpan.FromSeconds(15),
-            wake: both.Token
-        );
+        await Task.WhenAll(firstLost.Task, secondLost.Task).Bounded(TimeSpan.FromSeconds(15));
 
         first
             .LostToken.IsCancellationRequested.Should()
@@ -137,40 +136,6 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgreSqlDistributedLock
         // here rather than later asserting on a connection that was never killed.
         var terminated = await command.ExecuteScalarAsync(AbortToken);
         terminated.Should().Be(true, "the shared lock-holding backend should be found and terminated");
-    }
-
-    /// <summary>
-    /// Polls <paramref name="condition"/> until it holds or <paramref name="timeout"/> elapses. The wait between polls
-    /// is woken by <paramref name="wake"/> (the linked lost-tokens) so detection ends the wait immediately rather than
-    /// waiting out a fixed interval; AbortToken cancels the whole wait. A timeout simply returns, leaving the caller's
-    /// assertions to decide the outcome.
-    /// </summary>
-    private async Task _WaitUntilAsync(Func<bool> condition, TimeSpan timeout, CancellationToken wake)
-    {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        deadline.CancelAfter(timeout);
-
-        while (!condition())
-        {
-            using var step = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, wake);
-
-            try
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(50), step.Token);
-            }
-            catch (OperationCanceledException) when (AbortToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (OperationCanceledException)
-            {
-                // The wake token fired (a handle was lost): loop re-evaluates the condition immediately.
-            }
-        }
     }
 
     private ServiceProvider _CreateProvider()

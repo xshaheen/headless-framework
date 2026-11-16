@@ -51,7 +51,7 @@ public sealed class PostgresReleaseSignalReconnectTests(PostgreSqlDistributedLoc
             AbortToken
         );
 
-        await _WaitForHeldLockAsync(keyPrefix + resource);
+        await _AssertLockHeldAsync(keyPrefix + resource);
         contender.IsCompleted.Should().BeFalse();
 
         await first.ReleaseAsync();
@@ -111,6 +111,11 @@ public sealed class PostgresReleaseSignalReconnectTests(PostgreSqlDistributedLoc
             }
 
             timeout.Token.IsCancellationRequested.Should().BeFalse("the listener should reconnect on a fresh backend");
+
+            // The listener reconnects after a ReconnectBackoff that runs on the real clock by design (it never reads
+            // the app clock, which the fake-clock test above proves), so a fresh backend appears only after that
+            // back-off elapses; the pause spaces the catalog reads across it.
+            // real-wait: the listener's reconnect back-off elapses on the real clock
             await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
         }
     }
@@ -167,44 +172,33 @@ public sealed class PostgresReleaseSignalReconnectTests(PostgreSqlDistributedLoc
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 
-    private async Task _WaitForHeldLockAsync(string keyMaterial)
+    private async Task _AssertLockHeldAsync(string keyMaterial)
     {
         var key = PostgreSqlAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
         var (key1, key2) = key.Keys;
 
-        using var timeout = TimeProvider.System.CreateCancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
 
-        while (true)
-        {
-            await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-            await connection.OpenAsync(AbortToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM pg_catalog.pg_locks l
+            JOIN pg_catalog.pg_database d ON d.oid = l.database
+            WHERE l.locktype = 'advisory'
+              AND l.granted
+              AND d.datname = pg_catalog.current_database()
+              AND l.classid = @classId
+              AND l.objid = @objId
+              AND l.objsubid = @objSubId
+            """;
+        command.Parameters.AddWithValue("classId", key1);
+        command.Parameters.AddWithValue("objId", key2);
+        command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
 
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT COUNT(*)
-                FROM pg_catalog.pg_locks l
-                JOIN pg_catalog.pg_database d ON d.oid = l.database
-                WHERE l.locktype = 'advisory'
-                  AND l.granted
-                  AND d.datname = pg_catalog.current_database()
-                  AND l.classid = @classId
-                  AND l.objid = @objId
-                  AND l.objsubid = @objSubId
-                """;
-            command.Parameters.AddWithValue("classId", key1);
-            command.Parameters.AddWithValue("objId", key2);
-            command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
+        var held = (long)(await command.ExecuteScalarAsync(AbortToken) ?? 0L);
 
-            var held = (long)(await command.ExecuteScalarAsync(AbortToken) ?? 0L);
-
-            if (held > 0)
-            {
-                return;
-            }
-
-            timeout.Token.IsCancellationRequested.Should().BeFalse("the holder's advisory lock should be granted");
-            await Task.Delay(TimeSpan.FromMilliseconds(25), AbortToken);
-        }
+        held.Should().BePositive("the holder's advisory lock should be granted");
     }
 
     private ServiceProvider _CreateProvider(string keyPrefix, TimeSpan pollingFallback, TimeProvider? appClock = null)
