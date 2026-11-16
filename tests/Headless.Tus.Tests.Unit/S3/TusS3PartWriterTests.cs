@@ -192,9 +192,20 @@ public sealed class TusS3PartWriterTests : TestBase
     [Fact]
     public async Task should_keep_part_buffers_within_the_concurrency_bound()
     {
-        // given - uploads that stay in flight long enough to overlap
+        // given - each upload stays in flight until a second one is in flight beside it, so the bound is what
+        // limits the buffers instead of the uploads finishing first
         _options.MaxConcurrentPartUploads = 2;
-        _s3.BeforePartStored = _ => Task.Delay(20, AbortToken);
+        var inFlight = 0;
+        var overlapped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _s3.BeforePartStored = _ =>
+        {
+            if (Interlocked.Increment(ref inFlight) >= 2)
+            {
+                overlapped.TrySetResult();
+            }
+
+            return overlapped.Task.Bounded();
+        };
         await _SeedAsync(new TusS3UploadState { PartSize = _PartSize, UploadLength = 1_000 });
 
         // when

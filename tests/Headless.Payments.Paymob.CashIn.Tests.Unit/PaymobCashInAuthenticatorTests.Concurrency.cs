@@ -15,6 +15,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
         // given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var callCount = 0;
+        using var respond = new ManualResetEventSlim();
         var apiKey = CashInTestData.Text(Faker);
         var token = CashInTestData.Text(Faker);
         var config = fixture.CashInOptions with { ApiKey = apiKey };
@@ -27,10 +28,11 @@ public sealed partial class PaymobCashInAuthenticatorTests
             .RespondWith(
                 Response
                     .Create()
-                    .WithBody(_ =>
+                    .WithBody(request =>
                     {
                         Interlocked.Increment(ref callCount);
-                        Thread.Sleep(50); // Simulate network latency
+                        // The server holds its answer until every caller has started, so the callers overlap.
+                        _ = respond.Wait(TimeSpan.FromSeconds(30));
                         var response = new CashInAuthenticationTokenResponse { Token = token };
                         return JsonSerializer.Serialize(response);
                     })
@@ -42,7 +44,8 @@ public sealed partial class PaymobCashInAuthenticatorTests
             timeProvider,
             fixture.OptionsAccessor
         );
-        var tasks = Enumerable.Range(0, 10).Select(_ => authenticator.GetAuthenticationTokenAsync().AsTask());
+        var tasks = Enumerable.Range(0, 10).Select(_ => authenticator.GetAuthenticationTokenAsync().AsTask()).ToArray();
+        respond.Set();
         var results = await Task.WhenAll(tasks);
 
         // then

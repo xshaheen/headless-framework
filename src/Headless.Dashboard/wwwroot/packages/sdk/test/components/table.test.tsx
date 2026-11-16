@@ -385,6 +385,7 @@ describe('virtualized keyset table', () => {
   afterEach(() => {
     localStorage.clear()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   function SelectableRuns({ rows: list }: { rows: Run[] }) {
@@ -725,8 +726,7 @@ describe('virtualized keyset table', () => {
     // Each press flips the order once: the button inside the header adds no second press of its own, which would
     // flip it back. Space returns to the ascending order already read, so it may come from the cache.
     await user.keyboard(' ')
-    await new Promise((done) => setTimeout(done, 50))
-    expect(header.getAttribute('aria-sort')).toBe('ascending')
+    await waitFor(() => expect(header.getAttribute('aria-sort')).toBe('ascending'))
     expect(asked(fetchPage).every((request) => request.cursor === undefined || request.sort === undefined)).toBe(true)
   })
 
@@ -777,14 +777,15 @@ describe('virtualized keyset table', () => {
   })
 
   it('sends nothing while typing in a submit search, and one request with the text on Enter', async () => {
-    const user = userEvent.setup()
     const fetchPage = vi.fn<FetchPage>(async () => ({ items: runs(3), nextCursor: null }))
     render(withDashboard(<ScopedRuns fetchPage={fetchPage} searchMode="submit" />))
     await screen.findByRole('row', { name: /^r1\b/ })
 
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     await user.type(screen.getByRole('searchbox', { name: 'Search runs' }), 'order 42')
-    // A debounced search would have sent by now.
-    await new Promise((done) => setTimeout(done, 400))
+    // Firing every timer still pending runs a debounce timer the typing left, so a debounced search would have sent.
+    await act(() => vi.runAllTimersAsync())
     expect(fetchPage).toHaveBeenCalledTimes(1)
 
     await user.keyboard('{Enter}')

@@ -261,23 +261,12 @@ public sealed class MaxMindDatabaseUpdaterTests : MaxMindTestBase
 
         // when
         await updater.StartAsync(AbortToken);
-        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+
+        // The updater parks on its interval timer instead of checking; advancing before that timer exists would be
+        // lost. A single advance then starts exactly one check: the next timer is armed only after it finishes.
+        await Clock.WhenTimerArmedAsync(TimeSpan.FromHours(12)).Bounded();
         var requestsBeforeTheInterval = Handler.Requests.Count;
-
-        // An advance that lands before the updater arms its interval timer is lost, so keep advancing until the
-        // check starts. Stop at the first request: the next timer is armed only after that check finishes, so a
-        // later advance would trigger a second check.
-        await WaitUntilAsync(() =>
-        {
-            if (!Handler.Requests.IsEmpty)
-            {
-                return true;
-            }
-
-            Clock.Advance(TimeSpan.FromHours(12));
-
-            return false;
-        });
+        Clock.Advance(TimeSpan.FromHours(12));
         await WaitUntilAsync(() => geolocator.Locate(TestDatabases.TelstraAddress) is not null);
         await updater.StopAsync(AbortToken);
 

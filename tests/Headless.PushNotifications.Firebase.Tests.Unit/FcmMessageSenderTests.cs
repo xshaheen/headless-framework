@@ -172,7 +172,6 @@ public sealed class FcmMessageSenderTests : TestBase
         // then
         delay.Should().Be(TimeSpan.FromSeconds(120));
         _time.Advance(TimeSpan.FromSeconds(119));
-        await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
         _http.Requests.Should().ContainSingle("the retry must not start before Retry-After elapses");
 
         _time.Advance(TimeSpan.FromSeconds(1));

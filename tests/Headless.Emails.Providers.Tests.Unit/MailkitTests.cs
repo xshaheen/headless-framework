@@ -316,6 +316,7 @@ public sealed class MailkitEmailSenderTests : TestBase
         (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
 
         // Waiting longer than the threshold can only make the connection more idle, so the wait cannot flake.
+        // real-wait: PooledSmtpClient.WasUsedWithin reads Stopwatch (real idle time, by design), which no test clock can move
         await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
         (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
 
