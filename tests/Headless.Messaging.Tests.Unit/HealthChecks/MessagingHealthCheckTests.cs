@@ -411,17 +411,11 @@ public sealed class MessagingHealthCheckTests : TestBase
             .Build();
     }
 
-    // The bootstrapper is a BackgroundService, so host start returns before its bootstrap completes.
+    // The bootstrapper is a BackgroundService, so host start returns before its bootstrap completes; asking it to
+    // bootstrap joins the run in flight.
     private static async Task _WaitStartedAsync(IServiceProvider services)
     {
-        var bootstrapper = services.GetRequiredService<IBootstrapper>();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-
-        while (!bootstrapper.IsStarted)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token);
-        }
+        await services.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
     }
 
     private static async Task<HealthReportEntry> _CheckAsync(IServiceProvider services, string name)

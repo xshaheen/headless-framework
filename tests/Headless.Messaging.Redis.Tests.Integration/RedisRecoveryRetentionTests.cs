@@ -118,6 +118,10 @@ public sealed class RedisRecoveryRetentionTests(RedisMessagingFixture fixture) :
         await database.StreamReadGroupAsync(stream, destination, "gone-empty", StreamPosition.NewMessages);
         await database.StreamAddAsync(stream, _Message(destination).AsStreamEntries());
         await database.StreamReadGroupAsync(stream, destination, "gone-holding", StreamPosition.NewMessages);
+        var sentinel = _Message(destination);
+        await database.StreamAddAsync(stream, sentinel.AsStreamEntries());
+
+        // real-wait: Redis ages a consumer on its own server clock and the client sweeps idle consumers at startup, so both seeded ones must already be idle past IdleConsumerDeleteAfter (200 ms); no fake clock reaches the server
         await Task.Delay(TimeSpan.FromMilliseconds(300), AbortToken);
 
         await using var session = await fixture.CreateSessionAsync(
@@ -133,19 +137,14 @@ public sealed class RedisRecoveryRetentionTests(RedisMessagingFixture fixture) :
             }
         );
 
-        // when
+        // when: the startup sweep runs before the loop's first read, so the sentinel's delivery marks the sweep as done
         await session.StartAsync(cancellationToken: AbortToken);
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
         var names = await _ConsumerNamesAsync(database, stream, destination);
-        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
-        {
-            while (names.Contains("gone-empty"))
-            {
-                await Task.Delay(50, timeout.Token);
-                names = await _ConsumerNamesAsync(database, stream, destination);
-            }
-        }
 
         // then
+        delivery.Message.Id.Should().Be(sentinel.Id);
         names.Should().NotContain("gone-empty");
         names.Should().Contain("gone-holding");
     }

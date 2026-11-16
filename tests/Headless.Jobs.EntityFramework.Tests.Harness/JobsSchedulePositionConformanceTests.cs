@@ -1154,6 +1154,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
                     // is pinned here for the transaction's whole life; reading it first is what makes the assertion
                     // below a real measurement rather than a race.
                     transactionStartClock = await _ReadEnlistedClockAsync(connection, transaction, innerCt);
+                    // real-wait: the transaction's age on the database's clock is the quantity under test (the seed must be the statement's instant, not the transaction start); a host fake cannot age a database transaction
                     await Task.Delay(transactionAge, innerCt);
                     await manager.AddAsync(definition, innerCt);
                 },
@@ -1222,6 +1223,7 @@ public abstract class JobsSchedulePositionConformanceTests<TFixture>(TFixture fi
         var untilTick = seededNextDueUtc - await _StoreUtcNowAsync(ct);
         if (untilTick > TimeSpan.Zero)
         {
+            // real-wait: the seeded tick falls due on the database's clock (its now is read just above), which no host fake moves
             await Task.Delay(untilTick + TimeSpan.FromMilliseconds(300), ct);
         }
 

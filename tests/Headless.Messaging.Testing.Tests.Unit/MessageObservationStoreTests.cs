@@ -162,18 +162,11 @@ public sealed class MessageObservationStoreTests : TestBase
             cancellationToken: AbortToken
         );
 
-        // record from a background "thread"
-        _ = Task.Run(
-            async () =>
-            {
-                await Task.Delay(30, AbortToken);
-                var msg = _MakeMessage(typeof(SimpleMessage), "late-msg");
-                store.Record(msg, MessageObservationType.Consumed);
-            },
-            AbortToken
-        );
+        // the waiter is registered before WaitForAsync returns its pending task
+        waitTask.IsCompleted.Should().BeFalse();
+        store.Record(_MakeMessage(typeof(SimpleMessage), "late-msg"), MessageObservationType.Consumed);
 
-        var result = await waitTask;
+        var result = await waitTask.Bounded();
 
         // then
         result.MessageId.Should().Be("late-msg");
@@ -189,7 +182,7 @@ public sealed class MessageObservationStoreTests : TestBase
         var wrongMsg = _MakeMessage(typeof(SimpleMessage), "wrong", new SimpleMessage { Value = "nope" });
         store.Record(wrongMsg, MessageObservationType.Published);
 
-        // record the correct one after a short delay
+        // record the correct one after the waiter is registered
         var correctMsg = _MakeMessage(typeof(SimpleMessage), "correct", new SimpleMessage { Value = "yes" });
         var waitTask = store.WaitForAsync(
             typeof(SimpleMessage),
@@ -200,16 +193,10 @@ public sealed class MessageObservationStoreTests : TestBase
             cancellationToken: AbortToken
         );
 
-        _ = Task.Run(
-            async () =>
-            {
-                await Task.Delay(30, AbortToken);
-                store.Record(correctMsg, MessageObservationType.Published);
-            },
-            AbortToken
-        );
+        waitTask.IsCompleted.Should().BeFalse("the non-matching message does not satisfy the predicate");
+        store.Record(correctMsg, MessageObservationType.Published);
 
-        var result = await waitTask;
+        var result = await waitTask.Bounded();
 
         // then
         result.Should().Be(correctMsg);
@@ -383,7 +370,6 @@ public sealed class MessageObservationStoreTests : TestBase
         );
 
         // when
-        await Task.Delay(20, AbortToken);
         await cts.CancelAsync();
 
         // then — must be OperationCanceledException, NOT MessageObservationTimeoutException

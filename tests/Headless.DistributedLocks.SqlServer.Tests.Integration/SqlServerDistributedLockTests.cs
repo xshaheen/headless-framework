@@ -734,19 +734,28 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
 
     private async Task<bool> _WaitUntilSessionLockFreeAsync(string resource, TimeSpan within)
     {
-        var started = TimeProvider.System.GetTimestamp();
+        // Unpooled, so closing the probe ends its session and frees the lock it took. A blocking sp_getapplock queues
+        // behind the failed session and is granted the moment SQL Server tears that session down: the server's own
+        // wake-up is the signal, and a lock that leaked is never granted within the timeout.
+        var builder = new SqlConnectionStringBuilder(fixture.ConnectionString) { Pooling = false };
+        await using var connection = new SqlConnection(builder.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DECLARE @result int;
+            EXEC @result = sys.sp_getapplock
+                @Resource = @resource,
+                @LockMode = N'Exclusive',
+                @LockOwner = N'Session',
+                @LockTimeout = @timeoutMs,
+                @DbPrincipal = N'public';
+            SELECT @result;
+            """;
+        command.Parameters.AddWithValue("resource", _Encode(resource));
+        command.Parameters.AddWithValue("timeoutMs", (int)within.TotalMilliseconds);
 
-        while (TimeProvider.System.GetElapsedTime(started) < within)
-        {
-            if (await _CanTakeExclusiveSessionLockAsync(resource))
-            {
-                return true;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
-        }
-
-        return await _CanTakeExclusiveSessionLockAsync(resource);
+        // 0 and 1 are the granted codes; -1 is the timeout.
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture) >= 0;
     }
 
     private async Task<bool> _CanTakeExclusiveSessionLockAsync(string resource)

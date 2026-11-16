@@ -22,7 +22,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.WaitUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+        await _WaitForLossAsync(sut);
 
         // then
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
@@ -41,16 +41,16 @@ public sealed class LeaseMonitorTests : TestBase
         // when - Unknown then Renewed within budget — must NOT cancel. A real handle reports the renew it sent at 3s,
         // which moves the deadline from 9s to 3s + 10s - 1s = 12s.
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount == 1, AbortToken);
+        await handle.WhenInvokedAsync(1).Bounded();
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
         sut.OnLeaseRenewed(_timeProvider.GetTimestamp(), handle.LeaseDuration);
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount == 2, AbortToken);
+        await handle.WhenInvokedAsync(2).Bounded();
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
         sut.TriggerImmediateValidation();
         // The advance also fires the cadence wait armed at 3s, so the cadence and the nudge can each run a probe and
         // the count can pass 3 before it is read.
-        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount >= 3, AbortToken);
+        await handle.WhenInvokedAsync(3).Bounded();
 
         // then - still alive after Unknown → Renewed.
         sut.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -59,8 +59,7 @@ public sealed class LeaseMonitorTests : TestBase
         // confirm the monitor DOES react when storage subsequently confirms loss.
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.WaitUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
-        sut.LostToken.IsCancellationRequested.Should().BeTrue();
+        await _WaitForLossAsync(sut);
     }
 
     [Fact]
@@ -78,7 +77,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount == 1, AbortToken);
+        await handle.WhenInvokedAsync(1).Bounded();
         _timeProvider.Advance(handle.LeaseDuration);
         sut.TriggerImmediateValidation();
         await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
@@ -177,7 +176,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.WaitUntilAsync(() => sut.LostToken.IsCancellationRequested, AbortToken);
+        await _WaitForLossAsync(sut);
 
         // then
         sut.LostToken.IsCancellationRequested.Should().BeTrue();
@@ -206,45 +205,46 @@ public sealed class LeaseMonitorTests : TestBase
         // strong-root the monitor for the lifetime of MonitoringTask, defeating this invariant).
         // The lease is long enough that the loss deadline cannot end the loop inside the test's advances, so only
         // the dead weak reference can.
-        var handle = new FakeLeaseHandle(_timeProvider)
+        var timeProvider = new CadenceTimeProvider(TimeSpan.FromSeconds(1));
+        var handle = new FakeLeaseHandle(timeProvider)
         {
             LeaseDuration = TimeSpan.FromHours(1),
             MonitoringCadence = TimeSpan.FromSeconds(1),
         };
-        var monitoringTask = _CreateMonitorAndDropReference(handle);
+        var monitoringTask = _CreateMonitorAndDropReference(handle, timeProvider);
 
         // when - drive GC + a cadence advance repeatedly until the loop observes the dead
-        // WeakReference and exits. Two non-determinisms make a single pass flaky: (1) GC need not
-        // reclaim an object parked behind an in-flight async continuation on the first collection,
-        // and (2) FakeTimeProvider.Advance only fires timers already registered at advance time,
-        // so an advance can race the loop re-parking on its next cadence wait and be silently lost.
-        // Retrying both — bounded — is deterministic without depending on collection or scheduler
-        // timing. In production real time always advances, so neither race exists.
+        // WeakReference and exits. GC need not reclaim an object parked behind an in-flight async continuation on the
+        // first collection, so a single pass is not enough. Each advance happens only once the loop has armed its
+        // cadence wait (FakeTimeProvider.Advance fires only timers already registered), and the loop then either
+        // re-arms it (the monitor is still reachable) or exits (it is not), so each pass waits for exactly one of the
+        // two instead of sleeping. In production real time always advances.
+        var armed = timeProvider.CadenceTicks.Reader;
+        await armed.ReadAsync(AbortToken).AsTask().Bounded();
+
         for (var attempt = 0; attempt < 50 && !monitoringTask.IsCompleted; attempt++)
         {
             GC.Collect(2, GCCollectionMode.Forced, blocking: true);
             GC.WaitForPendingFinalizers();
             GC.Collect(2, GCCollectionMode.Forced, blocking: true);
 
-            _timeProvider.Advance(TimeSpan.FromSeconds(2));
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
 
-            // Yield real wall-clock time so the loop's continuation can resume on the thread pool
-            // and re-check the WeakReference before the next attempt.
-            var completed = await Task.WhenAny(monitoringTask, Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken));
-            await completed.Bounded();
+            var rearmed = armed.ReadAsync(AbortToken).AsTask();
+            _ = await Task.WhenAny(monitoringTask, rearmed).Bounded();
         }
 
         // then
         monitoringTask.IsCompleted.Should().BeTrue();
     }
 
-    private Task _CreateMonitorAndDropReference(FakeLeaseHandle handle)
+    private Task _CreateMonitorAndDropReference(FakeLeaseHandle handle, TimeProvider timeProvider)
     {
         // Helper isolates the strong-reference scope so the JIT cannot keep the LeaseMonitor
         // alive in a local on the caller's stack frame across GC.Collect.
         // CA2000: intentionally not disposed — this test verifies GC reclaims an abandoned monitor.
 #pragma warning disable CA2000 // CA2000: intentional — this test verifies GC reclaims an abandoned (undisposed) monitor; disposing defeats it.
-        var monitor = new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+        var monitor = new LeaseMonitor(handle, timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
 #pragma warning restore CA2000
         var task = monitor.MonitoringTask;
         monitor = null;
@@ -264,7 +264,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // Trigger an iteration that will block inside RenewOrValidateLeaseAsync.
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.WaitUntilAsync(() => handle.IsBlocking, AbortToken);
+        await handle.Blocking.Bounded();
 
         // when — the bound is what proves the point: the blocking call ends only on a cancellation, and the
         // handle's other cancellation source (blockSignal) is not released until this method returns, so a
@@ -394,7 +394,7 @@ public sealed class LeaseMonitorTests : TestBase
     private static async Task _RunIterationAndWait(LeaseMonitor sut, FakeLeaseHandle handle, int expectedCount)
     {
         sut.TriggerImmediateValidation();
-        await DistributedLockTestSupport.WaitUntilAsync(() => handle.InvocationCount >= expectedCount, AbortToken);
+        await handle.WhenInvokedAsync(expectedCount).Bounded();
     }
 
     private LeaseMonitor _CreateMonitor(FakeLeaseHandle handle)
@@ -419,9 +419,15 @@ public sealed class LeaseMonitorTests : TestBase
         public bool IsBlocking { get; private set; }
         public bool ExitedBeforeRelease { get; private set; }
 
+        /// <summary>Completes once the monitor's probe is parked inside <see cref="RenewOrValidateLeaseAsync"/>.</summary>
+        public Task Blocking => _blocking.Task;
+
+        private readonly TaskCompletionSource _blocking = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public async Task<LeaseMonitor.LeaseState> RenewOrValidateLeaseAsync(CancellationToken cancellationToken)
         {
             IsBlocking = true;
+            _blocking.TrySetResult();
 
             try
             {

@@ -2041,9 +2041,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         await sut.ReportFailureAsync(_Group, 0, new TimeoutException(), AbortToken);
 
-        // when — take two snapshots with a small delay between them
+        // when — take two snapshots with the clock moved on between them
         var snapshot1 = sut.GetSnapshot(_Group);
-        await Task.Delay(50, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(50));
         var snapshot2 = sut.GetSnapshot(_Group);
 
         // then — remaining duration should be positive and ≤ configured open duration
@@ -2056,10 +2056,10 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         snapshot1.EstimatedRemainingOpenDuration.Value.Should().BeLessThanOrEqualTo(openDuration);
         snapshot2.EstimatedRemainingOpenDuration.Value.Should().BeLessThanOrEqualTo(openDuration);
 
-        // second snapshot should have less or equal remaining time
+        // second snapshot should have less remaining time
         snapshot2
             .EstimatedRemainingOpenDuration.Value.Should()
-            .BeLessThanOrEqualTo(snapshot1.EstimatedRemainingOpenDuration.Value);
+            .BeLessThan(snapshot1.EstimatedRemainingOpenDuration.Value);
     }
 
     // -------------------------------------------------------------------------
@@ -2466,33 +2466,35 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     [Fact]
     public async Task dispose_blocks_on_resume_task_before_disposing_cts()
     {
-        // given — a resume callback that delays long enough to overlap with Dispose
+        // given — a resume callback that stays in flight until the test releases it
         var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var laneGroup = CircuitBreakerKeys.For(MessageLane.Bus, _Group);
         await using var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(20));
         sut.RegisterConsumerCallbacks(
-            _Group,
+            laneGroup,
             onPause: epoch => ValueTask.CompletedTask,
             onResume: async epoch =>
             {
                 resumeStarted.TrySetResult();
-                halfOpenTcs.TrySetResult();
-                await Task.Delay(50, AbortToken); // simulate slow resume work
+                await releaseResume.Task.Bounded();
             }
         );
 
         // trip circuit so the timer fires and the resume task is in-flight
-        await sut.ReportFailureAsync(_Group, 0, new TimeoutException(), AbortToken);
+        await sut.ReportFailureAsync(laneGroup, 0, new TimeoutException(), AbortToken);
         _timeProvider.Advance(TimeSpan.FromMilliseconds(20));
-        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await resumeStarted.Task.Bounded();
+        var probe = sut.GetRetryDecision(MessageLane.Bus, _Group);
 
-        // wait until resume has actually started running
-        await resumeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        // when — Dispose completes the probe's outcome only after it has taken the in-flight resumes to wait on
+        var dispose = Task.Run(sut.Dispose, AbortToken);
+        await probe.ProbeOutcome!.Bounded();
 
-        // when — call synchronous Dispose while resume is in progress
-        var act = sut.Dispose;
-
-        // then — should not throw ObjectDisposedException
-        act.Should().NotThrow();
+        // then — it must not return, nor throw ObjectDisposedException, while the resume is still running
+        dispose.IsCompleted.Should().BeFalse("Dispose must wait for the in-flight resume");
+        releaseResume.TrySetResult();
+        var act = async () => await dispose.Bounded();
+        await act.Should().NotThrowAsync();
     }
 }

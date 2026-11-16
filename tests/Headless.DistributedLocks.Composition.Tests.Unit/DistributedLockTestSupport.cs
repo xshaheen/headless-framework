@@ -33,7 +33,9 @@ internal static class DistributedLockTestSupport
     /// Use this, not <see cref="DrainUntilAsync"/>, before asserting that something happened. Advancing a
     /// <see cref="FakeTimeProvider"/> only queues the monitor's continuation on the thread pool; on a loaded machine
     /// that continuation can stay undispatched for longer than any fixed number of yields, and a wait that gave up
-    /// then fails a pre-condition the code was about to meet.
+    /// then fails a pre-condition the code was about to meet. It stays a counted wait: the handle exposes no signal
+    /// for a recorded renewal, and a cadence tick is not one, because a timer of the same length is created between
+    /// the renew returning and the count being incremented.
     /// </remarks>
     public static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {
@@ -55,8 +57,8 @@ internal static class DistributedLockTestSupport
     /// <summary>
     /// Gives queued background work a short, bounded chance to run, stopping early once <paramref name="condition"/>
     /// holds. Use it only before asserting that something did <em>not</em> happen; the budget is a fixed number of
-    /// scheduler turns, so it can end before slow work finishes. To wait for something that must happen, use
-    /// <see cref="WaitUntilAsync"/>.
+    /// scheduler turns, so it can end before slow work finishes. To wait for something that must happen, await the
+    /// signal the work raises (a handle's invocation count, a token's cancellation, an armed timer).
     /// </summary>
     public static async Task DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {

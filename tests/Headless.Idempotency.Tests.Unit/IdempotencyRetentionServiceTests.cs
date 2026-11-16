@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,13 +22,12 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
     };
 
     private readonly IIdempotencyRecordStore _store = Substitute.For<IIdempotencyRecordStore>();
-    private readonly FakeTimeProvider _time = new();
+    private readonly ArmedTimerTimeProvider _time = new();
 
     // Every loop round reads the options first, so a read proves ExecuteAsync is running. BackgroundService starts it
     // through Task.Run with the stopping token, and a stop that lands before the thread pool picks it up ends
     // ExecuteTask canceled without the loop ever running, so tests that assert a clean stop wait for this first.
     private readonly TaskCompletionSource _loopStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private int _optionReads;
 
     [Fact]
     public async Task should_purge_record_batches_until_one_comes_back_short()
@@ -54,7 +54,9 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         // when
         await service.StartAsync(AbortToken);
-        await _AdvanceUntilAsync(shortBatch.Task);
+        await _time.WaitForTimerAsync();
+        _time.Advance(_Interval);
+        await shortBatch.Task.Bounded();
         await service.StopAsync(AbortToken);
 
         // then - a full batch is followed by another; the short one ends the run
@@ -83,7 +85,11 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         // when
         await service.StartAsync(AbortToken);
-        await _AdvanceUntilAsync(retried.Task);
+        await _time.WaitForTimerAsync();
+        _time.Advance(_Interval);
+        await _time.WaitForTimerAsync();
+        _time.Advance(_Interval);
+        await retried.Task.Bounded();
         await service.StopAsync(AbortToken);
 
         // then
@@ -115,7 +121,11 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         // when
         await service.StartAsync(AbortToken);
-        await _AdvanceUntilAsync(() => Volatile.Read(ref _optionReads) >= 2);
+        await _time.WaitForTimerAsync();
+        _time.Advance(_Interval);
+
+        // The next re-check delay is armed only after the loop read the options again.
+        await _time.WaitForTimerAsync();
 
         // then — a disabled purge keeps re-checking on a fixed cadence instead of exiting the hosted service
         _store.ReceivedCalls().Should().BeEmpty();
@@ -142,12 +152,17 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
 
         // when — still disabled: the re-check tick alone must not purge anything
         await service.StartAsync(AbortToken);
-        await _AdvanceUntilAsync(() => Volatile.Read(ref _optionReads) >= 2);
+        await _time.WaitForTimerAsync();
+        _time.Advance(_Interval);
+        await _time.WaitForTimerAsync();
         _store.ReceivedCalls().Should().BeEmpty("the interval is still null");
 
         // and then the option reloads back to a value on the already-running service
         _options.PurgeInterval = _Interval;
-        await _AdvanceUntilAsync(purged.Task);
+        _time.Advance(_Interval);
+        await _time.WaitForTimerAsync();
+        _time.Advance(_Interval);
+        await purged.Task.Bounded();
         await service.StopAsync(AbortToken);
 
         // then
@@ -159,7 +174,6 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
         var monitor = Substitute.For<IOptionsMonitor<IdempotentOperationsOptions>>();
         monitor.CurrentValue.Returns(_ =>
         {
-            Interlocked.Increment(ref _optionReads);
             _loopStarted.TrySetResult();
             return _options;
         });
@@ -172,27 +186,20 @@ public sealed class IdempotencyRetentionServiceTests : TestBase
         );
     }
 
-    // The service's loop runs on its own thread, so its next delay may not be registered at the moment the test
-    // advances the clock; advancing repeatedly until the expected effect lands avoids racing it.
-    private async Task _AdvanceUntilAsync(Task effect)
+    // The service's loop runs on its own thread, so its next delay may not exist when the test advances the clock, and
+    // an advance made before the timer is armed is lost. The tests advance only after this reports the armed timer.
+    private sealed class ArmedTimerTimeProvider : FakeTimeProvider
     {
-        await _AdvanceUntilAsync(() => effect.IsCompleted);
-        await effect;
-    }
+        private readonly Channel<bool> _armed = Channel.CreateUnbounded<bool>();
 
-    private async Task _AdvanceUntilAsync(Func<bool> reached)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        public Task WaitForTimerAsync() => _armed.Reader.ReadAsync(AbortToken).Bounded();
 
-        while (!reached())
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException("The retention service did not reach the expected state.");
-            }
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            _armed.Writer.TryWrite(true);
 
-            _time.Advance(_Interval);
-            await Task.Delay(10, AbortToken);
+            return timer;
         }
     }
 }

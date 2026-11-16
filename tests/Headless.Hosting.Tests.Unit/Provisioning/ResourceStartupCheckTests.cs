@@ -5,6 +5,8 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Tests.Warmup;
 
 namespace Tests.Provisioning;
 
@@ -83,6 +85,8 @@ public sealed class ResourceStartupCheckTests : TestBase
         builder.Services.AddResourceProvisioner(_ =>
             _Missing("RabbitMQ", "orders", ResourceStartupCheck.GateReadiness)
         );
+        using var failure = new WarmupFailureSignal();
+        builder.Services.AddSingleton<ILoggerProvider>(failure);
         using var host = builder.Build();
 
         // when
@@ -90,16 +94,7 @@ public sealed class ResourceStartupCheckTests : TestBase
 
         // The bounded wait below tests only the cancellation message, so let the background check record its error
         // first; on a starved thread pool it may not run inside the bound.
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-
-        while (
-            (await _CheckWarmupAsync(host.Services)).Exception?.Message.Contains("last error", StringComparison.Ordinal)
-                != true
-            && DateTime.UtcNow < deadline
-        )
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
-        }
+        await failure.Recorded.Bounded();
 
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         bounded.CancelAfter(TimeSpan.FromSeconds(2));

@@ -2797,6 +2797,18 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var sut = new MessageNeedToRetryProcessor(options, retryProcessorOptions, logger, dispatcher, lockProvider);
 
         _SetupReceivedMessages(dataStorage);
+
+        // The queue lane's pickups run too, and an unconfigured substitute would fault them while the test joins them.
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(
+                MessageLane.Queue,
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Queue, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
         await using var context = _CreateContext(
             new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider(),
             cancellationToken: AbortToken
@@ -2804,7 +2816,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         // when — drive ProcessAsync once
         await sut.ProcessAsync(context);
-        await Task.Delay(50, AbortToken);
+        await Task.WhenAll(sut.Quiesce()).Bounded();
 
         // then — TryAcquireAsync must never be called when UseStorageLock=false
         await lockProvider

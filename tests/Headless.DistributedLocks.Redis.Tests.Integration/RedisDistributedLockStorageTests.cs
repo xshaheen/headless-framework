@@ -204,6 +204,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         await fixture.LockStorage.InsertAsync(key, leaseId, ttl, AbortToken);
 
         // when
+        // real-wait: the 100 ms key expiry runs on Redis's own clock, which no fake clock moves
         await Task.Delay(200, AbortToken);
 
         // then
@@ -221,6 +222,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         await fixture.LockStorage.InsertAsync(key, lockId1, TimeSpan.FromMilliseconds(100), AbortToken);
 
         // when - wait for expiration
+        // real-wait: the 100 ms key expiry runs on Redis's own clock, which no fake clock moves
         await Task.Delay(200, AbortToken);
         var result = await fixture.LockStorage.InsertAsync(key, lockId2, TimeSpan.FromMinutes(5), AbortToken);
 

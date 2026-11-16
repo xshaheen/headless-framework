@@ -17,7 +17,7 @@ public abstract class MaxMindTestBase : TestBase
 
     internal StubMaxMindHandler Handler { get; } = new();
 
-    protected FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 12, 0, 0, 0, TimeSpan.Zero));
+    protected TimerArmedClock Clock { get; } = new(new DateTimeOffset(2026, 10, 12, 0, 0, 0, TimeSpan.Zero));
 
     protected ServiceProvider BuildProvider(Action<MaxMindOptions>? configure = null, bool withCredentials = false)
     {

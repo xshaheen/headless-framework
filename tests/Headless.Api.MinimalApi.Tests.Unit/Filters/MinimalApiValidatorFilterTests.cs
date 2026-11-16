@@ -45,14 +45,21 @@ public sealed class ValidatorOverlapProbe
     private int _inFlight;
     private int _maxInFlight;
     private readonly System.Collections.Concurrent.ConcurrentQueue<string> _order = new();
+    private readonly TaskCompletionSource _firstEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public int MaxInFlight => Volatile.Read(ref _maxInFlight);
+
+    public Task FirstEntered => _firstEntered.Task;
+
+    public void Release() => _release.TrySetResult();
 
     public IReadOnlyList<string> Order => [.. _order];
 
     public async Task<bool> RunAsync(string name, CancellationToken cancellationToken)
     {
         _order.Enqueue(name);
+        _firstEntered.TrySetResult();
         var current = Interlocked.Increment(ref _inFlight);
         int observed;
 
@@ -61,8 +68,8 @@ public sealed class ValidatorOverlapProbe
             observed = Volatile.Read(ref _maxInFlight);
         } while (current > observed && Interlocked.CompareExchange(ref _maxInFlight, current, observed) != observed);
 
-        // Long enough that two validators started together are certain to overlap.
-        await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+        // Held open until the test releases it, so validators started together are certain to overlap.
+        await _release.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
         Interlocked.Decrement(ref _inFlight);
 
         return true;
@@ -213,9 +220,21 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         );
 
         // when
-        await filter.InvokeAsync(context, _CreateNext());
+        var invoking = filter.InvokeAsync(context, _CreateNext()).AsTask();
 
-        // then
+        try
+        {
+            await probe.FirstEntered.Bounded();
+
+            // then - the first validator is held open, so a run that started the second beside it shows here
+            probe.Order.Should().Equal("first");
+        }
+        finally
+        {
+            probe.Release();
+        }
+
+        await invoking.Bounded();
         probe.MaxInFlight.Should().Be(1);
         probe.Order.Should().Equal("first", "second");
     }

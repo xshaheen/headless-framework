@@ -16,9 +16,7 @@ namespace Tests.Processor;
 /// </summary>
 public sealed class OutboxInitializationProcessorTests : TestBase
 {
-    private static readonly TimeSpan _Timeout = TimeSpan.FromSeconds(10);
-
-    private readonly FakeTimeProvider _timeProvider = new();
+    private readonly TimerArmedSignalClock _timeProvider = new(DateTimeOffset.UnixEpoch);
     private readonly CancellationTokenSource _stopping = new();
     private readonly OutboxInitializationProcessor _sut = new(NullLogger<OutboxInitializationProcessor>.Instance);
 
@@ -80,15 +78,14 @@ public sealed class OutboxInitializationProcessorTests : TestBase
         return new ProcessingContext(provider, _timeProvider, _stopping.Token);
     }
 
-    // The processor's awaits resume on the thread pool, so time is advanced in steps until it observes the change.
+    // The processor arms its next retry wait only after an attempt ends, so time moves once that wait exists, by more
+    // than the longest back-off so the wait fires.
     private async Task _AdvanceUntilAsync(Func<bool> condition)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(_Timeout);
         while (!condition())
         {
-            _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token);
+            await _timeProvider.WaitForArmedTimerAsync();
+            _timeProvider.Advance(OutboxInitializationProcessor.MaxRetryDelay * 2);
         }
     }
 

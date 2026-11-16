@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Threading.Channels;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,8 +17,6 @@ namespace Tests;
 [Collection(nameof(RedisCacheFixture))]
 public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : TestBase
 {
-    private static readonly TimeSpan _Wait = TimeSpan.FromSeconds(15);
-
     [Fact]
     public async Task should_evict_the_peer_l1_when_one_host_writes()
     {
@@ -28,7 +27,7 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
         var key = Faker.Random.AlphaNumeric(12);
         await first.Cache.UpsertAsync(key, "v1", TimeSpan.FromMinutes(5), AbortToken);
         // Let the first write's invalidation land before the read, so it cannot evict the copy the read caches.
-        await _WaitUntilAsync(() => ValueTask.FromResult(second.Cache.InvalidateCacheCalls >= 1));
+        await second.Tap.NextInvalidationAsync();
         (await second.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v1");
         (await second.Cache.LocalCache.ExistsAsync(key, AbortToken)).Should().BeTrue();
 
@@ -36,9 +35,8 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
         await first.Cache.UpsertAsync(key, "v2", TimeSpan.FromMinutes(5), AbortToken);
 
         // then - the peer drops its stale copy and reads the new value from L2; the writer ignores its own echo
-        await _WaitUntilAsync(async () =>
-            second.Cache.InvalidateCacheCalls >= 2 && !await second.Cache.LocalCache.ExistsAsync(key, AbortToken)
-        );
+        await second.Tap.NextInvalidationAsync();
+        (await second.Cache.LocalCache.ExistsAsync(key, AbortToken)).Should().BeFalse();
         (await second.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
         (await first.Cache.LocalCache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
         first.Cache.InvalidateCacheCalls.Should().Be(0);
@@ -53,7 +51,6 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
         await using var reader = await _StartHostAsync(prefix);
         var staleKey = Faker.Random.AlphaNumeric(12);
         await reader.Cache.LocalCache.UpsertAsync(staleKey, "stale", TimeSpan.FromMinutes(5), AbortToken);
-        var generationBefore = reader.Backplane.EstablishedGeneration;
 
         // when - Redis drops every pub/sub connection, so both hosts lose their subscription until they reconnect
         var killed = await fixture
@@ -62,19 +59,18 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
 
         // then - the reader re-subscribes, then flushes the L1 entry it can no longer trust
         killed.Should().BePositive();
-        await _WaitUntilAsync(() => ValueTask.FromResult(reader.Backplane.EstablishedGeneration > generationBefore));
+        await reader.Tap.NextEstablishedAsync();
         (await reader.Cache.LocalCache.ExistsAsync(staleKey, AbortToken)).Should().BeFalse();
 
         // and the new subscription carries invalidations again
         var key = Faker.Random.AlphaNumeric(12);
         await writer.Cache.UpsertAsync(key, "v1", TimeSpan.FromMinutes(5), AbortToken);
-        await _WaitUntilAsync(() => ValueTask.FromResult(reader.Cache.InvalidateCacheCalls >= 1));
+        await reader.Tap.NextInvalidationAsync();
         (await reader.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v1");
         (await reader.Cache.LocalCache.ExistsAsync(key, AbortToken)).Should().BeTrue();
         await writer.Cache.UpsertAsync(key, "v2", TimeSpan.FromMinutes(5), AbortToken);
-        await _WaitUntilAsync(async () =>
-            reader.Cache.InvalidateCacheCalls >= 2 && !await reader.Cache.LocalCache.ExistsAsync(key, AbortToken)
-        );
+        await reader.Tap.NextInvalidationAsync();
+        (await reader.Cache.LocalCache.ExistsAsync(key, AbortToken)).Should().BeFalse();
         (await reader.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
     }
 
@@ -87,7 +83,7 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
         await using var reader = await _StartHostAsync(prefix);
         var key = Faker.Random.AlphaNumeric(12);
         await writer.Cache.UpsertAsync(key, "v1", TimeSpan.FromMinutes(5), AbortToken);
-        await _WaitUntilAsync(() => ValueTask.FromResult(reader.Cache.InvalidateCacheCalls >= 1));
+        await reader.Tap.NextInvalidationAsync();
         (await reader.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v1");
 
         // when - something else publishes text that is not an invalidation on the channel, then a real write follows
@@ -96,9 +92,8 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
         await writer.Cache.UpsertAsync(key, "v2", TimeSpan.FromMinutes(5), AbortToken);
 
         // then - the bad payloads are dropped and the delivery loop still applies the write that came after them
-        await _WaitUntilAsync(async () =>
-            reader.Cache.InvalidateCacheCalls >= 2 && !await reader.Cache.LocalCache.ExistsAsync(key, AbortToken)
-        );
+        await reader.Tap.NextInvalidationAsync();
+        (await reader.Cache.LocalCache.ExistsAsync(key, AbortToken)).Should().BeFalse();
         (await reader.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
     }
 
@@ -119,6 +114,11 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
             setup.UseRedisBackplane();
         });
 
+        // Registered after AddHeadlessCaching, so the backplane calls it after the router that applies the delivery: a
+        // signal from the tap means the cache has already applied it.
+        var tap = new InvalidationTap();
+        builder.Services.AddSingleton<IHybridCacheInvalidationListener>(tap);
+
         var host = builder.Build();
         await host.StartAsync(AbortToken);
 
@@ -126,27 +126,17 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
         var backplane = (RedisHybridCacheBackplane)host.Services.GetRequiredService<IHybridCacheBackplane>();
 
         // The subscription is made in the background; until it is, a peer's invalidation would not arrive.
-        await _WaitUntilAsync(() => ValueTask.FromResult(backplane.EstablishedGeneration >= 1));
+        await tap.NextEstablishedAsync();
 
-        return new BackplaneHost(host, connection, cache, backplane);
-    }
-
-    private static async Task _WaitUntilAsync(Func<ValueTask<bool>> condition)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(_Wait);
-
-        while (!await condition())
-        {
-            await Task.Delay(20, timeout.Token);
-        }
+        return new BackplaneHost(host, connection, cache, backplane, tap);
     }
 
     private sealed record BackplaneHost(
         IHost Host,
         ConnectionMultiplexer Connection,
         HybridCache Cache,
-        RedisHybridCacheBackplane Backplane
+        RedisHybridCacheBackplane Backplane,
+        InvalidationTap Tap
     ) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
@@ -163,6 +153,39 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
             }
 
             await Connection.DisposeAsync();
+        }
+    }
+
+    /// <summary>Hands the test each delivery and each subscription establishment the backplane reports, in order.</summary>
+    private sealed class InvalidationTap : IHybridCacheInvalidationListener
+    {
+        private readonly Channel<CacheInvalidationMessage> _invalidations =
+            Channel.CreateUnbounded<CacheInvalidationMessage>();
+
+        private readonly Channel<long> _establishments = Channel.CreateUnbounded<long>();
+
+        public ValueTask OnInvalidationAsync(CacheInvalidationMessage message, CancellationToken cancellationToken)
+        {
+            _invalidations.Writer.TryWrite(message);
+
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask OnSubscriptionEstablishedAsync(long generation, CancellationToken cancellationToken)
+        {
+            _establishments.Writer.TryWrite(generation);
+
+            return ValueTask.CompletedTask;
+        }
+
+        public Task<CacheInvalidationMessage> NextInvalidationAsync()
+        {
+            return _invalidations.Reader.ReadAsync(AbortToken).Bounded();
+        }
+
+        public Task<long> NextEstablishedAsync()
+        {
+            return _establishments.Reader.ReadAsync(AbortToken).Bounded();
         }
     }
 }

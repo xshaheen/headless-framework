@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 
 namespace Tests;
@@ -57,38 +56,6 @@ internal sealed class PostgreSqlDeadlockInjector(string connectionString, string
         );
 
         return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
-    }
-
-    /// <summary>Waits in real time until at least <paramref name="count" /> statements have reached the table.</summary>
-    public async Task WaitForCountAsync(long count, CancellationToken cancellationToken)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
-
-        while (await CountAsync(timeout.Token) < count)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token);
-        }
-    }
-
-    /// <summary>
-    /// Moves the fake clock forward in small steps until <paramref name="done" /> holds. Stepping, rather than one jump,
-    /// covers a delay the store starts on the clock only after the test has already moved it.
-    /// </summary>
-    public static async Task AdvanceUntilAsync(
-        FakeTimeProvider clock,
-        Func<Task<bool>> done,
-        CancellationToken cancellationToken
-    )
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
-
-        while (!await done())
-        {
-            clock.Advance(TimeSpan.FromMilliseconds(5));
-            await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token);
-        }
     }
 
     private async Task _ExecuteAsync(string sql, CancellationToken cancellationToken)

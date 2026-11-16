@@ -280,6 +280,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        using var gate = new IdlePollGate();
         var consumeCallCount = 0;
         consumer
             .Consume(Arg.Any<TimeSpan>())
@@ -306,14 +307,8 @@ public sealed class KafkaConsumerClientTests : TestBase
                         ),
                         Message = new Message<string, byte[]> { Value = [2], Headers = _CreateHeaders() },
                     },
-                    _ => waitAndReturnNull(),
+                    _ => gate.Idle(),
                 };
-
-                static ConsumeResult<string, byte[]> waitAndReturnNull()
-                {
-                    Thread.Sleep(10);
-                    return null!;
-                }
             });
 
         await using var client = new KafkaConsumerClient(
@@ -344,6 +339,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var gateRegistration = gate.OpenWhenCancelled(cts.Token);
 
         // when
         // Consume blocks, so run the loop off the test thread the way the consumer register does.
@@ -372,6 +368,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        using var gate = new IdlePollGate();
         var consumeOnPoolThread = new ConcurrentQueue<bool>();
         var polled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         consumer
@@ -380,9 +377,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             {
                 consumeOnPoolThread.Enqueue(Thread.CurrentThread.IsThreadPoolThread);
                 polled.TrySetResult();
-                Thread.Sleep(10);
-
-                return null!;
+                return gate.Idle();
             });
 
         await using var client = new KafkaConsumerClient(
@@ -395,6 +390,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var gateRegistration = gate.OpenWhenCancelled(cts.Token);
 
         // when
         var listeningTask = Task.Run(
@@ -421,6 +417,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        using var gate = new IdlePollGate();
         var consumeCallCount = 0;
         consumer
             .Consume(Arg.Any<TimeSpan>())
@@ -433,23 +430,19 @@ public sealed class KafkaConsumerClientTests : TestBase
                     1 => _CreateConsumeResult(100),
                     2 => _CreateConsumeResult(101),
                     3 => _CreateConsumeResult(102),
-                    _ => waitAndReturnNull(),
+                    _ => gate.Idle(),
                 };
-
-                static ConsumeResult<string, byte[]> waitAndReturnNull()
-                {
-                    Thread.Sleep(10);
-
-                    return null!;
-                }
             });
 
         var committedOffsets = new ConcurrentQueue<long>();
+        var stored = new ConcurrentDictionary<long, TaskCompletionSource>();
         consumer
             .When(c => c.StoreOffset(Arg.Any<TopicPartitionOffset>()))
             .Do(call =>
             {
-                committedOffsets.Enqueue(call.Arg<TopicPartitionOffset>().Offset.Value);
+                var offset = call.Arg<TopicPartitionOffset>().Offset.Value;
+                committedOffsets.Enqueue(offset);
+                _StoredSignal(stored, offset).TrySetResult();
             });
 
         await using var client = new KafkaConsumerClient(
@@ -492,6 +485,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var gateRegistration = gate.OpenWhenCancelled(cts.Token);
         // Consume blocks, so run the loop off the test thread the way the consumer register does.
         var listeningTask = Task.Run(
             () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
@@ -505,11 +499,11 @@ public sealed class KafkaConsumerClientTests : TestBase
             committedOffsets.Should().BeEmpty("offset 102 cannot commit while 100 and 101 are still in flight");
 
             releaseOffset100.TrySetResult();
-            await _WaitUntilAsync(() => committedOffsets.Contains(101), AbortToken);
+            await _StoredSignal(stored, 101).Task.Bounded();
             committedOffsets.Should().Equal([101]);
 
             releaseOffset101.TrySetResult();
-            await _WaitUntilAsync(() => committedOffsets.Contains(103), AbortToken);
+            await _StoredSignal(stored, 103).Task.Bounded();
             committedOffsets.Should().Equal([101, 103]);
 
             consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
@@ -529,6 +523,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         // given — a tombstone sits between two records. It is never dispatched to a handler, so the
         // commit watermark has to account for it in the poll loop or the partition stalls on it.
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        using var gate = new IdlePollGate();
         var consumeCallCount = 0;
         consumer
             .Consume(Arg.Any<TimeSpan>())
@@ -541,23 +536,19 @@ public sealed class KafkaConsumerClientTests : TestBase
                     1 => _CreateConsumeResult(100),
                     2 => _CreateTombstoneResult(101),
                     3 => _CreateConsumeResult(102),
-                    _ => waitAndReturnNull(),
+                    _ => gate.Idle(),
                 };
-
-                static ConsumeResult<string, byte[]> waitAndReturnNull()
-                {
-                    Thread.Sleep(10);
-
-                    return null!;
-                }
             });
 
         var committedOffsets = new ConcurrentQueue<long>();
+        var stored = new ConcurrentDictionary<long, TaskCompletionSource>();
         consumer
             .When(c => c.StoreOffset(Arg.Any<TopicPartitionOffset>()))
             .Do(call =>
             {
-                committedOffsets.Enqueue(call.Arg<TopicPartitionOffset>().Offset.Value);
+                var offset = call.Arg<TopicPartitionOffset>().Offset.Value;
+                committedOffsets.Enqueue(offset);
+                _StoredSignal(stored, offset).TrySetResult();
             });
 
         await using var client = new KafkaConsumerClient(
@@ -572,6 +563,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var gateRegistration = gate.OpenWhenCancelled(cts.Token);
 
         // when
         // Consume blocks, so run the loop off the test thread the way the consumer register does.
@@ -583,7 +575,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         try
         {
             // then — 103 is only reachable if the tombstone at 101 moved the watermark
-            await _WaitUntilAsync(() => committedOffsets.Contains(103), AbortToken);
+            await _StoredSignal(stored, 103).Task.Bounded();
         }
         finally
         {
@@ -678,6 +670,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        using var gate = new IdlePollGate();
         var consumeResult = _CreateConsumeResult(42);
         var consumeCallCount = 0;
         consumer
@@ -689,8 +682,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                     return consumeResult;
                 }
 
-                Thread.Sleep(10);
-                return null!;
+                return gate.Idle();
             });
 
         await using var client = new KafkaConsumerClient(
@@ -710,6 +702,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var gateRegistration = gate.OpenWhenCancelled(cts.Token);
         // Consume blocks, so run the loop off the test thread the way the consumer register does.
         var listeningTask = Task.Run(
             () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
@@ -740,6 +733,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        using var gate = new IdlePollGate();
         var consumeResult = _CreateConsumeResult(42);
         var consumeCallCount = 0;
         consumer
@@ -751,8 +745,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                     return consumeResult;
                 }
 
-                Thread.Sleep(10);
-                return null!;
+                return gate.Idle();
             });
 
         await using var client = new KafkaConsumerClient(
@@ -772,6 +765,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var gateRegistration = gate.OpenWhenCancelled(cts.Token);
         // Consume blocks, so run the loop off the test thread the way the consumer register does.
         var listeningTask = Task.Run(
             () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
@@ -986,10 +980,19 @@ public sealed class KafkaConsumerClientTests : TestBase
             consumerFactory: _ => consumer
         );
         var attempts = 0;
+        var secondAttempt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.OnMessageCallback = (_, _) =>
-            Interlocked.Increment(ref attempts) == 1
-                ? throw new InvalidOperationException("callback failure")
-                : Task.CompletedTask;
+        {
+            if (Interlocked.Increment(ref attempts) == 1)
+            {
+                throw new InvalidOperationException("callback failure");
+            }
+
+            // The record is handed out again only after the seek back, so a second attempt proves the seek ran.
+            secondAttempt.TrySetResult();
+
+            return Task.CompletedTask;
+        };
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -999,7 +1002,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         );
 
         // when
-        await _WaitUntilAsync(() => Volatile.Read(ref attempts) >= 2 && Volatile.Read(ref seeks) >= 1, AbortToken);
+        await secondAttempt.Task.Bounded();
 
         // then
         consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 5));
@@ -1038,7 +1041,8 @@ public sealed class KafkaConsumerClientTests : TestBase
 
             throw new InvalidOperationException("callback failure");
         };
-        client.OnLogCallback = _ => { };
+        var logs = new ConcurrentQueue<LogMessageEventArgs>();
+        client.OnLogCallback = logs.Enqueue;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var listeningTask = Task.Run(
@@ -1055,11 +1059,15 @@ public sealed class KafkaConsumerClientTests : TestBase
         // then: the failure releases the record to the next owner and is not latched as a listener failure
         consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 5));
         consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
-        await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
-        listeningTask.IsCompleted.Should().BeFalse("a callback failure must not end the listener");
 
+        // Shutdown waits for every handler task to finish and logs one that faulted, so a callback failure latched as
+        // a listener failure shows up here without waiting for the poll loop to notice it.
         await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        await client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken);
+        logs.Should()
+            .NotContain(log => log.Reason!.Contains("draining in-flight Kafka handlers", StringComparison.Ordinal));
+        var listened = async () => await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        await listened.Should().NotThrowAsync("a callback failure must not end the listener");
     }
 
     [Fact]
@@ -1092,7 +1100,8 @@ public sealed class KafkaConsumerClientTests : TestBase
 
             throw new InvalidOperationException("callback failure");
         };
-        client.OnLogCallback = _ => { };
+        var logs = new ConcurrentQueue<LogMessageEventArgs>();
+        client.OnLogCallback = logs.Enqueue;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var listeningTask = Task.Run(
@@ -1105,15 +1114,19 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.PartitionsLost([consumeResult.TopicPartitionOffset]);
         releaseCallback.SetResult();
         await callbackFinished.Task.Bounded();
-        await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+
+        // Shutdown waits for the handler task to finish, which is the only point after which a seek or a latched
+        // failure for the lost partition can no longer appear; it also logs a handler that faulted.
+        await cts.CancelAsync();
+        await client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then: the new owner reads the record from its committed offset, so this client neither seeks nor fails
         consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
         consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
-        listeningTask.IsCompleted.Should().BeFalse("a callback failure on a partition this client lost is not fatal");
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        logs.Should()
+            .NotContain(log => log.Reason!.Contains("draining in-flight Kafka handlers", StringComparison.Ordinal));
+        var listened = async () => await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        await listened.Should().NotThrowAsync("a callback failure on a partition this client lost is not fatal");
     }
 
     [Theory]
@@ -1377,14 +1390,14 @@ public sealed class KafkaConsumerClientTests : TestBase
         };
     }
 
-    private static async Task _WaitUntilAsync(Func<bool> predicate, CancellationToken cancellationToken)
+    private static TaskCompletionSource _StoredSignal(
+        ConcurrentDictionary<long, TaskCompletionSource> stored,
+        long offset
+    )
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
-
-        while (!predicate())
-        {
-            await Task.Delay(10, timeoutCts.Token).ConfigureAwait(false);
-        }
+        return stored.GetOrAdd(
+            offset,
+            static _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+        );
     }
 }

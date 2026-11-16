@@ -106,23 +106,29 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
         var (options, monitor) = _CreateOptions();
         var accessToken = CashOutTestData.Text(Faker);
         var callCount = 0;
+        using var respond = new ManualResetEventSlim();
 
         fixture
             .Server.Given(Request.Create().WithPath("/o/token/").UsingPost().WithBody(_PasswordGrantBody(options)))
             .RespondWith(
                 Response
                     .Create()
-                    .WithBody(_ =>
+                    .WithBody(request =>
                     {
                         Interlocked.Increment(ref callCount);
-                        Thread.Sleep(50); // Simulate network latency so callers overlap
+                        // The server holds its answer until every caller has started, so the callers overlap.
+                        _ = respond.Wait(TimeSpan.FromSeconds(30));
                         return _AuthJson(accessToken);
                     })
             );
 
         // when
         using var authenticator = _CreateAuthenticator(monitor);
-        var tasks = Enumerable.Range(0, 10).Select(_ => authenticator.GetAccessTokenAsync(AbortToken).AsTask());
+        var tasks = Enumerable
+            .Range(0, 10)
+            .Select(_ => authenticator.GetAccessTokenAsync(AbortToken).AsTask())
+            .ToArray();
+        respond.Set();
         var results = await Task.WhenAll(tasks);
 
         // then - double-checked lock allows exactly one refresh call

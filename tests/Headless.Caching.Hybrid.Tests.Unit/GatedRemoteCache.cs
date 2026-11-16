@@ -41,6 +41,12 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     /// <summary>Completed when a gated UpsertAsync/UpsertAllAsync has started and is parked on the gate.</summary>
     public TaskCompletionSource UpsertStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    /// <summary>Completed when a gated SetEntryAsync has written to the inner cache after its gate opened.</summary>
+    public TaskCompletionSource WriteCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Completed when a gated UpsertAsync/UpsertAllAsync has written to the inner cache after its gate opened.</summary>
+    public TaskCompletionSource UpsertCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public int ReadAttempts { get; private set; }
 
     public CacheEntryOptions? DefaultEntryOptions => null;
@@ -112,7 +118,14 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
             await gate.Task.WaitAsync(cancellationToken);
         }
 
-        return await ((IFactoryCacheStore)_cache).SetEntryAsync(key, in entry, cancellationToken);
+        var written = await ((IFactoryCacheStore)_cache).SetEntryAsync(key, in entry, cancellationToken);
+
+        if (WriteGate is not null)
+        {
+            WriteCompleted.TrySetResult();
+        }
+
+        return written;
     }
 
     public ValueTask TryRearmSlidingAsync(
@@ -165,7 +178,14 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
             await gate.Task.WaitAsync(cancellationToken);
         }
 
-        return await _cache.UpsertAsync(key, value, expiration, cancellationToken);
+        var upserted = await _cache.UpsertAsync(key, value, expiration, cancellationToken);
+
+        if (UpsertGate is not null)
+        {
+            UpsertCompleted.TrySetResult();
+        }
+
+        return upserted;
     }
 
     public ValueTask<bool> UpsertEntryAsync<T>(
@@ -190,7 +210,14 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
             await gate.Task.WaitAsync(cancellationToken);
         }
 
-        return await _cache.UpsertAllAsync(value, expiration, cancellationToken);
+        var upserted = await _cache.UpsertAllAsync(value, expiration, cancellationToken);
+
+        if (UpsertGate is not null)
+        {
+            UpsertCompleted.TrySetResult();
+        }
+
+        return upserted;
     }
 
     public ValueTask<bool> TryInsertAsync<T>(

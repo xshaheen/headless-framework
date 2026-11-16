@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -19,6 +20,9 @@ namespace Tests;
 [Collection(nameof(OutputCacheRedisFixture))]
 public sealed class OutputCacheMiddlewareTests(OutputCacheRedisFixture fixture) : TestBase
 {
+    // The app clock stamps each entry's CreatedAt and each tag marker; Redis alone enforces TTLs on its own clock.
+    private readonly FakeTimeProvider _timeProvider = new();
+
     [Fact]
     public async Task second_identical_request_is_served_from_the_redis_backed_store()
     {
@@ -47,7 +51,7 @@ public sealed class OutputCacheMiddlewareTests(OutputCacheRedisFixture fixture) 
         // evict the tag through the store, exactly as a cross-cutting cache-invalidation handler would.
         // Cross a millisecond boundary first: the tag marker only invalidates entries whose CreatedAt strictly
         // predates it, and both are millisecond-precision.
-        await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(50));
         var store = host.Services.GetRequiredService<IOutputCacheStore>();
         await store.EvictByTagAsync("products", AbortToken);
 
@@ -66,6 +70,7 @@ public sealed class OutputCacheMiddlewareTests(OutputCacheRedisFixture fixture) 
                 .UseTestServer()
                 .ConfigureServices(services =>
                 {
+                    services.AddSingleton<TimeProvider>(_timeProvider);
                     services.AddRouting();
                     services.AddOutputCache();
                     services.AddHeadlessCaching(setup =>

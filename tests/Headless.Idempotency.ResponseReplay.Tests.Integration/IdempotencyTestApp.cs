@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
+using System.Threading.Channels;
 using Headless.Api;
 using Headless.Context;
 using Headless.Hosting;
@@ -16,6 +17,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -273,6 +275,8 @@ internal static class IdempotencyTestApp
     public sealed class TestHandlerGate
     {
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly Lock _enteredLock = new();
+        private readonly List<(int Count, TaskCompletionSource Signal)> _enteredWaiters = [];
         private int _entered;
 
         /// <summary>Number of handler invocations that have entered. Read by tests after Task.WhenAll.</summary>
@@ -280,7 +284,19 @@ internal static class IdempotencyTestApp
 
         public void OnHandlerEntered()
         {
-            Interlocked.Increment(ref _entered);
+            lock (_enteredLock)
+            {
+                var entered = Interlocked.Increment(ref _entered);
+
+                for (var i = _enteredWaiters.Count - 1; i >= 0; i--)
+                {
+                    if (entered >= _enteredWaiters[i].Count)
+                    {
+                        _enteredWaiters[i].Signal.TrySetResult();
+                        _enteredWaiters.RemoveAt(i);
+                    }
+                }
+            }
         }
 
         public async Task WaitForReleaseAsync(CancellationToken cancellationToken)
@@ -299,16 +315,77 @@ internal static class IdempotencyTestApp
         }
 
         /// <summary>
-        /// Polls until at least <paramref name="count"/> handler invocations have entered, or the
-        /// timeout elapses. Used by tests to ensure the loser has reached the InFlight check
-        /// before releasing the winner.
+        /// Completes once at least <paramref name="count"/> handler invocations have entered. Used by tests to ensure the
+        /// loser has reached the InFlight check before releasing the winner.
         /// </summary>
-        public async Task WaitForInvocationsAsync(int count, TimeSpan timeout)
+        /// <exception cref="TimeoutException">Fewer than <paramref name="count"/> invocations entered within <paramref name="timeout"/>.</exception>
+        public Task WaitForInvocationsAsync(int count, TimeSpan timeout)
         {
-            var deadline = DateTimeOffset.UtcNow + timeout;
-            while (InvocationCount < count && DateTimeOffset.UtcNow < deadline)
+            Task signal;
+
+            lock (_enteredLock)
             {
-                await Task.Delay(20).ConfigureAwait(false);
+                if (InvocationCount >= count)
+                {
+                    return Task.CompletedTask;
+                }
+
+                var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _enteredWaiters.Add((count, waiter));
+                signal = waiter.Task;
+            }
+
+            return signal.WaitAsync(timeout);
+        }
+    }
+
+    /// <summary>
+    /// The app's clock for a test that observes the WaitAndReplay loser: it reports each poll delay the loser arms, so
+    /// the test advances the clock only after that delay exists and the loser cannot finish between advances.
+    /// </summary>
+    public sealed class PollClock : FakeTimeProvider
+    {
+        // The loser's poll delay doubles from 50 ms up to this cap; the winner's lease renewal timer is a third of the
+        // lease, far above it, so the cap tells the two apart.
+        private static readonly TimeSpan _MaxPollDelay = TimeSpan.FromSeconds(1);
+
+        private readonly Channel<TimeSpan> _armed = Channel.CreateUnbounded<TimeSpan>();
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            _armed.Writer.TryWrite(dueTime);
+
+            return timer;
+        }
+
+        /// <summary>Waits for the loser to arm its next poll delay and returns that delay.</summary>
+        public async Task<TimeSpan> WaitForPollDelayAsync(CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                var dueTime = await _armed.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+                if (dueTime <= _MaxPollDelay)
+                {
+                    return dueTime;
+                }
+            }
+        }
+
+        /// <summary>Advances through each poll delay the loser arms until <paramref name="completion"/> finishes.</summary>
+        public async Task AdvanceUntilCompletedAsync(Task completion, CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                var poll = WaitForPollDelayAsync(cancellationToken);
+
+                if (await Task.WhenAny(completion, poll).Bounded() == completion)
+                {
+                    return;
+                }
+
+                Advance(await poll);
             }
         }
     }

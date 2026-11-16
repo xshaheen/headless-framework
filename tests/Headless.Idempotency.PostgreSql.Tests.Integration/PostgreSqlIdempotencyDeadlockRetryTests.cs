@@ -23,7 +23,7 @@ public sealed class PostgreSqlIdempotencyDeadlockRetryTests(PostgreSqlIdempotenc
     public async Task should_wait_on_the_clock_before_retrying_a_deadlocked_purge_then_succeed()
     {
         // given
-        var clock = new FakeTimeProvider();
+        var clock = new PostgreSqlDeadlockInjector.ArmedClock();
         await using var services = await _CreateServicesAsync(clock);
         var injector = _Injector();
         await injector.ArmAsync(failures: 1, AbortToken);
@@ -31,15 +31,17 @@ public sealed class PostgreSqlIdempotencyDeadlockRetryTests(PostgreSqlIdempotenc
 
         // when
         var purge = store.PurgeAsync(TimeSpan.FromDays(1), 100, AbortToken).AsTask();
-        await injector.WaitForCountAsync(1, AbortToken);
+
+        // The store arms its retry delay on the clock only after the first attempt reached the table and deadlocked.
+        var delay = await clock.WaitForTimerAsync(AbortToken).Bounded();
 
         // then: with the clock frozen, the retry never starts
-        await Task.Delay(TimeSpan.FromMilliseconds(300), AbortToken);
         purge.IsCompleted.Should().BeFalse();
         (await injector.CountAsync(AbortToken)).Should().Be(1);
 
         // and: once the clock moves past the delay, the retry runs in a fresh transaction and completes
-        await PostgreSqlDeadlockInjector.AdvanceUntilAsync(clock, () => Task.FromResult(purge.IsCompleted), AbortToken);
+        clock.Advance(delay);
+        await PostgreSqlDeadlockInjector.AdvanceThroughRetriesAsync(clock, purge, AbortToken);
         (await purge).Should().Be(0);
         (await injector.CountAsync(AbortToken)).Should().Be(2);
     }
@@ -48,7 +50,7 @@ public sealed class PostgreSqlIdempotencyDeadlockRetryTests(PostgreSqlIdempotenc
     public async Task should_stop_after_three_attempts_and_throw_the_deadlock_when_every_attempt_deadlocks()
     {
         // given
-        var clock = new FakeTimeProvider();
+        var clock = new PostgreSqlDeadlockInjector.ArmedClock();
         await using var services = await _CreateServicesAsync(clock);
         var injector = _Injector();
         await injector.ArmAsync(failures: long.MaxValue, AbortToken);
@@ -56,7 +58,7 @@ public sealed class PostgreSqlIdempotencyDeadlockRetryTests(PostgreSqlIdempotenc
 
         // when
         var purge = store.PurgeAsync(TimeSpan.FromDays(1), 100, AbortToken).AsTask();
-        await PostgreSqlDeadlockInjector.AdvanceUntilAsync(clock, () => Task.FromResult(purge.IsCompleted), AbortToken);
+        await PostgreSqlDeadlockInjector.AdvanceThroughRetriesAsync(clock, purge, AbortToken);
 
         // then
         var thrown = await FluentActions.Awaiting(() => purge).Should().ThrowExactlyAsync<PostgresException>();

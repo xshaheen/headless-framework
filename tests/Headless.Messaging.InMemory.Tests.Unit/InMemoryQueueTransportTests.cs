@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
 using Headless.Testing.Tests;
@@ -272,14 +273,20 @@ public sealed class InMemoryQueueTransportTests : TestBase
         await worker1.SubscribeAsync(["jobs"], AbortToken);
         await worker2.SubscribeAsync(["jobs"], AbortToken);
 
-        var received = 0;
-        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var receivedIds = new ConcurrentQueue<string>();
+        var sentinels = 0;
+        var sentinelsReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        Task onMessage(TransportMessage _, object? __)
+        Task onMessage(TransportMessage message, object? __)
         {
-            if (Interlocked.Increment(ref received) == 1)
+            receivedIds.Enqueue(message.Id);
+
+            if (
+                message.Id.StartsWith("sentinel", StringComparison.Ordinal)
+                && Interlocked.Increment(ref sentinels) == 2
+            )
             {
-                tcs.TrySetResult();
+                sentinelsReceived.TrySetResult();
             }
 
             return Task.CompletedTask;
@@ -314,14 +321,18 @@ public sealed class InMemoryQueueTransportTests : TestBase
 
         // when
         var result = await transport.SendAsync(_CreateTestMessage("job-1", "jobs"), AbortToken);
-        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-        await Task.Delay(100, AbortToken);
+
+        // Competing workers take turns, so two sentinels sent after job-1 reach both workers. Each worker's channel is
+        // FIFO, so a second copy of job-1 would arrive ahead of its sentinel; waiting for both gives it time to show.
+        _ = await transport.SendAsync(_CreateTestMessage("sentinel-1", "jobs"), AbortToken);
+        _ = await transport.SendAsync(_CreateTestMessage("sentinel-2", "jobs"), AbortToken);
+        await sentinelsReceived.Task.Bounded();
         await cts.CancelAsync();
         await Task.WhenAll(listen1, listen2).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         result.Succeeded.Should().BeTrue();
-        received.Should().Be(1);
+        receivedIds.Count(id => string.Equals(id, "job-1", StringComparison.Ordinal)).Should().Be(1);
     }
 
     private static TransportMessage _CreateTestMessage(string id, string messageName)

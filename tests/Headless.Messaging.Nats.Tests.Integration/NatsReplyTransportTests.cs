@@ -41,6 +41,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
 
     private readonly List<NatsConnectionPool> _pools = [];
     private readonly List<ILoggerFactory> _loggerFactories = [];
+    private readonly ChangeSignal _logged = new();
 
     [Fact]
     public async Task should_store_requests_in_the_operator_stream_but_never_a_reply_in_any_stream()
@@ -376,7 +377,9 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         // Fully qualified: the test base exposes a LoggerFactory property of its own.
         // The factory filters at Information unless told otherwise, and the stream check logs its outcome at Debug.
         var factory = Microsoft.Extensions.Logging.LoggerFactory.Create(logging =>
-            logging.SetMinimumLevel(LogLevel.Trace).AddProvider(new CapturingLoggerProvider(log))
+            logging
+                .SetMinimumLevel(LogLevel.Trace)
+                .AddProvider(new NotifyingLoggerProvider(new CapturingLoggerProvider(log), _logged))
         );
         _loggerFactories.Add(factory);
         return new NatsReplyTransport(pool, factory.CreateLogger<NatsReplyTransport>());
@@ -393,12 +396,38 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         }
     }
 
-    private static async Task _WaitUntilAsync(Func<bool> condition)
+    private async Task _WaitUntilAsync(Func<bool> condition)
     {
-        using var bound = new CancellationTokenSource(_Bound);
-        while (!condition())
+        var reached = await _logged.WaitUntilAsync(condition, _Bound, AbortToken);
+        reached.Should().BeTrue("the awaited log entry should appear within the bound");
+    }
+
+    // Wakes the waiting test as each entry is logged, so it checks the log when it changes instead of on a timer.
+    private sealed class NotifyingLoggerProvider(ILoggerProvider inner, ChangeSignal logged) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) =>
+            new NotifyingLogger(inner.CreateLogger(categoryName), logged);
+
+        public void Dispose() => inner.Dispose();
+
+        private sealed class NotifyingLogger(ILogger inner, ChangeSignal logged) : ILogger
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(50), bound.Token);
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => inner.BeginScope(state);
+
+            public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                inner.Log(logLevel, eventId, state, exception, formatter);
+                logged.Notify();
+            }
         }
     }
 

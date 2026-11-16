@@ -6,6 +6,7 @@ using Headless.Idempotency.Caching;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -67,8 +68,9 @@ public sealed class RedisCacheIdempotencyTests(RedisIdempotencyFixture fixture) 
     {
         var prefix = _Prefix();
         var key = _Key();
-        await using var hostA = await fixture.CreateHostAsync(prefix, AbortToken);
-        await using var hostB = await fixture.CreateHostAsync(prefix, AbortToken);
+        var clock = new FakeTimeProvider();
+        await using var hostA = await fixture.CreateHostAsync(prefix, clock, AbortToken);
+        await using var hostB = await fixture.CreateHostAsync(prefix, clock, AbortToken);
 
         var first = await hostA.Operations.AdmitAsync(
             key,
@@ -77,7 +79,9 @@ public sealed class RedisCacheIdempotencyTests(RedisIdempotencyFixture fixture) 
             retention: _Retention,
             cancellationToken: AbortToken
         );
-        await Task.Delay(TimeSpan.FromSeconds(1.5), AbortToken);
+
+        // The cache provider decides a lease by the application clock, and the entry itself outlives it by the retention.
+        clock.Advance(TimeSpan.FromSeconds(1.5));
 
         var second = await _AdmitAsync(hostB, key);
 
@@ -153,6 +157,8 @@ public sealed class RedisCacheIdempotencyTests(RedisIdempotencyFixture fixture) 
         );
 
         (await host.Cache.ExistsAsync(cacheKey, AbortToken)).Should().BeTrue();
+
+        // real-wait: Redis drops the entry on its own server clock, which no fake clock moves
         await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
 
         (await host.Cache.ExistsAsync(cacheKey, AbortToken)).Should().BeFalse("Redis expired the entry");

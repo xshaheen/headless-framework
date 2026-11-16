@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Threading.Channels;
 using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 
@@ -59,35 +60,46 @@ internal sealed class PostgreSqlDeadlockInjector(string connectionString, string
         return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
-    /// <summary>Waits in real time until at least <paramref name="count" /> statements have reached the table.</summary>
-    public async Task WaitForCountAsync(long count, CancellationToken cancellationToken)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
-
-        while (await CountAsync(timeout.Token) < count)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token);
-        }
-    }
-
     /// <summary>
-    /// Moves the fake clock forward in small steps until <paramref name="done" /> holds. Stepping, rather than one jump,
-    /// covers a delay the store starts on the clock only after the test has already moved it.
+    /// Releases every retry delay the store arms on <paramref name="clock" />, one at a time, until
+    /// <paramref name="call" /> finishes. Each advance waits for the timer to exist: an advance made before the store
+    /// armed its delay is lost.
     /// </summary>
-    public static async Task AdvanceUntilAsync(
-        FakeTimeProvider clock,
-        Func<Task<bool>> done,
+    public static async Task AdvanceThroughRetriesAsync(
+        ArmedClock clock,
+        Task call,
         CancellationToken cancellationToken
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
-
-        while (!await done())
+        while (true)
         {
-            clock.Advance(TimeSpan.FromMilliseconds(5));
-            await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token);
+            var armed = clock.WaitForTimerAsync(cancellationToken);
+
+            if (await Task.WhenAny(call, armed).Bounded() == call)
+            {
+                return;
+            }
+
+            clock.Advance(await armed);
+        }
+    }
+
+    /// <summary>A fake clock that reports the due time of each timer the code under test arms.</summary>
+    internal sealed class ArmedClock : FakeTimeProvider
+    {
+        private readonly Channel<TimeSpan> _armed = Channel.CreateUnbounded<TimeSpan>();
+
+        public Task<TimeSpan> WaitForTimerAsync(CancellationToken cancellationToken)
+        {
+            return _armed.Reader.ReadAsync(cancellationToken).AsTask();
+        }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            _armed.Writer.TryWrite(dueTime);
+
+            return timer;
         }
     }
 

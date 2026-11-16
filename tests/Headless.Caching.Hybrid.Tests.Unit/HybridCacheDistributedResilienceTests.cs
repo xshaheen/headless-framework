@@ -67,10 +67,8 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     public async Task should_apply_l2_hard_timeout_when_no_l1_fallback_exists()
     {
         // given
-        var timeProvider = TimeProvider.System;
+        var timeProvider = new TimerSignalingTimeProvider(_timeProvider);
         var softTimeout = TimeSpan.FromMilliseconds(50);
-        // Far past the soft timeout: the not-completed check below runs on the real clock, and a stalled runner must
-        // not let the two hard-timed L2 reads finish inside the soft-timeout window.
         var hardTimeout = TimeSpan.FromSeconds(3);
         using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider)
@@ -91,6 +89,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
 
         var key = Faker.Random.AlphaNumeric(10);
         var factoryCalls = 0;
+        var hardTimerArmed = timeProvider.WatchForTimer(hardTimeout);
         var task = cache
             .GetOrAddAsync<int>(
                 key,
@@ -104,15 +103,18 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
             )
             .AsTask();
 
-        await l2.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await l2.ReadStarted.Task.Bounded();
 
-        // when — no L1 reserve exists, so the soft timeout must not be selected for the factory-store read
-        await Task.Delay(softTimeout + TimeSpan.FromMilliseconds(25), AbortToken);
+        // when — no L1 reserve exists, so the soft timeout must not be selected for the factory-store read: the read
+        // waits on a timer of the hard timeout, and moving the clock past the soft timeout leaves it pending
+        await hardTimerArmed.Bounded();
+        _timeProvider.Advance(softTimeout + TimeSpan.FromMilliseconds(25));
 
         // then
         task.IsCompleted.Should().BeFalse("without a local fallback the L2 read should wait for the hard timeout");
 
-        var act = async () => await task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        _timeProvider.Advance(hardTimeout);
+        var act = async () => await task.Bounded();
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("origin unavailable");
         factoryCalls.Should().Be(1);
         l2.ReadAttempts.Should()

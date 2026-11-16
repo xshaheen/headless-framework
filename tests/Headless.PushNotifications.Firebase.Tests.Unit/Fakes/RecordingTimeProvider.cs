@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Fakes;
@@ -13,9 +12,20 @@ namespace Tests.Fakes;
 internal sealed class RecordingTimeProvider()
     : FakeTimeProvider(new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.Zero))
 {
-    private readonly ConcurrentQueue<TimeSpan> _timers = new();
+    private readonly Lock _sync = new();
+    private readonly List<TimeSpan> _timers = [];
+    private readonly List<(int Count, TaskCompletionSource Source)> _waiters = [];
 
-    public IReadOnlyList<TimeSpan> Timers => [.. _timers];
+    public IReadOnlyList<TimeSpan> Timers
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return [.. _timers];
+            }
+        }
+    }
 
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
@@ -23,22 +33,42 @@ internal sealed class RecordingTimeProvider()
 
         if (dueTime != Timeout.InfiniteTimeSpan)
         {
-            _timers.Enqueue(dueTime);
+            lock (_sync)
+            {
+                _timers.Add(dueTime);
+
+                for (var i = _waiters.Count - 1; i >= 0; i--)
+                {
+                    if (_timers.Count >= _waiters[i].Count)
+                    {
+                        _waiters[i].Source.TrySetResult();
+                        _waiters.RemoveAt(i);
+                    }
+                }
+            }
         }
 
         return timer;
     }
 
-    /// <summary>Waits in real time, bounded, for the <paramref name="count"/>th timer and returns its due time.</summary>
+    /// <summary>Waits, bounded, for the <paramref name="count"/>th timer and returns its due time.</summary>
     public async Task<TimeSpan> WaitForTimerAsync(int count, CancellationToken cancellationToken)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        Task created;
 
-        while (_timers.Count < count)
+        lock (_sync)
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(5), timeout.Token);
+            if (_timers.Count >= count)
+            {
+                return _timers[count - 1];
+            }
+
+            var source = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Add((count, source));
+            created = source.Task;
         }
+
+        await created.WaitAsync(cancellationToken).Bounded();
 
         return Timers[count - 1];
     }

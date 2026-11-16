@@ -123,6 +123,7 @@ public sealed class LoggingBehaviorsTests
             new SensitiveRequest(Password: "hunter2"),
             async (_, cancellationToken) =>
             {
+                // real-wait: the slow-request threshold is measured with Stopwatch.GetTimestamp, which no test clock can move
                 await Task.Delay(TimeSpan.FromSeconds(1.1), cancellationToken);
 
                 return response;
@@ -156,6 +157,7 @@ public sealed class LoggingBehaviorsTests
             new SensitiveRequest(Password: "hunter2"),
             async (_, cancellationToken) =>
             {
+                // real-wait: the slow-request threshold is measured with Stopwatch.GetTimestamp, which no test clock can move
                 await Task.Delay(TimeSpan.FromSeconds(1.1), cancellationToken);
 
                 return new TestResponse();

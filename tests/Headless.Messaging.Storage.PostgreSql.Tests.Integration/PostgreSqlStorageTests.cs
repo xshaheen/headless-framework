@@ -811,6 +811,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             await _WaitForAdvisoryLockWaiterAsync(controlConnection, lockClassId, lockObjectId, AbortToken);
 
             await cancellation.CancelAsync();
+            // real-wait: the cancel request must have time to reach PostgreSQL and abort the blocked COMMIT if the code wrongly honored it; no signal reports a cancellation that did not happen
             await Task.Delay(TimeSpan.FromMilliseconds(500), TimeProvider.System, AbortToken);
             var commitStayedInFlight = !claimTask.IsCompleted;
 

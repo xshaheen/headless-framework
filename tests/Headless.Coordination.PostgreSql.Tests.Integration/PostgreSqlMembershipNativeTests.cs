@@ -136,6 +136,7 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         await node.Membership.RegisterAsync(AbortToken);
 
         // Age past the prune window, then trigger exactly one liveness read so the read-path prune runs a single pass.
+        // real-wait: PostgreSQL clock_timestamp() ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
         await node.Membership.GetLivenessSnapshotAsync(AbortToken);
 
@@ -207,10 +208,12 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
             .Be(NodeLivenessState.Alive);
 
         // Aged into the suspicion band -> Suspected.
+        // real-wait: PostgreSQL clock_timestamp() ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
         (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Suspected);
 
         // Aged past the dead threshold but still inside the retention window -> Dead.
+        // real-wait: PostgreSQL clock_timestamp() ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(
             CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
             AbortToken
@@ -268,6 +271,7 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         // Age past the retention window, then read the targeted path FIRST — before any snapshot read could
         // prune the row. The snapshot path produces absence by deleting; the targeted path must produce the same
         // absence by classification (returning null) without writing.
+        // real-wait: PostgreSQL clock_timestamp() ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
 
         var state = await store.ReadNodeLivenessAsync(identity, AbortToken);

@@ -190,8 +190,8 @@ public sealed class AzureServiceBusRawPayloadTests(AzureServiceBusFixture fixtur
 
             if (Interlocked.Increment(ref _calls) == 1 && HoldFirstCallFor > TimeSpan.Zero)
             {
-                // Real time: the broker's lock expires on its own clock, and only a handler that outlives it makes
-                // Azure redeliver.
+                // The broker's lock expires on its own clock, and only a handler that outlives it makes Azure redeliver.
+                // real-wait: the lock clock is the broker's, so no fake clock can expire it
                 await Task.Delay(HoldFirstCallFor, CancellationToken.None);
             }
         }

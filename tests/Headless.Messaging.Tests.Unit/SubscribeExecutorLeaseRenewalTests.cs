@@ -24,7 +24,8 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
     private static readonly TimeSpan _RenewalInterval = TimeSpan.FromSeconds(10);
     private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
 
-    private readonly FakeTimeProvider _clock = new();
+    private readonly TimerArmedSignalClock _clock = new(DateTimeOffset.UnixEpoch);
+    private readonly TaskCompletionSource _firstRenewal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly IDataStorage _storage = Substitute.For<IDataStorage>();
     private readonly ISubscribeInvoker _invoker = Substitute.For<ISubscribeInvoker>();
     private int _renewals;
@@ -95,7 +96,7 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
 
         // when
         var execution = executor.ExecuteAsync(_CreateMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
-        await _AdvanceUntilAsync(() => execution.IsCompleted);
+        await _AdvanceUntilAsync(() => execution.IsCompleted, wakeOn: execution);
         var result = await execution;
 
         // then: the handler saw its token cancelled, and nothing was written to the row another node may own
@@ -129,7 +130,7 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
 
         // when
         var execution = executor.ExecuteAsync(_CreateMessage(), _EmptyScope, _CreateDescriptor(), AbortToken);
-        await _AdvanceUntilAsync(() => execution.IsCompleted);
+        await _AdvanceUntilAsync(() => execution.IsCompleted, wakeOn: execution);
         var result = await execution;
 
         // then
@@ -186,7 +187,7 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
             _CreateDescriptor(),
             AbortToken
         );
-        await _AdvanceUntilAsync(() => execution.IsCompleted);
+        await _AdvanceUntilAsync(() => execution.IsCompleted, wakeOn: execution);
         var result = await execution;
 
         // then: the unit's callback threw, so the runner never commits the row another node may own
@@ -204,11 +205,7 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
             .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
             .Returns(async _ =>
             {
-                while (Volatile.Read(ref _renewals) < 1)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(2), AbortToken);
-                }
-
+                await _firstRenewal.Task.Bounded();
                 return new ConsumerExecutedResult(null, null, "message-id", null, null);
             });
         var runner = new RecordingInboxRunner();
@@ -221,11 +218,10 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
             _CreateDescriptor(),
             AbortToken
         );
-        await _AdvanceUntilAsync(() => execution.IsCompleted);
+        await _AdvanceUntilAsync(() => execution.IsCompleted, wakeOn: execution);
         var result = await execution;
         var renewalsAtCommit = runner.RenewalsAtCallbackExit(() => Volatile.Read(ref _renewals));
         _clock.Advance(_RenewalInterval * 3);
-        await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
 
         // then: the commit saw a settled lease identity, and nothing renewed after it
         result.Succeeded.Should().BeTrue();
@@ -300,17 +296,27 @@ public sealed class SubscribeExecutorLeaseRenewalTests : TestBase
             .Returns(_ =>
             {
                 Interlocked.Increment(ref _renewals);
+                _firstRenewal.TrySetResult();
                 return ValueTask.FromResult(renewed);
             });
     }
 
-    /// <summary>Steps the renewal cadence until <paramref name="condition"/> holds; the loop may still be starting.</summary>
-    private async Task _AdvanceUntilAsync(Func<bool> condition)
+    /// <summary>
+    /// Steps the renewal cadence until <paramref name="condition"/> holds, advancing only once the loop has armed its
+    /// next wait; <paramref name="wakeOn"/> ends a wait for an arm that will not come because the loop has stopped.
+    /// </summary>
+    private async Task _AdvanceUntilAsync(Func<bool> condition, Task? wakeOn = null)
     {
-        for (var step = 0; step < 1_000 && !condition(); step++)
+        while (!condition())
         {
+            var armed = _clock.WaitForArmedTimerAsync();
+            await (wakeOn is null ? armed : Task.WhenAny(armed, wakeOn));
+            if (condition())
+            {
+                break;
+            }
+
             _clock.Advance(_RenewalInterval);
-            await Task.Delay(TimeSpan.FromMilliseconds(2), AbortToken);
         }
 
         condition().Should().BeTrue();

@@ -37,10 +37,10 @@ public sealed class HybridCacheTwoReplicaInvalidationTests : TestBase
             );
 
         // then - a competing subscription would have handed the one copy to a single replica
-        await _WaitUntilAsync(async () =>
-            !await firstCache.LocalCache.ExistsAsync("key", AbortToken)
-            && !await secondCache.LocalCache.ExistsAsync("key", AbortToken)
-        );
+        await first.GetRequiredService<InvalidationProbe>().WhenInvalidatedAsync(1).Bounded();
+        await second.GetRequiredService<InvalidationProbe>().WhenInvalidatedAsync(1).Bounded();
+        (await firstCache.LocalCache.ExistsAsync("key", AbortToken)).Should().BeFalse();
+        (await secondCache.LocalCache.ExistsAsync("key", AbortToken)).Should().BeFalse();
         firstCache.InvalidateCacheCalls.Should().Be(1);
         secondCache.InvalidateCacheCalls.Should().Be(1);
     }
@@ -65,7 +65,7 @@ public sealed class HybridCacheTwoReplicaInvalidationTests : TestBase
         await firstCache.UpsertAsync("other-3", "value", TimeSpan.FromMinutes(5), AbortToken);
 
         // then - the second replica received every invalidation, and now reads the new value from L2
-        await _WaitUntilAsync(() => ValueTask.FromResult(secondCache.InvalidateCacheCalls >= 4));
+        await second.GetRequiredService<InvalidationProbe>().WhenInvalidatedAsync(4).Bounded();
         (await secondCache.LocalCache.ExistsAsync("key", AbortToken)).Should().BeFalse();
         (await secondCache.GetAsync<string>("key", AbortToken)).Value.Should().Be("new");
     }
@@ -99,7 +99,8 @@ public sealed class HybridCacheTwoReplicaInvalidationTests : TestBase
             );
 
         // then - only the replica with the gap drops its L1
-        await _WaitUntilAsync(async () => !await secondCache.LocalCache.ExistsAsync("key", AbortToken));
+        await second.GetRequiredService<InvalidationProbe>().WhenEstablishedAsync(2).Bounded();
+        (await secondCache.LocalCache.ExistsAsync("key", AbortToken)).Should().BeFalse();
         (await firstCache.LocalCache.ExistsAsync("key", AbortToken)).Should().BeTrue();
     }
 
@@ -130,6 +131,11 @@ public sealed class HybridCacheTwoReplicaInvalidationTests : TestBase
             setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
         });
 
+        // Registered after the hybrid's own router, so the probe hears an invalidation only once the router applied it.
+        var probe = new InvalidationProbe();
+        services.AddSingleton(probe);
+        services.AddSingleton<IHybridCacheInvalidationListener>(probe);
+
         // Registered last, so both replicas resolve the one transport instead of their own.
         services.AddSingleton(transport);
 
@@ -138,13 +144,61 @@ public sealed class HybridCacheTwoReplicaInvalidationTests : TestBase
         return provider;
     }
 
-    private static async Task _WaitUntilAsync(Func<ValueTask<bool>> condition)
+    /// <summary>
+    /// Counts what the invalidation consumer delivers to this replica's listeners, so a test awaits the delivery
+    /// instead of polling L1.
+    /// </summary>
+    private sealed class InvalidationProbe : IHybridCacheInvalidationListener
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        while (!await condition())
+        private readonly Lock _lock = new();
+        private readonly List<(Func<bool> Reached, TaskCompletionSource Signal)> _waiters = [];
+        private long _invalidations;
+        private long _generation;
+
+        public Task WhenInvalidatedAsync(long count) => _WaitAsync(() => _invalidations >= count);
+
+        public Task WhenEstablishedAsync(long generation) => _WaitAsync(() => _generation >= generation);
+
+        public ValueTask OnInvalidationAsync(CacheInvalidationMessage message, CancellationToken cancellationToken)
         {
-            await Task.Delay(20, timeout.Token);
+            _Record(() => _invalidations++);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask OnSubscriptionEstablishedAsync(long generation, CancellationToken cancellationToken)
+        {
+            _Record(() => _generation = Math.Max(_generation, generation));
+            return ValueTask.CompletedTask;
+        }
+
+        private Task _WaitAsync(Func<bool> reached)
+        {
+            lock (_lock)
+            {
+                if (reached())
+                {
+                    return Task.CompletedTask;
+                }
+
+                var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiters.Add((reached, signal));
+
+                return signal.Task;
+            }
+        }
+
+        private void _Record(Action update)
+        {
+            lock (_lock)
+            {
+                update();
+
+                foreach (var waiter in _waiters.Where(waiter => waiter.Reached()).ToArray())
+                {
+                    waiter.Signal.TrySetResult();
+                    _waiters.Remove(waiter);
+                }
+            }
         }
     }
 

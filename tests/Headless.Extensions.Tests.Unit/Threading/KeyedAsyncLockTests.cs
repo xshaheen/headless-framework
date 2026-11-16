@@ -121,8 +121,13 @@ public sealed class KeyedAsyncLockTests : TestBase
             AbortToken
         );
 
-        // A negative window: without mutual exclusion task2 would enter and record 2 here.
-        await Task.Delay(50, AbortToken);
+        // Without mutual exclusion a second acquirer gets in while task1 holds the key. A bounded attempt on the fake
+        // clock answers that without waiting: it can only give up once the clock reaches its timeout.
+        var timeProvider = new FakeTimeProvider();
+        var probe = keyedLock.LockAsync("shared-key", TimeSpan.FromSeconds(5), timeProvider, AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        using var probeReleaser = await probe;
+        probeReleaser.Should().BeNull("a second acquirer must not get in while task1 holds the key");
         task2.IsCompleted.Should().BeFalse("task2 must wait while task1 holds the key");
 
         lock1Released.SetResult();
@@ -169,9 +174,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         // then - both should acquire without blocking
         var bothTask = Task.WhenAll(key1Acquired.Task, key2Acquired.Task);
         // A broken lock blocks forever instead of running late, so the bound only has to outlast a starved pool.
-        var completed = await Task.WhenAny(bothTask, Task.Delay(TimeSpan.FromSeconds(30), AbortToken));
-
-        completed.Should().Be(bothTask, "both locks should be acquired concurrently");
+        await bothTask.Bounded();
 
         bothAcquired.SetResult();
         await Task.WhenAll(task1, task2);
@@ -262,8 +265,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         // then - should complete without deadlock
         var allTasks = Task.WhenAll(tasks);
         // A broken lock blocks forever instead of running late, so the bound only has to outlast a starved pool.
-        var completed = await Task.WhenAny(allTasks, Task.Delay(TimeSpan.FromSeconds(30), AbortToken));
-        completed.Should().Be(allTasks, "all locks should complete within timeout");
+        await allTasks.Bounded();
     }
 
     [Fact]
@@ -376,9 +378,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         // then - both should acquire without blocking (different keys)
         var bothTask = Task.WhenAll(key1Acquired.Task, key2Acquired.Task);
         // A broken lock blocks forever instead of running late, so the bound only has to outlast a starved pool.
-        var completed = await Task.WhenAny(bothTask, Task.Delay(TimeSpan.FromSeconds(30), AbortToken));
-
-        completed.Should().Be(bothTask, "case-different keys should be treated as different locks");
+        await bothTask.Bounded();
 
         bothAcquired.SetResult();
         await Task.WhenAll(task1, task2);
@@ -390,16 +390,17 @@ public sealed class KeyedAsyncLockTests : TestBase
         // given
         using var keyedLock = new KeyedAsyncLock();
         var lockAcquired = new TaskCompletionSource();
+        var holderRelease = new TaskCompletionSource();
         using var cts = new CancellationTokenSource();
 
         // when - acquire lock, then try to acquire same key with cancellation
-        _ = Task.Run(
+        var holder = Task.Run(
             async () =>
             {
                 using (await keyedLock.LockAsync("cancel-key", AbortToken))
                 {
                     lockAcquired.SetResult();
-                    await Task.Delay(5000, AbortToken); // Hold lock for a while
+                    await holderRelease.Task.Bounded();
                 }
             },
             AbortToken
@@ -411,8 +412,16 @@ public sealed class KeyedAsyncLockTests : TestBase
         cts.CancelAfter(50);
 
         // then
-        var act = async () => await keyedLock.LockAsync("cancel-key", cts.Token);
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        try
+        {
+            var act = async () => await keyedLock.LockAsync("cancel-key", cts.Token);
+            await act.Should().ThrowAsync<OperationCanceledException>();
+        }
+        finally
+        {
+            holderRelease.SetResult();
+            await holder;
+        }
     }
 
     [Fact]
@@ -750,13 +759,7 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         // then - lock2 should acquire immediately (instance-based locking, not global)
         // A broken lock blocks forever instead of running late, so the bound only has to outlast a starved pool.
-        var lock2AcquiredResult = await Task.WhenAny(
-            lock2Acquired.Task,
-            Task.Delay(TimeSpan.FromSeconds(30), AbortToken)
-        );
-        lock2AcquiredResult
-            .Should()
-            .Be(lock2Acquired.Task, "lock2 should acquire immediately because lock2 has its own lock dictionary");
+        await lock2Acquired.Task.Bounded();
 
         lock1CanRelease.SetResult();
         await Task.WhenAll(task1, task2);

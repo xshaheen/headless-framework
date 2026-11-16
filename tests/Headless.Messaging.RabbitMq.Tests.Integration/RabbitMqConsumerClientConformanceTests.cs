@@ -258,6 +258,7 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
         var destination = $"malformed-{Guid.NewGuid():N}";
         var group = $"group-{Guid.NewGuid():N}";
         var terminalLogs = 0;
+        var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var session = await fixture.CreateMalformedSessionAsync(
             exchangeName,
             destination,
@@ -270,6 +271,7 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
                 if (log.Reason?.Contains("terminally rejected", StringComparison.Ordinal) == true)
                 {
                     Interlocked.Increment(ref terminalLogs);
+                    rejected.TrySetResult();
                 }
             },
             cancellationToken: AbortToken
@@ -288,13 +290,7 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
         );
         result.Succeeded.Should().BeTrue();
 
-        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
-        {
-            while (Volatile.Read(ref terminalLogs) == 0)
-            {
-                await Task.Delay(20, timeout.Token);
-            }
-        }
+        await rejected.Task.Bounded();
 
         await session.StopAsync(TimeSpan.FromSeconds(2));
         await using var replacement = await session.CreateReplacementAsync(AbortToken);

@@ -234,7 +234,16 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
             new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(5) },
             AbortToken
         );
-        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        await WaitForWriterQueuedAsync(resource, AbortToken);
+
+        // A zero-timeout probe fails only while the first writer still holds the lock, so it proves the contention the
+        // queued writer waits behind without a quiet window; a lock that let a second writer in would hand it a lease.
+        var probe = await provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        probe.Should().BeNull("the first writer still holds the lock");
         secondWriterTask.IsCompleted.Should().BeFalse();
 
         await firstWriter.ReleaseAsync();
@@ -340,7 +349,7 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
             await Task.Yield();
         }
 
-        await acquireTask;
+        await acquireTask.Bounded();
     }
 
     public virtual async Task should_prefer_queued_writer_over_new_reader()

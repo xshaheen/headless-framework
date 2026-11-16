@@ -857,6 +857,7 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         first.Should().NotBeSameAs(pending, "the write waits on the row the fence holds");
 
         // The lease runs out while the write waits: a clock read before the row lock would still call it live.
+        // real-wait: the lease expires on the database's own clock while the write is blocked behind the fence's row lock, so no other connection can age the row and no host clock moves the store's
         await Task.Delay(lease, AbortToken);
         await transaction.CommitAsync(AbortToken);
         var written = await pending.WaitAsync(LeasesFixtureExtensions.ReleaseTimeout, AbortToken);

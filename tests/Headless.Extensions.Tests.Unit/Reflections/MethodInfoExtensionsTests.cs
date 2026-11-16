@@ -41,7 +41,7 @@ public sealed class MethodInfoExtensionsTests
 #pragma warning disable VSTHRD100 // Intentional async-void test data for reflection tests.
         public static async void AsyncVoidMethod()
         {
-            await Task.Delay(10);
+            await Task.Yield();
         }
 #pragma warning restore VSTHRD100
 
@@ -62,7 +62,7 @@ public sealed class MethodInfoExtensionsTests
 
         public static async ValueTask AsyncValueTaskMethod()
         {
-            await Task.Delay(10);
+            await Task.Yield();
         }
 
         public static IAsyncEnumerable<int> IAsyncEnumerableMethod()

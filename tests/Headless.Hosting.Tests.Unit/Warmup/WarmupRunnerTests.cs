@@ -5,6 +5,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Warmup;
@@ -38,20 +39,20 @@ public sealed class WarmupRunnerTests : TestBase
     {
         // given
         var warmup = new FlakyWarmup("Store", failures: 1);
-        using var host = _BuildHost(services => services.AddWarmup(_ => warmup));
+        using var failure = new WarmupFailureSignal();
+        using var host = _BuildHost(services =>
+        {
+            services.AddWarmup(_ => warmup);
+            services.AddSingleton<ILoggerProvider>(failure);
+        });
 
         // when
         await host.StartAsync(AbortToken);
-        await warmup.FirstFailure.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await warmup.FirstFailure.Bounded();
 
-        // The runner records the error just after the attempt returns, so read it once it is there.
+        // The runner records the error just after the attempt returns and logs it right after, so read it then.
+        await failure.Recorded.Bounded();
         var meanwhile = await _CheckAsync(host.Services);
-
-        for (var i = 0; i < 50 && !_HasError(meanwhile); i++)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
-            meanwhile = await _CheckAsync(host.Services);
-        }
 
         await _Runner(host).WaitForInitializationAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
@@ -162,22 +163,18 @@ public sealed class WarmupRunnerTests : TestBase
         // given
         var never = new TaskCompletionSource();
         var store = new FlakyWarmup("Store", failures: int.MaxValue);
+        using var failure = new WarmupFailureSignal();
         using var host = _BuildHost(services =>
         {
             services.AddWarmup(_ => new BlockingWarmup("Cache", never.Task));
             services.AddWarmup(_ => store);
+            services.AddSingleton<ILoggerProvider>(failure);
         });
         await host.StartAsync(AbortToken);
 
         // The bounded wait below tests only the cancellation message, so let the store's first error be recorded
         // first; on a starved thread pool the attempt may not run inside the bound.
-        await store.FirstFailure.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-
-        while (!_HasError(await _CheckAsync(host.Services)) && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
-        }
+        await failure.Recorded.Bounded();
 
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         bounded.CancelAfter(TimeSpan.FromSeconds(1));
