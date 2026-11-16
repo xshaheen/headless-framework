@@ -955,6 +955,79 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
             .Be(LeaseSettlementStatus.Settled);
     }
 
+    /// <summary>
+    /// A table renders each distinct write once and reuses the statement, so every input that shapes the statement
+    /// must keep two writes apart: the assignments, the transition, and the columns read back, compared by value even
+    /// when the caller reuses and changes one list between calls.
+    /// </summary>
+    public virtual async Task should_run_each_distinct_composed_write_as_its_own_statement()
+    {
+        var id = await InsertAsync("pending");
+        await using var connection = Fixture.CreateConnection();
+        var row = (
+            await FencedRows.GrantAsync(_table, connection, null, id, LongDuration, Holder("node-a"), AbortToken)
+        )!.Row!;
+        string[] returning = ["status"];
+
+        FencedRowWrite write(string set, string next) =>
+            new(set, Returning: returning, Bind: command => Dialect.AddParameter(command, "Next", _Status, next));
+
+        var first = await FencedRows.WriteAsync(
+            _table,
+            connection,
+            null,
+            row,
+            write("status = @Next", "first"),
+            _ReadStatusAsync,
+            AbortToken
+        );
+        var reshaped = await FencedRows.WriteAsync(
+            _table,
+            connection,
+            null,
+            row,
+            write("status = (@Next)", "second"),
+            _ReadStatusAsync,
+            AbortToken
+        );
+
+        returning[0] = "lease_holder";
+        var holder = await FencedRows.WriteAsync(
+            _table,
+            connection,
+            null,
+            row,
+            write("status = @Next", "third"),
+            _ReadStatusAsync,
+            AbortToken
+        );
+        var stored = await ReadAsync(id);
+
+        returning[0] = "status";
+        var settled = await FencedRows.SettleAsync(
+            _table,
+            connection,
+            null,
+            row,
+            write("status = @Next", "settled"),
+            _ReadStatusAsync,
+            AbortToken
+        );
+
+        first.Match<string?>(accepted: (status, _) => status, rejected: _ => null).Should().Be("first");
+        reshaped.Match<string?>(accepted: (status, _) => status, rejected: _ => null).Should().Be("second");
+        holder
+            .Match<string?>(accepted: (value, _) => value, rejected: _ => null)
+            .Should()
+            .Be("node-a", "the changed list reads the holder column back, not the status the earlier write read");
+        stored.Status.Should().Be("third");
+        stored.Lease.State.Should().Be(RowLeaseState.Active, "a write keeps the lease");
+        settled.IsAccepted.Should().BeTrue();
+        (await ReadAsync(id))
+            .Should()
+            .Be(new StoredWorkItem("settled", stored.Lease with { State = RowLeaseState.Settled, TakeoverCount = 0 }));
+    }
+
     #endregion
 
     #region Fence, status, sweep
