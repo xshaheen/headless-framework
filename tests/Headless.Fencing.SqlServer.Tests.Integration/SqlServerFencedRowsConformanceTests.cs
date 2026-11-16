@@ -116,6 +116,12 @@ public sealed class SqlServerFencedRowsConformanceTests(SqlServerFencingFixture 
     }
 
     [Fact]
+    public override Task should_run_each_distinct_composed_write_as_its_own_statement()
+    {
+        return base.should_run_each_distinct_composed_write_as_its_own_statement();
+    }
+
+    [Fact]
     public override Task should_give_up_waiting_on_a_held_row_after_the_tables_command_timeout()
     {
         return base.should_give_up_waiting_on_a_held_row_after_the_tables_command_timeout();
