@@ -148,9 +148,9 @@ public sealed class SqsRejectBatcherTests : TestBase
 
         // when: rejects arrive meanwhile
         var rejects = Enumerable.Range(1, 3).Select(i => batcher.RejectAsync($"receipt-{i}", AbortToken)).ToArray();
-        await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
 
-        // then: nothing is sent until the extension is done
+        // then: nothing is sent until the extension is done. The flush starts inside the first reject and takes the gate
+        // before any call, so a send that skipped the gate would already be recorded when that reject returns.
         _sqs.ReceivedCalls().Should().BeEmpty();
 
         // when: the extension returns

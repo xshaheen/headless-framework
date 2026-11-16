@@ -359,22 +359,29 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
                 return lateSender;
             });
 
-        var pool = _CreatePool(client, () => 0);
+        await using var pool = _CreatePool(client, () => 0);
         _ = pool.GetSender("warmup");
 
         var blockedTask = Task.Run(() => pool.GetSender("blocked"), AbortToken);
         await createEntered.Task.Bounded();
 
         // when: dispose runs while the sender is mid-creation
-        var disposeTask = pool.DisposeAsync().AsTask();
-        var completed = await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5), AbortToken));
+        // A dispose that blocks on the lazy blocks inside this call, so it runs off the test thread to fail fast.
+        var disposeTask = Task.Run(() => pool.DisposeAsync().AsTask(), AbortToken);
 
         // then: dispose skips the unmaterialized lazy instead of blocking on it, drains the
         // warmed sender, and disposes the client
-        completed.Should().BeSameAs(disposeTask);
-        releaseCreate.SetResult();
+        try
+        {
+            await disposeTask.Bounded();
+        }
+        finally
+        {
+            // A dispose that blocked on the lazy would leave the creating thread parked past the failure.
+            releaseCreate.TrySetResult();
+        }
+
         _ = await blockedTask;
-        await disposeTask;
         await warmupSender.Received(1).DisposeAsync();
         await client.Received(1).DisposeAsync();
     }

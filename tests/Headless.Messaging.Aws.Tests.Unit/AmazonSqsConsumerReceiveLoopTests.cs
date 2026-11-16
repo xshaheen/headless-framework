@@ -10,7 +10,6 @@ using Headless.Messaging.Aws;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Time.Testing;
 using SqsMessage = Amazon.SQS.Model.Message;
 
 namespace Tests;
@@ -24,11 +23,15 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
     private const string _BusyUrl = "http://test/busy";
     private const string _EmptyUrl = "http://test/empty";
 
-    private readonly FakeTimeProvider _time = new();
+    private readonly TimerSignalingFakeTimeProvider _time = new();
     private readonly IAmazonSQS _sqs = Substitute.For<IAmazonSQS>();
     private readonly ILogger<AmazonSqsConsumerClient> _logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
     private readonly ConcurrentQueue<string> _handled = new();
     private readonly ConcurrentDictionary<string, int> _polls = new(StringComparer.Ordinal);
+
+    // Released on every state change a test waits on, so a wait re-checks its condition when something changed and
+    // never on a timer.
+    private readonly SemaphoreSlim _changed = new(0);
 
     public AmazonSqsConsumerReceiveLoopTests()
     {
@@ -39,7 +42,12 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
                 Arg.Any<List<ChangeMessageVisibilityBatchRequestEntry>>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(Task.FromResult(new ChangeMessageVisibilityBatchResponse()));
+            .Returns(_ =>
+            {
+                // NSubstitute records the call before it runs this, so the waiter sees it when it re-checks.
+                _changed.Release();
+                return Task.FromResult(new ChangeMessageVisibilityBatchResponse());
+            });
     }
 
     [Fact]
@@ -127,10 +135,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         await client.SubscribeAsync([_BusyUrl], AbortToken);
         var emptyPolls = _polls[_EmptyUrl];
         var busyPolls = _polls[_BusyUrl];
-        for (var round = 0; round < 5; round++)
-        {
-            await _AdvanceAndWaitForPollAsync(_BusyUrl, busyPolls + round + 1);
-        }
+        await _time.AdvanceUntilAsync(() => _polls[_BusyUrl] >= busyPolls + 5, TimeSpan.FromSeconds(1), AbortToken);
 
         // then: at most the poll that was already running when the URL was dropped is made
         _polls[_EmptyUrl].Should().BeLessThanOrEqualTo(emptyPolls + 1);
@@ -160,11 +165,12 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         await _WaitForPollAsync(_EmptyUrl);
 
-        // when
+        // when: shutdown reaches its drain, which arms the drain's timer, while the handler is still running
+        var drainArmed = _time.WatchForTimer(TimeSpan.FromSeconds(30));
         var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(30), AbortToken).AsTask();
-        await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+        await drainArmed.Bounded();
         finishHandler.TrySetResult();
-        await _AdvanceUntilCompletedAsync(shutdown);
+        await shutdown.Bounded();
 
         // then: listening ended normally once the loops stopped, and the handled message was settled by the handler
         await listening.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -204,7 +210,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
             )
             .Returns(_ =>
             {
-                _polls.AddOrUpdate(_BusyUrl, 1, static (_, count) => count + 1);
+                _RecordPoll(_BusyUrl);
                 return inFlightPoll.Task;
             });
         await using var client = _CreateClient(concurrency: 1, _BusyUrl);
@@ -230,6 +236,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         return async (message, sender) =>
         {
             _handled.Enqueue(message.Id);
+            _changed.Release();
             await client.CommitAsync(sender);
         };
     }
@@ -242,7 +249,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
             )
             .Returns(call =>
             {
-                _polls.AddOrUpdate(queueUrl, 1, static (_, count) => count + 1);
+                _RecordPoll(queueUrl);
                 return _HangUntilCancelledAsync(call.Arg<CancellationToken>());
             });
     }
@@ -255,7 +262,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
             )
             .Returns(_ =>
             {
-                _polls.AddOrUpdate(queueUrl, 1, static (_, count) => count + 1);
+                _RecordPoll(queueUrl);
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
     }
@@ -270,7 +277,7 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
             )
             .Returns(call =>
             {
-                _polls.AddOrUpdate(queueUrl, 1, static (_, count) => count + 1);
+                _RecordPoll(queueUrl);
 
                 return Interlocked.Increment(ref received) == 1
                     ? Task.FromResult(new ReceiveMessageResponse { Messages = [.. receiptHandles.Select(_Message)] })
@@ -306,73 +313,58 @@ public sealed class AmazonSqsConsumerReceiveLoopTests : TestBase
         return client;
     }
 
-    private async Task _WaitForHandledAsync(int count)
+    private void _RecordPoll(string queueUrl)
     {
-        for (var i = 0; i < 500 && _handled.Count < count; i++)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
-        }
-
-        _handled.Count.Should().BeGreaterThanOrEqualTo(count, "the messages are handled without waiting for a poll");
+        _polls.AddOrUpdate(queueUrl, 1, static (_, count) => count + 1);
+        _changed.Release();
     }
 
-    private async Task _WaitForVisibilityResetAsync(string receiptHandle)
+    private Task _WaitForHandledAsync(int count)
     {
-        bool released() =>
-            _sqs.ReceivedCalls()
-                .Where(call =>
-                    string.Equals(
-                        call.GetMethodInfo().Name,
-                        nameof(IAmazonSQS.ChangeMessageVisibilityBatchAsync),
-                        StringComparison.Ordinal
+        return _WaitUntilAsync(() => _handled.Count >= count, "the messages are handled without waiting for a poll");
+    }
+
+    private Task _WaitForVisibilityResetAsync(string receiptHandle)
+    {
+        return _WaitUntilAsync(
+            () =>
+                _sqs.ReceivedCalls()
+                    .Where(call =>
+                        string.Equals(
+                            call.GetMethodInfo().Name,
+                            nameof(IAmazonSQS.ChangeMessageVisibilityBatchAsync),
+                            StringComparison.Ordinal
+                        )
                     )
-                )
-                .SelectMany(call => (List<ChangeMessageVisibilityBatchRequestEntry>)call.GetArguments()[1]!)
-                .Any(entry =>
-                    string.Equals(entry.ReceiptHandle, receiptHandle, StringComparison.Ordinal)
-                    && entry.VisibilityTimeout == 0
-                );
-
-        for (var i = 0; i < 500 && !released(); i++)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
-        }
-
-        released().Should().BeTrue("a paused consumer hands a late-arriving message back to the queue");
+                    .SelectMany(call => (List<ChangeMessageVisibilityBatchRequestEntry>)call.GetArguments()[1]!)
+                    .Any(entry =>
+                        string.Equals(entry.ReceiptHandle, receiptHandle, StringComparison.Ordinal)
+                        && entry.VisibilityTimeout == 0
+                    ),
+            "a paused consumer hands a late-arriving message back to the queue"
+        );
     }
 
-    private async Task _WaitForPollAsync(string queueUrl, int count = 1)
+    private Task _WaitForPollAsync(string queueUrl)
     {
-        for (var i = 0; i < 500 && _polls.GetValueOrDefault(queueUrl) < count; i++)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
-        }
-
-        _polls.GetValueOrDefault(queueUrl).Should().BeGreaterThanOrEqualTo(count);
+        return _WaitUntilAsync(() => _polls.GetValueOrDefault(queueUrl) >= 1, $"{queueUrl} is polled");
     }
 
-    private async Task _AdvanceAndWaitForPollAsync(string queueUrl, int count)
+    private async Task _WaitUntilAsync(Func<bool> condition, string because)
     {
-        for (var i = 0; i < 500 && _polls.GetValueOrDefault(queueUrl) < count; i++)
+        try
         {
-            _time.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
+            while (!condition())
+            {
+                await _changed.WaitAsync(AbortToken).Bounded();
+            }
         }
-
-        _polls.GetValueOrDefault(queueUrl).Should().BeGreaterThanOrEqualTo(count);
-    }
-
-    // Shutdown registers its drain timer on the fake clock only once it reaches the drain, so time is advanced in steps
-    // until it completes.
-    private async Task _AdvanceUntilCompletedAsync(Task task)
-    {
-        for (var step = 0; step < 100 && !task.IsCompleted; step++)
+        catch (TimeoutException)
         {
-            _time.Advance(TimeSpan.FromSeconds(1));
-            _ = await Task.WhenAny(task, Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken));
+            // Name what never happened instead of the awaited signal.
+            condition().Should().BeTrue(because);
+            throw;
         }
-
-        await task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
     }
 
     private static async Task _IgnoreCancellationAsync(Task task)

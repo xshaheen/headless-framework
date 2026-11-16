@@ -590,7 +590,15 @@ public sealed class RedisConsumerClientTests : TestBase
                 )
             );
         var logger = new CapturingLogger<RedisConsumerClient>();
-        await using var client = new RedisConsumerClient("orders", 1, _mockStreamManager, _options, logger);
+        var timeProvider = new DrainWatchingTimeProvider();
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            _options,
+            logger,
+            timeProvider: timeProvider
+        );
         client.AttachCallbacks(
             (_, _) =>
             {
@@ -605,7 +613,10 @@ public sealed class RedisConsumerClientTests : TestBase
 
         // when
         var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(30), AbortToken).AsTask();
-        var completedBeforeRead = await Task.WhenAny(shutdown, Task.Delay(200, AbortToken)) == shutdown;
+
+        // A shutdown that waits for the read loop arms the drain's timeout timer and then stays pending; one that does
+        // not finishes without ever arming it. Exactly one of the two happens, so no wait is needed to tell them apart.
+        var completedBeforeRead = await Task.WhenAny(shutdown, timeProvider.DrainWaiting) == shutdown;
         completeRead.SetResult();
         await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -882,6 +893,7 @@ public sealed class RedisConsumerClientTests : TestBase
     {
         // given a read loop that cannot reach Redis twice, then reads it on every later poll
         _SetupGroupReads();
+        var allReadsConsumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _mockStreamManager
             .PollStreamsLatestMessagesAsync(
                 Arg.Any<string[]>(),
@@ -894,6 +906,7 @@ public sealed class RedisConsumerClientTests : TestBase
             .Returns(callInfo =>
                 _ReadsWithOutcomes(
                     callInfo.ArgAt<Action<Exception?>?>(4),
+                    allReadsConsumed,
                     new RedisException("No connection is available"),
                     new RedisException("No connection is available"),
                     null,
@@ -909,14 +922,10 @@ public sealed class RedisConsumerClientTests : TestBase
         // when
         using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         var listen = client.ListeningAsync(TimeSpan.FromSeconds(1), listening.Token).AsTask();
-        using (var wait = CancellationTokenSource.CreateLinkedTokenSource(AbortToken))
-        {
-            wait.CancelAfter(TimeSpan.FromSeconds(10));
-            while (reports.Count < 3)
-            {
-                await Task.Delay(10, wait.Token);
-            }
-        }
+
+        // The reads run in order, so every outcome, the repeated success included, has been reported or not by the
+        // time the loop asks for the batch after the last one.
+        await allReadsConsumed.Task.Bounded();
 
         await listening.CancelAsync();
         await listen;
@@ -927,6 +936,7 @@ public sealed class RedisConsumerClientTests : TestBase
 
     private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _ReadsWithOutcomes(
         Action<Exception?>? onRead,
+        TaskCompletionSource allConsumed,
         params Exception?[] outcomes
     )
     {
@@ -936,7 +946,29 @@ public sealed class RedisConsumerClientTests : TestBase
             yield return [];
         }
 
+        allConsumed.TrySetResult();
+
         await Task.CompletedTask;
+    }
+
+    // Reports the timer a drain arms for its timeout, which only happens while it waits on a handler or read loop.
+    private sealed class DrainWatchingTimeProvider : FakeTimeProvider
+    {
+        private readonly TaskCompletionSource _drainWaiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task DrainWaiting => _drainWaiting.Task;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+
+            if (dueTime != Timeout.InfiniteTimeSpan)
+            {
+                _drainWaiting.TrySetResult();
+            }
+
+            return timer;
+        }
     }
 
     private sealed record LogEntry(int EventId, string Message, Exception? Exception);

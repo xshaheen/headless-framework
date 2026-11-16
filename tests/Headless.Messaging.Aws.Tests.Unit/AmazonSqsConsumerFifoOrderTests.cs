@@ -31,6 +31,10 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
     private readonly ConcurrentQueue<string> _committed = new();
     private readonly ConcurrentQueue<ReceiveMessageRequest> _requests = new();
 
+    // Released on every state change a test waits on, so a wait re-checks its condition when something changed and
+    // never on a timer.
+    private readonly SemaphoreSlim _changed = new(0);
+
     public AmazonSqsConsumerFifoOrderTests()
     {
         _sqs.DeleteMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -59,7 +63,12 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
                 Arg.Any<List<ChangeMessageVisibilityBatchRequestEntry>>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(Task.FromResult(new ChangeMessageVisibilityBatchResponse()));
+            .Returns(_ =>
+            {
+                // NSubstitute records the call before it runs this, so the waiter sees it when it re-checks.
+                _changed.Release();
+                return Task.FromResult(new ChangeMessageVisibilityBatchResponse());
+            });
     }
 
     [Fact]
@@ -83,7 +92,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
             }
 
             await client.CommitAsync(sender);
-            _committed.Enqueue(message.Id);
+            _Committed(message.Id);
         };
         using var cts = new CancellationTokenSource();
 
@@ -118,7 +127,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
             }
 
             await client.CommitAsync(sender);
-            _committed.Enqueue(message.Id);
+            _Committed(message.Id);
         };
         using var cts = new CancellationTokenSource();
 
@@ -207,7 +216,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
             }
 
             await client.CommitAsync(sender);
-            _committed.Enqueue(message.Id);
+            _Committed(message.Id);
         };
         using var cts = new CancellationTokenSource();
 
@@ -232,7 +241,7 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         client.OnMessageCallback = async (message, sender) =>
         {
             await client.CommitAsync(sender);
-            _committed.Enqueue(message.Id);
+            _Committed(message.Id);
         };
         using var cts = new CancellationTokenSource();
 
@@ -317,14 +326,27 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
         return client;
     }
 
-    private static async Task _WaitUntilAsync(Func<bool> condition, string because)
+    private void _Committed(string id)
     {
-        for (var i = 0; i < 500 && !condition(); i++)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
-        }
+        _committed.Enqueue(id);
+        _changed.Release();
+    }
 
-        condition().Should().BeTrue(because);
+    private async Task _WaitUntilAsync(Func<bool> condition, string because)
+    {
+        try
+        {
+            while (!condition())
+            {
+                await _changed.WaitAsync(AbortToken).Bounded();
+            }
+        }
+        catch (TimeoutException)
+        {
+            // Name what never happened instead of the awaited signal.
+            condition().Should().BeTrue(because);
+            throw;
+        }
     }
 
     private static async Task _IgnoreCancellationAsync(Task task)
