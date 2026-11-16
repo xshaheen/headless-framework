@@ -49,6 +49,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var identity = await node.Membership.RegisterAsync(AbortToken);
 
         // Stay below the suspicion threshold so the node is unambiguously still alive when we beat.
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspicionThreshold * 0.8, AbortToken);
         var accepted = await node.Membership.HeartbeatAsync(AbortToken);
         var live = await node.Membership.GetLiveNodesAsync(AbortToken);
@@ -66,6 +67,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var identity = await node.Membership.RegisterAsync(AbortToken);
 
+        // real-wait: the store stamps each beat with its own clock (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); a second beat must land later on it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.HeartbeatInterval, AbortToken);
         var before = TimeProvider.System.GetUtcNow();
         var firstAccepted = await node.Membership.HeartbeatAsync(AbortToken);
@@ -73,6 +75,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var first = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
 
         // Stay below the suspicion threshold so the second beat is accepted.
+        // real-wait: the store stamps each beat with its own clock (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); a second beat must land later on it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.HeartbeatInterval, AbortToken);
         var secondAccepted = await node.Membership.HeartbeatAsync(AbortToken);
         var second = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
@@ -90,6 +93,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var identity = await node.Membership.RegisterAsync(AbortToken);
 
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.DeadButRetainedWait, AbortToken);
 
         var live = await node.Membership.GetLiveNodesAsync(AbortToken);
@@ -196,6 +200,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
 
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.DeadButRetainedWait, AbortToken);
 
         await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
@@ -242,6 +247,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var identity = await node.Membership.RegisterAsync(AbortToken);
         var store = node.Services.GetRequiredService<IMembershipStore>();
 
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.DeadButRetainedWait, AbortToken);
 
         (await store.HeartbeatAsync(identity, AbortToken)).Should().BeFalse();
@@ -265,6 +271,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var identity = await node.Membership.RegisterAsync(AbortToken);
         var store = node.Services.GetRequiredService<IMembershipStore>();
 
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
         (await node.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
 
@@ -277,6 +284,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
 
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
         (await first.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
 
@@ -440,10 +448,12 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
             .Be(NodeLivenessState.Alive);
 
         // Aged into the suspicion band -> Suspected.
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
         (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Suspected);
 
         // Aged past the dead threshold but still inside the retention window -> Dead.
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(
             CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
             AbortToken
@@ -491,6 +501,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         // Age past the retention window, then read the TARGETED path first — before any snapshot read, whose
         // prune side effect would delete the row and mask a divergence. The targeted path must reproduce the
         // snapshot's post-prune "absent" view by returning null, never by classifying the row as Dead.
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
 
         var targeted = await store.ReadNodeLivenessAsync(identity, AbortToken);
@@ -578,9 +589,11 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         // IsAliveAsync maps every non-Alive targeted state to false, not just absence. As the current-generation
         // node ages out of the alive band its targeted state becomes Suspected, then Dead — both derive false
         // (only Alive is true), so this pins the derivation beyond the superseded/absent case above.
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
         (await second.Membership.IsAliveAsync(secondIdentity, AbortToken)).Should().BeFalse();
 
+        // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
         await TimeProvider.System.Delay(
             CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
             AbortToken
@@ -609,6 +622,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
 
         if (wait > TimeSpan.Zero)
         {
+            // real-wait: the store's own clock ages the node (Redis TIME, PostgreSQL clock_timestamp, SQL Server SYSUTCDATETIME, SQLite now); no fake clock moves it
             await TimeProvider.System.Delay(wait, AbortToken);
         }
 

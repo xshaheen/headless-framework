@@ -13,10 +13,6 @@ namespace Tests;
 [Collection<SqliteMembershipFixture>]
 public sealed class SqliteMembershipReadLockTests(SqliteMembershipFixture fixture) : TestBase
 {
-    // A read that queued for the write lock would wait for the connection's 30-second busy timeout; one that takes only
-    // a shared lock returns in milliseconds, so this window separates the two without timing the read itself.
-    private static readonly TimeSpan _BlockedObservationWindow = TimeSpan.FromSeconds(5);
-
     [Fact]
     public async Task should_read_liveness_while_another_connection_holds_the_write_lock()
     {
@@ -54,23 +50,16 @@ public sealed class SqliteMembershipReadLockTests(SqliteMembershipFixture fixtur
             (await command.ExecuteNonQueryAsync(AbortToken)).Should().BePositive();
         }
 
-        var snapshot = await _WithinWindowAsync(store.ReadLivenessAsync(AbortToken).AsTask());
-        var state = await _WithinWindowAsync(store.ReadNodeLivenessAsync(identity, AbortToken).AsTask());
-        var live = await _WithinWindowAsync(store.ReadLiveNodesAsync(AbortToken).AsTask());
+        // A read that queued for the write lock never completes while the transaction stays open, so it ends in the
+        // connection's busy timeout or the bound below and fails the test; one that takes only a shared lock returns.
+        var snapshot = await store.ReadLivenessAsync(AbortToken).Bounded();
+        var state = await store.ReadNodeLivenessAsync(identity, AbortToken).Bounded();
+        var live = await store.ReadLiveNodesAsync(AbortToken).Bounded();
 
         snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Alive);
         state.Should().Be(NodeLivenessState.Alive);
         live.Should().Equal([identity]);
 
         await transaction.RollbackAsync(AbortToken);
-    }
-
-    private static async Task<T> _WithinWindowAsync<T>(Task<T> read)
-    {
-        var first = await Task.WhenAny(read, Task.Delay(_BlockedObservationWindow, AbortToken));
-
-        first.Should().BeSameAs(read, "a liveness read takes only a shared lock, never the write lock");
-
-        return await read;
     }
 }

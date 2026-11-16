@@ -59,6 +59,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
 
         // The fixture's RedisKnownNodeRetention (600ms) is clamped up to at least the harness
         // DeadThreshold + DeadRetentionWindow, so wait past the harness prune threshold for the :known prune.
+        // real-wait: Redis TIME ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
         (await first.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
 
@@ -102,6 +103,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
 
         // The fixture's RedisKnownNodeRetention (600ms) is clamped up to at least the harness
         // DeadThreshold + DeadRetentionWindow, so wait past the harness prune threshold for the :known prune.
+        // real-wait: Redis TIME ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
         await node.Services.GetRequiredService<RedisMembershipStore>().CleanupAsync(AbortToken);
 
@@ -121,6 +123,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
 
+        // real-wait: Redis TIME ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
 
         await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
@@ -262,10 +265,12 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
             .Be(NodeLivenessState.Alive);
 
         // Aged into the suspicion band -> Suspected.
+        // real-wait: Redis TIME ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
         (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Suspected);
 
         // Aged past the dead threshold but still inside the retention window -> Dead.
+        // real-wait: Redis TIME ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(
             CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
             AbortToken
@@ -338,6 +343,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
 
         // Age past the operational prune window, then read the targeted path FIRST — before any snapshot or
         // cleanup tick could delete the member. The targeted path reports absence (null) without writing.
+        // real-wait: Redis TIME ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
 
         var state = await store.ReadNodeLivenessAsync(identity, AbortToken);
