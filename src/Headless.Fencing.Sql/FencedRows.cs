@@ -512,7 +512,7 @@ public static class FencedRows
                 transaction,
                 row,
                 write,
-                write.Set,
+                FencedTransitionKind.Write,
                 renewFor: null,
                 readReturning,
                 cancellationToken
@@ -566,7 +566,7 @@ public static class FencedRows
                 transaction,
                 row,
                 write,
-                write.Set,
+                FencedTransitionKind.WriteAndRenew,
                 duration,
                 readReturning,
                 cancellationToken
@@ -611,7 +611,7 @@ public static class FencedRows
             transaction,
             row,
             write,
-            RowLeaseState.Settled,
+            FencedTransitionKind.Settle,
             readReturning,
             cancellationToken
         );
@@ -653,7 +653,7 @@ public static class FencedRows
             transaction,
             row,
             write,
-            RowLeaseState.Released,
+            FencedTransitionKind.Release,
             readReturning,
             cancellationToken
         );
@@ -665,7 +665,7 @@ public static class FencedRows
         DbTransaction? transaction,
         FencedRow<TKey> row,
         FencedRowWrite write,
-        RowLeaseState state,
+        FencedTransitionKind kind,
         Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readReturning,
         CancellationToken cancellationToken
     )
@@ -681,15 +681,13 @@ public static class FencedRows
             Argument.IsNotNullOrWhiteSpace(write.Set, paramName: nameof(write));
         }
 
-        var set = write.Set is null ? table.EndAssignments(state) : table.EndAssignments(state) + ", " + write.Set;
-
         return await _WriteAsync(
                 table,
                 connection,
                 transaction,
                 row,
                 write,
-                set,
+                kind,
                 renewFor: null,
                 readReturning,
                 cancellationToken
@@ -698,7 +696,7 @@ public static class FencedRows
     }
 
     /// <summary>
-    /// Runs one fenced transition whose assignments are <paramref name="set" />, narrowed by the write's condition, and
+    /// Runs one fenced transition of <paramref name="kind" /> composing the write, narrowed by its condition, and
     /// classifies a refusal: a lease-fence refusal reports its status, and a held lease whose condition failed reports
     /// <see cref="LeaseFenceStatus.Current" />.
     /// </summary>
@@ -708,7 +706,7 @@ public static class FencedRows
         DbTransaction? transaction,
         FencedRow<TKey> row,
         FencedRowWrite write,
-        string set,
+        FencedTransitionKind kind,
         TimeSpan? renewFor,
         Func<DbDataReader, CancellationToken, ValueTask<TAccepted>> readReturning,
         CancellationToken cancellationToken
@@ -720,13 +718,7 @@ public static class FencedRows
             Argument.IsNotNullOrWhiteSpace(write.Condition, paramName: nameof(write));
         }
 
-        if (renewFor is not null)
-        {
-            set = set + ", " + table.RenewAssignment;
-        }
-
-        var fence = write.Condition is null ? table.Current : $"{table.Current} AND ({write.Condition})";
-        var sql = table.RenderTransition(fence, set, _Returning(table, write.Returning));
+        var sql = table.FencedTransition(kind, write.Set, write.Condition, write.Returning);
 
         return await _RunAsync(
                 table,
@@ -832,10 +824,12 @@ public static class FencedRows
             );
         }
 
-        return table.RenderTransition(
-            table.Current,
-            table.EndAssignments(state) + ", " + write.Set,
-            [table.Generation]
+        // The same statement the column-reading overload renders for a write with no condition or columns.
+        return table.FencedTransition(
+            state == RowLeaseState.Settled ? FencedTransitionKind.Settle : FencedTransitionKind.Release,
+            write.Set,
+            condition: null,
+            returning: null
         );
     }
 
@@ -992,7 +986,7 @@ public static class FencedRows
             );
         }
 
-        return table.RenderRevoke(write.Set);
+        return table.FencedTransition(FencedTransitionKind.Revoke, write.Set, condition: null, returning: null);
     }
 
     private static async Task<FencedRow<TKey>?> _RevokeOneAsync<TKey>(
@@ -1518,25 +1512,6 @@ public static class FencedRows
                 );
             }
         }
-    }
-
-    private static string[] _Returning<TKey>(FencedRowTable<TKey> table, IReadOnlyList<string>? returning)
-        where TKey : notnull
-    {
-        if (returning is null || returning.Count == 0)
-        {
-            return [table.Generation];
-        }
-
-        var quoted = new string[returning.Count];
-
-        for (var i = 0; i < returning.Count; i++)
-        {
-            Argument.IsNotNullOrWhiteSpace(returning[i], paramName: "write");
-            quoted[i] = table.Dialect.Quote(returning[i]);
-        }
-
-        return quoted;
     }
 
     private static async Task<bool> _IsLiveAsync<TKey>(
