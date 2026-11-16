@@ -18,7 +18,7 @@
     "format:check": "prettier --check src/Headless.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot"
   },
   "devDependencies": {
-    "prettier": "3.9.10"
+    "prettier": "3.10.1"
   },
   "overrides": {
     "@eslint/config-array": {
