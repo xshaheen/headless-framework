@@ -138,11 +138,7 @@ public sealed class FormFileExtensionsTests : TestBase
                 return 0;
             }
 
-            Thread.Sleep(50);
-            buffer[offset] = (byte)'x';
-            _read = true;
-
-            return 1;
+            throw new NotSupportedException("Saving reads the stream asynchronously.");
         }
 
         public override async ValueTask<int> ReadAsync(
@@ -155,7 +151,7 @@ public sealed class FormFileExtensionsTests : TestBase
                 return 0;
             }
 
-            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+            await _tracker.WindowFull.Bounded().ConfigureAwait(false);
             buffer.Span[0] = (byte)'x';
             _read = true;
 
@@ -174,7 +170,7 @@ public sealed class FormFileExtensionsTests : TestBase
                 return 0;
             }
 
-            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+            await _tracker.WindowFull.Bounded().ConfigureAwait(false);
             buffer[offset] = (byte)'x';
             _read = true;
 
@@ -270,14 +266,26 @@ public sealed class FormFileExtensionsTests : TestBase
 
     private sealed class StreamConcurrencyTracker
     {
+        private readonly TaskCompletionSource _windowFull = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _active;
         private int _maxActive;
 
         public int MaxActive => _maxActive;
 
+        /// <summary>
+        /// Completes once as many streams are open as the bound allows. Reads wait for it, so the streams that are open
+        /// at once overlap for certain instead of for as long as a sleep happens to last.
+        /// </summary>
+        public Task WindowFull => _windowFull.Task;
+
         public void Open()
         {
             var active = Interlocked.Increment(ref _active);
+
+            if (active >= Environment.ProcessorCount)
+            {
+                _windowFull.TrySetResult();
+            }
 
             while (true)
             {

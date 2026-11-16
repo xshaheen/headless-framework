@@ -257,15 +257,24 @@ public sealed class HeadlessTestServerTests : TestBase
     [Fact]
     public async Task should_throw_timeout_when_readiness_check_exceeds_timeout()
     {
+        // given - a check that finishes only when the test releases it
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _server = new HeadlessTestServer<Program>();
-        _server.AddReadinessCheck(
-            _ => Task.Delay(TimeSpan.FromSeconds(30), AbortToken),
-            timeout: TimeSpan.FromMilliseconds(50)
-        );
+        _server.AddReadinessCheck(_ => release.Task, timeout: TimeSpan.FromMilliseconds(50));
 
-        var act = async () => await _server.InitializeAsync();
+        // The check never finishes on its own, so only the server's own timeout can end the start; the bound turns a
+        // missing timeout into a failed test instead of a hang, and its message differs from the server's.
+        var act = async () => await _server.InitializeAsync().Bounded();
 
-        await act.Should().ThrowExactlyAsync<TimeoutException>();
+        try
+        {
+            await act.Should().ThrowExactlyAsync<TimeoutException>().WithMessage("Readiness check timed out after*");
+        }
+        finally
+        {
+            // A start that is still waiting on the check would otherwise block the teardown too.
+            release.SetResult();
+        }
     }
 
     [Fact]

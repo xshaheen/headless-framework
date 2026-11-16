@@ -28,6 +28,8 @@ internal sealed class FakeFcmHttpHandler(TimeProvider timeProvider) : HttpMessag
 {
     private const string _FcmErrorType = "type.googleapis.com/google.firebase.fcm.v1.FcmError";
 
+    private readonly Lock _sync = new();
+    private readonly List<(int Count, TaskCompletionSource Source)> _requestWaiters = [];
     private readonly ConcurrentQueue<FcmRecordedRequest> _requests = new();
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
     private int _tokenRequests;
@@ -59,15 +61,38 @@ internal sealed class FakeFcmHttpHandler(TimeProvider timeProvider) : HttpMessag
         return [.. _requests.Where(r => string.Equals(r.Target, target, StringComparison.Ordinal))];
     }
 
-    /// <summary>Waits in real time, bounded, until at least <paramref name="count"/> FCM sends have arrived.</summary>
+    /// <summary>Waits, bounded, until at least <paramref name="count"/> FCM sends have arrived.</summary>
     public async Task WaitForRequestsAsync(int count, CancellationToken cancellationToken)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        Task arrived;
 
-        while (_requests.Count < count)
+        lock (_sync)
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(5), timeout.Token);
+            if (_requests.Count >= count)
+            {
+                return;
+            }
+
+            var source = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _requestWaiters.Add((count, source));
+            arrived = source.Task;
+        }
+
+        await arrived.WaitAsync(cancellationToken).Bounded();
+    }
+
+    private void _CompleteRequestWaiters()
+    {
+        lock (_sync)
+        {
+            for (var i = _requestWaiters.Count - 1; i >= 0; i--)
+            {
+                if (_requests.Count >= _requestWaiters[i].Count)
+                {
+                    _requestWaiters[i].Source.TrySetResult();
+                    _requestWaiters.RemoveAt(i);
+                }
+            }
         }
     }
 
@@ -157,6 +182,7 @@ internal sealed class FakeFcmHttpHandler(TimeProvider timeProvider) : HttpMessag
         var recorded = new FcmRecordedRequest(target, attempt, timeProvider.GetUtcNow(), body);
 
         _requests.Enqueue(recorded);
+        _CompleteRequestWaiters();
 
         return await Responder(recorded, cancellationToken);
     }

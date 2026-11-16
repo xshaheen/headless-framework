@@ -148,9 +148,7 @@ public sealed class AsyncExExtensionsTests : TestBase
         countdownEvent.Signal();
 
         // then — completes without advancing the clock
-        var completed = await Task.WhenAny(waiter, Task.Delay(TimeSpan.FromSeconds(5), AbortToken));
-        completed.Should().BeSameAs(waiter);
-        await waiter;
+        await waiter.Bounded();
     }
 
     [Fact]

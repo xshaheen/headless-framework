@@ -434,7 +434,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     {
         // given - intentionally using separate CTS to test mid-iteration cancellation
         using var cts = new CancellationTokenSource();
-        var first = _CreateSlowAsyncEnumerable([1, 2, 3], TimeSpan.FromMilliseconds(50), AbortToken);
+        var first = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
         var second = _CreateAsyncEnumerable([4, 5, 6], AbortToken);
 
         // when
@@ -468,20 +468,6 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
             cancellationToken.ThrowIfCancellationRequested();
             yield return item;
             await Task.Yield();
-        }
-    }
-
-    private static async IAsyncEnumerable<T> _CreateSlowAsyncEnumerable<T>(
-        T[] items,
-        TimeSpan delay,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default
-    )
-    {
-        foreach (var item in items)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(delay, cancellationToken);
-            yield return item;
         }
     }
 
