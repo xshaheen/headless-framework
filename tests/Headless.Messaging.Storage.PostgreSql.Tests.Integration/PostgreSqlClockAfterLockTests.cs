@@ -127,6 +127,7 @@ public sealed class PostgreSqlClockAfterLockTests(PostgreSqlTestFixture fixture)
         );
 
         var pending = action();
+        // real-wait: PostgreSQL's own clock must advance while the statement is blocked on the row lock, so a clock read before the lock differs from one after it; the store clock cannot be faked
         await Task.Delay(_LockHold, AbortToken);
         pending.IsCompleted.Should().BeFalse("the statement must still be waiting for the row lock");
 

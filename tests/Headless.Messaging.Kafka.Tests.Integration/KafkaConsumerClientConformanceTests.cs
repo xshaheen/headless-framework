@@ -133,6 +133,7 @@ public sealed class KafkaConsumerClientConformanceTests(KafkaFixture fixture) : 
         var destination = $"malformed-{Guid.NewGuid():N}";
         var group = $"group-{Guid.NewGuid():N}";
         var terminalLogs = 0;
+        var terminallyCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var session = await fixture.CreateConformanceSessionAsync(AbortToken, destination, group);
         await session.StartAsync(
             onLog: log =>
@@ -140,6 +141,7 @@ public sealed class KafkaConsumerClientConformanceTests(KafkaFixture fixture) : 
                 if (log.Reason?.Contains("terminally committed", StringComparison.Ordinal) == true)
                 {
                     Interlocked.Increment(ref terminalLogs);
+                    terminallyCommitted.TrySetResult();
                 }
             },
             cancellationToken: AbortToken
@@ -159,13 +161,7 @@ public sealed class KafkaConsumerClientConformanceTests(KafkaFixture fixture) : 
             AbortToken
         );
 
-        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
-        {
-            while (Volatile.Read(ref terminalLogs) == 0)
-            {
-                await Task.Delay(20, timeout.Token);
-            }
-        }
+        await terminallyCommitted.Task.Bounded();
 
         await session.StopAsync(TimeSpan.FromSeconds(2));
         await using var replacement = await session.CreateReplacementAsync(AbortToken);

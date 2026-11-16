@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Text;
+using System.Threading.Channels;
 using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
@@ -81,7 +82,7 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
             (await listener.TakeAsync(3))
                 .Should()
                 .Equal("pending-1", "pending-2", "pending-3");
-            await listener.ExpectNothingMoreAsync();
+            await listener.ExpectNothingMoreAsync(() => _PublishAsync(names[1], "sentinel"), "sentinel");
         }
 
         (await _ConsumerExistsAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable(identity, names[0])))
@@ -148,7 +149,7 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
         (await listener.TakeAsync(1))
             .Should()
             .Equal("new");
-        await listener.ExpectNothingMoreAsync();
+        await listener.ExpectNothingMoreAsync(() => _PublishAsync(names[1], "sentinel"), "sentinel");
     }
 
     private IOptions<NatsMessagingOptions> _MemoryOptions() =>
@@ -254,7 +255,7 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
     {
         private readonly NatsConsumerClient _client;
         private readonly CancellationTokenSource _stop = new();
-        private readonly ConcurrentQueue<string> _received = new();
+        private readonly Channel<string> _received = Channel.CreateUnbounded<string>();
         private readonly ConcurrentQueue<string> _logs = new();
         private Task? _listening;
 
@@ -264,7 +265,7 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
             _client = client;
             client.OnMessageCallback = async (message, sender) =>
             {
-                _received.Enqueue(Encoding.UTF8.GetString(message.Body.Span));
+                _received.Writer.TryWrite(Encoding.UTF8.GetString(message.Body.Span));
                 await client.CommitAsync(sender, CancellationToken.None);
             };
             client.OnLogCallback = args => _logs.Enqueue($"{args.LogType}: {args.Reason}");
@@ -281,35 +282,35 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
         public async Task<List<string>> TakeAsync(int count)
         {
             var taken = new List<string>(count);
-            using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            while (taken.Count < count)
+            using var bound = TimeSpan.FromSeconds(20).ToCancellationTokenSource(AbortToken);
+
+            try
             {
-                if (_received.TryDequeue(out var body))
+                while (taken.Count < count)
                 {
-                    taken.Add(body);
-                    continue;
+                    taken.Add(await _received.Reader.ReadAsync(bound.Token));
                 }
-
-                if (bound.IsCancellationRequested)
-                {
-                    throw new TimeoutException(
-                        $"Received {taken.Count} of {count} messages ({string.Join(", ", taken)}); logs: "
-                            + string.Join(" | ", _logs)
-                    );
-                }
-
-                await Task.Delay(10, AbortToken);
+            }
+            catch (OperationCanceledException e) when (!AbortToken.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Received {taken.Count} of {count} messages ({string.Join(", ", taken)}); logs: "
+                        + string.Join(" | ", _logs),
+                    e
+                );
             }
 
             return taken;
         }
 
-        // Catches a replayed backlog, which the open pull would hand over at once. A redelivery of something already
-        // delivered waits for the 30 s AckWait, so this window does not cover one.
-        public async Task ExpectNothingMoreAsync()
+        // Catches a replayed backlog, which the open pull would hand over at once. A sentinel published after the
+        // backlog would be delivered behind it, in stream order, so it is the next message unless something replayed
+        // ahead of it. A redelivery of something already delivered waits for the 30 s AckWait, so this does not cover one.
+        public async Task ExpectNothingMoreAsync(Func<Task> publishSentinel, string sentinel)
         {
-            await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
-            _received.Should().BeEmpty();
+            await publishSentinel();
+            (await TakeAsync(1)).Should().Equal(sentinel);
+            _received.Reader.TryRead(out _).Should().BeFalse();
         }
 
         public async ValueTask DisposeAsync()

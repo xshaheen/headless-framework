@@ -55,10 +55,12 @@ public sealed class NatsRawPayloadTests(NatsFixture fixture) : TestBase
             "the rebound durable acknowledged both stored messages"
         );
 
-        // then: the inbox recognised both redeliveries by their identifiers, so no handler ran again. The core commits
-        // before it dispatches, so give a wrongly admitted redelivery time to reach the handler.
-        await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
-        host.Consumer.Received.Should().HaveCount(2);
+        // then: the inbox recognised both redeliveries by their identifiers, so no handler ran again. The durable
+        // delivers in stream order, so a message published now arrives behind both redeliveries: once it has been
+        // handled, a wrongly admitted redelivery would already be in the received list ahead of it.
+        await _PublishNativeAsync(host, """{"value":"sentinel"}""", natsMsgId: null);
+        await host.Consumer.WaitForCountAsync(3, _Wait, AbortToken);
+        host.Consumer.Received.Select(r => r.Value).Should().Equal("first", "second", "sentinel");
     }
 
     [Fact]
@@ -291,6 +293,8 @@ public sealed class NatsRawPayloadTests(NatsFixture fixture) : TestBase
     {
         public ConcurrentQueue<RawRunReceipt> Received { get; } = new();
 
+        private readonly ChangeSignal _arrived = new();
+
         public ValueTask ConsumeAsync(ConsumeContext<RawRun> context, CancellationToken cancellationToken)
         {
             Received.Enqueue(
@@ -303,18 +307,14 @@ public sealed class NatsRawPayloadTests(NatsFixture fixture) : TestBase
                     context.Message.Value
                 )
             );
+            _arrived.Notify();
             return ValueTask.CompletedTask;
         }
 
         public async Task WaitForCountAsync(int count, TimeSpan timeout, CancellationToken cancellationToken)
         {
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(timeout);
-
-            while (Received.Count < count)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(50), deadline.Token);
-            }
+            var reached = await _arrived.WaitUntilAsync(() => Received.Count >= count, timeout, cancellationToken);
+            reached.Should().BeTrue($"{count} message(s) should arrive within {timeout}; got {Received.Count}");
         }
     }
 }

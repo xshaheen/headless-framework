@@ -43,14 +43,13 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         var keysWhileListening = await fixture.ScanKeysAsync($"*{ReplyAddresses.Prefix}*", AbortToken);
         await listener.DisposeAsync();
 
-        // then
+        // then: closing the listener drains its loop, which unsubscribes the channel before it ends
         delivered.Headers[MessagingHeaders.InReplyTo].Should().Be("first");
         delivered.Body.ToArray().Should().Equal("{\"ok\":true}"u8.ToArray());
         keysWhileListening.Should().BeEmpty("a reply is a PUBLISH, which writes no key");
-        await _UntilAsync(
-            async () => await fixture.CountSubscribersAsync(address, AbortToken) == 0,
-            "closing the listener unsubscribed its channel"
-        );
+        (await fixture.CountSubscribersAsync(address, AbortToken))
+            .Should()
+            .Be(0, "closing the listener unsubscribed its channel");
         (await fixture.ScanKeysAsync($"*{ReplyAddresses.Prefix}*", AbortToken)).Should().BeEmpty();
     }
 
@@ -156,24 +155,6 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         }
 
         await base.DisposeAsyncCore();
-    }
-
-    private static async Task _UntilAsync(Func<Task<bool>> condition, string what)
-    {
-        using var bound = new CancellationTokenSource(_Bound);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(bound.Token, AbortToken);
-
-        while (!await condition())
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(20), linked.Token);
-            }
-            catch (OperationCanceledException e) when (bound.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Gave up after {_Bound} waiting until {what}.", e);
-            }
-        }
     }
 
     private static async Task<TransportMessage> _SendUntilReceivedAsync(

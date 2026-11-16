@@ -28,7 +28,7 @@ public sealed class RedisStreamWakeTests(RedisMessagingFixture fixture) : TestBa
             listeningTimeout: _PollInterval
         );
         await session.StartAsync(cancellationToken: AbortToken);
-        await _WaitUntilIdleAsync(destination, MessageLane.Queue);
+        await _WaitUntilIdleAsync(session, destination, MessageLane.Queue);
         var message = _Message(destination, MessageLane.Queue);
 
         // when
@@ -63,7 +63,7 @@ public sealed class RedisStreamWakeTests(RedisMessagingFixture fixture) : TestBa
             listeningTimeout: _PollInterval
         );
         await session.StartAsync(cancellationToken: AbortToken);
-        await _WaitUntilIdleAsync(destination, MessageLane.Bus);
+        await _WaitUntilIdleAsync(session, destination, MessageLane.Bus);
         var message = _Message(destination, MessageLane.Bus);
 
         // when
@@ -93,19 +93,25 @@ public sealed class RedisStreamWakeTests(RedisMessagingFixture fixture) : TestBa
         try
         {
             await session.StartAsync(cancellationToken: AbortToken);
-            await _WaitUntilIdleAsync(destination, MessageLane.Queue);
+            await _WaitUntilIdleAsync(session, destination, MessageLane.Queue);
+
+            // The subscription exists before the stop below, so an empty channel afterwards is the stop's doing.
+            (await fixture.CountSubscribersAsync(channel, AbortToken))
+                .Should()
+                .Be(1);
+
+            // when: stopping drains the read loop, which unsubscribes before it ends; the connection stays open, so a
+            // dropped connection cannot stand in for the unsubscribe
+            await session.StopAsync(TimeSpan.FromSeconds(5));
+
+            // then
+            (await fixture.CountSubscribersAsync(channel, AbortToken))
+                .Should()
+                .Be(0);
         }
         finally
         {
-            // when
             await session.DisposeAsync();
-        }
-
-        // then
-        using var timeout = TimeSpan.FromSeconds(5).ToCancellationTokenSource(AbortToken);
-        while (await fixture.CountSubscribersAsync(channel, timeout.Token) > 0)
-        {
-            await Task.Delay(50, timeout.Token);
         }
     }
 
@@ -135,19 +141,20 @@ public sealed class RedisStreamWakeTests(RedisMessagingFixture fixture) : TestBa
         (await fixture.CountSubscribersAsync(channel, AbortToken)).Should().Be(0);
     }
 
-    // The consumer subscribes to the wake channel right before its first read of new entries; once it has, the read
-    // has run and the loop is waiting out the poll interval.
-    private async Task _WaitUntilIdleAsync(string destination, MessageLane lane)
+    // An entry the first read returns proves the loop subscribed to the wake channel before that read and is past it, so
+    // an entry published afterwards reaches the loop only through a wake-up: the wake signal latches if the loop has not
+    // started waiting yet.
+    private async Task _WaitUntilIdleAsync(
+        TransportConsumerConformanceSession session,
+        string destination,
+        MessageLane lane
+    )
     {
-        var channel = RedisPhysicalAddress.WakeChannel(RedisPhysicalAddress.ForLane(lane, destination));
-        using var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken);
-
-        while (await fixture.CountSubscribersAsync(channel, timeout.Token) == 0)
-        {
-            await Task.Delay(50, timeout.Token);
-        }
-
-        await Task.Delay(500, AbortToken);
+        var priming = _Message(destination, lane);
+        (await session.PublishAsync(priming, AbortToken)).Succeeded.Should().BeTrue();
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        delivery.Message.Id.Should().Be(priming.Id);
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
     }
 
     private static TransportMessage _Message(string destination, MessageLane lane) =>

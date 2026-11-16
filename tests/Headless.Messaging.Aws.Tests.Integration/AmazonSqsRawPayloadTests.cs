@@ -72,8 +72,14 @@ public sealed class AmazonSqsRawPayloadTests(LocalStackTestFixture fixture) : Te
             )
         );
         await _WaitUntilAsync(async () => await _PendingAsync(sqs, queueUrl) == 0);
-        await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
-        recorder.Deliveries.Should().ContainSingle();
+
+        // The redelivery was received before this send, so a handler run it caused would land ahead of the sentinel.
+        await sqs.SendMessageAsync(
+            new SendMessageRequest { QueueUrl = queueUrl, MessageBody = """{"value":"sentinel-after-redelivery"}""" },
+            AbortToken
+        );
+        await recorder.WaitForDeliveriesAsync(2, AbortToken);
+        recorder.Deliveries.Select(d => d.Value).Should().Equal("from-python", "sentinel-after-redelivery");
 
         // when: a foreign producer sends a body that is not JSON
         await sqs.SendMessageAsync(
@@ -85,8 +91,15 @@ public sealed class AmazonSqsRawPayloadTests(LocalStackTestFixture fixture) : Te
         var storage = provider.GetRequiredService<IDataStorage>();
         await _WaitUntilAsync(async () => await _CountFailedAsync(storage, name) == 1);
         await _WaitUntilAsync(async () => await _PendingAsync(sqs, queueUrl) == 0);
-        await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
-        recorder.Deliveries.Should().ContainSingle();
+        await sqs.SendMessageAsync(
+            new SendMessageRequest { QueueUrl = queueUrl, MessageBody = """{"value":"sentinel-after-poison"}""" },
+            AbortToken
+        );
+        await recorder.WaitForDeliveriesAsync(3, AbortToken);
+        recorder
+            .Deliveries.Select(d => d.Value)
+            .Should()
+            .Equal("from-python", "sentinel-after-redelivery", "sentinel-after-poison");
         (await _CountFailedAsync(storage, name)).Should().Be(1);
     }
 
@@ -234,16 +247,29 @@ public sealed class AmazonSqsRawPayloadTests(LocalStackTestFixture fixture) : Te
     {
         private readonly TaskCompletionSource _handled = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly ConcurrentQueue<ProbeDelivery> _deliveries = new();
+        private readonly ChangeSignal _changed = new();
 
         public IReadOnlyCollection<ProbeDelivery> Deliveries => _deliveries;
 
         public Task WaitForHandlerAsync(CancellationToken cancellationToken) =>
             _handled.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
 
+        public async Task WaitForDeliveriesAsync(int count, CancellationToken cancellationToken)
+        {
+            var reached = await _changed.WaitUntilAsync(
+                () => _deliveries.Count >= count,
+                TimeSpan.FromSeconds(20),
+                cancellationToken
+            );
+
+            reached.Should().BeTrue("the handler should have run {0} time(s)", count);
+        }
+
         public ValueTask RecordAsync(ProbeDelivery delivery)
         {
             _deliveries.Enqueue(delivery);
             _handled.TrySetResult();
+            _changed.Notify();
             return ValueTask.CompletedTask;
         }
     }
