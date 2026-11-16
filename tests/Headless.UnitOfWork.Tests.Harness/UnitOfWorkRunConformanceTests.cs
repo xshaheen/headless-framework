@@ -14,8 +14,6 @@ namespace Tests;
 public abstract class UnitOfWorkRunConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IUnitOfWorkRunFixture
 {
-    private static readonly TimeSpan _DrainTimeout = TimeSpan.FromSeconds(15);
-
     [Fact]
     public virtual async Task should_drain_completion_work_and_persist_rows_when_operation_completes()
     {
@@ -38,8 +36,7 @@ public abstract class UnitOfWorkRunConformanceTests<TFixture>(TFixture fixture) 
             AbortToken
         );
 
-        var winner = await Task.WhenAny(drained.Task, Task.Delay(_DrainTimeout, AbortToken));
-        winner.Should().BeSameAs(drained.Task, "a completed unit of work must drain its OnCompleted work");
+        await drained.Task.Bounded();
 
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1, "the committed probe row must be durable");
     }
@@ -91,8 +88,7 @@ public abstract class UnitOfWorkRunConformanceTests<TFixture>(TFixture fixture) 
         thrown!.Message.Should().Be("conformance-rollback");
 
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0, "the rolled-back probe row must not be durable");
-        var winner = await Task.WhenAny(settled.Task, Task.Delay(_DrainTimeout, AbortToken));
-        winner.Should().BeSameAs(settled.Task, "the failure drain must dispose scope-local state");
+        await settled.Task.Bounded();
         drained.Task.IsCompleted.Should().BeFalse("a rolled-back unit of work must discard its OnCompleted work");
         failure.Should().NotBeNull("a rolled-back unit of work must run its OnFailed work");
         failure!.Reason.Should().Be(UnitOfWorkFailureReason.RolledBack);

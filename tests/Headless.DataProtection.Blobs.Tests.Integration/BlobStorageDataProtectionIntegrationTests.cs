@@ -222,18 +222,19 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
 
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.AddProvider(LoggerProvider);
+        using var warmupFailed = new WarmupFailedSignal();
+        builder.Logging.AddProvider(warmupFailed);
         builder
             .Services.AddDataProtection()
             .PersistKeysToBlobStorage(storage, provisioning: BlobContainerProvisioning.PreProvisioned)
             .ValidateKeyRing();
         using var host = builder.Build();
 
-        // when: the start does not wait for the key store.
+        // when: the start does not wait for the key store. The runner records each failure as the readiness check's
+        // last error before it logs the failed attempt.
         await host.StartAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
-        var failing = await _WaitForReadinessAsync(
-            host.Services,
-            e => e.Exception?.Message.Contains("last error", StringComparison.Ordinal) == true
-        );
+        await warmupFailed.Failed.Bounded();
+        var failing = await _CheckReadinessAsync(host.Services);
 
         // then: unready, naming the validation and the missing container.
         failing.Status.Should().Be(HealthStatus.Unhealthy);
@@ -242,7 +243,8 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
 
         // when: the container is provisioned, the retried validation writes a real key.
         await container.CreateIfNotExistsAsync(cancellationToken: AbortToken);
-        var ready = await _WaitForReadinessAsync(host.Services, e => e.Status == HealthStatus.Healthy);
+        await host.Services.WaitForWarmupAsync(AbortToken).Bounded();
+        var ready = await _CheckReadinessAsync(host.Services);
 
         // then
         ready.Status.Should().Be(HealthStatus.Healthy);
@@ -256,30 +258,46 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
         await host.StopAsync(AbortToken);
     }
 
-    private static async Task<HealthReportEntry> _WaitForReadinessAsync(
-        IServiceProvider services,
-        Func<HealthReportEntry, bool> condition
-    )
+    private static async Task<HealthReportEntry> _CheckReadinessAsync(IServiceProvider services)
     {
-        using var limit = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        limit.CancelAfter(TimeSpan.FromSeconds(60));
-        var health = services.GetRequiredService<HealthCheckService>();
-
-        while (true)
-        {
-            var report = await health.CheckHealthAsync(
+        var report = await services
+            .GetRequiredService<HealthCheckService>()
+            .CheckHealthAsync(
                 r => string.Equals(r.Name, HeadlessHealthCheckNames.Warmup, StringComparison.Ordinal),
                 AbortToken
             );
-            var entry = report.Entries[HeadlessHealthCheckNames.Warmup];
 
-            if (condition(entry))
+        return report.Entries[HeadlessHealthCheckNames.Warmup];
+    }
+
+    private sealed class WarmupFailedSignal : ILoggerProvider, ILogger
+    {
+        private readonly TaskCompletionSource _failed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Failed => _failed.Task;
+
+        public ILogger CreateLogger(string categoryName) => this;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (string.Equals(eventId.Name, "WarmupFailed", StringComparison.Ordinal))
             {
-                return entry;
+                _failed.TrySetResult();
             }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(50), limit.Token);
         }
+
+        public void Dispose() { }
     }
 
     private sealed class TestAzureBlobContainerManager(

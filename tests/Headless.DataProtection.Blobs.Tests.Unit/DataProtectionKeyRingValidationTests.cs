@@ -340,16 +340,17 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         // given: the store rejects every write until it is fixed.
         var broken = new StrongBox<bool>(true);
         var storage = _CreateWorkingStorage(writesFail: broken);
+        using var logs = new RecordingLoggerProvider();
         using var host = _BuildHost(builder =>
-            builder.Services.AddDataProtection().PersistKeysToBlobStorage(storage, _Manager()).ValidateKeyRing()
-        );
+        {
+            builder.Logging.AddProvider(logs);
+            builder.Services.AddDataProtection().PersistKeysToBlobStorage(storage, _Manager()).ValidateKeyRing();
+        });
 
-        // when
+        // when: the runner records each failure as the readiness check's last error before it logs the failed attempt
         await host.StartAsync(AbortToken).WaitAsync(_WaitLimit, AbortToken);
-        var failing = await _WaitForReadinessAsync(
-            host.Services,
-            e => e.Exception?.Message.Contains("last error", StringComparison.Ordinal) == true
-        );
+        await logs.WaitForAsync("WarmupFailed").Bounded();
+        var failing = await _CheckReadinessAsync(host.Services);
 
         // then: unready, naming the validation and its actionable error, while the store is broken.
         failing.Status.Should().Be(HealthStatus.Unhealthy);
@@ -456,27 +457,6 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
             );
 
         return report.Entries[HeadlessHealthCheckNames.Warmup];
-    }
-
-    private static async Task<HealthReportEntry> _WaitForReadinessAsync(
-        IServiceProvider services,
-        Func<HealthReportEntry, bool> condition
-    )
-    {
-        using var limit = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        limit.CancelAfter(_WaitLimit);
-
-        while (true)
-        {
-            var entry = await _CheckReadinessAsync(services);
-
-            if (condition(entry))
-            {
-                return entry;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(20), limit.Token);
-        }
     }
 
     private static Task _WaitUntilWarmAsync(IServiceProvider services)
