@@ -385,7 +385,6 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         var pending = host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken).AsTask();
         var first = await Task.WhenAny(
             pending,
-            // real-wait: the grant stays blocked inside the database's lock manager, which raises no client-visible event when a statement starts waiting, so no completion over a real window is the observation
             Task.Delay(LeasesFixtureExtensions.BlockedObservationWindow, AbortToken)
         );
 
