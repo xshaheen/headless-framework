@@ -526,27 +526,43 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.AutoExtend);
 
-        await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
-        await firstRenewSent.Task.Bounded();
-        storage.RenewCalls.Should().Be(1, "pre-condition: the first renew is in flight");
-        timeProvider.Advance(TimeSpan.FromSeconds(3));
-        firstRenew.SetResult(true);
-        // The loop re-arms its cadence wait only after the renew it just ran has been recorded on the handle.
-        await timeProvider.WaitForCadenceTickAsync(AbortToken);
-        handle.RenewalCount.Should().Be(1, "pre-condition: the slow renew succeeded");
+        try
+        {
+            await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
+            await firstRenewSent.Task.Bounded();
+            storage.RenewCalls.Should().Be(1, "pre-condition: the first renew is in flight");
+            timeProvider.Advance(TimeSpan.FromSeconds(3));
 
-        // when - just short of send + lease - margin
-        timeProvider.Advance(TimeSpan.FromSeconds(6) - TimeSpan.FromMilliseconds(1));
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+            // The loop is blocked inside the renew, so no cadence timer can arm until it returns; a tick still queued from
+            // earlier arms would otherwise satisfy the wait below before the renewal is recorded.
+            while (timeProvider.CadenceTicks.Reader.TryRead(out _)) { }
 
-        // then
-        handle.LostToken.IsCancellationRequested.Should().BeFalse();
+            firstRenew.SetResult(true);
+            // The loop re-arms its cadence wait only after the renew it just ran has been recorded on the handle.
+            await timeProvider.WaitForCadenceTickAsync(AbortToken);
+            handle.RenewalCount.Should().Be(1, "pre-condition: the slow renew succeeded");
 
-        // when - send + lease - margin; a reply-anchored deadline would wait until 17s, after the store expired
-        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+            // when - just short of send + lease - margin
+            timeProvider.Advance(TimeSpan.FromSeconds(6) - TimeSpan.FromMilliseconds(1));
+            await DistributedLockTestSupport.DrainUntilAsync(
+                () => handle.LostToken.IsCancellationRequested,
+                AbortToken
+            );
 
-        // then
-        await _WaitForLossAsync(handle);
+            // then
+            handle.LostToken.IsCancellationRequested.Should().BeFalse();
+
+            // when - send + lease - margin; a reply-anchored deadline would wait until 17s, after the store expired
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+            // then
+            await _WaitForLossAsync(handle);
+        }
+        finally
+        {
+            // A failed assertion must not leave the renew blocked: disposing the handle waits on the loop.
+            firstRenew.TrySetResult(false);
+        }
     }
 
     [Fact]
@@ -554,7 +570,22 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     {
         // given - auto-extend, 10s lease, 5s cadence. The renew sent at 5s succeeds; every later renew fails while
         // storage still reports ownership, so each later iteration is Unknown. The key expires at 15s.
-        var storage = new ScriptedLeaseStorage { OnRenew = call => ValueTask.FromResult(call == 1) };
+        var firstRenew = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstRenewSent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var storage = new ScriptedLeaseStorage
+        {
+            OnRenew = call =>
+            {
+                if (call != 1)
+                {
+                    return ValueTask.FromResult(false);
+                }
+
+                firstRenewSent.TrySetResult();
+
+                return new ValueTask<bool>(firstRenew.Task);
+            },
+        };
         // The cadence-aware clock advances only once the monitor loop has armed its 5s wait, so the first renew
         // really is sent at 5s rather than whenever the loop happens to start.
         var timeProvider = new CadenceTimeProvider(TimeSpan.FromSeconds(5));
@@ -565,23 +596,42 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         await using var handle = await _AcquireAsync(provider, TimeSpan.FromSeconds(10), LockMonitoringMode.AutoExtend);
 
-        await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
-        // The loop re-arms its cadence wait only after the renew it just ran has been recorded on the handle.
-        await timeProvider.WaitForCadenceTickAsync(AbortToken);
-        handle.RenewalCount.Should().Be(1, "pre-condition: the renew sent at 5s succeeded");
+        try
+        {
+            await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
+            await firstRenewSent.Task.Bounded();
 
-        // when - just short of last renew send + lease - margin = 14s
-        timeProvider.Advance(TimeSpan.FromSeconds(9) - TimeSpan.FromMilliseconds(1));
-        await DistributedLockTestSupport.DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
+            // The loop is blocked inside the renew, so no cadence timer can arm until it returns; a tick still queued from
+            // earlier arms would otherwise satisfy the wait below before the renewal is recorded.
+            while (timeProvider.CadenceTicks.Reader.TryRead(out _)) { }
 
-        // then
-        handle.LostToken.IsCancellationRequested.Should().BeFalse();
+            firstRenew.SetResult(true);
 
-        // when
-        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+            // The loop re-arms its cadence wait only after the renew it just ran has been recorded on the handle.
+            await timeProvider.WaitForCadenceTickAsync(AbortToken);
+            handle.RenewalCount.Should().Be(1, "pre-condition: the renew sent at 5s succeeded");
 
-        // then
-        await _WaitForLossAsync(handle);
+            // when - just short of last renew send + lease - margin = 14s
+            timeProvider.Advance(TimeSpan.FromSeconds(9) - TimeSpan.FromMilliseconds(1));
+            await DistributedLockTestSupport.DrainUntilAsync(
+                () => handle.LostToken.IsCancellationRequested,
+                AbortToken
+            );
+
+            // then
+            handle.LostToken.IsCancellationRequested.Should().BeFalse();
+
+            // when
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+
+            // then
+            await _WaitForLossAsync(handle);
+        }
+        finally
+        {
+            // A failed assertion must not leave the renew blocked: disposing the handle waits on the loop.
+            firstRenew.TrySetResult(false);
+        }
     }
 
     [Fact]
