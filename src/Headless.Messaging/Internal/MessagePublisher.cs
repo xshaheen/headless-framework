@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.RequestReply;
+using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
@@ -52,7 +53,39 @@ internal sealed class MessagePublisher(
         CancellationToken cancellationToken
     )
     {
-        return _PublishAsync(lane, content, options, unitOfWork, requireCoordination, request: null, cancellationToken);
+        return _PublishAsync(
+            lane,
+            content,
+            options,
+            unitOfWork,
+            requireCoordination,
+            request: null,
+            batch: null,
+            cancellationToken
+        );
+    }
+
+    /// <summary>Publishes one message of an <see cref="OutboxStoreBatch" /> run on that batch's unit.</summary>
+    internal Task<PublishReceipt> PublishAsync<T>(
+        MessageLane lane,
+        T? content,
+        MessageOptions? options,
+        IUnitOfWork unitOfWork,
+        bool requireCoordination,
+        OutboxStoreBatch batch,
+        CancellationToken cancellationToken
+    )
+    {
+        return _PublishAsync(
+            lane,
+            content,
+            options,
+            unitOfWork,
+            requireCoordination,
+            request: null,
+            batch,
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -79,6 +112,7 @@ internal sealed class MessagePublisher(
             unitOfWork: null,
             requireCoordination: false,
             request,
+            batch: null,
             cancellationToken
         );
     }
@@ -90,6 +124,7 @@ internal sealed class MessagePublisher(
         IUnitOfWork? unitOfWork,
         bool requireCoordination,
         RequestStamp? request,
+        OutboxStoreBatch? batch,
         CancellationToken cancellationToken
     )
     {
@@ -136,6 +171,16 @@ internal sealed class MessagePublisher(
             // PublishAt, not Delay: an absolute schedule is equally a scheduled send, and gating on Delay
             // alone would let an absolute instant past a provider that cannot schedule.
             capabilities.EnsureOutboxSupported(lane, scheduled: decision.PublishAt is not null);
+        }
+
+        // A batched run holds a row only for a publish no middleware wraps. Any other publish first writes the rows held
+        // so far, before its middleware runs, so its middleware sees only its own store, as without a batch, and the
+        // rows still land in publish order.
+        var holdIn = batch;
+        if (batch is not null && !_CanHold(content, lane, options, decision))
+        {
+            await batch.FlushAsync(cancellationToken).ConfigureAwait(false);
+            holdIn = null;
         }
 
         PublishReceipt receipt = default;
@@ -233,7 +278,7 @@ internal sealed class MessagePublisher(
                         decision.Coordination.UnitOfWork.PreventRetry();
                     }
 
-                    var storageId = await writer.WriteAsync(prepared, decision, ct).ConfigureAwait(false);
+                    var storageId = await writer.WriteAsync(prepared, decision, holdIn, ct).ConfigureAwait(false);
                     receipt = new PublishReceipt(prepared.Message.Headers[Headers.MessageId], storageId);
                 },
                 cancellationToken
@@ -241,6 +286,12 @@ internal sealed class MessagePublisher(
             .ConfigureAwait(false);
         // Middleware may suppress publication before the request and its identity exist.
         return receipt;
+    }
+
+    private bool _CanHold<T>(T? content, MessageLane lane, MessageOptions? options, DeliveryDecision decision)
+    {
+        return decision.Path is DeliveryPath.DurableEnlisted
+            && !publishPipeline.HasMiddleware(content, lane, options, decision);
     }
 
     private DeliveryCoordination _ResolveCoordination(IUnitOfWork? unitOfWork)

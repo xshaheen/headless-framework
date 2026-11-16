@@ -116,9 +116,21 @@ public sealed class SqlServerDialectConformanceTests(SqlServerTestFixture fixtur
     }
 
     [Fact]
+    public override Task should_hold_every_name_one_transaction_lock_statement_takes()
+    {
+        return base.should_hold_every_name_one_transaction_lock_statement_takes();
+    }
+
+    [Fact]
     public override Task should_render_portable_expressions()
     {
         return base.should_render_portable_expressions();
+    }
+
+    [Fact]
+    public override Task should_round_trip_binary_memory_whether_it_spans_its_array_or_not()
+    {
+        return base.should_round_trip_binary_memory_whether_it_spans_its_array_or_not();
     }
 
     [Fact]

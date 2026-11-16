@@ -41,6 +41,12 @@ internal sealed class OutboxIntegrationEventDispatcher(IntegrationEventPublishIn
 
         _EnsureOwnsATransaction(unitOfWork);
 
+        // One save's events are all known here, so their rows are held and written together at the end of this call,
+        // in one round trip where the storage can, instead of one round trip each while the save's transaction holds
+        // its locks. The flush runs before this call returns, so a store failure still surfaces here, before the
+        // save commits. A publish that publish middleware wraps is stored on its own, as without the batch.
+        await using var batch = unitOfWork.Outbox.BeginStoreBatch();
+
         foreach (var integrationEvent in integrationEvents)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -54,10 +60,24 @@ internal sealed class OutboxIntegrationEventDispatcher(IntegrationEventPublishIn
                 SuppressAmbientBusinessContext = true,
                 IsRetainedForTransactionReplay = true,
             };
+            if (batch is not null)
+            {
+                // The writer still checks the handle's liveness on every publish of the batch.
+                var publishInBatch = invokerCache.GetBatchPublishInvoker(integrationEvent.Payload.GetType());
+                await publishInBatch(batch, integrationEvent.Payload, options, cancellationToken).ConfigureAwait(false);
+
+                continue;
+            }
+
             var publish = invokerCache.GetPublishInvoker(integrationEvent.Payload.GetType());
             // Read at the call site: the binding checks the handle's liveness per publish, and taking it is free.
             await publish(unitOfWork.Outbox, integrationEvent.Payload, options, cancellationToken)
                 .ConfigureAwait(false);
+        }
+
+        if (batch is not null)
+        {
+            await batch.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 

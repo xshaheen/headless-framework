@@ -124,9 +124,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     /// <see cref="JobPriority.LongRunning"/> work returns as soon as the admission is registered: the bounded
     /// dedicated-thread permit is awaited on a detached lane so a saturated long-running pool never blocks the
     /// caller's dispatch loop. The detached backlog is capped at two parked admissions per slot; beyond the cap
-    /// the admission is rejected outright. A rejected or dropped (cancellation/shutdown) admission never runs;
-    /// the claimed job is recovered by the fallback reclaim sweep when its pickup lease lapses. While a graceful stop
-    /// drains, an admission whose wait is cancelled still runs its work, which hands the claimed row back.
+    /// the admission is rejected outright. A rejected or dropped (cancellation/shutdown) admission never runs. While
+    /// a graceful stop drains, an admission whose wait is cancelled still runs its work, which hands the claimed row
+    /// back.
     /// </summary>
     public Task QueueAsync(
         Func<CancellationToken, Task> work,
@@ -142,9 +142,14 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         JobPriority priority,
         CancellationToken capacityCancellationToken,
         CancellationToken executionCancellationToken,
-        SemaphoreSlim? concurrencyGate = null
+        SemaphoreSlim? concurrencyGate = null,
+        Func<Task>? notAdmitted = null
     )
     {
+        // notAdmitted runs when this call returns normally but the work will never run: a long-running admission
+        // rejected at the backlog cap, or one dropped while parked. A caller whose claim lapses to nobody (an
+        // immediate run's InProgress row, which a lapsed lease settles as a node death) hands the claim back there.
+        // When this method throws, the work was not accepted and the caller still owns the item.
         Argument.IsNotNull(work);
 
         Ensure.NotDisposed(_disposed, this);
@@ -166,13 +171,15 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             // Bound the detached admission backlog at two parked waiters per slot. Under sustained saturation the
             // fallback sweep re-claims a still-parked job every time its pickup lease lapses and dispatches it
             // again, so an unbounded backlog would grow by one waiter per job per lease cycle. Beyond the cap the
-            // admission is rejected outright — the job stays claimed until its lease lapses and the reclaim sweep
-            // re-dispatches it, so nothing is lost.
+            // admission is rejected outright and the caller decides what happens to its claim through notAdmitted.
             var pendingAdmissions = Interlocked.Increment(ref _pendingLongRunningAdmissions);
             if (pendingAdmissions > _maxPendingLongRunningAdmissions)
             {
                 Interlocked.Decrement(ref _pendingLongRunningAdmissions);
                 _logger.LongRunningAdmissionRejected(pendingAdmissions - 1, _maxPendingLongRunningAdmissions);
+
+                await _ReportNotAdmittedAsync(notAdmitted).ConfigureAwait(false);
+
                 return;
             }
 
@@ -182,9 +189,13 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
             // Admission is decoupled from the caller: a saturated long-running pool must not head-of-line-block a
             // sequential dispatch batch that still has ordinary-priority work to queue. A dropped admission
-            // (caller cancellation or shutdown while parked, outside a drain) never runs; the claimed job is
-            // recovered by the fallback reclaim sweep once its pickup lease lapses.
-            _ = _AdmitAndStartLongRunningAsync(work, capacityCancellationToken, executionCancellationToken);
+            // (caller cancellation or shutdown while parked, outside a drain) never runs; notAdmitted reports it.
+            _ = _AdmitAndStartLongRunningAsync(
+                work,
+                notAdmitted,
+                capacityCancellationToken,
+                executionCancellationToken
+            );
 
             return;
         }
@@ -739,12 +750,14 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
     private async Task _AdmitAndStartLongRunningAsync(
         Func<CancellationToken, Task> work,
+        Func<Task>? notAdmitted,
         CancellationToken capacityCancellationToken,
         CancellationToken executionCancellationToken
     )
     {
         var admitted = false;
         var drained = false;
+        var dropped = false;
 
 #pragma warning disable ERP022 // A detached admission has no caller to observe faults; dropping it lets the reclaim sweep recover the job.
         try
@@ -766,6 +779,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         }
         catch
         {
+            dropped = true;
             Interlocked.Decrement(ref _outstandingLongRunningOperations);
             _logger.LongRunningAdmissionDropped(_pendingLongRunningAdmissions, _maxPendingLongRunningAdmissions);
             _TryDisposeLongRunningSlots();
@@ -781,6 +795,12 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         if (drained)
         {
             await _HandBackDrainedLongRunningWorkAsync(work, executionCancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (dropped)
+        {
+            await _ReportNotAdmittedAsync(notAdmitted).ConfigureAwait(false);
             return;
         }
 
@@ -813,6 +833,25 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             _TryDisposeLongRunningSlots();
         }
 #pragma warning restore ERP022
+    }
+
+    // A hand-back fault is logged, never thrown: the detached lane has no caller to surface it to, and a throw from
+    // the cap path would tell the caller the work was not accepted when it was.
+    private async Task _ReportNotAdmittedAsync(Func<Task>? notAdmitted)
+    {
+        if (notAdmitted is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await notAdmitted().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.WorkItemFaulted(exception);
+        }
     }
 
     // Runs work whose slot wait the stop cancelled. It holds no slot and needs none: a draining work item starts no job
@@ -1216,7 +1255,7 @@ internal static partial class JobsTaskSchedulerLog
         EventId = 3302,
         EventName = "JobsLongRunningAdmissionRejected",
         Level = LogLevel.Debug,
-        Message = "Long-running admission rejected at backlog cap ({PendingAdmissions}/{MaxPendingAdmissions} parked); the reclaim sweep re-dispatches the still-claimed job when its pickup lease lapses."
+        Message = "Long-running admission rejected at backlog cap ({PendingAdmissions}/{MaxPendingAdmissions} parked); an immediate run's claim is handed back, and a scheduler claim is re-dispatched by the reclaim sweep when its pickup lease lapses."
     )]
     internal static partial void LongRunningAdmissionRejected(
         this ILogger logger,
@@ -1228,7 +1267,7 @@ internal static partial class JobsTaskSchedulerLog
         EventId = 3303,
         EventName = "JobsLongRunningAdmissionDropped",
         Level = LogLevel.Debug,
-        Message = "Parked long-running admission dropped by cancellation or shutdown ({PendingAdmissions}/{MaxPendingAdmissions} parked); the reclaim sweep recovers the claimed job when its pickup lease lapses."
+        Message = "Parked long-running admission dropped by cancellation or shutdown ({PendingAdmissions}/{MaxPendingAdmissions} parked); an immediate run's claim is handed back, and a scheduler claim is recovered by the reclaim sweep when its pickup lease lapses."
     )]
     internal static partial void LongRunningAdmissionDropped(
         this ILogger logger,

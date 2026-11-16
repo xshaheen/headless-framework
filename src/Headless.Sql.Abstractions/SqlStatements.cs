@@ -260,13 +260,23 @@ public sealed record SqlLockBatch(
 );
 
 /// <summary>
-/// Takes an exclusive lock on an application-defined resource name until the transaction ends, waiting while another
-/// transaction holds it, so callers that share a name serialize even when no row exists to lock yet.
+/// Takes an exclusive lock on each of one or more application-defined resource names until the transaction ends,
+/// waiting while another transaction holds one, so callers that share a name serialize even when no row exists to lock
+/// yet.
 /// </summary>
 /// <remarks>
+/// <para>
+/// The statement takes the locks one after another, in list order, in one command, so locking many names costs one
+/// round trip. Callers that lock overlapping sets must list the names in one agreed order, such as ascending: two
+/// transactions that take the same names in opposite orders can deadlock.
+/// </para>
+/// <para>
 /// The wait is bounded by the command timeout. The name is hashed on PostgreSQL (an advisory lock), and used as is on
 /// SQL Server (an application lock), where it may hold at most 255 characters.
+/// </para>
 /// </remarks>
-/// <param name="ResourceParameter">The text parameter that holds the resource name.</param>
+/// <param name="ResourceParameters">
+/// The text parameters that hold the resource names, in the order the locks are taken. At least one.
+/// </param>
 [PublicAPI]
-public sealed record SqlTransactionLock(string ResourceParameter);
+public sealed record SqlTransactionLock(IReadOnlyList<string> ResourceParameters);

@@ -15,15 +15,17 @@ namespace Headless.Api;
 /// <remarks>
 /// It only adds a vary-by value: it never turns caching on for an endpoint without its own output-cache policy. It
 /// reads the ambient tenant, so <c>UseOutputCache()</c> must run after <c>UseHeadlessTenantCatalogResolution()</c>;
-/// a request that reaches it before resolution ran is logged once per process at Error.
+/// a request that reaches it before resolution ran is logged once per host at Error.
 /// </remarks>
 internal sealed partial class TenantOutputCachePolicy(ILogger<TenantOutputCachePolicy> logger) : IOutputCachePolicy
 {
     /// <summary>The vary-by value name that carries the tenant id (empty for host context).</summary>
     public const string VaryByValueName = "Headless.Tenant";
 
-    // 0 = not yet logged, 1 = logged; the misordering is a pipeline fact, so one event per process is enough.
-    private static int _misorderedLogged;
+    // 0 = not yet logged, 1 = logged; the misordering is a fact of this host's pipeline, so one event per host is enough. The flag is an
+    // instance field: a static one let the first host in a process (such as one WebApplicationFactory) silence
+    // the warning for every later host.
+    private int _misorderedLogged;
 
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
     {

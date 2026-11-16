@@ -12,7 +12,7 @@ namespace Tests;
 
 public sealed class JobsDispatcherTests : TestBase
 {
-    private static readonly TimeSpan _waitBudget = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _waitBudget = HeadlessTestTaskExtensions.DefaultTimeout;
 
     [Fact]
     public async Task dispatched_job_keeps_running_when_the_enqueuers_token_is_cancelled_after_dispatch()
@@ -107,6 +107,170 @@ public sealed class JobsDispatcherTests : TestBase
 
         var observedCancellation = await observed.Task.WaitAsync(_waitBudget, AbortToken);
         observedCancellation.Should().BeTrue("scheduler shutdown must still reach immediate-dispatch jobs");
+    }
+
+    [Fact]
+    public async Task should_hand_back_every_claimed_context_when_the_callers_token_cancels_before_admission()
+    {
+        // An HTTP request enqueues due-now jobs and its client disconnects before the pool admits them. The rows are
+        // already InProgress with a lease, so leaving them would let the stalled reclaim settle them as a node death
+        // (a charged retry, or Failed with no retries) although no handler ever ran.
+        var manager = _HealthyManager();
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var handler = _Handler(serviceProvider, manager);
+        await using var taskScheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
+        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+
+        var ran = 0;
+        var first = _Job(
+            "fn-c",
+            (_, _, _) =>
+            {
+                Interlocked.Increment(ref ran);
+                return Task.CompletedTask;
+            }
+        );
+        var second = _Job(
+            "fn-c",
+            (_, _, _) =>
+            {
+                Interlocked.Increment(ref ran);
+                return Task.CompletedTask;
+            }
+        );
+        using var callerCts = new CancellationTokenSource();
+        await callerCts.CancelAsync();
+
+        var dispatch = () => dispatcher.DispatchAsync([first, second], callerCts.Token);
+
+        await dispatch.Should().NotThrowAsync("the rows are durably enqueued; only this node will not run them");
+        await manager.Received(1).ReleaseInProgressAsync(first, Arg.Any<CancellationToken>());
+        await manager.Received(1).ReleaseInProgressAsync(second, Arg.Any<CancellationToken>());
+        Volatile.Read(ref ran).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_hand_back_a_long_running_context_when_the_backlog_cap_rejects_it()
+    {
+        var manager = _HealthyManager();
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var handler = _Handler(serviceProvider, manager);
+        await using var taskScheduler = new JobsTaskScheduler(
+            maxConcurrency: 1,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
+        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var unblock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var running = _LongRunningJob(
+            "fn-long",
+            async (_, _, _) =>
+            {
+                started.TrySetResult();
+                await unblock.Task.ConfigureAwait(false);
+            }
+        );
+        await dispatcher.DispatchAsync([running], AbortToken);
+        await started.Task.WaitAsync(_waitBudget, AbortToken);
+
+        // One slot, so the backlog holds two parked admissions; the third is over the cap.
+        var parkedA = _LongRunningJob("fn-long", (_, _, _) => Task.CompletedTask);
+        var parkedB = _LongRunningJob("fn-long", (_, _, _) => Task.CompletedTask);
+        var rejected = _LongRunningJob("fn-long", (_, _, _) => Task.CompletedTask);
+
+        try
+        {
+            await dispatcher.DispatchAsync([parkedA, parkedB, rejected], AbortToken);
+
+            await manager.Received(1).ReleaseInProgressAsync(rejected, Arg.Any<CancellationToken>());
+            await manager.DidNotReceive().ReleaseInProgressAsync(parkedA, Arg.Any<CancellationToken>());
+            await manager.DidNotReceive().ReleaseInProgressAsync(parkedB, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            unblock.TrySetResult();
+        }
+
+        (await taskScheduler.WaitForRunningTasksAsync(_waitBudget)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_hand_back_a_parked_long_running_context_when_the_callers_token_cancels()
+    {
+        var manager = _HealthyManager();
+        var handedBack = new TaskCompletionSource<JobExecutionState>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        manager
+            .ReleaseInProgressAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                handedBack.TrySetResult(call.Arg<JobExecutionState>());
+                return Task.FromResult(1);
+            });
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var handler = _Handler(serviceProvider, manager);
+        await using var taskScheduler = new JobsTaskScheduler(
+            maxConcurrency: 1,
+            timeProvider: TimeProvider.System,
+            maxLongRunningConcurrency: 1
+        );
+        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var unblock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var running = _LongRunningJob(
+            "fn-long",
+            async (_, _, _) =>
+            {
+                started.TrySetResult();
+                await unblock.Task.ConfigureAwait(false);
+            }
+        );
+        await dispatcher.DispatchAsync([running], AbortToken);
+        await started.Task.WaitAsync(_waitBudget, AbortToken);
+
+        var parkedRan = false;
+        var parked = _LongRunningJob(
+            "fn-long",
+            (_, _, _) =>
+            {
+                parkedRan = true;
+                return Task.CompletedTask;
+            }
+        );
+
+        try
+        {
+            using var callerCts = new CancellationTokenSource();
+            await dispatcher.DispatchAsync([parked], callerCts.Token);
+            await callerCts.CancelAsync();
+
+            var released = await handedBack.Task.WaitAsync(_waitBudget, AbortToken);
+            released.Should().BeSameAs(parked);
+        }
+        finally
+        {
+            unblock.TrySetResult();
+        }
+
+        (await taskScheduler.WaitForRunningTasksAsync(_waitBudget)).Should().BeTrue();
+        parkedRan.Should().BeFalse("a dropped admission never reaches its handler");
+    }
+
+    private static JobExecutionState _LongRunningJob(string functionName, JobFunctionDelegate function)
+    {
+        var job = _Job(functionName, function);
+        job.CachedPriority = JobPriority.LongRunning;
+        return job;
     }
 
     private static IInternalJobManager _HealthyManager()

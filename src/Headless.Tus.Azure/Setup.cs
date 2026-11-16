@@ -4,6 +4,7 @@ using Azure.Storage.Blobs;
 using Headless.Checks;
 using Headless.Hosting;
 using Headless.Tus.Internal;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -38,7 +39,8 @@ public static class SetupTusAzureStore
         /// Requires a <see cref="BlobServiceClient"/> registration (for example via
         /// <c>Microsoft.Extensions.Azure</c>'s <c>AddAzureClients</c>). An
         /// <c>ITusAzureBlobHttpHeadersProvider</c> or <c>ITusFileIdProvider</c> registered before
-        /// this call is honored; otherwise the defaults apply. The container is registered as a
+        /// this call is honored; otherwise the defaults apply. It also adds <c>IHttpContextAccessor</c>, which lets the
+        /// store answer the several store calls of one tus request from one read. The container is registered as a
         /// provisioned resource of kind <c>AzureBlob</c>: a deploy step creates it with
         /// <c>resources provision</c>, and a starting host holds readiness until it exists.
         /// </remarks>
@@ -78,6 +80,8 @@ public static class SetupTusAzureStore
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ITusAzureBlobHttpHeadersProvider, DefaultTusAzureBlobHttpHeadersProvider>();
+        // Lets the store read a blob's properties and block list once per tus request instead of once per store call.
+        services.AddHttpContextAccessor();
 
         services.TryAddSingleton(provider => new TusAzureStore(
             provider.GetRequiredService<BlobServiceClient>(),
@@ -85,7 +89,8 @@ public static class SetupTusAzureStore
             provider.GetRequiredService<ITusAzureBlobHttpHeadersProvider>(),
             provider.GetService<ITusFileIdProvider>(),
             provider.GetService<ILoggerFactory>(),
-            provider.GetService<TimeProvider>()
+            provider.GetService<TimeProvider>(),
+            provider.GetService<IHttpContextAccessor>()
         ));
 
         if (!storeAlreadyRegistered)

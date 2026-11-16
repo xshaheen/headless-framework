@@ -8,6 +8,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging" />
     <InternalsVisibleTo Include="Headless.EntityFramework.Messaging" />
+    <InternalsVisibleTo Include="Headless.EntityFramework.Messaging.Tests.Unit" />
     <!-- Grants Tests.Unit access to internal ConsumeContext.Response/ResponseType/ResponseCallbackName and MarkCompleted() for callback-capture unit assertions. -->
     <InternalsVisibleTo Include="Headless.Messaging.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.SourceGenerator.Tests.Unit" />

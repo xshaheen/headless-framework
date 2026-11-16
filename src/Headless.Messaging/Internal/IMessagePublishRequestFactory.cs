@@ -79,6 +79,17 @@ internal sealed class MessagePublishRequestFactory(
     // intent) and often a few more; reserving room up front avoids growing the dictionary while they are added.
     private const int _FrameworkHeaderCapacity = 16;
 
+    // Built once: a validation message is read only when the check fails, and these run on every publish.
+    private static readonly string _MessageIdTooLongMessage = string.Create(
+        CultureInfo.InvariantCulture,
+        $"Options.MessageId must be {MessageOptions.MessageIdMaxLength} characters or fewer before durable storage."
+    );
+
+    private static readonly string _TenantIdTooLongMessage = string.Create(
+        CultureInfo.InvariantCulture,
+        $"Options.TenantId must be {MessageOptions.TenantIdMaxLength} characters or fewer before durable storage."
+    );
+
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
     {
         Headers.MessageId,
@@ -539,7 +550,7 @@ internal sealed class MessagePublishRequestFactory(
         Argument.IsLessThanOrEqualTo(
             messageId.Length,
             MessageOptions.MessageIdMaxLength,
-            $"Options.MessageId must be {MessageOptions.MessageIdMaxLength} characters or fewer before durable storage.",
+            _MessageIdTooLongMessage,
             paramName: nameof(messageId)
         );
 
@@ -661,7 +672,7 @@ internal sealed class MessagePublishRequestFactory(
         Argument.IsLessThanOrEqualTo(
             tenantId.Length,
             MessageOptions.TenantIdMaxLength,
-            $"Options.TenantId must be {MessageOptions.TenantIdMaxLength} characters or fewer before durable storage.",
+            _TenantIdTooLongMessage,
             paramName: nameof(tenantId)
         );
 

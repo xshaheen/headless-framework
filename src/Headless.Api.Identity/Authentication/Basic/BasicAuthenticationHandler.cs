@@ -68,7 +68,7 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
 
         if (cacheKey is not null && credentialCache!.TryGet(Scheme.Name, cacheKey) is { } cachedPrincipal)
         {
-            return AuthenticateResult.Success(new AuthenticationTicket(cachedPrincipal, Options.Scheme));
+            return AuthenticateResult.Success(new AuthenticationTicket(cachedPrincipal, Scheme.Name));
         }
 
         var user = await userManager.FindByNameAsync(userName).ConfigureAwait(false);
@@ -94,7 +94,8 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
             credentialCache!.Set(Scheme.Name, cacheKey, claimsPrincipal, Options);
         }
 
-        var ticket = new AuthenticationTicket(claimsPrincipal, Options.Scheme);
+        // The ticket names the scheme it was registered under, as AddBasicSchema("partner-basic") expects.
+        var ticket = new AuthenticationTicket(claimsPrincipal, Scheme.Name);
 
         return AuthenticateResult.Success(ticket);
     }

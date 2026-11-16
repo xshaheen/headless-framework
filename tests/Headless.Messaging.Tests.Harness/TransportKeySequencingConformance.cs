@@ -26,10 +26,34 @@ public static class TransportKeySequencingConformance
     /// concurrency run side by side and no more, and, on a transport that delivers in publish order, that each key's
     /// messages run in that order.
     /// </summary>
-    public static async Task AssertAsync(TransportProviderConformanceDriver driver, CancellationToken cancellationToken)
+    public static Task AssertAsync(TransportProviderConformanceDriver driver, CancellationToken cancellationToken) =>
+        AssertAsync(
+            // The same transport a consuming host uses; every driver configures it, whatever its request/reply support.
+            driver.ConfigureRequestReplyTransport,
+            driver.ConfigureRequestReplyServices,
+            $"conformance.seq.{Guid.NewGuid():N}",
+            driver.DeliversInPublishOrder,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Runs the same proof on a Queue-lane <paramref name="destination"/> the caller provides, for a broker that cannot
+    /// create one at run time. The destination must be empty and used by no other test.
+    /// </summary>
+    /// <param name="configureTransport">Wires the transport the consuming host uses.</param>
+    /// <param name="configureServices">Adds the services that transport needs.</param>
+    /// <param name="destination">The queue the keyed messages are published to and consumed from.</param>
+    /// <param name="deliversInPublishOrder">Whether the destination delivers in publish order, so each key's order is checked.</param>
+    /// <param name="cancellationToken">Cancels the run.</param>
+    public static async Task AssertAsync(
+        Action<MessagingSetupBuilder> configureTransport,
+        Action<IServiceCollection> configureServices,
+        string destination,
+        bool deliversInPublishOrder,
+        CancellationToken cancellationToken
+    )
     {
         var probe = new KeySequencingProbe();
-        var destination = $"conformance.seq.{Guid.NewGuid():N}";
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(probe);
@@ -40,8 +64,7 @@ public static class TransportKeySequencingConformance
         });
         services.AddHeadlessMessaging(setup =>
         {
-            // The same transport a consuming host uses; every driver configures it, whatever its request/reply support.
-            driver.ConfigureRequestReplyTransport(setup);
+            configureTransport(setup);
             setup.UseInMemoryStorage();
             setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.Tune(
@@ -49,7 +72,7 @@ public static class TransportKeySequencingConformance
                 consumer => consumer.Concurrency(_Concurrency).Sequential()
             );
         });
-        driver.ConfigureRequestReplyServices(services);
+        configureServices(services);
 
         await using var provider = services.BuildServiceProvider();
         await provider.SetupResourcesAndBootstrapAsync(cancellationToken);
@@ -127,7 +150,7 @@ public static class TransportKeySequencingConformance
         probe.MostAtOnce.Should().Be(_Concurrency);
         foreach (var key in keys)
         {
-            if (driver.DeliversInPublishOrder)
+            if (deliversInPublishOrder)
             {
                 runOrder[key].Should().Equal(Enumerable.Range(0, _MessagesPerKey), $"{key} runs in publish order");
             }

@@ -36,4 +36,7 @@
   <data name="setting:decryption_failed" xml:space="preserve">
     <value>Failed to decrypt setting value for setting name: {0}.</value>
   </data>
+  <data name="setting:provider_not_allowed" xml:space="preserve">
+    <value>Setting {0} does not allow the {1} provider.</value>
+  </data>
 </root>

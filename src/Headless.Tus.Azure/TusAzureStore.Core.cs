@@ -1,8 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Azure;
-using Azure.Storage.Blobs.Specialized;
-
 namespace Headless.Tus;
 
 public sealed partial class TusAzureStore
@@ -18,18 +15,11 @@ public sealed partial class TusAzureStore
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
-        var blobClient = _GetBlobClient(fileId);
+        // A properties read rather than an existence check: it costs the same request, and the rest of the
+        // tus request's calls are answered from what it loaded.
+        var file = await _LoadFileAsync(fileId, cancellationToken).ConfigureAwait(false);
 
-        try
-        {
-            var response = await blobClient.ExistsAsync(cancellationToken).ConfigureAwait(false);
-
-            return response.Value;
-        }
-        catch (RequestFailedException e) when (e.Status == 404)
-        {
-            return false;
-        }
+        return file is not null;
     }
 
     /// <summary>
@@ -44,7 +34,7 @@ public sealed partial class TusAzureStore
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
-        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var blobInfo = await _LoadFileAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return blobInfo?.Metadata.UploadLength;
     }
@@ -55,23 +45,21 @@ public sealed partial class TusAzureStore
     /// <param name="fileId">the TUS file identifier</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <returns>
-    /// the sum of all committed Azure block sizes in bytes; 0 if the blob does not exist or has
-    /// no committed blocks
+    /// the committed length of the blob in bytes; 0 if the blob does not exist or has no committed
+    /// blocks
     /// </returns>
     /// <remarks>
-    /// The offset is derived from the committed block list, not from the blob's
-    /// <c>ContentLength</c> property. This correctly excludes any staged-but-uncommitted blocks
-    /// (for example, blocks held pending checksum verification).
+    /// The offset is the blob's <c>ContentLength</c>, which for a block blob counts committed
+    /// blocks only, so staged-but-uncommitted blocks (for example, blocks held pending checksum
+    /// verification) never advance it. Reading it from the properties lets a HEAD answer every
+    /// store call from one request.
     /// </remarks>
     public async Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
-        // No GetProperties pre-check: _GetCommittedBlocksAsync maps a missing blob (404) to an empty list,
-        // so the offset is 0 either way and this method costs one round-trip instead of two per HEAD/PATCH.
-        var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
-        var blockList = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
+        var file = await _LoadFileAsync(fileId, cancellationToken).ConfigureAwait(false);
 
-        return blockList.Sum(block => block.SizeLong);
+        return file?.CurrentContentLength ?? 0;
     }
 }

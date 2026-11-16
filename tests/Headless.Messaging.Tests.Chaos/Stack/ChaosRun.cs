@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Headless.Context;
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
@@ -302,6 +303,8 @@ public sealed class ChaosRun : IAsyncDisposable
         var builder = Host.CreateEmptyApplicationBuilder(settings: null);
         var services = builder.Services;
 
+        // A host start only verifies the broker topology, so each chaos host provisions it first, as a deploy would.
+        services.AddDeployStepsOnStartup(options => options.Seed = false);
         services.AddLogging(logging =>
         {
             logging.AddProvider(_logs);

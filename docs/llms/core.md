@@ -38,6 +38,7 @@ Guard clause library for argument validation and defensive programming.
 - **Runtime Assertions**: `Ensure` class for internal state validation
 - **Performance Optimized**: `AggressiveInlining` and `DebuggerStepThrough`
 - **Caller Expression Support**: Automatic parameter name capture
+- **Free Passing Checks**: `Ensure.True` and `Argument.IsTrue` take an interpolated-string message through `TrueCheckInterpolatedStringHandler`, which formats the message only when the check fails, so a passing check with `$"...{value}"` builds no string. The message is formatted with the invariant culture. String literals and `string` variables still bind to the `string?` overload
 - **Type Support**: Nullable, `Span<T>`, `ReadOnlySpan<T>`, collections, strings
 
 ### Install
@@ -97,6 +98,7 @@ public void ProcessOrder()
     Ensure.NotDisposed(_disposed, this);
     Ensure.False(_queue.IsEmpty, "Queue should not be empty.");
     var connection = Ensure.NotNull(_connection); // state must-be-present; throws InvalidOperationException
+    Ensure.True(_pending < _max, $"At most {_max} pending orders."); // the message is built only when the check fails
 }
 ```
 

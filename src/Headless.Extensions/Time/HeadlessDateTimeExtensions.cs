@@ -176,7 +176,10 @@ public static class HeadlessDateTimeExtensions
     [JetBrainsPure]
     public static DateTime Ceiling(this DateTime date, TimeSpan interval)
     {
-        return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
+        var remainder = date.Ticks % interval.Ticks;
+
+        // A value already on the boundary is its own ceiling; adding a whole interval would skip a slot.
+        return remainder == 0 ? date : date.AddTicks(interval.Ticks - remainder);
     }
 
     /// <summary>Extracts the date portion of <paramref name="date"/> as a <see cref="DateOnly"/>, ignoring the time-of-day.</summary>

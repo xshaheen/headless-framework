@@ -2070,6 +2070,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         owner,
                         // Mirrors the acquire predicate's owner arm; the new generation fences off the earlier dispatch.
                         reclaimOwn: true,
+                        supersededBefore: null,
                         cancellationToken
                     )
                     .ConfigureAwait(false)

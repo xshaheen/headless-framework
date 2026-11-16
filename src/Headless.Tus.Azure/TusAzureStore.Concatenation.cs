@@ -29,7 +29,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
         var blobClient = _GetBlobClient(fileId);
-        var tusFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
+        var tusFile = await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
         if (tusFile == null)
         {
@@ -73,16 +73,23 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.UploadLength = uploadLength >= 0 ? uploadLength : null;
             blobMetadata.ConcatType = "partial";
 
-            await blobClient
+            var httpHeaders = await _blobHttpHeadersProvider
+                .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
+                .ConfigureAwait(false);
+            var created = await blobClient
                 .UploadAsync(
                     content: Stream.Null,
-                    httpHeaders: await _blobHttpHeadersProvider
-                        .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
-                        .ConfigureAwait(false),
+                    httpHeaders: httpHeaders,
                     metadata: blobMetadata.ToAzure(),
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
+
+            // As for CreateFileAsync: the rest of the creating request starts from the blob just written.
+            _memo.Set(
+                fileId,
+                TusAzureFile.Created(fileId, blobClient.Name, created.Value.ETag, blobMetadata, httpHeaders)
+            );
 
             _logger.LogCreatedPartialFile(fileId, uploadLength);
 
@@ -335,7 +342,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             var blobClient = _GetBlobClient(partialFileId);
 
             var blobInfo =
-                await _GetTusFileInfoAsync(blobClient, partialFileId, cancellationToken).ConfigureAwait(false)
+                await _LoadFileAsync(blobClient, partialFileId, cancellationToken).ConfigureAwait(false)
                 ?? throw new TusStoreException($"Partial file {partialFileId} does not exist");
 
             // Verify it's a partial file

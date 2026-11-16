@@ -105,6 +105,19 @@ public sealed class EncryptedValueConverterTests : TestBase
     }
 
     [Fact]
+    public void should_share_the_frame_array_in_both_directions()
+    {
+        var converter = new EncryptedValueConverter();
+        var stored = _Frame().ToArray();
+
+        var read = (EncryptedValue)converter.ConvertFromProvider(stored)!;
+        var written = (byte[])converter.ConvertToProvider(read)!;
+
+        written.Should().BeSameAs(stored);
+        read.Should().Be(EncryptedValue.FromBytes(stored));
+    }
+
+    [Fact]
     public void should_map_both_shapes_to_a_binary_column()
     {
         using var db = _Context();

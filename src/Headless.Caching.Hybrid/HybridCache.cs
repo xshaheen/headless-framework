@@ -114,7 +114,7 @@ public sealed partial class HybridCache(
     /// </summary>
     internal async ValueTask FlushLocalAfterSubscriptionGapAsync(long generation, CancellationToken ct)
     {
-        await LocalCache.FlushAsync(ct).ConfigureAwait(false);
+        await _L1ForAll().FlushAsync(ct).ConfigureAwait(false);
         _logger.LogFlushedLocalCacheAfterSubscriptionGap(generation);
     }
 
@@ -164,7 +164,7 @@ public sealed partial class HybridCache(
             }
 
             // Physically wipe this receiver's L1 (drops its local fail-safe reserves, matching the originator).
-            await LocalCache.FlushAsync(ct).ConfigureAwait(false);
+            await _L1ForAll().FlushAsync(ct).ConfigureAwait(false);
 
             return;
         }
@@ -189,7 +189,7 @@ public sealed partial class HybridCache(
             }
             else
             {
-                await LocalCache.ClearAsync(ct).ConfigureAwait(false);
+                await _L1ForAll().ClearAsync(ct).ConfigureAwait(false);
             }
 
             // Seed the L2 provider's process-local marker cache too (when it caches markers): without this, an
@@ -205,7 +205,7 @@ public sealed partial class HybridCache(
 
         if (!string.IsNullOrEmpty(message.Prefix))
         {
-            await LocalCache.RemoveByPrefixAsync(message.Prefix, ct).ConfigureAwait(false);
+            await _L1ForAll().RemoveByPrefixAsync(message.Prefix, ct).ConfigureAwait(false);
             return;
         }
 
@@ -235,7 +235,7 @@ public sealed partial class HybridCache(
             }
             else
             {
-                await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
+                await _L1ForAll().RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
             }
 
             // Seed the L2 provider's process-local marker cache too so an L1-miss read on this peer observes the
@@ -269,12 +269,12 @@ public sealed partial class HybridCache(
                     // removing, since there is no bulk logical-expire on the local store.
                     foreach (var key in keys)
                     {
-                        await LocalCache.ExpireAsync(key, ct).ConfigureAwait(false);
+                        await _L1For(key).ExpireAsync(key, ct).ConfigureAwait(false);
                     }
                 }
                 else
                 {
-                    await LocalCache.RemoveAllAsync(keys, ct).ConfigureAwait(false);
+                    await _L1ForAll().RemoveAllAsync(keys, ct).ConfigureAwait(false);
                 }
             }
 
@@ -287,11 +287,11 @@ public sealed partial class HybridCache(
             {
                 if (message.Expire)
                 {
-                    await LocalCache.ExpireAsync(message.Key, ct).ConfigureAwait(false);
+                    await _L1For(message.Key).ExpireAsync(message.Key, ct).ConfigureAwait(false);
                 }
                 else
                 {
-                    await LocalCache.RemoveAsync(message.Key, ct).ConfigureAwait(false);
+                    await _L1For(message.Key).RemoveAsync(message.Key, ct).ConfigureAwait(false);
                 }
             }
 

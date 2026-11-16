@@ -217,7 +217,12 @@ public sealed class SimulatedConsumerClient : IConsumerClient
                 slotHeld = true;
             }
 
-            var step = _Poll(retryAt);
+            // Withdraws a back-off's retry deadline when a broker change wins, so an abandoned retry never lingers as a
+            // pending clock wait.
+            using var withdrawRetry = retryAt is null
+                ? null
+                : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var step = _Poll(retryAt, withdrawRetry?.Token ?? CancellationToken.None);
 
             switch (step.Kind)
             {
@@ -225,7 +230,15 @@ public sealed class SimulatedConsumerClient : IConsumerClient
                     _ReleaseSlot(ref slotHeld);
                     return;
                 case PollKind.BackingOff:
-                    await _BackOffAsync(step.Changed, retryAt!.Value, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await _WaitAsync(step.Changed, step.Retry, cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        await withdrawRetry!.CancelAsync().ConfigureAwait(false);
+                    }
+
                     continue;
                 case PollKind.Unreachable:
                 case PollKind.ReceiveFailed:
@@ -430,11 +443,11 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         );
     }
 
-    private PollStep _Poll(DateTimeOffset? retryAt)
+    private PollStep _Poll(DateTimeOffset? retryAt, CancellationToken withdrawRetry)
     {
         lock (_broker.Gate)
         {
-            var step = _PollLocked(retryAt);
+            var step = _PollLocked(retryAt, withdrawRetry);
 
             // Read after the poll, whose own records move the generation: the loop waits next only on these two steps.
             _parkedGeneration =
@@ -453,7 +466,7 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         }
     }
 
-    private PollStep _PollLocked(DateTimeOffset? retryAt)
+    private PollStep _PollLocked(DateTimeOffset? retryAt, CancellationToken withdrawRetry)
     {
         var now = _broker.Clock.GetUtcNow();
         var changed = _broker.ChangedLocked;
@@ -463,9 +476,13 @@ public sealed class SimulatedConsumerClient : IConsumerClient
             return new PollStep(PollKind.Stopped, now, changed);
         }
 
-        if (retryAt > now)
+        if (retryAt is { } due && due > now)
         {
-            return new PollStep(PollKind.BackingOff, now, changed);
+            // Armed under the broker gate, in the step that parks the loop: once parked, the loop counts as quiescent,
+            // and a wait clock that then reads the pending waits without this retry would step straight past it to a
+            // test's receive timeout, which then fires with the client still cut off.
+            var retry = _broker.Clock.WhenReachedAsync(due, withdrawRetry);
+            return new PollStep(PollKind.BackingOff, now, changed, Retry: retry);
         }
 
         if (!_broker.IsConnectedLocked)
@@ -768,23 +785,6 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         }
     }
 
-    /// <summary>Waits for the retry time or for a broker change, such as a close, whichever comes first.</summary>
-    private async Task _BackOffAsync(Task changed, DateTimeOffset retryAt, CancellationToken cancellationToken)
-    {
-        // The deadline is withdrawn when the change wins, so an abandoned retry never lingers as a pending clock wait.
-        using var withdraw = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var retry = _broker.Clock.WhenReachedAsync(retryAt, withdraw.Token);
-
-        try
-        {
-            await _WaitAsync(changed, retry, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            await withdraw.CancelAsync().ConfigureAwait(false);
-        }
-    }
-
     private static async Task _WaitAsync(Task changed, Task? other, CancellationToken cancellationToken)
     {
         try
@@ -813,6 +813,7 @@ public sealed class SimulatedConsumerClient : IConsumerClient
         DateTimeOffset Now,
         Task Changed,
         string? Reason = null,
-        SimulatedDelivery? Delivery = null
+        SimulatedDelivery? Delivery = null,
+        Task? Retry = null
     );
 }

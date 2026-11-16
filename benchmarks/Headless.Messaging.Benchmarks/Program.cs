@@ -11,6 +11,13 @@ if (args is ["relay"])
     return;
 }
 
+if (args is ["outbox-save"])
+{
+    await OutboxSaveScenario.RunAsync();
+
+    return;
+}
+
 if (args is ["send-window"])
 {
     await ParallelSendWindowScenario.RunAsync();
@@ -26,5 +33,6 @@ BenchmarkSwitcher
         typeof(DelayedSchedulingBenchmarks),
         typeof(RetryEngineBenchmarks),
         typeof(ContentRefreshBenchmarks),
+        typeof(TransportSendMetadataBenchmarks),
     ])
     .Run(args, BenchmarkRunConfig.Create());

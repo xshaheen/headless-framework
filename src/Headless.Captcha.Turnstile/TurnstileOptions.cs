@@ -22,6 +22,18 @@ public sealed class TurnstileOptions
 
     /// <summary>The Turnstile secret key used for server-side verification.</summary>
     public required string SiteSecret { get; set; }
+
+    /// <summary>
+    /// The widget action a token must carry. A token solved for another action fails with the error code
+    /// <c>action-mismatch</c>. Defaults to <see langword="null"/>, which skips the check.
+    /// </summary>
+    public string? ExpectedAction { get; set; }
+
+    /// <summary>
+    /// The host name a token must have been solved on, compared ignoring case. A token solved on another host fails with
+    /// the error code <c>hostname-mismatch</c>. Defaults to <see langword="null"/>, which skips the check.
+    /// </summary>
+    public string? ExpectedHostName { get; set; }
 }
 
 internal sealed class TurnstileOptionsValidator : AbstractValidator<TurnstileOptions>

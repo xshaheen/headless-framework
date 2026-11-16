@@ -53,10 +53,10 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
 {
     private readonly TenantTelemetryOptions _telemetryOptions = telemetryOptions.Value;
 
-    // Fires exactly once per process for HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING and
+    // Fires exactly once per host for HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING and
     // HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED. 0 = not yet warned, 1 = warned.
     // CompareExchange ensures one of the two events is emitted by at most one request.
-    private static int _orderingWarningEmitted;
+    private int _orderingWarningEmitted;
 
     // Evaluated once at construction: whether the registered sources include a route source, whose
     // input only exists after UseRouting() — that misordering silently degrades every request to
@@ -224,15 +224,6 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
     }
 
     /// <summary>
-    /// Test seam: resets the once-per-process ordering warning flag so that tests asserting on the
-    /// HEADLESS_TENANT_CATALOG_MIDDLEWARE_ORDERING log entry can run in any order.
-    /// </summary>
-    internal static void ResetOrderingWarningForTesting()
-    {
-        Volatile.Write(ref _orderingWarningEmitted, 0);
-    }
-
-    /// <summary>
     /// Unconditional identifier/claim mismatch enforcement: rejects the request when the default-scheme principal
     /// carries a tenant claim that disagrees with the identifier-resolved tenant. Returns
     /// <see langword="true"/> when the response was written and the pipeline must short-circuit.
@@ -342,7 +333,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
         Message = "UseHeadlessTenantCatalogResolution() observed a request with no resolved endpoint. "
             + "Tenant resolution still ran, but [SkipTenantResolution] endpoint metadata was not "
             + "discoverable and was ignored. Place UseHeadlessTenantCatalogResolution() AFTER "
-            + "UseRouting() and BEFORE UseAuthentication(). This warning is emitted once per process."
+            + "UseRouting() and BEFORE UseAuthentication(). This warning is emitted once per host."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogMiddlewareOrderingWarning(ILogger logger);
@@ -356,7 +347,7 @@ internal sealed partial class TenantCatalogResolutionMiddleware(
             + "found a tenant: requests it should have scoped ran as host context unless a later source "
             + "resolved them. Place UseHeadlessTenantCatalogResolution() "
             + "AFTER UseRouting() and BEFORE UseAuthentication(). This error is emitted once per "
-            + "process and never logs the request path or route values."
+            + "host and never logs the request path or route values."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogRouteSourceMisorderedError(ILogger logger);

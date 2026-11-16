@@ -72,11 +72,7 @@ public readonly struct EncryptedValue : IEquatable<EncryptedValue>
     /// </exception>
     public static EncryptedValue FromBytes(ReadOnlySpan<byte> frame)
     {
-        return TryFromBytes(frame, out var value)
-            ? value
-            : throw new FormatException(
-                $"The bytes are not an encrypted value: a frame is at least {Overhead} bytes and starts with format version {FormatVersion}."
-            );
+        return TryFromBytes(frame, out var value) ? value : throw _NotAFrame();
     }
 
     /// <summary>Copies <paramref name="frame" /> into a value when it has a frame's shape.</summary>
@@ -85,7 +81,7 @@ public readonly struct EncryptedValue : IEquatable<EncryptedValue>
     /// <returns><see langword="true" /> when the bytes are a frame.</returns>
     public static bool TryFromBytes(ReadOnlySpan<byte> frame, out EncryptedValue value)
     {
-        if (frame.Length < Overhead || frame[0] != FormatVersion)
+        if (!_IsFrame(frame))
         {
             value = default;
 
@@ -95,6 +91,22 @@ public readonly struct EncryptedValue : IEquatable<EncryptedValue>
         value = new EncryptedValue(frame.ToArray());
 
         return true;
+    }
+
+    /// <summary>
+    /// Wraps <paramref name="frame" /> without copying it, after checking it has a frame's shape. The value takes the
+    /// array over, so the caller must not keep, change, or hand it out afterwards.
+    /// </summary>
+    /// <remarks>
+    /// For a frame the caller just created and owns alone, such as a fresh seal or a byte array a database reader
+    /// allocated for one row, where <see cref="FromBytes" /> would only copy it a second time.
+    /// </remarks>
+    /// <exception cref="FormatException">
+    /// <paramref name="frame" /> is shorter than <see cref="Overhead" /> bytes or its format version is unknown.
+    /// </exception>
+    internal static EncryptedValue FromOwnedBytes(byte[] frame)
+    {
+        return _IsFrame(frame) ? new EncryptedValue(frame) : throw _NotAFrame();
     }
 
     /// <summary>Reads a value written by <see cref="ToBase64Url" />.</summary>
@@ -144,6 +156,13 @@ public readonly struct EncryptedValue : IEquatable<EncryptedValue>
     /// <returns>The frame; empty for the default value.</returns>
     public byte[] ToArray() => _frame is null ? [] : (byte[])_frame.Clone();
 
+    /// <summary>
+    /// Returns the frame's own array, not a copy, for a writer that only reads it, such as a database parameter; the
+    /// caller must never change it, because the value is immutable.
+    /// </summary>
+    /// <returns>The frame; <see langword="null" /> for the default value.</returns>
+    internal byte[]? GetFrameArray() => _frame;
+
     /// <summary>Returns the frame as unpadded base64url text, for a column that must stay text.</summary>
     /// <returns>The text; empty for the default value.</returns>
     public string ToBase64Url() => _frame is null ? string.Empty : Base64Url.EncodeToString(_frame);
@@ -174,6 +193,13 @@ public readonly struct EncryptedValue : IEquatable<EncryptedValue>
 
     /// <summary>Compares two values by their frame bytes.</summary>
     public static bool operator !=(EncryptedValue left, EncryptedValue right) => !left.Equals(right);
+
+    private static bool _IsFrame(ReadOnlySpan<byte> frame) => frame.Length >= Overhead && frame[0] == FormatVersion;
+
+    private static FormatException _NotAFrame() =>
+        new(
+            $"The bytes are not an encrypted value: a frame is at least {Overhead} bytes and starts with format version {FormatVersion}."
+        );
 
     private byte[] _Require() =>
         _frame ?? throw new InvalidOperationException("The default EncryptedValue holds no frame.");

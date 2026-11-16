@@ -13,6 +13,12 @@ public sealed class PostgreSqlSequencesConformanceTests(PostgreSqlSequencesFixtu
     }
 
     [Fact]
+    public override Task should_never_issue_a_value_twice_when_two_hosts_take_values_from_blocks()
+    {
+        return base.should_never_issue_a_value_twice_when_two_hosts_take_values_from_blocks();
+    }
+
+    [Fact]
     public override Task should_create_the_counter_once_when_first_calls_race_on_a_new_key()
     {
         return base.should_create_the_counter_once_when_first_calls_race_on_a_new_key();

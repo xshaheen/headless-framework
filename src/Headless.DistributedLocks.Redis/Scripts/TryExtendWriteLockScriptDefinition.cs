@@ -23,7 +23,12 @@ internal sealed class TryExtendWriteLockScriptDefinition : RedisScriptDefinition
             end
 
             if (@expires ~= nil and @expires ~= '') then
-              redis.call('pexpire', @writerKey, @expires)
+              -- Never shorten a live lease (or turn a persisted one finite): a shorter extend keeps the current TTL,
+              -- matching the in-memory provider. PTTL is -1 for a key with no expiry.
+              local currentTtl = redis.call('pttl', @writerKey)
+              if currentTtl ~= -1 and currentTtl < tonumber(@expires) then
+                redis.call('pexpire', @writerKey, @expires)
+              end
             else
               redis.call('persist', @writerKey)
             end

@@ -43,6 +43,21 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
     }
 
     [Fact]
+    public void should_ask_for_a_single_active_consumer_only_when_requested()
+    {
+        var sequential = RabbitMqQueueTopology.BuildQueueArguments(
+            _CreateOptions(),
+            _LaneExchange,
+            _Queue,
+            singleActiveConsumer: true
+        );
+        var plain = RabbitMqQueueTopology.BuildQueueArguments(_CreateOptions(), _LaneExchange, _Queue);
+
+        sequential.Should().Contain("x-single-active-consumer", true);
+        plain.Should().NotContainKey("x-single-active-consumer");
+    }
+
+    [Fact]
     public async Task should_declare_dead_letter_exchange_and_queue_before_the_queue_when_enabled()
     {
         var options = _CreateOptions();

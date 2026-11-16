@@ -137,6 +137,42 @@ public sealed class SequencesSetupTests : TestBase
         options.Invoking(x => x.Value).Should().Throw<OptionsValidationException>().WithMessage("*Step*");
     }
 
+    [Theory]
+    [InlineData(SequenceMode.GapFree)]
+    [InlineData(SequenceMode.Reported)]
+    public void should_reject_a_block_size_above_one_on_a_non_fast_policy(SequenceMode mode)
+    {
+        var options = _Options(setup => setup.Policy("invoice", new SequencePolicy { Mode = mode, BlockSize = 50 }));
+
+        options.Invoking(x => x.Value).Should().Throw<OptionsValidationException>().WithMessage("*BlockSize*");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_a_block_size_below_one(int blockSize)
+    {
+        var options = _Options(setup => setup.DefaultPolicy(new SequencePolicy { BlockSize = blockSize }));
+
+        options.Invoking(x => x.Value).Should().Throw<OptionsValidationException>().WithMessage("*Block Size*");
+    }
+
+    [Fact]
+    public void should_reject_a_max_cached_blocks_below_one()
+    {
+        var options = _Options(setup => setup.ConfigureOptions(o => o.MaxCachedBlocks = 0));
+
+        options.Invoking(x => x.Value).Should().Throw<OptionsValidationException>().WithMessage("*Max Cached Blocks*");
+    }
+
+    [Fact]
+    public void should_accept_a_block_size_on_a_fast_policy()
+    {
+        var options = _Options(setup => setup.Policy("receipt", new SequencePolicy { BlockSize = 50 }));
+
+        options.Value.Policies["receipt"].BlockSize.Should().Be(50);
+    }
+
     [Fact]
     public void should_reject_an_over_length_name_added_through_options()
     {

@@ -58,7 +58,14 @@ public sealed class ConcurrentWriteFencingTests : TestBase
             BlobPrefix = $"{Guid.NewGuid():N}/",
         };
 
-        _store = new TusAzureStore(blobServiceClient, storeOptions, loggerFactory: LoggerFactory);
+        // With an accessor, as AddTusAzureStore wires it: the HTTP race then runs with each PATCH's store calls
+        // sharing one read, while the store-direct tests run outside any request and read on every call.
+        _store = new TusAzureStore(
+            blobServiceClient,
+            storeOptions,
+            loggerFactory: LoggerFactory,
+            httpContextAccessor: new HttpContextAccessor()
+        );
         _provisioner = new TusAzureContainerProvisioner(blobServiceClient, storeOptions);
     }
 
@@ -300,7 +307,7 @@ public sealed class ConcurrentWriteFencingTests : TestBase
         var builder = new HostBuilder().ConfigureWebHost(webHost =>
             webHost
                 .UseTestServer()
-                .ConfigureServices(services => services.AddRouting())
+                .ConfigureServices(services => services.AddRouting().AddHttpContextAccessor())
                 .Configure(app =>
                 {
                     // Kestrel answers an unhandled exception that escapes before the response started

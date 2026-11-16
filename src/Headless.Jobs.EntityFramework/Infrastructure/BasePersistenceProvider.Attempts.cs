@@ -205,16 +205,49 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
     /// some first (another node running the same sweep, or the owner ending the run), the rows this arm moved cannot be
     /// told apart from those, so only attempts still open on rows no longer running are closed: that writer closed its
     /// own, and nothing is closed twice.
+    /// <para>
+    /// With <paramref name="chargeAttemptInFlight"/>, a Retry reclaim adds one to <c>RetryCount</c> for the attempt the
+    /// lapse interrupted. A run whose holder was waiting between in-process retries has none in flight: the executor's
+    /// retry write already charged the failed attempt and closed it, so the arm first moves those runs without the
+    /// charge and with no attempt to close (see <see cref="_MoveRunsBetweenAttemptsAsync{TRun, TAttempt}"/>). A model
+    /// without attempt history cannot tell the two apart, so it charges every run, as before.
+    /// </para>
     /// </remarks>
     private async Task<int> _MoveRunningRowsAsync<TRun, TAttempt>(
         TDbContext dbContext,
         IQueryable<TRun> rows,
         Action<UpdateSettersBuilder<TRun>> setters,
-        JobAttemptEnd end
+        JobAttemptEnd end,
+        bool chargeAttemptInFlight = false
     )
         where TRun : class
         where TAttempt : JobAttemptEntity, new()
     {
+        var movedBetweenAttempts = 0;
+        if (chargeAttemptInFlight)
+        {
+            var uncharged = setters;
+            setters = setter =>
+            {
+                uncharged(setter);
+                setter.SetProperty(
+                    x => EF.Property<int>(x, nameof(TimeJobEntity.RetryCount)),
+                    x => EF.Property<int>(x, nameof(TimeJobEntity.RetryCount)) + 1
+                );
+            };
+
+            if (_AttemptsMapped<TAttempt>())
+            {
+                movedBetweenAttempts = await _MoveRunsBetweenAttemptsAsync<TRun, TAttempt>(
+                        dbContext,
+                        rows,
+                        uncharged,
+                        end
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+
         if (!_AttemptsMapped<TAttempt>())
         {
             return await rows.ExecuteUpdateAsync(setters, CancellationToken.None).ConfigureAwait(false);
@@ -224,7 +257,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
 
         if (candidates.Count == 0)
         {
-            return 0;
+            return movedBetweenAttempts;
         }
 
         var ids = candidates.ConvertAll(static candidate => candidate.Id);
@@ -239,6 +272,105 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                 .ConfigureAwait(false);
         }
         else if (affected > 0)
+        {
+            var moved = await dbContext
+                .Set<TRun>()
+                .AsNoTracking()
+                .Where(x =>
+                    ids.Contains(EF.Property<Guid>(x, "Id"))
+                    && EF.Property<JobStatus>(x, "Status") != JobStatus.InProgress
+                )
+                .Select(x => EF.Property<Guid>(x, "Id"))
+                .ToListAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+
+            await JobsAttemptLedger
+                .CloseAsync<TAttempt>(
+                    dbContext,
+                    moved.ConvertAll(static id => (id, (string?)null)),
+                    end,
+                    insertWhenMissing: false,
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
+        }
+
+        return affected + movedBetweenAttempts;
+    }
+
+    /// <summary>
+    /// Moves the runs of <paramref name="rows"/> whose holder was waiting between in-process retries, with
+    /// <paramref name="setters"/> and no attempt charged: the run's last attempt is a Failed one its current holder
+    /// closed, and no attempt is open.
+    /// </summary>
+    /// <remarks>
+    /// The write re-checks that no attempt is open, so an attempt that opened after the read stays with the charging
+    /// arm. An open that commits while the write waits on the row can still slip past the check under read committed;
+    /// the write then closes it as <paramref name="end"/> so it is never left open, uncharged once. An open that failed
+    /// right after a retry write also looks like the wait and goes uncharged; charging resumes with the next attempt
+    /// whose open lands, or the first one another owner runs.
+    /// </remarks>
+    private static async Task<int> _MoveRunsBetweenAttemptsAsync<TRun, TAttempt>(
+        TDbContext dbContext,
+        IQueryable<TRun> rows,
+        Action<UpdateSettersBuilder<TRun>> setters,
+        JobAttemptEnd end
+    )
+        where TRun : class
+        where TAttempt : JobAttemptEntity, new()
+    {
+        var candidates = await _ReadRunningCandidatesAsync(rows).ConfigureAwait(false);
+
+        if (candidates.Count == 0)
+        {
+            return 0;
+        }
+
+        var candidateIds = candidates.ConvertAll(static candidate => candidate.Id);
+        var attempts = await dbContext
+            .Set<TAttempt>()
+            .AsNoTracking()
+            .Where(attempt => candidateIds.Contains(attempt.RunId))
+            .Select(attempt => new
+            {
+                attempt.RunId,
+                attempt.Number,
+                attempt.OwnerId,
+                attempt.EndedAt,
+                attempt.Outcome,
+            })
+            .ToListAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        var lastByRun = attempts
+            .GroupBy(static attempt => attempt.RunId)
+            .ToDictionary(static group => group.Key, static group => group.MaxBy(static attempt => attempt.Number)!);
+
+        var ids = candidates
+            .Where(candidate =>
+                lastByRun.TryGetValue(candidate.Id, out var last)
+                && last.EndedAt is not null
+                && last.Outcome == JobAttemptOutcome.Failed
+                && string.Equals(last.OwnerId, candidate.OwnerId, StringComparison.Ordinal)
+            )
+            .Select(static candidate => candidate.Id)
+            .ToList();
+
+        if (ids.Count == 0)
+        {
+            return 0;
+        }
+
+        var affected = await rows.Where(x =>
+                ids.Contains(EF.Property<Guid>(x, "Id"))
+                && !dbContext
+                    .Set<TAttempt>()
+                    .Any(attempt => attempt.RunId == EF.Property<Guid>(x, "Id") && attempt.EndedAt == null)
+            )
+            .ExecuteUpdateAsync(setters, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        if (affected > 0)
         {
             var moved = await dbContext
                 .Set<TRun>()

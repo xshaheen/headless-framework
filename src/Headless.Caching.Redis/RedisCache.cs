@@ -3736,7 +3736,9 @@ public sealed class RedisCache(
             return null;
         }
 
-        return (long)expiresIn.Value.TotalMilliseconds;
+        // Round up: truncating a positive expiration under 1 ms to 0 makes the scripts' PEXPIRE 0 delete the key the
+        // operation just wrote, and the caller then sees an error for a write that applied.
+        return _ToPositiveMilliseconds(expiresIn.Value);
     }
 
     private static DateTime? _GetExpirationDateTime(TimeSpan? expiresIn, DateTimeOffset now)

@@ -17,12 +17,6 @@ public sealed class BasicAuthenticationOptions
     public const string DefaultScheme = AuthenticationConstants.Schemas.Basic;
 
     /// <summary>
-    /// Scheme name included in the <see cref="Microsoft.AspNetCore.Authentication.AuthenticationTicket"/>.
-    /// Defaults to <see cref="DefaultScheme"/>.
-    /// </summary>
-    public string Scheme { get; set; } = DefaultScheme;
-
-    /// <summary>
     /// How long a successful authentication is reused for the same user name and password without asking the Identity
     /// store again. <see langword="null"/> (the default) or <see cref="TimeSpan.Zero"/> turns the cache off, so every
     /// request runs the full check. At most one hour.

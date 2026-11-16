@@ -13,7 +13,26 @@ internal sealed class TusAzureFile
 
     public required string BlobName { get; init; }
 
-    public long CurrentContentLength { get; init; }
+    /// <summary>
+    /// The committed content length: Azure counts only committed blocks in a block blob's length, so this is the
+    /// upload offset. Each block-list commit of this request updates it.
+    /// </summary>
+    public long CurrentContentLength { get; set; }
+
+    /// <summary>
+    /// The committed block list, read after the properties this file holds and kept until this request commits a new
+    /// list. Reading it after the properties is what keeps the fence sound: a list read later can only be newer than
+    /// <see cref="ETag"/>, so a commit built from a list another writer changed fails on the stale ETag instead of
+    /// dropping that writer's blocks.
+    /// </summary>
+    public List<BlobBlock>? CommittedBlocks { get; set; }
+
+    /// <summary>
+    /// Bytes this request staged for a checksum-header chunk that waits for verification, so the commit that verifies
+    /// it knows the new length without reading the blob again; <see langword="null"/> when the chunk was staged by an
+    /// earlier request or nothing waits.
+    /// </summary>
+    public long? PendingChunkLength { get; set; }
 
     /// <summary>
     /// The blob ETag this request last observed: read with the file, then replaced by the ETag each
@@ -35,6 +54,35 @@ internal sealed class TusAzureFile
     /// so echoing the stored MD5 would persist a stale digest.
     /// </summary>
     public required BlobHttpHeaders HttpHeaders { get; init; }
+
+    /// <summary>The view of a blob this request has just created, empty and carrying the creation's ETag.</summary>
+    public static TusAzureFile Created(
+        string fileId,
+        string blobName,
+        ETag etag,
+        TusAzureMetadata metadata,
+        BlobHttpHeaders httpHeaders
+    )
+    {
+        return new TusAzureFile
+        {
+            FileId = fileId,
+            BlobName = blobName,
+            CurrentContentLength = 0,
+            CommittedBlocks = [],
+            Metadata = metadata,
+            ETag = etag,
+            // The same fields a properties read captures, so a later commit re-supplies what creation set.
+            HttpHeaders = new BlobHttpHeaders
+            {
+                ContentType = httpHeaders.ContentType,
+                CacheControl = httpHeaders.CacheControl,
+                ContentEncoding = httpHeaders.ContentEncoding,
+                ContentLanguage = httpHeaders.ContentLanguage,
+                ContentDisposition = httpHeaders.ContentDisposition,
+            },
+        };
+    }
 
     public static TusAzureFile FromBlobProperties(string fileId, string blobName, BlobProperties properties)
     {

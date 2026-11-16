@@ -176,6 +176,7 @@
         <Project Path="tests\Headless.Sql.Sqlite.Tests.Integration\Headless.Sql.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sql.SqlServer.Tests.Integration\Headless.Sql.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sql.Tests.Harness\Headless.Sql.Tests.Harness.csproj" />
+        <Project Path="benchmarks\Headless.Sql.Benchmarks\Headless.Sql.Benchmarks.csproj" />
         <Project Path="tests\Headless.SchemaRunner.PostgreSql.Tests.Integration\Headless.SchemaRunner.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.SchemaRunner.SqlServer.Tests.Integration\Headless.SchemaRunner.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.SchemaRunner.Sqlite.Tests.Integration\Headless.SchemaRunner.Sqlite.Tests.Integration.csproj" />
@@ -229,6 +230,7 @@
         <Project Path="tests\Headless.Encryption.Tests.Unit\Headless.Encryption.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Encryption.AzureKeyVault.Tests.Integration\Headless.Encryption.AzureKeyVault.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Encryption.EntityFramework.Tests.Unit\Headless.Encryption.EntityFramework.Tests.Unit.csproj" />
+        <Project Path="benchmarks\Headless.Encryption.Benchmarks\Headless.Encryption.Benchmarks.csproj" />
         <Project Path="tests\Headless.Encryption.PostgreSql.Tests.Integration\Headless.Encryption.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Encryption.SqlServer.Tests.Integration\Headless.Encryption.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Encryption.Tests.Harness\Headless.Encryption.Tests.Harness.csproj" />
@@ -389,6 +391,7 @@
         <Project Path="tests\Headless.Domain.EventDispatcher.Tests.Unit\Headless.Domain.EventDispatcher.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Extensions.Tests.Unit\Headless.Extensions.Tests.Unit.csproj" />
+        <Project Path="benchmarks\Headless.Checks.Benchmarks\Headless.Checks.Benchmarks.csproj" />
         <Project Path="benchmarks\Headless.Threading.Benchmarks\Headless.Threading.Benchmarks.csproj" />
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.NetTopologySuite.Tests.Unit\Headless.NetTopologySuite.Tests.Unit.csproj" />
@@ -610,6 +613,7 @@
         <Project Path="src\Headless.Sequences.PostgreSql\Headless.Sequences.PostgreSql.csproj" />
         <Project Path="src\Headless.Sequences.SqlServer\Headless.Sequences.SqlServer.csproj" />
         <Project Path="src\Headless.Sequences.Sqlite\Headless.Sequences.Sqlite.csproj" />
+        <Project Path="benchmarks\Headless.Sequences.Benchmarks\Headless.Sequences.Benchmarks.csproj" />
     </Folder>
     <Folder Name="/Sequences/Tests/">
         <Project Path="tests\Headless.Sequences.Tests.Unit\Headless.Sequences.Tests.Unit.csproj" />

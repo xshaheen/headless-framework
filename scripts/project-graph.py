@@ -32,9 +32,10 @@ from pathlib import Path, PurePosixPath
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOTS = ("src", "tests", "demo", "sandboxes", "benchmarks", "test-assets")
 
-# A change to one of these reaches every project, so the affected set becomes the whole graph.
+# A change to one of these reaches every project, so the affected set becomes the whole graph. A shared build file
+# that projects pull in with <Import>, such as eng/DashboardSpa.targets, is not listed: it reaches only its importers,
+# which load_graph records as linked inputs.
 GLOBAL_FILES = {"global.json", "dotnet-tools.json", "nuget.config"}
-GLOBAL_PREFIXES = ("eng/DashboardSpa.targets",)
 # A change to one of these reaches every project in and under its directory.
 SCOPED_BUILD_FILES = {"Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", ".editorconfig"}
 
@@ -55,7 +56,8 @@ class Project:
     references: set[str] = field(default_factory=set)
     dependents: set[str] = field(default_factory=set)
     # Files outside the project directory that the project links as items, such as the guides a docs-example
-    # test compiles. A change to one changes what the project builds or tests, but no directory match finds it.
+    # test compiles, or imports, such as eng/DashboardSpa.targets. A change to one changes what the project builds
+    # or tests, but no directory match finds it.
     linked_inputs: set[str] = field(default_factory=set)
 
     @property
@@ -108,6 +110,9 @@ def load_graph() -> dict[str, Project]:
             if tag in LINKED_ITEM_TAGS:
                 _add_linked_input(project, element.get("Include"))
                 continue
+            if tag == "Import" and not element.get("Sdk"):
+                _add_linked_input(project, _project_relative(element.get("Project")))
+                continue
             if tag != "ProjectReference":
                 continue
             include = element.get("Include")
@@ -130,6 +135,17 @@ def load_graph() -> dict[str, Project]:
 
 
 LINKED_ITEM_TAGS = {"None", "Content", "Compile", "EmbeddedResource", "AdditionalFiles"}
+# In a project file both properties name the project's own directory, with a trailing separator, so an import written
+# against either resolves like a relative path. Any other property stays unresolved and the import is skipped.
+PROJECT_DIRECTORY_PROPERTIES = ("$(MSBuildThisFileDirectory)", "$(MSBuildProjectDirectory)/", "$(MSBuildProjectDirectory)\\")
+
+
+def _project_relative(path: str | None) -> str | None:
+    if path:
+        for prefix in PROJECT_DIRECTORY_PROPERTIES:
+            if path.startswith(prefix):
+                return path[len(prefix) :]
+    return path
 
 
 def _add_linked_input(project: Project, include: str | None) -> None:
@@ -250,7 +266,7 @@ def select_affected(
 
     for file in files:
         path = PurePosixPath(file)
-        if file in GLOBAL_FILES or file.startswith(GLOBAL_PREFIXES):
+        if file in GLOBAL_FILES:
             global_triggers.append(file)
             changed.update(projects)
             continue

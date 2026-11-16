@@ -42,6 +42,42 @@ public sealed class TusAzureFileTests : TestBase
     }
 
     [Fact]
+    public void should_describe_a_created_blob_as_empty_with_its_creation_etag_and_headers()
+    {
+        // given
+        var etag = new ETag(Faker.Random.Hash());
+        var metadata = TusAzureMetadata.FromTus("filename dGVzdC5iaW4=");
+        var headers = new BlobHttpHeaders
+        {
+            ContentType = "image/png",
+            CacheControl = "no-cache",
+            ContentEncoding = "gzip",
+            ContentLanguage = "en",
+            ContentDisposition = "inline",
+            ContentHash = [1, 2, 3],
+        };
+
+        // when
+        var file = TusAzureFile.Created("file-1", "prefix/file-1", etag, metadata, headers);
+
+        // then - an empty blob with no committed block, and the headers a properties read would return
+        file.FileId.Should().Be("file-1");
+        file.BlobName.Should().Be("prefix/file-1");
+        file.ETag.Should().Be(etag);
+        file.CurrentContentLength.Should().Be(0);
+        file.CommittedBlocks.Should().BeEmpty();
+        file.PendingChunkLength.Should().BeNull();
+        file.Metadata.Should().BeSameAs(metadata);
+        file.HttpHeaders.Should().NotBeSameAs(headers);
+        file.HttpHeaders.ContentType.Should().Be("image/png");
+        file.HttpHeaders.CacheControl.Should().Be("no-cache");
+        file.HttpHeaders.ContentEncoding.Should().Be("gzip");
+        file.HttpHeaders.ContentLanguage.Should().Be("en");
+        file.HttpHeaders.ContentDisposition.Should().Be("inline");
+        file.HttpHeaders.ContentHash.Should().BeNull();
+    }
+
+    [Fact]
     public void should_expose_file_id()
     {
         // given

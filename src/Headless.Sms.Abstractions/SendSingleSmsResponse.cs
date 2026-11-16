@@ -99,10 +99,16 @@ public enum SmsFailureKind
     /// <summary>The send succeeded without error.</summary>
     None = 0,
 
-    /// <summary>The failure cause is unknown or unclassified.</summary>
+    /// <summary>
+    /// The failure cause is unknown or unclassified. This includes timeouts and resets after the request was sent: the
+    /// message may have been delivered, so a retry can send it twice.
+    /// </summary>
     Unknown = 1,
 
-    /// <summary>A transient transport or network fault, such as a timeout or connection reset. May succeed on retry.</summary>
+    /// <summary>
+    /// A transport fault before the request reached the provider, such as a refused connection or an open circuit. The
+    /// message was not sent, so a retry is safe and may succeed.
+    /// </summary>
     Transient = 2,
 
     /// <summary>The provider rejected the request due to rate limiting.</summary>

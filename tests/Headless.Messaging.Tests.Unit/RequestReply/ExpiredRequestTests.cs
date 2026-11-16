@@ -25,7 +25,7 @@ public sealed class ExpiredRequestTests : TestBase
     {
         // given: the request's admission reaches the store only after its deadline
         var desk = new ExpiringQuoteDesk();
-        var exhausted = new ConcurrentQueue<TerminalMessageInfo>();
+        var exhausted = new TerminalCalls();
         await using var host = await _StartAsync(desk, exhausted, setup => { });
         var admissionDelay = _RequestTimeout * 2;
         host.Faults.DelayStoreCommit(StorageOperation.AdmitReceivedMessage, admissionDelay);
@@ -38,7 +38,7 @@ public sealed class ExpiredRequestTests : TestBase
         await host.WhenWaitArmedAsync(mark, due => due == admissionDelay, AbortToken);
         host.Advance(admissionDelay);
         await call.Awaiting(static pending => pending).Should().ThrowAsync<RequestTimeoutException>();
-        await host.WaitForCallsAsync(StorageOperation.ChangeReceiveRetryState, 1, AbortToken);
+        await host.WithinBoundAsync(exhausted.First, AbortToken);
 
         // then
         desk.Attempts.Should().Be(0);
@@ -54,7 +54,7 @@ public sealed class ExpiredRequestTests : TestBase
         {
             FirstAttempt = static cancellationToken => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken),
         };
-        var exhausted = new ConcurrentQueue<TerminalMessageInfo>();
+        var exhausted = new TerminalCalls();
         var host = await _StartAsync(desk, exhausted, static _ => { });
         var call = _RequestAsync(host, "sku-1");
         await host.WithinBoundAsync(desk.FirstAttemptStarted.Task, AbortToken);
@@ -64,7 +64,7 @@ public sealed class ExpiredRequestTests : TestBase
         await host.ShutDownAsync(AbortToken);
         await host.DisposeAsync();
         await call.Awaiting(static pending => pending).Should().ThrowAsync<Exception>();
-        var restartedExhausted = new ConcurrentQueue<TerminalMessageInfo>();
+        var restartedExhausted = new TerminalCalls();
         await using var restarted = await SimulationHost.RestartAsync(
             host,
             setup => _Configure(setup, restartedExhausted, static _ => { }),
@@ -72,18 +72,22 @@ public sealed class ExpiredRequestTests : TestBase
             AbortToken
         );
         await restarted.RunRetryPickupAsync(TimeSpan.FromMinutes(5) + PipelineHosts.PollInterval, AbortToken);
-        await restarted.WaitForCallsAsync(StorageOperation.ChangeReceiveRetryState, 1, AbortToken);
+        await restarted.WithinBoundAsync(restartedExhausted.First, AbortToken);
 
         // then: the recovered attempt found the request expired and ended it without running the responder
         desk.Attempts.Should().Be(1);
         _AssertEndedAsExpired(restarted, restartedExhausted);
-        exhausted.Should().BeEmpty("the stopped host wrote no terminal state for the attempt shutdown cut off");
+        exhausted.Calls.Should().BeEmpty("the stopped host wrote no terminal state for the attempt shutdown cut off");
     }
 
-    private static void _AssertEndedAsExpired(SimulationHost host, ConcurrentQueue<TerminalMessageInfo> exhausted)
+    private static void _AssertEndedAsExpired(SimulationHost host, TerminalCalls exhausted)
     {
         host.Broker.Events.Should().NotContain(e => e.Kind == BrokerEventKind.ReplySent);
-        exhausted.Should().ContainSingle().Which.Reason.Should().Be(MessageTerminalReason.DeliveryDeadlineExpired);
+        exhausted
+            .Calls.Should()
+            .ContainSingle()
+            .Which.Reason.Should()
+            .Be(MessageTerminalReason.DeliveryDeadlineExpired);
         host.GetRequiredService<ICircuitBreakerMonitor>()
             .GetSnapshot(MessageLane.Queue, ExpiringQuoteDesk.Identity)!
             .ConsecutiveFailures.Should()
@@ -102,7 +106,7 @@ public sealed class ExpiredRequestTests : TestBase
 
     private static Task<SimulationHost> _StartAsync(
         ExpiringQuoteDesk desk,
-        ConcurrentQueue<TerminalMessageInfo> exhausted,
+        TerminalCalls exhausted,
         Action<MessagingSetupBuilder> configure
     )
     {
@@ -115,7 +119,7 @@ public sealed class ExpiredRequestTests : TestBase
 
     private static void _Configure(
         MessagingSetupBuilder setup,
-        ConcurrentQueue<TerminalMessageInfo> exhausted,
+        TerminalCalls exhausted,
         Action<MessagingSetupBuilder> configure
     )
     {
@@ -125,7 +129,7 @@ public sealed class ExpiredRequestTests : TestBase
         setup.Options.RetryProcessor.BaseInterval = PipelineHosts.PollInterval;
         setup.Options.RetryPolicy.OnTerminal = (info, _) =>
         {
-            exhausted.Enqueue(info);
+            exhausted.Record(info);
             return Task.CompletedTask;
         };
         configure(setup);
@@ -182,6 +186,27 @@ public sealed class ExpiringQuoteDesk : IRespond<ExpiringQuoteRequest, ExpiringQ
         }
 
         return new ExpiringQuote(context.Message.Sku);
+    }
+}
+
+/// <summary>
+/// Every <c>OnTerminal</c> call of one host, and a signal for the first. The pipeline writes the terminal state before it
+/// runs <c>OnTerminal</c>, so a test that waits for that store write still races the callback; it waits on this instead.
+/// </summary>
+internal sealed class TerminalCalls
+{
+    private readonly ConcurrentQueue<TerminalMessageInfo> _calls = new();
+    private readonly TaskCompletionSource _first = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public IReadOnlyCollection<TerminalMessageInfo> Calls => _calls;
+
+    /// <summary>Completes once <c>OnTerminal</c> has been called.</summary>
+    public Task First => _first.Task;
+
+    public void Record(TerminalMessageInfo info)
+    {
+        _calls.Enqueue(info);
+        _first.TrySetResult();
     }
 }
 
