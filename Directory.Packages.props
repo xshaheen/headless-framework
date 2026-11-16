@@ -53,6 +53,8 @@
     <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="10.0.15" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.15" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
+    <!-- Transitive-only pin: Serilog.Enrichers.ClientInfo 2.9.0 (via Microsoft.AspNetCore.Http 2.3.9) resolves WebUtilities 2.3.0, which carries GHSA-6527-9fp8-r4x6 (CVE-2026-118750, NU1902). 2.3.14 is the first patched release; no ClientInfo 2.x release moves off it. Drop this pin once ClientInfo no longer depends on the 2.3.x packages. -->
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="2.3.14" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.12.0" />
     <!--
       Pinned: must match SDK's Roslyn version. Source generators fail silently if higher, and an analyzer or code fix
