@@ -14,9 +14,13 @@ internal sealed class FakeDbConnection : DbConnection
 {
     private ConnectionState _state = ConnectionState.Open;
     private int _executeNonQueryCount;
+    private readonly TaskCompletionSource _firstProbe = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>Number of <c>ExecuteNonQueryAsync</c> calls observed (keepalive + monitoring probes).</summary>
     public int ExecuteNonQueryCount => Volatile.Read(ref _executeNonQueryCount);
+
+    /// <summary>Completes when the first <c>ExecuteNonQueryAsync</c> (keepalive or monitoring probe) has been observed.</summary>
+    public Task FirstProbe => _firstProbe.Task;
 
     /// <summary>Number of <c>OpenAsync</c> calls observed.</summary>
     public int OpenCount { get; private set; }
@@ -61,6 +65,7 @@ internal sealed class FakeDbConnection : DbConnection
     internal async Task<int> OnExecuteNonQueryAsync(FakeDbCommand command, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _executeNonQueryCount);
+        _firstProbe.TrySetResult();
 
         var handler = ExecuteNonQueryHandler;
 
