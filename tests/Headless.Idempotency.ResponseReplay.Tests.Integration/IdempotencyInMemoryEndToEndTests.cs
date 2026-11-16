@@ -62,24 +62,35 @@ public sealed class IdempotencyInMemoryEndToEndTests : TestBase
     {
         var key = _UniqueKey();
         var gate = new IdempotencyTestApp.TestHandlerGate();
+        var clock = new IdempotencyTestApp.PollClock();
         await using var app = await _CreateAppAsync(
             options =>
             {
                 options.InFlightStrategy = InFlightStrategy.WaitAndReplay;
                 options.InFlightLockTimeout = TimeSpan.FromSeconds(15);
             },
-            gate
+            gate,
+            clock
         );
         using var client = IdempotencyTestApp.CreateClient(app);
 
         var winnerTask = _PostAsync(client, "/echo", key, "hello");
         await gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5));
         var loserTask = _PostAsync(client, "/echo", key, "hello");
-        await Task.Delay(200, AbortToken);
+
+        // The loser arms its first poll delay once it saw the winner in flight and cannot move on until the clock does.
+        var firstPoll = await clock.WaitForPollDelayAsync(AbortToken).Bounded();
+        clock.Advance(firstPoll);
+
+        // Its peek found the winner still running, so it armed a longer delay instead of finishing.
+        var secondPoll = await clock.WaitForPollDelayAsync(AbortToken).Bounded();
+        secondPoll.Should().BeGreaterThan(firstPoll);
         loserTask.IsCompleted.Should().BeFalse("the loser waits on the winner's admission");
 
         gate.Release();
         var winner = await winnerTask;
+        clock.Advance(secondPoll);
+        await clock.AdvanceUntilCompletedAsync(loserTask, AbortToken);
         var loser = await loserTask;
 
         winner.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -111,7 +122,8 @@ public sealed class IdempotencyInMemoryEndToEndTests : TestBase
 
     private static Task<WebApplication> _CreateAppAsync(
         Action<HttpIdempotencyOptions>? configure = null,
-        IdempotencyTestApp.TestHandlerGate? handlerGate = null
+        IdempotencyTestApp.TestHandlerGate? handlerGate = null,
+        IdempotencyTestApp.PollClock? clock = null
     )
     {
         return IdempotencyTestApp.CreateAsync(
@@ -122,7 +134,8 @@ public sealed class IdempotencyInMemoryEndToEndTests : TestBase
                     setup.ConfigureOptions(static options => options.PurgeInterval = null);
                 }),
             configure,
-            handlerGate: handlerGate
+            handlerGate: handlerGate,
+            configureServices: clock is null ? null : services => services.AddSingleton<TimeProvider>(clock)
         );
     }
 

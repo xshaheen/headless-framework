@@ -225,6 +225,7 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
         var membership = provider.GetRequiredService<INodeMembership>();
         var identity = await membership.RegisterAsync(AbortToken);
 
+        // real-wait: Redis TIME ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.DeadButRetainedWait, AbortToken);
 
         var snapshot = await membership.GetLivenessSnapshotAsync(AbortToken);
