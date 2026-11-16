@@ -62,7 +62,8 @@ wall-clock 4 tests/Headless.DataProtection.Blobs.Tests.Integration/BlobStorageDa
 wall-clock 2 tests/Headless.DataProtection.Blobs.Tests.Unit/BlobStorageDataProtectionXmlRepositoryTests.cs
 real-wait 1 tests/Headless.DataProtection.Blobs.Tests.Unit/DataProtectionKeyRingValidationTests.cs
 wall-clock 2 tests/Headless.DataProtection.Blobs.Tests.Unit/DataProtectionKeyRingValidationTests.cs
-real-wait 1 tests/Headless.DistributedLocks.Composition.Tests.Unit/DistributedLockTestSupport.cs
+real-wait 2 tests/Headless.DistributedLocks.Composition.Tests.Unit/DistributedLockTestSupport.cs
+wall-clock 1 tests/Headless.DistributedLocks.Composition.Tests.Unit/DistributedLockTestSupport.cs
 wall-clock 1 tests/Headless.DistributedLocks.Composition.Tests.Unit/Fakes/CompositeTestScheduler.cs
 wall-clock 2 tests/Headless.DistributedLocks.Composition.Tests.Unit/RegularLocks/DistributedLockTests.cs
 wall-clock 1 tests/Headless.DistributedLocks.Composition.Tests.Unit/RegularLocks/DistributedSemaphoreProviderTests.cs

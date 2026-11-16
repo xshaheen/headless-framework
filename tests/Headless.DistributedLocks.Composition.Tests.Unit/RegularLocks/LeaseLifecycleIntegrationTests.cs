@@ -533,13 +533,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             storage.RenewCalls.Should().Be(1, "pre-condition: the first renew is in flight");
             timeProvider.Advance(TimeSpan.FromSeconds(3));
 
-            // The loop is blocked inside the renew, so no cadence timer can arm until it returns; a tick still queued from
-            // earlier arms would otherwise satisfy the wait below before the renewal is recorded.
-            while (timeProvider.CadenceTicks.Reader.TryRead(out _)) { }
-
             firstRenew.SetResult(true);
-            // The loop re-arms its cadence wait only after the renew it just ran has been recorded on the handle.
-            await timeProvider.WaitForCadenceTickAsync(AbortToken);
+            await DistributedLockTestSupport.WaitUntilAsync(() => handle.RenewalCount == 1, AbortToken);
             handle.RenewalCount.Should().Be(1, "pre-condition: the slow renew succeeded");
 
             // when - just short of send + lease - margin
@@ -601,14 +596,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             await timeProvider.AdvanceCadenceAsync(cancellationToken: AbortToken);
             await firstRenewSent.Task.Bounded();
 
-            // The loop is blocked inside the renew, so no cadence timer can arm until it returns; a tick still queued from
-            // earlier arms would otherwise satisfy the wait below before the renewal is recorded.
-            while (timeProvider.CadenceTicks.Reader.TryRead(out _)) { }
-
             firstRenew.SetResult(true);
-
-            // The loop re-arms its cadence wait only after the renew it just ran has been recorded on the handle.
-            await timeProvider.WaitForCadenceTickAsync(AbortToken);
+            await DistributedLockTestSupport.WaitUntilAsync(() => handle.RenewalCount == 1, AbortToken);
             handle.RenewalCount.Should().Be(1, "pre-condition: the renew sent at 5s succeeded");
 
             // when - just short of last renew send + lease - margin = 14s
