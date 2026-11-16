@@ -93,8 +93,6 @@ public sealed class InMemoryConsumerClientTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when
         _queue.SendBus(message);
 
@@ -155,8 +153,6 @@ public sealed class InMemoryConsumerClientTests : TestBase
             },
             AbortToken
         );
-
-        await Task.Delay(50, AbortToken);
 
         // when
         _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
@@ -253,11 +249,17 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await using var client = new InMemoryConsumerClient(_queue, "early-group", 1, redeliveryClock: clock);
         await client.SubscribeAsync(["early-messageName"], AbortToken);
 
-        var deliveries = 0;
+        var deliveredIds = new ConcurrentQueue<string>();
         var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        client.OnMessageCallback = async (_, sender) =>
+        var sentinelDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (message, sender) =>
         {
-            if (Interlocked.Increment(ref deliveries) == 1)
+            deliveredIds.Enqueue(message.Id);
+            if (string.Equals(message.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinelDelivered.TrySetResult();
+            }
+            else if (deliveredIds.Count == 1)
             {
                 await client.RejectAsync(sender, AbortToken);
                 rejected.SetResult();
@@ -267,15 +269,19 @@ public sealed class InMemoryConsumerClientTests : TestBase
         using var cts = new CancellationTokenSource();
         _StartListening(client, cts.Token);
         _queue.SendBus(_CreateTestMessage("msg-1", "early-messageName"));
-        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await rejected.Task.Bounded();
 
         // when: just short of the shortest first delay (a second jittered down by at most a quarter)
         clock.Advance(_MinFirstRedeliveryDelay - TimeSpan.FromMilliseconds(1));
-        await Task.Delay(200, AbortToken);
+
+        // The redelivery is written into the client's FIFO channel when its delay ends, so an early one sits ahead of a
+        // sentinel sent now; waiting for the sentinel gives it the time to show up.
+        _queue.SendBus(_CreateTestMessage("sentinel", "early-messageName"));
+        await sentinelDelivered.Task.Bounded();
 
         // then: an immediate requeue would spin on a delivery the core keeps rejecting
         await cts.CancelAsync();
-        deliveries.Should().Be(1);
+        deliveredIds.Should().Equal("msg-1", "sentinel");
     }
 
     [Fact]
@@ -287,12 +293,20 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await using var client = new InMemoryConsumerClient(_queue, "core-delay-group", 1, redeliveryClock: clock);
         await client.SubscribeAsync(["core-delay-messageName"], AbortToken);
 
-        var deliveries = 0;
+        var deliveredIds = new ConcurrentQueue<string>();
         var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var redelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        client.OnMessageCallback = async (_, sender) =>
+        var sentinelDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (message, sender) =>
         {
-            if (Interlocked.Increment(ref deliveries) == 1)
+            deliveredIds.Enqueue(message.Id);
+            if (string.Equals(message.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinelDelivered.TrySetResult();
+                return;
+            }
+
+            if (deliveredIds.Count == 1)
             {
                 // The reject completes without the clock moving: the delivery is not held for the delay.
                 await client.RejectAsync(sender, coreDelay, AbortToken);
@@ -307,19 +321,22 @@ public sealed class InMemoryConsumerClientTests : TestBase
         using var cts = new CancellationTokenSource();
         _StartListening(client, cts.Token);
         _queue.SendBus(_CreateTestMessage("msg-1", "core-delay-messageName"));
-        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await rejected.Task.Bounded();
 
         // when: past the transport's own first delay, but short of the core's
         clock.Advance(coreDelay - TimeSpan.FromMilliseconds(1));
-        await Task.Delay(200, AbortToken);
-        var deliveriesBeforeCoreDelay = Volatile.Read(ref deliveries);
+
+        // A redelivery that ignored the core's delay would be in the FIFO channel ahead of a sentinel sent now.
+        _queue.SendBus(_CreateTestMessage("sentinel", "core-delay-messageName"));
+        await sentinelDelivered.Task.Bounded();
+        var deliveredBeforeCoreDelay = deliveredIds.ToArray();
         clock.Advance(TimeSpan.FromMilliseconds(1));
 
         // then
-        await redelivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await redelivered.Task.Bounded();
         await cts.CancelAsync();
-        deliveriesBeforeCoreDelay.Should().Be(1);
-        deliveries.Should().Be(2);
+        deliveredBeforeCoreDelay.Should().Equal("msg-1", "sentinel");
+        deliveredIds.Should().Equal("msg-1", "sentinel", "msg-1");
     }
 
     [Fact]
@@ -450,16 +467,16 @@ public sealed class InMemoryConsumerClientTests : TestBase
         };
 
         using var cts = new CancellationTokenSource();
-        _StartListening(client, cts.Token);
+        var listening = _ListenAsync(client, cts.Token);
         _queue.SendBus(_CreateTestMessage("msg-1", "stopped-messageName"));
-        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await rejected.Task.Bounded();
 
         // when
         await client.DisposeAsync();
         clock.Advance(ReconnectBackoff.Ceiling);
-        await Task.Delay(100, AbortToken);
 
-        // then
+        // then: disposal ends the listening loop, so once it has returned nothing can deliver the message again
+        await listening.Bounded();
         await cts.CancelAsync();
         deliveries.Should().Be(1);
     }
@@ -472,11 +489,18 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await using var client = new InMemoryConsumerClient(_queue, "drained-group", 1, redeliveryClock: clock);
         await client.SubscribeAsync(["drained-messageName"], AbortToken);
 
-        var deliveries = 0;
+        var deliveredIds = new ConcurrentQueue<string>();
         var rejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        client.OnMessageCallback = async (_, sender) =>
+        var sentinelDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (message, sender) =>
         {
-            Interlocked.Increment(ref deliveries);
+            deliveredIds.Enqueue(message.Id);
+            if (string.Equals(message.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinelDelivered.TrySetResult();
+                return;
+            }
+
             await client.RejectAsync(sender, AbortToken);
             rejected.TrySetResult();
         };
@@ -484,16 +508,22 @@ public sealed class InMemoryConsumerClientTests : TestBase
         using var cts = new CancellationTokenSource();
         _StartListening(client, cts.Token);
         _queue.SendBus(_CreateTestMessage("msg-1", "drained-messageName"));
-        await rejected.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await rejected.Task.Bounded();
 
         // when
         client.DrainPendingMessages();
         clock.Advance(ReconnectBackoff.Ceiling);
-        await Task.Delay(100, AbortToken);
 
-        // then
+        // then: a redelivery the drain failed to discard sits in the FIFO channel ahead of a sentinel sent now
+        _queue.SendBus(_CreateTestMessage("sentinel", "drained-messageName"));
+        await sentinelDelivered.Task.Bounded();
         await cts.CancelAsync();
-        deliveries.Should().Be(1, "a drain discards pending work, including a redelivery still waiting on its delay");
+        deliveredIds
+            .Should()
+            .Equal(
+                ["msg-1", "sentinel"],
+                "a drain discards pending work, including a redelivery still waiting on its delay"
+            );
     }
 
     [Fact]
@@ -514,9 +544,9 @@ public sealed class InMemoryConsumerClientTests : TestBase
         };
 
         using var cts = new CancellationTokenSource();
-        _StartListening(client, cts.Token);
+        var listening = _ListenAsync(client, cts.Token);
         _queue.SendBus(_CreateTestMessage("msg-1", "late-messageName"));
-        var sender = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var sender = await delivered.Task.Bounded();
         await client.DisposeAsync();
 
         // when
@@ -525,7 +555,9 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // then
         await act.Should().NotThrowAsync();
         clock.Advance(ReconnectBackoff.Ceiling);
-        await Task.Delay(100, AbortToken);
+
+        // disposal ends the listening loop, so once it has returned nothing can deliver the message again
+        await listening.Bounded();
         await cts.CancelAsync();
         deliveries.Should().Be(1);
     }
@@ -612,6 +644,12 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
         using var cts = new CancellationTokenSource();
         var listenerStopped = false;
+        var listening = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _client.OnMessageCallback = (_, _) =>
+        {
+            listening.TrySetResult();
+            return Task.CompletedTask;
+        };
 
         var listenTask = Task.Run(
             async () =>
@@ -628,10 +666,10 @@ public sealed class InMemoryConsumerClientTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
-        // when: awaiting the listener task itself (bounded) instead of a fixed post-cancel
-        // delay keeps the assertion deterministic under CI scheduling pressure
+        // when: a delivery proves the loop is running before it is cancelled, and awaiting the listener task itself
+        // (bounded) instead of a fixed post-cancel delay keeps the assertion deterministic under CI scheduling pressure
+        _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
+        await listening.Task.Bounded();
         await cts.CancelAsync();
         await listenTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -644,25 +682,27 @@ public sealed class InMemoryConsumerClientTests : TestBase
     {
         // given
         var logger = Substitute.For<ILogger<MemoryQueue>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var queue = new MemoryQueue(logger);
         var client = new InMemoryConsumerClient(queue, "dispose-group", 1);
         await client.SubscribeAsync(["dispose-messageName"], AbortToken);
 
-        TransportMessage? receivedMessage = null;
-        client.OnMessageCallback = (msg, _) =>
-        {
-            receivedMessage = msg;
-            return Task.CompletedTask;
-        };
-
         // when
         await client.DisposeAsync();
 
-        // then - disposed client removes the binding; send is a silent no-op (real-broker semantics)
+        // then - disposed client removes the binding; send is a silent no-op (real-broker semantics). A disposed
+        // client's channel is closed either way, so the queue reporting that nobody subscribes is what shows the
+        // binding went (event 3008, NoSubscribersBus); a binding left behind would be delivered to a closed channel.
         var act = () => queue.SendBus(_CreateTestMessage("msg-1", "dispose-messageName"));
         act.Should().NotThrow();
-        await Task.Delay(100, AbortToken);
-        receivedMessage.Should().BeNull();
+        logger
+            .ReceivedCalls()
+            .Should()
+            .Contain(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
+                && call.GetArguments()[1] is EventId
+                && ((EventId)call.GetArguments()[1]!).Id == 3008
+            );
     }
 
     [Fact]
@@ -680,7 +720,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var currentConcurrent = 0;
         var lockObj = new Lock();
         const int messageCount = 10;
-        var tcs = new TaskCompletionSource();
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var limitInFlight = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         // Handlers hold here, so the in-flight count can reach the concurrency limit no matter how fast each runs.
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -692,6 +733,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
                 if (currentConcurrent > maxConcurrent)
                 {
                     maxConcurrent = currentConcurrent;
+                }
+
+                if (currentConcurrent >= concurrency)
+                {
+                    limitInFlight.TrySetResult();
                 }
             }
 
@@ -723,8 +769,6 @@ public sealed class InMemoryConsumerClientTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when - send multiple messages
         for (var i = 0; i < messageCount; i++)
         {
@@ -732,15 +776,10 @@ public sealed class InMemoryConsumerClientTests : TestBase
         }
 
         // Wait until the limit is in flight, then let every handler finish
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-
-        while (Volatile.Read(ref currentConcurrent) < concurrency && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10, AbortToken);
-        }
+        await limitInFlight.Task.Bounded();
 
         release.SetResult();
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(30000, AbortToken));
+        await tcs.Task.Bounded();
         await cts.CancelAsync();
         await client.DisposeAsync();
 
@@ -783,8 +822,6 @@ public sealed class InMemoryConsumerClientTests : TestBase
             },
             AbortToken
         );
-
-        await Task.Delay(50, AbortToken);
 
         // when - send messages in order
         queue.SendBus(_CreateTestMessage("1", "sequential-messageName"));
@@ -839,8 +876,6 @@ public sealed class InMemoryConsumerClientTests : TestBase
             },
             AbortToken
         );
-
-        await Task.Delay(50, AbortToken);
 
         // when
         _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
@@ -914,8 +949,6 @@ public sealed class InMemoryConsumerClientTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when — pause then send
         await _client.PauseAsync(AbortToken);
         _queue.SendBus(_CreateTestMessage("paused-msg", "test-messageName"));
@@ -949,11 +982,18 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when — drain before any listener picks them up
         _client.DrainPendingMessages();
 
-        // then — start listening; no messages should arrive
-        TransportMessage? receivedMessage = null;
+        // then — start listening; only a sentinel sent after the drain should arrive. The client's channel is FIFO, so a
+        // message the drain left behind would reach the listener ahead of it.
+        var receivedIds = new ConcurrentQueue<string>();
+        var sentinelReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _client.OnMessageCallback = (msg, _) =>
         {
-            receivedMessage = msg;
+            receivedIds.Enqueue(msg.Id);
+            if (string.Equals(msg.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinelReceived.TrySetResult();
+            }
+
             return Task.CompletedTask;
         };
 
@@ -970,10 +1010,11 @@ public sealed class InMemoryConsumerClientTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(300, AbortToken);
+        _queue.SendBus(_CreateTestMessage("sentinel", "test-messageName"));
+        await sentinelReceived.Task.Bounded();
         await cts.CancelAsync();
 
-        receivedMessage.Should().BeNull();
+        receivedIds.Should().Equal("sentinel");
     }
 
     [Fact]
@@ -1006,7 +1047,12 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
     private void _StartListening(InMemoryConsumerClient client, CancellationToken cancellationToken)
     {
-        _ = Task.Run(
+        _ = _ListenAsync(client, cancellationToken);
+    }
+
+    private Task _ListenAsync(InMemoryConsumerClient client, CancellationToken cancellationToken)
+    {
+        return Task.Run(
             async () =>
             {
                 try

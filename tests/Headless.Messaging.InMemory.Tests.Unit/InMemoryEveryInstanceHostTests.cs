@@ -15,6 +15,8 @@ namespace Tests;
 /// </summary>
 public sealed class InMemoryEveryInstanceHostTests : TestBase
 {
+    private const string _Sentinel = "sentinel";
+
     [Fact]
     public async Task should_deliver_every_message_once_to_each_host_of_an_every_instance_consumer()
     {
@@ -24,25 +26,51 @@ public sealed class InMemoryEveryInstanceHostTests : TestBase
         await using var second = await _StartHostAsync(transport);
         var bus = first.GetRequiredService<IBus>();
 
+        var firstProbe = first.GetRequiredService<HostProbe>();
+        var secondProbe = second.GetRequiredService<HostProbe>();
+        var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sentinelDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void CheckDelivered()
+        {
+            if (
+                firstProbe.EveryInstance.Count == 2
+                && secondProbe.EveryInstance.Count == 2
+                && firstProbe.Competing.Count + secondProbe.Competing.Count == 2
+            )
+            {
+                delivered.TrySetResult();
+            }
+
+            if (
+                firstProbe.EveryInstance.Contains(_Sentinel, StringComparer.Ordinal)
+                && secondProbe.EveryInstance.Contains(_Sentinel, StringComparer.Ordinal)
+                && firstProbe.Competing.Concat(secondProbe.Competing).Contains(_Sentinel, StringComparer.Ordinal)
+            )
+            {
+                sentinelDelivered.TrySetResult();
+            }
+        }
+
+        firstProbe.Recorded += (_, _) => CheckDelivered();
+        secondProbe.Recorded += (_, _) => CheckDelivered();
+
         // when
         await bus.PublishAsync(new RateChanged("EUR"), cancellationToken: AbortToken);
         await bus.PublishAsync(new RateChanged("USD"), cancellationToken: AbortToken);
-        var firstProbe = first.GetRequiredService<HostProbe>();
-        var secondProbe = second.GetRequiredService<HostProbe>();
-        await _WaitUntilAsync(() =>
-            firstProbe.EveryInstance.Count == 2
-            && secondProbe.EveryInstance.Count == 2
-            && firstProbe.Competing.Count + secondProbe.Competing.Count == 2
-        );
-        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        await delivered.Task.Bounded();
+
+        // A sentinel published after the rest reaches each consumer behind any extra copy of EUR or USD that is still
+        // in flight, so waiting for it gives a duplicate the time to show up.
+        await bus.PublishAsync(new RateChanged(_Sentinel), cancellationToken: AbortToken);
+        await sentinelDelivered.Task.Bounded();
 
         // then
-        firstProbe.EveryInstance.Should().BeEquivalentTo(["EUR", "USD"]);
-        secondProbe.EveryInstance.Should().BeEquivalentTo(["EUR", "USD"]);
+        firstProbe.EveryInstance.Should().BeEquivalentTo(["EUR", "USD", _Sentinel]);
+        secondProbe.EveryInstance.Should().BeEquivalentTo(["EUR", "USD", _Sentinel]);
         firstProbe
             .Competing.Concat(secondProbe.Competing)
             .Should()
-            .BeEquivalentTo(["EUR", "USD"], "replicas of a competing identity share one copy");
+            .BeEquivalentTo(["EUR", "USD", _Sentinel], "replicas of a competing identity share one copy");
     }
 
     private static async Task<ServiceProvider> _StartHostAsync(MemoryQueue transport)
@@ -65,16 +93,6 @@ public sealed class InMemoryEveryInstanceHostTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
         return provider;
     }
-
-    private static async Task _WaitUntilAsync(Func<bool> condition)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        while (!condition())
-        {
-            await Task.Delay(20, timeout.Token);
-        }
-    }
 }
 
 public sealed record RateChanged(string Currency);
@@ -84,13 +102,28 @@ public sealed class HostProbe
     public ConcurrentQueue<string> EveryInstance { get; } = new();
 
     public ConcurrentQueue<string> Competing { get; } = new();
+
+    /// <summary>Raised after a consumer records a message, so a test waits on deliveries instead of polling.</summary>
+    public event EventHandler? Recorded;
+
+    public void RecordEveryInstance(string currency)
+    {
+        EveryInstance.Enqueue(currency);
+        Recorded?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void RecordCompeting(string currency)
+    {
+        Competing.Enqueue(currency);
+        Recorded?.Invoke(this, EventArgs.Empty);
+    }
 }
 
 public sealed class RateCache(HostProbe probe) : IConsume<RateChanged>
 {
     public ValueTask ConsumeAsync(ConsumeContext<RateChanged> context, CancellationToken cancellationToken)
     {
-        probe.EveryInstance.Enqueue(context.Message.Currency);
+        probe.RecordEveryInstance(context.Message.Currency);
         return ValueTask.CompletedTask;
     }
 }
@@ -99,7 +132,7 @@ public sealed class RateProjection(HostProbe probe) : IConsume<RateChanged>
 {
     public ValueTask ConsumeAsync(ConsumeContext<RateChanged> context, CancellationToken cancellationToken)
     {
-        probe.Competing.Enqueue(context.Message.Currency);
+        probe.RecordCompeting(context.Message.Currency);
         return ValueTask.CompletedTask;
     }
 }

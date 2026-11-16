@@ -331,14 +331,7 @@ public sealed class RetryHelperTests : TestBase
 
                 // Trigger host shutdown after the callback registers its cancellation hook so
                 // WaitAsync observes the host token, producing an OCE bound to that token.
-                _ = Task.Run(
-                    async () =>
-                    {
-                        await Task.Delay(50, AbortToken).ConfigureAwait(false);
-                        await hostCts.CancelAsync().ConfigureAwait(false);
-                    },
-                    AbortToken
-                );
+                await hostCts.CancelAsync().ConfigureAwait(false);
 
                 await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
             },

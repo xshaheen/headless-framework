@@ -82,11 +82,9 @@ public sealed class InMemoryBusTransportTests : TestBase
         var listen2 = Task.Run(() => _ListenAsync(client2, cts.Token), AbortToken);
         var listen3 = Task.Run(() => _ListenAsync(client3, cts.Token), AbortToken);
 
-        await Task.Delay(50, AbortToken);
-
-        // when
+        // when - each client's channel holds a message sent before its listener reads, so no pause is needed
         var result = await transport.SendAsync(_CreateTestMessage("msg-1", "events"), AbortToken);
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
+        await tcs.Task.Bounded();
         await cts.CancelAsync();
 
         // then

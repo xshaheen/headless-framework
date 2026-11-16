@@ -90,12 +90,10 @@ public sealed class MemoryQueueTests : TestBase
             AbortToken
         );
 
-        // when
-        await Task.Delay(50, AbortToken); // Let listener start
+        // when - the client's channel holds a message sent before the listener reads, so there is nothing to wait for
         _queue.SendBus(message);
 
-        // Wait for message to be delivered
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
+        await tcs.Task.Bounded();
         await cts.CancelAsync();
 
         // then
@@ -158,13 +156,11 @@ public sealed class MemoryQueueTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when - send to both messageNames
         _queue.SendBus(_CreateTestMessage("msg-a", "messageName-a"));
         _queue.SendBus(_CreateTestMessage("msg-b", "messageName-b"));
 
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
+        await tcs.Task.Bounded();
         await cts.CancelAsync();
 
         // then
@@ -216,8 +212,6 @@ public sealed class MemoryQueueTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when - send messages concurrently
         var sendTasks = Enumerable
             .Range(0, messageCount)
@@ -226,7 +220,7 @@ public sealed class MemoryQueueTests : TestBase
             );
 
         await Task.WhenAll(sendTasks);
-        _ = await Task.WhenAny(tcs.Task, Task.Delay(30000, AbortToken));
+        await tcs.Task.Bounded();
         await cts.CancelAsync();
 
         // then
@@ -288,15 +282,10 @@ public sealed class MemoryQueueTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when
         queue.SendBus(_CreateTestMessage("msg-1", "shared-messageName"));
 
-        await Task.WhenAll(
-            Task.WhenAny(tcs1.Task, Task.Delay(5000, AbortToken)),
-            Task.WhenAny(tcs2.Task, Task.Delay(5000, AbortToken))
-        );
+        await Task.WhenAll(tcs1.Task.Bounded(), tcs2.Task.Bounded());
         await cts.CancelAsync();
 
         // then - both groups should receive the message
@@ -313,11 +302,17 @@ public sealed class MemoryQueueTests : TestBase
         // given
         await _consumerClient.SubscribeAsync(["test-messageName"], AbortToken);
 
-        TransportMessage? receivedMessage = null;
+        var receivedIds = new ConcurrentQueue<string>();
+        var sentinelReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _consumerClient.OnMessageCallback = async (msg, sender) =>
         {
-            receivedMessage = msg;
+            receivedIds.Enqueue(msg.Id);
             await _consumerClient.CommitAsync(sender);
+
+            if (string.Equals(msg.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinelReceived.TrySetResult();
+            }
         };
 
         using var cts = new CancellationTokenSource();
@@ -333,19 +328,24 @@ public sealed class MemoryQueueTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // when - unsubscribe the consumer
         _queue.Unsubscribe(MessageLane.Bus, "test-group", _consumerClient);
 
         // then - the messageName binding is removed with the final client; send is a silent no-op
         var act = () => _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
         act.Should().NotThrow();
-        await Task.Delay(100, AbortToken);
+
+        // SendBus delivers synchronously and the client's channel is FIFO, so a copy of msg-1 would sit ahead of a
+        // sentinel sent after the client rejoins; waiting for the sentinel gives a leaked copy the time to show up.
+        _queue.RegisterConsumerClient(MessageLane.Bus, "test-group", _consumerClient);
+        _queue.Subscribe(MessageLane.Bus, "test-group", ["test-messageName"]);
+        _queue.SendBus(_CreateTestMessage("sentinel", "test-messageName"));
+
+        await sentinelReceived.Task.Bounded();
         await cts.CancelAsync();
 
-        // Consumer should not receive the message since it was unsubscribed
-        receivedMessage.Should().BeNull();
+        // Consumer should not receive the message sent while it was unsubscribed
+        receivedIds.Should().Equal("sentinel");
     }
 
     [Fact]
@@ -384,8 +384,6 @@ public sealed class MemoryQueueTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(50, AbortToken);
-
         // A duplicate subscription would deliver msg-1 twice, and the client channel is FIFO, so any copy arrives
         // before the sentinel sent after it; waiting for the sentinel gives a duplicate the time to show up.
         _queue.SendBus(_CreateTestMessage("msg-1", "messageName-1"));
@@ -422,18 +420,31 @@ public sealed class MemoryQueueTests : TestBase
         // when
         queue.DrainAllPendingMessages();
 
-        // then — listeners should receive nothing
-        var received1 = new List<TransportMessage>();
-        var received2 = new List<TransportMessage>();
+        // then — listeners should receive nothing but a sentinel sent after the drain. Each client's channel is FIFO,
+        // so a message the drain left behind would reach its listener ahead of the sentinel.
+        var received1 = new ConcurrentQueue<string>();
+        var received2 = new ConcurrentQueue<string>();
+        var sentinel1 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sentinel2 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         client1.OnMessageCallback = (msg, _) =>
         {
-            received1.Add(msg);
+            received1.Enqueue(msg.Id);
+            if (string.Equals(msg.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinel1.TrySetResult();
+            }
+
             return Task.CompletedTask;
         };
         client2.OnMessageCallback = (msg, _) =>
         {
-            received2.Add(msg);
+            received2.Enqueue(msg.Id);
+            if (string.Equals(msg.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinel2.TrySetResult();
+            }
+
             return Task.CompletedTask;
         };
 
@@ -461,11 +472,13 @@ public sealed class MemoryQueueTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(300, AbortToken);
+        queue.SendBus(_CreateTestMessage("sentinel", "drain-messageName"));
+
+        await Task.WhenAll(sentinel1.Task.Bounded(), sentinel2.Task.Bounded());
         await cts.CancelAsync();
 
-        received1.Should().BeEmpty();
-        received2.Should().BeEmpty();
+        received1.Should().Equal("sentinel");
+        received2.Should().Equal("sentinel");
 
         await client1.DisposeAsync();
         await client2.DisposeAsync();

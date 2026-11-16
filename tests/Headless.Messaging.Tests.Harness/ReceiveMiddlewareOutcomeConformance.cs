@@ -260,19 +260,9 @@ public static class ReceiveMiddlewareOutcomeConformance
         exhaustedFired.Should().BeTrue("Reject outcome must trigger OnTerminal");
         ConformanceReceiveConsumer.InvocationCount.Should().Be(0, "Reject outcome must not invoke consumer");
 
+        // OnTerminal runs only after the receive stage stored the poison row, so the row is already there.
         var storage = provider.GetRequiredService<IDataStorage>();
-        var sw = Stopwatch.StartNew();
-        StatisticsView stats;
-        do
-        {
-            stats = await storage.GetMonitoringApi().GetStatisticsAsync(cancellationToken);
-            if (stats.ReceivedFailed >= 1)
-            {
-                break;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
-        } while (sw.Elapsed < TimeSpan.FromSeconds(5));
+        var stats = await storage.GetMonitoringApi().GetStatisticsAsync(cancellationToken);
 
         stats.ReceivedFailed.Should().Be(1, "Reject outcome must store a failed exception row");
     }
