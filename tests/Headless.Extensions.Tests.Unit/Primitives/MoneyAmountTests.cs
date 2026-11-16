@@ -45,9 +45,10 @@ public sealed class MoneyAmountTests
 
     [Theory]
     // Banker's rounding (MidpointRounding.ToEven): a midpoint rounds to the nearest even last digit.
-    [InlineData(5.125, 5.12)] // preceding digit 2 is even -> stays 5.12
-    [InlineData(5.135, 5.14)] // preceding digit 3 is odd  -> rounds to even 5.14
-    [InlineData(2.675, 2.68)] // preceding digit 7 is odd  -> rounds to even 2.68
+    // Strings, not double literals: 2.675 has no exact double, so the decimal would depend on the conversion.
+    [InlineData("5.125", "5.12")] // preceding digit 2 is even -> stays 5.12
+    [InlineData("5.135", "5.14")] // preceding digit 3 is odd  -> rounds to even 5.14
+    [InlineData("2.675", "2.68")] // preceding digit 7 is odd  -> rounds to even 2.68
     public void should_round_midpoints_to_even(decimal value, decimal expected)
     {
         // given - value at the two-decimal midpoint
