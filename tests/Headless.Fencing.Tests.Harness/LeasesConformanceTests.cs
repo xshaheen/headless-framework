@@ -365,6 +365,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
         // The transaction started before the grant and stays open: a clock frozen at transaction start would still
         // call the lease live.
+        // real-wait: only real elapsed time on the database's own clock exposes a clock frozen at transaction start, and the open fence holds the lease row, so no other connection can age it
         await Task.Delay(ShortDuration + TimeSpan.FromMilliseconds(500), AbortToken);
         var late = async () => await unit.Unit.Leases.FenceAsync(granted.Lease!, AbortToken);
 
@@ -384,6 +385,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         var pending = host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken).AsTask();
         var first = await Task.WhenAny(
             pending,
+            // real-wait: the grant stays blocked inside the database's lock manager, which raises no client-visible event when a statement starts waiting, so no completion over a real window is the observation
             Task.Delay(LeasesFixtureExtensions.BlockedObservationWindow, AbortToken)
         );
 
@@ -408,6 +410,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         var pending = host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken).AsTask();
 
         // Held open past the enlisted lease's expiry, so the waiter takes it over once the unit commits.
+        // real-wait: the enlisted lease must expire on the database's own clock while the waiter stays blocked behind its row lock, which no other connection can age and no event reports
         await Task.Delay(ShortDuration * 2, AbortToken);
         pending.IsCompleted.Should().BeFalse("the waiter blocks on the enlisted grant's row");
 
@@ -1207,13 +1210,11 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         (await unit.Unit.Leases.SettleAsync(granted.Lease!, AbortToken)).Should().Be(LeaseSettlementStatus.Settled);
 
         var status = host.Leases.GetStatusAsync(granted.Lease!, AbortToken).AsTask();
-        var first = await Task.WhenAny(
-            status,
-            Task.Delay(LeasesFixtureExtensions.BlockedObservationWindow, AbortToken)
-        );
-
-        first.Should().BeSameAs(status, "a status read never takes or waits on the lease row's lock");
-        (await status).Should().Be(LeaseFenceStatus.Current, "the settling transaction has not committed yet");
+        // The read must finish while the settlement is still uncommitted: a read that waits on the row lock never
+        // completes before the commit below, so it times out here instead of passing.
+        (await status.Bounded())
+            .Should()
+            .Be(LeaseFenceStatus.Current, "the settling transaction has not committed yet");
 
         await unit.CommitAsync(AbortToken);
 

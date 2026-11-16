@@ -298,6 +298,7 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
             // Without row locks a claim takes the database write lock, so the second claimer waits for the first.
             var done = await Task.WhenAny(
                 pending,
+                // real-wait: the claim stays blocked inside the database's lock manager, which raises no client-visible event when a statement starts waiting, so no completion over a real window is the observation
                 Task.Delay(LeasesFixtureExtensions.BlockedObservationWindow, AbortToken)
             );
             done.Should().NotBeSameAs(pending, "the second claim waits for the open claim's write lock");
@@ -852,11 +853,13 @@ public abstract class FencedRowsConformanceTests<TFixture>(TFixture fixture) : T
         );
         var first = await Task.WhenAny(
             pending,
+            // real-wait: the write stays blocked inside the database's lock manager, which raises no client-visible event when a statement starts waiting, so no completion over a real window is the observation
             Task.Delay(LeasesFixtureExtensions.BlockedObservationWindow, AbortToken)
         );
         first.Should().NotBeSameAs(pending, "the write waits on the row the fence holds");
 
         // The lease runs out while the write waits: a clock read before the row lock would still call it live.
+        // real-wait: the lease expires on the database's own clock while the write is blocked behind the fence's row lock, so no other connection can age the row and no host clock moves the store's
         await Task.Delay(lease, AbortToken);
         await transaction.CommitAsync(AbortToken);
         var written = await pending.WaitAsync(LeasesFixtureExtensions.ReleaseTimeout, AbortToken);

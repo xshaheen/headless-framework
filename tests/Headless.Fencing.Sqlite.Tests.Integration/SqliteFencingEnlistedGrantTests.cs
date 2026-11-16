@@ -44,6 +44,7 @@ public sealed class SqliteFencingEnlistedGrantTests(SqliteFencingFixture fixture
         await unit.Unit.Leases.FenceAsync(granted.Lease!, AbortToken);
 
         // The transaction stays open: a clock frozen at transaction start would still call the lease live.
+        // real-wait: only real elapsed time on SQLite's own clock exposes a clock frozen at transaction start
         await Task.Delay(_ShortDuration + TimeSpan.FromMilliseconds(500), AbortToken);
         var late = async () => await unit.Unit.Leases.FenceAsync(granted.Lease!, AbortToken);
 
