@@ -665,6 +665,27 @@ public sealed class LeaseSqlCapture : DbCommandInterceptor
 {
     private readonly Lock _lock = new();
     private readonly List<CapturedSqlStatement> _statements = [];
+    private readonly List<(Func<CapturedSqlStatement, bool> Match, TaskCompletionSource Seen)> _waiters = [];
+
+    /// <summary>
+    /// Completes when a captured statement satisfies <paramref name="match"/>, counting statements already captured,
+    /// so a test waits for the command to go on the wire instead of sleeping until it probably has.
+    /// </summary>
+    public Task WaitForStatementAsync(Func<CapturedSqlStatement, bool> match)
+    {
+        lock (_lock)
+        {
+            if (_statements.Exists(statement => match(statement)))
+            {
+                return Task.CompletedTask;
+            }
+
+            var seen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Add((match, seen));
+
+            return seen.Task;
+        }
+    }
 
     /// <summary>Only statements that touch the lease column — everything else is noise for this guard.</summary>
     public IReadOnlyList<CapturedSqlStatement> Statements
@@ -776,6 +797,17 @@ public sealed class LeaseSqlCapture : DbCommandInterceptor
         lock (_lock)
         {
             _statements.Add(statement);
+            _waiters.RemoveAll(waiter =>
+            {
+                if (!waiter.Match(statement))
+                {
+                    return false;
+                }
+
+                waiter.Seen.TrySetResult();
+
+                return true;
+            });
         }
     }
 }

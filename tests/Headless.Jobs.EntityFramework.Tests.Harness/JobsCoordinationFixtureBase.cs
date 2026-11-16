@@ -1371,6 +1371,7 @@ public sealed class CoordinatedJobsModule : IJobsModule
                                 100d * report / JobsCoordinationFixtureExtensions.ProgressReports,
                                 string.Create(CultureInfo.InvariantCulture, $"report {report}")
                             );
+                            // real-wait: the reports must arrive spread over real time, because the throttle under test is the progress writer's interval wait on the host's system clock; back to back, a writer with no throttle would also finish with one write and the test could not tell
                             await Task.Delay(1, cancellationToken).ConfigureAwait(false);
                         }
                     },
@@ -1465,6 +1466,7 @@ internal sealed class HarnessAmbientCurrentTenant : ICurrentTenant
 internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificationHubSender
 {
     private readonly ConcurrentQueue<Guid> _notificationIds = new();
+    private TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _restartCount;
 
     bool IJobsHostScheduler.IsRunning => false;
@@ -1489,9 +1491,17 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
 
         try
         {
-            while (RestartCount < restarts || _notificationIds.Count < notifications)
+            while (true)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token).ConfigureAwait(false);
+                // Taken before the check, so a delivery that lands between the check and the wait still wakes it.
+                var changed = Volatile.Read(ref _changed).Task;
+
+                if (RestartCount >= restarts && _notificationIds.Count >= notifications)
+                {
+                    return;
+                }
+
+                await changed.WaitAsync(timeout.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -1515,18 +1525,29 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
         if (dateTime is not null)
         {
             Interlocked.Increment(ref _restartCount);
+            _NotifyChanged();
         }
     }
 
     void IJobsHostScheduler.Restart()
     {
         Interlocked.Increment(ref _restartCount);
+        _NotifyChanged();
     }
 
     Task IJobsNotificationHubSender.AddTimeJobNotifyAsync(Guid id)
     {
         _notificationIds.Enqueue(id);
+        _NotifyChanged();
         return Task.CompletedTask;
+    }
+
+    // Wakes every waiter and arms the next round; a waiter that arrives later waits for the next delivery.
+    private void _NotifyChanged()
+    {
+        Interlocked
+            .Exchange(ref _changed, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+            .TrySetResult();
     }
 
     Task IJobsNotificationHubSender.AddCronJobNotifyAsync(object cronJob)

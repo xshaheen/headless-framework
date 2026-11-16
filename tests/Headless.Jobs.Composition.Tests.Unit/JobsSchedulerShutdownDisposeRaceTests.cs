@@ -48,8 +48,9 @@ public sealed class JobsSchedulerShutdownDisposeRaceTests : TestBase
 
         var stop = service.StopAsync(CancellationToken.None);
 
-        // The drain is observably open; disposing here is what a concurrent host dispose does once it wins the race.
-        await Task.Delay(200, AbortToken);
+        // StopAsync marks the pool draining and parks on the running job before it returns its task, so the drain is
+        // open here; disposing now is what a concurrent host dispose does once it wins the race.
+        taskScheduler.IsDraining.Should().BeTrue();
         stop.IsCompleted.Should().BeFalse("the drain must still be waiting on the in-flight job");
         await taskScheduler.DisposeAsync();
 

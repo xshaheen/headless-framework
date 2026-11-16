@@ -43,8 +43,10 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
 
         var stop = service.StopAsync(CancellationToken.None);
 
-        // The drain must be observably waiting on the in-flight job, not returning early.
-        await Task.Delay(200, AbortToken);
+        // StopAsync marks the pool draining and parks on the running job before it returns its task, so a stop that
+        // abandoned the job (freeze, cancel, return) would already be complete or have cancelled it here.
+        taskScheduler.IsDraining.Should().BeTrue();
+        taskScheduler.ExecutionCancellationToken.IsCancellationRequested.Should().BeFalse();
         stop.IsCompleted.Should().BeFalse("stop must wait for in-flight work, not freeze-and-abandon it");
 
         release.TrySetResult();

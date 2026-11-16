@@ -576,21 +576,56 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
         using var readerStop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var overlap = TimeSpan.FromMilliseconds(300);
         var reader = _Store(readerHost);
+        var enlisted = new TimeJobEntity
+        {
+            Id = Guid.NewGuid(),
+            Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
+            Request = [],
+            ExecutionTime = DateTime.UtcNow.AddHours(1),
+        };
+        var autonomous = _TimeJob(null);
         var seen = new ConcurrentDictionary<Guid, byte>();
+        var autonomousSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var enlistedSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cursor = await reader.GetChangeStartCursorAsync(ct);
         var readLoop = Task.Run(
             async () =>
             {
-                while (!readerStop.IsCancellationRequested)
+                try
                 {
-                    var page = await reader.ReadChangesAsync(cursor, pageSize: 50, overlap, readerStop.Token);
-                    foreach (var change in page.Changes)
+                    // Back to back: each read is a fresh pass of the change feed, so the reader keeps moving on
+                    // while the enlisted transaction stays open.
+                    while (!readerStop.IsCancellationRequested)
                     {
-                        seen.TryAdd(change.Id, 0);
-                    }
+                        var page = await reader.ReadChangesAsync(cursor, pageSize: 50, overlap, readerStop.Token);
+                        foreach (var change in page.Changes)
+                        {
+                            seen.TryAdd(change.Id, 0);
+                        }
 
-                    cursor = page.Cursor;
-                    await Task.Delay(TimeSpan.FromMilliseconds(100), readerStop.Token);
+                        if (seen.ContainsKey(autonomous.Id))
+                        {
+                            autonomousSeen.TrySetResult();
+                        }
+
+                        if (seen.ContainsKey(enlisted.Id))
+                        {
+                            enlistedSeen.TrySetResult();
+                        }
+
+                        cursor = page.Cursor;
+                        await Task.Yield();
+                    }
+                }
+                catch (OperationCanceledException) when (readerStop.IsCancellationRequested)
+                {
+                    // The test finished and stopped the reader.
+                }
+                catch (Exception e)
+                {
+                    // A dead reader would otherwise leave the awaits below to run into their ceiling.
+                    autonomousSeen.TrySetException(e);
+                    enlistedSeen.TrySetException(e);
                 }
             },
             ct
@@ -598,40 +633,31 @@ public abstract class JobsChangeMarkerConformanceTests<TFixture>(TFixture fixtur
 
         try
         {
-            var enlisted = new TimeJobEntity
-            {
-                Id = Guid.NewGuid(),
-                Function = JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
-                Request = [],
-                ExecutionTime = DateTime.UtcNow.AddHours(1),
-            };
-            var autonomous = _TimeJob(null);
-
             await fixture.RunCoordinatedTransactionAsync(
                 writerHost.Services,
                 async (_, unitOfWork, _, _, innerCt) =>
                 {
                     (await unitOfWork.TimeJobs<TimeJobEntity>().AddAsync(enlisted, innerCt)).Should().NotBeNull();
 
-                    // Hold the transaction well past the overlap window while another write moves the readers on.
+                    // real-wait: the overlap window is measured on the database's change-stamp clock, so the enlisted row's stamp has to age past it while another write moves the readers on; no host clock moves the database's
                     await Task.Delay(overlap * 3, innerCt);
                     (await _Store(readerHost).AddTimeJobsAsync([autonomous], innerCt)).Should().Be(1);
-                    var deadline = DateTime.UtcNow.AddSeconds(5);
-                    while (!seen.ContainsKey(autonomous.Id) && DateTime.UtcNow < deadline)
+                    // A store that locks rows on read blocks the reader on this open transaction, so the reader may
+                    // never see the autonomous write before the commit: the wait is best effort, and the assertion
+                    // that matters is the one after the commit.
+                    try
                     {
-                        await Task.Delay(TimeSpan.FromMilliseconds(50), innerCt);
+                        await autonomousSeen.Task.WaitAsync(TimeSpan.FromSeconds(5), innerCt);
                     }
+                    catch (TimeoutException) { }
 
+                    // real-wait: the reader must have read past the overlap window of the enlisted row's stamp on the database's change-stamp clock before the commit lands
                     await Task.Delay(overlap * 3, innerCt);
                 },
                 ct
             );
 
-            var afterCommit = DateTime.UtcNow.AddSeconds(15);
-            while (!seen.ContainsKey(enlisted.Id) && DateTime.UtcNow < afterCommit)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
-            }
+            await enlistedSeen.Task.Bounded(TimeSpan.FromSeconds(15));
 
             seen.Should().ContainKey(enlisted.Id);
         }

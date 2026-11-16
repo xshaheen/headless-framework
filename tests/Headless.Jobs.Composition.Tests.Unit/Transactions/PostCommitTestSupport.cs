@@ -2,33 +2,8 @@
 
 using Headless.Jobs.BackgroundServices;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Transactions;
-
-internal static class FakeClock
-{
-    /// <summary>
-    /// Advances the fake clock in <paramref name="step" /> increments until <paramref name="until" /> completes. The
-    /// deadline timers under test are armed just AFTER the hook that released the test, so a single advance can race
-    /// the arming and leave the timer parked forever; repeating the advance makes the wait deterministic.
-    /// </summary>
-    public static async Task AdvanceUntilAsync(
-        FakeTimeProvider timeProvider,
-        TimeSpan step,
-        Task until,
-        CancellationToken cancellationToken
-    )
-    {
-        for (var attempt = 0; attempt < 500 && !until.IsCompleted; attempt++)
-        {
-            timeProvider.Advance(step);
-            _ = await Task.WhenAny(until, Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken));
-        }
-
-        await until.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
-    }
-}
 
 /// <summary>A post-commit signal whose side effect is supplied by the test.</summary>
 internal sealed record TestPostCommitSignal(string Scope, Func<DateTimeOffset, CancellationToken, Task> SideEffect)

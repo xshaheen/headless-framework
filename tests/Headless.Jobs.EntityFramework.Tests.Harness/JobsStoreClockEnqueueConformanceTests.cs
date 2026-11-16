@@ -76,10 +76,12 @@ public abstract class JobsStoreClockEnqueueConformanceTests<TFixture>(TFixture f
                 async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
                     transactionStart = await _ReadEnlistedClockAsync(connection, transaction, innerCt);
+                    // real-wait: the transaction's age on the database's clock is the quantity under test (the stamp must be the statement's instant, not the transaction start); a host fake cannot age a database transaction
                     await Task.Delay(TimeSpan.FromSeconds(3), innerCt);
                     beforeWrite = await _StoreUtcNowAsync(innerCt);
                     returned = await unitOfWork.TimeJobs<TimeJobEntity>().AddAsync(job, innerCt);
                     afterWrite = await _StoreUtcNowAsync(innerCt);
+                    // real-wait: the commit has to land seconds after the write on the database's clock, which is what makes the commit slow; a host fake cannot delay a database commit
                     await Task.Delay(TimeSpan.FromSeconds(2), innerCt);
                 },
                 ct
@@ -500,6 +502,7 @@ public abstract class JobsStoreClockEnqueueConformanceTests<TFixture>(TFixture f
                 async (_, unitOfWork, connection, transaction, innerCt) =>
                 {
                     transactionStart = await _ReadEnlistedClockAsync(connection, transaction, innerCt);
+                    // real-wait: the transaction's age on the database's clock is the quantity under test (the stamp must be the statement's instant, not the transaction start); a host fake cannot age a database transaction
                     await Task.Delay(TimeSpan.FromSeconds(3), innerCt);
                     beforeWrite = await _StoreUtcNowAsync(innerCt);
                     created = await enqueue(unitOfWork, key, innerCt);

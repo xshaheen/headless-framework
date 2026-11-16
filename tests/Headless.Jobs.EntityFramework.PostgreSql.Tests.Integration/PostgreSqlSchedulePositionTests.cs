@@ -190,6 +190,7 @@ public abstract class PostgreSqlSchedulePositionTestsBase<TFixture>(TFixture fix
         var untilDue = seeded.NextDueUtc - DateTime.UtcNow + TimeSpan.FromMilliseconds(250);
         if (untilDue > TimeSpan.Zero)
         {
+            // real-wait: the definition's next due instant is judged by the database's clock when the materialization runs, which no host fake moves
             await Task.Delay(untilDue, ct);
         }
 
@@ -208,21 +209,17 @@ public abstract class PostgreSqlSchedulePositionTestsBase<TFixture>(TFixture fix
             ExecutionTimeUtc = seeded.NextDueUtc,
         };
         var materializationTask = persistence.MaterializeCronScheduleOccurrenceAsync(materialization, ct);
-        var updateObserved = SpinWait.SpinUntil(
-            () =>
-                capture.Statements.Any(statement =>
-                    statement.InExplicitTransaction
-                    && statement.Sql.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
-                    && statement.Sql.Contains("next_due_utc", StringComparison.Ordinal)
-                ),
-            TimeSpan.FromSeconds(5)
+        var materializationUpdateReachedTheHeldRowLock = capture.WaitForStatementAsync(statement =>
+            statement.InExplicitTransaction
+            && statement.Sql.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
+            && statement.Sql.Contains("next_due_utc", StringComparison.Ordinal)
         );
+        await materializationUpdateReachedTheHeldRowLock.Bounded(TimeSpan.FromSeconds(5));
         var waitedForDefinitionLock = !materializationTask.IsCompleted;
 
         await blockerTransaction.CommitAsync(ct);
         var result = await materializationTask;
 
-        updateObserved.Should().BeTrue("the materialization UPDATE must reach the held row lock");
         waitedForDefinitionLock.Should().BeTrue("the materialization transaction must wait for the definition lock");
         result.Outcome.Should().Be(CronScheduleMaterializationOutcome.OccurrenceCreated);
         capture
