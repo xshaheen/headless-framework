@@ -11,9 +11,9 @@ public sealed class PaymobCashInFeesCalculatorTests : TestBase
     private static readonly PaymobCashInFeesCalculator _Default = new();
 
     [Theory]
-    [InlineData(1000, 31, 4.34)]
-    [InlineData(110, 8.75, 1.23)]
-    [InlineData(100, 8.5, 1.19)]
+    [InlineData("1000", "31", "4.34")]
+    [InlineData("110", "8.75", "1.23")]
+    [InlineData("100", "8.5", "1.19")]
     public void should_deduct_fixed_and_percentage_fee_plus_vat_on_that_fee(
         decimal amount,
         decimal expectedFees,
@@ -33,7 +33,7 @@ public sealed class PaymobCashInFeesCalculatorTests : TestBase
     [InlineData(100, 110)]
     [InlineData(500, 522)]
     [InlineData(1000, 1037)]
-    [InlineData(12345.67, 12715)]
+    [InlineData("12345.67", "12715")]
     public void should_gross_up_net_with_the_percentage_fee_rate_in_the_denominator(decimal net, decimal expected)
     {
         // amount(net) = (net + fixedFees * vatScaler) / (1 - percentageFees * vatScaler), ceiling-rounded.
