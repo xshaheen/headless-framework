@@ -1,7 +1,7 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardProvider } from '../src/context.tsx'
 import { createDashboardClient, listKey, objectKey } from '../src/data/client.tsx'
 import { useDashboardList, useDashboardObject, useNewRows } from '../src/data/hooks.ts'
@@ -54,6 +54,10 @@ describe('fetch results against newer stream changes', () => {
   beforeEach(() => {
     client = createDashboardClient()
     stream = createFakeStream()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('keeps the newer object when a refetch started before a stream change lands after it', async () => {
@@ -194,6 +198,7 @@ describe('fetch results against newer stream changes', () => {
   })
 
   it('asks once, not in a loop, when the refetch still answers the older row', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     let call = 0
     const { result } = renderHook(
       () =>
@@ -212,7 +217,8 @@ describe('fetch results against newer stream changes', () => {
 
     await waitFor(() => expect(call).toBe(2))
     await waitFor(() => expect(result.current.isFetching).toBe(false))
-    await new Promise((done) => setTimeout(done, 20))
+    // A refetch asks again from a zero-delay timer, so firing every pending timer runs the next ask of a loop.
+    await act(() => vi.runAllTimersAsync())
     expect(call).toBe(2)
   })
 })
