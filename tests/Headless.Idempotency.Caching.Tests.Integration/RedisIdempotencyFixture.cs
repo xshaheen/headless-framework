@@ -20,13 +20,26 @@ public sealed class RedisIdempotencyFixture : HeadlessRedisFixture, ICollectionF
     /// Builds a host with idempotency on the cache provider over its own Redis connection, with records under
     /// <paramref name="keyPrefix" /> so tests never share a record or a generation counter.
     /// </summary>
-    public async Task<RedisIdempotencyHost> CreateHostAsync(string keyPrefix, CancellationToken cancellationToken)
+    public Task<RedisIdempotencyHost> CreateHostAsync(string keyPrefix, CancellationToken cancellationToken)
+    {
+        return CreateHostAsync(keyPrefix, TimeProvider.System, cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds the same host on <paramref name="timeProvider" />, which decides leases and retention: the cache provider
+    /// reads the application clock, so a test moves a lease past its expiry by advancing a fake one.
+    /// </summary>
+    public async Task<RedisIdempotencyHost> CreateHostAsync(
+        string keyPrefix,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    )
     {
         var connection = await ConnectionMultiplexer.ConnectAsync(Container.GetConnectionString());
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(timeProvider);
         services.AddHeadlessCaching(setup => setup.UseRedis(options => options.ConnectionMultiplexer = connection));
         services.AddHeadlessIdempotency(setup =>
         {

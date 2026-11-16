@@ -5,6 +5,7 @@ using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Tests;
@@ -739,6 +740,8 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
         await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
         await Fixture.TouchAsync(unit.Unit, AbortToken);
+
+        // real-wait: the database clock itself must pass the lease while this unit's open transaction stays frozen at its start; shifting the stored lease would not move that clock
         await Task.Delay(lease + TimeSpan.FromMilliseconds(500), AbortToken);
 
         var fence = async () => await unit.Unit.Idempotency.FenceAsync(admitted, AbortToken);
@@ -771,8 +774,9 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         var result = Encoding.UTF8.GetBytes("done");
         var generation = admitted.Generation!.Value;
 
+        // Aged before the unit begins: a SQLite unit holds the database's single write lock from its start.
+        await Fixture.ShiftLeaseIntoPastAsync(recordKey, lease + TimeSpan.FromMinutes(1), AbortToken);
         await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
-        await Task.Delay(lease + TimeSpan.FromMilliseconds(500), AbortToken);
 
         var complete = async () =>
             await store.CompleteAsync(unit.Unit, recordKey, generation, result, Contract, Retention, AbortToken);
@@ -951,14 +955,11 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         await unit.Unit.Idempotency.FenceAsync(admitted, AbortToken);
         await unit.Unit.Idempotency.CompleteAsync(admitted, Payload("done"), Contract, cancellationToken: AbortToken);
 
-        var peek = host.Operations.PeekAsync(key, AbortToken).AsTask();
-        var first = await Task.WhenAny(
-            peek,
-            Task.Delay(IdempotencyFixtureExtensions.BlockedObservationWindow, AbortToken)
-        );
+        // The unit stays open for the whole wait, so a peek that queued behind the record's row lock could only finish
+        // by the ceiling failing this test: a peek never takes or waits on that lock.
+        var peek = await host.Operations.PeekAsync(key, AbortToken).Bounded();
 
-        first.Should().BeSameAs(peek, "a peek never takes or waits on the record's row lock");
-        (await peek).Should().Be(IdempotencyPeekStatus.Pending, "the completing transaction has not committed yet");
+        peek.Should().Be(IdempotencyPeekStatus.Pending, "the completing transaction has not committed yet");
 
         await unit.CommitAsync(AbortToken);
 
@@ -1142,6 +1143,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     public virtual async Task should_purge_records_from_the_retention_service()
     {
+        var purged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var host = await Fixture.CreateHostAsync(
             setup =>
                 setup.ConfigureOptions(options =>
@@ -1149,6 +1151,10 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
                     options.PurgeInterval = TimeSpan.FromMilliseconds(100);
                     options.DefaultRetention = Retention;
                 }),
+            services =>
+                services.AddLogging(logging =>
+                    logging.SetMinimumLevel(LogLevel.Debug).AddProvider(new PurgeLoggerProvider(purged))
+                ),
             AbortToken
         );
         var past = Retention + TimeSpan.FromHours(1);
@@ -1169,13 +1175,12 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
         try
         {
-            var deadline = DateTimeOffset.UtcNow + IdempotencyFixtureExtensions.ReleaseTimeout;
+            // The service logs each round after its delete committed, so the row is gone once a round reports deleting one.
+            await purged.Task.Bounded(IdempotencyFixtureExtensions.ReleaseTimeout);
 
-            while (await Fixture.ReadRecordAsync(HostKey(completed), AbortToken) is not null)
-            {
-                DateTimeOffset.UtcNow.Should().BeBefore(deadline, "the retention service purges on its interval");
-                await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
-            }
+            (await Fixture.ReadRecordAsync(HostKey(completed), AbortToken))
+                .Should()
+                .BeNull("the retention service purges on its interval");
         }
         finally
         {
@@ -1516,5 +1521,36 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         const int batch = 1000;
 
         while (await host.Store.PurgeAsync(olderThan, batch, AbortToken) >= batch) { }
+    }
+
+    /// <summary>Completes once the retention service reports a purge round that deleted at least one record.</summary>
+    private sealed class PurgeLoggerProvider(TaskCompletionSource purged) : ILoggerProvider, ILogger
+    {
+        public ILogger CreateLogger(string categoryName) => this;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (
+                string.Equals(eventId.Name, "IdempotencyPurged", StringComparison.Ordinal)
+                && state is IReadOnlyList<KeyValuePair<string, object?>> fields
+                && fields.Any(static field => field is { Key: "RecordCount", Value: int count and > 0 })
+            )
+            {
+                purged.TrySetResult();
+            }
+        }
+
+        public void Dispose() { }
     }
 }

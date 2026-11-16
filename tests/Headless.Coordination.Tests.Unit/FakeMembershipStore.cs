@@ -7,6 +7,9 @@ namespace Tests;
 internal sealed class FakeMembershipStore : IMembershipStore
 {
     private readonly Queue<IReadOnlyList<NodeLivenessSnapshot>> _snapshots = new();
+    private readonly Lock _heartbeatLock = new();
+    private readonly List<(int Count, TaskCompletionSource Signal)> _heartbeatWaiters = [];
+    private readonly TaskCompletionSource _leaveEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public NodeIncarnation NextIncarnation { get; set; } = new(1);
 
@@ -36,6 +39,9 @@ internal sealed class FakeMembershipStore : IMembershipStore
     public bool ThrowOnLeave { get; set; }
 
     public bool BlockOnLeave { get; set; }
+
+    /// <summary>Completes when a leave reaches the store, so a test can act once the caller's leave budget is armed.</summary>
+    public Task LeaveEntered => _leaveEntered.Task;
 
     public int AllocateIncarnationCalls { get; private set; }
 
@@ -94,7 +100,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
     public async ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Heartbeats.Add(identity);
+        _RecordHeartbeat(identity);
 
         if (ThrowOnHeartbeat)
         {
@@ -113,6 +119,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
     public async ValueTask LeaveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _leaveEntered.TrySetResult();
 
         if (ThrowOnLeave)
         {
@@ -196,5 +203,39 @@ internal sealed class FakeMembershipStore : IMembershipStore
     public void EnqueueSnapshot(params NodeLivenessSnapshot[] snapshots)
     {
         _snapshots.Enqueue(snapshots);
+    }
+
+    /// <summary>Completes once the store has recorded at least <paramref name="count"/> heartbeats.</summary>
+    public Task WaitForHeartbeatsAsync(int count)
+    {
+        lock (_heartbeatLock)
+        {
+            if (Heartbeats.Count >= count)
+            {
+                return Task.CompletedTask;
+            }
+
+            var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _heartbeatWaiters.Add((count, signal));
+
+            return signal.Task;
+        }
+    }
+
+    private void _RecordHeartbeat(NodeIdentity identity)
+    {
+        lock (_heartbeatLock)
+        {
+            Heartbeats.Add(identity);
+
+            for (var i = _heartbeatWaiters.Count - 1; i >= 0; i--)
+            {
+                if (Heartbeats.Count >= _heartbeatWaiters[i].Count)
+                {
+                    _heartbeatWaiters[i].Signal.TrySetResult();
+                    _heartbeatWaiters.RemoveAt(i);
+                }
+            }
+        }
     }
 }

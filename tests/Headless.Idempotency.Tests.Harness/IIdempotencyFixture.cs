@@ -96,15 +96,19 @@ public static class IdempotencyFixtureExtensions
     /// Builds an independent host (its own service provider and connection pool) with idempotency on the provider
     /// under test, runs its storage initializer, and returns it. The retention purge is off unless
     /// <paramref name="configure" /> turns it on; the hosted service is never started by this method.
+    /// <paramref name="configureServices" /> adds registrations beside idempotency, such as a logger provider a test
+    /// observes the product through.
     /// </summary>
     public static async ValueTask<IdempotencyHost> CreateHostAsync(
         this IIdempotencyFixture fixture,
         Action<HeadlessIdempotencySetupBuilder>? configure = null,
+        Action<IServiceCollection>? configureServices = null,
         CancellationToken cancellationToken = default
     )
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        configureServices?.Invoke(services);
         services.AddHeadlessIdempotency(setup =>
         {
             fixture.ConfigureIdempotency(setup);

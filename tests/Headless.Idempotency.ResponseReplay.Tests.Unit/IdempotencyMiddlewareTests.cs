@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
+using System.Threading.Channels;
 using Headless.Context;
 using Headless.Http;
 using Headless.Idempotency;
@@ -944,7 +945,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     [Fact]
     public async Task should_renew_lease_every_third_of_in_flight_lease_while_handler_runs()
     {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedTimerTimeProvider(DateTimeOffset.UtcNow);
         var operations = CreateAdmittingOperations();
         var lease = TimeSpan.FromSeconds(30);
         var middleware = CreateMiddleware(
@@ -953,21 +954,33 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             timeProvider: time
         );
 
-        await middleware.InvokeAsync(
-            CreateContext(idempotencyKey: "k1"),
-            async ctx =>
-            {
-                await _AdvanceUntilAsync(time, lease / 3, () => CallCount(operations, "RenewAsync") >= 2);
-                ctx.Response.StatusCode = 201;
-            }
-        );
+        await middleware
+            .InvokeAsync(
+                CreateContext(idempotencyKey: "k1"),
+                async ctx =>
+                {
+                    // Each renewal is followed by the loop arming its next delay, so the third timer proves the second
+                    // renewal already ran.
+                    for (var renewal = 0; renewal < 2; renewal++)
+                    {
+                        (await time.WaitForTimerAsync()).Should().Be(lease / 3);
+                        time.Advance(lease / 3);
+                    }
+
+                    (await time.WaitForTimerAsync()).Should().Be(lease / 3);
+                    CallCount(operations, "RenewAsync").Should().Be(2);
+                    ctx.Response.StatusCode = 201;
+                }
+            )
+            .Bounded();
 
         await operations
             .Received()
             .RenewAsync(Arg.Any<IdempotentAdmission>(), Arg.Is(lease), Arg.Any<CancellationToken>());
         var renewals = CallCount(operations, "RenewAsync");
+
+        // The loop was cancelled and awaited before InvokeAsync returned, so no timer is left for this advance to fire.
         time.Advance(lease * 3);
-        await Task.Delay(50, AbortToken);
         CallCount(operations, "RenewAsync").Should().Be(renewals, "renewal stops once the handler returns");
     }
 
@@ -978,11 +991,16 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     [InlineData(IdempotentLeaseStatus.Released)]
     public async Task should_stop_renewing_when_lease_is_lost(IdempotentLeaseStatus status)
     {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedTimerTimeProvider(DateTimeOffset.UtcNow);
         var operations = CreateAdmittingOperations();
+        var renewed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         operations
             .RenewAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<IdempotentLeaseRenewal>(new IdempotentLeaseRenewal(status, null)));
+            .Returns(_ =>
+            {
+                renewed.TrySetResult();
+                return new ValueTask<IdempotentLeaseRenewal>(new IdempotentLeaseRenewal(status, null));
+            });
         var lease = TimeSpan.FromSeconds(30);
         var middleware = CreateMiddleware(
             options: Monitor(new HttpIdempotencyOptions { InFlightLease = lease }),
@@ -994,7 +1012,9 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             CreateContext(idempotencyKey: "k1"),
             async ctx =>
             {
-                await _AdvanceUntilAsync(time, lease / 3, () => CallCount(operations, "RenewAsync") >= 1);
+                await time.WaitForTimerAsync();
+                time.Advance(lease / 3);
+                await renewed.Task.Bounded();
 
                 for (var i = 0; i < 5; i++)
                 {
@@ -1014,9 +1034,10 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     {
         // A handler holding its fenced transaction blocks the renewal on the record row. The loop must give that call
         // up at the timeout, cancel it, and renew again on the next tick.
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedTimerTimeProvider(DateTimeOffset.UtcNow);
         var operations = CreateAdmittingOperations();
         var firstCallCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondCall = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = 0;
         operations
             .RenewAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
@@ -1037,6 +1058,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                     );
                 }
 
+                secondCall.TrySetResult();
+
                 return new ValueTask<IdempotentLeaseRenewal>(
                     new IdempotentLeaseRenewal(IdempotentLeaseStatus.Current, DateTimeOffset.UtcNow.AddMinutes(1))
                 );
@@ -1052,7 +1075,15 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             CreateContext(idempotencyKey: "k1"),
             async ctx =>
             {
-                await _AdvanceUntilAsync(time, lease / 3, () => Volatile.Read(ref calls) >= 2);
+                // Tick one releases the first renewal, which blocks and arms its timeout timer; the timeout cancels it and
+                // the loop arms the delay before the second renewal.
+                for (var tick = 0; tick < 3; tick++)
+                {
+                    await time.WaitForTimerAsync();
+                    time.Advance(lease / 3);
+                }
+
+                await secondCall.Task.Bounded();
                 ctx.Response.StatusCode = 201;
             }
         );
@@ -1067,14 +1098,19 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         // A store (or a decorator over it) that throws synchronously from RenewAsync must not fault the renewal loop:
         // the loop is awaited after the handler, and a faulted loop would fail a request whose work already committed
         // and leave the lease pending until it expires.
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new ArmedTimerTimeProvider(DateTimeOffset.UtcNow);
         var operations = CreateAdmittingOperations();
         var calls = 0;
+        var secondCall = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         operations
             .RenewAsync(Arg.Any<IdempotentAdmission>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns<ValueTask<IdempotentLeaseRenewal>>(_ =>
             {
-                Interlocked.Increment(ref calls);
+                if (Interlocked.Increment(ref calls) == 2)
+                {
+                    secondCall.TrySetResult();
+                }
+
                 throw new InvalidOperationException("store unavailable");
             });
         var lease = TimeSpan.FromSeconds(30);
@@ -1089,7 +1125,13 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             context,
             async ctx =>
             {
-                await _AdvanceUntilAsync(time, lease / 3, () => Volatile.Read(ref calls) >= 2);
+                for (var tick = 0; tick < 2; tick++)
+                {
+                    await time.WaitForTimerAsync();
+                    time.Advance(lease / 3);
+                }
+
+                await secondCall.Task.Bounded();
                 ctx.Response.StatusCode = 201;
             }
         );
@@ -1280,22 +1322,21 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     /// <summary>
-    /// Advances the fake clock one step at a time, yielding real time between steps so the renewal loop's continuations
-    /// run, until <paramref name="condition" /> holds.
+    /// Reports the due time of every timer the code under test arms, so a test advances the clock only after the delay
+    /// it means to release exists: an advance made before the timer is armed is lost.
     /// </summary>
-    private static async Task _AdvanceUntilAsync(FakeTimeProvider time, TimeSpan step, Func<bool> condition)
+    private sealed class ArmedTimerTimeProvider(DateTimeOffset start) : FakeTimeProvider(start)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        private readonly Channel<TimeSpan> _armed = Channel.CreateUnbounded<TimeSpan>();
 
-        while (!condition())
+        public Task<TimeSpan> WaitForTimerAsync() => _armed.Reader.ReadAsync(AbortToken).Bounded();
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException("The renewal loop never reached the expected state.");
-            }
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            _armed.Writer.TryWrite(dueTime);
 
-            time.Advance(step);
-            await Task.Delay(20, AbortToken);
+            return timer;
         }
     }
 
