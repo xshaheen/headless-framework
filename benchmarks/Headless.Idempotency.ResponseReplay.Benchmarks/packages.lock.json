@@ -238,7 +238,7 @@
           "Headless.Logging.Redaction": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.AspNetCore.MiddlewareAnalysis": "[10.0.13, )",
+          "Microsoft.AspNetCore.MiddlewareAnalysis": "[10.0.15, )",
           "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )",
           "TimeZoneConverter": "[8.0.0, )"
         }
@@ -403,9 +403,9 @@
       },
       "Microsoft.AspNetCore.MiddlewareAnalysis": {
         "type": "CentralTransitive",
-        "requested": "[10.0.13, )",
-        "resolved": "10.0.13",
-        "contentHash": "CjotqqEQ1Qtg4vZ6qqOuWjc5Aa1J6KbRA+xyCwheDpjeuBcKnOSbfXQBlqnBa+DvlilbqtLsBbOMBFrkDl2bng=="
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "vI7fA1mPziGkOVLff27Bdd/AVJ1mPpzpH3vQB7UmR1fCZYGZ9fttNVWirE84a7FpuvYCYv+QA1ktfbohMifsvA=="
       },
       "Microsoft.CodeAnalysis.Analyzers": {
         "type": "CentralTransitive",
