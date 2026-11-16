@@ -40,11 +40,12 @@ public sealed class SqlServerReaderWriterLockConformanceTests : DistributedReadW
 
     protected override TimeProvider TimeProvider => TimeProvider.System;
 
-    protected override async Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken)
+    protected override Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken)
     {
         // SQL Server application locks are session-scoped and have no TTL lease, so there is no fake clock to
-        // bridge. Acquire-timeout scenarios use wall-clock SQL waits; sleep long enough for those to elapse.
-        await Task.Delay(amount + TimeSpan.FromMilliseconds(50), TimeProvider.System, cancellationToken);
+        // bridge. Acquire-timeout scenarios hit a real wall-clock deadline the lock enforces on its own, and the
+        // scenarios await the acquire itself, so nothing here has to move time.
+        return Task.CompletedTask;
     }
 
     protected override async ValueTask DisposeAsyncCore()

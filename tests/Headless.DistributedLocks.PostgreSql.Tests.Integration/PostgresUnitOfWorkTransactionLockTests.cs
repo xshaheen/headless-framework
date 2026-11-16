@@ -212,17 +212,11 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
         await using var contender = await factory.BeginAsync(contenderConnection, AbortToken);
 
-        // when — release the holder while the contender is inside its bounded wait
-        var release = Task.Run(
-            async () =>
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
-                await holder.CompleteAsync(AbortToken);
-            },
-            AbortToken
-        );
-        var handle = await contender.TransactionLocks.TryAcquireAsync(resource, TimeSpan.FromSeconds(10), AbortToken);
-        await release;
+        // when — release the holder once the contender is inside its bounded wait
+        var acquire = contender.TransactionLocks.TryAcquireAsync(resource, TimeSpan.FromSeconds(10), AbortToken);
+        await _WaitUntilWaitingOnAdvisoryLockAsync(contenderConnection);
+        await holder.CompleteAsync(AbortToken);
+        var handle = await acquire;
 
         // then
         handle.Should().Be(new TransactionLockHandle(resource));
@@ -420,6 +414,9 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         var releaseFirst = Task.Run(
             async () =>
             {
+                // Releasing the first holder 1 s into the contender's 2 s budget is what tells one shared budget
+                // (2 s in all) from a fresh budget per resource (3 s).
+                // real-wait: the budget is spent against PostgreSQL's lock_timeout, a server clock no fake moves
                 await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
                 await firstHolder.CompleteAsync(AbortToken);
             },

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Threading.Channels;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 using Tests.Fakes;
@@ -10,8 +11,7 @@ namespace Tests;
 public sealed class ConnectionMonitorTests : TestBase
 {
     private const int _CommandTimeoutSeconds = 7;
-    private static readonly TimeSpan _WaitBound = TimeSpan.FromSeconds(30);
-    private readonly FakeTimeProvider _timeProvider = new();
+    private readonly TimerRecordingTimeProvider _timeProvider = new();
 
     [Fact]
     public async Task should_start_monitoring_and_probe_the_connection_when_a_monitoring_handle_is_registered()
@@ -24,7 +24,7 @@ public sealed class ConnectionMonitorTests : TestBase
         using var handle = connection.GetConnectionMonitoringHandle();
 
         // then (the active worker runs the monitoring probe against the connection)
-        await _WaitUntilAsync(() => fake.ExecuteNonQueryCount > 0);
+        await fake.FirstProbe.Bounded();
         fake.ExecuteNonQueryCount.Should().BePositive();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
     }
@@ -61,11 +61,9 @@ public sealed class ConnectionMonitorTests : TestBase
         fake.SetState(ConnectionState.Closed);
 
         // then (every outstanding handle's token is cancelled — the cancel runs on background tasks)
-        await _WaitUntilAsync(() =>
-            handleA.ConnectionLostToken.IsCancellationRequested
-            && handleB.ConnectionLostToken.IsCancellationRequested
-            && handleC.ConnectionLostToken.IsCancellationRequested
-        );
+        await _WhenCancelled(handleA.ConnectionLostToken).Bounded();
+        await _WhenCancelled(handleB.ConnectionLostToken).Bounded();
+        await _WhenCancelled(handleC.ConnectionLostToken).Bounded();
 
         handleA.ConnectionLostToken.IsCancellationRequested.Should().BeTrue();
         handleB.ConnectionLostToken.IsCancellationRequested.Should().BeTrue();
@@ -83,22 +81,13 @@ public sealed class ConnectionMonitorTests : TestBase
         connection.SetKeepaliveCadence(cadence);
 
         // then (the worker is now asleep on the keepalive delay; no probe yet)
-        await _DrainUntilAsync(() => false, iterations: 50);
+        await _timeProvider.WaitForTimerAsync(dueTime => dueTime == cadence, AbortToken);
         fake.ExecuteNonQueryCount.Should().Be(0);
 
-        // when (the cadence elapses). Advance again on every poll: an advance that lands before the worker has parked
-        // its fake-time delay fires nothing, and only a later advance releases the parked delay.
-        await _WaitUntilAsync(() =>
-        {
-            if (fake.ExecuteNonQueryCount >= 1)
-            {
-                return true;
-            }
-
-            _timeProvider.Advance(cadence);
-
-            return fake.ExecuteNonQueryCount >= 1;
-        });
+        // when (the cadence elapses). The advance happens only after the worker armed its delay: an advance that lands
+        // before that fires nothing.
+        _timeProvider.Advance(cadence);
+        await fake.FirstProbe.Bounded();
 
         // then (a keepalive probe runs)
         fake.ExecuteNonQueryCount.Should().BeGreaterThanOrEqualTo(1);
@@ -133,17 +122,14 @@ public sealed class ConnectionMonitorTests : TestBase
         // given
         var (connection, fake) = _CreateConnection();
         using var handle = connection.GetConnectionMonitoringHandle();
-        await _WaitUntilAsync(() => fake.ExecuteNonQueryCount > 0);
+        await fake.FirstProbe.Bounded();
 
-        // when
+        // when (DisposeAsync awaits the worker task, so no probe is in flight once it returns)
         await connection.DisposeAsync();
         var countAfterDispose = fake.ExecuteNonQueryCount;
 
-        // give any in-flight probe a chance to settle, then confirm the worker stopped
-        await _DrainUntilAsync(() => false, iterations: 50);
-
         // then (no new probes run after dispose; a subsequent state change does not re-cancel/throw)
-        fake.ExecuteNonQueryCount.Should().BeLessThanOrEqualTo(countAfterDispose + 1);
+        fake.ExecuteNonQueryCount.Should().Be(countAfterDispose);
 
         var act = () => fake.SetState(ConnectionState.Closed);
         act.Should().NotThrow();
@@ -209,20 +195,26 @@ public sealed class ConnectionMonitorTests : TestBase
         connection.SetKeepaliveCadence(cadence);
 
         // simulate command failure
-        fake.ExecuteNonQueryHandler = (_, _) => throw new InvalidOperationException("Non-terminal database error");
+        var probeFailed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fake.ExecuteNonQueryHandler = (_, _) =>
+        {
+            probeFailed.TrySetResult();
+
+            throw new InvalidOperationException("Non-terminal database error");
+        };
 
         // when (advancing past cadence)
         _timeProvider.Advance(cadence);
 
         // then (probe ran and failed, but since connection state remains Open, token is NOT cancelled)
-        await _WaitUntilAsync(() => fake.ExecuteNonQueryCount >= 1);
+        await probeFailed.Task.Bounded();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
 
         // when (terminal loss occurs and connection state is set to Closed)
         fake.SetState(ConnectionState.Closed);
 
         // then (the token is cancelled)
-        await _WaitUntilAsync(() => handle.ConnectionLostToken.IsCancellationRequested);
+        await _WhenCancelled(handle.ConnectionLostToken).Bounded();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeTrue();
     }
 
@@ -248,7 +240,7 @@ public sealed class ConnectionMonitorTests : TestBase
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
 
         // close the worker-start window deterministically: wait until the worker has actually issued a probe
-        await _WaitUntilAsync(() => fake.ExecuteNonQueryCount > 0);
+        await fake.FirstProbe.Bounded();
 
         // a clean stop tears down registrations without cancelling them (isCancel: false)
         await connection.ConnectionMonitor.StopAsync();
@@ -274,14 +266,14 @@ public sealed class ConnectionMonitorTests : TestBase
         fake.SetState(ConnectionState.Open);
 
         using var handle = connection.GetConnectionMonitoringHandle();
-        await _WaitUntilAsync(() => fake.ExecuteNonQueryCount > 0);
+        await fake.FirstProbe.Bounded();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
 
         // the connection actually dies
         fake.SetState(ConnectionState.Closed);
 
         // then (the handle's token is cancelled — the reactivated worker honored the real connection-loss path)
-        await _WaitUntilAsync(() => handle.ConnectionLostToken.IsCancellationRequested);
+        await _WhenCancelled(handle.ConnectionLostToken).Bounded();
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeTrue();
     }
 
@@ -294,34 +286,44 @@ public sealed class ConnectionMonitorTests : TestBase
     }
 
     /// <summary>
-    /// Waits on the wall clock until <paramref name="condition"/> holds, so a test can assert that background work
-    /// happened. Throws <see cref="TimeoutException"/> when it still does not hold after the wait bound.
+    /// A task that completes when <paramref name="token"/> is cancelled. The monitor cancels handle tokens on a
+    /// background task, so a test awaits this instead of reading <c>IsCancellationRequested</c> straight away.
     /// </summary>
-    /// <remarks>
-    /// Use this, not <see cref="_DrainUntilAsync"/>, before asserting that something happened. The monitor worker runs
-    /// on the thread pool; on a loaded machine its continuation can stay undispatched for longer than any fixed number
-    /// of yields, and a wait that gave up then fails an assertion the code was about to meet.
-    /// </remarks>
-    private static async Task _WaitUntilAsync(Func<bool> condition)
+    private static Task _WhenCancelled(CancellationToken token)
     {
-        var start = TimeProvider.System.GetTimestamp();
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = token.Register(static state => ((TaskCompletionSource)state!).TrySetResult(), cancelled);
 
-        while (!condition())
+        return cancelled.Task;
+    }
+
+    /// <summary>
+    /// A <see cref="FakeTimeProvider"/> that records the due time of every timer created on it, so a test can advance
+    /// time only after the code under test has armed the timer that advance is meant to fire.
+    /// </summary>
+    private sealed class TimerRecordingTimeProvider : FakeTimeProvider
+    {
+        private readonly Channel<TimeSpan> _createdTimers = Channel.CreateUnbounded<TimeSpan>();
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
-            if (TimeProvider.System.GetElapsedTime(start) >= _WaitBound)
-            {
-                throw new TimeoutException($"The condition did not hold within {_WaitBound}.");
-            }
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            _createdTimers.Writer.TryWrite(dueTime);
 
-            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), AbortToken);
+            return timer;
+        }
+
+        /// <summary>Waits for the next created timer whose due time matches, skipping the others.</summary>
+        public async Task WaitForTimerAsync(Func<TimeSpan, bool> match, CancellationToken cancellationToken)
+        {
+            while (!match(await _createdTimers.Reader.ReadAsync(cancellationToken).AsTask().Bounded())) { }
         }
     }
 
     /// <summary>
     /// Gives queued background work a short, bounded chance to run, stopping early once <paramref name="condition"/>
     /// holds. Use it only before asserting that something did <em>not</em> happen; the budget is a fixed number of
-    /// scheduler turns, so it can end before slow work finishes. To wait for something that must happen, use
-    /// <see cref="_WaitUntilAsync"/>.
+    /// scheduler turns, so it can end before slow work finishes.
     /// </summary>
     private static async Task _DrainUntilAsync(Func<bool> condition, int iterations)
     {

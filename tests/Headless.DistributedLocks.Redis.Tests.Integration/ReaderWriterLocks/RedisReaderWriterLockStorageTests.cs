@@ -498,6 +498,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
 
         while (stillValid && DateTime.UtcNow < deadline)
         {
+            // real-wait: Redis drops the key on its own clock, and raises no client event for it unless the server enables keyspace notifications, so the poll interval waits out the expiry
             await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
             stillValid = await fixture.ReaderWriterLockStorage.ValidateReadAsync(resource, readerId, AbortToken);
         }
@@ -604,6 +605,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         );
         // Wait past the zombie's per-entry expiry; the Redis HASH still holds the field
         // because the per-entry expiry is enforced inside the Lua script, not by Redis itself.
+        // real-wait: the per-entry expiry is judged inside the Lua script against Redis's TIME, which no fake clock moves
         await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
 
         // when - the writer acquires. The script must prune the expired entry before checking HLEN.

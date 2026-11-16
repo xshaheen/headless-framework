@@ -13,6 +13,12 @@ public sealed class MessagingDistributedLockReleaseSignalTests : TestBase
 
     private readonly IBus _bus = Substitute.For<IBus>();
     private readonly List<int> _eventIds = [];
+
+    // The failure is logged by a continuation that runs on the thread pool, after the publish task faults.
+    private readonly TaskCompletionSource _publishFailedLogged = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+
     private readonly MessagingDistributedLockReleaseSignal _signal;
 
     public MessagingDistributedLockReleaseSignalTests()
@@ -31,9 +37,16 @@ public sealed class MessagingDistributedLockReleaseSignalTests : TestBase
             )
             .Do(call =>
             {
+                var eventId = call.Arg<EventId>().Id;
+
                 lock (_eventIds)
                 {
-                    _eventIds.Add(call.Arg<EventId>().Id);
+                    _eventIds.Add(eventId);
+                }
+
+                if (eventId == _PublishFailedEventId)
+                {
+                    _publishFailedLogged.TrySetResult();
                 }
             });
         _signal = new MessagingDistributedLockReleaseSignal(_bus, logger);
@@ -102,7 +115,7 @@ public sealed class MessagingDistributedLockReleaseSignalTests : TestBase
         // then - the call returned before the publish finished, and the later failure is still logged
         _EventIds().Should().BeEmpty();
         publishGate.SetException(new InvalidOperationException("bus down"));
-        await _WaitForEventAsync(_PublishFailedEventId);
+        await _publishFailedLogged.Task.Bounded();
     }
 
     private List<int> _EventIds()
@@ -110,18 +123,6 @@ public sealed class MessagingDistributedLockReleaseSignalTests : TestBase
         lock (_eventIds)
         {
             return [.. _eventIds];
-        }
-    }
-
-    // The failure is logged by a continuation that runs on the thread pool, after the publish task faults.
-    private async Task _WaitForEventAsync(int eventId)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-
-        while (!_EventIds().Contains(eventId))
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token);
         }
     }
 }

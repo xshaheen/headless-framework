@@ -6,6 +6,7 @@ using Headless.Messaging;
 using Headless.Messaging.InMemory;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -25,7 +26,9 @@ public sealed class LockReleaseTwoReplicaTests : TestBase
         var transport = new MemoryQueue(NullLogger<MemoryQueue>.Instance);
         var store = new InMemoryDistributedLockStorage(TimeProvider.System);
         await using var holder = await _StartReplicaAsync(transport, store, TimeProvider.System);
-        await using var waiter = await _StartReplicaAsync(transport, store, new FakeTimeProvider());
+        var waiterParked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var retryDelayLogs = new RetryDelayLoggerProvider(waiterParked);
+        await using var waiter = await _StartReplicaAsync(transport, store, new FakeTimeProvider(), retryDelayLogs);
         var resource = Faker.Random.AlphaNumeric(10);
         var lease = await holder
             .GetRequiredService<IDistributedLock>()
@@ -42,8 +45,8 @@ public sealed class LockReleaseTwoReplicaTests : TestBase
                 waitTimeout.Token
             );
 
-        // Let the waiter fail its first attempt and park on the release signal.
-        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        // The waiter logs its retry delay after it failed its first attempt and registered to be woken by the release.
+        await waiterParked.Task.Bounded();
         waiting.IsCompleted.Should().BeFalse();
 
         // when
@@ -57,11 +60,18 @@ public sealed class LockReleaseTwoReplicaTests : TestBase
     private static async Task<ServiceProvider> _StartReplicaAsync(
         MemoryQueue transport,
         InMemoryDistributedLockStorage store,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        ILoggerProvider? loggerProvider = null
     )
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddLogging(logging =>
+        {
+            if (loggerProvider is not null)
+            {
+                logging.SetMinimumLevel(LogLevel.Trace).AddProvider(loggerProvider);
+            }
+        });
         services.AddSingleton(timeProvider);
 
         // Registered before the provider, whose TryAdd keeps this one store shared by both replicas.
@@ -80,5 +90,44 @@ public sealed class LockReleaseTwoReplicaTests : TestBase
         var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
         return provider;
+    }
+
+    /// <summary>
+    /// Completes a signal when the lock logs its <c>DelayBeforeRetry</c> event: the point where a waiter has failed an
+    /// attempt and registered for a release wake-up, just before it parks.
+    /// </summary>
+    private sealed class RetryDelayLoggerProvider(TaskCompletionSource signal) : ILoggerProvider, ILogger
+    {
+        public ILogger CreateLogger(string categoryName)
+        {
+            return this;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (string.Equals(eventId.Name, "DelayBeforeRetry", StringComparison.Ordinal))
+            {
+                signal.TrySetResult();
+            }
+        }
+
+        public void Dispose() { }
     }
 }

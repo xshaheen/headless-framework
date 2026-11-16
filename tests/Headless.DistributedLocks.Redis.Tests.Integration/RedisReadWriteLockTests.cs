@@ -31,6 +31,7 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
 
     protected override async Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken)
     {
+        // real-wait: the lease and TTL the base scenarios advance past are enforced by Redis's own clock (key expiry and the scripts' TIME), which no fake clock moves
         await Task.Delay(amount + TimeSpan.FromMilliseconds(50), TimeProvider.System, cancellationToken);
     }
 

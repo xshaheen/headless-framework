@@ -12,6 +12,7 @@ public sealed class TransactionLockBudgetTests : TestBase
     public async Task should_pass_a_one_attempt_budget_through_to_every_resource()
     {
         var budget = TransactionLockBudget.Start(TimeSpan.Zero);
+        // real-wait: the budget reads Stopwatch, the monotonic system clock, by design (not the TimeProvider), so only real elapsed time can show a one-attempt budget ignoring it
         await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
 
         budget.TryGetRemaining(out var wait).Should().BeTrue();
@@ -22,6 +23,7 @@ public sealed class TransactionLockBudgetTests : TestBase
     public async Task should_pass_an_unbounded_budget_through_to_every_resource()
     {
         var budget = TransactionLockBudget.Start(Timeout.InfiniteTimeSpan);
+        // real-wait: the budget reads Stopwatch, the monotonic system clock, by design (not the TimeProvider), so only real elapsed time can show an unbounded budget ignoring it
         await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
 
         budget.TryGetRemaining(out var wait).Should().BeTrue();
@@ -40,6 +42,7 @@ public sealed class TransactionLockBudgetTests : TestBase
         var startedAt = Stopwatch.GetTimestamp();
 
         // when
+        // real-wait: the budget counts Stopwatch time, the monotonic system clock, which no fake clock can advance
         await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
         var spent = Stopwatch.GetElapsedTime(startedAt);
 
@@ -56,6 +59,7 @@ public sealed class TransactionLockBudgetTests : TestBase
         var budget = TransactionLockBudget.Start(TimeSpan.FromMilliseconds(50));
 
         // when
+        // real-wait: the budget counts Stopwatch time, the monotonic system clock, which no fake clock can advance
         await Task.Delay(TimeSpan.FromMilliseconds(150), AbortToken);
 
         // then

@@ -150,14 +150,22 @@ public abstract class DistributedLockTestsBase : TestBase
         var options = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(5) };
         var firstHandle = await lockProvider.AcquireAllAsync([second, first], options, AbortToken);
         var secondTask = lockProvider.TryAcquireAllAsync([first, second], options, AbortToken);
-        var contentionWindow = Task.Delay(TimeSpan.FromMilliseconds(150), TimeProvider, AbortToken);
-        var completedDuringContention = await Task.WhenAny(secondTask, contentionWindow);
+
+        // A zero-timeout probe fails only while the first handle still holds the set, so it proves the contention the
+        // second acquire is queued behind without a quiet window; a lock that let a second holder in would hand the
+        // probe a handle here.
+        var probe = await lockProvider.TryAcquireAllAsync(
+            [first, second],
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        probe.Should().BeNull("the first handle still holds the whole set");
+        secondTask.IsCompleted.Should().BeFalse("the second acquire waits behind the first handle");
 
         await firstHandle.ReleaseAsync();
         await firstHandle.DisposeAsync();
 
-        var secondHandle = await secondTask.WaitAsync(TimeSpan.FromSeconds(5), TimeProvider, AbortToken);
-        completedDuringContention.Should().BeSameAs(contentionWindow);
+        var secondHandle = await secondTask.Bounded();
         secondHandle.Should().NotBeNull();
         await secondHandle!.DisposeAsync();
     }
@@ -557,7 +565,10 @@ public abstract class DistributedLockTestsBase : TestBase
                 currentConcurrency.Should().Be(1);
 
                 var item = current;
-                await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)), TimeProvider, ct);
+
+                // Yielding inside the critical section lets every other worker run while this one holds the lock, so a
+                // lock that admits two holders shows up as concurrency above 1.
+                await Task.Yield();
                 used.Add(item);
                 current++;
 
@@ -575,63 +586,74 @@ public abstract class DistributedLockTestsBase : TestBase
         var locker = GetLockProvider();
 
         var successCount = 0;
+        var settledCount = 0;
         var resource = Guid.NewGuid().ToString("N")[..5];
 
-        var lockTask1 = Task.Run(async () =>
+        // The holder keeps the lock until every caller has either entered the work or been refused, so the refusals
+        // are decided while the lock is genuinely held instead of after a fixed sleep.
+        var allSettled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHolder = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        try
         {
-            if (await doLockedWorkAsync(locker, resource))
-            {
-                Interlocked.Increment(ref successCount);
-                Logger.LogInformation("LockTask1 Success");
-            }
-        });
+            var lockTasks = Enumerable
+                .Range(1, 4)
+                .Select(index =>
+                    Task.Run(async () =>
+                    {
+                        if (await doLockedWorkAsync())
+                        {
+                            Interlocked.Increment(ref successCount);
+                            Logger.LogInformation("LockTask{Index} Success", index);
+                        }
+                        else
+                        {
+                            settle();
+                        }
+                    })
+                )
+                .ToArray();
 
-        var lockTask2 = Task.Run(async () =>
+            await allSettled.Task.Bounded();
+            releaseHolder.TrySetResult();
+            await Task.WhenAll(lockTasks);
+
+            successCount.Should().Be(1);
+
+            await Task.Run(async () =>
+            {
+                if (await doLockedWorkAsync())
+                {
+                    Interlocked.Increment(ref successCount);
+                }
+            });
+
+            successCount.Should().Be(2);
+        }
+        finally
         {
-            if (await doLockedWorkAsync(locker, resource))
-            {
-                Interlocked.Increment(ref successCount);
-                Logger.LogInformation("LockTask2 Success");
-            }
-        });
+            // A broken lock must fail the assertions, not hang on a holder nobody releases.
+            releaseHolder.TrySetResult();
+            allSettled.TrySetResult();
+        }
 
-        var lockTask3 = Task.Run(async () =>
+        void settle()
         {
-            if (await doLockedWorkAsync(locker, resource))
+            if (Interlocked.Increment(ref settledCount) == 4)
             {
-                Interlocked.Increment(ref successCount);
-                Logger.LogInformation("LockTask3 Success");
+                allSettled.TrySetResult();
             }
-        });
+        }
 
-        var lockTask4 = Task.Run(async () =>
-        {
-            if (await doLockedWorkAsync(locker, resource))
-            {
-                Interlocked.Increment(ref successCount);
-                Logger.LogInformation("LockTask4 Success");
-            }
-        });
-
-        await Task.WhenAll(lockTask1, lockTask2, lockTask3, lockTask4);
-
-        successCount.Should().Be(1);
-
-        await Task.Run(async () =>
-        {
-            if (await doLockedWorkAsync(locker, resource))
-            {
-                Interlocked.Increment(ref successCount);
-            }
-        });
-
-        successCount.Should().Be(2);
-
-        static Task<bool> doLockedWorkAsync(IDistributedLock locker, string resource)
+        Task<bool> doLockedWorkAsync()
         {
             return locker.TryUsingAsync(
                 resource: resource,
-                work: async () => await Task.Delay(300),
+                work: async () =>
+                {
+                    settle();
+                    await releaseHolder.Task;
+                },
                 new DistributedLockAcquireOptions
                 {
                     TimeUntilExpires = TimeSpan.FromMinutes(1),
@@ -850,6 +872,10 @@ public abstract class DistributedLockTestsBase : TestBase
         );
 
         handle.Should().NotBeNull();
+
+        // The lease must truly outlive its 1 s TTL: each store enforces it on its own clock and the auto-extend loop
+        // runs on real timers, so no fake clock moves either.
+        // real-wait: the 1 s lease is enforced by the store's own clock (a Redis TTL, an in-process expiry timer)
         await Task.Delay(TimeSpan.FromMilliseconds(1600), AbortToken);
 
         (await locker.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
@@ -880,18 +906,12 @@ public abstract class DistributedLockTestsBase : TestBase
         // Kill the lock-holding session out-of-band; the provider's probe should observe the dead connection.
         await KillLockHoldingConnectionAsync(handle, AbortToken);
 
-        // Probe cadence is provider configuration (up to 30s by default); poll generously, independent of AbortToken so
-        // we observe the lost token itself.
-        var lostToken = handle.LostToken;
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(40);
+        // Probe cadence is provider configuration (up to 30s by default); wait for the lost token itself, with a
+        // ceiling above that cadence.
+        await _WaitForLostTokenAsync(handle.LostToken);
 
-        while (!lostToken.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
-        }
-
-        lostToken
-            .IsCancellationRequested.Should()
+        handle
+            .LostToken.IsCancellationRequested.Should()
             .BeTrue("the lock-holding connection died and the probe should detect it");
     }
 
@@ -915,14 +935,9 @@ public abstract class DistributedLockTestsBase : TestBase
 
         await KillLockHoldingConnectionAsync(handle, AbortToken);
 
-        // Probe cadence is provider configuration (up to 30s by default); poll generously for the loss to be observed
-        // before asserting on renewal.
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(40);
-
-        while (!handle.LostToken.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
-        }
+        // Probe cadence is provider configuration (up to 30s by default); wait for the loss to be observed before
+        // asserting on renewal.
+        await _WaitForLostTokenAsync(handle.LostToken);
 
         handle.LostToken.IsCancellationRequested.Should().BeTrue("the probe should detect the dead connection");
         (await handle.RenewAsync(cancellationToken: AbortToken)).Should().BeFalse();
@@ -930,4 +945,17 @@ public abstract class DistributedLockTestsBase : TestBase
     }
 
     #endregion
+
+    /// <summary>
+    /// Waits for <paramref name="lostToken"/> to be cancelled by the provider's liveness probe, which runs on a cadence
+    /// of up to 30 s by default, so the ceiling sits above that cadence. Waits on the token itself, independent of
+    /// <c>AbortToken</c>; a loss that never arrives fails the test with a <see cref="TimeoutException"/>.
+    /// </summary>
+    private static async Task _WaitForLostTokenAsync(CancellationToken lostToken)
+    {
+        var lost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = lostToken.Register(() => lost.TrySetResult());
+
+        await lost.Task.Bounded(TimeSpan.FromSeconds(40));
+    }
 }
