@@ -188,7 +188,13 @@ internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Pa
         // A zero or negative refund was sent to Paymob as is; refuse it here.
         Argument.IsPositive(request.Amount);
 
-        var amountCents = (long)Math.Ceiling(request.Amount * 100);
+        // Refunds round a fraction of a cent down, so partial refunds of one charge never add up to more than it:
+        // three refunds of 100/3 ask for 9999 cents, not 10002. Charges round up, so a full refund of a sub-cent
+        // charge returns one cent less than was charged.
+        var amountCents = (long)Math.Floor(request.Amount * 100);
+
+        // A positive amount under one cent rounds to zero, which Paymob would receive as an empty refund.
+        Argument.IsPositive(amountCents, "A refund must be at least one cent.", paramName: nameof(request.Amount));
 
         return broker.RefundTransactionAsync(
             new(request.TransactionId, amountCents.ToString(CultureInfo.InvariantCulture)),
