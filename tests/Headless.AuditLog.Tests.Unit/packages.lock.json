@@ -518,11 +518,6 @@
         "resolved": "1.1.1",
         "contentHash": "CU0/Iuv5VDynK8I8pDLwkgF0rZhbQoZahtodfL0M3x2gFkpBRApKs8RyMyNlAi1mwExE4gsmqQXk4aFVvW9a4Q=="
       },
-      "System.Diagnostics.DiagnosticSource": {
-        "type": "Transitive",
-        "resolved": "11.0.0",
-        "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
-      },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
         "resolved": "10.0.15",
@@ -652,7 +647,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.15, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.15, )",
-          "OpenTelemetry.Api": "[1.21.0, )"
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.multitenancy.abstractions": {
@@ -844,12 +839,9 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.21.0, )",
-        "resolved": "1.21.0",
-        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
-        "dependencies": {
-          "System.Diagnostics.DiagnosticSource": "11.0.0"
-        }
+        "requested": "[1.20.1, )",
+        "resolved": "1.20.1",
+        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",
