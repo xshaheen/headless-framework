@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
+using DotNet.Testcontainers.Builders;
 using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
@@ -35,7 +36,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
 
     protected override NatsBuilder Configure()
     {
-        return base.Configure().WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf");
+        return base.Configure().WithResourceMapping(_NatsConfig, FilePath.Of("/etc/nats/nats-server.conf"));
     }
 
     protected override async ValueTask InitializeAsync()

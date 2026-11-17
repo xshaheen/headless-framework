@@ -93,7 +93,7 @@ internal sealed class AzureServiceBusEmulatorContainer : IAsyncDisposable
             .Build();
         var emulator = new ContainerBuilder(_EmulatorImage)
             .WithNetwork(network)
-            .WithResourceMapping(config, _ConfigPath)
+            .WithResourceMapping(config, FilePath.Of(_ConfigPath))
             .WithPortBinding(_ManagementPort, assignRandomHostPort: true)
             .WithPortBinding(_AmqpPort, assignRandomHostPort: true)
             .WithEnvironment("ACCEPT_EULA", "Y")
