@@ -269,7 +269,7 @@ public sealed partial class FactoryCacheCoordinator(
             : await _TryGetEntryAsync<T>(store, key, readOptions, cancellationToken).ConfigureAwait(false);
         var now = _GetUtcNow();
 
-        if (entry.IsFresh(now))
+        if (_IsFreshForFactoryRead(options, entry, now))
         {
             await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
             _MaybeStartEagerRefresh(store, key, factory, options, entry, now);
@@ -314,7 +314,7 @@ public sealed partial class FactoryCacheCoordinator(
                 entry = await _TryGetEntryAsync<T>(store, key, recheckOptions, cancellationToken).ConfigureAwait(false);
                 now = _GetUtcNow();
 
-                if (entry.IsFresh(now))
+                if (_IsFreshForFactoryRead(options, entry, now))
                 {
                     await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
                     return (_ToCacheValue(entry, isStale: false), reachedFactory);
@@ -376,7 +376,7 @@ public sealed partial class FactoryCacheCoordinator(
                 entry = await _TryGetEntryAsync<T>(store, key, recheckOptions, cancellationToken).ConfigureAwait(false);
                 now = _GetUtcNow();
 
-                if (entry.IsFresh(now))
+                if (_IsFreshForFactoryRead(options, entry, now))
                 {
                     await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
                     inFlightSignal.TrySetResult(true);
@@ -461,7 +461,7 @@ public sealed partial class FactoryCacheCoordinator(
                         .ConfigureAwait(false);
                     now = _GetUtcNow();
 
-                    if (entry.IsFresh(now))
+                    if (_IsFreshForFactoryRead(options, entry, now))
                     {
                         await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
                         inFlightSignal.TrySetResult(true);
@@ -814,6 +814,18 @@ public sealed partial class FactoryCacheCoordinator(
         return entry.IsNull
             ? new CacheValue<T>(default, hasValue: true, isStale)
             : new CacheValue<T>(entry.Value, hasValue: true, isStale);
+    }
+
+    // A factory read serves an entry without running the factory when it is fresh, or when it is a fail-safe
+    // reserve inside an open throttle window. The second case matters for a reserve a tag removal or clear
+    // invalidated: the store reports it logically expired (its birth time predates the marker, and the throttle
+    // restamp keeps that birth time so direct reads still miss it), so only ThrottledUntil tells this read that a
+    // factory call already failed within the window. Gated on fail-safe so a caller that opted out never receives
+    // a value the store reports as expired.
+    private static bool _IsFreshForFactoryRead<T>(CacheEntryOptions options, CacheStoreEntry<T> entry, DateTime now)
+    {
+        return entry.IsFresh(now)
+            || (options.IsFailSafeEnabled && entry.ThrottledUntil > now && _IsStaleCandidate(entry, now));
     }
 
     // A fail-safe stale candidate must carry a non-null physical expiration. A genuine fail-safe reserve

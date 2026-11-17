@@ -2086,7 +2086,9 @@ public sealed class InMemoryCache
         // Logical tag/clear invalidation: demote the entry to logically-expired-but-physically-present so the
         // coordinator re-runs the factory but can still serve this reserve stale when the factory fails. Clamp
         // LogicalExpiresAt to now (and drop sliding so it is not re-armed/treated fresh) while keeping the
-        // physical reserve intact.
+        // physical reserve intact. ThrottledUntil is returned as stored: the coordinator, not this read, decides
+        // whether an open fail-safe throttle window holds back the factory, so direct readers of this primitive
+        // (the hybrid cache's L2 read) still see the entry as expired.
         var logicalExpiresAt = existingEntry.LogicalExpiresAt;
         var slidingExpiration = existingEntry.SlidingExpiration;
 
@@ -2111,6 +2113,7 @@ public sealed class InMemoryCache
                 ETag = existingEntry.ETag,
                 LastModifiedAt = existingEntry.LastModifiedAt,
                 CreatedAt = existingEntry.CreatedAt,
+                ThrottledUntil = existingEntry.ThrottledUntil,
                 Tags = existingEntry.Tags,
                 ConcurrencyStamp = existingEntry.ConcurrencyStamp,
             }
@@ -2204,7 +2207,8 @@ public sealed class InMemoryCache
             eagerRefreshAt: entry.EagerRefreshAt,
             etag: entry.ETag,
             lastModifiedAt: entry.LastModifiedAt,
-            createdAt: entry.CreatedAt
+            createdAt: entry.CreatedAt,
+            throttledUntil: entry.ThrottledUntil
         );
 
         if (entry.ExpectedConcurrencyStamp is { } expectedStamp)
@@ -2992,6 +2996,7 @@ public sealed class InMemoryCache
             string? etag = null,
             DateTime? lastModifiedAt = null,
             DateTime? createdAt = null,
+            DateTime? throttledUntil = null,
             long nowTicksOverride = -1
         )
         {
@@ -3015,6 +3020,7 @@ public sealed class InMemoryCache
             ETag = etag;
             LastModifiedAt = lastModifiedAt;
             CreatedAt = createdAt;
+            ThrottledUntil = throttledUntil;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
@@ -3041,7 +3047,9 @@ public sealed class InMemoryCache
             ETag = prototype.ETag;
             LastModifiedAt = prototype.LastModifiedAt;
             // A WithExpiration/WithLogicalExpiration copy is a re-stamp (TTL/logical move only), so the entry's
-            // original birth time is preserved rather than reset.
+            // original birth time is preserved rather than reset. The fail-safe throttle window is not carried:
+            // the only callers are a sliding re-arm (sliding entries are never throttled) and a logical expire,
+            // which must send the next factory read to the factory.
             CreatedAt = prototype.CreatedAt;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
@@ -3072,6 +3080,8 @@ public sealed class InMemoryCache
         internal DateTime? LastModifiedAt { get; }
 
         internal DateTime? CreatedAt { get; }
+
+        internal DateTime? ThrottledUntil { get; }
 
         // Expired at the exact tick (expiresAt <= now): align with the Core (IsFresh/IsPhysicallyPresent),
         // Redis (_IsExpired), and the eviction maintenance loop conventions so every provider and the

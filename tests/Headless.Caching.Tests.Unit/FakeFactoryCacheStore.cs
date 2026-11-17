@@ -52,7 +52,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         DateTime? lastModifiedAt = null,
         DateTime? createdAt = null,
         IReadOnlyCollection<string>? tags = null,
-        bool serveStaleImmediately = false
+        bool serveStaleImmediately = false,
+        DateTime? throttledUntil = null
     )
     {
         lock (_lock)
@@ -69,7 +70,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 CreatedAt: createdAt,
                 Tags: tags,
                 ConcurrencyStamp: Guid.NewGuid().ToString("N"),
-                ServeStaleImmediately: serveStaleImmediately
+                ServeStaleImmediately: serveStaleImmediately,
+                ThrottledUntil: throttledUntil
             );
         }
     }
@@ -124,6 +126,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                     ETag = entry.ETag,
                     LastModifiedAt = entry.LastModifiedAt,
                     CreatedAt = entry.CreatedAt,
+                    ThrottledUntil = entry.ThrottledUntil,
                     Tags = entry.Tags,
                     ConcurrencyStamp = entry.ConcurrencyStamp,
                     ServeStaleImmediately = entry.ServeStaleImmediately,
@@ -200,7 +203,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 LastModifiedAt: entry.LastModifiedAt,
                 CreatedAt: entry.CreatedAt,
                 Tags: entry.Tags,
-                ConcurrencyStamp: Guid.NewGuid().ToString("N")
+                ConcurrencyStamp: Guid.NewGuid().ToString("N"),
+                ThrottledUntil: entry.ThrottledUntil
             );
         }
 
@@ -268,6 +272,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         DateTime? CreatedAt = null,
         IReadOnlyCollection<string>? Tags = null,
         string ConcurrencyStamp = "",
-        bool ServeStaleImmediately = false
+        bool ServeStaleImmediately = false,
+        DateTime? ThrottledUntil = null
     );
 }

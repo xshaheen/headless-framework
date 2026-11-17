@@ -2941,7 +2941,8 @@ public sealed class RedisCache(
         string? etag = null,
         DateTime? lastModifiedAt = null,
         IReadOnlyCollection<string>? tags = null,
-        DateTime? createdAt = null
+        DateTime? createdAt = null,
+        DateTime? throttledUntil = null
     )
     {
         // isNull and the string/byte[]/null fast paths both encode through the RedisValue overload, so resolve the
@@ -2959,7 +2960,8 @@ public sealed class RedisCache(
                 etag,
                 lastModifiedAt,
                 tags,
-                createdAt
+                createdAt,
+                throttledUntil
             );
         }
 
@@ -2976,7 +2978,8 @@ public sealed class RedisCache(
             etag,
             lastModifiedAt,
             tags,
-            createdAt
+            createdAt,
+            throttledUntil
         );
     }
 
@@ -3010,7 +3013,8 @@ public sealed class RedisCache(
         string? etag = null,
         DateTime? lastModifiedAt = null,
         IReadOnlyCollection<string>? tags = null,
-        DateTime? createdAt = null
+        DateTime? createdAt = null,
+        DateTime? throttledUntil = null
     )
     {
         if (isNull || value is null or string or byte[])
@@ -3025,7 +3029,8 @@ public sealed class RedisCache(
                 etag,
                 lastModifiedAt,
                 tags,
-                createdAt
+                createdAt,
+                throttledUntil
             );
 
             return new FramedValueWrite(framed, payloadOwner: null);
@@ -3046,7 +3051,8 @@ public sealed class RedisCache(
                 etag,
                 lastModifiedAt,
                 tags,
-                createdAt
+                createdAt,
+                throttledUntil
             );
 
             return new FramedValueWrite(spliced, buffer);
@@ -3157,7 +3163,8 @@ public sealed class RedisCache(
             entry.ETag,
             entry.LastModifiedAt,
             entry.Tags,
-            createdAt: entry.CreatedAt
+            createdAt: entry.CreatedAt,
+            throttledUntil: entry.ThrottledUntil
         );
 
         var hasExpectedStamp = entry.ExpectedConcurrencyStamp is not null;
@@ -3413,6 +3420,8 @@ public sealed class RedisCache(
 
             // Family-2 logical tag/clear invalidation: demote the entry to logically-expired-but-physically-
             // present so the coordinator re-runs the factory but can still serve this reserve stale on failure.
+            // ThrottledUntil is returned as stored: the coordinator decides whether an open fail-safe throttle
+            // window holds back the factory, so direct readers of this primitive still see the entry as expired.
             var newestMarker =
                 clearAndTagMs == _MarkerAbsent
                     ? (DateTime?)null
@@ -3437,6 +3446,7 @@ public sealed class RedisCache(
                 ETag = frame.ETag,
                 LastModifiedAt = frame.LastModifiedAt,
                 CreatedAt = frame.CreatedAt,
+                ThrottledUntil = frame.ThrottledUntil,
                 Tags = frame.Tags,
                 ConcurrencyStamp = concurrencyStamp,
             };

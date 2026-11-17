@@ -1139,9 +1139,11 @@ public abstract class CacheConformanceTestsBase : TestBase
             Duration = TimeSpan.FromMinutes(5),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromMinutes(30),
-            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+            // Long enough that the repeat reads below always land inside the window, even on a real clock.
+            FailSafeThrottleDuration = TimeSpan.FromMinutes(1),
             Tags = [tag],
         };
+        var factoryCalls = 0;
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
 
@@ -1155,7 +1157,11 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var result = await cache.GetOrAddAsync<string>(
             key,
-            _ => throw new InvalidOperationException("downstream unavailable"),
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
             options,
             AbortToken
         );
@@ -1163,6 +1169,23 @@ public abstract class CacheConformanceTestsBase : TestBase
         result.HasValue.Should().BeTrue();
         result.Value.Should().Be("value");
         result.IsStale.Should().BeTrue();
+
+        // The failure throttles the factory: repeat factory reads inside the window serve the reserve without
+        // calling it again, while a direct read still misses because the reserve stays invalidated.
+        var throttled = await cache.GetOrAddAsync<string>(
+            key,
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
+            options,
+            AbortToken
+        );
+
+        throttled.Value.Should().Be("value");
+        factoryCalls.Should().Be(1);
+        (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
     }
 
     public virtual async Task should_logically_clear_with_clear_async_preserving_reserves()
@@ -1177,8 +1200,10 @@ public abstract class CacheConformanceTestsBase : TestBase
             Duration = TimeSpan.FromMinutes(5),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromMinutes(30),
-            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+            // Long enough that the repeat read below always lands inside the window, even on a real clock.
+            FailSafeThrottleDuration = TimeSpan.FromMinutes(1),
         };
+        var factoryCalls = 0;
 
         await cache.GetOrAddAsync(
             taggedKey,
@@ -1203,7 +1228,11 @@ public abstract class CacheConformanceTestsBase : TestBase
         // ...but their fail-safe reserves are preserved: a failing factory still serves the stale value.
         var stale = await cache.GetOrAddAsync<string>(
             untaggedKey,
-            _ => throw new InvalidOperationException("downstream unavailable"),
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
             failSafe,
             AbortToken
         );
@@ -1211,6 +1240,22 @@ public abstract class CacheConformanceTestsBase : TestBase
         stale.HasValue.Should().BeTrue();
         stale.Value.Should().Be("untagged");
         stale.IsStale.Should().BeTrue();
+
+        // The failure throttles the factory on the cleared reserve too, and a direct read still misses.
+        var throttled = await cache.GetOrAddAsync<string>(
+            untaggedKey,
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
+            failSafe,
+            AbortToken
+        );
+
+        throttled.Value.Should().Be("untagged");
+        factoryCalls.Should().Be(1);
+        (await cache.GetAsync<string>(untaggedKey, AbortToken)).HasValue.Should().BeFalse();
 
         // A re-created entry (newer birth time) is unaffected by the earlier clear marker.
         await cache.UpsertAsync(taggedKey, "recreated", TimeSpan.FromMinutes(5), AbortToken);
