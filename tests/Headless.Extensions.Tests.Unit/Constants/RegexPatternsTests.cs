@@ -1,11 +1,46 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using RegexPatterns = Headless.RegexPatterns;
 
 namespace Tests.Constants;
 
 public sealed class RegexPatternsTests
 {
+    // The product patterns time out after 100 ms of wall-clock time, which a CPU-starved test thread can pass on a
+    // five-character input. The tests check what each pattern matches through an equivalent regex with no timeout;
+    // should_bound_every_pattern_with_the_match_timeout keeps the product timeout itself under test.
+    private static readonly ConcurrentDictionary<Regex, Regex> _UnboundedPatterns = new();
+
+    private static Regex _Unbounded(Regex pattern)
+    {
+        return _UnboundedPatterns.GetOrAdd(
+            pattern,
+            static p => new Regex(p.ToString(), p.Options & ~RegexOptions.Compiled, Regex.InfiniteMatchTimeout)
+        );
+    }
+
+    public static TheoryData<string> AllPatternNames =>
+        [
+            .. typeof(RegexPatterns)
+                .GetProperties(BindingFlags.Public | BindingFlags.Static)
+                .Where(static property => property.PropertyType == typeof(Regex))
+                .Select(static property => property.Name),
+        ];
+
+    [Theory]
+    [MemberData(nameof(AllPatternNames))]
+    public void should_bound_every_pattern_with_the_match_timeout(string patternName)
+    {
+        // when
+        var regex = (Regex)typeof(RegexPatterns).GetProperty(patternName)!.GetValue(null)!;
+
+        // then
+        regex.MatchTimeout.Should().Be(RegexPatterns.MatchTimeout);
+    }
+
     [Theory]
     [InlineData("test@example.com", true)]
     [InlineData("invalid-email@", false)]
@@ -14,7 +49,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_email_address(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.EmailAddress.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.EmailAddress).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -27,7 +62,7 @@ public sealed class RegexPatternsTests
     public void arabic_characters_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.ArabicCharacters.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.ArabicCharacters).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -39,7 +74,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_rtl_characters(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.RtlCharacters.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.RtlCharacters).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -52,7 +87,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_egyptian_national_id(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.EgyptianNationalId.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.EgyptianNationalId).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -65,7 +100,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_spaces(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.Spaces.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.Spaces).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -77,7 +112,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_hidden_chars(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.HiddenChars.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.HiddenChars).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -90,7 +125,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_quotes(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.Quotes.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.Quotes).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -103,7 +138,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_ip4(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.Ip4.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.Ip4).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -116,7 +151,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_ip6(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.Ip6.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.Ip6).IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -129,7 +164,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_ip_address_range(string input, bool isMatch)
     {
         // when
-        var result = RegexPatterns.IpAddressRange.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.IpAddressRange).IsMatch(input);
 
         // then
         result.Should().Be(isMatch);
@@ -150,7 +185,7 @@ public sealed class RegexPatternsTests
     public void integer_number_should_match_expected_results(string input, bool isMatch)
     {
         // when
-        var result = RegexPatterns.IntegerNumber.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.IntegerNumber).IsMatch(input);
 
         // then
         result.Should().Be(isMatch);
@@ -171,7 +206,7 @@ public sealed class RegexPatternsTests
     public void decimal_number_should_match_expected_results(string input, bool isMatch)
     {
         // when
-        var result = RegexPatterns.DecimalNumber.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.DecimalNumber).IsMatch(input);
 
         // then
         result.Should().Be(isMatch);
@@ -185,7 +220,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_url(string input, bool isMatch)
     {
         // when
-        var result = RegexPatterns.Url.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.Url).IsMatch(input);
 
         // then
         result.Should().Be(isMatch);
@@ -198,7 +233,7 @@ public sealed class RegexPatternsTests
     public void should_match_expected_results_when_xml_tag(string input, bool isMatch)
     {
         // when
-        var result = RegexPatterns.XmlTag.IsMatch(input);
+        var result = _Unbounded(RegexPatterns.XmlTag).IsMatch(input);
 
         // then
         result.Should().Be(isMatch);
@@ -229,8 +264,7 @@ public sealed class RegexPatternsTests
     public void should_reject_trailing_line_feed_when_full_match_pattern(string patternName, string validInput)
     {
         // given - in .NET, '$' also matches before a final line feed, so a value that ends in one would pass
-        var regex = (System.Text.RegularExpressions.Regex)
-            typeof(RegexPatterns).GetProperty(patternName)!.GetValue(null)!;
+        var regex = _Unbounded((Regex)typeof(RegexPatterns).GetProperty(patternName)!.GetValue(null)!);
 
         // when
         var acceptsValid = regex.IsMatch(validInput);
