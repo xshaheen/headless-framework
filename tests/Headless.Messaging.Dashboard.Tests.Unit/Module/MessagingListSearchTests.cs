@@ -32,7 +32,8 @@ public sealed class MessagingListSearchTests : TestBase
     [Fact]
     public async Task should_find_content_from_a_post_body_and_never_log_the_text_searched_for()
     {
-        // given: two published rows, one holding the order number; every log line of the host is captured
+        // given: two published rows, one holding the order number; every log line of the host is captured. The
+        // order number holds no digit or hex letter, so a request timing or id in a log line cannot contain it.
         using var logs = new CapturingLoggerProvider();
         await using var app = await MessagingModuleTestHost.StartAsync(
             _time,
@@ -43,7 +44,7 @@ public sealed class MessagingListSearchTests : TestBase
         var storage = app.Services.GetRequiredService<IDataStorage>();
         var order = await storage.StoreMessageAsync(
             "orders.placed",
-            _Message(new { Order = "ORD-991" }),
+            _Message(new { Order = "ORD-QZX" }),
             cancellationToken: AbortToken
         );
         await storage.StoreMessageAsync(
@@ -54,21 +55,21 @@ public sealed class MessagingListSearchTests : TestBase
         using var client = app.GetTestClient();
 
         // when
-        using var response = await _SearchAsync(client, "published", new { content = "ord-991" });
+        using var response = await _SearchAsync(client, "published", new { content = "ord-qzx" });
 
         // then: one match, served as a list row without its content, and the text in neither the URL nor a log
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.RequestMessage!.RequestUri!.ToString().Should().NotContain("991");
+        response.RequestMessage!.RequestUri!.ToString().Should().NotContainEquivalentOf("qzx");
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         using var document = JsonDocument.Parse(body);
         var items = document.RootElement.GetProperty("items");
         items.GetArrayLength().Should().Be(1);
         items[0].GetProperty("storageId").GetGuid().Should().Be(order.StorageId);
         items[0].TryGetProperty("content", out _).Should().BeFalse();
-        body.Should().NotContain("ORD-991", "a search serves rows, never the body it matched");
+        body.Should().NotContain("ORD-QZX", "a search serves rows, never the body it matched");
         document.RootElement.GetProperty("incomplete").GetBoolean().Should().BeFalse();
         logs.Lines.Should().Contain(line => line.Contains("/published/search", StringComparison.Ordinal));
-        logs.Lines.Should().NotContain(line => line.Contains("991", StringComparison.Ordinal));
+        logs.Lines.Should().NotContain(line => line.Contains("qzx", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
