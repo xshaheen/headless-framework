@@ -518,7 +518,7 @@
       "headless.couchbase": {
         "type": "Project",
         "dependencies": {
-          "CouchbaseNetClient": "[3.10.1, )",
+          "CouchbaseNetClient": "[3.10.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Linq2Couchbase": "[2.2.0, )",
@@ -605,9 +605,9 @@
       },
       "CouchbaseNetClient": {
         "type": "CentralTransitive",
-        "requested": "[3.10.1, )",
-        "resolved": "3.10.1",
-        "contentHash": "lH7weXxaRuyd4TLzbL3qtyxeuqhv1dnap7jOZVHSnDSlaGZyQidcutTNiG3kfZmZLIOs7mpYagQ8FBlU6rz/yQ==",
+        "requested": "[3.10.0, )",
+        "resolved": "3.10.0",
+        "contentHash": "ZsbuQ/ygvaDojdS3LNRpKlMGLOldZ+ppA4iD+haylp3CapgZSFM5vuVopN4Dz4hoNYCMgmbkERoCCvlKFXcycg==",
         "dependencies": {
           "DnsClient": "1.8.0",
           "Google.Api.CommonProtos": "2.17.0",
