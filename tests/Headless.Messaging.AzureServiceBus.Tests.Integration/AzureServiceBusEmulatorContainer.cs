@@ -62,6 +62,14 @@ internal sealed class AzureServiceBusEmulatorContainer : IAsyncDisposable
     public string ConnectionString { get; private set; } = string.Empty;
 
     /// <summary>
+    /// Gets the connection string for the emulator's management endpoint, which a <c>ServiceBusAdministrationClient</c>
+    /// uses to create and delete entities beyond the ones <c>Config.json</c> declares.
+    /// </summary>
+    public string AdministrationConnectionString =>
+        $"Endpoint=sb://{_emulator.Hostname}:{_emulator.GetMappedPublicPort(_ManagementPort).ToString(CultureInfo.InvariantCulture)};"
+        + "SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
+
+    /// <summary>
     /// Starts SQL Server and then the emulator. Pass <paramref name="stableAmqpAddress"/> to reach AMQP through a
     /// <see cref="BrokerPortForwarder"/>, so a client keeps its address across <see cref="RestartAsync"/>; otherwise the
     /// connection string names the random port Docker published for the first start.
