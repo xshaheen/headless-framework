@@ -12,7 +12,7 @@ namespace Tests;
 [Collection(nameof(BclRedisFixture))]
 public sealed class HeadlessDistributedCacheAdapterTests(BclRedisFixture fixture) : TestBase
 {
-    private const int _RedisFrameHeaderLength = 27;
+    private const int _RedisFrameHeaderLength = 35;
 
     [Fact]
     public async Task should_register_bcl_distributed_cache_over_named_redis_cache()
