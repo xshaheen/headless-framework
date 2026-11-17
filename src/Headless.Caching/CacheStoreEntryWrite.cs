@@ -40,6 +40,15 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// </summary>
     public DateTime? CreatedAt { get; init; }
 
+    /// <summary>
+    /// Gets the optional UTC timestamp until which a fail-safe throttle holds back the factory for this entry. The
+    /// coordinator sets it only on the fail-safe throttle restamp, to the restamp's logical expiration; any other
+    /// write leaves it <see langword="null"/>. Stores persist it beside <see cref="CreatedAt"/>, which keeps the
+    /// birth time so direct reads still treat a tag- or clear-invalidated reserve as a miss, and return it
+    /// unchanged through <see cref="CacheStoreEntry{T}.ThrottledUntil"/>; they apply no throttle logic of their own.
+    /// </summary>
+    public DateTime? ThrottledUntil { get; init; }
+
     /// <summary>Gets the optional invalidation tags associated with the cached value.</summary>
     public IReadOnlyCollection<string>? Tags { get; init; }
 

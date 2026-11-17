@@ -257,8 +257,12 @@ public sealed partial class FactoryCacheCoordinator
             LastModifiedAt = staleCandidate.LastModifiedAt,
             Tags = staleCandidate.Tags,
             ExpectedConcurrencyStamp = staleCandidate.ConcurrencyStamp,
-            // Throttle restamp preserves the reserve's original birth time (not a new write).
+            // Throttle restamp preserves the reserve's original birth time (not a new write), so a direct read,
+            // or a peer reading the shared tier, still misses a reserve that a tag removal or clear invalidated.
             CreatedAt = staleCandidate.CreatedAt,
+            // The birth time alone would make the next factory read see that invalidated reserve as stale and run
+            // the failing factory again; this stamp tells factory reads to hold it back until the window ends.
+            ThrottledUntil = logicalExpiresAt,
             IsRestamp = true,
         };
 

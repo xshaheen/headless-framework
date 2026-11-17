@@ -234,11 +234,60 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
                 AbortToken
             );
 
-        // then — the throttle re-stamp preserves the original birth time, not the advanced clock
+        // then — the throttle re-stamp preserves the original birth time, not the advanced clock, and records the
+        // window end apart from it so factory reads can honor the throttle on a tag- or clear-invalidated reserve
         result.Value.Should().Be("stale");
         result.IsStale.Should().BeTrue();
         var entry = _store.GetEntry("key");
         entry!.CreatedAt.Should().Be(createdAt);
+        entry.ThrottledUntil.Should().Be(now.AddSeconds(2).AddSeconds(10));
+        entry.LogicalExpiresAt.Should().Be(entry.ThrottledUntil);
+    }
+
+    [Theory]
+    [InlineData(true, 0)]
+    [InlineData(false, 1)]
+    public async Task should_hold_back_the_factory_on_a_throttled_reserve_only_when_failsafe_is_enabled(
+        bool isFailSafeEnabled,
+        int expectedFactoryCalls
+    )
+    {
+        // given — a reserve the store reports as logically expired (as it does after a tag removal or clear) but
+        // whose throttle window, stamped by an earlier failed factory call, is still open
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(
+            "key",
+            "reserve",
+            logicalExpiresAt: now,
+            physicalExpiresAt: now.AddMinutes(5),
+            createdAt: now.AddMinutes(-1),
+            throttledUntil: now.AddSeconds(10)
+        );
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(1),
+            IsFailSafeEnabled = isFailSafeEnabled,
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(10),
+        };
+        var factoryCalls = 0;
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                "key",
+                _ =>
+                {
+                    factoryCalls++;
+                    return ValueTask.FromResult<string?>("fresh");
+                },
+                options,
+                AbortToken
+            );
+
+        // then — fail-safe serves the reserve inside the window; a caller without fail-safe never gets it
+        factoryCalls.Should().Be(expectedFactoryCalls);
+        result.Value.Should().Be(isFailSafeEnabled ? "reserve" : "fresh");
     }
 
     [Fact]
