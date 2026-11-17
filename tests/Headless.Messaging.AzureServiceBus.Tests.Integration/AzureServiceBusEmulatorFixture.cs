@@ -52,6 +52,9 @@ public sealed class AzureServiceBusEmulatorFixture : IAsyncLifetime
 
     public string ConnectionString => _RequireEmulator().ConnectionString;
 
+    /// <summary>The connection string an administration client uses to create and delete emulator entities.</summary>
+    public string AdministrationConnectionString => _RequireEmulator().AdministrationConnectionString;
+
     public async ValueTask InitializeAsync()
     {
         if (!_IsEulaAccepted)
