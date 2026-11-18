@@ -22,7 +22,7 @@ public abstract class S3StaleWriterTestsBase(IS3TestBackend backend) : TestBase
 
     private readonly TusS3StoreOptions _options = new()
     {
-        Bucket = TusS3StoreFactory.Bucket,
+        Bucket = backend.Bucket,
         Prefix = $"stale-{Guid.NewGuid():N}/",
         PartSize = 5 * _MiB,
     };
@@ -196,6 +196,23 @@ public sealed class MinioS3StaleWriterTests(TusS3MinioFixture fixture) : S3Stale
 
 [Collection<TusS3LocalStackFixture>]
 public sealed class LocalStackS3StaleWriterTests(TusS3LocalStackFixture fixture) : S3StaleWriterTestsBase(fixture)
+{
+    [Fact]
+    public override Task should_let_one_of_two_part_reservations_win_and_fail_the_other_before_any_part() =>
+        base.should_let_one_of_two_part_reservations_win_and_fail_the_other_before_any_part();
+
+    [Fact]
+    public override Task should_keep_the_multipart_upload_when_a_landed_reservation_is_answered_with_412() =>
+        base.should_keep_the_multipart_upload_when_a_landed_reservation_is_answered_with_412();
+
+    [Fact]
+    public override Task should_reject_the_stale_commit_of_two_tail_only_appends() =>
+        base.should_reject_the_stale_commit_of_two_tail_only_appends();
+}
+
+// Cloudflare R2 through a gated client; skips without R2 credentials.
+[Collection<TusS3R2Fixture>]
+public sealed class R2S3StaleWriterTests(TusS3R2Fixture fixture) : S3StaleWriterTestsBase(fixture)
 {
     [Fact]
     public override Task should_let_one_of_two_part_reservations_win_and_fail_the_other_before_any_part() =>
