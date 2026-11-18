@@ -86,7 +86,8 @@ internal sealed partial class RelationalDataStorage
             : null;
         string[] returning = received
             ? [.. _RetryClaimColumns(), .. _InboxClaimColumns(), _t.PreEntryFailures]
-            : _RetryClaimColumns();
+            // The published table's own column follows the shared ones, at ordinal 10.
+            : [.. _RetryClaimColumns(), _t.Transport];
         // The claim carries no retry cap. A received row's budget belongs to its consumer's failure policy and a
         // published row's to MaxPersistedRetries; the executor and the sender check it after the claim and end a row
         // already past it. Capping the claim instead would strand a row past a lowered cap, never exhausted or purged.
@@ -241,6 +242,8 @@ internal sealed partial class RelationalDataStorage
                     Added = reader.GetFieldValue<DateTimeOffset>(7),
                     NextRetryAt = reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
                     Lease = _ReadClaimedLease(reader, holder, takeoverOrdinal: 9),
+                    // Ordinal 10 is the published table's transport and the received table's first inbox column.
+                    TransportName = received || reader.IsDBNull(10) ? null : reader.GetString(10),
 #pragma warning restore CA1849
                 };
 
@@ -840,7 +843,17 @@ internal sealed partial class RelationalDataStorage
         // Due time is the database's: the windows are measured from the database clock, the clock every other due
         // decision reads, so a replica whose clock is skewed neither schedules a message early nor holds it back.
         // Each status is selected by its own bounded statement, so each reads its own index in due order.
-        string[] columns = [_t.Id, _t.Content, _t.IntentType, _t.Retries, _t.InlineAttempts, _t.Added, _t.ExpiresAt];
+        string[] columns =
+        [
+            _t.Id,
+            _t.Content,
+            _t.IntentType,
+            _t.Retries,
+            _t.InlineAttempts,
+            _t.Added,
+            _t.ExpiresAt,
+            _t.Transport,
+        ];
         var delayedSql = _dialect.Render(
             new SqlLockBatch(
                 _publishedTable,
@@ -943,6 +956,9 @@ internal sealed partial class RelationalDataStorage
                             .GetFieldValueAsync<DateTimeOffset>(5, cancellationToken)
                             .ConfigureAwait(false),
                         ExpiresAt = await _ReadInstantAsync(reader, 6, cancellationToken).ConfigureAwait(false),
+                        TransportName = await reader.IsDBNullAsync(7, cancellationToken).ConfigureAwait(false)
+                            ? null
+                            : reader.GetString(7),
                     }
                 );
             }
@@ -984,7 +1000,16 @@ internal sealed partial class RelationalDataStorage
             [_t.ExpiresAt, _t.Id],
             // A stale Queued row claimed again only changes its lease, so only a Delayed row's marker moves.
             $"{_t.StatusName}=@QueuedStatusName, {_t.ChangedAt}=CASE WHEN {_t.StatusName} = @QueuedStatusName THEN {_t.ChangedAt} ELSE {_dialect.NextChangeMarker(_t.ChangedAt)} END",
-            [_t.Content, _t.IntentType, _t.Retries, _t.InlineAttempts, _t.Added, _t.ExpiresAt, _t.LeaseTakeoverCount],
+            [
+                _t.Content,
+                _t.IntentType,
+                _t.Retries,
+                _t.InlineAttempts,
+                _t.Added,
+                _t.ExpiresAt,
+                _t.LeaseTakeoverCount,
+                _t.Transport,
+            ],
             "BatchSize",
             deadlineExpression: _dialect.ShiftByDuration(
                 $"CASE WHEN {_t.ExpiresAt} > {SqlDialectTokens.Now} THEN {_t.ExpiresAt} ELSE {SqlDialectTokens.Now} END",
@@ -1090,6 +1115,7 @@ internal sealed partial class RelationalDataStorage
                             .ConfigureAwait(false),
 #pragma warning disable CA1849 // the GetString(3) above already pulls the large Content column synchronously, so these small lease columns cannot add blocking this row has not already paid for.
                         Lease = _ReadClaimedLease(reader, holder, takeoverOrdinal: 9),
+                        TransportName = reader.IsDBNull(10) ? null : reader.GetString(10),
 #pragma warning restore CA1849
                     }
                 );

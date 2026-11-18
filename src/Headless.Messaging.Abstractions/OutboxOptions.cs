@@ -22,4 +22,13 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed record OutboxOptions : MessageOptions;
+public sealed record OutboxOptions : MessageOptions
+{
+    /// <summary>
+    /// The named transport, registered with <c>setup.AddTransport(name)</c>, that relays this message once the unit
+    /// commits, or <see langword="null"/> for the default transport. The name is stored with the row, so the relay
+    /// sends it through the same broker after a restart. A name the host does not register is refused before the row is
+    /// written.
+    /// </summary>
+    public string? TransportName { get; init; }
+}

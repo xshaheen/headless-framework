@@ -65,39 +65,58 @@ internal static class InMemoryTransportReplacement
             );
 
         var transports = ledger.Entries.Where(static entry => entry.TransportName is not null).ToArray();
-        var brokers = transports.Where(static entry => !_IsInMemory(entry)).ToArray();
-        var hasInMemory = brokers.Length != transports.Length;
+        var defaults = transports.Where(static entry => entry.NamedTransport is null).ToArray();
+        var brokers = defaults.Where(static entry => !_IsInMemory(entry)).ToArray();
+        var hasInMemory = brokers.Length != defaults.Length;
 
-        foreach (var broker in brokers)
+        // A named transport is replaced by an in-memory broker of its own, so its messages still never reach another one.
+        var namedBrokers = transports
+            .Where(static entry => entry.NamedTransport is not null && !_IsInMemory(entry))
+            .ToArray();
+
+        foreach (var broker in brokers.Concat(namedBrokers))
         {
-            var provider = broker.Extension.GetType().Assembly;
-
-            foreach (var descriptor in broker.AddedDescriptors.Where(descriptor => _IsOwned(descriptor, provider)))
-            {
-                services.Remove(descriptor);
-            }
-
-            ledger.Forget(broker);
+            _Remove(services, ledger, broker);
         }
 
         _EnsureNoUnrecordedTransport(services);
 
-        if (hasInMemory)
-        {
-            return;
-        }
-
-        var replaced = brokers.Select(static broker => broker.TransportName!).ToArray();
-
         // A throwaway builder runs the in-memory provider's own registration, so the installed transport is exactly what
         // setup.UseInMemory() registers and stays in step with it.
         var scratch = new MessagingSetupBuilder(services, new MessagingOptions());
-        scratch.UseInMemory();
+
+        if (!hasInMemory)
+        {
+            scratch.UseInMemory();
+        }
+
+        foreach (var broker in namedBrokers)
+        {
+            new MessagingTransportBuilder(scratch, broker.NamedTransport!).UseInMemory();
+        }
+
+        var replaced = brokers.Concat(namedBrokers).Select(static broker => broker.TransportName!).ToArray();
 
         foreach (var extension in scratch.Extensions)
         {
             ledger.Record(services, new GuardedInMemoryExtension(extension, replaced));
         }
+    }
+
+    private static void _Remove(
+        IServiceCollection services,
+        MessagingExtensionRegistrations ledger,
+        MessagingExtensionRegistration broker
+    )
+    {
+        var provider = broker.Extension.GetType().Assembly;
+
+        foreach (var descriptor in broker.AddedDescriptors.Where(descriptor => _IsOwned(descriptor, provider)))
+        {
+            services.Remove(descriptor);
+        }
+
+        ledger.Forget(broker);
     }
 
     private static bool _IsInMemory(MessagingExtensionRegistration entry) =>
@@ -111,7 +130,9 @@ internal static class InMemoryTransportReplacement
     private static void _EnsureNoUnrecordedTransport(IServiceCollection services)
     {
         var unrecorded = services
-            .Where(static descriptor => descriptor.ServiceType == typeof(MessageQueueMarkerService))
+            .Where(static descriptor =>
+                descriptor.ServiceType == typeof(MessageQueueMarkerService) && !descriptor.IsKeyedService
+            )
             .Select(static descriptor => (descriptor.ImplementationInstance as MessageQueueMarkerService)?.Name)
             .Where(static name => !string.Equals(name, InMemoryTransportName, StringComparison.Ordinal))
             .Select(static name => $"'{name ?? "unnamed"}'")
@@ -209,17 +230,31 @@ internal static class InMemoryTransportReplacement
                 if (
                     before.Contains(descriptor)
                     || descriptor.ServiceType != typeof(MessagingProviderCapabilities)
-                    || descriptor.ImplementationInstance is not MessagingProviderCapabilities capabilities
+                    || (
+                        descriptor.IsKeyedService
+                            ? descriptor.KeyedImplementationInstance
+                            : descriptor.ImplementationInstance
+                    )
+                        is not MessagingProviderCapabilities capabilities
                 )
                 {
                     continue;
                 }
 
-                services[index] = ServiceDescriptor.Singleton(sp =>
-                {
-                    _EnsureNoRoutingAffinity(sp);
-                    return capabilities;
-                });
+                services[index] = descriptor.IsKeyedService
+                    ? ServiceDescriptor.KeyedSingleton(
+                        descriptor.ServiceKey,
+                        (sp, _) =>
+                        {
+                            _EnsureNoRoutingAffinity(sp);
+                            return capabilities;
+                        }
+                    )
+                    : ServiceDescriptor.Singleton(sp =>
+                    {
+                        _EnsureNoRoutingAffinity(sp);
+                        return capabilities;
+                    });
             }
         }
 

@@ -380,21 +380,36 @@ internal sealed class Bootstrapper(
         // Every-instance consumers keep no inbox state, so they alone never require an inbox guarantee from storage.
         var hasDurableConsumers = consumers.Any(static consumer => !consumer.EveryInstance);
         gate.ValidateStartup(
-            _GetRegisteredRoutes(capabilities),
+            _GetRegisteredRoutes(capabilities, transportName: null),
             hasDurableConsumers,
             options.Value.MinimumInboxGuarantee
         );
 
+        // Each named transport is checked against its own provider, for its own consumers and for the declared messages
+        // a keyed IBus or IQueue can publish through it.
+        var transports = serviceProvider.GetService<MessagingTransports>();
+        foreach (var named in transports?.Named ?? [])
+        {
+            named.Capabilities.ValidateStartup(
+                _GetRegisteredRoutes(named.Capabilities, named.Name),
+                hasDurableConsumers,
+                options.Value.MinimumInboxGuarantee
+            );
+        }
+
         // Runs before any processor starts, so a transport without every-instance subscriptions rejects the consumer
         // before any consumer client, and so any broker object, exists.
         foreach (
-            var identity in consumers
+            var consumer in consumers
                 .Where(static x => x.EveryInstance)
-                .Select(static x => x.ConsumerIdentity)
-                .Distinct(StringComparer.Ordinal)
+                .DistinctBy(static x => x.ConsumerIdentity, StringComparer.Ordinal)
         )
         {
-            gate.EnsureEveryInstanceSupported(identity);
+            var consumerGate =
+                consumer.TransportName is { } transportName && transports is not null
+                    ? transports.Get(transportName).Capabilities
+                    : gate;
+            consumerGate.EnsureEveryInstanceSupported(consumer.ConsumerIdentity);
         }
 
         // Runs before the reply listener and any processor start, so a host that sends requests or answers them on a
@@ -425,12 +440,22 @@ internal sealed class Bootstrapper(
     /// Queue-only transport accepts every contract; a consumer on that lane still fails here, and a publish on it fails
     /// when it is attempted.
     /// </remarks>
-    private HashSet<MessageRouteKey> _GetRegisteredRoutes(MessagingCapabilityModel capabilities)
+    private HashSet<MessageRouteKey> _GetRegisteredRoutes(MessagingCapabilityModel capabilities, string? transportName)
     {
         var routes = new HashSet<MessageRouteKey>();
 
-        foreach (var (route, needsTransportLane) in _GetAllRoutes())
+        foreach (var (route, needsTransportLane, consumerTransport) in _GetAllRoutes())
         {
+            // A consumer's route belongs to the transport it is bound to; every other route names a message any
+            // transport can publish.
+            if (
+                consumerTransport is { } bound
+                && !string.Equals(bound.Name, transportName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                continue;
+            }
+
             if (!needsTransportLane || capabilities.Supports(route.Lane, MessagingProviderRole.Transport))
             {
                 routes.Add(route);
@@ -445,25 +470,36 @@ internal sealed class Bootstrapper(
     /// <c>NeedsTransportLane</c> marks a route that names a message for both lanes, and so counts only on a lane the
     /// transport carries.
     /// </summary>
-    private IEnumerable<(MessageRouteKey Route, bool NeedsTransportLane)> _GetAllRoutes()
+    private IEnumerable<(
+        MessageRouteKey Route,
+        bool NeedsTransportLane,
+        ConsumerTransportBinding? ConsumerTransport
+    )> _GetAllRoutes()
     {
         var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
 
         foreach (var consumer in registry.GetAll())
         {
-            yield return (new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane), false);
+            yield return (
+                new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane),
+                false,
+                new ConsumerTransportBinding(consumer.TransportName)
+            );
         }
 
         foreach (var (registration, route) in _GetDeclaredRoutes(registry))
         {
-            yield return (route, registration.DeclaresMessage);
+            yield return (route, registration.DeclaresMessage, null);
         }
 
         foreach (var route in _GetEffectiveMessageNameRoutes(registry))
         {
-            yield return (route, true);
+            yield return (route, true, null);
         }
     }
+
+    // The transport one consumer route is bound to; Name is null for the default transport.
+    private readonly record struct ConsumerTransportBinding(string? Name);
 
     private IEnumerable<(MessageRegistration Registration, MessageRouteKey Route)> _GetDeclaredRoutes(
         ConsumerRegistry registry
@@ -503,7 +539,7 @@ internal sealed class Bootstrapper(
     /// </remarks>
     private void _CheckReplyNamespaceIsFree()
     {
-        foreach (var (route, _) in _GetAllRoutes())
+        foreach (var (route, _, _) in _GetAllRoutes())
         {
             if (route.MessageName.StartsWith(ReplyAddresses.Prefix, StringComparison.Ordinal))
             {
