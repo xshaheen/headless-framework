@@ -5,6 +5,7 @@ using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using StackExchange.Redis;
 
 namespace Tests;
 
@@ -87,6 +88,30 @@ public sealed class HeadlessPrefixCacheTests(RedisCacheFixture fixture) : TestBa
 
         // then
         backplane.Channel.ToString().Should().Be($"{prefix}:app:{CacheInvalidationMessage.MessageName}");
+    }
+
+    [Fact]
+    public void should_put_the_host_prefix_in_front_of_the_invalidation_channel_when_no_redis_tier_is_registered()
+    {
+        // given - the remote tier is not Redis, so no Redis cache registration runs
+        var prefix = _Prefix();
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<IConnectionMultiplexer>(fixture.ConnectionMultiplexer);
+        builder.Services.ConfigureHeadlessPrefix(prefix);
+        builder.Services.AddHeadlessCaching(setup =>
+        {
+            setup.AddMemoryTier();
+            setup.UseHybrid();
+            setup.UseRedisBackplane();
+        });
+        using var host = builder.Build();
+
+        // when
+        var backplane = (RedisHybridCacheBackplane)host.Services.GetRequiredService<IHybridCacheBackplane>();
+
+        // then
+        backplane.Channel.ToString().Should().Be($"{prefix}:{CacheInvalidationMessage.MessageName}");
     }
 
     private IHost _BuildHost(string prefix)

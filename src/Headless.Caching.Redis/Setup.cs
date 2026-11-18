@@ -180,6 +180,10 @@ public static class SetupRedisCache
         public HeadlessCachingSetupBuilder UseRedisBackplane()
         {
             setup.RegisterCrossCuttingExtension(static services =>
+            {
+                // The channel is built from the default Redis options, which a host whose remote tier is not Redis
+                // never registers a cache for; the host prefix must still reach it.
+                _ApplyHostPrefix(services);
                 services.Replace(
                     ServiceDescriptor.Singleton<IHybridCacheBackplane>(static provider => new RedisHybridCacheBackplane(
                         // Optional: a host whose Redis tiers are all named still has the registered multiplexer.
@@ -187,8 +191,8 @@ public static class SetupRedisCache
                         provider,
                         provider.GetRequiredService<ILogger<RedisHybridCacheBackplane>>()
                     ))
-                )
-            );
+                );
+            });
 
             return setup;
         }
@@ -208,9 +212,7 @@ public static class SetupRedisCache
         // set one explicitly). Runs after the user's configure action.
         services.PostConfigure<RedisCacheOptions>(name, options => options.CacheName ??= name);
         services.AddOptions<RedisCacheOptions>(name).PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
-        services.ApplyHeadlessPrefix<RedisCacheOptions>(
-            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
-        );
+        _ApplyHostPrefix(services);
 
         var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
 
@@ -266,6 +268,13 @@ public static class SetupRedisCache
     }
 
     // One warm-up loads the scripts onto every registered cache's Redis; each loader is listed once.
+    private static void _ApplyHostPrefix(IServiceCollection services)
+    {
+        services.ApplyHeadlessPrefix<RedisCacheOptions>(
+            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
+        );
+    }
+
     private static void _AddScriptsWarmup(IServiceCollection services, string loaderKey)
     {
         var listed = services.Any(d =>
@@ -310,9 +319,7 @@ public static class SetupRedisCache
         services.AddCacheProvider();
 
         services.AddOptions<RedisCacheOptions>().PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
-        services.ApplyHeadlessPrefix<RedisCacheOptions>(
-            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
-        );
+        _ApplyHostPrefix(services);
         services.AddSingletonOptionValue<RedisCacheOptions>();
         services.TryAddKeyedSingleton(
             RedisCacheServiceKeys.ScriptsLoader,

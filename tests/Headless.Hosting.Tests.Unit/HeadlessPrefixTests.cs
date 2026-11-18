@@ -160,6 +160,25 @@ public sealed class HeadlessPrefixTests : TestBase
     }
 
     [Fact]
+    public void should_keep_the_prefix_when_a_later_post_configure_sets_the_name()
+    {
+        // given - a consumer post-configure registered after the provider asked for the prefix
+        var services = _CreateServices(("Headless:Prefix", "wt1"));
+        services.ApplyHeadlessPrefix<StubKeyOptions>(static (x, prefix) => x.KeyPrefix = prefix + ":" + x.KeyPrefix);
+        services.PostConfigure<StubKeyOptions>(static x => x.KeyPrefix = "late:");
+        services.PostConfigure<StubKeyOptions>("orders", static x => x.KeyPrefix = "orders-late:");
+
+        // when
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var monitor = provider.GetRequiredService<IOptionsMonitor<StubKeyOptions>>();
+        monitor.CurrentValue.KeyPrefix.Should().Be("wt1:late:");
+        monitor.Get("orders").KeyPrefix.Should().Be("wt1:orders-late:");
+        provider.GetRequiredService<IOptions<StubKeyOptions>>().Value.KeyPrefix.Should().Be("wt1:late:");
+    }
+
+    [Fact]
     public void should_leave_names_unchanged_when_the_host_has_no_prefix()
     {
         // given

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,11 +85,20 @@ public static class HeadlessPrefixServiceCollectionExtensions
         /// <returns>The same service collection.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="apply" /> is <see langword="null" />.</exception>
         /// <remarks>
+        /// <para>
+        /// The prefix is applied by the options factory after every <c>Configure</c>, <c>PostConfigure</c>, and
+        /// validation step, so a consumer <c>PostConfigure</c> registered later cannot replace it. Validators therefore
+        /// see the value without the prefix.
+        /// </para>
+        /// <para>
         /// A provider registration runs once per default and named instance; applying the prefix from each would put it
         /// in front of every instance's names that many times. The first call for <typeparamref name="TOptions" />
         /// wins, and later calls add nothing.
+        /// </para>
         /// </remarks>
-        public IServiceCollection ApplyHeadlessPrefix<TOptions>(Action<TOptions, string> apply)
+        public IServiceCollection ApplyHeadlessPrefix<
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions
+        >(Action<TOptions, string> apply)
             where TOptions : class
         {
             Argument.IsNotNull(apply);
@@ -101,19 +111,17 @@ public static class HeadlessPrefixServiceCollectionExtensions
             }
 
             services.AddSingleton(new HeadlessPrefixApplied<TOptions>());
-            services.AddSingleton<IPostConfigureOptions<TOptions>>(provider => new PostConfigureOptions<
-                TOptions,
-                IOptions<HeadlessPrefixOptions>
-            >(
-                name: null,
-                provider.GetRequiredService<IOptions<HeadlessPrefixOptions>>(),
-                (options, prefix) =>
-                {
-                    if (prefix.Value.Prefix.Length > 0)
-                    {
-                        apply(options, prefix.Value.Prefix);
-                    }
-                }
+
+            // A post-configure step would run in registration order, so a consumer one registered later could
+            // overwrite the prefixed name; wrapping the factory applies the prefix after every other step.
+            services.AddTransient<IOptionsFactory<TOptions>>(provider => new HeadlessPrefixOptionsFactory<TOptions>(
+                new OptionsFactory<TOptions>(
+                    provider.GetServices<IConfigureOptions<TOptions>>(),
+                    provider.GetServices<IPostConfigureOptions<TOptions>>(),
+                    provider.GetServices<IValidateOptions<TOptions>>()
+                ),
+                provider.GetRequiredService<IOptions<HeadlessPrefixOptions>>().Value.Prefix,
+                apply
             ));
 
             return services;
@@ -123,4 +131,22 @@ public static class HeadlessPrefixServiceCollectionExtensions
     private sealed class HeadlessPrefixRegistration;
 
     private sealed class HeadlessPrefixApplied<TOptions>;
+
+    private sealed class HeadlessPrefixOptionsFactory<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions
+    >(IOptionsFactory<TOptions> inner, string prefix, Action<TOptions, string> apply) : IOptionsFactory<TOptions>
+        where TOptions : class
+    {
+        public TOptions Create(string name)
+        {
+            var options = inner.Create(name);
+
+            if (prefix.Length > 0)
+            {
+                apply(options, prefix);
+            }
+
+            return options;
+        }
+    }
 }
