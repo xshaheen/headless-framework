@@ -423,11 +423,15 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         _time.Advance(TimeSpan.FromSeconds(10));
         await beatInFlight.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
-        // when: shutdown stops receiving while the gate is held, and its 5 s budget runs out on the stuck handler
-        var drainArmed = _time.WatchForTimer(TimeSpan.FromSeconds(5));
-        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken).AsTask();
+        // when: shutdown stops receiving while the gate is held, and its 7 s budget runs out on the stuck handler. The
+        // budget runs out only once the receive loop has ended or started a release of its own, which waits behind the
+        // gate and gives up after 5 s, so the test never depends on which of the two ran first.
+        var loopReleaseArmed = _time.WatchForTimer(TimeSpan.FromSeconds(5));
+        var drainArmed = _time.WatchForTimer(TimeSpan.FromSeconds(7));
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(7), AbortToken).AsTask();
+        await Task.WhenAny(listening, loopReleaseArmed).Bounded();
         await drainArmed.Bounded();
-        _time.Advance(TimeSpan.FromSeconds(5));
+        _time.Advance(TimeSpan.FromSeconds(7));
         finishBeat.TrySetResult(new ChangeMessageVisibilityBatchResponse());
         await shutdown.Bounded();
         await listening.Bounded();
