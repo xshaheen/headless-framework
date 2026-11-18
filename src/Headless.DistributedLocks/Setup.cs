@@ -62,6 +62,12 @@ public static class SetupDistributedLocks
 
         services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(_ => { });
 
+        // Environments sharing one lock store keep their resources, and the release channel built from the same
+        // prefix, apart. Database-backed providers read their own key prefix and are isolated by their database.
+        services.ApplyHeadlessPrefix<DistributedLockOptions>(
+            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
+        );
+
         foreach (var extension in setup.Extensions)
         {
             extension.AddServices(services);
