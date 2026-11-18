@@ -2410,7 +2410,10 @@ public sealed class DispatcherTests : TestBase
     )
     {
         var committed = (ICommittedMessageDispatcher)dispatcher;
-        await committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), Stopwatch.GetTimestamp());
+
+        // One start for the whole fill: the first enqueue meets an empty channel, and the rest run under an hour.
+        var fillStartedAt = Stopwatch.GetTimestamp();
+        await committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), fillStartedAt);
         await sender.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // Filled under a budget no stall can spend, so an enqueue that completes is one the channel took. Under the
@@ -2425,7 +2428,7 @@ public sealed class DispatcherTests : TestBase
             // Bounded well above any real capacity (ProcessorCount * 500) so a channel that never fills fails the test.
             for (accepted = 1; accepted < 1_000_000; accepted++)
             {
-                var enqueue = committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), Stopwatch.GetTimestamp());
+                var enqueue = committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), fillStartedAt);
 
                 if (!enqueue.IsCompleted)
                 {
