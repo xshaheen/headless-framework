@@ -222,6 +222,40 @@ public sealed class RedisCacheClusterTests(RedisClusterCacheFixture fixture) : T
         await _ShouldExistAsync(failingKeys, exist: true);
     }
 
+    [Fact]
+    public async Task should_remove_later_batches_on_the_failing_primary_when_one_slot_fails_during_remove_by_prefix()
+    {
+        // given: more matching keys per primary than one 250-key deletion batch, and a large share of the failing
+        // primary's keys in the failing slot (a hash tag pins them there), so a failing batch on that primary comes
+        // before another of its batches. Stopping at the failing batch would leave that later batch's keys behind.
+        await fixture.FlushAllAsync(AbortToken);
+        using var cache = _CreateCache();
+        var pinned = Enumerable
+            .Range(0, 300)
+            .ToDictionary(i => $"sweep:{{pinned}}:{i}", i => $"value-{i}", StringComparer.Ordinal);
+        var spread = Enumerable
+            .Range(0, 900)
+            .ToDictionary(i => $"sweep:{i}", i => $"value-{i}", StringComparer.Ordinal);
+        await cache.UpsertAllAsync(pinned, _Expiration, AbortToken);
+        await cache.UpsertAllAsync(spread, _Expiration, AbortToken);
+        var failingSlot = fixture.ConnectionMultiplexer.HashSlot("{pinned}");
+        var unpinnedInFailingSlot = spread.Keys.Where(key =>
+            fixture.ConnectionMultiplexer.HashSlot(key) == failingSlot
+        );
+
+        await using (await fixture.UnassignSlotAsync(failingSlot, AbortToken))
+        {
+            // when
+            var act = async () => await cache.RemoveByPrefixAsync("sweep:", AbortToken);
+
+            // then
+            await act.Should().ThrowAsync<RedisServerException>().WithMessage("*CLUSTERDOWN*");
+        }
+
+        await _ShouldExistAsync(spread.Keys.Except(unpinnedInFailingSlot, StringComparer.Ordinal), exist: false);
+        await _ShouldExistAsync(pinned.Keys, exist: true);
+    }
+
     private RedisCache _CreateCache()
     {
         return new RedisCache(

@@ -312,11 +312,11 @@ public class HeadlessRedisClusterFixture()
 
     private sealed class SlotAssignment(HeadlessRedisClusterFixture fixture, int node, int slot) : IAsyncDisposable
     {
-        public async ValueTask DisposeAsync()
-        {
-            await fixture
-                ._NodeCommandAsync(node, ["CLUSTER", "ADDSLOTS", _Invariant(slot)], CancellationToken.None)
-                .ConfigureAwait(false);
-        }
+        // Every dispose awaits one restore: sending ADDSLOTS again would fail on the slot the first one took back.
+        private readonly Lazy<Task<string>> _restore = new(() =>
+            fixture._NodeCommandAsync(node, ["CLUSTER", "ADDSLOTS", _Invariant(slot)], CancellationToken.None)
+        );
+
+        public ValueTask DisposeAsync() => new(_restore.Value);
     }
 }
