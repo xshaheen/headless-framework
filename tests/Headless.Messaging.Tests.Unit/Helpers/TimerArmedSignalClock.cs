@@ -30,6 +30,12 @@ internal sealed class TimerArmedSignalClock(DateTimeOffset start) : FakeTimeProv
         return _armed.Reader.ReadAsync(TestContext.Current.CancellationToken).AsTask().Bounded();
     }
 
+    /// <summary>Takes the signal of a timer armed since the last wait, without waiting; false when none was.</summary>
+    public bool TryTakeArmedTimer()
+    {
+        return _armed.Reader.TryRead(out _);
+    }
+
     /// <summary>Advances the clock by <paramref name="delta"/> once a timer is armed to observe it.</summary>
     public async Task AdvanceWhenArmedAsync(TimeSpan delta)
     {

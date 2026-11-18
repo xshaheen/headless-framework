@@ -525,7 +525,16 @@ internal sealed class AmazonSqsConsumerClient(
         catch (OperationCanceledException)
         {
             // Never handed to the core: give them back now instead of leaving them hidden for the visibility timeout.
-            await _ReleaseAsync(received[dispatched..]).ConfigureAwait(false);
+            // When shutdown stopped receiving, they stay tracked for its own release instead: a drain that ends on its
+            // budget moves on to that release and disposes the client, so a release this loop starts can land after
+            // both and fail, leaving the messages hidden. Still tracked, they are in whatever shutdown releases. An
+            // inline handler cancelled mid-message already dropped its own tracking, so this loop still releases that
+            // one: shutdown would never see it.
+            var release = _stopReceiving.IsCancellationRequested
+                ? Array.FindAll(received[dispatched..], message => !_unsettled.ContainsKey(message.ReceiptHandle))
+                : received[dispatched..];
+            await _ReleaseAsync(release).ConfigureAwait(false);
+
             throw;
         }
     }

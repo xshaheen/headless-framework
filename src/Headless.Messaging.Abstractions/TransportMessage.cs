@@ -30,6 +30,10 @@ namespace Headless.Messaging;
 public readonly struct TransportMessage(IDictionary<string, string?> headers, ReadOnlyMemory<byte> body)
     : IEquatable<TransportMessage>
 {
+    private static readonly IDictionary<string, string?> _NoHeaders = new Dictionary<string, string?>(
+        StringComparer.Ordinal
+    ).AsReadOnly();
+
     /// <summary>
     /// Gets the metadata headers of this message.
     /// Headers contain system information such as message ID, name, consumer identity, and custom application data.
@@ -99,14 +103,19 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
     /// <inheritdoc />
     public bool Equals(TransportMessage other)
     {
-        if (Headers.Count != other.Headers.Count)
+        // default(TransportMessage) skips the constructor and has no headers. Mock argument matchers compare against
+        // it, so equality treats missing headers as empty instead of throwing.
+        var ownHeaders = Headers ?? _NoHeaders;
+        var otherHeaders = other.Headers ?? _NoHeaders;
+
+        if (ownHeaders.Count != otherHeaders.Count)
         {
             return false;
         }
 
-        foreach (var pair in Headers)
+        foreach (var pair in ownHeaders)
         {
-            if (!other.Headers.TryGetValue(pair.Key, out var otherValue))
+            if (!otherHeaders.TryGetValue(pair.Key, out var otherValue))
             {
                 return false;
             }
@@ -134,8 +143,9 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
         // content but different insertion order. XOR is commutative, so pair hashes can be
         // accumulated in any traversal order without affecting the final value.
         var pairHash = 0;
+        var ownHeaders = Headers ?? _NoHeaders;
 
-        foreach (var pair in Headers)
+        foreach (var pair in ownHeaders)
         {
             var keyHash = StringComparer.Ordinal.GetHashCode(pair.Key);
             var valueHash = pair.Value is null ? 0 : StringComparer.Ordinal.GetHashCode(pair.Value);
@@ -145,7 +155,7 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
         // Sample up to 8 bytes of the body (first 4 + last 4) into the hash so messages with
         // the same length but different content distribute across hash buckets. Equals still
         // enforces full-span equality; this just sharpens the bucketing.
-        return HashCode.Combine(Body.Length, Headers.Count, pairHash, _SampleBodyHash(Body.Span));
+        return HashCode.Combine(Body.Length, ownHeaders.Count, pairHash, _SampleBodyHash(Body.Span));
     }
 
     private static int _SampleBodyHash(ReadOnlySpan<byte> body)

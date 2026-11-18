@@ -16,7 +16,7 @@ public abstract class HeadRequestCountTestsBase(IS3TestBackend backend) : TestBa
 {
     private readonly S3TestClient _client = backend.CreateClient();
 
-    private readonly TusS3StoreOptions _options = new() { Bucket = TusS3StoreFactory.Bucket, Prefix = "head-counts/" };
+    private readonly TusS3StoreOptions _options = new() { Bucket = backend.Bucket, Prefix = "head-counts/" };
 
     private TusS3TestHost _host = null!;
 
@@ -158,6 +158,31 @@ public sealed class MinioHeadRequestCountTests(TusS3MinioFixture fixture) : Head
 
 [Collection<TusS3LocalStackFixture>]
 public sealed class LocalStackHeadRequestCountTests(TusS3LocalStackFixture fixture) : HeadRequestCountTestsBase(fixture)
+{
+    [Fact]
+    public override Task should_answer_head_on_an_incomplete_upload_with_one_request() =>
+        base.should_answer_head_on_an_incomplete_upload_with_one_request();
+
+    [Fact]
+    public override Task should_answer_head_on_a_completed_upload_with_two_requests() =>
+        base.should_answer_head_on_a_completed_upload_with_two_requests();
+
+    [Fact]
+    public override Task should_answer_head_on_an_upload_completed_by_a_patch_with_two_requests() =>
+        base.should_answer_head_on_an_upload_completed_by_a_patch_with_two_requests();
+
+    [Fact]
+    public override Task should_create_an_upload_with_expiration_in_two_requests() =>
+        base.should_create_an_upload_with_expiration_in_two_requests();
+
+    [Fact]
+    public override Task should_read_the_state_again_in_a_new_request() =>
+        base.should_read_the_state_again_in_a_new_request();
+}
+
+// Cloudflare R2 through a gated client; skips without R2 credentials.
+[Collection<TusS3R2Fixture>]
+public sealed class R2HeadRequestCountTests(TusS3R2Fixture fixture) : HeadRequestCountTestsBase(fixture)
 {
     [Fact]
     public override Task should_answer_head_on_an_incomplete_upload_with_one_request() =>

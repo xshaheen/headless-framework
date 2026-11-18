@@ -1293,7 +1293,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     [Fact]
     public async Task should_write_nothing_when_the_consume_token_is_cancelled_during_the_inbox_runner_work()
     {
-        // given — shutdown fires while the runner commits, and the runner surfaces a linked token's cancellation.
+        // given — shutdown fires while the runner works, and the runner surfaces a linked token's cancellation, as
+        // one raised before the handler returns would.
         using var shutdown = new CancellationTokenSource();
         var storage = Substitute.For<IDataStorage>();
         var invoker = _SucceedingInScope(out var invocations);

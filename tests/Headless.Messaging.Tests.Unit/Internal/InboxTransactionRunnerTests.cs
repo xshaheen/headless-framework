@@ -33,7 +33,12 @@ public sealed class InboxTransactionRunnerTests : TestBase
         _resolver.Resolve(_unitOfWork).Returns(DeliveryCoordination.Compatible(_unitOfWork, _transaction));
         _storage
             .CompleteReceivedInboxAsync(_message, _transaction, Arg.Any<CancellationToken>())
-            .Returns(_ => _Record("complete", true));
+            .Returns(call =>
+            {
+                // A real driver refuses a cancelled token before it reaches the database.
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return _Record("complete", true);
+            });
         _unitOfWork.CompleteAsync(Arg.Any<CancellationToken>()).Returns(_ => _RecordVoid("drain"));
         _unitOfWork.RollbackAsync().Returns(_ => _RecordVoid("unit-rollback"));
     }
@@ -48,6 +53,30 @@ public sealed class InboxTransactionRunnerTests : TestBase
         await runner.ExecuteAsync(_message, _Handler(), AbortToken);
 
         // then
+        _handlerEntries.Should().Be(1);
+        _calls.Should().Equal("begin", "handler", "flush", "complete", "commit", "drain", "dispose");
+    }
+
+    [Fact]
+    public async Task should_commit_a_returned_handler_when_shutdown_cancels_the_consume_token_before_the_commit()
+    {
+        // given: shutdown cancels the consume token just as the handler returns
+        using var consume = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var runner = _CreateRunner();
+        var handler = _Handler();
+
+        // when
+        await runner.ExecuteAsync(
+            _message,
+            async (unitOfWork, ct) =>
+            {
+                await handler(unitOfWork, ct);
+                await consume.CancelAsync();
+            },
+            consume.Token
+        );
+
+        // then: the finished work commits instead of rolling back for another host to run again
         _handlerEntries.Should().Be(1);
         _calls.Should().Equal("begin", "handler", "flush", "complete", "commit", "drain", "dispose");
     }
@@ -352,10 +381,15 @@ public sealed class InboxTransactionRunnerTests : TestBase
 
         public override DbTransaction Transaction => test._transaction;
 
-        public override ValueTask FlushAsync(CancellationToken cancellationToken) => test._RecordVoid("flush");
+        public override ValueTask FlushAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return test._RecordVoid("flush");
+        }
 
         public override Task CommitAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             test._calls.Add("commit");
             return CommitFault is null ? Task.CompletedTask : Task.FromException(CommitFault);
         }

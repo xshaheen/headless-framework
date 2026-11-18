@@ -35,6 +35,15 @@ public sealed class SqlServerChaosFixture : ChaosStackFixture
     public override void UseStorage(MessagingSetupBuilder setup, string connectionString) =>
         setup.UseSqlServer(connectionString);
 
+    protected override void ClearStoragePools() => SqlConnection.ClearAllPools();
+
+    protected override async Task OpenUnpooledProxiedConnectionAsync(CancellationToken cancellationToken)
+    {
+        var unpooled = new SqlConnectionStringBuilder(ProxiedStorageConnectionString) { Pooling = false };
+        await using var connection = new SqlConnection(unpooled.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public override void UseCoordination(HeadlessCoordinationSetupBuilder setup, string connectionString) =>
         setup.UseSqlServer(connectionString);
 

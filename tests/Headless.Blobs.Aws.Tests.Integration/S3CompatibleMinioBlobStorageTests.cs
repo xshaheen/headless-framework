@@ -24,9 +24,9 @@ public sealed class S3CompatibleMinioBlobStorageTests(MinioFixture fixture) : Bl
         services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
         services.AddHeadlessBlobs(blobs =>
             blobs.UseS3Compatible(
-                fixture.Container.GetConnectionString(),
-                fixture.Container.GetAccessKey(),
-                fixture.Container.GetSecretKey(),
+                fixture.ConnectionString,
+                MinioFixture.AccessKey,
+                MinioFixture.SecretKey,
                 options => options.AllowInsecureHttp = true
             )
         );

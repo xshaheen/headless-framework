@@ -437,7 +437,7 @@ public sealed class ConsumerKeySequencersTests : TestBase
     }
 
     [Fact]
-    public async Task should_stop_holding_a_row_another_attempt_took()
+    public async Task should_stop_holding_a_row_another_attempt_took_and_arm_no_pass_once_none_waits()
     {
         // given
         _defer = _ => ValueTask.FromResult(false);
@@ -448,16 +448,39 @@ public sealed class ConsumerKeySequencersTests : TestBase
         await sut.EnqueueAsync(waiting, AbortToken);
         await _Gate(running).Started.Task.Bounded();
         await _PassAsync(expectedCalls: 0);
+
+        // when: the refused hold drops the only waiting row
+        await _PassAsync(expectedCalls: 1);
+        await _FinishAsync(sut, running, waiting);
+
+        // then: the keeper went idle instead of ticking on an empty set, so a stopping host has no wait left on its clock
+        _holdCalls.Should().ContainSingle();
+        _clock.TryTakeArmedTimer().Should().BeFalse("no row waits, so no pass is armed");
+    }
+
+    [Fact]
+    public async Task should_start_passing_again_when_a_row_waits_after_the_keeper_went_idle()
+    {
+        // given: the only waiting row was dropped, which leaves the keeper idle
+        _defer = _ => ValueTask.FromResult(false);
+        var sut = _CreateSut();
+        var running = _Work("a-1", key: "a", concurrency: 1);
+        var dropped = _Work("a-2", key: "a", concurrency: 1);
+        var later = _Work("a-3", key: "a", concurrency: 1);
+        await sut.EnqueueAsync(running, AbortToken);
+        await sut.EnqueueAsync(dropped, AbortToken);
+        await _Gate(running).Started.Task.Bounded();
+        await _PassAsync(expectedCalls: 0);
         await _PassAsync(expectedCalls: 1);
 
         // when
+        await sut.EnqueueAsync(later, AbortToken);
         await _PassAsync(expectedCalls: 0);
-        await _PassAsync(expectedCalls: 0);
-        await _LastPassEndedAsync();
+        await _PassAsync(expectedCalls: 1);
 
-        // then
-        _holdCalls.Should().ContainSingle();
-        await _FinishAsync(sut, running, waiting);
+        // then: the new row is held on the second pass that finds it waiting, as any first wait is
+        _holdCalls.Should().Equal(("defer", dropped.Message.StorageId), ("defer", later.Message.StorageId));
+        await _FinishAsync(sut, running, dropped, later);
     }
 
     [Fact]

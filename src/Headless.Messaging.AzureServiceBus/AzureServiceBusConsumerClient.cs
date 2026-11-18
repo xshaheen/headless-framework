@@ -652,7 +652,15 @@ internal sealed class AzureServiceBusConsumerClient(
 
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.ExceptionReceived, Reason = exceptionMessage };
 
-        OnLogCallback!(logArgs);
+        // The processor can report an error before the core attaches its log callback; the client's logger keeps it.
+        if (OnLogCallback is { } onLog)
+        {
+            onLog(logArgs);
+        }
+        else
+        {
+            logger.ProcessorErrorWithoutCallback(args.Exception, args.ErrorSource, args.EntityPath);
+        }
 
         // The processor retries a lost receive on its own. A failed receive or session accept is the broker; a failed
         // settlement or handler callback is about one message and says nothing about reaching Service Bus.
@@ -1186,4 +1194,16 @@ internal static partial class AzureServiceBusConsumerClientLog
         Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
     )]
     internal static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
+
+    [LoggerMessage(
+        EventId = 3030,
+        Level = LogLevel.Warning,
+        Message = "Azure Service Bus processor reported a {ErrorSource} error on {EntityPath} before a log callback was attached"
+    )]
+    internal static partial void ProcessorErrorWithoutCallback(
+        this ILogger logger,
+        Exception exception,
+        ServiceBusErrorSource errorSource,
+        string entityPath
+    );
 }
