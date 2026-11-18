@@ -20,9 +20,33 @@ public sealed class DocExamplesCompileTests : TestBase
         ["docs/llms/dashboards.md"] = ["Common.cs", "Dashboards.cs"],
     };
 
+    // Every compiled document: each entry guide plus the topic files under docs/llms/<domain>/, which share its preludes.
+    private static readonly Lazy<IReadOnlyDictionary<string, string[]>> _Documents = new(() =>
+    {
+        var documents = new Dictionary<string, string[]>(_Guides, StringComparer.Ordinal);
+
+        foreach (var (guide, preludes) in _Guides)
+        {
+            var domain = Path.GetFileNameWithoutExtension(guide);
+            var folder = Path.Combine(AppContext.BaseDirectory, "Docs", domain);
+
+            if (!Directory.Exists(folder))
+            {
+                continue;
+            }
+
+            foreach (var topic in Directory.EnumerateFiles(folder, "*.md").Order(StringComparer.Ordinal))
+            {
+                documents[$"docs/llms/{domain}/{Path.GetFileName(topic)}"] = preludes;
+            }
+        }
+
+        return documents;
+    });
+
     private static readonly Lazy<IReadOnlyDictionary<string, DocExample>> _Examples = new(() =>
-        _Guides
-            .Keys.SelectMany(guide => DocExample.Read(_GuidePath(guide), guide))
+        _Documents
+            .Value.Keys.SelectMany(document => DocExample.Read(_DocumentPath(document), document))
             .ToDictionary(example => example.Id, StringComparer.Ordinal)
     );
 
@@ -39,7 +63,7 @@ public sealed class DocExamplesCompileTests : TestBase
         var block = _Examples.Value[example];
         var preludes = new List<(string Path, string Source)>();
 
-        foreach (var file in _Guides[block.Document])
+        foreach (var file in _Documents.Value[block.Document])
         {
             var path = Path.Combine(AppContext.BaseDirectory, "Preludes", file);
             preludes.Add((path, await File.ReadAllTextAsync(path, AbortToken)));
@@ -54,12 +78,25 @@ public sealed class DocExamplesCompileTests : TestBase
     [Fact]
     public void every_guide_should_have_compiled_examples()
     {
+        // A split guide may keep its examples in topic files, so a domain passes when any of its documents compiles one.
         foreach (var guide in _Guides.Keys)
         {
-            _Examples.Value.Values.Should().Contain(example => example.Document == guide && example.Compiles, guide);
+            var topicPrefix = $"docs/llms/{Path.GetFileNameWithoutExtension(guide)}/";
+
+            _Examples
+                .Value.Values.Should()
+                .Contain(
+                    example =>
+                        (
+                            example.Document == guide
+                            || example.Document.StartsWith(topicPrefix, StringComparison.Ordinal)
+                        ) && example.Compiles,
+                    guide
+                );
         }
     }
 
-    private static string _GuidePath(string guide) =>
-        Path.Combine(AppContext.BaseDirectory, "Docs", Path.GetFileName(guide));
+    // A document id is its path under the repository root; the build copies docs/llms/** to Docs/**.
+    private static string _DocumentPath(string document) =>
+        Path.Combine(AppContext.BaseDirectory, "Docs", document["docs/llms/".Length..]);
 }

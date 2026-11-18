@@ -59,6 +59,10 @@
     <None Include="..\..\docs\llms\messaging.md" Link="Docs\messaging.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\llms\jobs.md" Link="Docs\jobs.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\llms\dashboards.md" Link="Docs\dashboards.md" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Topic files of a split guide compile against the same prelude as its entry file. -->
+    <None Include="..\..\docs\llms\messaging\*.md" Link="Docs\messaging\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\llms\jobs\*.md" Link="Docs\jobs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\llms\dashboards\*.md" Link="Docs\dashboards\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Compile Remove="Preludes\**" />
     <None Include="Preludes\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

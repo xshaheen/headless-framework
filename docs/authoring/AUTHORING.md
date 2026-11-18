@@ -7,7 +7,7 @@ Headless has five documentation surfaces. Each has one job:
 | [`README.md`](../../README.md) | Evaluators and first-time users | Why Headless, first setup, package catalog |
 | [`README.ar.md`](../../README.ar.md) | Arabic-reading evaluators | The Arabic mirror of `README.md` |
 | [`docs/llms/index.md`](../llms/index.md) | Coding agents | Task routing and framework-wide invariants |
-| `docs/llms/<domain>.md` | Coding agents using one domain | Package choice, setup, behavior, constraints, operations |
+| `docs/llms/<domain>.md` | Coding agents using one domain in a consumer app | Package choice, setup, behavior, constraints, operations |
 | `src/Headless.<Package>/README.md` | NuGet visitors | Why this package exists, installation, canonical links |
 
 Do not mirror reference content between surfaces. The domain guide is the canonical consumer contract. Package READMEs point to it; the index routes to it; the root README explains the framework and catalogs packages.
@@ -21,6 +21,33 @@ Contributor notes (domain vocabulary, past fixes, and decisions) are kept outsid
 The catalog summary states the package count. Keep it equal to the catalog rows and to the IDs in [`eng/expected-packages.txt`](../../eng/expected-packages.txt).
 
 ## Domain guides
+
+### Write for an agent in a consumer app
+
+The reader of `docs/llms/` is a coding agent working in an application that references Headless packages. It has the guide, the installed packages, and the application's code. It does not have this repository's source, tests, build scripts, or history, and it does not change the framework.
+
+Every sentence answers one of these questions for that agent:
+
+- **Choose:** which package, provider, or API fits this task, and what each choice costs.
+- **Wire:** what to install, register, configure, and deploy, in order.
+- **Call:** how application code uses the API, with the tempting wrong call named beside the right one.
+- **Observe:** what the application sees at run time: defaults, ordering, retries, exceptions, status codes, health checks, metrics, and deploy-time verbs.
+- **Verify:** how the agent proves the wiring works before it calls the task done.
+- **Test:** how the application's own tests exercise the feature.
+
+Content that answers none of them goes, or moves to contributor docs (the repository `AGENTS.md`). That covers rules for code under `src/`, analyzer and banned-symbol policy, test-harness internals, internal type names, and the history of a change.
+
+**Keep a reason only when it changes a decision.** One clause of why helps the agent handle the case the rule did not foresee: "use `UseRedis`, because `UseInMemory` counts per process and N replicas admit N times the limit". Cut mechanism the consumer cannot act on: which internal tier a call routes through, how a type is laid out inside, or why the framework was built that way. When a mechanism shows up as observable behavior, state the behavior, not the mechanism.
+
+**End every setup recipe with a Verify step.** Name the observable proof that the wiring works: the `check` or `describe` verb's output, a readiness health check that reports the feature, a `resources provision` result, a log line, or an assertion in the application's test. Write it as a bold `**Verify:**` lead-in after the recipe's code. A recipe without an observable proof says so: "**Verify:** no startup signal; the first call fails with `X` when the store is unreachable."
+
+### Apply the writing standard
+
+Write in the Diátaxis mode each section needs, and keep one mode per section: rules and recipes are how-to, configuration tables and behavior lists are reference, and a short concept section is explanation. Address the agent as "you", in the present tense. Write instructions as commands with the condition first. Put one instruction in each sentence. Keep "only" and "not" next to the word they change. Call each thing by one name across every guide, and use the public symbol name, not a paraphrase. Use plain words a developer says out loud. Prefer periods to semicolons and em dashes.
+
+Prune for the agent's context. Delete a sentence that tells a capable model what it does by default. Keep each fact in one place and link to it from the others. Do not restate what the agent reads cheaply in the installed package: a full member list, a dependency list, or an XML doc comment.
+
+### Shape a guide
 
 Every first-party package has exactly one canonical domain guide. A guide starts with:
 
@@ -36,18 +63,26 @@ The `packages` field lists only packages with a `## Headless.*` section in that 
 Order content by the agent's decision path:
 
 1. `# <Domain>` and a factual one-line summary.
-2. `## Orientation`: entry points, package roles, and the default path.
-3. `## Agent Rules`: exact constraints and high-cost footguns.
-4. Concepts, decision tables, recipes, or operational reference needed across packages.
-5. One `## Headless.<Package>` section per owned package.
+2. `## Orientation`: the default path, entry-point abstractions, package roles, and provider choices.
+3. `## Agent Rules`: one exact rule per bullet, each naming the right API and the tempting wrong one, or a constraint that changes the code the agent writes.
+4. Concepts, decision tables, recipes, and operational reference needed across packages.
+5. One `## Headless.<Package>` section per owned package: setup with its Verify step, configuration, and observable behavior.
 
-Use exact public names. Keep examples compilable and version-free. State observable behavior, ordering, failure modes, and provider trade-offs where they change implementation decisions. Omit source-level inventories, direct dependency lists, and facts an agent can read cheaply from a project file.
+Use exact public names. Keep examples compilable and version-free. Keep every `## Headless.<Package>` heading exactly as it is, because package READMEs link to its anchor. When you rename or move another heading, update every link to it in `docs/llms/`, `src/*/README.md`, `README.md`, and `README.ar.md`.
 
-Long guides are acceptable when the domain is intrinsically complex, but keep branches discoverable through descriptive H2/H3 headings. Split a guide only when tasks can load the new file independently through an explicit pointer.
+### Split a guide over 140 KB
+
+A guide larger than about 140 KB costs an agent most of its context before it starts work. Split it into an entry file and topic files:
+
+- `docs/llms/<domain>.md` stays the entry. It holds the frontmatter, the summary, Orientation, Agent Rules, the decision tables, the default setup with its Verify step, and a `## Topics` table.
+- Each topic file is `docs/llms/<domain>/<topic>.md`, named by the task it serves (`retries.md`, `outbox.md`, `providers.md`). It starts with its own frontmatter, listing only the packages whose `## Headless.*` sections it holds, and a one-line summary that links back to the entry.
+- The `## Topics` table has a row per topic file: a **Read when** column worded as the task that triggers it, and the link. An agent reads the entry on every task in the domain and a topic file only when its row matches.
+- Put each fact in one file. A rule every task in the domain needs stays in the entry's Agent Rules, even when a topic file explains it further.
+- Link to a topic file from outside the domain with its path and anchor (`messaging/outbox.md#…`). The index links to the entry only.
 
 ### Compiled examples
 
-`tests/Headless.Docs.Examples.Tests.Unit` compiles every ```` ```csharp ```` block of `docs/llms/messaging.md` and `docs/llms/jobs.md` as part of the unit suite, one test case per block, with the Messaging and Jobs source generators running. A failure names the guide and line, such as `docs/llms/jobs.md:556: CS1026: ) expected`. Run it with `make test-project TEST_PROJECT=tests/Headless.Docs.Examples.Tests.Unit/Headless.Docs.Examples.Tests.Unit.csproj`.
+`tests/Headless.Docs.Examples.Tests.Unit` compiles every ```` ```csharp ```` block of `docs/llms/messaging.md`, `docs/llms/jobs.md`, and `docs/llms/dashboards.md`, and of every topic file under `docs/llms/messaging/`, `docs/llms/jobs/`, and `docs/llms/dashboards/`, as part of the unit suite, one test case per block, with the Messaging and Jobs source generators running. A failure names the guide and line, such as `docs/llms/jobs.md:556: CS1026: ) expected`. Run it with `make test-project TEST_PROJECT=tests/Headless.Docs.Examples.Tests.Unit/Headless.Docs.Examples.Tests.Unit.csproj`.
 
 - **Each block compiles alone.** Blocks never share declarations, so two blocks may declare the same type. Write using directives, assembly attributes, types, class members, and statements in the order a reader needs them; the harness moves statements and loose members into a method and class of their own.
 - **Ambient names need no declaration.** A block may use the host objects and placeholder types its guide's prelude declares: `builder`, `services`, `app`, `configuration`, `provider`, `cancellationToken`/`ct`, plus per-guide names such as `setup` (inside `AddHeadlessMessaging`), `options` (inside `AddHeadlessJobs`), `scheduler`, and application types such as `OrderPlaced` or `AppDbContext`. The preludes live in the test project's `Preludes/` folder; add a name there rather than declaring setup the reader does not need. A block that declares a name itself uses its own.
@@ -109,14 +144,18 @@ dotnet add package Headless.<Package>
 // Minimal compiling registration and representative use.
 ```
 
+**Verify:** <The observable proof the wiring works: `check` or `describe` output, a readiness health check, a `resources provision` result, or a test assertion.>
+
 ### Configuration
 
 <Only options and defaults that affect consumer decisions.>
 
 ### Design and runtime behavior
 
-<Non-obvious guarantees, side effects, failure modes, and operational constraints.>
+<What the application observes: guarantees, side effects, exceptions, status codes, ordering, and operational constraints. A reason only when it changes a decision.>
 ````
+
+A topic file of a split guide uses the same shape without Orientation and Agent Rules, and starts with `> Part of [<Domain>](../<domain>.md). <One-line summary.>`.
 
 ## Package READMEs
 
