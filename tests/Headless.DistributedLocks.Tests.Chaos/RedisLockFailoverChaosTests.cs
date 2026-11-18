@@ -50,12 +50,12 @@ public sealed class RedisLockFailoverChaosTests : TestBase
                 LockChaosScenario.Options(timeUntilExpires: TimeSpan.FromSeconds(5)),
                 seed,
                 FencingContract.RedisFailover,
-                stop =>
+                (ledger, stop) =>
                     LockChaosScenario.RepeatAsync(
                         seed,
                         TimeSpan.FromSeconds(8),
                         TimeSpan.FromSeconds(15),
-                        pair.FailoverAsync,
+                        cancellationToken => pair.FailoverAsync(ledger, cancellationToken),
                         stop
                     ),
                 AbortToken

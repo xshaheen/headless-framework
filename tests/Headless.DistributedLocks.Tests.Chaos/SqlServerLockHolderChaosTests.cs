@@ -59,7 +59,7 @@ public sealed class SqlServerLockHolderChaosTests(SqlServerLockChaosFixture fixt
             LockChaosScenario.Options(),
             seed,
             FencingContract.DurableSequence,
-            stop =>
+            (_, stop) =>
                 LockChaosScenario.RepeatAsync(
                     seed,
                     TimeSpan.FromSeconds(1),

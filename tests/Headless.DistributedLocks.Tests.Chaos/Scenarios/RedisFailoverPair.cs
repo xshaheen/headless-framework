@@ -6,6 +6,7 @@ using DotNet.Testcontainers.Networks;
 using Headless.Testing.Testcontainers;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+using Tests.Oracle;
 using Tests.Toxiproxy;
 
 namespace Tests.Scenarios;
@@ -87,12 +88,14 @@ public sealed class RedisFailoverPair : IAsyncDisposable
 
     /// <summary>
     /// Promotes the replica, moves the route to it while clients may be writing, demotes the old primary, and returns
-    /// once the route answers from the new primary and the old one replicates from it again.
+    /// once the route answers from the new primary and the old one replicates from it again. The failover's span goes to
+    /// <paramref name="ledger"/>, the only window in which the documented contract lets Redis reissue a token.
     /// </summary>
-    public async Task FailoverAsync(CancellationToken cancellationToken)
+    public async Task FailoverAsync(FencingLedger ledger, CancellationToken cancellationToken)
     {
         var old = _primary;
         var next = 1 - old;
+        ledger.FailoverStarted();
 
         await _CliAsync(next, ["REPLICAOF", "NO", "ONE"], cancellationToken).ConfigureAwait(false);
         await Route.DisableAsync(cancellationToken).ConfigureAwait(false);
@@ -102,6 +105,7 @@ public sealed class RedisFailoverPair : IAsyncDisposable
         _primary = next;
 
         await _WaitPrimaryThroughRouteAsync(cancellationToken).ConfigureAwait(false);
+        ledger.FailoverEnded();
         await _WaitReplicaLinkUpAsync(old, cancellationToken).ConfigureAwait(false);
         Failovers++;
     }

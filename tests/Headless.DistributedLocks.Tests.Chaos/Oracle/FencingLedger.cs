@@ -18,6 +18,12 @@ public enum FencingEventKind
 
     /// <summary>The worker stopped holding the lease, whether the release reached the backend or not.</summary>
     Released,
+
+    /// <summary>The harness began a backend failover (logged before it promotes the replica).</summary>
+    FailoverStarted,
+
+    /// <summary>The failover finished: clients reach the promoted primary.</summary>
+    FailoverEnded,
 }
 
 /// <summary>
@@ -104,6 +110,27 @@ public sealed class FencingLedger(TimeProvider clock)
         {
             _holders[resource] = _holders.GetValueOrDefault(resource) - 1;
             _Append(worker, resource, FencingEventKind.Released, token, highWaterMark: 0);
+        }
+    }
+
+    /// <summary>The resource name failover entries carry, since a failover hits every resource.</summary>
+    public const string AllResources = "*";
+
+    /// <summary>Records that the harness is about to fail the backend over.</summary>
+    public void FailoverStarted()
+    {
+        lock (_lock)
+        {
+            _Append("harness", AllResources, FencingEventKind.FailoverStarted, token: 0, highWaterMark: 0);
+        }
+    }
+
+    /// <summary>Records that clients reach the promoted primary.</summary>
+    public void FailoverEnded()
+    {
+        lock (_lock)
+        {
+            _Append("harness", AllResources, FencingEventKind.FailoverEnded, token: 0, highWaterMark: 0);
         }
     }
 

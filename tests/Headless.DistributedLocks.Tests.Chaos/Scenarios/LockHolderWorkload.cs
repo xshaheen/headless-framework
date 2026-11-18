@@ -56,7 +56,7 @@ public sealed class LockHolderWorkload(
     /// </summary>
     public async Task<LockHolderWorkloadCounts> RunAsync(
         LockHolderWorkloadOptions options,
-        Func<CancellationToken, Task> faults,
+        Func<FencingLedger, CancellationToken, Task> faults,
         CancellationToken cancellationToken
     )
     {
@@ -67,7 +67,7 @@ public sealed class LockHolderWorkload(
             .Range(0, options.Workers)
             .Select(index => _WorkAsync(index, options, stop.Token))
             .ToList();
-        var faulting = _IgnoreStopAsync(faults(stop.Token), stop.Token);
+        var faulting = _IgnoreStopAsync(faults(ledger, stop.Token), stop.Token);
 
         await Task.WhenAll([.. workers, faulting]).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
