@@ -115,6 +115,7 @@ public abstract class ClusterScenariosBase(ClusterStoreFixture store) : TestBase
         [
             .. judgement.Verdict.Violations,
             .. fence.Violations(judgement.Ledger.Attempts, judgement.Ledger.Specs, cluster.LeaseSamples()),
+            .. _InputViolations(cluster, judgement.Ledger),
         ];
         _AddIf(violations, !recovered, $"the cluster did not settle within {_Recovery}");
 
@@ -281,7 +282,7 @@ public abstract class ClusterScenariosBase(ClusterStoreFixture store) : TestBase
         var judgement = await cluster.JudgeAsync(AbortToken);
         var injected = await faults;
         var enqueued = await enqueue;
-        List<string> violations = [.. judgement.Verdict.Violations];
+        List<string> violations = [.. judgement.Verdict.Violations, .. _InputViolations(cluster, judgement.Ledger)];
         _AddIf(violations, !recovered, $"the cluster did not settle within {_Recovery} of the last fault");
 
         _Report(
@@ -295,6 +296,41 @@ public abstract class ClusterScenariosBase(ClusterStoreFixture store) : TestBase
             output
         );
         violations.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The oracles judge only what the run recorded, so a run that recorded too little passes them having exercised
+    /// nothing: an enqueue the control host failed is a job no oracle ever sees, and a failed store sample is a gap
+    /// the orphan bound cannot see across. The control host reaches the store directly, so both are harness faults.
+    /// </summary>
+    private static IEnumerable<string> _InputViolations(JobsCluster cluster, LedgerSnapshot ledger)
+    {
+        // A missed sample widens the orphan bound by one period; past this share the bound no longer means anything.
+        const double maxSampleFailureShare = 0.1;
+
+        if (ledger.Specs.Count == 0)
+        {
+            yield return "no job was enqueued, so the run exercised nothing";
+        }
+
+        if (cluster.CountEnqueueFailures() is > 0 and var enqueueFailures)
+        {
+            yield return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{enqueueFailures} enqueue(s) through the control host failed, so their jobs were never judged"
+            );
+        }
+
+        var sampleFailures = cluster.CountSampleFailures();
+        var sampleAttempts = sampleFailures + cluster.Tracker.Samples;
+
+        if (sampleAttempts == 0 || sampleFailures > sampleAttempts * maxSampleFailureShare)
+        {
+            yield return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{sampleFailures} of {sampleAttempts} store sample(s) failed, so the orphan bound was not observed"
+            );
+        }
     }
 
     private static string _Health(JobsCluster cluster) =>

@@ -228,7 +228,7 @@ public abstract class FallbackSweepScaleTests<TFixture>(TFixture fixture) : Test
 
         if (knownScans.Count > 0)
         {
-            // skip: quarantine #TBD — only scans KnownDefects names remain; any other violation failed above
+            // quarantine: #1750 only the scans KnownDefects names remain; any other violation failed above
             Assert.Skip($"Quarantined known defect: {string.Join("; ", knownScans)}");
         }
     }

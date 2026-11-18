@@ -21,7 +21,8 @@ namespace Tests.Scheduling;
 /// "Misfire recovery": when more than one instant is pending at a wake (a schedule shorter than the wake latency does
 /// this legitimately), <c>Coalesce</c>, the default, runs once for the whole backlog and reports the first missed instant
 /// as its <c>ScheduledFor</c>. The later instants of that backlog are accounted for without a run of their own, so a
-/// missing instant is excused only when the nearest earlier run is such a recovery run. "Overlap policy": the scenario
+/// missing instant is excused only when the nearest earlier run is such a recovery run and a later regular run shows the
+/// schedule resumed. "Overlap policy": the scenario
 /// keeps the default <c>Allow</c>, so an unfinished earlier run never turns an instant into a skip.
 /// </para>
 /// </remarks>
@@ -63,7 +64,11 @@ public sealed record CronInstantVerdict(
 
             var previous = ordered.LastOrDefault(fire => fire.ScheduledFor < instant);
 
-            if (previous is { IsRecoveryRun: true })
+            // A coalesced backlog ends when the schedule fires on time again; an instant after a recovery run that no
+            // later regular run follows is not backlog but a schedule that stopped firing, so it stays missing.
+            var resumedAfter = ordered.Exists(fire => fire.ScheduledFor > instant && !fire.IsRecoveryRun);
+
+            if (previous is { IsRecoveryRun: true } && resumedAfter)
             {
                 excused.Add(instant);
             }

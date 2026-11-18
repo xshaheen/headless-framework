@@ -65,6 +65,20 @@ public sealed class CronOracleTests : TestBase
     }
 
     [Fact]
+    public void should_catch_instants_after_a_recovery_run_when_the_schedule_never_fires_again()
+    {
+        // A recovery run at instant 1 and then silence: instants 2..4 are a stopped schedule, not a coalesced backlog.
+        var owed = _Owed(5);
+        List<CronFire> fires = [new("f", owed[0], "node-0"), new("f", owed[1], "node-1", RecoveredFromUtc: owed[1])];
+
+        var verdict = CronInstantVerdict.Evaluate(owed, _OnSchedule, fires);
+
+        verdict.Missing.Should().Equal(owed[2], owed[3], owed[4]);
+        verdict.Excused.Should().BeEmpty();
+        verdict.Violations().Should().ContainSingle(x => x.Contains("never fired", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void should_catch_a_fire_at_an_instant_the_schedule_does_not_place()
     {
         var owed = _Owed(3);
