@@ -297,7 +297,7 @@ public sealed class VideoProcessor(ITusUploads uploads, ICurrentTenant currentTe
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `MaxSize` | none (required) | The largest upload, in bytes. Must be positive. Also the request body limit of the endpoint. |
+| `MaxSize` | none (required) | The largest upload, in bytes. Must be positive. Also the request body limit of the endpoint. Read on every request: after you lower it, a write to an upload whose length is above the new limit gets `413`. |
 | `Expiration` | 24 hours | How long an incomplete upload stays resumable after its last write (sliding). Past it the upload answers `404` and the cleanup removes it. Must be positive. A store without expiration support ignores it. |
 | `AllowedContentTypes` | empty (every type) | Content types an upload may declare, such as `image/png`. An entry turns on the type rule and the first-bytes check. |
 | `AllowedFileExtensions` | empty (every extension) | File name extensions an upload may declare, such as `png`, with or without the dot. An entry turns on the extension rule and the first-bytes check. |
@@ -428,7 +428,7 @@ Every refusal is a tus response with a plain-text body and `Tus-Resumable`. A re
 | `403` | No owner key and the caller is signed in; tenant scoping with no tenant or an invalid tenant id on create; a client `DELETE` of a finished upload. |
 | `404` | Unknown file id; another endpoint's, owner's, or tenant's upload; no stamp; an expired upload; `Upload-Concat`. |
 | `408` | The first write's first bytes stopped arriving before `ClientReadTimeout`. |
-| `413` | The declared length, or the bytes that arrive, exceed `MaxSize`. |
+| `413` | The declared length, or the bytes that arrive, exceed `MaxSize`; a write to an upload longer than a `MaxSize` lowered since it was created. |
 | `415` | The declared type or extension is missing or not allowed; the first bytes are not an allowed or declared format. |
 | `423` | Another request holds the upload's lock; the store failed while a status request was authorized. |
 | `503` | The store failed while a write or delete was authorized. |
