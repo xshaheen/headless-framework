@@ -58,6 +58,8 @@ public sealed class PostgreSqlFallbackSweepScaleTests(StoreChaosPostgreSqlFixtur
     // gated child is a candidate, each claim reads every finished row (90,001 at the smoke size) to admit it
     protected override IReadOnlyList<string> KnownDefects { get; } = ["Seq Scan on time_jobs gate_parent"];
 
+    protected override string QuarantineIssue => "#1750";
+
     protected override async Task AnalyzeAsync(DbConnection connection, CancellationToken ct)
     {
         await using var command = connection.CreateCommand();

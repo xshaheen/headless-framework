@@ -25,24 +25,45 @@ public static class ChaosReport
     /// <param name="counts">The counts the scenario measured, in one line.</param>
     /// <param name="evidence">On a failure, the log slice or rows that broke the oracle.</param>
     /// <param name="output">The test's output sink; the summary line and the evidence also go there.</param>
+    /// <param name="negativeControl">
+    /// Whether the run sabotaged the stack on purpose, so the oracle must report violations: the row then reads
+    /// <c>pass</c> when it did and <c>FAIL</c> when the sabotage slipped through, and the summary never shows a red row
+    /// for a control that worked.
+    /// </param>
+    /// <param name="quarantinedBy">
+    /// The issue a known defect is quarantined against, when every violation is that defect's: the row reads
+    /// <c>quarantined</c> instead of <c>FAIL</c>, and its evidence still goes to <c>failures.md</c>.
+    /// </param>
     public static void Record(
         string store,
         string scenario,
         IReadOnlyList<string> violations,
         string counts,
         string? evidence,
-        Action<string>? output
+        Action<string>? output,
+        bool negativeControl = false,
+        string? quarantinedBy = null
     )
     {
         var settings = ChaosRunSettings.Current;
-        var result = violations.Count == 0 ? "pass" : "FAIL: " + string.Join("; ", violations);
+        var caught = string.Join("; ", violations);
+        var (result, failed) = (negativeControl, violations.Count, quarantinedBy) switch
+        {
+            (true, 0, _) => ("FAIL: the sabotage was not caught", true),
+            (true, _, _) => ("pass (control caught: " + caught + ")", false),
+            (false, 0, _) => ("pass", false),
+            (false, _, { Length: > 0 } issue) => ($"quarantined {issue}: {caught}", true),
+            _ => ("FAIL: " + caught, true),
+        };
         var line = $"| {store} | {scenario} | {_Escape(settings.ToString())} | {_Escape(result)} | {_Escape(counts)} |";
 
         output?.Invoke(line);
 
-        if (violations.Count > 0 && evidence is { Length: > 0 })
+        var withEvidence = failed && evidence is { Length: > 0 };
+
+        if (withEvidence)
         {
-            output?.Invoke(evidence);
+            output?.Invoke(evidence!);
         }
 
         if (Environment.GetEnvironmentVariable(ChaosRunSettings.SummaryDirectoryVariable) is not { Length: > 0 } dir)
@@ -62,7 +83,7 @@ public static class ChaosReport
 
             File.AppendAllText(summary, line + Environment.NewLine);
 
-            if (violations.Count > 0 && evidence is { Length: > 0 })
+            if (withEvidence)
             {
                 File.AppendAllText(
                     Path.Combine(dir, "failures.md"),

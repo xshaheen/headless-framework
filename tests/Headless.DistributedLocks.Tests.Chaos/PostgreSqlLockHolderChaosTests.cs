@@ -95,7 +95,13 @@ public sealed class PostgreSqlLockHolderChaosTests(PostgreSqlLockChaosFixture fi
         );
 
         // then
-        var violations = result.Report(_Store, "S7 negative control: reused token", seed, killer.ToString());
+        var violations = result.Report(
+            _Store,
+            "S7 negative control: reused token",
+            seed,
+            killer.ToString(),
+            negativeControl: true
+        );
         sabotaged.Sum(item => item.Sabotaged).Should().BePositive();
         violations.Should().Contain(violation => violation.StartsWith(FencingVerdict.IssuerRuleName + ":"));
     }

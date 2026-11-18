@@ -22,7 +22,13 @@ public sealed record LockChaosResult(
     /// contract only reports go to the test output and to <c>observations.md</c> beside the summary, with their log
     /// slice, so a pass still carries the evidence.
     /// </summary>
-    public IReadOnlyList<string> Report(string store, string scenario, int seed, string faults)
+    public IReadOnlyList<string> Report(
+        string store,
+        string scenario,
+        int seed,
+        string faults,
+        bool negativeControl = false
+    )
     {
         List<string> violations = [.. Verdict.Violations];
 
@@ -40,7 +46,8 @@ public sealed record LockChaosResult(
                 $"scenario seed {seed}; issuer rule {Contract.Issuer} ({Contract.Name}); {Verdict.Describe(Ledger)}; {Counts}; {faults}; wall {Elapsed.TotalSeconds:F0}s"
             ),
             Verdict.Evidence,
-            line => TestContext.Current.TestOutputHelper?.WriteLine(line)
+            line => TestContext.Current.TestOutputHelper?.WriteLine(line),
+            negativeControl
         );
 
         if (Verdict.Observations.Count > 0)

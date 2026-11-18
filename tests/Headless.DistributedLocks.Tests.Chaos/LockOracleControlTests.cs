@@ -57,7 +57,13 @@ public sealed class LockOracleControlTests : TestBase
         );
 
         // then
-        var violations = result.Report("InMemory", "S7 negative control: reused token", 7, "sabotaged grants");
+        var violations = result.Report(
+            "InMemory",
+            "S7 negative control: reused token",
+            7,
+            "sabotaged grants",
+            negativeControl: true
+        );
         sabotaged.Sabotaged.Should().BePositive();
         violations.Should().Contain(violation => violation.StartsWith(FencingVerdict.IssuerRuleName + ":"));
         violations.Should().NotContain(violation => violation.StartsWith(FencingVerdict.StoreSelfCheck + ":"));

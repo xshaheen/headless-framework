@@ -208,6 +208,9 @@ public abstract class FallbackSweepScaleTests<TFixture>(TFixture fixture) : Test
             violations.Add("the capture recorded no plan that reads a jobs table, so the scenario judged nothing");
         }
 
+        var knownScans = violations.Where(v => KnownDefects.Any(d => v.Contains(d, StringComparison.Ordinal))).ToList();
+        var onlyKnown = violations.Count > 0 && knownScans.Count == violations.Count;
+
         ChaosReport.Record(
             fixture.Store,
             _Scenario,
@@ -220,10 +223,10 @@ public abstract class FallbackSweepScaleTests<TFixture>(TFixture fixture) : Test
                 "\n\n",
                 judged.Where(plan => FindScans(plan).Count > 0).Select(plan => $"{plan.QueryText}\n{plan.Plan}")
             ),
-            line => output?.WriteLine(line)
+            line => output?.WriteLine(line),
+            quarantinedBy: onlyKnown ? QuarantineIssue : null
         );
 
-        var knownScans = violations.Where(v => KnownDefects.Any(d => v.Contains(d, StringComparison.Ordinal))).ToList();
         violations.Except(knownScans, StringComparer.Ordinal).Should().BeEmpty();
 
         if (knownScans.Count > 0)
@@ -238,6 +241,9 @@ public abstract class FallbackSweepScaleTests<TFixture>(TFixture fixture) : Test
     /// any other violation and skips, visibly, while only these remain.
     /// </summary>
     protected virtual IReadOnlyList<string> KnownDefects => [];
+
+    /// <summary>The issue that tracks <see cref="KnownDefects"/>, which the run summary names on a quarantined row.</summary>
+    protected virtual string? QuarantineIssue => null;
 
     // Null once every due row ran and no row is still held by the ghost owner; otherwise what is still pending.
     private async Task<string?> _WaitAsync(List<Guid> due, List<Guid> orphaned, CancellationToken ct)
