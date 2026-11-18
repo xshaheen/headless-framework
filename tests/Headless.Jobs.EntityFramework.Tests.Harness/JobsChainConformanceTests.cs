@@ -1902,7 +1902,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     /// returns nothing until the node holds a stamp owner, and it drops a row once its execution time is more than one
     /// second behind the clock, handing it to the fallback sweep. A root seeded at "now + 1 s" therefore ages out of
     /// the peek two seconds after the seed, which a loaded run spends on membership warm-up or on the steps between seed
-    /// and peek. So the peek waits for the stamp owner, then re-arms the root's execution time just before it reads.
+    /// and peek. So the peek waits for the stamp owner, then makes the root due now just before it reads.
     /// UpdatedAt stays untouched, so two snapshots peeked for a race still carry the same optimistic gate value, and the
     /// time-job claims gate on UpdatedAt, never on the execution time.
     /// </summary>
@@ -1911,7 +1911,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await JobsCoordinationFixtureExtensions.WaitForStampOwnerAsync(host, ct);
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-        // The re-armed root stays in the window for two seconds. A pause that long between the re-arm and the peek
+        // The re-armed root stays in the window for one second. A pause that long between the re-arm and the peek
         // (a stalled thread pool or database under load) re-arms it again; a peek that keeps missing a root it was just
         // handed is a defect, so the attempts are counted, not timed.
         const int attempts = 3;
@@ -1941,10 +1941,12 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         await using var connection = fixture.CreateConnection();
         await connection.OpenAsync(ct);
         await using var command = connection.CreateCommand();
-        // The store's clock, not this process's: the claim's due check compares against the store, and a database
-        // container whose clock lags the host would otherwise see a root armed by the host clock as not yet due.
+        // Due now on the store's clock, not this process's: the claim's due check compares against the store, so a
+        // database container whose clock lags the host would see a root armed by the host clock as not yet due. Not
+        // "now + 1 s" either: SQL Server's claim reads GETUTCDATE(), rounded to about 3 ms, so a claim a millisecond
+        // after the arm could see that as not yet due too. The claim's one-second due slack absorbs the rounding.
         command.CommandText = fixture.Sql(
-            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = {fixture.UtcNowOffsetSqlExpression(1)} WHERE \"Id\" = @id;"
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = {fixture.UtcNowSqlExpression} WHERE \"Id\" = @id;"
         );
         JobsCoordinationFixtureExtensions.AddParameter(command, "@id", rootId);
         (await command.ExecuteNonQueryAsync(ct)).Should().Be(1, "the root to peek must exist");
