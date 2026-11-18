@@ -62,6 +62,13 @@ public static class SetupDistributedLocks
 
         services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(_ => { });
 
+        // Environments sharing one lock store keep their resources, and the release channel built from the same
+        // prefix, apart. The PostgreSQL and SQL Server providers build names from their own options' key prefix,
+        // and their locks are scoped to their database, which already keeps environments apart.
+        services.ApplyHeadlessPrefix<DistributedLockOptions>(
+            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
+        );
+
         foreach (var extension in setup.Extensions)
         {
             extension.AddServices(services);

@@ -16,6 +16,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 ## Agent Rules
 
 - Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`; do not inject Redis storage types into application services.
+- Environments that share one Redis set a host-wide `Headless:Prefix`; it goes in front of `DistributedLockOptions.KeyPrefix`, so a lock on `orders` uses `wt1:distributed-lock:orders` and the Redis release channel becomes `wt1:distributed-lock:released`. The PostgreSQL and SQL Server providers and the static `SqlServerDistributedLock` helpers do not take it: their locks are scoped to their database, which already isolates environments. See [Isolation prefix](utilities.md#isolation-prefix).
 - Use `Headless.DistributedLocks.InMemory` only for tests, local development, or deliberately single-instance apps. It is not a cross-process lock.
 - The PostgreSQL and SQL Server fence sequences are created at host startup by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), never on first acquire. Code that builds a service provider without starting a host (a console tool, a test) must call `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()` before its first fenced acquire.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
