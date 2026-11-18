@@ -167,7 +167,9 @@ public sealed class SqliteSchemaDialect : ISchemaDialect
     /// </remarks>
     public string HistoryTableExistsSql(string schema)
     {
-        return $"SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = '{HistoryTableName(schema)}';";
+        // NOCASE, because SQLite resolves table names without regard to ASCII case and the catalog stores the name as
+        // the creating statement spelled it.
+        return $"SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = '{HistoryTableName(schema)}' COLLATE NOCASE;";
     }
 
     /// <inheritdoc />

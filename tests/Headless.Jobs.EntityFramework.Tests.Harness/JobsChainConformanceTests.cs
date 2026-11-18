@@ -1898,38 +1898,56 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
-    /// Peeks <paramref name="host" />'s main candidate window once and returns the snapshot holding the root. The peek
+    /// Peeks <paramref name="host" />'s main candidate window and returns the snapshot holding the root. The peek
     /// returns nothing until the node holds a stamp owner, and it drops a row once its execution time is more than one
     /// second behind the clock, handing it to the fallback sweep. A root seeded at "now + 1 s" therefore ages out of
     /// the peek two seconds after the seed, which a loaded run spends on membership warm-up or on the steps between seed
     /// and peek. So the peek waits for the stamp owner, then re-arms the root's execution time just before it reads.
-    /// UpdatedAt stays untouched, so two snapshots peeked for a race still carry the same optimistic gate value.
+    /// UpdatedAt stays untouched, so two snapshots peeked for a race still carry the same optimistic gate value, and the
+    /// time-job claims gate on UpdatedAt, never on the execution time.
     /// </summary>
     private async Task<TimeJobEntity[]> _PeekRootAsync(IHost host, Guid rootId, CancellationToken ct)
     {
         await JobsCoordinationFixtureExtensions.WaitForStampOwnerAsync(host, ct);
-
-        await using (var connection = fixture.CreateConnection())
-        {
-            await connection.OpenAsync(ct);
-            await using var command = connection.CreateCommand();
-            command.CommandText = fixture.Sql(
-                $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = @executionTime WHERE \"Id\" = @id;"
-            );
-            // wall-clock: the peek window is bounded by the real clock (store and node), so the re-armed time must be too.
-            JobsCoordinationFixtureExtensions.AddParameter(command, "@executionTime", DateTime.UtcNow.AddSeconds(1));
-            JobsCoordinationFixtureExtensions.AddParameter(command, "@id", rootId);
-            (await command.ExecuteNonQueryAsync(ct)).Should().Be(1, "the root to peek must exist");
-        }
-
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-        var candidates = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
 
-        return Array.Exists(candidates, x => x.Id == rootId)
-            ? candidates
-            : throw new InvalidOperationException(
-                $"Chain root {rootId} is not a claim candidate although the node holds a stamp owner and the root is due."
-            );
+        // The re-armed root stays in the window for two seconds. A pause that long between the re-arm and the peek
+        // (a stalled thread pool or database under load) re-arms it again; a peek that keeps missing a root it was just
+        // handed is a defect, so the attempts are counted, not timed.
+        const int attempts = 3;
+
+        for (var attempt = 1; ; attempt++)
+        {
+            await _ArmRootAsync(rootId, ct);
+            var candidates = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
+
+            if (Array.Exists(candidates, x => x.Id == rootId))
+            {
+                return candidates;
+            }
+
+            if (attempt == attempts)
+            {
+                throw new InvalidOperationException(
+                    $"Chain root {rootId} is not a claim candidate after {attempts} peeks, each just after the root was "
+                        + "made due, although the node holds a stamp owner."
+                );
+            }
+        }
+    }
+
+    private async Task _ArmRootAsync(Guid rootId, CancellationToken ct)
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        // The store's clock, not this process's: the claim's due check compares against the store, and a database
+        // container whose clock lags the host would otherwise see a root armed by the host clock as not yet due.
+        command.CommandText = fixture.Sql(
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = {fixture.UtcNowOffsetSqlExpression(1)} WHERE \"Id\" = @id;"
+        );
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", rootId);
+        (await command.ExecuteNonQueryAsync(ct)).Should().Be(1, "the root to peek must exist");
     }
 
     /// <summary>Claims the chain root through the native claim path (root -> Queued), returning the claimed root.</summary>
