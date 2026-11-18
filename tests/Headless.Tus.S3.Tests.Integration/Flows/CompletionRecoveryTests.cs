@@ -24,7 +24,7 @@ public abstract class CompletionRecoveryTestsBase(IS3TestBackend backend) : Test
 
     private readonly TusS3StoreOptions _options = new()
     {
-        Bucket = TusS3StoreFactory.Bucket,
+        Bucket = backend.Bucket,
         Prefix = $"completion-{Guid.NewGuid():N}/",
         PartSize = 5 * _MiB,
     };
@@ -61,6 +61,18 @@ public abstract class CompletionRecoveryTestsBase(IS3TestBackend backend) : Test
         _host.Dispose();
         _client.Dispose();
         await base.DisposeAsyncCore();
+    }
+
+    /// <summary>
+    /// Asserts how storage refused the losing finisher's state write. The loser's view is stale either because the
+    /// winner rewrote the state (412 <c>PreconditionFailed</c>), because the winner already deleted it on completion
+    /// (404 <c>NoSuchKey</c> on AWS and compatible servers), or because the winner's write was still in flight (409
+    /// <c>ConditionalRequestConflict</c> on AWS); which one depends on timing, so the default accepts every shape the
+    /// store treats as stale. A provider that answers all three cases one way pins that answer.
+    /// </summary>
+    protected virtual void ShouldBeStaleWrite(AmazonS3Exception exception)
+    {
+        TusS3StateStore.IsStaleWrite(exception).Should().BeTrue();
     }
 
     public virtual async Task should_write_an_upload_below_one_part_as_one_object_and_remove_its_working_set()
@@ -241,7 +253,7 @@ public abstract class CompletionRecoveryTestsBase(IS3TestBackend backend) : Test
         // then - the loser's write is stale, which tusdotnet answers with a retryable 500
         var act = async () => await loserTask;
         var failure = (await act.Should().ThrowAsync<AmazonS3Exception>()).Which;
-        TusS3StateStore.IsStaleWrite(failure).Should().BeTrue();
+        ShouldBeStaleWrite(failure);
 
         // and the finished object holds the winner's bytes
         var winner = winnerTask == firstAppend ? first : second;
@@ -278,7 +290,7 @@ public abstract class CompletionRecoveryTestsBase(IS3TestBackend backend) : Test
         // then - one finished the upload and the other failed on a stale write, so only one complete was sent
         outcomes.Count(o => o.Appended is not null).Should().Be(1);
         var loser = outcomes.Single(o => o.Error is not null).Error;
-        TusS3StateStore.IsStaleWrite(loser.Should().BeOfType<AmazonS3Exception>().Subject).Should().BeTrue();
+        ShouldBeStaleWrite(loser.Should().BeOfType<AmazonS3Exception>().Subject);
         _client.Gate.Count(S3Operation.CompleteMultipartUpload).Should().Be(1);
 
         var winner = outcomes[0].Appended is not null ? first : second;
@@ -567,6 +579,67 @@ public sealed class MinioCompletionRecoveryTests(TusS3MinioFixture fixture) : Co
 public sealed class LocalStackCompletionRecoveryTests(TusS3LocalStackFixture fixture)
     : CompletionRecoveryTestsBase(fixture)
 {
+    [Fact]
+    public override Task should_write_an_upload_below_one_part_as_one_object_and_remove_its_working_set() =>
+        base.should_write_an_upload_below_one_part_as_one_object_and_remove_its_working_set();
+
+    [Fact]
+    public override Task should_assemble_a_multipart_upload_from_equal_parts_and_a_shorter_last_one() =>
+        base.should_assemble_a_multipart_upload_from_equal_parts_and_a_shorter_last_one();
+
+    [Fact]
+    public override Task should_finish_on_the_resent_final_patch_after_complete_failed() =>
+        base.should_finish_on_the_resent_final_patch_after_complete_failed();
+
+    [Fact]
+    public override Task should_finish_on_a_redeclared_length_after_completing_from_a_declared_length_failed() =>
+        base.should_finish_on_a_redeclared_length_after_completing_from_a_declared_length_failed();
+
+    [Fact]
+    public override Task should_complete_a_deferred_upload_whose_fourth_patch_declares_the_length() =>
+        base.should_complete_a_deferred_upload_whose_fourth_patch_declares_the_length();
+
+    [Fact]
+    public override Task should_let_one_of_two_finishers_win_the_completing_write() =>
+        base.should_let_one_of_two_finishers_win_the_completing_write();
+
+    [Fact]
+    public override Task should_complete_the_multipart_upload_once_when_two_finishers_race() =>
+        base.should_complete_the_multipart_upload_once_when_two_finishers_race();
+
+    [Fact]
+    public override Task should_treat_a_missing_multipart_upload_as_done_when_the_finished_object_is_whole() =>
+        base.should_treat_a_missing_multipart_upload_as_done_when_the_finished_object_is_whole();
+
+    [Fact]
+    public override Task should_report_the_upload_gone_when_its_multipart_upload_was_aborted_out_of_band() =>
+        base.should_report_the_upload_gone_when_its_multipart_upload_was_aborted_out_of_band();
+
+    [Fact]
+    public override Task should_report_the_upload_gone_when_complete_rejects_a_recorded_part() =>
+        base.should_report_the_upload_gone_when_complete_rejects_a_recorded_part();
+
+    [Fact]
+    public override Task should_read_a_completed_upload_and_only_the_metadata_of_an_incomplete_one() =>
+        base.should_read_a_completed_upload_and_only_the_metadata_of_an_incomplete_one();
+
+    [Fact]
+    public override Task should_read_an_empty_file_when_a_zero_byte_upload_completes() =>
+        base.should_read_an_empty_file_when_a_zero_byte_upload_completes();
+}
+
+// Cloudflare R2 through a gated client; skips without R2 credentials.
+[Collection<TusS3R2Fixture>]
+public sealed class R2CompletionRecoveryTests(TusS3R2Fixture fixture) : CompletionRecoveryTestsBase(fixture)
+{
+    // R2 evaluates conditional writes atomically and answers a failed one with 412, whether the key changed or is
+    // gone (the capability probe pins the missing-key case); a 404 or 409 here would mean R2 changed how it fences.
+    protected override void ShouldBeStaleWrite(AmazonS3Exception exception)
+    {
+        exception.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+        exception.ErrorCode.Should().Be("PreconditionFailed");
+    }
+
     [Fact]
     public override Task should_write_an_upload_below_one_part_as_one_object_and_remove_its_working_set() =>
         base.should_write_an_upload_below_one_part_as_one_object_and_remove_its_working_set();
