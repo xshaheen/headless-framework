@@ -168,6 +168,49 @@ public sealed class CoordinationSetupBuilderTests
     }
 
     [Fact]
+    public void should_report_the_membership_heartbeat_disabled_when_the_setup_disables_it()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessCoordination(setup =>
+            setup.DisableMembershipHeartbeat().RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
+
+        // then
+        services.IsMembershipHeartbeatDisabled().Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_not_report_the_membership_heartbeat_disabled_when_the_setup_keeps_it()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
+
+        // then
+        services.IsMembershipHeartbeatDisabled().Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_not_report_the_membership_heartbeat_disabled_when_coordination_is_not_registered()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddSingleton<INodeMembership, NullNodeMembership>();
+
+        // then
+        services.IsMembershipHeartbeatDisabled().Should().BeFalse();
+    }
+
+    [Fact]
     public void should_default_the_storage_schema_to_the_shared_headless_schema()
     {
         new CoordinationStorageOptions().Schema.Should().Be("headless");
