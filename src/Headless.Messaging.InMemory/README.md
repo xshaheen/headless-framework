@@ -15,4 +15,4 @@ dotnet add package Headless.Messaging.InMemory
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessaginginmemory)
+- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging/transports.md#headlessmessaginginmemory)

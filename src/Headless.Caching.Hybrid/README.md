@@ -15,4 +15,4 @@ dotnet add package Headless.Caching.Hybrid
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Caching guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching.md#headlesscachinghybrid)
+- [Caching guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching/hybrid.md#headlesscachinghybrid)

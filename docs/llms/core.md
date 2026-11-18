@@ -5,156 +5,120 @@ packages: Checks, Domain, Domain.EventDispatcher
 
 # Core
 
-> Guard clauses, DDD building blocks, and domain messaging for the Headless framework.
+> Guard clauses, DDD building blocks (entities, aggregates, value objects, auditing), and in-process domain events.
 
 ## Orientation
 
-- **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
-- **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use plain payloads through `IDomainEventEmitter`; integration (distributed) events use plain payloads through `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
-- **`Headless.Domain.EventDispatcher`** — DI-based `IDomainEventDispatcher` for in-process domain event dispatch. Register with `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Namespace: `Headless.Domain`.
-- The ambient-context contracts and services (`ICurrentUser`, `ICurrentLocale`, `ICurrentPrincipalAccessor`, host identity, ...) ship as `Headless.Context.Abstractions` / `Headless.Context`; see [context.md](context.md).
+- **`Headless.Checks`**: guard clauses. `Argument` validates method arguments and throws the BCL argument exceptions. `Ensure` asserts object state and throws `InvalidOperationException` or `ObjectDisposedException`.
+- **`Headless.Domain`**: DDD base types and contracts: `Entity<TId>`, `AggregateRoot<TId>`, `ValueObject<TSelf>`, the audit interfaces and audited bases, `IHasConcurrencyStamp`, `IMultiTenant`, and the event contracts. An aggregate raises in-process domain events through `AddDomainEvent` and distributed integration events through `AddIntegrationEvent`. The package registers nothing and dispatches nothing.
+- **`Headless.Domain.EventDispatcher`**: the DI-backed `IDomainEventDispatcher`. Register it with `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<TPayload>`.
+- **Who dispatches events.** With `HeadlessDbContext`, `.AddDomainEvents()` dispatches domain events inside the save transaction, and `.AddIntegrationEventOutbox()` (`Headless.EntityFramework.Messaging`) writes integration events to the outbox. See [ORM](orm.md#headlessentityframework).
+- Strongly typed IDs (`UserId`, `AccountId`) and result types (`ApiResult`, `Result<TValue, TError>`) ship in `Headless.Primitives`; see [extensions.md](extensions.md#headlessprimitives). The ambient-context contracts (`ICurrentUser`, `ICurrentLocale`, host identity) ship in `Headless.Context.Abstractions`; see [context.md](context.md).
 
 ## Agent Rules
 
-- Use `Headless.Checks` (`Argument.IsNotNull`, `Argument.IsNotNullOrEmpty`, `Argument.IsPositive`, etc.) for argument validation instead of raw `ArgumentNullException` or `ArgumentOutOfRangeException`. Use `Ensure` for internal state assertions.
-- Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject<TSelf>` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
-- Name framework-owned event timestamps with an `At` suffix (`CreatedAt`, `UpdatedAt`, `DeletedAt`, `PublishedAt`) and use an `On` suffix only for `DateOnly` values (`EffectiveOn`). Avoid `DateCreated`-style prefixes; persisted instants and public timestamp contracts use `DateTimeOffset`. Preserve provider-owned CLR members, JSON fields, and protocol keys exactly as defined by the third party; the framework convention does not rename contracts it does not own.
-- When a value arrives from an external SDK with an untrustworthy `DateTime.Kind` (AWS S3 returns `Unspecified`), normalize with `NormalizeToUtc()` from `Headless.Extensions` before converting to `DateTimeOffset` — `new DateTimeOffset(DateTime)` applies the *host's* offset to an `Unspecified` value.
-- Use `ApiResult<T>` / `ApiResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures. Use `Result<TValue, TError>` when you need custom error types.
-- For local (in-process) domain events, register `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit integration payloads via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
-- For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
-- Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`) are marker interfaces — the ORM layer fills the properties automatically. Inherit an audited base instead of re-declaring the properties: `Audited*` for create and update, `SoftDeletable*` to add soft delete. When implementing the interfaces by hand, give each property a `private` or `protected` setter: the ORM writes non-public setters, but a `private` setter declared on a base class is invisible to it, so a hand-written base class needs `protected`.
-- Soft delete is the only lifecycle state the framework audits and filters. Model other states, such as suspension or blocking, as your own entity properties and filter them with explicit query predicates.
+- Inherit `Entity<TId>` for entities, `AggregateRoot<TId>` for aggregate roots, and `ValueObject<TSelf>` for value objects.
+- Raise events from the aggregate's own methods: `AddDomainEvent(payload)` for in-process handlers, `AddIntegrationEvent(payload)` for other services. Both are `protected`, so code outside the aggregate cannot raise them.
+- Treat an event payload as immutable after you raise it. The framework does not copy it.
+- To dispatch a domain event yourself, capture it first: `dispatcher.DispatchAsync(EventContext.Capture(payload), ct)`. `IDomainEventDispatcher` has no synchronous `Publish` and no overload that takes a bare payload.
+- Inherit an audited base (`AuditedEntity`, `AuditedAggregateRoot`, `SoftDeletableEntity`, `SoftDeletableAggregateRoot`) instead of re-declaring the audit properties. When you implement the audit interfaces by hand, give each property a `private` setter on the entity class itself, or a `protected` setter on a base class you write: the save pipeline cannot see a `private` setter declared on a base class.
+- Soft delete is the only lifecycle state the framework audits and filters. Model other states, such as suspension or blocking, as your own properties and filter them with explicit query predicates.
+- Read `IsDeleted` for the current deletion state, not `DeletedAt` or `RestoredAt`: each pair keeps the most recent transition of its kind.
 
 ---
 
 ## Headless.Checks
 
-Guard clause library for argument validation and defensive programming.
+Guard clauses for argument validation and state assertions in application code.
 
-### API and behavior
-
-- **Argument Validation**: Extensive static methods on `Argument` class
-- **Runtime Assertions**: `Ensure` class for internal state validation
-- **Performance Optimized**: `AggressiveInlining` and `DebuggerStepThrough`
-- **Caller Expression Support**: Automatic parameter name capture
-- **Free Passing Checks**: `Ensure.True` and `Argument.IsTrue` take an interpolated-string message through `TrueCheckInterpolatedStringHandler`, which formats the message only when the check fails, so a passing check with `$"...{value}"` builds no string. The message is formatted with the invariant culture. String literals and `string` variables still bind to the `string?` overload
-- **Type Support**: Nullable, `Span<T>`, `ReadOnlySpan<T>`, collections, strings
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Checks
 ```
 
-### Setup and use
-
-#### Argument Validation
-
 ```csharp
 using Headless.Checks;
 
-public void CreateUser(string name, int age, List<string> roles)
+public sealed class UserService
 {
-    Argument.IsNotNullOrEmpty(name);
-    Argument.IsPositive(age);
-    Argument.IsNotNullOrEmpty(roles);
-    Argument.HasNoNulls(roles);
+    private bool _initialized;
+    private bool _disposed;
+
+    public void CreateUser(string name, int age, List<string> roles)
+    {
+        Argument.IsNotNullOrEmpty(name);
+        Argument.IsPositive(age);
+        Argument.IsNotNullOrEmpty(roles);
+        Argument.HasNoNulls(roles);
+
+        Ensure.True(_initialized, "Service must be initialized.");
+        Ensure.NotDisposed(_disposed, this);
+    }
 }
 ```
 
-#### Common Checks
+**Verify:** no startup signal. In a unit test, assert that `CreateUser(null!, 1, [])` throws `ArgumentNullException` whose `ParamName` is `name`.
 
-- `Argument.IsNotNull(value)`
-- `Argument.IsNotNullOrEmpty(string|collection)`
-- `Argument.IsNotNullOrWhiteSpace(string)`
-- `Argument.IsNotEmpty(guid)` — rejects `Guid.Empty` (also `Guid?`; null passes through)
-- `Argument.IsPositive(number)` / `IsNegative` / `IsPositiveOrZero` / `IsNegativeOrZero`
-- `Argument.IsZero(number)` / `IsNotZero(number)` — `INumber<T>`, nullable, and `TimeSpan` overloads
-- `Argument.IsEqualTo(value, expected)` / `IsNotEqualTo(value, other)` — value equality (optional `IEqualityComparer<T>` overload); contrast `IsReferenceEqualTo`/`IsReferenceNotEqualTo` for identity
-- `Argument.IsCloseTo(value, target, delta)` / `IsNotCloseTo(…)` — tolerance comparison for `INumber<T>`; prefer over `IsEqualTo` for `float`/`double`. `int`/`long`/`nint` also have unsigned-`delta` overloads (overflow-safe, full distance range)
-- `Argument.IsBitwiseEqualTo(value, target)` — raw-byte equality for `unmanaged` types (distinguishes `+0.0`/`-0.0`, matches identical NaN payloads)
-- `Argument.IsOneOf(value, allowedValues)`
-- `Argument.IsInEnum(enumValue)`
-- `Argument.HasNoNulls(collection)` / `HasNoDuplicates(collection)` — `HasNoDuplicates` takes an optional `IEqualityComparer<T>`
-- `Argument.HasLength` / `HasMinLength` / `HasMaxLength` / `HasLengthBetween` / `HasLengthGreaterThan` / `HasLengthLessThan` / `HasLengthNotEqualTo(string, …)` — string length bounds (throw `ArgumentOutOfRangeException`)
-- `Argument.HasCount` / `HasMinCount` / `HasMaxCount` / `HasCountBetween(collection, …)` — item-count bounds (`IReadOnlyCollection<T>` fast-path + `IEnumerable<T>`)
-- `Argument.StartsWith` / `EndsWith` / `Contains(string, value, comparison)` — string content (`StringComparison.Ordinal` by default)
-- `Argument.IsPortableKey(string?)` — rejects text some storage provider would not keep unchanged as a key (null and empty pass through): surrounding white space, a NUL character (PostgreSQL cannot store it), or an unpaired UTF-16 surrogate (Npgsql refuses it; SqlClient sends it as U+FFFD, merging distinct keys on SQL Server). Case, accents, other control characters, and surrogate pairs pass and stay distinct. Use it for key text a feature stores on more than one provider
-- `Argument.HasNoSurroundingWhiteSpace(string?)` — rejects a value that starts or ends with white space (null and empty pass through). Use it on strings stored as keys: SQL Server ignores trailing spaces when it compares strings or enforces a unique index, under every collation, so `"acme"` and `"acme "` are one key there and two on PostgreSQL
-- `Argument.IsInRangeFor(index, count | collection | span)` — bounds-checks an index against a length/collection/span
-- `Argument.FileExists(path)` / `DirectoryExists(path)`
-- `Argument.Matches(string, regex)` — throws `ArgumentException` when the string does not match the pattern
-- `Argument.IsTrue(condition, message, nameof(arg))` / `IsFalse(condition, …)` — custom argument precondition that must hold / must not hold; throws `ArgumentException`
+### API
 
-#### Runtime Assertions
+Every `Argument` method captures the argument expression as `paramName` through `[CallerArgumentExpression]`, and most return the validated value, so `_name = Argument.IsNotNull(name);` works. A null argument throws `ArgumentNullException`, an out-of-range number, length, or count throws `ArgumentOutOfRangeException`, and any other failed check throws `ArgumentException`.
 
-```csharp
-using Headless.Checks;
+| Method | Checks |
+| --- | --- |
+| `IsNotNull`, `IsNotNullOrEmpty` (string or collection), `IsNotNullOrWhiteSpace` | Presence. |
+| `IsNotEmpty(Guid)` | Rejects `Guid.Empty`. The `Guid?` overload lets `null` pass. |
+| `IsPositive`, `IsNegative`, `IsPositiveOrZero`, `IsNegativeOrZero`, `IsZero`, `IsNotZero` | Sign. `INumber<T>`, nullable, and `TimeSpan` overloads. |
+| `IsEqualTo`, `IsNotEqualTo` | Value equality, with an optional `IEqualityComparer<T>`. Use `IsReferenceEqualTo` and `IsReferenceNotEqualTo` for identity. |
+| `IsCloseTo`, `IsNotCloseTo` | Tolerance comparison for `INumber<T>`. Use it instead of `IsEqualTo` for `float` and `double`. `int`, `long`, and `nint` also take an unsigned `delta`, which cannot overflow. |
+| `IsBitwiseEqualTo` | Raw-byte equality for `unmanaged` types. It tells `+0.0` from `-0.0` and matches identical NaN payloads. |
+| `IsOneOf`, `IsInEnum` | Membership in a set or a defined enum value. |
+| `HasNoNulls`, `HasNoDuplicates` | Collection elements. `HasNoDuplicates` takes an optional `IEqualityComparer<T>`. |
+| `HasLength`, `HasMinLength`, `HasMaxLength`, `HasLengthBetween`, `HasLengthGreaterThan`, `HasLengthLessThan`, `HasLengthNotEqualTo` | String length. |
+| `HasCount`, `HasMinCount`, `HasMaxCount`, `HasCountBetween` | Item count, on `IReadOnlyCollection<T>` and `IEnumerable<T>`. |
+| `StartsWith`, `EndsWith`, `Contains` | String content. The default comparison is `StringComparison.Ordinal`. |
+| `IsPortableKey` | Rejects key text some storage provider would not keep unchanged: surrounding white space, a NUL character (PostgreSQL cannot store it), or an unpaired UTF-16 surrogate (Npgsql refuses it, and SQL Server stores it as U+FFFD, merging distinct keys). Case, accents, other control characters, and surrogate pairs pass. `null` and empty pass. Use it for key text stored on more than one provider. |
+| `HasNoSurroundingWhiteSpace` | Rejects a value that starts or ends with white space. `null` and empty pass. Use it on strings stored as keys: SQL Server ignores trailing spaces in comparisons and unique indexes under every collation, so `"acme"` and `"acme "` are one key there and two on PostgreSQL. |
+| `IsInRangeFor` | An index against a count, collection, or span. |
+| `FileExists`, `DirectoryExists` | A path on disk. |
+| `Matches` | A string against a regex. |
+| `IsTrue`, `IsFalse` | A custom precondition. |
 
-public void ProcessOrder()
-{
-    Ensure.True(_initialized, "Service must be initialized.");
-    Ensure.NotDisposed(_disposed, this);
-    Ensure.False(_queue.IsEmpty, "Queue should not be empty.");
-    var connection = Ensure.NotNull(_connection); // state must-be-present; throws InvalidOperationException
-    Ensure.True(_pending < _max, $"At most {_max} pending orders."); // the message is built only when the check fails
-}
-```
+`Ensure` asserts state, not arguments:
+
+| Method | Throws |
+| --- | --- |
+| `Ensure.True(condition, message)`, `Ensure.False(...)` | `InvalidOperationException` |
+| `Ensure.NotNull(value)` | `InvalidOperationException`. Returns the value. |
+| `Ensure.NotDisposed(disposed, this)` | `ObjectDisposedException` |
 
 ### Configuration
 
-No configuration required.
-
-### Runtime behavior
-
 None.
+
+### Design and runtime behavior
+
+- `Ensure.True` and `Argument.IsTrue` accept an interpolated-string message (`$"At most {_max} pending orders."`) and format it only when the check fails, so a passing check allocates no string. The message uses the invariant culture. A string literal or `string` variable binds to the plain `string?` overload.
+- The methods support nullable values, `Span<T>`, `ReadOnlySpan<T>`, collections, and strings.
 
 ## Headless.Domain
 
-Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
+DDD base types and contracts: entities, aggregate roots, value objects, auditing, concurrency, tenancy, and event emission.
 
-### API and behavior
-
-- **Entity Abstractions**: `IEntity`, `IEntity<T>`, base `Entity` class
-- **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
-- **Value Objects**: `ValueObject<TSelf>` base class with equality over the components it compares and hashes
-
-- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, each in three arities: timestamps only, `<TAccountId>` adding actor ids, and `<TAccountId, TAccount>` adding actor navigations plus `Update` on `IUpdateAudit` and `Delete`/`Restore` on `IDeleteAudit`
-- **Audited bases**, split by capability, each over `Entity<TId>` or `AggregateRoot<TId>` with `protected` setters: `AuditedEntity` / `AuditedAggregateRoot` (create + update) and `SoftDeletableEntity` / `SoftDeletableAggregateRoot` (create + update + soft delete). Each comes in `<TId>`, `<TId, TAccountId>`, and `<TId, TAccountId, TAccount>` forms matching the interface arity; only the last form exposes the public transition methods (`Update`, plus `Delete`/`Restore`)
-- **Concurrency**: `IHasConcurrencyStamp`
-- **Multi-tenancy**: `IMultiTenant`
-- **Domain Events (in-process)**: `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.EventDispatcher`.
-- **Integration Events (distributed)**: `IIntegrationEventEmitter`. An aggregate raises its own events through the `protected AddIntegrationEvent`; `GetIntegrationEvents`/`ClearIntegrationEvents` and the `IIntegrationEventEmitter` contract stay public for infrastructure. This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.EntityFramework.Messaging`), not from `Headless.Domain` (see [orm.md](orm.md)).
-- **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
-
-Event payloads are plain reference types with no required marker interface. `AggregateRoot` captures an immutable `EventContext<TPayload>` for every raise, including repeated raises of the same payload object. The envelope contains `Payload`, `EventId`, root `CorrelationId`, immediate `CausationId`, and `TenantId`. Payloads must be treated as immutable after emission; the framework does not deep-copy arbitrary business objects.
-
-Use `EventEmissionScope.Begin(new EventEmissionContext(correlationId, parentId, tenantId))` at an application or subsystem boundary. The scope flows across awaits, nests with strict reverse-order disposal, and isolates parallel async flows. Without a scope, an occurrence roots correlation at its own new ID. `Activity` tracing never supplies business identity. Infrastructure forwards an existing occurrence explicitly; passing only its payload raises a new occurrence. Use `EventContext.Capture(payload)` when explicitly creating an event outside aggregate behavior.
-
-Emitter buffers contain `IReadOnlyList<EventContext<object>>` so one aggregate can raise different payload types. The generic `AddDomainEvent(context)` / `AddIntegrationEvent(context)` overloads preserve an existing concrete envelope. Batch clear removes only saved event IDs; parameterless clear explicitly discards the pending buffer.
-
-Use `EventBuffer` when an entity implements an emitter interface without inheriting `AggregateRoot`. It provides `Add(payload)`, `Add(context)`, `Snapshot()`, `Clear()`, and `Clear(savedBatch)` with the same occurrence semantics as aggregate roots. Keep one buffer per entity and event kind; instances are not thread-safe. The buffer only retains events in memory. The entity must still implement `IIntegrationEventEmitter` or `IDomainEventEmitter` so infrastructure can collect them. Choose application-specific tenant and correlation values before adding an explicit `EventContext`; the buffer preserves them.
-
-Handlers receive `EventContext<TPayload>` and a cancellation token. `IDomainEventDispatcher.DispatchAsync(context, token)` accepts only a captured envelope and resolves the exact runtime payload type, preserving identity and lineage across retries.
-
-This package adds no event store, stream version, replay, or durable Domain contract registry. Domain remains independent of Messaging, Jobs, persistence, and commit coordination.
-
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Domain
 ```
 
-### Setup and use
-
 ```csharp
+using Headless.Domain;
+
 public sealed class Order : AggregateRoot<Guid>, ICreateAudit
 {
     public required string CustomerName { get; init; }
     public decimal Total { get; private set; }
-    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; private set; }
 
     public void Complete()
     {
@@ -165,60 +129,41 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
 public sealed record OrderCompletedEvent(Guid OrderId);
 ```
 
-For an entity using composition:
+**Verify:** no startup signal. In a unit test, call `order.Complete()` and assert that `order.GetDomainEvents()` holds one `EventContext<object>` whose `Payload` is the `OrderCompletedEvent`.
 
-```csharp
-public sealed class Account : IIntegrationEventEmitter
-{
-    private readonly EventBuffer _events = new();
+### API
 
-    public void AddIntegrationEvent(object payload) => _events.Add(payload);
+- **Entities.** `Entity<TId>` compares by type and ID. `AggregateRoot<TId>` adds the event buffers and implements both `IDomainEventEmitter` and `IIntegrationEventEmitter`.
+- **Value objects.** `ValueObject<TSelf>` compares on the components you name. Override `EqualityComponentsEqual` and `BuildHashCode`.
+- **Audit interfaces.** `ICreateAudit`, `IUpdateAudit`, and `IDeleteAudit`, each in three arities: timestamps only (`CreatedAt`, `UpdatedAt`, `DeletedAt`, `RestoredAt`, `IsDeleted`); `<TAccountId>`, which adds the actor IDs (`CreatedById` and the rest); and `<TAccountId, TAccount>`, which adds the actor navigations plus `Update` on `IUpdateAudit` and `Delete` and `Restore` on `IDeleteAudit`.
+- **Audited bases.** Each base exists over `Entity<TId>` and over `AggregateRoot<TId>`, in `<TId>`, `<TId, TAccountId>`, and `<TId, TAccountId, TAccount>` forms, with `protected` setters. Only the last form has the public transition methods.
 
-    public void AddIntegrationEvent<TPayload>(EventContext<TPayload> context)
-        where TPayload : class => _events.Add(context);
+  | Base | Capabilities |
+  | --- | --- |
+  | `AuditedEntity<…>`, `AuditedAggregateRoot<…>` | create, update |
+  | `SoftDeletableEntity<…>`, `SoftDeletableAggregateRoot<…>` | create, update, soft delete |
 
-    public IReadOnlyList<EventContext<object>> GetIntegrationEvents() => _events.Snapshot();
+  A create-only entity implements `ICreateAudit<…>` directly.
+- **Concurrency and tenancy.** `IHasConcurrencyStamp` marks an entity for optimistic concurrency. `IMultiTenant` marks a tenant-owned entity.
+- **Events.** `EventContext<TPayload>`, `EventContext.Capture`, `EventEmissionScope`, `EventEmissionContext`, `EventBuffer`, `IDomainEventEmitter`, `IIntegrationEventEmitter`, `IDomainEventHandler<TPayload>`, `DomainEventHandlerOrderAttribute`, and the entity event payloads `EntityCreatedEventData`, `EntityUpdatedEventData`, and `EntityDeletedEventData`.
 
-    public void ClearIntegrationEvents() => _events.Clear();
+### Auditing
 
-    public void ClearIntegrationEvents(IReadOnlyList<EventContext<object>> occurrences) => _events.Clear(occurrences);
-}
-```
-
-#### Auditing
-
-Implement audit interfaces for automatic tracking:
-
-```csharp
-public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
-{
-    public required string Name { get; set; }
-    public DateTimeOffset CreatedAt { get; private set; }
-    public DateTimeOffset? UpdatedAt { get; private set; }
-}
-```
-
-Or inherit the audited base that carries only the capabilities the entity needs:
-
-| Base | Capabilities |
-| --- | --- |
-| `AuditedEntity<…>` / `AuditedAggregateRoot<…>` | create, update |
-| `SoftDeletableEntity<…>` / `SoftDeletableAggregateRoot<…>` | create, update, soft delete |
-
-A create-only entity implements `ICreateAudit<…>` directly.
-
-The `HeadlessDbContext` save pipeline stamps the audit fields, and it stamps the matching `*ById` from `ICurrentUser` when `TAccountId` is `UserId` or `AccountId`:
+The `HeadlessDbContext` save pipeline stamps the audit fields. It also stamps the matching `*ById` from `ICurrentUser` when `TAccountId` is `UserId` or `AccountId`:
 
 - Every modified save stamps `UpdatedAt` and `UpdatedById` with the current time and actor.
-- `IsDeleted` false → true stamps `DeletedAt`/`DeletedById`; true → false stamps `RestoredAt`/`RestoredById`.
-- Each pair holds the most recent transition of its kind. A restore keeps the deletion pair as history, and a later delete keeps the restore pair, so read `IsDeleted`, not the timestamps, for the current state.
-- A non-null value the save already set explicitly wins over the stamp.
-- A delete or restore with no actor records a null actor id, never the previous transition's actor. "No actor" means none was passed to the transition method and none resolved from `ICurrentUser`. The transition methods likewise write `byId` and `by` exactly as given, including `null`.
-- A modified save with no resolved current user records a null `UpdatedById` and clears a loaded `UpdatedBy`. An anonymous flow that knows the actor passes it to `Update(now, byId, by)` in the same save, which wins.
+- `IsDeleted` changing from `false` to `true` stamps `DeletedAt` and `DeletedById`. Changing from `true` to `false` stamps `RestoredAt` and `RestoredById`.
+- Each pair holds the most recent transition of its kind. A restore keeps the deletion pair as history, and a later delete keeps the restore pair.
+- A non-null value that the save already set explicitly wins over the stamp.
+- A delete or restore with no actor records a `null` actor ID, never the previous transition's actor. "No actor" means none was passed to the transition method and none resolved from `ICurrentUser`. The transition methods write `byId` and `by` exactly as given, `null` included.
+- A modified save with no resolved current user records a `null` `UpdatedById` and clears a loaded `UpdatedBy`. To record a known actor in an anonymous flow, call `Update(now, byId, by)` in the same save; that value wins.
 
 The entity changes `IsDeleted` through its own behavior:
 
 ```csharp
+using Headless.Domain;
+using Headless.Primitives;
+
 public sealed class Invoice : SoftDeletableAggregateRoot<Guid, UserId>
 {
     public required string Number { get; init; }
@@ -227,15 +172,15 @@ public sealed class Invoice : SoftDeletableAggregateRoot<Guid, UserId>
 }
 ```
 
-The `<TId, TAccountId, TAccount>` form also implements the public transition methods: `Update` on every base, and `Delete`/`Restore` on the soft-deletable bases. Each records the given time and actor. `Delete` and `Restore` do nothing when the entity is already in the target state. Call `Update` only when the recorded time or actor must differ from the pipeline's clock and current user, for example an anonymous flow acting for a known account: the pipeline stamps every modified save by itself.
+On the `<TId, TAccountId, TAccount>` form, `Update`, `Delete`, and `Restore` record the given time and actor. `Delete` and `Restore` do nothing when the entity is already in the target state. Call `Update` only when the recorded time or actor must differ from the pipeline's clock and current user, because the pipeline already stamps every modified save.
 
-Soft-deleted rows are hidden by the default not-deleted filter; load one to restore it with `IgnoreNotDeletedFilter()`.
+The default not-deleted query filter hides soft-deleted rows. To load one, for example to restore it, query with `IgnoreNotDeletedFilter()` ([ORM](orm.md#global-query-filters)).
 
-**Migrating from suspension audit:** model suspension as your own domain state, and add an explicit filter where you relied on `NotSuspendedFilter`.
-
-#### Value Objects
+### Value objects
 
 ```csharp
+using Headless.Domain;
+
 public sealed class Address : ValueObject<Address>
 {
     public required string Street { get; init; }
@@ -253,93 +198,111 @@ public sealed class Address : ValueObject<Address>
 }
 ```
 
+### Events
+
+An event payload is any reference type; no marker interface is required. Each raise captures an immutable `EventContext<TPayload>` with `Payload`, `EventId`, `CorrelationId` (the root of the chain), `CausationId` (the immediate cause), and `TenantId`. Raising the same payload object twice records two occurrences with different `EventId` values.
+
+- **Correlation scope.** At an application or subsystem boundary, call `using var scope = EventEmissionScope.Begin(new EventEmissionContext(correlationId, causationId, tenantId));`. Events raised inside the scope take its lineage. The scope flows across `await` and isolates parallel async flows. Without a scope, an event roots its correlation at its own new ID. `Activity` tracing never supplies the correlation.
+- **Dispose scopes in reverse order.** Disposing a scope that is not the current one in its async flow throws `InvalidOperationException`.
+- **Forward an existing occurrence, not its payload.** Passing an existing `EventContext<TPayload>` to `AddDomainEvent(context)` or `AddIntegrationEvent(context)` keeps its identity and lineage. Passing only its payload raises a new occurrence. Outside an aggregate, create an occurrence with `EventContext.Capture(payload)`.
+- **Reading and clearing.** `GetDomainEvents()` and `GetIntegrationEvents()` return `IReadOnlyList<EventContext<object>>`, so one aggregate can hold several payload types. `ClearDomainEvents(savedBatch)` removes only the occurrences in that batch, by `EventId`. The parameterless `ClearDomainEvents()` discards the whole pending buffer. The integration methods behave the same.
+
+To emit events from an entity that does not inherit `AggregateRoot`, implement the emitter interface over an `EventBuffer`. `EventBuffer` keeps events in memory with the same occurrence rules. The entity must still implement `IIntegrationEventEmitter` or `IDomainEventEmitter`, because the save pipeline collects events through those interfaces. Keep one buffer per entity and event kind. A buffer is not thread-safe.
+
+```csharp
+using Headless.Domain;
+
+public sealed class Account : IIntegrationEventEmitter
+{
+    private readonly EventBuffer _events = new();
+
+    public void AddIntegrationEvent(object payload) => _events.Add(payload);
+
+    public void AddIntegrationEvent<TPayload>(EventContext<TPayload> context)
+        where TPayload : class => _events.Add(context);
+
+    public IReadOnlyList<EventContext<object>> GetIntegrationEvents() => _events.Snapshot();
+
+    public void ClearIntegrationEvents() => _events.Clear();
+
+    public void ClearIntegrationEvents(IReadOnlyList<EventContext<object>> occurrences) => _events.Clear(occurrences);
+}
+```
+
 ### Configuration
 
-No configuration required. This is an abstractions package.
+None. The package registers no services.
 
-### Runtime behavior
+### Design and runtime behavior
 
-`EventEmissionScope.Begin` temporarily establishes async-flow-local business lineage. Dispose its scope in reverse creation order to restore the parent; no services, persistence, or transport are registered.
+- `Headless.Domain` has no event store, stream version, replay, or durable event registry, and it does not depend on Messaging, Jobs, or persistence.
+- Integration events reach other services only through the outbox bridge in `Headless.EntityFramework.Messaging` ([ORM](orm.md#headlessentityframeworkmessaging)). Without it, `AddIntegrationEvent` only fills the in-memory buffer.
 
 ## Headless.Domain.EventDispatcher
 
-DI-based implementation of `IDomainEventDispatcher` for in-process domain event handling.
+The DI-backed `IDomainEventDispatcher` for in-process domain event handlers.
 
-### API and behavior
-
-- `IDomainEventDispatcher` implementation (`ServiceProviderDomainEventDispatcher`) backed by DI
-- One envelope-only async contract: `DispatchAsync<TPayload>(EventContext<TPayload>, CancellationToken)`
-- Handler resolution per publish from the active scope
-- Handler ordering via `DomainEventHandlerOrderAttribute`
-- Handler exception aggregation and cooperative cancellation
-
-### Design constraints
-
-- **Async-only contract.** `IDomainEventDispatcher` deliberately exposes no synchronous `Publish`: a public sync member would dispatch the async handlers sync-over-async, which can deadlock on threads that carry a synchronization context (classic ASP.NET, Blazor Server, WPF). Infrastructure that must publish from a synchronous code path (for example the EF sync `SaveChanges` pipeline) owns and contains that bridge internally.
-- **Exact-runtime dispatch.** `DispatchAsync(context)` resolves handlers for the exact runtime payload type, with no base/interface traversal. Cached compiled invokers support heterogeneous emitter batches without repeated reflection. Dispatch preserves captured identity and lineage. Each handler receives one immutable `EventContext<TPayload>`; nested emissions use that event as their immediate cause.
-- **Scoped lifetime.** `AddHeadlessDomainEventDispatcher()` registers `IDomainEventDispatcher` as scoped (`TryAddScoped`). Handlers are resolved from the caller's scope, so they share the same scoped services — notably the `DbContext` — when published inside a unit of work.
-- **Exception aggregation and cancellation.** Handlers are resolved and invoked per publish. A single handler exception is rethrown as-is; multiple handler exceptions are wrapped in an `AggregateException`. Cancellation is observed between handlers; if the token is cancelled, already-accumulated handler exceptions are preserved rather than discarded.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Domain.EventDispatcher
 ```
 
-### Setup and use
-
 ```csharp
+using Headless.Domain;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Register the in-process domain event dispatcher
 builder.Services.AddHeadlessDomainEventDispatcher();
-
-// Register handlers
 builder.Services.AddScoped<IDomainEventHandler<OrderCreatedEvent>, OrderCreatedHandler>();
-```
+builder.Services.AddScoped<IDomainEventHandler<OrderCreatedEvent>, AuditHandler>();
 
-#### Dispatching Events
+public sealed record OrderCreatedEvent(Guid OrderId);
 
-```csharp
-public sealed class OrderService(IDomainEventDispatcher eventDispatcher)
-{
-    public async Task CreateOrderAsync(Order order, CancellationToken ct)
-    {
-        await _repository.AddAsync(order, ct).ConfigureAwait(false);
-
-        var context = EventContext.Capture(new OrderCreatedEvent(order.Id));
-        await eventDispatcher.DispatchAsync(context, ct).ConfigureAwait(false);
-    }
-}
-```
-
-#### Handling Events
-
-```csharp
 public sealed class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
 {
-    public ValueTask HandleAsync(EventContext<OrderCreatedEvent> context, CancellationToken ct = default)
+    public ValueTask HandleAsync(EventContext<OrderCreatedEvent> context, CancellationToken cancellationToken = default)
     {
-        // Apply local transactional state changes; external effects belong in an outbox.
+        // Change local state in the same transaction. Send external effects through an outbox.
         return ValueTask.CompletedTask;
     }
 }
 
-[DomainEventHandlerOrder(-1)] // Execute before handlers with the default order
+[DomainEventHandlerOrder(-1)] // runs before handlers with the default order 0
 public sealed class AuditHandler : IDomainEventHandler<OrderCreatedEvent>
 {
-    public ValueTask HandleAsync(EventContext<OrderCreatedEvent> context, CancellationToken ct = default)
+    public ValueTask HandleAsync(EventContext<OrderCreatedEvent> context, CancellationToken cancellationToken = default) =>
+        ValueTask.CompletedTask;
+}
+```
+
+To dispatch outside the EF save pipeline, capture the event and pass the envelope:
+
+```csharp
+using Headless.Domain;
+
+public sealed class OrderNotifier(IDomainEventDispatcher dispatcher)
+{
+    public async Task NotifyCreatedAsync(Guid orderId, CancellationToken cancellationToken)
     {
-        // Audit logging
-        return ValueTask.CompletedTask;
+        var context = EventContext.Capture(new OrderCreatedEvent(orderId));
+        await dispatcher.DispatchAsync(context, cancellationToken);
     }
 }
 ```
+
+**Verify:** resolve `IDomainEventDispatcher` from a scope and dispatch a captured event in a test; assert the handler ran. With `HeadlessDbContext` and `.AddDomainEvents()`, assert the handler ran after `SaveChangesAsync`.
 
 ### Configuration
 
-No configuration required.
+None. `HeadlessDbContext`'s `.AddDomainEvents()` calls `AddHeadlessDomainEventDispatcher()` for you.
 
-### Runtime behavior
+### Design and runtime behavior
 
-- Registers `IDomainEventDispatcher` (`ServiceProviderDomainEventDispatcher`) as scoped
+- **Scoped.** `AddHeadlessDomainEventDispatcher()` registers `IDomainEventDispatcher` as scoped, and only when none is registered. Handlers resolve from the caller's scope on every dispatch, so inside a unit of work they share its scoped services, the `DbContext` included.
+- **Exact payload type.** Dispatch resolves `IDomainEventHandler<T>` for the exact runtime payload type. A handler for a base class or interface of the payload does not run. A value-type payload throws `ArgumentException`.
+- **Order.** Handlers run one at a time, in ascending `DomainEventHandlerOrder` (default `0`). Handlers with equal order run in registration order.
+- **Lineage.** Each handler receives the same immutable `EventContext<TPayload>`. Events a handler raises take that event as their `CausationId` and keep its `CorrelationId` and `TenantId`.
+- **Exceptions.** A failing handler does not stop the others. After all handlers run, one failure is rethrown as the original exception, and two or more are thrown as one `AggregateException`.
+- **Cancellation.** The dispatcher checks the token before each handler. When it is cancelled, the exceptions collected so far are thrown in place of `OperationCanceledException`; with none, it throws `OperationCanceledException`.
+- **Async only.** There is no synchronous dispatch, because blocking on async handlers can deadlock under a synchronization context.

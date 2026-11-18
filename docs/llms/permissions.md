@@ -5,57 +5,60 @@ packages: Permissions.Abstractions, Permissions, Permissions.Storage.EntityFrame
 
 # Permissions
 
-> Dynamic permission management with hierarchical grant resolution (User > Role), explicit-deny semantics, caching, and database persistence via EF Core, PostgreSQL, or SQL Server.
+> Dynamic permission grants for users and roles, with explicit deny, caching, ASP.NET Core policy integration, and storage on EF Core, PostgreSQL, or SQL Server.
 
 ## Orientation
 
-Install `Headless.Permissions.Abstractions` to depend on interfaces only (domain/application layers). Install `Headless.Permissions` plus exactly one storage provider for the full runtime.
+- `Headless.Permissions.Abstractions`: the contracts for domain and application code. `IPermissionManager`, `IPermissionDefinitionProvider`, the definition model, and `unit.Permissions`.
+- `Headless.Permissions`: the runtime. Grant resolution, the grant cache, the definitions seeder, and the ASP.NET Core authorization integration.
+- One storage provider: `Headless.Permissions.Storage.EntityFramework` (schema through your EF migrations), `Headless.Permissions.Storage.PostgreSql`, or `Headless.Permissions.Storage.SqlServer` (schema through `resources provision`).
+- `Headless.Permissions.Testing`: always-allow doubles for integration tests.
 
-Typical setup:
+Register the prerequisites, the definitions, and the runtime with one storage provider:
 
 ```csharp
-// 1. Register permission definitions
-builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
+// Prerequisites: TimeProvider, IGuidGenerator, a caching provider, and a distributed lock.
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory()); // production: the hybrid cache, see Caching
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
-// 2. Register management core + storage in one call
+// Definitions, then the runtime and its storage in one call.
+builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
 builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
-`AddHeadlessPermissions` requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered first.
+Read a grant with `IPermissionManager.GetAsync` or `IsGrantedAsync`. Protect an endpoint with the permission name as the policy name: `[Authorize("Orders.Edit")]`.
 
-Provider packages:
-- `Headless.Permissions.Storage.EntityFramework` — EF Core, schema via migrations
-- `Headless.Permissions.Storage.PostgreSql` — raw ADO.NET, schema created by `resources provision`
-- `Headless.Permissions.Storage.SqlServer` — raw ADO.NET, schema created by `resources provision`
+**Verify:** `dotnet app.dll check` runs the startup validators and exits 1 with `Host check failed: …` when a prerequisite is missing (`MissingRequiredServiceException`) or the EF model lacks the permission entities. After the deployment runs `seed`, `dotnet app.dll seed verify` prints `Current` for `PermissionDefinitions`.
 
 ## Agent Rules
 
-- Inject `IPermissionManager` to read or write permission grants. Never roll custom permission checks.
-- Check a permission with `GetAsync(name, currentUser)` and inspect `result.IsGranted`. Use `IsGrantedAsync(currentUser, name)` for a boolean shorthand.
-- Define permissions by implementing `IPermissionDefinitionProvider` and calling `context.AddGroup("Name").AddChild("Name.Action")`. The method is `AddChild`, not `AddPermission` — the latter does not exist.
-- Register definition providers with `services.AddPermissionDefinitionProvider<T>()`.
-- Grant a permission with `GrantToUserAsync` / `GrantToRoleAsync`. Prohibit explicitly with `RevokeFromUserAsync` / `RevokeFromRoleAsync`. Delete all records for a principal with `DeleteAsync(providerName, providerKey)`.
-- To make a grant, revoke, or delete atomic with your other writes, call it on the unit you hold: `unit.Permissions.GrantToRoleAsync(...)`, `unit.Permissions.SetAsync(...)`, `unit.Permissions.DeleteAsync(...)`. The injected `IPermissionManager` never joins a unit: its writes commit on their own before they return. See [Writing grants inside a unit of work](#writing-grants-inside-a-unit-of-work).
-- Resolution order (highest to lowest priority): **User** then **Role**. An explicit `Prohibited` from any provider denies access regardless of other grants. The default when no record exists is deny.
-- Do NOT call `IDynamicPermissionDefinitionStore.SaveAsync` directly — the `PermissionDefinitions` seeder does, and only when the host seeds. Seeding is opt-in: see [Definition Seeding](#definition-seeding).
-- `IPermissionManager` and `unit.Permissions` writes invalidate the affected cache entries; an enlisted write invalidates only after its unit commits. A direct `IPermissionGrantRepository` write invalidates on the EF store only (the repository removes the entry after its save, or after the unit commits for an enlisted write); a direct write to the PostgreSQL or SQL Server repository, raw SQL, or a direct `DbContext` write leaves the cache stale.
-- Protect an endpoint with the permission name itself: `[Authorize("Orders.Edit")]` or `.RequireAuthorization("Orders.Edit")` works for any defined permission with no `AddPolicy` call. There is **no** `[HasPermission]` attribute. Build a `PermissionsRequirement` policy only for an any-of (OR) or all-of set under one name, and use `IPermissionManager` for in-code checks.
-- A permission answers whether this caller may act; a feature flag answers whether the capability is on for the tenant or edition. Both gates are ASP.NET Core authorization requirements: gate on a feature with `[RequiresFeature]` or `.RequireAuthorization(policy => policy.RequireFeatures(...))`, the same shape a permission policy uses ([features.md § Gating HTTP endpoints](features.md#gating-http-endpoints)). Both fail the same way: 403, or 401 when anonymous. Put both on an endpoint that needs both; they combine into one policy, and the 403 `detail` carries the feature's reason. Messages passed to `Fail(new AuthorizationFailureReason(...))` are shown to the caller in the 403 `detail`; keep internal detail out of them.
-- Policy names passed to `[Authorize]` must come from code, never from user input: an undefined name throws "policy not found", and permission names match case-sensitively.
-- `SetAsync` throws `ConflictException` when the permission is not defined, is disabled, restricts its providers and excludes the given `providerName`, or when no grant provider with that name is registered. Catch this for user-facing validation.
-- Batch writes via `SetAsync(IReadOnlyCollection<string>, ...)` are all-or-nothing — a single invalid name rejects the entire batch.
-- A batch grant converts existing `Prohibited` records to grants and inserts records for names that have none, exactly like the single-name path; names that are already granted are left untouched.
-- `PermissionDefinition.Providers` restricts which grant providers can read/write that permission. An empty list allows all providers.
-- For integration tests, reference `Headless.Permissions.Testing` and call `services.AddAlwaysAllowAuthorization()` to replace both `IPermissionManager` and `IAuthorizationService` with always-allow stubs. This lives in a separate test-only package so the production `Headless.Permissions` surface never ships an authorization bypass.
-- Grant caching is tenant-scoped: the cache key includes the current tenant id. A permission check for tenant A does not serve a cached result for tenant B.
+- Inject `IPermissionManager` to read or write grants. Do not write your own permission checks.
+- Check one permission with `GetAsync(name, currentUser)` and read `result.IsGranted`, or call `IsGrantedAsync(currentUser, name)` for a `bool`. An undefined or disabled permission returns not granted. It does not throw.
+- Define permissions in an `IPermissionDefinitionProvider` with `context.AddGroup("Orders").AddChild("Orders.Edit")`. The method is `AddChild`. There is no `AddPermission`.
+- Register each definition provider with `services.AddPermissionDefinitionProvider<T>()`.
+- Grant with `GrantToUserAsync` or `GrantToRoleAsync`. Deny explicitly with `RevokeFromUserAsync` or `RevokeFromRoleAsync`. Remove every record of a user or role with `DeleteAsync(providerName, providerKey)`.
+- Pass `PermissionGrantProviderNames.User` or `PermissionGrantProviderNames.Role` as `providerName`, not a string literal.
+- To make a grant, revoke, or delete atomic with your other writes, call it on the unit you hold: `unit.Permissions.GrantToRoleAsync(...)`. An injected `IPermissionManager` write never joins a unit. It commits before it returns. See [Writing grants inside a unit of work](#writing-grants-inside-a-unit-of-work).
+- An explicit prohibition from any provider denies, whatever the other providers grant. With no record anywhere, the answer is deny.
+- Protect an endpoint with the permission name itself: `[Authorize("Orders.Edit")]` or `.RequireAuthorization("Orders.Edit")`. You need no `AddPolicy` call. There is no `[HasPermission]` attribute. Register a `PermissionsRequirement` policy only for an any-of (OR) set or a named all-of set.
+- Pass `[Authorize]` only policy names from code, never from user input. An undefined name throws "policy not found", and permission names match case-sensitively.
+- A permission says whether this caller may act. A feature flag says whether the capability is on for the tenant. Gate a feature with `[RequiresFeature]` or `.RequireAuthorization(policy => policy.RequireFeatures(...))` ([Gating HTTP endpoints](features.md#gating-http-endpoints)). Put both on an endpoint that needs both. They combine into one policy, and both fail with 403, or 401 for an anonymous caller.
+- A reason passed to `Fail(new AuthorizationFailureReason(...))` reaches the caller in the 403 `detail`. Keep internal detail out of it.
+- `SetAsync` throws `ConflictException` when the permission is undefined or disabled, when its `Providers` excludes `providerName`, or when no grant provider has that name. Catch it for user-facing validation.
+- A batch `SetAsync(IReadOnlyCollection<string>, ...)` is all-or-nothing: one invalid name rejects the whole batch.
+- Do not call `IDynamicPermissionDefinitionStore.SaveAsync`. The `PermissionDefinitions` seeder saves definitions when the deployment runs `seed`. See [Definition Seeding](#definition-seeding).
+- Write grants only through `IPermissionManager`, `unit.Permissions`, or the EF `IPermissionGrantRepository`. Raw SQL, a direct `DbContext` write, or a direct call to the PostgreSQL or SQL Server repository leaves the grant cache stale for up to `GrantCacheExpiration` (5 hours).
+- Use the hybrid cache ([`UseHybrid`](caching/hybrid.md#headlesscachinghybrid)) in production. Every authorized request reads the grant cache. See [Grant Store and Caching](#grant-store-and-caching).
+- In integration tests that do not test authorization, call `services.AddAlwaysAllowAuthorization()` from `Headless.Permissions.Testing`.
 
 ## Core Concepts
 
 ### Permission Definitions and Groups
 
-A *permission definition* declares a permission's identity and metadata: its unique `Name`, optional `DisplayName`, whether it is `IsEnabled` (disabled permissions always resolve to not-granted), which `Providers` may read/write it (empty = all), and an optional `ExtraProperties` bag (the model implements `IHasExtraProperties`) for custom metadata.
+A permission definition has a unique `Name`, an optional `DisplayName`, `IsEnabled` (a disabled permission is never granted), `Providers` (the grant providers that may read or write it; empty allows all), and an `ExtraProperties` bag for your own metadata.
 
-Permissions form a tree via `AddChild`. A group (`PermissionGroupDefinition`) is the top-level container; calling `group.AddChild("Orders.View")` adds a root permission to the group. Calling `permission.AddChild("Orders.View.Detail")` nests a child under that permission. Both `PermissionGroupDefinition` and `PermissionDefinition` implement `ICanAddChildPermission` so the same `AddChild` fluent call works on both.
+Permissions form a tree. A group, created with `context.AddGroup(name, displayName)`, is the top-level container. `group.AddChild("Orders.View")` adds a root permission, and `permission.AddChild("Orders.View.Detail")` nests a child. You cannot construct a group or a definition directly.
 
 ```csharp
 public sealed class OrderPermissionProvider : IPermissionDefinitionProvider
@@ -76,34 +79,40 @@ public sealed class OrderPermissionProvider : IPermissionDefinitionProvider
 
 ### Grant Providers and Resolution Order
 
-`PermissionManager` delegates resolution to a chain of `IPermissionGrantProvider` implementations. Built-in providers (registration order, lowest to highest priority):
+Two built-in grant providers resolve a permission, from lowest to highest priority:
 
-1. `RolePermissionGrantProvider` (`"Role"`) — checks grants attached to each role the current user holds. It loads every role's grants for the pending names through one `IPermissionGrantStore.IsGrantedAsync(names, providerName, providerKeys)` call, then combines them the way providers combine: a name any role prohibits is `Prohibited`, otherwise a name any role grants is `Granted`, and every deciding role is reported in ordinal order. The user's roles are a set, so no role order decides a conflict. If the user has no roles, all permissions are `Undefined`.
-2. `UserPermissionGrantProvider` (`"User"`) — checks grants attached to the user's id. Returns `Undefined` for anonymous principals (null user id).
+1. **Role** (`PermissionGrantProviderNames.Role`) checks the grants of every role the current user holds, in one store read. A name any role prohibits is prohibited. Otherwise a name any role grants is granted. Role order never decides a conflict. A user with no roles gets `Undefined`.
+2. **User** (`PermissionGrantProviderNames.User`) checks the grants on the user's id. An anonymous principal gets `Undefined`.
 
-Last-registered provider has the highest priority, so **User wins over Role**. Custom providers added with `services.AddPermissionGrantProvider<T>()` are appended after the built-in providers and therefore have higher priority than both.
-
-Use `PermissionGrantProviderNames.User` and `PermissionGrantProviderNames.Role` as the `providerName` argument rather than string literals.
+The last-registered provider has the highest priority, so User wins over Role. A provider you add with `services.AddPermissionGrantProvider<T>()` goes after both built-ins and outranks them.
 
 ### Grant States
 
-Each provider returns one of three states per permission:
+Each provider returns one state per permission:
 
-- **Granted** — a record exists with `IsGranted = true`.
-- **Prohibited** — a record exists with `IsGranted = false`. An explicit prohibition from **any** provider overrides grants from all other providers.
-- **Undefined** — no record exists; the provider has no opinion. When all providers are `Undefined`, the permission is not granted (default deny).
+- **Granted**: a record exists with `IsGranted = true`.
+- **Prohibited**: a record exists with `IsGranted = false`. A prohibition from any provider overrides grants from every other provider.
+- **Undefined**: no record exists. When every provider returns `Undefined`, the permission is not granted.
 
-`GrantedPermissionResult.IsGranted` reflects the final merged decision. `GrantedPermissionResult.Providers` lists the providers that contributed a grant (an explicit denial suppresses this list rather than appearing in it).
+`GrantedPermissionResult.IsGranted` is the merged decision. `GrantedPermissionResult.Providers` lists the providers, with their keys, that granted it. An explicit denial empties the list.
 
 ### Grant Store and Caching
 
-`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, `PermissionGrantStore` writes the new status into the affected cache entries through `ICache`, and `IPermissionManager.DeleteAsync` writes the deleted names' entries as undefined. An enlisted write through `unit.Permissions` touches the cache only after its unit commits, and then writes the committed statuses the same way; a unit that rolls back leaves the cache as it was. The after-commit write runs under the tenant that made the write, even when the unit completes outside that tenant's scope, and a cache fault there is logged rather than thrown, because the commit is already durable. A cache miss loads the target's rows and fills only the entries that are still absent (`ICache.TryInsertAsync`, one call per defined permission, issued together), so a check that read the rows before a concurrent grant, revoke, or delete cannot write the old status over the new one. After its commit, a store write, and `RefreshAsync`, reads the affected names back from the repository and stores the statuses it finds. Each entry is swapped in only while it still holds what the write read (`ICache.SyncWithSourceAsync`), with a retry when another write got there first. Two writes to the same grant whose cache updates land in the opposite order to their commits therefore leave the last committed status cached, and a refresh cannot put back a status that a concurrent write replaced. This costs one extra repository read per write. A direct write to the EF `IPermissionGrantRepository` also writes the status it stored into the affected entry (undefined for a delete), after its unit commits when it is enlisted, so a repository-level write is reflected on the next read and a check that loaded the rows before it cannot fill the old status back. Writes that bypass the EF repository (the PostgreSQL or SQL Server repository called directly, raw SQL, direct `DbContext`) leave the cache stale, and they stay stale for `PermissionManagementOptions.GrantCacheExpiration` (default 5 hours). `IPermissionGrantStore` also exposes a batched read, `IsGrantedAsync(names, providerName, providerKeys)`, which returns every key's grant statuses for every pending name: one `ICache.GetAllAsync` round-trip, then one repository read that covers all missed name/key pairs, so a check across N roles costs one store call instead of N. A long-lived consumer that must observe such a write sooner, for example a streaming connection whose credential is checked once per event, calls `IPermissionGrantStore.RefreshAsync(providerName, providerKey)`, which reloads every grant for that target from the repository and replaces the cached statuses.
+The grant store caches each grant status in the registered `ICache`, keyed by the current tenant id. A check for tenant A never returns a cached result for tenant B.
 
-**Use the hybrid cache in production.** The grant cache is read on every authorized request, so these packages expect `UseHybrid` (an in-process L1 in front of the distributed cache), where a warm check costs no network trip. On a distributed-only cache (`UseRedis`) every read is a round trip on the request path, and nothing memoizes a result within a request. One tenant-scoped request that resolves its tenant through the catalog, checks a permission and a feature, and reads one setting waits on about five sequential round trips before the handler's own I/O: two for the tenant catalog (identifier to id, then id to tenant), one for the permission check (the user and role reads run together), one for the feature check, and one for the setting read. A second check or read of the same name in the same request repeats its trip.
+- **Writes update the cache.** `IPermissionManager.SetAsync` writes the new status into the cache, and `DeleteAsync` marks the deleted names undefined. A `unit.Permissions` write updates the cache only after its unit commits, under the tenant that made the write. A rolled-back unit leaves the cache as it was. A cache fault after a commit is logged, not thrown.
+- **Races resolve to the last commit.** A check that read the rows before a concurrent write never overwrites the newer status. Two writes to one grant leave the last committed status cached. Each write costs one extra repository read to guarantee this.
+- **Bypassing writes go stale.** A direct EF `IPermissionGrantRepository` write updates the cache too. Raw SQL, a direct `DbContext` write, or a direct PostgreSQL or SQL Server repository call does not, and the old status stays cached for `PermissionManagementOptions.GrantCacheExpiration` (default 5 hours).
+- **Force a reload.** A long-lived consumer that must see such a write sooner, such as a streaming connection that checks a credential per event, calls `IPermissionGrantStore.RefreshAsync(providerName, providerKey)`. It reloads every grant of that user or role and replaces the cached statuses.
+- **Batched reads.** `IPermissionGrantStore.IsGrantedAsync(names, providerName, providerKeys)` returns every key's statuses for every name in one cache round trip and at most one repository read, so a check across N roles costs one call.
+
+**Use the hybrid cache in production.** With `UseHybrid`, an in-process tier serves a warm check with no network trip. With a distributed-only cache (`UseRedis`), every read is a round trip on the request path, and nothing memoizes a result within a request. One tenant-scoped request that resolves its tenant through the catalog, checks a permission and a feature, and reads one setting waits on about five sequential round trips before the handler's own I/O: two for the tenant catalog, one for the permission check (the user and role reads run together), one for the feature check, and one for the setting. A second check of the same name in the same request repeats its trip.
 
 ### Reacting to a change
 
-`PermissionManager` publishes `PermissionGrantChangedMessage` over `IBus` after a successful `SetAsync` or `DeleteAsync`. The message tells an instance that a copied grant decision is stale, so the instance can re-read instead of polling. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too. Wire contract: `AddHeadlessPermissions` declares the message as `headless.permissions.grant-changed`, contract version `1` (`PermissionGrantChangedMessage.MessageName`), so the consumer below needs no `Message<T>` declaration of its own. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
+`IPermissionManager` publishes `PermissionGrantChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`. Consume it to refresh a grant decision you copied into state of your own, instead of polling. The grant cache does not need it: store writes already update the cache.
+
+Consume it with an [every-instance consumer](messaging/consumers.md#every-instance-bus-delivery), so every process receives every announcement. Delivery is at most once, so also reload when the subscription is established. `AddHeadlessPermissions` declares the message as `headless.permissions.grant-changed`, contract version `1` (`PermissionGrantChangedMessage.MessageName`), so you declare no `Message<T>` for it. Naming conventions (`UseConventions`) do not rename it. Only `MessagingOptions.MessageNamePrefix` applies.
 
 ```csharp
 [BusConsumer("app.reload-role-permissions", EveryInstance = true)]
@@ -137,19 +146,17 @@ public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<Permis
 }
 ```
 
-The message carries permission names and the scope that changed, never grant values. Values would make delivery order load-bearing: two racing grant and revoke writes could leave a receiver holding the older state. A receiver re-reads instead, which is idempotent and order-free. `OriginHostName` names the host that wrote the change (`IHostIdentityAccessor.HostName`) for logs and telemetry. Do not filter on it. The writing process holds copies too, since the manager knows nothing about the state a consumer copied a grant into. The origin must re-read like every other instance.
+- **Names, not values.** The message carries `PermissionNames`, `ProviderName`, and `ProviderKey`, never grant values. Re-read the grant on receipt. A re-read is idempotent and does not depend on delivery order.
+- **Do not filter on `OriginHostName`.** It names the writing host for logs. The writing process holds copies too, so it re-reads like every other instance.
+- **After the commit.** An `IPermissionManager` write commits before the message goes out, even inside your own `RunAsync(db, …)`, so a re-read loads the new grant. A `unit.Permissions` write publishes after its unit commits. A rolled-back unit publishes nothing. A crash between the commit and the publish loses the announcement.
+- **Messaging is optional.** A host without `AddHeadlessMessaging` publishes nothing. A failed publish is logged and never fails the write. A consumer that must converge without a bus still needs a periodic refresh.
+- **No ordering with cache invalidation.** With a hybrid cache, a peer can receive `PermissionGrantChangedMessage` before its own `CacheInvalidationMessage` and re-read the old grant from its local tier. When the first re-read shows no change, re-read again a few seconds later, and keep the periodic refresh short. A copied grant decision is only as current as its last re-read.
 
-`IBus` is optional. A host that never calls `AddHeadlessMessaging` writes grants exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
-
-The announcement follows a committed write. An `IPermissionManager` write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. It commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new grant. A write through `unit.Permissions` joins the unit instead, and its message is published from the unit's post-commit callback; a unit that rolls back publishes nothing. That callback is process-local, so a crash between the commit and the publish loses the announcement, the same outcome as a failed publish.
-
-This signal is separate from grant-cache coherence. A store-backed write updates the affected cache entries directly. `PermissionGrantChangedMessage` exists for state the framework cannot see, such as a resolved grant decision that a consumer copied into a field of its own.
-
-The two messages travel on separate subscriptions, and nothing orders them. With a hybrid grant cache, a peer can receive `PermissionGrantChangedMessage` before its own `CacheInvalidationMessage`, re-read, and get the old grant from its local tier. A consumer that re-reads once on the announcement then keeps a revoked grant until its next refresh. Re-read again a few seconds later when the first read shows no change, and keep the periodic refresh short: a copied grant decision is only as current as its last re-read.
+**Verify:** in a test, grant a permission through `IPermissionManager` and assert that the consumer reloaded.
 
 ### Writing grants inside a unit of work
 
-`unit.Permissions` is the enlisted receiver for grant writes, an accessor `Headless.Permissions.Abstractions` adds to `IUnitOfWork` (namespace `Headless.UnitOfWork`). It offers `SetAsync` (single or batch), `DeleteAsync(providerName, providerKey)`, and the `GrantToUserAsync`, `RevokeFromUserAsync`, `GrantToRoleAsync`, and `RevokeFromRoleAsync` shorthands. Every read and write of a call runs on the unit's connection and transaction, so the grant commits or rolls back with the caller's other writes:
+`unit.Permissions` (namespace `Headless.UnitOfWork`) writes grants inside the unit you hold. It offers `SetAsync` (single or batch), `DeleteAsync(providerName, providerKey)`, `GrantToUserAsync`, `RevokeFromUserAsync`, `GrantToRoleAsync`, and `RevokeFromRoleAsync`. Each call runs on the unit's connection and transaction, so the grant commits or rolls back with your other writes:
 
 ```csharp
 await factory.RunAsync(db, async (unit, ct) =>
@@ -160,71 +167,70 @@ await factory.RunAsync(db, async (unit, ct) =>
 }, ct);
 ```
 
-- **Which unit joins.** Any unit with a live relational transaction on the database the storage is configured for: an EF unit (`BeginAsync(db)`, `RunAsync(db, …)`) or a raw-ADO unit (`BeginAsync(connection)`), on any of the three stores. A unit on another database, a resource-less unit, or one that already completed is refused with `InvalidOperationException` before any write, and the unit stays usable.
-- **After commit.** The grant cache entries are written with the committed statuses and `PermissionGrantChangedMessage` is published from the unit's `OnCompleted` callbacks. A rolled-back unit does neither. Both callbacks restore the tenant that made the write.
-- **Validation is unchanged.** Definition, provider, and key checks throw `ConflictException` or `ArgumentException` before the unit is touched, exactly as `IPermissionManager.SetAsync` does.
-- **Replay.** Inside an owned `RunAsync` block the writes replay with the block. Inside an observed unit (a domain-event handler running in the `HeadlessDbContext` save pipeline) the first write calls `IUnitOfWork.PreventRetry()`, because the pipeline's replay cannot restore rows written outside its change tracker.
-- **EF store with a retrying execution strategy.** A context configured with `EnableRetryOnFailure` joins a unit only from inside `RunAsync(db, …)`, which runs the whole unit under the strategy. From a raw-ADO unit it is refused with an `InvalidOperationException` that names `RunAsync(db, …)`.
-- **Custom extensions.** A custom `IPermissionGrantProvider` or `IPermissionGrantRepository` joins through its `SetEnlistedAsync` / `*EnlistedAsync` members, which default to throwing `NotSupportedException`; `StorePermissionGrantProvider` and the three stores implement them. A host that replaces `IPermissionManager` keeps the framework's enlisted path, because `IUnitOfWorkPermissions` is registered separately.
+- **Which unit joins.** A unit with a live relational transaction on the database the storage uses: an EF unit (`BeginAsync(db)`, `RunAsync(db, …)`) or a raw-ADO unit (`BeginAsync(connection)`), on any of the three stores. A unit on another database, a unit with no resource, or a completed unit throws `InvalidOperationException` before any write, and the unit stays usable. `unit.Permissions` also throws `InvalidOperationException` when `AddHeadlessPermissions` was not called.
+- **After commit.** The cache entries and `PermissionGrantChangedMessage` follow the commit, under the tenant that made the write. A rolled-back unit does neither.
+- **Validation is unchanged.** Definition, provider, and key checks throw `ConflictException` or `ArgumentException` before the unit is touched, as `IPermissionManager.SetAsync` does.
+- **Replay.** Inside an owned `RunAsync` block the writes replay with the block. Inside a domain-event handler running in the `HeadlessDbContext` save pipeline, the first write calls `IUnitOfWork.PreventRetry()`, because that replay cannot restore rows written outside the change tracker.
+- **EF with a retrying execution strategy.** A context with `EnableRetryOnFailure` joins only from inside `RunAsync(db, …)`. From a raw-ADO unit it throws `InvalidOperationException` naming `RunAsync(db, …)`.
+- **Custom extensions.** A custom `IPermissionGrantProvider` or `IPermissionGrantRepository` joins a unit only by implementing its `*EnlistedAsync` members. The defaults throw `NotSupportedException`. Replacing `IPermissionManager` does not disable `unit.Permissions`, which is registered separately.
+
+**Verify:** in a test, throw inside the `RunAsync` block after the grant and assert that `IsGrantedAsync` still returns `false`.
 
 ### Static vs. Dynamic Definition Store
 
-The *static store* (`IStaticPermissionDefinitionStore`) builds the permission catalog once at startup by invoking all registered `IPermissionDefinitionProvider` instances. It is thread-safe and lazily initialized on first access.
+The static store builds the catalog once, on first use, from every registered `IPermissionDefinitionProvider`.
 
-The *dynamic store* (`IDynamicPermissionDefinitionStore`) reads definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicPermissionStoreEnabled = false`); enable it only when permission definitions must be edited at runtime without redeployment. When it is enabled, the `PermissionDefinitions` [warm-up](utilities.md#warm-up) loads it through `IDynamicPermissionDefinitionStore.GetGroupsAsync` after the host starts, so the first request does not wait on the database; the `warmup` readiness check reports `Unhealthy` until that load succeeds, and a failed load is retried in the background. With the dynamic store disabled, the warm-up does nothing and does not hold readiness.
+The dynamic store reads definitions from the database. It is off by default (`IsDynamicPermissionStoreEnabled = false`). Turn it on only when definitions must change at runtime without a redeploy. It caches definitions in process for `DynamicDefinitionsMemoryCacheExpiration` (default 30 seconds), then checks a distributed stamp that other instances bump.
 
-When a save adds or updates definitions, the dynamic store publishes `DynamicPermissionDefinitionsChanged` over `IBus`, listing the added or updated names. A host without messaging still saves the definitions and changes the common stamp, so other instances refresh on their next read; it publishes nothing. Wire contract: `AddHeadlessPermissions` declares it as `headless.permissions.definitions-changed`, contract version `1` (`DynamicPermissionDefinitionsChanged.MessageName`). The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
-
-`IPermissionDefinitionManager` merges both stores. Static definitions take precedence over dynamic definitions of the same name.
+- With the dynamic store on, the `PermissionDefinitions` [warm-up](utilities.md#warm-up) loads it after the host starts. The `warmup` readiness check reports `Unhealthy` until that load succeeds, and a failed load retries in the background. With it off, the warm-up does nothing.
+- A save that adds or updates definitions publishes `DynamicPermissionDefinitionsChanged` over `IBus`, listing the names. Its wire name is `headless.permissions.definitions-changed`, contract version `1` (`DynamicPermissionDefinitionsChanged.MessageName`). Without messaging, other instances still refresh through the stamp on their next read.
+- `IPermissionDefinitionManager` merges both stores. A static definition wins over a dynamic one with the same name.
 
 ### Definition Seeding
 
-`AddHeadlessPermissions` registers an `ISeeder` named `PermissionDefinitions`. When `SaveStaticPermissionsToDatabase` is true, it saves the static permission definitions through `IDynamicPermissionDefinitionStore.SaveAsync` (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; any other failure surfaces from the seed run after the last retry. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` still retries in real time. A definition's `ExtraProperties` are stored with `JsonConstants.DefaultStorageJsonOptions` on every provider: keys keep their case, and values read back as `string`, `bool`, `long`, `decimal`, or `JsonElement` (read them with `GetProperty<T>(name)`). The seeder compares in that stored shape, so re-seeding unchanged definitions writes nothing and `seed --verify` reports the store current.
+`AddHeadlessPermissions` registers a seeder named `PermissionDefinitions`. When `SaveStaticPermissionsToDatabase` is `true` (the default), it saves the static definitions to the database. The save is idempotent and runs under a distributed lock.
 
-The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
+- **Run it on every release.** The host start does not seed. Run `dotnet app.dll seed` (or `deploy`) in the deployment. In development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
+- **Retries.** A failed save retries up to 10 times with jittered exponential back-off capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail at once. The back-off waits real time, even under a `FakeTimeProvider`. A failed seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup`.
+- **Extra properties.** `ExtraProperties` are stored as JSON. Keys keep their case, and values read back as `string`, `bool`, `long`, `decimal`, or `JsonElement`. Read them with `GetProperty<T>(name)`. Re-seeding unchanged definitions writes nothing.
+- **Deleting definitions.** List removed names in `PermissionManagementProvidersOptions.DeletedPermissions` or `DeletedPermissionGroups` (`services.Configure<PermissionManagementProvidersOptions>(...)`). The next seed removes them.
 
-A host that never seeds still serves its static definitions from memory, and the dynamic store loads on its first read. But:
+A host that never seeds still serves its static definitions from memory. But deleted definitions stay in the database, other applications sharing the database keep stale definitions, and `DynamicPermissionDefinitionsChanged` is not published.
 
-- Definitions listed in `DeletedPermissions` or `DeletedPermissionGroups` are not removed from the database.
-- Other applications that share the database keep serving stale definitions, because the common stamp is not bumped.
-- `DynamicPermissionDefinitionsChanged` is not published.
+**Verify:** `dotnet app.dll seed verify` prints `Current` for `PermissionDefinitions`, and exits 1 when the store is `Stale`.
 
 ## Choosing a Provider
 
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
-| `Headless.Permissions.Storage.EntityFramework` | You already use EF Core and want schema managed via EF migrations | You need to avoid an EF dependency or want zero-overhead ADO.NET | Portable across any EF-supported DB; startup validates that all permissions entities are in the EF model before hosted services start |
-| `Headless.Permissions.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against PostgreSQL naming rules |
-| `Headless.Permissions.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against SQL Server naming rules |
+| `Headless.Permissions.Storage.EntityFramework` | You already use EF Core and want the schema in your EF migrations | You want no EF Core dependency | Works on any EF Core database. A start fails when the EF model lacks the permission entities |
+| `Headless.Permissions.Storage.PostgreSql` | You use PostgreSQL without EF Core | You run SQL Server or want EF migrations to own the schema | `resources provision` creates the tables. Table names follow PostgreSQL identifier rules |
+| `Headless.Permissions.Storage.SqlServer` | You use SQL Server without EF Core | You run PostgreSQL or want EF migrations to own the schema | `resources provision` creates the tables. Table names follow SQL Server identifier rules |
 
 ---
 
 ## Headless.Permissions.Abstractions
 
-Defines the unified interface for permission management across different grant providers and storage backends.
-
-### API and behavior
-
-- `IPermissionManager` — resolves and mutates permission grants with AWS IAM-style semantics; `GetAsync` (single), `GetAllAsync` (all or by names), `SetAsync` (grant or prohibit, single or batch), `DeleteAsync` (remove all records for a principal)
-- `PermissionManagerExtensions` — convenience helpers: `IsGrantedAsync` (boolean overloads), `GrantToUserAsync`, `RevokeFromUserAsync`, `SetToUserAsync`, `GrantToRoleAsync`, `RevokeFromRoleAsync`, `SetToRoleAsync`
-- `unit.Permissions` (`HeadlessUnitOfWorkPermissionsExtensions`, namespace `Headless.UnitOfWork`) — returns the `UnitOfWorkPermissions` bound to the unit: `SetAsync` (single or batch), `DeleteAsync`, `GrantToUserAsync`, `RevokeFromUserAsync`, `GrantToRoleAsync`, `RevokeFromRoleAsync`, each running inside the unit's transaction. Throws `InvalidOperationException` when `AddHeadlessPermissions` was not called or the unit is no longer active
-- `IUnitOfWorkPermissions` — the `IUnitOfWorkFeature` behind `unit.Permissions`; takes the unit per call. Bridge seam, hidden from IntelliSense
-- `IPermissionDefinitionProvider` — contributes permission groups and definitions at startup via `IPermissionDefinitionContext`
-- `IPermissionDefinitionManager` — looks up and enumerates all defined permissions (`FindAsync`, `GetPermissionsAsync`, `GetGroupsAsync`)
-- `IPermissionDefinitionContext` — mutable builder passed to `IPermissionDefinitionProvider.Define`; `AddGroup(name, displayName)`, `GetGroup`, `GetGroupOrDefault`, `RemoveGroup`, `GetPermissionOrDefault`. Groups are created only through `AddGroup(name, ...)` — there is no instance-taking `AddGroup(PermissionGroupDefinition)` overload and `PermissionGroupDefinition`'s constructor is internal
-- `PermissionGroupDefinition` — named container for permissions; `AddChild`, `GetFlatPermissions`, `GetPermissionOrDefault`. Constructed via `IPermissionDefinitionContext.AddGroup`, not directly
-- `PermissionDefinition` — single permission; `AddChild` for nesting, `RemoveChild(name)` to detach a child, `Providers` list for restricting which grant providers can manage it
-- `ICanAddChildPermission` — shared interface on both group and definition, enabling uniform `AddChild` calls in tree-building code
-- `GrantedPermissionResult` — result of `GetAsync`; `Name`, `IsGranted`, and `Providers` (`IReadOnlyList<GrantPermissionProvider>` — the contributing grant providers with their keys; the framework populates it)
-- `GrantPermissionProvider` — identifies a contributing provider by `Name` and the `Keys` (user id or role names) that granted the permission
-- `MultiplePermissionGrantResult` — exposes the name-to-granted map as a read-only `Grants` (`IReadOnlyDictionary<string, bool>`) property, a `this[permissionName]` lookup indexer, and `AllGranted`/`AllProhibited` shorthand properties; returned by batch `IsGrantedAsync`
-- `PermissionGrantProviderNames` — constants `User` and `Role` for the built-in providers
+The contracts that application and domain code reference.
 
 ### Install
 
 ```bash
 dotnet add package Headless.Permissions.Abstractions
 ```
+
+### API and behavior
+
+- `IPermissionManager`: `GetAsync` (one name), `GetAllAsync` (all, or by names), `SetAsync` (grant or prohibit, one name or a batch), and `DeleteAsync` (every record of one user or role). `GetAsync` and `GetAllAsync` take an optional `providerName` that limits resolution to one provider.
+- `PermissionManagerExtensions`: `IsGrantedAsync` (one name returns `bool`, several return `MultiplePermissionGrantResult`), `GrantToUserAsync`, `RevokeFromUserAsync`, `SetToUserAsync`, `GrantToRoleAsync`, `RevokeFromRoleAsync`, and `SetToRoleAsync`.
+- `unit.Permissions`: the unit-bound writer. See [Writing grants inside a unit of work](#writing-grants-inside-a-unit-of-work).
+- `IPermissionDefinitionProvider` and `IPermissionDefinitionContext`: `AddGroup(name, displayName)`, `GetGroup`, `GetGroupOrDefault`, `RemoveGroup`, and `GetPermissionOrDefault`. Create groups only through `AddGroup`.
+- `PermissionGroupDefinition` and `PermissionDefinition`: both have `AddChild`. A definition also has `RemoveChild(name)` and `Providers`.
+- `IPermissionDefinitionManager`: `FindAsync`, `GetPermissionsAsync`, and `GetGroupsAsync`.
+- `GrantedPermissionResult`: `Name`, `IsGranted`, and `Providers` (each a `GrantPermissionProvider` with `Name` and the `Keys`, user id or role names, that granted it).
+- `MultiplePermissionGrantResult`: `Grants` (name to granted), an indexer by name, `AllGranted`, and `AllProhibited`.
+- `PermissionGrantChangedMessage`: the change announcement. See [Reacting to a change](#reacting-to-a-change).
+- `PermissionGrantProviderNames`: the constants `User` and `Role`.
 
 ### Setup and use
 
@@ -255,85 +261,15 @@ var grantMap = await permissions.IsGrantedAsync(
 if (grantMap.AllGranted) { /* all allowed */ }
 ```
 
-#### Defining Permissions
+Define permissions as shown in [Permission Definitions and Groups](#permission-definitions-and-groups).
 
-```csharp
-public sealed class OrderPermissionProvider : IPermissionDefinitionProvider
-{
-    public void Define(IPermissionDefinitionContext context)
-    {
-        var group = context.AddGroup("Orders");
-
-        // Use AddChild (not AddPermission — that method does not exist)
-        group.AddChild("Orders.View");
-        group.AddChild("Orders.Create");
-        group.AddChild("Orders.Edit");
-        group.AddChild("Orders.Delete");
-
-        // Nested children
-        var billing = group.AddChild("Orders.Billing");
-        billing.AddChild("Orders.Billing.Refund");
-    }
-}
-```
-
-### Configuration
-
-None. This is an abstractions-only package.
-
-### Runtime behavior
-
-None.
+**Verify:** no startup signal of its own. The runtime registration in [Headless.Permissions](#headlesspermissions) carries the checks.
 
 ---
 
 ## Headless.Permissions
 
-Core implementation of permission management with grant resolution, caching, the definitions seeder, and ASP.NET Core authorization integration.
-
-### API and behavior
-
-- `PermissionManager` — full `IPermissionManager` implementation; walks the grant-provider chain, caches results, and coordinates writes with cache invalidation. Also implements `IUnitOfWorkPermissions`
-- `IPermissionGrantProvider` / built-in providers: `UserPermissionGrantProvider` (`"User"`) and `RolePermissionGrantProvider` (`"Role"`). `SetEnlistedAsync` writes inside a unit; `StorePermissionGrantProvider` implements it and the interface default throws `NotSupportedException`
-- `IPermissionGrantStore` — cached grant reads and writes. `GrantAsync` and `RevokeAsync` write in the current tenant: the lookup, the written record's `TenantId`, and the cache entry all use `ICurrentTenant.Id`, so to write another tenant's grant, wrap the call in `currentTenant.Change(tenantId)`. `DeleteAsync(providerName, providerKey)` deletes a subject's grants and marks their cache entries undefined, and `GrantEnlistedAsync`, `RevokeEnlistedAsync`, and `DeleteEnlistedAsync` do the same writes inside a unit, updating the cache entries after it commits
-- `IPermissionGrantRepository` — storage contract; `SaveAsync(inserted, deleted)` deletes then inserts in one transaction, and the store routes every grant/denial flip through it so a failure cannot leave the permission undefined; `GetListEnlistedAsync`, `InsertManyEnlistedAsync`, and `DeleteManyEnlistedAsync` run on a unit's connection and transaction, and default to throwing `NotSupportedException` for a third-party repository that cannot join a unit
-- `IStaticPermissionDefinitionStore` — builds the permission catalog lazily and thread-safely from all registered `IPermissionDefinitionProvider` instances
-- `IDynamicPermissionDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination; disabled by default
-- `PermissionDefinitions` seeder — saves static definitions when the host seeds, with up to 10 jittered exponential-back-off retries capped at 30 seconds
-- `PermissionDefinitions` warm-up — loads the dynamic store into its in-process cache after the start, behind readiness, when `IsDynamicPermissionStoreEnabled` is true
-- `PermissionManagementOptions` — all tuning options for lock keys/timeouts, cache expiry, dynamic store toggle
-- `PermissionsStorageOptions` — schema, table name, and column length configuration shared across all storage providers
-- `RelationalPermissionsOptions` — base of `PostgreSqlPermissionsOptions` and `SqlServerPermissionsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational grant and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
-- `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `DisablePermissionNamePolicies`, `RegisterExtension`. `ConfigureStorage` also accepts the `Headless:Permissions:Storage` configuration section.
-- `PermissionPolicyProvider` — `IAuthorizationPolicyProvider` that resolves a defined permission name as a policy holding one `PermissionRequirement`; registered by default in place of ASP.NET Core's default provider
-- `IAuthorizationPolicyCatalog` (`Headless.Permissions`) — lists names: `GetRegisteredPolicyNamesAsync()` (policies added to `AuthorizationOptions`), `GetPermissionNamesAsync()` (defined permission names, for grant checks), and `GetPolicyNamesAsync()` (every name that resolves to a policy through the active provider: the registered policies, plus the permissions with any `PolicyNamePrefix` applied when `PermissionPolicyProvider` is that provider). Every name `GetPolicyNamesAsync()` returns is safe to pass to `IAuthorizationService`, including under `DisablePermissionNamePolicies()` or a host-owned provider, where it returns the registered policies only
-- `IGrantedPoliciesReader` (`Headless.Permissions`) — `GetAsync(PrincipalContext, policyNames, …)` returns the set of every granted permission name plus every listed policy the principal satisfies. Every defined permission is read in one batch; a listed name that `PermissionPolicyProvider` resolves as a permission policy (prefix included) is decided from that batch instead of through `IAuthorizationService`, so passing `GetPolicyNamesAsync()` costs no grant check per permission. Registered policies, including one that shadows a permission name, are still evaluated through `IAuthorizationService`, and a shadowing policy that fails stays out of the set even when the permission of the same name is granted
-- `PrincipalContext(ClaimsPrincipal Principal, string? TenantId)` (`Headless.Context` namespace, in `Headless.Context.Abstractions`) — the principal and tenant a reader resolves for in place of the ambient ones
-- `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
-- `services.AddPermissionDefinitionProvider<T>()` — registers a custom `IPermissionDefinitionProvider` as singleton
-- `services.AddPermissionGrantProvider<T>()` — registers an additional grant provider (last-registered = highest priority)
-- `IGrantPermissionsSeedHelper` / `GrantPermissionsSeedHelper` — seed-time helper for granting all allowed permissions to a role idempotently
-- `PermissionRequirement` — ASP.NET Core `IAuthorizationRequirement` for a single permission
-- `PermissionsRequirement` — multi-permission requirement with AND (`RequiresAll = true`) or OR semantics. The constructor throws `ArgumentException` for an empty name list, which would otherwise authorize every caller under AND, and drops duplicate names
-- `PermissionRequirementHandler` — the one `IAuthorizationHandler` for both requirement types. It collects every `PermissionRequirement` and `PermissionsRequirement` in the evaluated policy, reads all their names with one `IPermissionManager.GetAllAsync` call, and succeeds each requirement whose rule holds. A combined policy (a route-group permission, an endpoint permission, and a surface policy) therefore costs one grant read, not one per requirement. It never calls `Fail`, so an ungranted requirement stays pending. Undefined and disabled permissions are never granted
-
-The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuthorizationService`) and `services.AddAlwaysAllowAuthorization()` live in the separate `Headless.Permissions.Testing` package, not Core.
-
-### Design constraints
-
-- Grant providers are stored in registration order with last-registered = highest priority. The built-in registration is `Role` first, then `User`, making User the highest-priority built-in provider. Custom providers added via `AddPermissionGrantProvider<T>()` are appended after `User` and override both built-ins.
-- `AddHeadlessPermissions` is guarded on `IPermissionGrantStore` so calling it more than once is safe — the management core registers once. However, registering a second storage provider extension throws at host startup.
-- **Permission-name policies.** `PermissionPolicyProvider` asks ASP.NET Core's default provider first, so a policy registered with `AddPolicy` always wins. ASP.NET matches those names ignoring case, so a host policy `orders.edit` shadows the permission `Orders.Edit`. On a miss, the name is looked up as a permission (ordinal, case-sensitive): a defined permission — enabled or disabled — resolves to a policy whose only requirement is `PermissionRequirement`; anything else resolves to `null` and ASP.NET Core throws its usual "policy not found" `InvalidOperationException`. A disabled permission therefore still resolves, and its policy denies everyone.
-- **Provider registration order.** `AddHeadlessPermissions` replaces ASP.NET Core's `DefaultAuthorizationPolicyProvider` whether `AddAuthorization`/`AddControllers` ran before or after it. A host that registered its own `IAuthorizationPolicyProvider` before `AddHeadlessPermissions` keeps it and gets no permission-name resolution; such a provider can create `PermissionPolicyProvider` with `ActivatorUtilities.CreateInstance<PermissionPolicyProvider>(serviceProvider)` and consult it on its own misses. A provider registered afterwards with `TryAdd*` is skipped, and one registered afterwards with `AddSingleton` replaces ours. ASP.NET Core uses exactly one policy provider.
-- **Generated policies hold only the permission requirement**, the same as a hand-written `AddPolicy(name, p => p.Requirements.Add(new PermissionRequirement(name)))`. ASP.NET Core never merges `DefaultPolicy` into a named policy, so tenant enforcement added through `RequireTenant()` and any default authentication schemes do not apply to `[Authorize("Orders.Edit")]`.
-- **Caching.** A resolved name keeps its policy for the process lifetime, and the provider lets the authorization middleware cache the combined policy per endpoint. Misses are not cached, so a permission added later through the dynamic store resolves without a restart (after `DynamicDefinitionsMemoryCacheExpiration`); a permission deleted after first use keeps its policy, and `PermissionRequirementHandler` denies it because undefined permissions are never granted.
-- **Failures propagate.** A definition-store failure (cache, lock, or database) while resolving a policy surfaces as that exception, never as "policy not found", and is not cached. The provider contract has no cancellation token, so with the dynamic store enabled a first lookup during an outage can wait up to `CrossApplicationsCommonLockAcquireTimeout`.
-- **Policy catalog limits.** ASP.NET Core exposes no listing of registered policies, so `IAuthorizationPolicyCatalog.GetRegisteredPolicyNamesAsync()` reads the private map on `AuthorizationOptions` through `[UnsafeAccessor]`; an ASP.NET Core release that renames or removes it makes the call throw `MissingMethodException`, and a unit test pins it so an upgrade fails CI first. Policies a custom `IAuthorizationPolicyProvider` produces on demand have no list and are not included.
-- **Keys must be text every provider keeps unchanged.** Every `IPermissionGrantStore` entry point throws `ArgumentException` before touching storage when a permission name, provider name, or provider key starts or ends with white space, on reads as well as writes. `GrantAsync`, `RevokeAsync`, and their enlisted forms apply the same check to the ambient `ICurrentTenant.Id` before they write, because a denial row is as tenant-scoped as a grant row. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Every provider must keep a key unchanged, so the store also refuses a NUL character (PostgreSQL cannot store it) and an unpaired UTF-16 surrogate (SqlClient sends it as U+FFFD, so SQL Server would merge keys that differ only in which lone surrogate they carry). The rule is `Argument.IsPortableKey`. Normalize keys at your own boundary; the store refuses rather than trims. `IPermissionManager.DeleteAsync` and `GrantPermissionsSeedHelper` apply the same rule; reads do not check the ambient `ICurrentTenant.Id`.
-- The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
-- Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `PermissionDefinitions` seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`.
-- `PermissionGrantRecord` implements `ICreateAudit` / `IUpdateAudit` and carries `CreatedAt` (non-null) and `UpdatedAt` (nullable) audit timestamps. Grants are insert-only — a revoke deletes the row and inserts a replacement rather than updating, both in one transaction — so `UpdatedAt` is normally null. The EF provider stamps `CreatedAt` through the audit save-processor; the raw-SQL providers stamp it from the injected `TimeProvider`. Hydrate from storage with the `PermissionGrantRecord.FromStorage(...)` factory, which sets the audit fields.
-- **Tenancy divergence (intentional).** `PermissionGrantRecord` keeps a first-class `TenantId` column and implements `IMultiTenant`, unlike `SettingValueRecord` / `FeatureValueRecord`, which scope tenancy through `ProviderName`/`ProviderKey` and have no tenant column. Grants need tenant-scoped uniqueness expressed directly in the `(Name, ProviderName, ProviderKey, TenantId)` unique index so the same grant can coexist per tenant and for the host. Because `TenantId` is nullable and PostgreSQL treats NULLs as distinct, every storage provider (EF, PostgreSQL, SQL Server) declares that constraint as a pair of filtered unique indexes — one `WHERE "TenantId" IS NOT NULL`, one over `(Name, ProviderName, ProviderKey)` `WHERE "TenantId" IS NULL` — so host-level grants are covered too. This is a deliberate design decision, not drift.
+The runtime: grant resolution, the grant cache, the definitions seeder, and the ASP.NET Core authorization integration.
 
 ### Install
 
@@ -343,9 +279,7 @@ dotnet add package Headless.Permissions
 
 ### Setup and use
 
-Register required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessPermissions`:
-
-> A caching provider is a hard prerequisite. This package references `Headless.Caching.Abstractions` only, so the root `ICache` that the tenant-scoped `ICache<PermissionGrantCacheItem>` wrapper delegates to comes from `AddHeadlessCaching(...)` with a provider (`UseInMemory` / `UseRedis` / `UseHybrid`). `AddHeadlessPermissions` declares it via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without one is refused at startup with a `MissingRequiredServiceException` rather than failing on the first permission check. Registration order does not matter — the check runs at host start.
+Register `TimeProvider`, `IGuidGenerator`, a caching provider (`AddHeadlessCaching` with `UseInMemory`, `UseRedis`, or `UseHybrid`), and an `IDistributedLock`. Then call `AddHeadlessPermissions` with one storage provider:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -357,9 +291,14 @@ builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
 builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
+- A host without a caching provider fails at start with `MissingRequiredServiceException`, not on the first check. Registration order does not matter.
+- Calling `AddHeadlessPermissions` twice is safe: the runtime registers once. A second storage provider throws at host start.
+
+**Verify:** `dotnet app.dll check` exits 0. A missing prerequisite makes it exit 1 with `Host check failed: …` naming the service.
+
 #### ASP.NET Core Authorization Integration
 
-Use a defined permission name directly as the policy name. `AddHeadlessPermissions` registers `PermissionPolicyProvider`, so no `AddPolicy` call is needed:
+Use a defined permission name as the policy name. `AddHeadlessPermissions` registers a policy provider that resolves it, so you add no policy:
 
 ```csharp
 // Controllers
@@ -370,7 +309,7 @@ public IActionResult Edit(int id) => Ok();
 app.MapPut("/orders/{id}", (int id) => Results.Ok()).RequireAuthorization("Orders.Edit");
 ```
 
-Stacked attributes and several names in one `RequireAuthorization(...)` call are AND. For an any-of (OR) set, or an all-of set under one name, register a `PermissionsRequirement` policy:
+Stacked attributes, and several names in one `RequireAuthorization(...)` call, are AND. For an any-of (OR) set, or an all-of set under one name, register a `PermissionsRequirement` policy:
 
 ```csharp
 // Multi-permission policy (AND); requiresAll: false gives OR
@@ -384,13 +323,13 @@ builder.Services.AddAuthorization(options =>
 });
 ```
 
-Or check inline:
+Or check in code:
 
 ```csharp
 var isGranted = await permissionManager.IsGrantedAsync(currentUser, "Orders.Edit");
 ```
 
-To make the namespace explicit, set a prefix; only prefixed names then resolve, with the prefix stripped before the lookup (`[Authorize("permission:Orders.Edit")]`):
+To make permission policies explicit, set a prefix. Only prefixed names then resolve, and the prefix is stripped before the lookup (`[Authorize("permission:Orders.Edit")]`):
 
 ```csharp
 builder.Services.AddHeadlessPermissions(setup =>
@@ -400,7 +339,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
-Hosts that resolve policies themselves opt out, which leaves the existing `IAuthorizationPolicyProvider` untouched:
+To keep your own `IAuthorizationPolicyProvider` and turn off permission-name policies:
 
 ```csharp
 builder.Services.AddHeadlessPermissions(setup =>
@@ -410,9 +349,27 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
+How permission-name policies behave:
+
+- **A registered policy wins.** A policy added with `AddPolicy` is looked up first, and ASP.NET Core matches it ignoring case, so a policy `orders.edit` shadows the permission `Orders.Edit`. Otherwise the name is looked up as a permission, ordinal and case-sensitive. A defined permission, enabled or disabled, resolves to a policy holding one `PermissionRequirement`. A disabled permission's policy denies everyone. Any other name throws ASP.NET Core's "policy not found" `InvalidOperationException`.
+- **No default policy is merged.** A permission policy holds only the permission requirement. `RequireTenant()` and default authentication schemes on `DefaultPolicy` do not apply to `[Authorize("Orders.Edit")]`.
+- **Failures.** A permission that is not granted stays unsatisfied, so ASP.NET Core returns 403, or 401 for an anonymous caller. Every permission requirement in one policy is read in one `GetAllAsync` call.
+- **Your own policy provider.** `AddHeadlessPermissions` replaces ASP.NET Core's default provider whatever the call order. A provider you register before `AddHeadlessPermissions` stays, and permission names then do not resolve. To keep both, create `PermissionPolicyProvider` with `ActivatorUtilities.CreateInstance<PermissionPolicyProvider>(serviceProvider)` and call it on your provider's misses. A provider registered afterwards with `AddSingleton` replaces the permission provider. One registered with `TryAdd*` is ignored.
+- **Caching.** A resolved name keeps its policy for the life of the process. A miss is not cached, so a permission added through the dynamic store resolves after `DynamicDefinitionsMemoryCacheExpiration` without a restart. A permission deleted after first use keeps its policy, which denies everyone.
+- **Store outages.** A definition-store failure while resolving a policy surfaces as that exception, not as "policy not found". With the dynamic store on, a first lookup during an outage can wait up to `CrossApplicationsCommonLockAcquireTimeout`.
+- **Workers.** `AddHeadlessPermissions` calls `AddAuthorizationCore()`, so `IAuthorizationService` resolves in a host that never called `AddAuthorization()`. Your own authorization registrations win.
+
+`IAuthorizationPolicyCatalog` lists names:
+
+- `GetRegisteredPolicyNamesAsync()`: the policies added to `AuthorizationOptions`. Policies a custom provider creates on demand are not listed. It reads a private ASP.NET Core field, so an ASP.NET Core release that renames it makes the call throw `MissingMethodException`.
+- `GetPermissionNamesAsync()`: the defined permission names.
+- `GetPolicyNamesAsync()`: every name that resolves to a policy, with any `PolicyNamePrefix` applied. Every name it returns is safe to pass to `IAuthorizationService`. Under `DisablePermissionNamePolicies()` or your own provider, it returns the registered policies only.
+
+**Verify:** in an integration test, call the endpoint anonymously and assert 401, as a user without the grant and assert 403, then grant the permission and assert success.
+
 #### Client Config for SPAs
 
-A front end usually needs, at login and on refresh, which permissions and policies the user holds and which client-visible features and settings apply. Headless ships one reader per domain and no endpoint: the application composes their results into its own response and returns it wherever it wants, such as a user-config endpoint and the login and refresh responses.
+A front end usually needs, at login and on refresh, the permissions and policies the user holds and the client-visible features and settings. Headless ships one reader per domain and no endpoint. Compose their results into your own response, such as a user-config endpoint or the login and refresh responses.
 
 ```csharp
 public sealed class UserConfigFactory(
@@ -438,9 +395,12 @@ public sealed class UserConfigFactory(
 }
 ```
 
-- Every reader resolves for the context's principal and tenant, not the ambient ones: it switches `ICurrentPrincipalAccessor` and `ICurrentTenant` to the context while it runs and restores them afterwards. Build the config from the principal you are about to return, not from `ICurrentUser`, because at login the new principal is not yet ambient. Pass `TenantId: null` for the host.
-- The granted-policies set holds only what is granted; a name that is not granted is absent. Project it to whatever shape the front end expects, such as `{ name: true }`. Permissions are checked with one `IPermissionManager.GetAllAsync` call, and each listed policy costs one `IAuthorizationService` evaluation.
-- A listed policy name that is neither a registered policy nor a defined permission throws ASP.NET Core's "No policy found" `InvalidOperationException`. To expose every registered policy instead of a fixed list, pass `await catalog.GetRegisteredPolicyNamesAsync()`.
+- **Pass the principal you return.** Each reader resolves for the `PrincipalContext` principal and tenant, not the ambient ones, and restores the ambient ones afterwards. At login the new principal is not ambient yet, so do not build the config from `ICurrentUser`. Pass `TenantId: null` for the host.
+- **The set holds only granted names.** `IGrantedPoliciesReader.GetAsync` returns every granted permission name plus every listed policy the principal satisfies. A name that is not granted is absent. Project it to the shape the front end expects, such as `{ name: true }`.
+- **Cost.** Every defined permission is read in one `GetAllAsync` call, and a listed name that resolves as a permission policy is decided from that read. Each other listed policy costs one `IAuthorizationService` evaluation. A registered policy that shadows a permission name is evaluated as a policy. If it fails, the name is absent even when the permission is granted.
+- **Unknown names throw.** A listed name that is neither a registered policy nor a defined permission throws ASP.NET Core's "No policy found" `InvalidOperationException`. To expose every resolvable name, pass `await catalog.GetPolicyNamesAsync()` from `IAuthorizationPolicyCatalog`.
+
+**Verify:** in a test, build the config for a principal holding one role grant and assert that the set contains that permission and omits an ungranted one.
 
 #### Seeding Permissions at Startup
 
@@ -449,69 +409,47 @@ public sealed class UserConfigFactory(
 await seedHelper.GrantAllPermissionsToRoleAsync("admin", tenantId: null, ct);
 ```
 
-`IGrantPermissionsSeedHelper.GrantAllPermissionsToRoleAsync` skips permissions that already have a grant record (idempotent) and only grants permissions that allow the `Role` provider.
+`IGrantPermissionsSeedHelper.GrantAllPermissionsToRoleAsync` grants a role every permission that allows the `Role` provider. It skips permissions that already have a grant record, so it is idempotent.
+
+**Verify:** after the seeder runs, `IsGrantedAsync` for a user in the role returns `true`.
 
 ### Configuration
 
 #### PermissionManagementOptions
 
-Configure via `setup.ConfigureManagement(...)` or `services.Configure<PermissionManagementOptions>(...)`:
+Configure with `setup.ConfigureManagement(...)` (also an `(options, IServiceProvider)` overload) or `services.Configure<PermissionManagementOptions>(...)`:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `GrantCacheExpiration` | 5 hours | How long a cached grant status lives. Bounds staleness after a write that bypasses the store |
+| `IsDynamicPermissionStoreEnabled` | `false` | Turns on the database-backed definition store |
+| `DynamicDefinitionsMemoryCacheExpiration` | 30 seconds | How long dynamic definitions stay in process before the distributed stamp is re-checked |
+| `SaveStaticPermissionsToDatabase` | `true` | Whether the `PermissionDefinitions` seeder saves static definitions |
+| `PolicyNamePrefix` | `null` | Only names with this prefix (ordinal) resolve as permissions. `null` resolves any defined name. Empty or white space fails validation |
+| `CrossApplicationsCommonLockKey` | `permissions:common_update_lock` | Distributed-lock key for definition saves across applications |
+| `CrossApplicationsCommonLockExpiration` | 10 minutes | How long that lock is held |
+| `CrossApplicationsCommonLockAcquireTimeout` | 5 minutes | Longest wait for that lock |
+| `ApplicationSaveLockExpiration` | 10 minutes | How long the per-application save lock is held |
+| `ApplicationSaveLockAcquireTimeout` | 5 minutes | Longest wait for the per-application save lock |
+| `PermissionsHashCacheExpiration` | 30 days | How long the hash of saved definitions is cached |
+| `CommonPermissionsUpdatedStampCacheKey` | `permissions:updated_local_stamp` | Distributed-cache key of the cross-application update stamp |
+| `CommonPermissionsUpdatedStampCacheExpiration` | 30 days | How long that stamp lives |
 
 ```csharp
 builder.Services.AddHeadlessPermissions(setup =>
 {
     setup.ConfigureManagement(options =>
     {
-        // Distributed-lock key coordinating cross-instance definition saves
-        // (default: "permissions:common_update_lock")
-        options.CrossApplicationsCommonLockKey = "permissions:common_update_lock";
-
-        // How long the cross-app lock is held (default: 10 minutes)
-        options.CrossApplicationsCommonLockExpiration = TimeSpan.FromMinutes(10);
-
-        // Max wait to acquire the cross-app lock (default: 5 minutes)
-        options.CrossApplicationsCommonLockAcquireTimeout = TimeSpan.FromMinutes(5);
-
-        // How long the per-application save lock is held (default: 10 minutes)
-        options.ApplicationSaveLockExpiration = TimeSpan.FromMinutes(10);
-
-        // Max wait to acquire the per-app save lock (default: 5 minutes)
-        options.ApplicationSaveLockAcquireTimeout = TimeSpan.FromMinutes(5);
-
-        // How long the SHA-256 hash of saved permissions is cached (default: 30 days)
-        options.PermissionsHashCacheExpiration = TimeSpan.FromDays(30);
-
-        // How long the cross-app update stamp lives in the distributed cache (default: 30 days)
-        options.CommonPermissionsUpdatedStampCacheExpiration = TimeSpan.FromDays(30);
-
-        // Distributed-cache key for the cross-app update stamp
-        // (default: "permissions:updated_local_stamp")
-        options.CommonPermissionsUpdatedStampCacheKey = "permissions:updated_local_stamp";
-
-        // Persist static definitions to the DB when the host seeds (default: true)
-        options.SaveStaticPermissionsToDatabase = true;
-
-        // Enable the dynamic definition store (default: false)
-        options.IsDynamicPermissionStoreEnabled = false;
-
-        // How long dynamic definitions stay in the in-process cache before
-        // the distributed stamp is re-checked (default: 30 seconds)
-        options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
-
-        // Only policy names with this prefix resolve as permissions (ordinal match,
-        // stripped before lookup). Null resolves any defined permission name;
-        // empty or whitespace fails validation (default: null)
-        options.PolicyNamePrefix = null;
+        options.IsDynamicPermissionStoreEnabled = true;
+        options.PolicyNamePrefix = "permission:";
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
-An `(options, IServiceProvider)` overload is available for late-bound configuration.
-
 #### PermissionsStorageOptions
 
-Configure schema and table names via `setup.ConfigureStorage(...)`:
+Configure schema and table names with `setup.ConfigureStorage(...)`, or bind the `Headless:Permissions:Storage` section with its `IConfiguration` overload:
 
 ```csharp
 builder.Services.AddHeadlessPermissions(setup =>
@@ -527,11 +465,13 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
-Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`permission_grants`, `provider_key`, `pk_permission_grants`, `ix_permission_grants_name_provider_name_provider_key_no_tenant`); on SQL Server and other databases they are PascalCase (`PermissionGrants`, `ProviderKey`, `PK_PermissionGrants`, `IX_PermissionGrants_Name_ProviderName_ProviderKey_NoTenant`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyGrants`). The raw providers and the EF mapping produce the same names on the same database. Because PostgreSQL silently truncates identifiers longer than 63 bytes, every provider refuses a configured table name whose longest derived PostgreSQL key or index name would exceed that: at most 18 characters for the grants table, 49 for definitions, and 55 for groups.
+- **Naming.** On PostgreSQL, tables, columns, keys, and indexes are snake_case (`permission_grants`, `provider_key`, `pk_permission_grants`). On SQL Server and other databases they are PascalCase (`PermissionGrants`, `ProviderKey`, `PK_PermissionGrants`). The EF mapping and the raw providers produce the same names on the same database.
+- **Custom table names.** A name you set is used as written, and its key and index names derive from it (`pk_MyGrants`). PostgreSQL truncates identifiers past 63 bytes, so every provider refuses a table name longer than 18 characters for grants, 49 for definitions, or 55 for groups.
+- **Tenancy.** Each grant row carries a `TenantId` column (null for host grants). A grant is unique per tenant on `(TenantId, Name, ProviderName, ProviderKey)`, and host grants are unique on `(Name, ProviderName, ProviderKey)`, on every provider.
 
 ##### Column lengths
 
-Every string column's maximum length is an option on `PermissionsStorageOptions`. The defaults are the lengths the tables always had, so an application that sets none gets the same schema:
+Every string column's maximum length is an option on `PermissionsStorageOptions`:
 
 | Option | Column | Default |
 | --- | --- | --- |
@@ -549,14 +489,15 @@ Every string column's maximum length is an option on `PermissionsStorageOptions`
 setup.ConfigureStorage(o => o.PermissionGrantsProviderKeyMaxLength = 128);
 ```
 
-Each value must be between 1 and 4000, the widest sized `nvarchar` on SQL Server; the registration refuses anything else when the options are first read. One option drives every reader: the EF Core model (`HasMaxLength`), the raw providers' `CREATE TABLE`, and the size of the raw providers' lookup parameters. Set it in `ConfigureStorage`, or bind it from the `Headless:Permissions:Storage` section, before the tables are created. `PermissionDefinitionSerializer` checks each definition against the same options and throws `ArgumentOutOfRangeException` for a name or display name that would not fit, so an over-long definition fails when definitions are saved instead of at the database; the definition record constructors no longer check length.
+- Each value must be between 1 and 4000. The registration refuses any other value when the options are first read.
+- One option sets the EF Core model, the raw providers' `CREATE TABLE`, and their query parameter sizes. Set it before the tables are created.
+- A definition whose name or display name exceeds its length throws `ArgumentOutOfRangeException` when the seeder saves it.
+- The grants unique indexes cover `TenantId`, `Name`, `ProviderName`, and `ProviderKey`. SQL Server limits a nonclustered index key to 850 `nvarchar` characters, and PostgreSQL limits a B-tree entry to about 2700 bytes. Keep the four lengths together under 850, or a row that fills them fails on insert.
 
-The grants table's unique indexes cover `TenantId`, `Name`, `ProviderName`, and `ProviderKey`. SQL Server limits a nonclustered index key to 1700 bytes, which is 850 `nvarchar` characters, and PostgreSQL limits a B-tree entry to about 2700 bytes. Keep the four lengths together under 850, or a row that fills them fails on insert.
+**Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column. Change the option and the column in the same release:
 
-**Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column: the schema runner records a step as applied and never re-runs it, and EF Core changes a column only through a migration. Change the option and the column in the same release:
-
-- **EF Core storage**: change the option, then add a migration (`dotnet ef migrations add WidenPermissionGrantProviderKeyColumn`). The model now maps the new length, so the migration contains the `AlterColumn`. Apply it as you apply every migration.
-- **Raw PostgreSQL or SQL Server storage**: run the `ALTER` with the tool that owns your schema, then deploy the option. `resources provision` does not widen a column.
+- **EF Core storage:** change the option, then add a migration (`dotnet ef migrations add WidenPermissionGrantProviderKeyColumn`). It contains the `AlterColumn`.
+- **Raw PostgreSQL or SQL Server storage:** run the `ALTER` with the tool that owns your schema, then deploy the option. `resources provision` does not widen a column.
 
   ```sql
   -- PostgreSQL: widening a varchar changes metadata only and keeps its indexes
@@ -566,47 +507,22 @@ The grants table's unique indexes cover `TenantId`, `Name`, `ProviderName`, and 
   ALTER TABLE [headless].[PermissionGrants] ALTER COLUMN [ProviderKey] nvarchar(128) NOT NULL;
   ```
 
-Widen the column before, or together with, the code that writes longer values. Narrowing a column that already holds longer values fails on both databases, so shorten the data first.
+Widen the column before, or together with, the code that writes longer values. Narrowing a column that holds longer values fails on both databases, so shorten the data first.
 
-The raw providers write no DDL when the host starts: `resources provision` creates their tables at deploy time, also when a migration tool owns the schema, and a host start only verifies them (see [Resource provisioning](utilities.md#resource-provisioning)). The EF provider uses migrations.
+### Design and runtime behavior
 
-### Runtime behavior
-
-- Registers `IPermissionManager` (`PermissionManager`) as singleton
-- Registers `IUnitOfWorkPermissions` (a second, stateless `PermissionManager`) as singleton, and calls `AddUnitOfWork()` so `IUnitOfWorkFactory` resolves
-- Registers `IPermissionGrantStore` (`PermissionGrantStore`) as singleton
-- Registers `IPermissionGrantProviderManager` as singleton
-- Registers `IStaticPermissionDefinitionStore`, `IDynamicPermissionDefinitionStore`, `IPermissionDefinitionManager` as singletons
-- Registers `RolePermissionGrantProvider`, `UserPermissionGrantProvider` as singletons
-- Registers the `PermissionDefinitions` seeder (`ISeeder`); it runs only when the host seeds
-- Registers the `PermissionDefinitions` warm-up (`IWarmup`), which adds the `warmup` readiness check; it loads and gates readiness only when `IsDynamicPermissionStoreEnabled` is true
-- Registers `IGrantPermissionsSeedHelper` as transient
-- Registers `PermissionRequirementHandler` as an `IAuthorizationHandler` singleton; it handles both `PermissionRequirement` and `PermissionsRequirement`
-- Calls `AddAuthorizationCore()`, so `IAuthorizationService` resolves in a host that never called `AddAuthorization()` (a worker, for example); the call only adds what is missing, so a host's own authorization registrations win
-- Registers `IAuthorizationPolicyCatalog` and `IGrantedPoliciesReader` as transient
-- Registers an `AsyncLocal`-backed `CurrentTenant` as the `ICurrentTenant` fallback (the same fallback Messaging and Jobs use); any real tenancy registration replaces it
-- Registers `PermissionPolicyProvider` as the singleton `IAuthorizationPolicyProvider`, replacing ASP.NET Core's default provider and keeping a host-registered one, unless `setup.DisablePermissionNamePolicies()` was called
-- Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton
+- **Keys must survive every database unchanged.** Every grant-store entry point throws `ArgumentException` before touching storage when a permission name, provider name, or provider key starts or ends with white space, contains a NUL character, or contains an unpaired UTF-16 surrogate. Grant and revoke writes check the ambient `ICurrentTenant.Id` the same way. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would overwrite the `"acme"` row there. Normalize keys at your own boundary. The store refuses rather than trims. `IPermissionManager.DeleteAsync` and `GrantPermissionsSeedHelper` apply the same rule.
+- **Writes use the current tenant.** A grant or revoke writes, reads, and caches under `ICurrentTenant.Id`. To write another tenant's grant, wrap the call in `currentTenant.Change(tenantId)`.
+- **A revoke replaces the row.** A grant-to-deny flip deletes the record and inserts a new one in one transaction, so a failure never leaves the permission undefined. `UpdatedAt` on a grant record is therefore normally null.
+- **Tenancy fallback.** `AddHeadlessPermissions` registers an `AsyncLocal`-backed `ICurrentTenant` fallback. Any real tenancy registration replaces it.
+- **Lifetimes.** `IPermissionManager`, the grant store, the definition stores, and the authorization handler are singletons. `IGrantPermissionsSeedHelper`, `IAuthorizationPolicyCatalog`, and `IGrantedPoliciesReader` are transient.
+- **Startup does no writes.** The host start does not seed and does not create tables. Raw providers create tables only through `resources provision`. A start only verifies them.
 
 ---
 
 ## Headless.Permissions.Storage.EntityFramework
 
-Entity Framework Core storage implementation for permission management.
-
-### API and behavior
-
-- `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessPermissionsSetupBuilder`
-- `modelBuilder.ConfigureHeadlessPermissions(DbContext context)` — applies entity configurations by resolving `PermissionsStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
-- `modelBuilder.ConfigureHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
-- `EfPermissionGrantRepository<TContext>` — EF repository for `IPermissionGrantRepository`
-- `EfPermissionDefinitionRecordRepository<TContext>` — EF repository for `IPermissionDefinitionRecordRepository`
-- Startup gate that inspects the EF model before hosted services start and throws `InvalidOperationException` with an actionable message if any permissions entity is missing
-- Grant uniqueness declared as a pair of filtered unique indexes — `(TenantId, Name, ProviderName, ProviderKey) WHERE "TenantId" IS NOT NULL` and `(Name, ProviderName, ProviderKey) WHERE "TenantId" IS NULL` — matching the raw-DDL providers, so host (NULL-tenant) grants stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite)
-
-### Design constraints
-
-The package does not ship a dedicated permissions `DbContext` or a permissions-specific `DbContext` interface. Consumers register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory), map entities with `modelBuilder.ConfigureHeadlessPermissions(this)` in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties. The factory must be a singleton (the default lifetime of all four registrations): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`. Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`; writes commit through a fresh context owned by the repository. Every read and delete is scoped to `ICurrentTenant.Id` by the repository itself (a null tenant matches only host rows), the same as the PostgreSQL and SQL Server repositories, so a plain `DbContext` without a tenant query filter keeps one tenant's `admin` role apart from another's; a delete leaves a record of another tenant in place. Host grants pass the `HeadlessDbContext` tenant write guard (`GuardTenantWrites()`): when there is no ambient tenant and every written record has a null `TenantId`, the repository opens `ITenantWriteGuardBypass` around its save. A write that names a tenant stays guarded. An enlisted call (`unit.Permissions`) takes a context from the same factory, points it at the unit's open connection and transaction for that call, and gives the context its own connection back before disposing it, so a pooled context never keeps the unit's connection. A context whose options supply a connection it owns (`contextOwnsConnection: true`) is refused, and so is a retrying execution strategy outside `RunAsync(db, …)`.
+Entity Framework Core storage for grants and definitions.
 
 ### Install
 
@@ -615,6 +531,8 @@ dotnet add package Headless.Permissions.Storage.EntityFramework
 ```
 
 ### Setup and use
+
+Register a singleton `IDbContextFactory<TContext>`, map the entities in `OnModelCreating`, then call `UseEntityFramework<TContext>()`:
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
@@ -640,44 +558,31 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
-### Configuration
+Create the tables with an EF migration. The provider writes no DDL.
 
-`PermissionsStorageOptions` defaults:
+**Verify:** `dotnet app.dll check` exits 0. A model without the entities exits 1 with `InvalidOperationException` text naming the missing entity and `modelBuilder.ConfigureHeadlessPermissions(this)`. A scoped or transient factory exits 1 with `InvalidServiceLifetimeException`.
 
-- `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
-- `PermissionGrantsTableName = null`: `permission_grants` on PostgreSQL, `PermissionGrants` elsewhere
-- `PermissionDefinitionsTableName = null`: `permission_definitions` on PostgreSQL, `PermissionDefinitions` elsewhere
-- `PermissionGroupDefinitionsTableName = null`: `permission_group_definitions` on PostgreSQL, `PermissionGroupDefinitions` elsewhere
-- Every `*MaxLength` option defaults to the length its column always had; see [Column lengths](#column-lengths) for the list and for changing one after the tables exist
+### API and behavior
 
-Identifier names are validated using cross-provider rules (SQL Server superset) so the same options class works regardless of the underlying DB engine; the DB enforces type- and length-specific constraints at migration time, except the length of derived key and index names, which the registration bounds as described under `PermissionsStorageOptions`. The startup gate inspects the EF model before hosted services start and fails with an actionable message if any permissions entity is missing.
+- `setup.UseEntityFramework<TContext>()` registers the EF storage provider.
+- `modelBuilder.ConfigureHeadlessPermissions(DbContext context)` maps the entities. It reads `PermissionsStorageOptions` from the context's service provider and picks snake_case on Npgsql, PascalCase on every other provider.
+- `modelBuilder.ConfigureHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` maps them from options you hold. Pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database.
 
-The EF provider writes no DDL; create its tables with EF migrations.
+### Design and runtime behavior
 
-### Runtime behavior
-
-- Registers `IPermissionGrantRepository` (`EfPermissionGrantRepository<TContext>`) as singleton
-- Registers `IPermissionDefinitionRecordRepository` (`EfPermissionDefinitionRecordRepository<TContext>`) as singleton
-- Registers validated `PermissionsStorageOptions`
-- Registers `PermissionsEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator`
+- **Factory.** Register the factory with `AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`. All four register a singleton factory. Startup refuses a scoped or transient one with `InvalidServiceLifetimeException`.
+- **No permissions `DbContext`.** The package ships no context of its own and adds no `DbSet` to yours.
+- **Own context per write.** Reads use `AsNoTracking()`. Writes commit through a fresh context, so they never join your outer transaction. Use `unit.Permissions` to join one.
+- **Tenant isolation without a query filter.** Every read and delete filters on `ICurrentTenant.Id` (a null tenant matches only host rows), so a plain `DbContext` keeps one tenant's `admin` role apart from another's.
+- **Tenant write guard.** A host grant saves under a `HeadlessDbContext` with `GuardTenantWrites()` when there is no ambient tenant and every record has a null `TenantId`. A write that names a tenant stays guarded.
+- **Enlisted writes.** A `unit.Permissions` call borrows the unit's connection and transaction for that call only. A context whose options own their connection (`contextOwnsConnection: true`) is refused.
+- **Identifiers.** Table names are checked against SQL Server identifier rules, which also satisfy the other databases, plus the PostgreSQL length limits in [PermissionsStorageOptions](#permissionsstorageoptions).
 
 ---
 
 ## Headless.Permissions.Storage.PostgreSql
 
-PostgreSQL raw-DDL storage for permission management.
-
-### API and behavior
-
-- `setup.UsePostgreSql(string connectionString)` — registers the PostgreSQL storage provider from a connection string
-- `setup.UsePostgreSql(IConfiguration configuration)` — binds `PostgreSqlPermissionsOptions` from a configuration section
-- `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions> configure)` — full option control
-- `setup.UsePostgreSql(Action<PostgreSqlPermissionsOptions, IServiceProvider> configure)` — with resolved services
-- `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table and index creation as schema steps (`Permissions/1` tables, `Permissions/2` indexes) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`permission_grants`, `tenant_id`, `ix_permission_grants_tenant_id_name_provider_name_provider_key`)
-- `PostgreSqlPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds), inherited from `RelationalPermissionsOptions`
-- Shares `PermissionsStorageOptions` with the EF provider (schema, table names)
-- Identifier names validated against PostgreSQL naming rules
+PostgreSQL storage for grants and definitions, without EF Core.
 
 ### Install
 
@@ -687,7 +592,7 @@ dotnet add package Headless.Permissions.Storage.PostgreSql
 
 ### Setup and use
 
-Register required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessPermissions` registers the management core automatically.
+Register the prerequisites (`TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`). Then reuse the shared connection or give the feature its own:
 
 ```csharp
 builder.Services.AddPostgreSqlSql(connectionString);
@@ -711,41 +616,28 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
-### Configuration
+`UsePostgreSql` takes a connection string, an `IConfiguration` section, an `Action<PostgreSqlPermissionsOptions>`, an `Action<PostgreSqlPermissionsOptions, IServiceProvider>`, or nothing. With no argument it uses the connection from `AddPostgreSqlSql` ([shared connection and schema](sql.md#shared-connection-and-schema-for-storage-features)).
 
-#### Options
+Run `dotnet app.dll resources provision` (or `deploy`) on every release. It applies the steps `Permissions/1` (tables) and `Permissions/2` (indexes) through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). A host start only verifies them and fails, naming `resources provision`, when a step is missing.
+
+**Verify:** `dotnet app.dll resources verify` reports `Ok` for the schema resource ([Resource provisioning](utilities.md#resource-provisioning)).
+
+### Configuration
 
 `PostgreSqlPermissionsOptions`:
 
 | Option | Default | Description |
 |---|---|---|
-| `ConnectionString` | `""` | Npgsql connection string (required). |
-| `CommandTimeout` | 30 seconds | Timeout for DDL/DML commands. |
+| `ConnectionString` | `""` | Npgsql connection string. Required. |
+| `CommandTimeout` | 30 seconds | Timeout for each command. |
 
-Configure schema and table names through `PermissionsStorageOptions` via `setup.ConfigureStorage(...)`.
-
-### Runtime behavior
-
-- Registers the permissions schema contribution; `resources provision` applies it, and a host start only verifies it
-- Registers the shared relational repositories from `Headless.Permissions`, over the PostgreSQL dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
+Configure schema and table names through `PermissionsStorageOptions` with `setup.ConfigureStorage(...)`. Table names are checked against PostgreSQL identifier rules.
 
 ---
 
 ## Headless.Permissions.Storage.SqlServer
 
-SQL Server raw-DDL storage for permission management.
-
-### API and behavior
-
-- `setup.UseSqlServer(string connectionString)` — registers the SQL Server storage provider from a connection string
-- `setup.UseSqlServer(IConfiguration configuration)` — binds `SqlServerPermissionsOptions` from a configuration section
-- `setup.UseSqlServer(Action<SqlServerPermissionsOptions> configure)` — full option control
-- `setup.UseSqlServer(Action<SqlServerPermissionsOptions, IServiceProvider> configure)` — with resolved services
-- `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table, index, and table-type creation as one schema step (`Permissions/1`) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`PermissionGrants`, `TenantId`, `IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey`)
-- `SqlServerPermissionsOptions` — `ConnectionString` and `CommandTimeout` (default 30 seconds), inherited from `RelationalPermissionsOptions`
-- Shares `PermissionsStorageOptions` with the EF provider (schema, table names)
-- Identifier names validated against SQL Server naming rules
+SQL Server storage for grants and definitions, without EF Core.
 
 ### Install
 
@@ -755,7 +647,7 @@ dotnet add package Headless.Permissions.Storage.SqlServer
 
 ### Setup and use
 
-Register required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessPermissions` registers the management core automatically.
+Register the prerequisites (`TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`). Then reuse the shared connection or give the feature its own:
 
 ```csharp
 builder.Services.AddSqlServerSql(connectionString);
@@ -779,35 +671,28 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
-### Configuration
+`UseSqlServer` takes a connection string, an `IConfiguration` section, an `Action<SqlServerPermissionsOptions>`, an `Action<SqlServerPermissionsOptions, IServiceProvider>`, or nothing. With no argument it uses the connection from `AddSqlServerSql` ([shared connection and schema](sql.md#shared-connection-and-schema-for-storage-features)).
 
-#### Options
+Run `dotnet app.dll resources provision` (or `deploy`) on every release. It applies one step, `Permissions/1`, with the tables, indexes, and table types, through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). A host start only verifies it and fails, naming `resources provision`, when it is missing.
+
+**Verify:** `dotnet app.dll resources verify` reports `Ok` for the schema resource ([Resource provisioning](utilities.md#resource-provisioning)).
+
+### Configuration
 
 `SqlServerPermissionsOptions`:
 
 | Option | Default | Description |
 |---|---|---|
-| `ConnectionString` | `""` | SQL Server connection string (required). |
-| `CommandTimeout` | 30 seconds | Timeout for DDL/DML commands. |
+| `ConnectionString` | `""` | SQL Server connection string. Required. |
+| `CommandTimeout` | 30 seconds | Timeout for each command. |
 
-Configure schema and table names through `PermissionsStorageOptions` via `setup.ConfigureStorage(...)`.
-
-### Runtime behavior
-
-- Registers the permissions schema contribution; `resources provision` applies it, and a host start only verifies it
-- Registers the shared relational repositories from `Headless.Permissions`, over the SQL Server dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
+Configure schema and table names through `PermissionsStorageOptions` with `setup.ConfigureStorage(...)`. Table names are checked against SQL Server identifier rules.
 
 ---
 
 ## Headless.Permissions.Testing
 
-Test-only doubles that bypass all permission and authorization checks.
-
-### API and behavior
-
-- `services.AddAlwaysAllowAuthorization()` — replaces `IPermissionManager` with `AlwaysAllowPermissionManager` and `IAuthorizationService` with `AlwaysAllowAuthorizationService`, granting every permission and authorizing every request
-- `AlwaysAllowPermissionManager` — `IPermissionManager` that reports every permission as granted; `SetAsync` / `DeleteAsync` are no-ops
-- `AlwaysAllowAuthorizationService` — `IAuthorizationService` that returns `AuthorizationResult.Success()` for every call
+Always-allow doubles for integration tests that do not test authorization. It is a separate package so production code never references an authorization bypass.
 
 ### Install
 
@@ -822,12 +707,11 @@ dotnet add package Headless.Permissions.Testing
 builder.Services.AddAlwaysAllowAuthorization();
 ```
 
-### Configuration
+**Verify:** a request to an `[Authorize("Orders.Edit")]` endpoint by an authenticated test user with no grants succeeds.
 
-None.
+### API and behavior
 
-### Runtime behavior
-
-- Replaces the registered `IPermissionManager` with `AlwaysAllowPermissionManager` (singleton)
-- Replaces the registered `IAuthorizationService` with `AlwaysAllowAuthorizationService` (singleton)
-- Does not touch policy resolution. On the endpoint (middleware) path, `[Authorize("<name>")]` still resolves the policy before calling the service, so an undefined name still throws "policy not found". Direct `IAuthorizationService.AuthorizeAsync(user, name)` calls succeed for any name, typos included.
+- `services.AddAlwaysAllowAuthorization()` replaces `IPermissionManager` with `AlwaysAllowPermissionManager` and `IAuthorizationService` with `AlwaysAllowAuthorizationService`, both singletons.
+- `AlwaysAllowPermissionManager` reports every permission as granted. `SetAsync` and `DeleteAsync` do nothing.
+- `AlwaysAllowAuthorizationService` returns `AuthorizationResult.Success()` for every call.
+- Policy resolution is unchanged. On the endpoint path, `[Authorize("<name>")]` still resolves the policy first, so an undefined name still throws "policy not found". A direct `IAuthorizationService.AuthorizeAsync(user, name)` call succeeds for any name, typos included.

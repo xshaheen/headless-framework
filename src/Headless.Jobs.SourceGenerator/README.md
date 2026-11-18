@@ -15,4 +15,4 @@ dotnet add package Headless.Jobs.SourceGenerator
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Jobs (Background Jobs) guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs.md#headlessjobssourcegenerator)
+- [Jobs (Background Jobs) guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs/declaring.md#headlessjobssourcegenerator)
