@@ -5,22 +5,22 @@ packages: Tus, Tus.Azure, Tus.S3, Tus.DistributedLocks
 
 # TUS (Resumable Uploads)
 
-> TUS protocol implementation for resumable file uploads, with Azure Blob Storage and S3-compatible (Cloudflare R2, Amazon S3, MinIO) stores and distributed lock support.
+> tus 1.0.0 resumable-upload stores for tusdotnet on Azure Blob Storage and on S3-compatible storage (Cloudflare R2, Amazon S3, MinIO), with cross-node file locking.
 
 ## Orientation
 
-Four packages compose the TUS domain:
+`tusdotnet` serves the tus protocol. A Headless store decides where the bytes land. All four packages use the `Headless.Tus` namespace.
 
 | Package | Role |
-|---|---|
-| `Headless.Tus` | Base package: protocol-level pieces every deployment needs — `TusCorsDefaults`/`WithTusHeaders()` for browser clients, `AddTusExpiredUploadsCleanup()` for expired-upload removal — plus the shared `tusdotnet` + `Headless.Hosting` references. |
-| `Headless.Tus.Azure` | Storage backend: `TusAzureStore` stores upload chunks in Azure Blob Storage using block blobs. |
-| `Headless.Tus.S3` | Storage backend: `TusS3Store` stores uploads as S3 multipart uploads in Cloudflare R2, Amazon S3, or an S3-compatible server, through the app's `IAmazonS3` client. |
-| `Headless.Tus.DistributedLocks` | Locking add-on: `DistributedLockTusLockProvider` prevents concurrent PATCH corruption across nodes. |
+| --- | --- |
+| `Headless.Tus` | Shared pieces: `WithTusHeaders()` and `TusCorsDefaults` for browser clients, and `AddTusExpiredUploadsCleanup()`. Every store package brings it in. |
+| `Headless.Tus.Azure` | `TusAzureStore`: uploads as Azure block blobs. |
+| `Headless.Tus.S3` | `TusS3Store`: uploads as S3 multipart uploads, through the app's `IAmazonS3` client. |
+| `Headless.Tus.DistributedLocks` | `AddDistributedLockTusLockProvider()`: one PATCH per file across all nodes, through `IDistributedLock`. |
 
-`Headless.Tus` has no store — pair it with one store package: `Headless.Tus.Azure` or `Headless.Tus.S3` ([Choosing a store](#choosing-a-store)). Add `Headless.Tus.DistributedLocks` for multi-instance deployments.
+Add exactly one store package ([Choosing a store](#choosing-a-store)). Add `Headless.Tus.DistributedLocks` when more than one instance serves the endpoint.
 
-A complete resumable-upload backend on Azure (Azurite for local development: `docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0`):
+A complete backend on Azure. For local development, Azurite serves blobs: `docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0`.
 
 ```csharp
 using Headless.Tus;
@@ -35,15 +35,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddAzureClients(clients =>
     clients.AddBlobServiceClient(builder.Configuration.GetConnectionString("AzureStorage")));
 
-// 2. The store: options from the "Tus" config section (ContainerName, BlobPrefix, ...),
-//    validated at startup.
+// 2. The store, with options from the "Tus" section (ContainerName, BlobPrefix, ...), validated at startup.
 builder.Services.AddTusAzureStore(builder.Configuration.GetSection("Tus"));
 
-// 3. Reap expired incomplete uploads (uses the ITusExpirationStore registered above).
+// 3. Remove expired incomplete uploads.
 builder.Services.AddTusExpiredUploadsCleanup();
 
-// 4. CORS for browser clients on another origin (tus-js-client, Uppy): expose the tus
-//    response headers or every cross-origin upload fails on the first request.
+// 4. CORS for browser clients on another origin (tus-js-client, Uppy).
 builder.Services.AddCors(options =>
     options.AddPolicy("tus", policy => policy.WithOrigins("https://app.example.com").WithTusHeaders()));
 
@@ -64,111 +62,63 @@ app.MapTus(
 app.Run();
 ```
 
-The S3 store swaps steps 1 and 2 for an `IAmazonS3` registration and `AddTusS3Store`, and resolves `TusS3Store` in step 5 ([Headless.Tus.S3](#headlesstuss3)).
+For S3, replace steps 1 and 2 with an `IAmazonS3` registration and `AddTusS3Store`, and resolve `TusS3Store` in step 5 ([Headless.Tus.S3](#headlesstuss3)).
 
-Any tus 1.0.0 client works against this endpoint (`tus-js-client`, Uppy's `@uppy/tus`, tuspy, …). A complete runnable example — this backend plus a React frontend driving the endpoint with both Uppy Dashboard and `use-tus` — lives in [demo/Headless.Tus.Demo](../../demo/Headless.Tus.Demo/README.md).
+**Verify:** `dotnet MyApp.dll resources provision -k AzureBlob` reports `Ok`, and `resources verify -k AzureBlob` exits `0` (the `resources` verb needs [`RunHeadlessAsync(args)`](utilities.md#resource-provisioning)). Until the container exists, a started host's readiness endpoint reports the `warmup` check `Unhealthy` naming it; in a test, `await host.Services.WaitForWarmupAsync(ct)` returns once it exists. A `POST /files` with `Tus-Resumable: 1.0.0` and `Upload-Length` returns `201` with a `Location` header.
+
+Any tus 1.0.0 client works against this endpoint (`tus-js-client`, Uppy's `@uppy/tus`, tuspy). [demo/Headless.Tus.Demo](../../demo/Headless.Tus.Demo/README.md) runs this backend with a React frontend that uses Uppy Dashboard and `use-tus`.
 
 ## Agent Rules
 
-- `Headless.Tus` has no store implementation — add exactly one store package for upload storage: `Headless.Tus.Azure` or `Headless.Tus.S3`. It does ship the cross-provider pieces: `TusCorsDefaults` / `WithTusHeaders()` and `AddTusExpiredUploadsCleanup()`.
-- Browser clients on another origin need the tus CORS surface: use `policy.WithTusHeaders()` (allowed request headers + exposed response headers + methods incl. PATCH/DELETE). Without the exposed headers, `tus-js-client`/Uppy cannot read `Location`/`Upload-Offset` and uploads fail on the first request.
-- Nothing removes expired uploads unless a job runs: register `services.AddTusExpiredUploadsCleanup()` (first pass at startup, then every 5 minutes by default; scans the store each pass). It removes expired incomplete uploads only, and requires an `ITusExpirationStore` — `AddTusAzureStore` and `AddTusS3Store` forward it automatically; register manually constructed stores with `services.AddSingleton<ITusExpirationStore>(store)`. Expiration itself is enabled via `DefaultTusConfiguration.Expiration`. The reaper runs outside tusdotnet's middleware and holds no `ITusFileLock`, so each store deletes an expired upload only if it is unchanged since the pass found it expired (`TusAzureStore` checks the blob ETag, `TusS3Store` the state object's ETag): a resume that committed data or refreshed the sliding expiration in between makes the delete skip that upload (not counted, not an error). A resume that has begun but not yet written anything can still be deleted mid-resume — gate uploads and cleanup with `Headless.Tus.DistributedLocks` to eliminate that window.
-- `TusAzureStore` can be constructed manually (`new TusAzureStore(blobServiceClient, options)`) — tusdotnet composes stores inside `DefaultTusConfiguration` factories — or registered via `services.AddTusAzureStore(...)` (overloads: `IConfiguration`, `Action<TusAzureStoreOptions>`, `Action<TusAzureStoreOptions, IServiceProvider>`). The DI path requires a `BlobServiceClient` registration and resolves `ITusAzureBlobHttpHeadersProvider`/`ITusFileIdProvider` when present (TryAdd defaults otherwise); options run through FluentValidation with `ValidateOnStart`.
-- `TusAzureStore` rejects a write from a PATCH whose view of the blob is stale (it lost its file lock and another PATCH committed meanwhile) with `Azure.RequestFailedException` status `412`, deliberately not a `TusStoreException`. Through tusdotnet it surfaces as an unhandled exception, so the server answers `500` and sends no `Upload-Offset`; tus clients retry a 5xx by issuing HEAD and resuming from the committed offset. Do not map that exception to `400` (or any non-retryable 4xx) in an exception handler: tus clients treat `400` as fatal. Mapping it to `409` keeps it retryable.
-- For multi-instance deployments, always add `Headless.Tus.DistributedLocks` and call `services.AddDistributedLockTusLockProvider()`. Without it, concurrent PATCH requests for the same file from different nodes interleave on one upload: on Azure they can corrupt block lists, and on S3 the write fencing fails all but one of them with a 5xx the client has to retry.
-- The distributed lock add-on requires `IDistributedLock` in DI. Register a Headless distributed lock provider first, for example: `services.AddHeadlessDistributedLocks(setup => setup.UseRedis())`.
-- Set `FileLockProvider` in your `DefaultTusConfiguration` factory to the `ITusFileLockProvider` resolved from DI — it is not wired automatically. A single-node deployment can omit it and use tusdotnet's in-process lock.
-- `BlobMaxChunkSize` must be ≤ 100 MB (a store-imposed memory cap — each chunk is buffered per request; Azure's own per-block limit is 4,000 MiB), and `BlobDefaultChunkSize` must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. The store auto-selects chunk size from `BlobDefaultChunkSize` vs `BlobMaxChunkSize` based on declared upload length.
-- With `EnableChunkSplitting = false` the whole PATCH body is buffered in memory and staged as one Azure block. `MaxNoSplitBufferSize` (default 256 MB, 1 byte–~2 GB) caps that buffer and is the *only* in-flight memory bound for a Creation-Defer-Length no-split upload — its declared length is unknown, so the too-much-data guard is a no-op (and tusdotnet disables Kestrel's PATCH body limit). A body exceeding the cap is rejected with a `TusStoreException` (HTTP 400 through the pipeline). For a declared length, tusdotnet rejects an over-length PATCH itself with 413 before the store buffers anything. Ignored when splitting is enabled.
-- An upload is capped at Azure's 50,000 committed blocks; a too-small chunk size on a very large upload throws a `TusStoreException` at commit time. Increase `BlobDefaultChunkSize`/`BlobMaxChunkSize` to use fewer, larger blocks.
-- File ids become blob names: ids from a custom `ITusFileIdProvider` must not contain `/`, `\`, `..`, `,` (the separator used to persist file-id lists in blob metadata), control characters, or leading/trailing whitespace — the store rejects such ids with a `TusStoreException` at every entry point in addition to enforcing the provider's own `ValidateId`.
-- `GetExpirationAsync` returns `null` for completed uploads (deliberate `TusDiskStore` divergence): tusdotnet's `FileHasNotExpired` requirement 404s any upload whose expiration passed — reporting the stale timestamp would make completed uploads unreachable via tus (no HEAD, no DELETE/termination) after the sliding window elapses.
-- Cancellation-token policy (TusDiskStore parity): client reads use the live request token — it is the disconnect signal — while everything that persists already-received bytes runs on `CancellationToken.None`. `AppendDataAsync` commits the bytes received before a disconnect (the spec: the server "SHOULD always attempt to store as much of the received data as possible"), and `SetExpirationAsync`/`VerifyChecksumAsync` ignore the token entirely: tusdotnet invokes them after the PATCH with the request token already cancelled — exactly when the bookkeeping (sliding-expiration refresh, checksum verify/rollback) must still complete. One exception: the `EnableChunkSplitting=false` fast path for seekable bodies streams directly into `StageBlock` with the live token (tusdotnet request bodies are never seekable; that path is store-direct only). Expired-file deletion likewise runs on `CancellationToken.None` once a file is enumerated, and a cancelled enumeration returns the files found so far (`TusDiskStore` parity). One deliberate divergence: a checksum PATCH whose chunk was fully received and hashed just before the disconnect is *committed* (its digest verifies), whereas `TusDiskStore` discards any chunk from a disconnected request — keeping verified bytes serves the spec better, and the resuming client sees the advanced offset on HEAD.
-- The client's `Upload-Metadata` header value is stored verbatim in a single `tus_metadata` blob-metadata entry and echoed byte-for-byte in HEAD responses (TUS round-trip contract). Keys keep their original casing and characters; values may decode to any UTF-8 content. Upload-Metadata that is not printable ASCII or exceeds ~7 KB (Azure's 8 KB blob-metadata cap) is rejected with a `TusStoreException`. A concatenation *final* also persists `tus_partial_uploads` (comma-joined constituent ids) alongside the verbatim metadata, so `CreateFinalFileAsync` re-checks the composed total against the 8 KB cap and throws a `TusStoreException` rather than an opaque Azure 400 when many partials plus near-cap metadata would overflow it.
-- Checksum verification (SHA1, SHA256, SHA512, MD5) is handled automatically for both `Upload-Checksum` forms. Header flow: blocks are staged but not committed until the checksum passes; mismatched blocks are left uncommitted (Azure auto-removes them after 7 days). Trailer flow (`checksum-trailer`): data commits during the append with a recorded rollback offset (`tus_last_chunk_offset`); `VerifyChecksumAsync` hashes the committed range on demand and rolls the chunk back on mismatch or a faulty/missing trailer.
-- The concatenation extension uses server-side block copy (`StageBlockFromUri`) when available, falling back to streaming when it is not — Azurite returns HTTP 501, and a private container returns HTTP 403 for the bare source URI (no SAS).
-- `TusAzureStore` never creates its container; the constructor makes no network call. `AddTusAzureStore` registers the container as a [provisioned resource](utilities.md#resource-provisioning) of kind `AzureBlob`, named after `ContainerName`: the deployment runs `dotnet <app>.dll resources provision` (or `deploy`), which creates it with `ContainerPublicAccessType`, and a starting host only checks that it exists, holding the `warmup` readiness check until it does. A development or test host calls `services.AddDeployStepsOnStartup()` to create it as the host starts. A manually constructed store has no provisioner, so create its container beforehand. `resources purge` deletes the blobs under `BlobPrefix` and keeps the container; `resources delete` deletes them too, then the container only when nothing else is left in it, since a container can hold blobs outside `BlobPrefix`.
-- `ITusAzureBlobHttpHeadersProvider` lets you inject custom `Content-Type` / cache headers per file. The default sets `application/octet-stream` for every upload ([Default content type](#default-content-type)).
-- `AddTusS3Store` takes `IAmazonS3` from DI and does not configure it. For Cloudflare R2, register the client with path style, `AuthenticationRegion = "auto"`, and `WHEN_REQUIRED` request and response checksums (R2 rejects the SDK's default CRC checksums), and set `Provider = TusS3Provider.R2`. See [Headless.Tus.S3](#headlesstuss3) for one client example per server.
-- `TusS3Store` does not support the Checksum extension, and an incomplete upload's content is not readable (`GetContentAsync` throws until the upload completes). On R2, an upload must finish within 7 days of its first part, when R2 aborts the multipart upload; keep the tus expiration below that.
-- A deferred-length upload on `TusS3Store` can grow to `(10,000 − 4 × PartClaimWindow) × PartSize` bytes, 77,952 MiB (about 76 GiB) at the defaults; a known length up to `(10,000 − 4 × PartClaimWindow) × MaxPartSize`, 623,616 MiB (about 609 GiB). Raise `PartSize` for larger deferred uploads.
-- `TusS3Store` never creates its bucket and never edits bucket lifecycle rules. Run `resources provision -k S3Bucket` as a deploy step; on R2 that step needs a token that can create buckets, while the serving host needs only object rights.
+- Add exactly one store package: `Headless.Tus.Azure` or `Headless.Tus.S3`. `Headless.Tus` alone has no store.
+- Call `policy.WithTusHeaders()` on the CORS policy for a browser client on another origin. Without the exposed headers, `tus-js-client` and Uppy cannot read `Location` or `Upload-Offset`, and every upload fails on the first request. Origins and credentials stay your choice.
+- Register `services.AddTusExpiredUploadsCleanup()` and set `DefaultTusConfiguration.Expiration`. Nothing removes expired uploads otherwise. The job needs an `ITusExpirationStore`: `AddTusAzureStore` and `AddTusS3Store` register it. For a store you construct yourself, register `services.AddSingleton<ITusExpirationStore>(store)`.
+- In a multi-instance deployment, add `Headless.Tus.DistributedLocks`, call `services.AddDistributedLockTusLockProvider()`, and set `FileLockProvider` in the `DefaultTusConfiguration` factory to the `ITusFileLockProvider` from DI. Nothing sets it for you. Without it, two nodes can run PATCHes on one file at once: on Azure that can corrupt the block list, and on S3 all but one PATCH fail with a 5xx the client must retry. A single-node deployment can rely on tusdotnet's in-process lock.
+- Register an `IDistributedLock` backend before `AddDistributedLockTusLockProvider()`, for example `services.AddHeadlessDistributedLocks(setup => setup.UseRedis())`.
+- Do not map a store's stale-write exception to `400` or another non-retryable 4xx in an exception handler. `Azure.RequestFailedException` with status `412` (Azure) and `AmazonS3Exception` with `412`, `409`, or `404` (S3) reach tusdotnet as unhandled exceptions and answer `500`. tus clients retry a 5xx by sending HEAD and resuming from the committed offset, but treat `400` as fatal. Mapping to `409` keeps the error retryable.
+- Create the container or bucket as a deploy step: `dotnet MyApp.dll resources provision` (or `deploy`). Neither store creates it, and neither constructor makes a network call. A development or test host can call `services.AddDeployStepsOnStartup()` instead. A store you construct yourself has no provisioner, so create its container or bucket beforehand.
+- Keep the default `application/octet-stream` content type unless you serve uploads from an isolated origin. See [Default content type](#default-content-type).
+- Validate file ids from a custom `ITusFileIdProvider`: they become blob names or object keys, and the store rejects unsafe ids with `TusStoreException`.
+- Call `AddTusAzureStore` or `AddTusS3Store` once per app. A second call adds its options to the same single store and registers no second store.
 
 ## Core Concepts
-
-### TUS Protocol Flow
-
-TUS is an HTTP-based protocol for resumable uploads. The key operations are:
-
-1. **POST /files** — Upload creation. Client declares `Upload-Length` (or defers it). Server returns a `Location` URL with a file ID and `Upload-Offset: 0`.
-2. **PATCH /files/{id}** — Chunk upload. Client sends bytes starting at `Upload-Offset`. Server appends and returns the new offset.
-3. **HEAD /files/{id}** — Resume check. Client fetches current `Upload-Offset` to know where to resume after a disconnect.
-4. **DELETE /files/{id}** (Termination extension) — Cancels and cleans up.
-
-`tusdotnet` handles the HTTP negotiation; the store (`TusAzureStore` or `TusS3Store`) handles where bytes land.
 
 ### Choosing a store
 
 | Store | Use when | Trade-off |
-|---|---|---|
+| --- | --- | --- |
 | `Headless.Tus.Azure` | Uploads land in Azure Blob Storage, or clients send `Upload-Checksum`. | Supports every tus extension tusdotnet defines, Checksum included. |
 | `Headless.Tus.S3` | Uploads land in Cloudflare R2, Amazon S3, or an S3-compatible server. | No Checksum extension. An incomplete upload's content is not readable, only its metadata. On R2 an upload must finish within 7 days of its first part. |
 
-Both stores fence every write against stale writers, report completed uploads as never expiring, and register their storage as a [provisioned resource](utilities.md#resource-provisioning). Moving from one to the other means swapping the client registration and the `AddTus*Store` call; uploads in flight do not move.
-
-### Azure Block Blob Mapping
-
-Azure Block Blobs decompose a file into independently-uploadable blocks that are committed in a single atomic operation. `TusAzureStore` maps TUS chunks onto Azure blocks:
-
-- Each PATCH appends one or more staged blocks (split by `BlobDefaultChunkSize` / `BlobMaxChunkSize`).
-- A block list commit makes the blocks durable and visible as blob content.
-- For checksum uploads, blocks are staged but the commit is deferred until `VerifyChecksumAsync` passes — if checksum fails, staged blocks are left uncommitted and Azure discards them within 7 days.
-
-A block blob's `ContentLength` counts committed blocks only, so `GetUploadOffsetAsync` reports it as the offset: staged blocks waiting for a checksum never advance it.
+Both stores reject a write from a request whose view is stale, report a completed upload as never expiring, and register their storage as a [provisioned resource](utilities.md#resource-provisioning). To move from one store to the other, swap the client registration and the `AddTus*Store` call. Uploads in flight do not move.
 
 ### Concurrent PATCH Safety
 
-The TUS protocol allows only one concurrent PATCH for a given file, but enforcing this across multiple app instances requires explicit locking. Use **`DistributedLockTusLockProvider`** (from `Headless.Tus.DistributedLocks`): it wraps `IDistributedLock` with `AcquireTimeout = TimeSpan.Zero` and auto-extending leases. Non-blocking — tusdotnet receives `false` from `Lock()` and returns `423 Locked` immediately, and a crashed holder's lease expires so the file is not stuck.
+tus allows one PATCH at a time per file. Across nodes, `DistributedLockTusLockProvider` (from `Headless.Tus.DistributedLocks`) enforces it: it tries the lock once with no wait, so a second PATCH gets `423 Locked` at once. The lease extends itself while held and expires when its holder crashes, so a file is never stuck.
 
-Register it with `services.AddDistributedLockTusLockProvider()` after registering an `IDistributedLock` backend (Redis, SQL Server, …). A single-node deployment can omit it and rely on tusdotnet's in-process lock.
+The lock is best effort. A holder can lose it without noticing (a process pause, a lock-backend failover) while a second PATCH proceeds. Both stores therefore condition their writes on what the request read: the stale PATCH's write fails with a retryable `500` instead of overwriting the other PATCH's data. See **Write fencing** under [Headless.Tus.Azure](#headlesstusazure) and [Headless.Tus.S3](#headlesstuss3).
 
-The lock is best-effort: a holder can lose it without noticing (a process pause, a lock-backend failover) while a second PATCH proceeds. Both stores therefore also fence their writes. `TusAzureStore` conditions every block-list commit and metadata write on the blob ETag its request read, and `TusS3Store` conditions every write of an upload's state object on its ETag, so the stale PATCH's write fails instead of overwriting the other PATCH's data (see the **Write fencing** design constraints under [`Headless.Tus.Azure`](#headlesstusazure) and [`Headless.Tus.S3`](#headlesstuss3)).
+Do not take an Azure blob lease on an upload blob. The store writes without a lease, so a lease makes its own writes fail with `412`. Coordinate PATCHes through `DistributedLockTusLockProvider`, which locks a separate resource.
 
-> The store writes blocks to the upload blob without holding an Azure blob lease on it, so do **not** lock that blob directly — a lease on the upload blob would make the store's own writes fail with `412`. Coordinate PATCHes through `DistributedLockTusLockProvider` (a separate lock resource) instead.
+### Default content type
+
+`DefaultTusAzureBlobHttpHeadersProvider` and `DefaultTusS3ObjectHeadersProvider` store every upload as `application/octet-stream` and ignore the `filetype` metadata. A browser downloads such an object instead of displaying it.
+
+The client chooses `filetype`. An object served from your storage or CDN origin as `text/html`, `image/svg+xml`, or another type a browser renders or runs, would run the uploader's script in that origin (stored XSS). To store the real type, implement the store's headers provider: allow-list the types you serve instead of storing `filetype` as sent, and serve anything a browser can run from an isolated origin or with `Content-Disposition: attachment`.
 
 ---
 
 ## Headless.Tus
 
-Base package for the TUS stack: protocol-level helpers every deployment needs regardless of storage provider, plus the shared `tusdotnet` dependency.
+The CORS helpers and the expired-upload cleanup job shared by every store.
 
-### API and behavior
-
-- `TusCorsDefaults` — the tus 1.0.0 CORS surface as constants: `ExposedHeaders`, `AllowedHeaders`, `AllowedMethods` (includes the PATCH/DELETE that default CORS configs miss)
-- `CorsPolicyBuilder.WithTusHeaders()` — applies all three in one call; origins/credentials stay the caller's decision
-- `AddTusExpiredUploadsCleanup(...)` — registers an internal background hosted service calling `ITusExpirationStore.RemoveExpiredFilesAsync` on an interval (tuned via the public `TusExpiredUploadsCleanupOptions`)
-
-### Design constraints
-
-Cleanup targets **incomplete** uploads only — conforming Headless stores never report completed uploads as expired, so the job cannot destroy finished data. It binds to the `ITusExpirationStore` capability interface, not a concrete store; store packages forward the registration (`AddTusAzureStore` and `AddTusS3Store` do), and manually constructed stores register with `services.AddSingleton<ITusExpirationStore>(store)`. The default 5-minute interval trades reclaim latency against the store scan each pass performs. In multi-node deployments every node runs its own loop against the same store. When `AddDistributedLockTusLockProvider()` is registered, a node runs a pass only if it takes the cleanup lease (`{resourcePrefix}:expired-uploads-cleanup`, zero wait), and the lease stays held for 90% of the interval after the pass, so the store is swept about once per interval across the cluster and a node that loses the race skips its tick. The lease expires on its own, so a crashed node delays cleanup by at most one interval. Without the lock provider every node sweeps on every tick: deletions are idempotent so this is safe, but the scan load multiplies and the logged removal counts are per-node.
-
-#### Default content type
-
-The default headers provider of each store (`DefaultTusAzureBlobHttpHeadersProvider`, `DefaultTusS3ObjectHeadersProvider`) stores every upload as `application/octet-stream` and ignores the `filetype` metadata.
-
-The client chooses `filetype`. An object served from the bucket's or CDN's origin as `text/html`, `image/svg+xml`, or another type a browser renders or runs would execute the uploader's script in that origin (stored XSS). Which types are safe depends on where the app serves its uploads from, so the framework does not decide it. A browser downloads an `application/octet-stream` object instead of displaying it.
-
-An app that wants the real type implements the store's headers provider: allow-list the types it serves instead of storing `filetype` as sent, and serve anything a browser can run from an isolated origin or with `Content-Disposition: attachment`.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Tus
 ```
 
-Pulled in transitively by every `Headless.Tus.*` provider package.
-
-### Setup and use
+Every `Headless.Tus.*` store package brings it in.
 
 ```csharp
 using Headless.Tus;
@@ -177,64 +127,39 @@ builder.Services.AddCors(options =>
     options.AddPolicy("tus", policy =>
         policy.WithOrigins("https://app.example.com").WithTusHeaders()));
 
-builder.Services.AddTusExpiredUploadsCleanup(); // requires an ITusExpirationStore
+builder.Services.AddTusExpiredUploadsCleanup(); // needs an ITusExpirationStore
 ```
+
+**Verify:** a cross-origin `POST /files` from the allowed origin returns `Access-Control-Expose-Headers` that list `Location` and `Upload-Offset`. The cleanup job logs `Removed {Count} expired incomplete upload(s)` at `Information` when a pass removes something, and `Expired-upload cleanup pass failed` at `Error` when a pass throws. The host fails to start when no `ITusExpirationStore` is registered, because the job cannot be resolved.
 
 ### Configuration
 
-`TusExpiredUploadsCleanupOptions`:
+`TusCorsDefaults` holds the tus CORS surface as lists: `ExposedHeaders`, `AllowedHeaders`, and `AllowedMethods` (with the `PATCH` and `DELETE` that default CORS policies miss). `WithTusHeaders()` applies all three.
 
-| Option | Default | Notes |
-|---|---|---|
-| `Interval` | `5 minutes` | How often expired incomplete uploads are removed. Each pass scans the store's uploads — prefer coarser intervals for large containers. Must be positive. |
+| `TusExpiredUploadsCleanupOptions` | Default | Notes |
+| --- | --- | --- |
+| `Interval` | 5 minutes | Time between passes. Each pass scans the store, so choose a longer interval for a large container or bucket. Must be positive. |
 
-### Runtime behavior
+### Design and runtime behavior
 
-- `AddTusExpiredUploadsCleanup` registers an internal hosted service and `TimeProvider.System` (TryAdd).
-- `TusCorsDefaults` / `WithTusHeaders` are pure helpers — no registrations.
+- **Incomplete uploads only.** A Headless store never reports a completed upload as expired, so the job cannot delete finished data.
+- **Schedule.** The first pass runs when the host starts, to reclaim uploads that expired while it was down. Then one pass runs per `Interval`. A failed pass is logged and the next tick runs normally.
+- **Several nodes.** With `AddDistributedLockTusLockProvider()` registered, a node runs a pass only when it takes the `{resourcePrefix}:expired-uploads-cleanup` lease, held for 90% of the interval, so the cluster sweeps about once per interval. A crashed node delays cleanup by at most one interval. Without the lock provider, every node sweeps on every tick: deletes are idempotent, but the scan load multiplies and each node logs its own counts.
+- **Races with a resuming client.** The job holds no tus file lock. Each store deletes an expired upload only when it is unchanged since the pass found it, so a resume that committed data or refreshed a sliding expiration in between skips the delete. A resume that has started but written nothing yet can still lose its upload. Register `Headless.Tus.DistributedLocks` to close that window.
 
 ---
 
 ## Headless.Tus.Azure
 
-Azure Blob Storage TUS store implementation.
+`TusAzureStore` stores each upload as an Azure block blob. It supports Creation, Creation Defer Length, Concatenation, Expiration, Checksum, Termination, and reading a file back (`GetFileAsync`).
 
-### API and behavior
-
-- `TusAzureStore` — full `ITusStore` implementation backed by Azure block blobs; also implements `ITusPipelineStore` for zero-copy `PipeReader`-based ingestion
-- TUS extensions supported:
-  - **Creation** (`ITusCreationStore`) — `CreateFileAsync`, `GetUploadMetadataAsync`
-  - **CreationDeferLength** (`ITusCreationDeferLengthStore`) — `SetUploadLengthAsync`
-  - **Concatenation** (`ITusConcatenationStore`) — server-side block copy with streaming fallback for emulators
-  - **Expiration** (`ITusExpirationStore`) — `SetExpirationAsync`, `GetExpiredFilesAsync`, `RemoveExpiredFilesAsync`
-  - **Checksum** (`ITusChecksumStore`) — SHA1, SHA256, SHA512, MD5; constant-time comparison; deferred block commit
-  - **Termination** (`ITusTerminationStore`) — `DeleteFileAsync`
-  - **Readable** (`ITusReadableStore`) — `GetFileAsync` returns `ITusFile`
-- `ITusAzureBlobHttpHeadersProvider` / `DefaultTusAzureBlobHttpHeadersProvider` — per-file HTTP header customization (Content-Type, cache control); the default sets only `Content-Type`, by the [shared rule](#default-content-type)
-- Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (16 MB default; up to 100 MB) based on declared upload size
-- Pooled buffer stream splitting via `ArrayPool<byte>` to minimize allocations during PATCH ingestion
-
-### Design constraints
-
-**Block blob chunking and checksum deferral.** TUS Checksum verification happens _after_ all PATCH data is staged. `TusAzureStore` stages blocks during `AppendDataAsync` but defers the commit list until `VerifyChecksumAsync` succeeds. The staged block range — a constant-size `token:firstIndex:count` triple that reconstructs the exact block IDs at commit time — and the pre-calculated checksum are written to blob metadata (`tus_last_chunk_blocks`, `tus_last_chunk_checksum`); being constant-size, the tracking cannot approach Azure's 8 KB blob-metadata cap no matter how many blocks one PATCH stages. On success, blocks are committed atomically together with metadata update. On mismatch, blocks are left uncommitted and Azure auto-purges them within 7 days. Uncommitted blocks are not part of a block blob's `ContentLength`, so `GetUploadOffsetAsync` reports that property as the offset, and a resuming client never sees staged bytes.
-
-**Blob HTTP header preservation.** Headers returned by `ITusAzureBlobHttpHeadersProvider` are applied at creation and re-supplied on every block-list commit — appends, checksum-verified commits, and rollbacks. Azure's Put Block List clears any `x-ms-blob-*` property omitted from the request, so without the re-supply a custom content type or cache control set at creation would silently reset to `application/octet-stream` on the first PATCH. `ContentHash` is deliberately not carried over: the content changes with each commit, so echoing the stored MD5 would persist a stale digest.
-
-**Write fencing.** Every block-list commit and metadata write — append commits, checksum staging and verified commits, rollbacks and discards, `SetUploadLengthAsync`, and `SetExpirationAsync` — sends the ETag the calling request read as `If-Match` and carries each write's returned ETag into its next write, so a request's own sequential writes keep matching while a request whose view is stale gets `412`. A stale writer fails with `Azure.RequestFailedException` (status `412`), not `TusStoreException`, so tusdotnet does not answer `400` and tus clients retry and resume (see Agent Rules). `SetExpirationAsync` is the exception that retries: it merges one field into the blob's current metadata, so it re-reads and re-applies up to three times rather than failing a PATCH whose data already committed. With an `IHttpContextAccessor` (see Storage requests), the store calls of one tus request fence from that request's first read and the ETags its own writes returned, so in the checksum header flow a writer that staged other blocks between the append and `VerifyChecksumAsync` makes the verified commit fail with `412`. Without an accessor, each store call fences from its own read: `VerifyChecksumAsync` re-reads the blob, and its digest comparison is what rejects blocks a different writer staged in between. The concatenated final blob is committed with `If-None-Match: *`, so a new final upload can never replace an existing blob. A tus `DELETE` and the post-concatenation deletion of partials stay unconditional (the client asked for removal, and a concatenated partial is consumed whatever its state); the expired-upload reaper's deletes are conditional (see Agent Rules).
-
-**Storage requests.** tusdotnet calls several store methods per request. With the `IHttpContextAccessor` that `AddTusAzureStore` adds, the store keeps the blob's properties and committed block list for the rest of the HTTP request: a HEAD costs one Get Blob Properties, a creation with a sliding expiration two requests (Put Blob, Set Metadata), a PATCH five (properties, block list, Put Block, Put Block List, and the expiration's Set Metadata), and a checksum-header PATCH six. A failed write drops what the request kept, so `SetExpirationAsync`'s retry and the next request read the blob again. A store constructed without an accessor reads the blob on every call and stays correct.
-
-**Server-side concatenation.** Final-file creation uses `StageBlockFromUri` to copy block ranges across blobs without moving data through the application server. When server-side copy is unavailable — Azurite returns HTTP 501, and a private container returns HTTP 403 because the source blob is not readable via its bare URI (no SAS) — the store falls back to download-then-re-upload streaming automatically.
-
-**Container provisioning.** Creating the container is a deploy step, not store construction: the `AzureBlob` provisioner that `AddTusAzureStore` registers creates it on `resources provision`, so the running host needs no container-create permission. At start the host verifies the container with one existence check (`ResourceStartupCheck.GateReadiness`); override it per kind with `ResourceProvisioningOptions.StartupChecks`.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Tus.Azure
 ```
 
-### Setup and use
+Register the store through DI ([Orientation](#orientation)), or construct it yourself:
 
 ```csharp
 using Azure.Storage.Blobs;
@@ -246,8 +171,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 var blobServiceClient = new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]);
 
-// A manually constructed store does not create its container: create "uploads" in the deployment,
-// or register the store with AddTusAzureStore and run `resources provision`.
+// A store you construct has no provisioner: create the "uploads" container in the deployment.
 var tusStore = new TusAzureStore(
     blobServiceClient,
     new TusAzureStoreOptions
@@ -264,34 +188,11 @@ app.MapTus("/files", async _ => new DefaultTusConfiguration { Store = tusStore, 
 app.Run();
 ```
 
-Serializing concurrent PATCHes across nodes (multi-node deployments) with `Headless.Tus.DistributedLocks`:
+`AddTusAzureStore` takes an `IConfiguration` section, an `Action<TusAzureStoreOptions>`, or an `Action<TusAzureStoreOptions, IServiceProvider>`. It needs a `BlobServiceClient` in DI, and it uses an `ITusAzureBlobHttpHeadersProvider` or `ITusFileIdProvider` registered before the call. It registers `TusAzureStore` and `ITusExpirationStore` as singletons, adds `IHttpContextAccessor`, and registers the `AzureBlob` provisioner named after `ContainerName`. The constructor takes the same optional services: `new TusAzureStore(blobServiceClient, options, blobHttpHeadersProvider, fileIdProvider, loggerFactory, timeProvider, httpContextAccessor)`.
 
-```csharp
-using Headless.Tus; // AddDistributedLockTusLockProvider
-using tusdotnet;
-using tusdotnet.Interfaces;
-using tusdotnet.Models;
+**Verify:** `dotnet MyApp.dll resources verify -k AzureBlob` exits `0`. Invalid `TusAzureStoreOptions` fail the host start with `OptionsValidationException`.
 
-// Register an IDistributedLock backend (Redis, SQL Server, …) first, then the TUS lock adapter:
-builder.Services.AddDistributedLockTusLockProvider();
-
-app.MapTus(
-    "/files",
-    httpContext =>
-        Task.FromResult(
-            new DefaultTusConfiguration
-            {
-                Store = tusStore,
-                UrlPath = "/files",
-                FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>(),
-            }
-        )
-);
-```
-
-A single-node deployment can omit the lock provider and rely on tusdotnet's in-process lock.
-
-With custom HTTP headers per upload:
+Custom HTTP headers per upload:
 
 ```csharp
 using System.Collections.Frozen;
@@ -329,120 +230,62 @@ var store = new TusAzureStore(
 );
 ```
 
+With DI, register the provider before `AddTusAzureStore`: `services.AddSingleton<ITusAzureBlobHttpHeadersProvider, MyHeadersProvider>()`. The headers apply at creation and on every later commit, so a custom content type survives each PATCH.
+
 ### Configuration
 
-`TusAzureStoreOptions` — all properties have defaults:
+| `TusAzureStoreOptions` | Default | Notes |
+| --- | --- | --- |
+| `ContainerName` | `"tus-uploads"` | Azure Blob container. |
+| `BlobPrefix` | `"uploads/"` | Prefix of every blob name the store writes. |
+| `ContainerPublicAccessType` | `PublicAccessType.None` | Access type `resources provision` applies when it creates the container. Ignored for an existing container. |
+| `EnableChunkSplitting` | `true` | Splits a PATCH body into several Azure blocks. |
+| `BlobDefaultChunkSize` | 4 MB | Block size for medium uploads. 1 byte to 100 MB, and at most `BlobMaxChunkSize`. |
+| `BlobMaxChunkSize` | 16 MB | Block size for uploads of 100 MB and more, and the per-request buffer for them. At most 100 MB, a memory cap the store sets (Azure allows 4,000 MiB per block). |
+| `MaxNoSplitBufferSize` | 256 MB | With `EnableChunkSplitting = false`, the largest PATCH body the store buffers. 1 byte to about 2 GB. Ignored when splitting is on. |
+| `DeletePartialFilesOnConcat` | `false` | Deletes the partial uploads after a final upload commits, best effort. Keep `false` when clients reuse partials. |
 
-| Option | Default | Notes |
-|---|---|---|
-| `ContainerName` | `"tus-uploads"` | Azure Blob container name. |
-| `BlobPrefix` | `"uploads/"` | Prefix applied to all blob names in the container. |
-| `ContainerPublicAccessType` | `PublicAccessType.None` | Access type `resources provision` applies when it creates the container; ignored for an existing one. |
-| `EnableChunkSplitting` | `true` | Splits large PATCH bodies into multiple Azure blocks. |
-| `BlobDefaultChunkSize` | `4 MB` | Default block size for medium uploads. Must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. |
-| `BlobMaxChunkSize` | `16 MB` | Block size used for uploads ≥ 100 MB; also the per-request memory buffering unit for large uploads. Max 100 MB — a store-imposed memory cap; Azure's own per-block limit is 4,000 MiB. |
-| `DeletePartialFilesOnConcat` | `false` | Delete partial uploads after a final upload is committed (best-effort; keep `false` if clients reuse partials). |
+Block size by declared upload length: under 10 MB, `min(BlobDefaultChunkSize, length)`; 10 MB to 100 MB, `BlobDefaultChunkSize`; 100 MB and more, `BlobMaxChunkSize`.
 
-Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`; uploads 10–100 MB use `BlobDefaultChunkSize`; uploads ≥ 100 MB use `BlobMaxChunkSize`.
+### Design and runtime behavior
 
-### Runtime behavior
+**Upload limits.**
 
-- Construction makes no network call; the container must already exist (see Container provisioning).
-- DI registration is optional: `TusAzureStore` can be constructed manually or registered via `AddTusAzureStore` (requires a `BlobServiceClient` in DI, adds `IHttpContextAccessor`, and registers the container provisioner). A manually constructed store passes `httpContextAccessor` to read each blob once per tus request (see Storage requests). For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
+- An upload holds at most 50,000 committed blocks, Azure's limit. A block size too small for a very large upload throws `TusStoreException` at commit. Raise `BlobDefaultChunkSize` and `BlobMaxChunkSize` for fewer, larger blocks.
+- With `EnableChunkSplitting = false`, the whole PATCH body is buffered and staged as one block. `MaxNoSplitBufferSize` is then the only memory bound for a deferred-length upload, because its length is unknown and tusdotnet lifts Kestrel's body limit for it. A larger body fails with `TusStoreException` (HTTP `400`). For a declared length, tusdotnet answers an over-length PATCH with `413` before the store buffers anything.
+- The client's `Upload-Metadata` is stored verbatim and returned byte for byte on HEAD. Keys keep their casing, and values may decode to any UTF-8 content. A value that is not printable ASCII, or longer than about 7 KB (Azure allows 8 KB of blob metadata), fails with `TusStoreException`. A concatenation final also stores its partial ids, and `CreateFinalFileAsync` throws `TusStoreException` when ids plus metadata would pass 8 KB.
+- A file id must not contain `/`, `\`, `..`, `,`, or a control character, or start or end with whitespace. Every entry point rejects such an id with `TusStoreException`, in addition to the id provider's own `ValidateId`.
+
+**Offsets and checksums.** The offset is the blob's committed length, so staged blocks never advance it. SHA1, SHA256, SHA512, and MD5 are checked for both `Upload-Checksum` forms, with a constant-time comparison.
+
+- Header form: blocks are staged and committed only after the checksum passes. On a mismatch they stay uncommitted, and Azure removes them within 7 days.
+- Trailer form (`checksum-trailer`): data commits during the append. On a mismatch, or a missing or faulty trailer, the store rolls the chunk back.
+
+**Disconnects and cancellation.** Reading the request body follows the request token, which is the disconnect signal. Everything that stores bytes already received runs to completion: a disconnected PATCH commits what arrived, and the sliding-expiration refresh and checksum verification run even after tusdotnet cancels the request token. A checksum PATCH whose chunk fully arrived and verified just before the disconnect is committed, and the resuming client sees the advanced offset on HEAD. Expired-file deletion finishes once a file is enumerated, and a cancelled enumeration returns the files found so far.
+
+**Expiration.** `GetExpirationAsync` returns `null` for a completed upload, so a completed upload stays reachable through HEAD and DELETE after its sliding window passes.
+
+**Write fencing.** Every block-list commit and metadata write is conditioned on the blob ETag the request read. A request whose view is stale (it lost its file lock and another PATCH committed meanwhile) fails with `Azure.RequestFailedException` status `412`, which tusdotnet answers with `500` and the client retries. The sliding-expiration refresh is the exception: it re-reads and retries up to three times instead of failing a PATCH whose data already committed. A concatenated final blob is written only when no blob has that name yet. A tus `DELETE` and the deletion of partials after concatenation are unconditional. The cleanup job's deletes are conditional ([Headless.Tus](#headlesstus)).
+
+**Storage requests.** With the `IHttpContextAccessor` that `AddTusAzureStore` adds, the store reads a blob once per tus request: a HEAD costs one request, a PATCH five, a checksum-header PATCH six. A store constructed without an accessor reads the blob on every store call and stays correct.
+
+**Concatenation.** The final upload copies blocks server-side. When the server cannot copy (Azurite answers `501`, and a private container answers `403` because the source has no SAS), the store downloads and re-uploads the data instead.
+
+**Provisioning.** `resources provision` creates the container with `ContainerPublicAccessType`, so the serving host needs no container-create permission. A starting host checks that the container exists with one request and holds the `warmup` readiness check until it does. Change that per kind with `ResourceProvisioningOptions.StartupChecks`. `resources purge` deletes the blobs under `BlobPrefix` and keeps the container. `resources delete` also deletes the container, but only when nothing else is left in it.
 
 ---
 
 ## Headless.Tus.S3
 
-TUS store for Cloudflare R2, Amazon S3, and S3-compatible servers such as MinIO. It writes each upload as one S3 multipart upload and takes the S3 client from the app.
+`TusS3Store` stores each upload as one S3 multipart upload, in Cloudflare R2, Amazon S3, or an S3-compatible server such as MinIO. It supports Creation (with upload), Creation Defer Length up to a cap, Concatenation, Expiration, Termination, and reading a file back. It does not support Checksum, so tusdotnet does not advertise it. Use `Headless.Tus.Azure` when clients send `Upload-Checksum`.
 
-### API and behavior
-
-- `TusS3Store` — `ITusStore` implementation over the S3 API; also implements `ITusPipelineStore`. The `PipeReader` and `Stream` appends store the same offsets with the same durability.
-- TUS extensions supported:
-  - **Creation** (`ITusCreationStore`), including creation-with-upload
-  - **CreationDeferLength** (`ITusCreationDeferLengthStore`), up to a capped length (see **Part size and length limits**)
-  - **Concatenation** (`ITusConcatenationStore`) — partials of any size; parts inside one partial are copied server-side with a ranged `UploadPartCopy`
-  - **Expiration** (`ITusExpirationStore`)
-  - **Termination** (`ITusTerminationStore`) — removes the multipart upload, the state object, the tail segments, and the finished object
-  - **Readable** (`ITusReadableStore`) — `GetFileAsync` returns `ITusFile`
-- **Checksum is not supported.** `TusS3Store` does not implement `ITusChecksumStore`, so tusdotnet does not advertise the extension. Use `Headless.Tus.Azure` when clients must send `Upload-Checksum`.
-- `AddTusS3Store(...)` — overloads: `IConfiguration`, `Action<TusS3StoreOptions>`, `Action<TusS3StoreOptions, IServiceProvider>`. It resolves `IAmazonS3` from DI with `GetRequiredService`, honors an `ITusS3ObjectHeadersProvider` or `ITusFileIdProvider` registered before the call, forwards `ITusExpirationStore`, adds `IHttpContextAccessor`, and registers the bucket as a provisioned resource of kind `S3Bucket`.
-- `new TusS3Store(s3, options, objectHeadersProvider, fileIdProvider, loggerFactory, timeProvider, httpContextAccessor)` — every parameter after `options` is optional. The constructor validates the options and throws `ValidationException` on invalid ones.
-- `TusS3Provider` — `Aws` (default), `S3Compatible`, `R2`; selects the per-request settings (see **Providers and the S3 client**).
-- `ITusS3ObjectHeadersProvider` / `DefaultTusS3ObjectHeadersProvider` / `TusS3ObjectHeaders` — the `Content-Type`, `Cache-Control`, `Content-Disposition`, `Content-Encoding`, and `Content-Language` the finished object carries.
-
-### Design constraints
-
-**Providers and the S3 client.** The app registers `IAmazonS3`; the store never builds one. Client-level settings are the app's to set, and registration does not check them:
-
-| Server | `ServiceURL` | `ForcePathStyle` | `AuthenticationRegion` | Checksum settings | `Provider` |
-|---|---|---|---|---|---|
-| Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` | `true` | `auto` | `WHEN_REQUIRED` (required) | `R2` |
-| Amazon S3 | SDK default (region endpoint) | SDK default | SDK default | SDK default | `Aws` |
-| MinIO or another S3-compatible server | the server URL, `http` allowed | `true` | the server's region, often `us-east-1` | `WHEN_REQUIRED` (most servers reject the SDK's default CRC checksums) | `S3Compatible` |
-
-R2 rejects the CRC checksums AWS SDK v4 adds to every request by default, so an R2 client must set `RequestChecksumCalculation` and `ResponseChecksumValidation` to `WHEN_REQUIRED`. `Provider` changes only per-request settings. Every object and part write sends a plain `Content-Length` body (`UseChunkEncoding = false`) for all three. `R2` sends unsigned payloads (`DisablePayloadSigning = true`), which skips a hash pass over every part. `S3Compatible` keeps payloads signed, because the SDK refuses unsigned payloads over plain `http`. `Aws` keeps the SDK's signing default. `R2` also sets the default `MultipartUploadLifetime` to 7 days.
-
-Set the client's `Timeout` and `MaxErrorRetry` deliberately. Completion, the expiry refresh after a PATCH, and the sweep's removals run on `CancellationToken.None`, so a client disconnect or host shutdown cannot interrupt them halfway; the client's timeout and retry count are then the only bound on how long one of those calls waits on a slow or unreachable server.
-
-R2 behavior is tested against a real R2 bucket in the release checks. Amazon S3 behavior is verified against LocalStack, not a real AWS account. MinIO is supported as an S3-compatible endpoint; its upstream repository was archived in April 2026.
-
-**Object layout.** The store owns every key under `Prefix` (default `uploads/`), so give it a prefix no other writer uses: `resources purge` deletes objects there. An upload with file id `{id}` uses:
-
-- `{Prefix}{id}` — the finished object, written when the upload completes.
-- `{Prefix}.tus/{id}/info` — the JSON state object of an incomplete upload: length, part size, metadata, expiry, multipart upload id, committed parts and tail segments.
-- `{Prefix}.tus/{id}/seg/...` — tail segments: received bytes that do not yet fill a part.
-- `{Prefix}.tus-completed/{id}` — the record a completed upload keeps beside its finished object.
-
-The tus metadata lives in the state object, not in S3 object metadata, so S3's 2 KB user-metadata limit does not apply. File ids become keys: the store rejects an id that starts with `.`, contains `/`, `\`, or a control character, or starts or ends with whitespace, with a `TusStoreException`.
-
-**Write fencing.** Creation writes the state object with `If-None-Match: *`, and every later write sends `If-Match` with the ETag the request read. A request whose view is stale (it lost its file lock and another request wrote meanwhile) fails with `AmazonS3Exception` (`412 PreconditionFailed`, `409 ConditionalRequestConflict`, or `404 NoSuchKey`), deliberately not a `TusStoreException`. tusdotnet answers `500`, and the tus client resumes from HEAD. Do not map that exception to `400` or another non-retryable 4xx. Before uploading parts, a PATCH reserves a window of part numbers (`PartClaimWindow`) with one conditional state write, so a stale writer fails before it touches a part. This matters on R2, which replaces a part uploaded again under the same number and loses it when that upload fails. No step relies on a conditional delete.
-
-**Part size and length limits.** S3 and R2 allow 10,000 parts per multipart upload, and R2 requires every part except the last to be the same size. The store fixes each upload's part size at creation, and every part except the last is exactly that size. Four claim windows of part numbers stay in reserve for crash recovery, so an upload spans at most `10,000 − 4 × PartClaimWindow` parts: 9,744 at the default window of 64.
-
-- **Known length.** The part size is the larger of `PartSize` and the length divided by the part budget, rounded up to 1 MiB. The largest accepted length is the part budget times `MaxPartSize`: 9,744 × 64 MiB = 623,616 MiB (about 609 GiB) at the defaults. Creation rejects a longer upload with a `TusStoreException` (`400`).
-- **Deferred length.** The upload uses `PartSize`, so it can grow to the part budget times `PartSize`: 9,744 × 8 MiB = 77,952 MiB (about 76 GiB) at the defaults. Declaring a longer length, or appending past the cap, fails with a `TusStoreException`. Raise `PartSize` to raise the cap; it also raises the memory each PATCH holds.
-
-**Tail segments and memory.** Bytes that do not fill a part are written as a new tail segment object, so a client may send chunks of any size, below 5 MiB included. The store reads the segments back into the next part once enough bytes arrive, and deletes them only after the state write that records that part, so no step drops bytes the store already reported in an offset. Past `MaxTailSegments` segments, the store folds them into one. Each PATCH holds at most `MaxConcurrentPartUploads` + 1 part buffers, each rented at the upload's part size rounded up to a power of two (6 MiB parts take 8 MiB buffers). The buffers come from a pool for sizes up to `MaxPartSize` that keeps up to 8 idle buffers per size for reuse; beyond that, buffers are allocated fresh. The store writes nothing to local disk.
-
-**Disconnects.** When the client disconnects, the store still stores every byte it received: it commits the parts that landed and writes the rest as tail segments, bounded by `PersistTimeout`. Keep `PersistTimeout` below the lease duration of the `IDistributedLock` backend behind `Headless.Tus.DistributedLocks`. Otherwise a lock failover can start a second writer while the first is still persisting; the write fencing then fails one of them.
-
-**Completion.** The final PATCH uploads the last part, marks the upload as completing with one conditional write, completes the multipart upload (or writes the finished object in one request when the upload never filled a part), marks the upload as committing with a second conditional write, writes the completed record, and deletes the state object. The committing write is what keeps the expiry sweep from deleting a finished object: the sweep claims an upload with a conditional write on the same state, so only one of the two lands. If the sweep claimed the upload first, the final PATCH fails with a retryable `500`, records nothing, and deletes the finished object its own write may have created after the sweep deleted that key; a final PATCH that loses to another completion leaves that completion's object in place; once the upload is committing, the sweep leaves it to the client until it is past its expiry and has been committing for over an hour. A zero-length upload writes an empty finished object at creation. If completion is interrupted, HEAD reports the offset from before the final PATCH, the client sends that PATCH again, and the store finishes the completion and tusdotnet raises `OnFileCompleteAsync`. Concatenation builds the final upload inside `CreateFinalFileAsync`, writes its completed record last (if that write fails, it deletes the finished object it built), and keeps the partial uploads.
-
-**Aborted multipart uploads.** By default R2 aborts every incomplete multipart upload 7 days after it was created. With `Provider = R2` and no `MultipartUploadLifetime`, the store applies the same 7 days: once they pass since the upload's first part, the upload reads as missing (`404`) and the cleanup job removes it. An upload whose final PATCH already completed the multipart upload (committing) is exempt: its bytes are in the finished object, so it stays reachable and a re-sent final PATCH records it. A client must therefore finish an R2 upload within 7 days of its first part; set the tus expiration below that. When the provider reports the multipart upload gone (`NoSuchUpload`), the store marks the upload gone and answers with a `TusStoreException`, never a corrupt upload. The store never edits bucket lifecycle rules; if a rule changes R2's window, set `MultipartUploadLifetime` to match. On AWS or an S3-compatible server, an abort-incomplete-multipart-upload lifecycle rule is the operator's choice; when the bucket has one, set `MultipartUploadLifetime` to its window.
-
-**Bucket provisioning.** Creating the bucket is a deploy step. `AddTusS3Store` registers a provisioner of kind `S3Bucket` named after `Bucket`: `dotnet <app>.dll resources provision -k S3Bucket` (or `deploy`) creates it, and a bucket the account already owns counts as created. A starting host only verifies it with one `ListObjectsV2` call (`ResourceStartupCheck.GateReadiness`): the host starts, and the `warmup` readiness check stays unhealthy until the bucket exists. On R2, the deploy step needs an API token that can create buckets, while the serving host needs only object read, write, and list rights. `resources purge` deletes the working sets, the completed records, and the finished objects those records name, and keeps the bucket and every other object. `resources delete` does the same, then deletes the bucket only when nothing else is left in it. A manually constructed store has no provisioner, so create its bucket beforehand.
-
-**Storage requests.** The DI registration lets the store read an upload's state once per tus request, though tusdotnet calls several store methods per request. A store constructed without an `IHttpContextAccessor` reads the state on every call and stays correct.
-
-| tus operation | Storage requests |
-|---|---|
-| HEAD, incomplete upload | 1 |
-| HEAD, completed upload | 2 |
-| Creation | 1, plus 1 when expiration is on |
-| PATCH that only adds a tail segment | 3 |
-| PATCH that writes N parts | N + 4 + ⌈N / 64⌉, plus 1 per tail segment read back, plus 1 on the upload's first part-writing PATCH (creates the multipart upload) |
-| Final PATCH, on top of its append | 4 (mark completing, complete, mark committing, write the record), plus 1 delete |
-| Expiry sweep | 1 listing per 1,000 in-progress uploads and 1 read per in-progress upload; a removal pass adds 1 multipart-upload listing page and the deletes for each removed upload. Completed uploads cost nothing. |
-
-Under sliding expiration, the first PATCH that writes after creation costs one more state write to refresh the expiry; later PATCHes carry the refresh in their commit.
-
-**Expiry sweep.** `RemoveExpiredFilesAsync` lists the in-progress uploads under `{Prefix}.tus/`, one entry per upload, and reads each state object. Before removing an expired or gone upload it writes the state as gone with `If-Match`, and skips the upload when a request changed it since the read. An upload whose completion already wrote the finished object and marked it committing is removed, with that object, only once it is past the expiry it had before completing and has been committing for over an hour: by then the completion has died with the server, and the client has not re-sent the final PATCH that would finish it. A completion frozen for longer than that hour between two storage calls would record an object the sweep already deleted; the store accepts that risk to reclaim the storage. It also aborts a multipart upload older than one hour that sits on the key of an upload it read but that upload's state does not record, and never touches a multipart upload on any other key. Such a leak comes from a crash, or from a request that created the multipart upload and then lost the state write recording it: the store leaves that empty multipart upload to the sweep rather than aborting it at once, because a 412 can also answer an SDK retry of a write that landed, and the upload is then live. Known limit: MinIO lists multipart uploads only under an exact object key, so on MinIO the sweep finds no leaked multipart uploads. Termination lists the exact key and still aborts them; a bucket abort rule covers the rest.
-
-**Readable store.** `GetFileAsync` returns `null` for an unknown or gone upload. For an incomplete upload it returns the metadata, but `GetContentAsync` throws `InvalidOperationException`, because S3 does not serve the parts of an incomplete multipart upload. Inside `OnFileCompleteAsync` the upload is complete and `GetContentAsync` streams the finished object.
-
-**Object headers.** The finished object's headers are fixed when its multipart upload starts or its single write happens, and S3 cannot change them later without copying the object. `DefaultTusS3ObjectHeadersProvider` stores every object as `application/octet-stream` ([Default content type](#default-content-type)) and sets no other header.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Tus.S3
 ```
 
-### Setup and use
-
-Register `IAmazonS3` for the server, then the store. Cloudflare R2:
+Register `IAmazonS3` for your server, then the store. Cloudflare R2:
 
 ```csharp
 using Amazon.Runtime;
@@ -543,6 +386,10 @@ Create the bucket as a deploy step before the host serves uploads:
 dotnet MyApp.dll resources provision -k S3Bucket
 ```
 
+`AddTusS3Store` takes an `IConfiguration` section, an `Action<TusS3StoreOptions>`, or an `Action<TusS3StoreOptions, IServiceProvider>`. It resolves `IAmazonS3` from DI and does not configure it. It uses an `ITusS3ObjectHeadersProvider` or `ITusFileIdProvider` registered before the call. It registers `TusS3Store` and `ITusExpirationStore` as singletons, adds `IHttpContextAccessor`, and registers the `S3Bucket` provisioner named after `Bucket`. To construct the store yourself, call `new TusS3Store(s3, options, objectHeadersProvider, fileIdProvider, loggerFactory, timeProvider, httpContextAccessor)`. Every parameter after `options` is optional, and invalid options throw `ValidationException`.
+
+**Verify:** `dotnet MyApp.dll resources provision -k S3Bucket` reports `Ok`, and `resources verify -k S3Bucket` exits `0`. Until the bucket exists, a started host's readiness endpoint reports the `warmup` check `Unhealthy` naming it. Invalid `TusS3StoreOptions` fail the host start with `OptionsValidationException`.
+
 Custom headers on the finished object:
 
 ```csharp
@@ -574,54 +421,99 @@ public sealed class DownloadHeadersProvider : ITusS3ObjectHeadersProvider
 builder.Services.AddSingleton<ITusS3ObjectHeadersProvider, DownloadHeadersProvider>();
 ```
 
-Metadata values are client input. Validate or encode them before they become stored response headers: allow-list a `filetype` instead of storing it as sent.
+`TusS3ObjectHeaders` carries `ContentType`, `CacheControl`, `ContentDisposition`, `ContentEncoding`, and `ContentLanguage`. They are fixed when the upload's multipart upload starts, and S3 cannot change them later without copying the object. Metadata values are client input: validate or encode them before they become stored response headers.
 
 ### Configuration
 
-`TusS3StoreOptions`:
-
-| Option | Default | Notes |
-|---|---|---|
+| `TusS3StoreOptions` | Default | Notes |
+| --- | --- | --- |
 | `Bucket` | `""` | Required. The bucket that holds the uploads. |
-| `Prefix` | `"uploads/"` | Key prefix the store owns; must not be empty. A trailing `/` is added when missing. Do not share it with other writers. |
-| `Provider` | `TusS3Provider.Aws` | `Aws`, `S3Compatible`, or `R2`; sets the per-request settings and, for `R2`, the default `MultipartUploadLifetime`. |
-| `PartSize` | `8 MiB` | Part size for a deferred-length upload, and the minimum for a known one. At least 5 MiB. Sets the deferred-length cap. |
-| `MaxPartSize` | `64 MiB` | Largest part size the store picks for a long known-length upload. At least `PartSize`, at most 1 GiB, because each part is buffered in one pooled array. Sets the largest accepted length. |
-| `MaxConcurrentPartUploads` | `2` | Parts one PATCH uploads in parallel. At least 1. One PATCH holds up to this + 1 part buffers, each the part size rounded up to a power of two. |
-| `PartClaimWindow` | `64` | Part numbers one state write reserves. 1–250. Four windows are held back from the 10,000-part budget, so a wider window lowers both length limits. |
-| `MaxTailSegments` | `16` | Tail segments an upload may hold before the store folds them into one. At least 1. |
-| `PersistTimeout` | `30 seconds` | How long the store keeps storing received bytes after a client disconnects. Must be positive; keep it below the distributed lock lease. |
-| `MultipartUploadLifetime` | `null` (7 days with `Provider = R2`) | When the provider aborts incomplete multipart uploads. Set it to match a bucket abort rule on AWS or an S3-compatible server. Must be positive when set. |
+| `Prefix` | `"uploads/"` | The key prefix the store owns. Must not be empty. A missing trailing `/` is added. Share it with no other writer, because `resources purge` deletes objects there. |
+| `Provider` | `TusS3Provider.Aws` | `Aws`, `S3Compatible`, or `R2`. Sets per-request settings and, for `R2`, the default `MultipartUploadLifetime`. |
+| `PartSize` | 8 MiB | Part size for a deferred-length upload, and the minimum for a known length. At least 5 MiB. Sets the deferred-length cap. |
+| `MaxPartSize` | 64 MiB | Largest part size the store picks for a long known-length upload. At least `PartSize`, at most 1 GiB. Sets the largest accepted length. |
+| `MaxConcurrentPartUploads` | `2` | Parts one PATCH uploads in parallel. At least 1. |
+| `PartClaimWindow` | `64` | Part numbers one state write reserves. 1 to 250. A wider window lowers both length limits. |
+| `MaxTailSegments` | `16` | Tail segments an upload holds before the store merges them into one. At least 1. |
+| `PersistTimeout` | 30 seconds | How long the store keeps storing received bytes after a client disconnects. Must be positive. Keep it below the distributed lock lease. |
+| `MultipartUploadLifetime` | `null` (7 days with `Provider = R2`) | When the server aborts an incomplete multipart upload. Set it to match a bucket abort rule on AWS or an S3-compatible server. Must be positive when set. |
 
-### Runtime behavior
+### Design and runtime behavior
 
-- Construction makes no network call; the bucket must already exist (see **Bucket provisioning**).
-- `AddTusS3Store` registers `TusS3Store` as a singleton, `ITusExpirationStore`, `IHttpContextAccessor`, `TimeProvider.System` (TryAdd), the default `ITusS3ObjectHeadersProvider` (TryAdd), and the `S3Bucket` provisioner. Options run through FluentValidation with `ValidateOnStart`.
-- For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
+**S3 client settings.** The app registers `IAmazonS3`, and registration does not check its settings:
+
+| Server | `ServiceURL` | `ForcePathStyle` | `AuthenticationRegion` | Checksum settings | `Provider` |
+| --- | --- | --- | --- | --- | --- |
+| Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` | `true` | `auto` | `WHEN_REQUIRED` (required) | `R2` |
+| Amazon S3 | SDK default | SDK default | SDK default | SDK default | `Aws` |
+| MinIO or another S3-compatible server | The server URL; `http` allowed | `true` | The server's region, often `us-east-1` | `WHEN_REQUIRED` (most servers reject the SDK's default CRC checksums) | `S3Compatible` |
+
+`Provider` changes only per-request settings. Every write sends a plain `Content-Length` body. `R2` sends unsigned payloads, which skips a hash pass over every part. `S3Compatible` keeps payloads signed, because the SDK refuses unsigned payloads over plain `http`. `Aws` keeps the SDK default.
+
+Set the client's `Timeout` and `MaxErrorRetry` deliberately. Completion, the expiry refresh after a PATCH, and the cleanup removals ignore cancellation so a disconnect or shutdown cannot interrupt them halfway. The client's timeout and retry count are then the only bound on a call to a slow or unreachable server.
+
+R2 is tested against a real R2 bucket. Amazon S3 is tested against LocalStack, not a real AWS account. MinIO is supported as an S3-compatible server; its upstream repository was archived in April 2026.
+
+**Object layout.** For an upload with file id `{id}`:
+
+- `{Prefix}{id}`: the finished object, written when the upload completes.
+- `{Prefix}.tus/{id}/info`: the JSON state of an incomplete upload: length, part size, metadata, expiry, and committed parts.
+- `{Prefix}.tus/{id}/seg/...`: tail segments, bytes received that do not yet fill a part.
+- `{Prefix}.tus-completed/{id}`: the record a completed upload keeps beside its finished object.
+
+The tus metadata lives in the state object, so S3's 2 KB user-metadata limit does not apply. The store rejects a file id that starts with `.`, contains `/`, `\`, or a control character, or starts or ends with whitespace, with `TusStoreException`.
+
+**Length limits.** S3 and R2 allow 10,000 parts per multipart upload, and R2 needs every part except the last to be the same size. The store fixes the part size at creation and holds four claim windows in reserve, so an upload spans at most `10,000 − 4 × PartClaimWindow` parts: 9,744 at the defaults.
+
+- **Known length.** The part size is the larger of `PartSize` and the length divided by the part budget, rounded up to 1 MiB. The largest accepted length is the part budget × `MaxPartSize`: 623,616 MiB (about 609 GiB) at the defaults. Creation rejects a longer upload with `TusStoreException` (`400`).
+- **Deferred length.** The upload uses `PartSize`, so it can grow to the part budget × `PartSize`: 77,952 MiB (about 76 GiB) at the defaults. Declaring a longer length, or appending past the cap, fails with `TusStoreException`. Raise `PartSize` to raise the cap; that also raises the memory each PATCH holds.
+
+**Memory.** A client may send chunks of any size, below 5 MiB included: bytes that do not fill a part are stored as tail segments and read back into the next part. One PATCH holds at most `MaxConcurrentPartUploads` + 1 part buffers, each the part size rounded up to a power of two (6 MiB parts take 8 MiB buffers). The store writes nothing to local disk.
+
+**Disconnects.** When the client disconnects, the store still stores every byte it received, bounded by `PersistTimeout`. Keep `PersistTimeout` below the lease of the `IDistributedLock` backend. Otherwise a lock failover can start a second writer while the first is still storing, and the write fencing fails one of them.
+
+**Write fencing.** Creation writes the state object only when it does not exist, and every later write is conditioned on the ETag the request read. A request whose view is stale fails with `AmazonS3Exception` (`412 PreconditionFailed`, `409 ConditionalRequestConflict`, or `404 NoSuchKey`), which tusdotnet answers with `500` and the client retries from HEAD. A PATCH reserves its part numbers before it uploads any part, so a stale writer fails before it can replace a part on R2.
+
+**Completion.**
+
+- The final PATCH completes the multipart upload, writes the completed record, and deletes the state object. A zero-length upload writes an empty finished object at creation.
+- If completion is interrupted, HEAD reports the offset from before the final PATCH. The client sends that PATCH again, the store finishes the completion, and tusdotnet raises `OnFileCompleteAsync`.
+- If the cleanup job claimed the upload first, the final PATCH fails with a retryable `500` and leaves no finished object.
+- Concatenation builds the final upload inside `CreateFinalFileAsync`, copies parts server-side, accepts partials of any size, and keeps the partial uploads.
+
+**Aborted multipart uploads.** By default R2 aborts an incomplete multipart upload 7 days after it was created. With `Provider = R2` and no `MultipartUploadLifetime`, the store applies the same 7 days: once they pass since the upload's first part, the upload reads as missing (`404`) and the cleanup job removes it. An upload whose final PATCH already completed the multipart upload stays reachable. Finish an R2 upload within 7 days of its first part, and set the tus expiration below that. When the server reports the multipart upload gone (`NoSuchUpload`), the store answers with `TusStoreException`, never a corrupt upload. The store never edits bucket lifecycle rules. If a rule changes R2's window, or a bucket on AWS or another server has an abort rule, set `MultipartUploadLifetime` to match.
+
+**Provisioning.** `resources provision -k S3Bucket` creates the bucket, and a bucket the account already owns counts as created. On R2, that deploy step needs a token that can create buckets, while the serving host needs only object read, write, and list rights. A starting host checks the bucket with one `ListObjectsV2` call and holds the `warmup` readiness check until it exists. `resources purge` deletes the store's objects under `Prefix` (in-progress uploads, completed records, and the finished objects they name) and keeps the bucket and every other object. `resources delete` does the same, then deletes the bucket only when nothing else is left in it.
+
+**Storage requests.** With the `IHttpContextAccessor` that `AddTusS3Store` adds, the store reads an upload's state once per tus request. A store without an accessor reads the state on every store call and stays correct. Request counts, which R2 and S3 bill per operation:
+
+| tus operation | Storage requests |
+| --- | --- |
+| HEAD, incomplete upload | 1 |
+| HEAD, completed upload | 2 |
+| Creation | 1, plus 1 when expiration is on |
+| PATCH that only adds a tail segment | 3 |
+| PATCH that writes N parts | N + 4 + ⌈N / 64⌉, plus 1 per tail segment read back, plus 1 on the first part-writing PATCH |
+| Final PATCH, on top of its append | 4, plus 1 delete |
+| Cleanup pass | 1 listing per 1,000 in-progress uploads and 1 read per in-progress upload. A pass that removes uploads adds 1 multipart-upload listing page and the deletes. Completed uploads cost nothing. |
+
+Under sliding expiration, the first PATCH that writes after creation costs one more state write to refresh the expiry.
+
+**Cleanup.** `RemoveExpiredFilesAsync` lists the in-progress uploads and reads each state object. It skips an upload a request changed since the read. An upload stuck mid-completion is removed, with its finished object, only once it is past its earlier expiry and has been completing for over an hour. The pass also aborts a leaked multipart upload, older than one hour, on the key of an upload it read. On MinIO, which lists multipart uploads only by exact key, the pass finds no leaked multipart uploads; a tus `DELETE` still aborts them, and a bucket abort rule covers the rest.
+
+**Reading uploads.** `GetFileAsync` returns `null` for an unknown or removed upload. For an incomplete upload it returns the metadata, but `GetContentAsync` throws `InvalidOperationException`, because S3 does not serve the parts of an incomplete multipart upload. Inside `OnFileCompleteAsync` the upload is complete, and `GetContentAsync` streams the finished object.
 
 ---
 
 ## Headless.Tus.DistributedLocks
 
-Distributed lock-based TUS file lock provider, using `Headless.DistributedLocks` to prevent concurrent PATCH corruption across multiple application instances.
+`DistributedLockTusLockProvider`, an `ITusFileLockProvider` over `IDistributedLock`. It keeps one PATCH per file across nodes and runs the cleanup job on one node per interval.
 
-### API and behavior
-
-- `DistributedLockTusLockProvider` — `ITusFileLockProvider` backed by `IDistributedLock`
-- `DistributedLockTusFileLock` — `ITusFileLock` that calls `TryAcquireAsync` with zero wait; returns `false` immediately if another node holds the lock (tusdotnet returns `423 Locked` to the client)
-- Lock resource key format: `{resourcePrefix}-{fileId}` with prefix default `tus-file-lock`; give each TUS endpoint its own prefix when several endpoints (different stores/containers) share one `IDistributedLock` backend, so equal file ids cannot contend for the same lock
-- Compatible with any `IDistributedLock` backend (Redis, in-memory, etc.)
-- Single-flights expired-upload cleanup: with `AddTusExpiredUploadsCleanup()` also registered, one node per interval runs the sweep under the `{resourcePrefix}:expired-uploads-cleanup` lease
-- Single `AddDistributedLockTusLockProvider(resourcePrefix?)` extension on `IServiceCollection`
-- Best-effort mutual exclusion, not fencing: tusdotnet's `ITusFileLock` contract has no hook to observe a lease lost mid-request, so a holder that loses its lease during a backend partition keeps writing until the request ends — the auto-extending lease shrinks that window but cannot eliminate it. The store has to fence: `TusAzureStore` conditions every write on the blob ETag and `TusS3Store` on the state object's ETag, so such a holder's write fails with `412` instead of overwriting the new holder's data
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Tus.DistributedLocks
 ```
-
-### Setup and use
 
 ```csharp
 using Headless.Tus;
@@ -632,17 +524,16 @@ using tusdotnet.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Register a Headless distributed lock backend (Redis shown; any backend works).
-//    The Redis backend resolves the IConnectionMultiplexer from DI when the host starts.
+// 1. A Headless distributed lock backend (Redis shown; any backend works).
 builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
-// 2. Register the TUS lock provider
+// 2. The tus lock provider.
 builder.Services.AddDistributedLockTusLockProvider();
 
 var app = builder.Build();
 
-// 3. Wire the lock provider into the TUS configuration
+// 3. Wire the lock provider into the tus configuration.
 app.MapTus(
     "/files",
     async ctx =>
@@ -651,7 +542,7 @@ app.MapTus(
 
         return new DefaultTusConfiguration
         {
-            Store = tusStore, // your TusAzureStore or TusS3Store instance
+            Store = tusStore, // your TusAzureStore or TusS3Store
             UrlPath = "/files",
             FileLockProvider = lockProvider,
         };
@@ -661,12 +552,16 @@ app.MapTus(
 app.Run();
 ```
 
+**Verify:** start two PATCH requests for the same file at once. The second gets `423 Locked`. Resolving `ITusFileLockProvider` throws when no `IDistributedLock` is registered.
+
 ### Configuration
 
-None beyond registering an `IDistributedLock` provider. The lock acquires with `AcquireTimeout = TimeSpan.Zero` (non-blocking) and `TimeUntilExpires = Timeout.InfiniteTimeSpan` (no expiry while held).
+`AddDistributedLockTusLockProvider(string resourcePrefix = "tus-file-lock")` is the only setting. The lock resource for a file is `{resourcePrefix}-{fileId}`. When several tus endpoints share one `IDistributedLock` backend, give each its own prefix so equal file ids from different stores do not contend.
 
-### Runtime behavior
+### Design and runtime behavior
 
-- `AddDistributedLockTusLockProvider()` registers `ITusFileLockProvider` as a singleton (`DistributedLockTusLockProvider`).
-- It also registers (TryAdd) an internal gate that single-flights `AddTusExpiredUploadsCleanup` passes across nodes through the same `IDistributedLock`.
-- Requires `IDistributedLock` to be registered in DI before this call.
+- `ITusFileLockProvider` is a singleton.
+- A lock attempt does not wait. When another node holds the file, tusdotnet answers `423 Locked`.
+- The lease has the lock backend's default lifetime and extends itself while held. A crashed holder's lease expires, so the file is freed.
+- The lock gives mutual exclusion, not fencing. A holder that loses its lease during a backend partition keeps writing until its request ends, and the store's write fencing then fails its write with a retryable `500`.
+- With `AddTusExpiredUploadsCleanup()` also registered, the cleanup job runs on one node per interval ([Headless.Tus](#headlesstus)).

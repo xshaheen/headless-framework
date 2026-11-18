@@ -15,5 +15,5 @@ dotnet add package Headless.Messaging.Dashboard
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingdashboard)
-- [Dashboards guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/dashboards.md#messaging-module)
+- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging/dashboard.md#headlessmessagingdashboard)
+- [Dashboards guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/dashboards/messaging-module.md#messaging-module)
