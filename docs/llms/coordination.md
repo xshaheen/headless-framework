@@ -24,6 +24,7 @@ The store is the clock. PostgreSQL uses `clock_timestamp()`, SQL Server uses `SY
 - Choose stable node ids. Kubernetes StatefulSet ordinal names are the strongest default. A Deployment pod name plus namespace is stable for the pod lifetime. Generated ids are for local development only: every process start leaves one permanent generation entry, so generated ids grow the store without bound.
 - Keep `MembershipLostBehavior.StopApplication` unless every ownership-sensitive worker observes `LocalMembershipLostToken`.
 - Give each Jobs store its own `ClusterName`. Jobs publishes node metadata that gates cron rebases across every node in a cluster; see [Node Metadata](#node-metadata).
+- When environments share one Redis, give each host a `Headless:Prefix`. The Redis provider puts it in front of `CoordinationOptions.KeyPrefix` (`wt1:coordination:{cluster}:known`). Relational providers ignore the key prefix and separate clusters by `ClusterName`. Hosts that share a Jobs database must share the prefix, and changing it on such a fleet needs a full stop, not a rolling deploy. See [Isolation prefix](utilities.md#isolation-prefix).
 
 ## How this differs from locks and leases
 

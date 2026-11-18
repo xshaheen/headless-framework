@@ -42,6 +42,8 @@ export interface MessageRow {
   nextRetryAt?: string
   changedAt?: string
   failureFingerprint?: string
+  /** The named transport a published row is sent through; missing for the default transport and on received rows. */
+  transport?: string
   tenantId?: string
   /**
    * What a failed row failed with, `Type: message`, cut to one bounded line. A list serves it for failed rows only,

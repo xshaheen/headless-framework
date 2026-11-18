@@ -15,13 +15,14 @@ Messaging registers its readiness checks itself. There is no `AddMessagingHealth
 | --- | --- | --- | --- |
 | `messaging` | `AddHeadlessMessaging` | `Unhealthy` | The host has not started messaging, or host shutdown has begun. Messaging starts in the background after the host already serves requests, so this check holds readiness until messaging has started |
 | `messaging-broker` | `AddHeadlessMessaging` | `Unhealthy` | The broker is unreachable (see [Broker reachability](#broker-reachability)). Applies to consuming and publish-only hosts on every transport. It stays healthy while the host starts or stops |
+| `messaging-broker-{name}` | `AddHeadlessMessaging` with at least one `AddTransport(name)` | `Unhealthy` | The [named transport](transports.md#named-transports)'s broker is unreachable, judged like `messaging-broker` from that transport's own sends and receives |
 | `messaging-consumers` | `AddHeadlessMessaging` | `Degraded` | Any consumer circuit is `Open`, tripped or forced with `ICircuitBreakerMonitor.ForceOpenAsync`. `HalfOpen` reports healthy, because it is already resuming |
 | `messaging-outboxes` | `AddHeadlessMessaging` with at least one `AddOutbox(name)` | `Degraded` | An [additional outbox](storage.md#additional-outboxes) is not initialized yet. Only units of work on that database are refused, so the host stays ready |
 | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default` | The primary PostgreSQL or SQL Server storage, raw or EF; also tagged `database` | `Unhealthy` | A connection from the storage's options cannot open, or `SELECT 1` on it fails |
 | `messaging-storage-postgresql-outbox-{name}`, `messaging-storage-sqlserver-outbox-{name}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{name}` is the name passed to `AddOutbox(name)` |
 | `messaging-nats` | `UseNats` | `Unhealthy` | A NATS `PING` fails or gets no answer within 5 seconds (see [Headless.Messaging.Nats](nats.md#headlessmessagingnats)) |
 
-`messaging`, `messaging-broker`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`). The [`check` command](../utilities.md#health-check-command) skips them before the host starts. The storage and NATS checks probe their dependency and run there. The in-memory storage and transport contribute no storage or broker probe.
+`messaging`, `messaging-broker`, `messaging-broker-{name}`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`). The [`check` command](../utilities.md#health-check-command) skips them before the host starts. The storage and NATS checks probe their dependency and run there. The in-memory storage and transport contribute no storage or broker probe.
 
 The storage probe runs a query instead of only opening a connection, because a pooled open can return an idle connection without a round trip and report a stopped database as reachable.
 
@@ -99,17 +100,22 @@ Azure Service Bus, Amazon SQS, and Redis Streams retry a lost broker inside thei
     { "name": "primary", "storage": "PostgreSQL" },
     { "name": "billing", "storage": "SQL Server" }
   ],
-  "transports": { "bus": "RabbitMQ", "queue": "RabbitMQ" }
+  "transports": {
+    "bus": "RabbitMQ",
+    "queue": "RabbitMQ",
+    "named": [{ "name": "partner", "bus": "RabbitMQ", "queue": "RabbitMQ" }]
+  }
 }
 ```
 
 - **One entry per identity and lane**, ordered by identity, then lane. An identity that owns a Queue message and consumes Bus messages has an entry on each lane. `messages` lists every message the entry consumes, with its contract version, the handling class in `consumerType`, and the method in `handlerMethod`: `ConsumeAsync` for `IConsume<T>`, `RespondAsync` for `IRespond<TRequest, TResponse>`.
 - **`delivery`** is `competing` or `every-instance`. **`runState`** is `runs-here` when this host starts clients for the entry, and `registered-not-run-here` when its `ConsumeOnly` filter leaves the entry out. An every-instance consumer always runs here.
+- **`transport`** appears only on a consumer bound to a [named transport](transports.md#named-transports), with its name.
 - **`consumeOnly`** appears only on a competing consumer of a host that calls `ConsumeOnly`: `listed` or `not-listed`.
 - **Tuning.** `concurrency` is always written. `sequential: true` appears on a consumer tuned [`Sequential()`](ordering.md#sequential-consumers), with `activeHost` set to `keyRouted`, `broker`, `lock`, or `none`. `inboxRetentionSeconds` appears on competing consumers only. `failurePolicy` appears when the consumer has one: the delay fields only when `delayedRetries` is above zero, `failOn` and `failWhenRules` only when set. `rateLimit` carries `algorithm` plus `tokenLimit`, `tokensPerPeriod`, and `replenishmentPeriodSeconds` for `token-bucket`, or `permitLimit` and `windowSeconds` otherwise. `circuitBreaker` lists only the overrides the consumer sets (`enabled`, `failureThreshold`, `openDurationSeconds`, and `customTransientPredicate: true`). `middleware` lists per-consumer middleware type names.
 - **`messages`** is the publish side: one entry per `Message<T>(name, version)` contract, ordered by name, with each lane it declares. A lane shows `deliveryMode` only when the contract pins one, and `routingAffinity` and `rawPayload` only when set.
 - **`outboxes`** lists the primary storage as `primary`, then each additional outbox in registration order, under its `AddOutbox(name)` name. `storage` is `PostgreSQL` or `SQL Server` for relational storage, and the storage type name otherwise.
-- **`transports`** names each lane's broker from `BrokerAddress.Name`. A lane with no transport is absent. The endpoint is never written.
+- **`transports`** names the broker of each lane's default transport from `BrokerAddress.Name`. A lane with no transport is absent. `named` lists each [named transport](transports.md#named-transports) in registration order, with the same `bus` and `queue` fields, and is absent when the host has none. The endpoint is never written.
 - **Not described:** runtime subscriptions, provider-specific consumer configuration, broker addresses, connection strings, and credentials.
 
 Use `describe` to verify wiring: it shows which consumers this host runs, their effective tuning, and each lane's transport.

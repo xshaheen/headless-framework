@@ -90,6 +90,7 @@ The policy counts attempts of a stored row, so it does not apply before admissio
 - A `FailWhen` predicate that throws counts as a match and is logged (EventId 111, `FailurePolicyRuleThrew`).
 - Every other exception is retried.
 - A cancellation of the consume token, such as host shutdown, is not a failure. Once that token is cancelled, any `OperationCanceledException` that ends the attempt writes nothing, and the row is picked up again later.
+- Shutdown cancels the consume token as soon as it starts, not at the `ShutdownTimeout` deadline. Under the transactional inbox, once the handler has returned, the save, inbox completion, and commit no longer observe the consume token, so a finished attempt commits during shutdown instead of rolling back and running again on the next host. The completion is still fenced on the attempt's lease. A handler that returns early on cancellation therefore commits what it did as a success; throw instead to have the message retried.
 - An `OperationCanceledException` raised while the consume token is live is an ordinary failure. That covers an `HttpClient` timeout, a handler-owned `CancelAfter`, and a timeout raised by commit work after the handler, such as a `SaveChanges` interceptor. To end such a cancellation at once, declare `FailOn<OperationCanceledException>()`, which also matches `TaskCanceledException`.
 
 ### Failures before the handler runs

@@ -24,6 +24,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 
 - Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`. Do not inject Redis storage types into application services.
 - Use `Headless.DistributedLocks.InMemory` only for tests, local development, or deliberately single-instance apps. It is not a cross-process lock.
+- When environments share one Redis, give each host a `Headless:Prefix`. It goes in front of `DistributedLockOptions.KeyPrefix`: a lock on `orders` uses `wt1:distributed-lock:orders`, and the Redis release channel becomes `wt1:distributed-lock:released`. The PostgreSQL and SQL Server providers and the static `SqlServerDistributedLock` helpers ignore it, because their database already separates environments. See [Isolation prefix](utilities.md#isolation-prefix).
 - On PostgreSQL and SQL Server, create the fence sequence at deploy time with `resources provision`. A host start only verifies it and fails when it is missing. Code that builds a service provider without starting a host (a console tool, a test) calls `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()` before its first fenced acquire.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch. Use `AcquireAsync(...)` when timeout should fail the workflow.
 - Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. Pass the complete set in one call, so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and undo a partial acquisition. `IDistributedLock` takes `IEnumerable<string>`, `IDistributedReadWriteLock` takes `IEnumerable<DistributedReadWriteLockRequest>`, and `IDistributedSemaphoreProvider` takes `IEnumerable<DistributedSemaphoreRequest>`.
@@ -182,6 +183,7 @@ The reason tag has two values, exposed as `DistributedLockFailureReasons.Contend
 
 - `contended`: every expected not-acquired outcome (held by another holder, acquire timeout elapsed, a swallowed transient storage error). After a transient error during a mutex acquire, the lock deletes its own lease id if the write landed. If every cleanup also fails, the key stays held until its TTL, or until removed by hand with `TimeUntilExpires = Timeout.InfiniteTimeSpan`.
 - `stalled`: a try-once acquire (`AcquireTimeout = TimeSpan.Zero`) whose single storage attempt hit the internal safety deadline, even when the caller's token never fires. The acquire returns `null` and logs `TryOnceSafetyDeadlineFired` (`EventId = 24`, Warning, fields `Resource`, `LeaseId`, `Duration`). Alert on `rate(headless.lock.failed{headless.lock.reason="stalled"})` to detect lock-store degradation.
+- A try-once acquire that finds the resource held logs no Warning: the mutex logs `FailedToAcquireLock` (`EventId = 7`) at Debug, and the reader-writer and semaphore log nothing. A mutex try-once whose storage call throws logs `FailedToAcquireLockAfter` (`EventId = 13`) at Warning, as a blocking acquire does when its `AcquireTimeout` elapses.
 
 ## Reader-Writer Locks
 

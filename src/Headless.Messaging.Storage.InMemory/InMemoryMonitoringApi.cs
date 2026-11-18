@@ -425,6 +425,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 LockedUntil = message.Lease.State == RowLeaseState.Active ? message.Lease.ExpiresAt : null,
                 ChangedAt = message.ChangedAt,
                 FailureFingerprint = message.FailureFingerprint,
+                TransportName = received ? null : message.TransportName,
                 TenantId = received ? message.InboxKey?.TenantId : null,
                 IsHeld = received && message.IsHeld,
                 IncarnationId = message.InboxGeneration?.IncarnationId,

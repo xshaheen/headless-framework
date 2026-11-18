@@ -21,7 +21,7 @@ Choose an entry point:
 
 - **`services.AddMessagingTestHarness()`** decorates an existing host's messaging registrations (a `WebApplicationFactory`, an `IHost`). Call it after `AddHeadlessMessaging(...)`.
 - **`MessagingTestHarness.CreateAsync(...)`** builds and owns a standalone test `ServiceProvider`. Dispose the harness after each test.
-- **`services.ReplaceMessagingTransportWithInMemory()`** swaps the broker transport an application registered (RabbitMQ, Kafka, Amazon SQS, Azure Service Bus, NATS, Redis, or a custom `IMessagesOptionsExtension`) for the in-memory transport, so the application's own registration runs without a broker. Call it after `AddHeadlessMessaging` and before `AddMessagingTestHarness()`.
+- **`services.ReplaceMessagingTransportWithInMemory()`** swaps the broker transport an application registered (RabbitMQ, Kafka, Amazon SQS, Azure Service Bus, NATS, Redis, or a custom `IMessagesOptionsExtension`) for the in-memory transport, so the application's own registration runs without a broker. Each [named transport](transports.md#named-transports) becomes a named in-memory transport of its own, so routing stays as in production, and `AddMessagingTestHarness()` records publishes through every transport. Call it after `AddHeadlessMessaging` and before `AddMessagingTestHarness()`.
 
 Consumers under test register as in production: attribute-declared classes and `AddModule<…MessagingModule>()`.
 

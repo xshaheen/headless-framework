@@ -5,7 +5,7 @@ packages: Messaging.InMemory
 
 # Messaging transports
 
-> Part of [Messaging](../messaging.md). What each transport supports, how it names broker objects, how routing affinity maps, which topology a deployment creates, and the in-memory transport.
+> Part of [Messaging](../messaging.md). What each transport supports, how it names broker objects, how routing affinity maps, which topology a deployment creates, how to add a second broker as a named transport, and the in-memory transport.
 
 Each broker has its own topic file: [AWS](aws.md), [Azure Service Bus](azure-service-bus.md), [Kafka](kafka.md), [NATS](nats.md), [RabbitMQ](rabbitmq.md), and [Redis](redis.md). To write a transport for another broker, read [Writing a Transport Provider](custom-transport.md#writing-a-transport-provider).
 
@@ -127,6 +127,42 @@ Every transport `Use{Provider}(...)` except `UseInMemory()` has the standard ove
 - `Use{Provider}(Action<TOptions, IServiceProvider> configure)` configures in code with the service provider, for example to read a secret or credential from DI.
 
 Options are validated at start through their validators. The options types are `AmazonSqsMessagingOptions`, `AzureServiceBusMessagingOptions`, `KafkaMessagingOptions`, `NatsMessagingOptions`, `RabbitMqMessagingOptions`, and `RedisMessagingOptions`. An invalid value fails the host start with an `OptionsValidationException`.
+
+## Named transports
+
+A host has one default transport, the one `setup.Use…` registers. When the host must also publish to and consume from a second broker, register a named transport for it. Do not run a second process or wrap a raw client. For example, RabbitMQ carries internal events and a second broker carries a partner integration:
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
+    setup.UseRabbitMq(builder.Configuration.GetSection("Messaging:Internal")); // default transport
+    setup.AddTransport("partner").UseRabbitMq(builder.Configuration.GetSection("Messaging:Partner"));
+    setup.Tune("partner.order-sync", consumer => consumer.Transport("partner"));
+});
+
+// Publish through the partner broker.
+public sealed record OrderShipped(Guid OrderId);
+
+public sealed class PartnerNotifier([FromKeyedServices("partner")] IBus partnerBus)
+{
+    public Task NotifyAsync(OrderShipped message, CancellationToken cancellationToken) =>
+        partnerBus.PublishAsync(message, cancellationToken);
+}
+```
+
+- **Name.** `AddTransport(name)` takes letters, digits, `-`, and `_`, at most 64 characters (`MessagingSetupBuilder.TransportNameMaxLength`), unique within the host, compared case-insensitively. `default` (`MessagingSetupBuilder.DefaultTransportName`) is reserved for the default transport. `AddHeadlessMessaging` throws for a duplicate, malformed, or `default` name, for an `AddTransport(name)` without a provider, and for a second provider on one `AddTransport(name)`. Choose the name once and keep it: every durable row stores it.
+- **Providers.** `AddTransport(name)` returns a `MessagingTransportBuilder`. Only `UseInMemory()` and `UseRabbitMq(...)` (the `string` host name and the standard overload trio) register a named transport today. Each named transport has its own named options (validated at start), connection pool, consumer clients, and topology provisioner, so two transports never share a connection or a setting, even two of one provider. A named in-memory transport is a broker of its own: its messages never reach the default in-memory broker.
+- **What is shared.** One storage, one inbox, one retry relay, one failure-policy model, and one dashboard serve every transport. [Additional outboxes](storage.md#additional-outboxes) are independent of transports: any unit of work's outbox can hold rows for any transport.
+- **Publishing.** The unkeyed `IBus` and `IQueue` publish through the default transport. The keyed `IBus` and `IQueue` (`[FromKeyedServices("partner")]`, `GetRequiredKeyedService<IBus>("partner")`) publish through the named one, keyed by the name exactly as `AddTransport` spelled it. Inside a unit of work, `unit.Outbox.PublishAsync(message, new OutboxOptions { TransportName = "partner" }, ct)` (and `EnqueueAsync`) picks the transport. `TransportName = null` or `"default"` is the default transport. A name the host does not register throws `MessagingConfigurationException` before any row is written. Each publish is checked against its own transport's capabilities, so that transport refuses a lane or schedule its broker does not support.
+- **Durable rows remember their transport.** The published row stores the transport name (`transport` / `Transport`, `NULL` for the default), so the relay, a retry, a delayed claim, and a dead-owner reclaim send the row through the broker it was published through, also after a restart. Every host that shares the storage must register the same named transports. A host that picks up a row naming a transport it does not register fails the row with `MessageTerminalReason.NoTransport`. `MediumMessage.TransportName`, `MessageView.TransportName`, and the dashboard row's `transport` carry the name.
+- **Consuming.** A consumer subscribes on the default transport unless `Tune(identity, c => c.Transport("partner"))` or `Headless:Messaging:Consumers:{identity}:Transport` binds it to a named one; `Transport("default")` binds it back. It then subscribes on that broker only. Startup fails, naming the identity, for a binding to a name the host does not register and for a responder bound to a named transport. `ConsumerMetadata.TransportName` carries the binding, spelled as in `AddTransport`.
+- **Failure isolation.** Each transport reports into its own broker check (`messaging-broker-{name}`; see [Health checks](operations.md#health-checks)), and its consumer clients are rebuilt alone. When a named broker is down at startup, the host starts, the default transport's consumers run, and the transport check creates the missing subscriptions once the broker answers. Publishes to the named transport are stored and wait for the relay. Its topology is its own resource, `topology-{name}`, with the default `GateReadiness` startup check, so a named broker that is down holds readiness without stopping the host.
+- **Topology.** `resources provision` creates each named transport's topology from the consumers bound to it. The declared message contracts provision on the default transport only, so a Queue-lane message published through a named transport needs its consumer's topology on that broker, as for a foreign producer.
+- **Request/reply** runs on the default transport only. A named transport opens no reply channel.
+- **Test hosts.** `ReplaceMessagingTransportWithInMemory()` replaces each named broker with a named in-memory transport of its own, so routing stays as in production. `AddMessagingTestHarness()` records publishes through every transport.
+
+**Verify:** `messaging-broker-partner` reports `Healthy` after the first send or receive on that broker, and the `describe` host manifest lists the transport under `messaging.transports.named`.
 
 ## Headless.Messaging.InMemory
 

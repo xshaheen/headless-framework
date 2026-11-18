@@ -9,7 +9,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 
 ## Orientation
 
-Install `Headless.Messaging`, exactly one transport, and exactly one storage. `IBus.PublishAsync` sends on the Bus lane (broadcast: one copy per consumer identity). `IQueue.EnqueueAsync` sends on the Queue lane (point-to-point: one consumer per message). Message types are plain classes, records, or interfaces with no Headless reference.
+Install `Headless.Messaging`, exactly one transport, and exactly one storage. `IBus.PublishAsync` sends on the Bus lane (broadcast: one copy per consumer identity). `IQueue.EnqueueAsync` sends on the Queue lane (point-to-point: one consumer per message). Message types are plain classes, records, or interfaces with no Headless reference. A host that bridges a second broker adds it as a [named transport](messaging/transports.md#named-transports).
 
 Registration has three parts:
 
@@ -134,7 +134,7 @@ Deploy the RabbitMQ topology and the storage tables with `resources provision` b
 | You add publish, receive, or consume middleware, or propagate the tenant. | [Middleware](messaging/middleware.md) |
 | A caller must await a typed answer from another service. | [Request/reply](messaging/request-reply.md) |
 | A non-Headless producer publishes the messages, or you parse a foreign JSON body. | [Foreign producers](messaging/foreign-producers.md) |
-| You compare transports, need broker object names, routing affinity, topology permissions, or the in-memory transport. | [Transports](messaging/transports.md) |
+| You compare transports, need broker object names, routing affinity, topology permissions, a second broker in one host (named transports), or the in-memory transport. | [Transports](messaging/transports.md) |
 | You use AWS SNS/SQS. | [AWS](messaging/aws.md) |
 | You use Azure Service Bus. | [Azure Service Bus](messaging/azure-service-bus.md) |
 | You use Kafka. | [Kafka](messaging/kafka.md) |
@@ -381,7 +381,7 @@ Tenant propagation and strict publishing are configured through `AddHeadlessTena
 
 ### Runtime behavior
 
-Registers the messaging services, hosted processors, publishers, consumers, the middleware registries, the always-on dead-owner recovery service, the `messaging`, `messaging-broker`, and `messaging-consumers` readiness checks (`messaging-outboxes` when the host adds an outbox), and the `messaging` host manifest section. Messaging starts in the background after the host serves requests; the `messaging` check holds readiness until it has started. See [Operations](messaging/operations.md).
+Registers the messaging services, hosted processors, publishers, consumers, the middleware registries, the always-on dead-owner recovery service, the `messaging`, `messaging-broker`, and `messaging-consumers` readiness checks (`messaging-outboxes` when the host adds an outbox, and `messaging-broker-{name}` for each `AddTransport(name)`), and the `messaging` host manifest section. Messaging starts in the background after the host serves requests; the `messaging` check holds readiness until it has started. See [Operations](messaging/operations.md).
 
 ## Headless.Messaging.SourceGenerator
 

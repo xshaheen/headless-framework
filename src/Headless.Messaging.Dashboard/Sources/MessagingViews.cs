@@ -385,6 +385,9 @@ internal sealed record MessagingRowView
 
     public string? FailureFingerprint { get; init; }
 
+    /// <summary>The named transport that sends a published row; <see langword="null"/> for the default one.</summary>
+    public string? Transport { get; init; }
+
     public string? TenantId { get; init; }
 
     /// <summary>
@@ -422,6 +425,7 @@ internal sealed record MessagingRowView
             NextRetryAt = view.NextRetryAt,
             ChangedAt = view.ChangedAt,
             FailureFingerprint = view.FailureFingerprint,
+            Transport = view.TransportName,
             TenantId = view.TenantId,
             IsHeld = view.IsHeld,
         };
@@ -452,6 +456,7 @@ internal sealed record MessagingRowView
             NextRetryAt = message.NextRetryAt,
             ChangedAt = changedAt,
             FailureFingerprint = message.FailureFingerprint,
+            Transport = message.TransportName,
             TenantId = message.InboxKey?.TenantId,
             Reason = MessagingViews.ReasonOf(message.StatusName ?? status, message.ExceptionInfo),
         };

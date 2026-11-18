@@ -91,6 +91,12 @@ public sealed class ConsumerExecutorDescriptor
     /// </summary>
     public bool EveryInstance { get; init; }
 
+    /// <summary>
+    /// The named transport this consumer subscribes on, or <see langword="null"/> for the default transport. Every
+    /// descriptor of one consumer identity carries the same value.
+    /// </summary>
+    internal string? TransportName { get; init; }
+
     /// <summary>The subscription kind the consumer's client opens.</summary>
     internal Transport.ConsumerSubscriptionKind SubscriptionKind =>
         EveryInstance ? Transport.ConsumerSubscriptionKind.EveryInstance : Transport.ConsumerSubscriptionKind.Competing;

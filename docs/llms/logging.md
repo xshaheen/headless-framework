@@ -86,7 +86,7 @@ public sealed record Customer(
 | `MaskText(pattern, replacement = "***", scope?)` | Masks value shapes no classification reaches, such as a 14-digit national ID or a card number. The `string` overload compiles the pattern culture-invariant with a 100 ms match timeout. The `Regex` overload uses your options. `MaskText(ILogTextRedactor, scope?)` takes your own redactor. |
 | `scope` (`LogTextRedactionScope`) | Limits a pattern to `Categories` (prefixes, ordinal, ignoring case, as logging filters match them) and a `MinimumLevel` (default `Trace`). |
 | `ConfigureRedaction(configure)` | Microsoft's `IRedactionBuilder`, applied after the defaults. Map your own classifications or replace a default. |
-| `ClassifyProperty(name, classification)` | Redacts a structured log property by name, ignoring case, as if its value carried `classification`. Applies to every entry and scope, element by element for a collection. The rendered message carries the redacted value. |
+| `ClassifyProperty(name, classification)` | Redacts a structured log property by name, ignoring case, as if its value carried `classification`. Applies to every entry and scope, element by element for a collection, and to events written through Serilog's own injected `ILogger`, with the same pseudonym. The rendered message carries the redacted value. |
 
 Other public types:
 
@@ -145,7 +145,7 @@ Exception masking:
 | Exception messages and inner-exception messages logged through `ILogger` | `MaskText` and any `ILogTextRedactor`, through a masked copy of the same type, or a `RedactedException` |
 | The request span's exception event | `AddHeadless()` records it from the masked copy when `OpenTelemetry.RecordException` is on; events other code records are not rewritten |
 | A span's status description and `exception.message` and `exception.stacktrace` tags | `AddHeadlessTextRedaction()` on the tracer provider (`AddHeadless()` adds it) |
-| Events written through an injected Serilog `ILogger` | `AddHeadlessSerilog()`: the template text, scalar properties, `ForContext` values, and the exception |
+| Events written through an injected Serilog `ILogger` | `AddHeadlessSerilog()`: classified property names (`ClassifyProperty`), the template text, scalar properties, `ForContext` values, and the exception |
 
 ### Collector backstop
 
@@ -338,5 +338,5 @@ Redaction of destructured values (`DataClassificationDestructuringPolicy`):
 
 Serilog's own `ILogger`:
 
-- When a text redactor is registered, `AddHeadlessSerilog` wraps the injected `Serilog.ILogger`, so events written through it get the same masking: the template's literal text, scalar property values, `ForContext` values, and the exception. Events from `Microsoft.Extensions.Logging` arrive already masked and are not scanned twice.
+- When a text redactor or a `ClassifyProperty` name is registered, `AddHeadlessSerilog` wraps the injected `Serilog.ILogger`. A property whose name is classified, as a template hole or a `ForContext` value, goes through the classification's redactor (element by element for a sequence; a destructured `{@Value}` under that name is redacted whole). Everything else gets the same masking: the template's literal text, scalar property values, `ForContext` values, and the exception. Members of a destructured value are not matched by name: classify them. Events from `Microsoft.Extensions.Logging` arrive already masked and are not scanned twice.
 - To mask `UseSerilogRequestLogging`, set its `Logger` option to the injected `Serilog.ILogger`.

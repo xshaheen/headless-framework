@@ -19,13 +19,7 @@ public sealed class TusS3MinioFixture
 
     public S3TestClient CreateClient()
     {
-        return new S3TestClient(
-            Container.GetConnectionString(),
-            Container.GetAccessKey(),
-            Container.GetSecretKey(),
-            "us-east-1",
-            TusS3Provider.S3Compatible
-        );
+        return new S3TestClient(ConnectionString, AccessKey, SecretKey, "us-east-1", TusS3Provider.S3Compatible);
     }
 
     public Task<TusS3Store> CreateStoreAsync(ILoggerFactory loggerFactory, CancellationToken cancellationToken)

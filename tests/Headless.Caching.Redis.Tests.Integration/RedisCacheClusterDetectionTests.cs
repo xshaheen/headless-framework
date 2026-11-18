@@ -11,8 +11,8 @@ namespace Tests;
 
 /// <summary>
 /// A cluster node reports its server type only once it is connected, so the cache must not settle on "standalone"
-/// from a probe made while every endpoint was down. A substituted multiplexer stands in for the cluster because the
-/// fixture runs a single Redis node.
+/// from a probe made while every endpoint was down. A substituted multiplexer stands in for the cluster because a live
+/// cluster cannot be held disconnected for the first call; <see cref="RedisCacheClusterTests"/> covers the real cluster.
 /// </summary>
 public sealed class RedisCacheClusterDetectionTests : TestBase
 {

@@ -48,6 +48,7 @@ The default path:
 - **Prevent overlapping cron runs with `OnOverlap = CronOverlapPolicy.Skip`.** A check inside the job sees only its own node.
 - **Keep `ShutdownTimeout` equal to `HostOptions.ShutdownTimeout`.** Jobs cannot read the host's timeout.
 - **In tests, call `options.DisableBackgroundServices()`** to schedule without executing, and add `DisableStartupInitialization()` to skip store access at startup. See [testing.md](jobs/testing.md).
+- **Hosts that share one Jobs database share one `Headless:Prefix`**, or use distinct coordination `ClusterName` values. With different prefixes, each host misses the others in its membership view and the orphan sweep reclaims their live rows. Changing the prefix on such a fleet needs a full stop, not a rolling deploy. See [Isolation prefix](utilities.md#isolation-prefix).
 
 ## Choose an API
 

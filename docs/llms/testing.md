@@ -381,6 +381,7 @@ public sealed class CacheIntegrationTests(HeadlessRedisFixture redis) : IClassFi
 | `HeadlessSqlServerFixture` | A database per fixture. SQL Server 2022 on x86_64, Azure SQL Edge on ARM64. | Yes |
 | `HeadlessRabbitMqFixture` | A virtual host per fixture | Yes |
 | `HeadlessRedisFixture` | A private container | No |
+| `HeadlessRedisClusterFixture` | A private container: three primaries, no replicas. See [Redis Cluster](#redis-cluster). | No |
 | `HeadlessNatsFixture`, `HeadlessKafkaFixture`, `HeadlessAzuriteFixture`, `HeadlessLocalStackFixture`, `HeadlessMinioFixture` | A private container | No |
 
 Other types:
@@ -388,8 +389,17 @@ Other types:
 - `TestImages` pins every image tag. No fixture uses `:latest`.
 - `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (namespace `Testcontainers.Redis`) run `redis-cli FLUSHALL` inside the container, so the next test starts clean without a client connection or `allowAdmin`.
 - `RedisBuilder.WithHostPingWaitStrategy()` holds the container start until Redis answers `PING` through the mapped host port. `HeadlessRedisFixture` applies it. Call it on a `RedisBuilder` you build yourself: the stock check pings inside the container, so a client that connects right after `StartAsync` can be refused while Docker still sets up the port forward, and StackExchange.Redis's default `abortConnect=true` turns that into `RedisConnectionException`.
+- `HeadlessMinioFixture` runs a plain `ContainerBuilder` container, because Testcontainers removed its MinIO module in 4.16. Build a client from its `ConnectionString` and its `AccessKey` and `SecretKey` constants, not from `Container`.
 - `HeadlessResourceReaperFixture` starts Testcontainers' resource reaper (Ryuk) before any test runs and retries the start once. See [Resource reaper start](#resource-reaper-start).
 - `TestContextMessageSink` forwards Testcontainers diagnostics to xUnit v3.
+
+### Redis Cluster
+
+`HeadlessRedisClusterFixture` runs three primaries (`PrimaryCount`), with no replicas, in one container. Use it for code that only runs on a cluster, such as per-hash-slot command splitting. Connect with `ConnectionString`, which seeds every primary; `Endpoints` lists them.
+
+- Each node announces `127.0.0.1` and its host-mapped port, so the fixture needs a local Docker engine. On a remote engine it fails the start with `NotSupportedException`.
+- `UnassignSlotAsync(slot)` takes one hash slot from its primary, so commands for that slot fail with `CLUSTERDOWN Hash slot not served` while the rest of the cluster keeps serving. Dispose the returned handle to give the slot back; its keys are kept.
+- `FlushAllAsync()` runs `FLUSHALL` on every primary.
 
 ### Customize a fixture
 

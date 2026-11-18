@@ -286,6 +286,7 @@ The host's deploy verbs, health checks, startup validation, seeders, resource pr
 | Capability | Entry point | Section |
 | --- | --- | --- |
 | Host verbs for deploy and verification | `RunHeadlessAsync(args)` | [Host verbs](#host-verbs) |
+| Environments that share one Redis | `Headless:Prefix`, `ConfigureHeadlessPrefix` | [Isolation prefix](#isolation-prefix) |
 | Readiness checks for dependencies | `AddHeadlessHealthCheck`, `ConfigureHeadlessHealthCheck`, `RemoveHealthChecks` | [Health checks](#health-checks) |
 | Pre-rollout dependency check | the `check` verb | [Health check command](#health-check-command) |
 | What the host registered, without starting it | the `describe` verb | [Host manifest](#host-manifest) |
@@ -343,6 +344,28 @@ return await app.RunHeadlessAsync(args);
 - **Console logging goes to standard error** during a verb, for hosts built with `HostApplicationBuilder` or `WebApplicationBuilder`. A host built with the legacy `Host.CreateDefaultBuilder` can still write Microsoft console logger lines to standard output. `describe` then writes a warning to standard error first. Filter the log lines out, or turn console logging off for the command.
 - **A normal run exits 1 after a background fault.** When the host runs normally, `RunHeadlessAsync` returns 0, or 1 when a `BackgroundService` had faulted by the time the host began stopping. It then writes `Host stopped: {service} failed: {message}` to standard error. A fault the stop causes, such as a disposed client during shutdown, does not count. Orchestrators see the exit code.
 - The host is disposed in every mode.
+
+### Isolation prefix
+
+Give each host its own prefix when several environments share one Redis, such as worktrees, preview stacks, or sandboxes. Set it once, with no code:
+
+```json
+{ "Headless": { "Prefix": "wt1" } }
+```
+
+You can also set the environment variable `Headless__Prefix=wt1`, or call `services.ConfigureHeadlessPrefix("wt1")`. The code call wins over configuration, whether you call it before or after the features are registered.
+
+- **Shape.** Empty (the default), or 1 to 20 lowercase letters, digits, and `-`, not starting or ending with `-`. Any other value fails the start with `OptionsValidationException` naming `Headless:Prefix`. The allowed characters include no store separator (`:`, `.`, `_`, `/`) and no pattern character, so a prefix cannot reach another environment's names or widen a pattern delete.
+- **Position.** The prefix goes in front of each feature's own key prefix, joined with `:`. A lock on `orders` uses `wt1:distributed-lock:orders`, and a cache with `KeyPrefix = "app:"` writes `wt1:app:{key}`. An empty prefix leaves every name unchanged.
+- **What it isolates.** Redis and in-memory cache keys and the Redis hybrid invalidation channel ([Caching](caching.md)); mutex, semaphore, and reader-writer lock resources and the Redis lock release channel ([Distributed Locks](distributed-locks.md)); Redis coordination keys ([Coordination](coordination.md)). Features that write through `ICache` or `IDistributedLock` inherit it: idempotency, rate limiting, the cache-factory lock, TUS file locks, tenant-scoped caching, Features, Settings, Permissions, and Jobs.
+- **What it does not isolate.** Database-backed locks (PostgreSQL advisory locks and SQL Server app locks, including the static `SqlServerDistributedLock` helpers), relational coordination (separated by cluster name), relational storage tables, and blob containers, `Headless.Blobs.Redis` included. Environments that share one Redis must give that blob provider distinct container names. Use a separate database, schema, or bucket for the rest.
+- **One prefix per shared relational store.** Hosts that share one Jobs or other relational store are one environment. Give them the same prefix, or distinct `CoordinationOptions.ClusterName` values. Otherwise a host treats the other prefix's live nodes as dead and reclaims their in-flight rows. For the same reason, adding or changing the prefix on a running fleet that shares such a store needs a full stop and restart, not a rolling deploy.
+- **Redis lock keys.** Lock storage hex-encodes the resource inside a hash tag, so a lock key does not start with the prefix and `SCAN wt1:*` does not find it. Cache and coordination keys do start with it.
+- **Not a security boundary.** The prefix separates names. Credentials still decide who can reach a store.
+
+A provider package applies the prefix to its own options with `services.ApplyHeadlessPrefix<TOptions>((options, prefix) => ...)`. The options factory applies it after every `Configure`, `PostConfigure`, and validation step, once per named instance, so a later consumer `PostConfigure` cannot remove it.
+
+**Verify:** at start the host logs `Headless names in shared stores start with the prefix '{Prefix}'`, and `dotnet MyApp.dll describe` shows the prefix as `host.prefix`.
 
 ### Health checks
 
@@ -496,7 +519,7 @@ dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
 - **Needs no infrastructure.** No section opens a connection, so `describe` succeeds when the broker and databases are unreachable, for example in CI. Configuration must still be valid: a missing RabbitMQ password, or two outboxes on one database, fails the command as it would fail a start.
 - **Output.** On success, standard output carries only the JSON document and the exit code is `0`. On any failure, standard output stays empty, standard error gets `Host manifest failed: {message}`, and the exit code is `1`.
 - `schemaVersion` is `HostManifest.SchemaVersion`. It changes only when a change would break a reader of the old shape.
-- **`host`** is always written: the application and environment names, the entry assembly's and Headless's informational versions, and the .NET runtime. It names no machine and no address.
+- **`host`** is always written: the application and environment names, the entry assembly's and Headless's informational versions, and the .NET runtime, plus `prefix` when the host has an [isolation prefix](#isolation-prefix). It names no machine and no address.
 - **`healthChecks`** is always written: every registered check ordered by name, with its sorted tags, its `failureStatus` (`unhealthy` or `degraded`), and `timeoutSeconds` when it has a timeout. No probe runs.
 - The other sections are sorted by name, one per registered feature. The [Messaging](messaging/operations.md#host-manifest) and [Jobs](jobs/operations.md#host-manifest) guides document theirs.
 - The manifest never carries connection strings, broker addresses, credentials, or runtime state.

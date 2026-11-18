@@ -95,6 +95,7 @@ Deployment settings are keyed by consumer identity. An identity that no register
 | `FailurePolicy<TPolicy>()`, `FailurePolicy(p => ...)` | Replaces the declared policy; see [Consumer failure policy](retries.md#consumer-failure-policy) |
 | `UseMiddleware<TMiddleware>()` | Consume middleware for this consumer only; see [Middleware](middleware.md#middleware) |
 | `UseKafka(...)`, `UseNats(...)`, `UseRabbitMq(...)` | Provider consumer hatches. AWS and Azure Service Bus have none |
+| `Transport(string name)` | Subscribes on a [named transport](transports.md#named-transports) instead of the default; `Transport("default")` binds it back |
 
 Several `Tune` calls for one identity apply in registration order: a later value wins, and middleware accumulates. A later `Tune` with the same provider config type replaces the earlier one. A consumer that handles several messages takes the settings for each of them. `InboxRetention`, `CircuitBreaker`, `FailurePolicy`, or `Sequential` on an every-instance consumer fails startup.
 
@@ -110,6 +111,7 @@ Inbox retention bounds duplicate suppression. While a message's inbox row is ret
 - `FailurePolicy:ImmediateRetries`, `FailurePolicy:DelayedRetries`, `FailurePolicy:DelayedInitialDelay`, `FailurePolicy:DelayedMaxDelay`.
 - `RateLimit`, holding exactly one of `FixedWindow:PermitLimit` with `FixedWindow:Window`, or `TokenBucket:TokenLimit`, `TokenBucket:TokensPerPeriod`, and `TokenBucket:ReplenishmentPeriod`.
 - `Sequential`, `true` or `false`.
+- `Transport`, the name of a [named transport](transports.md#named-transports).
 
 The transient-exception predicate and fail rules are code-only. An unknown identity, an unknown setting, an invalid value, or a retention, circuit breaker, or failure policy on an every-instance consumer fails startup.
 

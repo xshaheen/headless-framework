@@ -298,6 +298,39 @@ public static class SetupMessagesMyBroker
 
 **Verify:** the `describe` host manifest's `messaging.transports` names your `BrokerAddress.Name` for each declared lane, and a consumer on an undeclared lane fails startup with a `MessagingConfigurationException` naming the provider.
 
+To support [named transports](transports.md#named-transports), add the same members to `MessagingTransportBuilder` and register through `transport.RegisterTransport(extension)`. The extension registers everything keyed by `transport.Name`, builds every broker-owned object from options named for that instance (never from the default options or a shared singleton), and marks itself with an unkeyed `MessageQueueMarkerService("MyBroker") { TransportName = name }`:
+
+```csharp no-compile
+extension(MessagingTransportBuilder transport)
+{
+    public MessagingSetupBuilder UseMyBroker(Action<MyBrokerOptions> configure) =>
+        transport.RegisterTransport(new NamedMyBrokerOptionsExtension(transport.Name, configure));
+}
+
+private sealed class NamedMyBrokerOptionsExtension(string name, Action<MyBrokerOptions> configure)
+    : IMessagesOptionsExtension
+{
+    private readonly string _optionsName = "Headless.Messaging.Transport." + name;
+
+    public void AddServices(IServiceCollection services)
+    {
+        services.AddSingleton(new MessageQueueMarkerService("MyBroker") { TransportName = name });
+        services.Configure<MyBrokerOptions, MyBrokerOptionsValidator>(configure, _optionsName);
+        services.AddMessagingProviderCapabilities(name, MessagingProviderCapabilities.Transport(
+            "MyBroker", [MessageLane.Queue], supportsIndependentLaneTopology: true));
+        services.AddKeyedSingleton<IQueueTransport>(name, (sp, _) => new MyBrokerTransport(_Options(sp)));
+        services.AddKeyedSingleton<IConsumerClientFactory>(name, (sp, _) => new MyBrokerConsumerClientFactory(_Options(sp)));
+    }
+
+    private IOptions<MyBrokerOptions> _Options(IServiceProvider sp) =>
+        Options.Create(sp.GetRequiredService<IOptionsMonitor<MyBrokerOptions>>().Get(_optionsName));
+}
+```
+
+A keyed `ITransportTopologyProvisioner` becomes the named transport's `topology-{name}` resource. A named transport registers no `IReplyTransport` and declares `supportsRequestReply: false`.
+
+**Verify:** with `setup.AddTransport("partner").UseMyBroker(...)`, the `describe` host manifest lists `partner` under `messaging.transports.named`, and `messaging-broker-partner` appears among the readiness checks.
+
 `MessagingProviderCapabilities.Transport(...)` declares lanes, `supportsIndependentLaneTopology`, `supportsEveryInstance`, `supportsSingleActiveConsumer`, `supportsRequestReply`, and `routingAffinityRoutes`. The core freezes these declarations at bootstrap and validates consumers and contracts against them before readiness. Raw DI registration is not capability evidence.
 
 ## Publishing: ITransport.SendAsync
@@ -326,7 +359,7 @@ On the Bus lane, derive the broker-legal name with `BusNameBuilder.Build(...)` a
 - **`RejectAsync(sender, redeliveryDelay, cancellationToken)`** is what the core calls for a delivery it could not admit (its store failed, or its circuit's half-open probe is out). The default holds the delivery for `redeliveryDelay` in real time on `TimeProvider.System`, then calls the plain `RejectAsync`. The token only cuts the wait short on shutdown, and the reject still runs. Override it when the broker can delay redelivery itself (a NAK delay, a visibility timeout, a pending-entry idle time), so the delivery is released at once.
 - **`DeadLetterAsync(sender, reason, description)`** settles a message poisoned on arrival after the core stored its poison row. The core calls it only for the delivery that stored the row. The default calls `CommitAsync`, so a broker without a dead-letter destination needs no change. Override it when the broker can keep the message aside, and attach the reason and description when the broker can carry them. Reason codes: `SubscriberNotFound`, `ReceiveRejected` (a receive middleware's `Reject`), `DeserializationFailed`, and `ReceiveFailed` (a contract-version mismatch, a receive middleware fault, or an undeclared outcome). The description is the sanitized exception message capped at 1024 characters, except for `ReceiveFailed`, which carries only the exception type, because a middleware's message can echo header values such as a token.
 - **`PauseAsync` and `ResumeAsync`** serve circuit-breaker backpressure. Make them idempotent and safe to call concurrently, and stop new pulls once `PauseAsync` returns. In-flight deliveries may complete. Keep the listener alive across pause and resume. A provider may cancel an in-flight receive to reach its pause gate, but must install fresh receive state before it reopens the gate.
-- **`OnLogCallback`** emits `MqLogType` events:
+- **`OnLogCallback`** emits `MqLogType` events. Core attaches the callback after it creates the client, so read it at each event and never assume it is set: a client used before then, such as one a test fixture creates, must not throw or drop the event. The built-in Kafka, RabbitMQ, and Azure Service Bus clients write an event raised with no callback to their own logger as a warning.
   - `ConsumerCancelled`, `ConsumerShutdown`, `ServerConnError`, and `ConnectError` mark that client degraded. `ConsumerRegistered` clears only that client. A `ConsumerCancelled` raised while the circuit breaker paused the subscription changes nothing. Every 30 seconds the transport check rebuilds each subscription that holds a degraded client and leaves healthy ones consuming. A failure that belongs to no subscription rebuilds every subscription.
   - A client that retries a lost broker inside its own loop, instead of failing the loop, reports each failed receive as `MqLogType.BrokerUnreachable` and the first success after one as `MqLogType.BrokerReachable`. The core counts these toward reachability without rebuilding the client.
   - Emit `MqLogType.SettlementFailed` when an ack did not reach the broker, and record it with `TransportMetrics.RecordSettlementFailure`. The core logs it as a warning (EventId 4120 `TransportSettlementFailed`). Do not throw from settlement: the broker redelivers and the inbox deduplicates.

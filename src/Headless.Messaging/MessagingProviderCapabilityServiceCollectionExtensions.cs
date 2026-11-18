@@ -37,4 +37,28 @@ public static class MessagingProviderCapabilityServiceCollectionExtensions
         services.AddSingleton(capabilities);
         return services;
     }
+
+    /// <summary>
+    /// Adds the inert capability contribution of the named transport <paramref name="transportName"/>, registered with
+    /// <c>setup.AddTransport(name)</c>. The named transport's capability model composes it with the host's storage and
+    /// coordination contributions, apart from the default transport's.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="transportName">The named transport's name.</param>
+    /// <param name="capabilities">The transport's capability contribution.</param>
+    /// <returns>The service collection, for chaining.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public static IServiceCollection AddMessagingProviderCapabilities(
+        this IServiceCollection services,
+        string transportName,
+        MessagingProviderCapabilities capabilities
+    )
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNullOrWhiteSpace(transportName);
+        Argument.IsNotNull(capabilities);
+
+        services.AddKeyedSingleton(transportName, capabilities);
+        return services;
+    }
 }
