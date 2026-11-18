@@ -74,7 +74,7 @@ public sealed class PublishedPortCheck(
     /// <exception cref="InvalidOperationException">Every start of <see cref="_MaxStarts"/> landed on a shadowed port.</exception>
     public async Task StartAsync(IContainer container, CancellationToken cancellationToken)
     {
-        var shadowed = new List<ushort>();
+        var shadowed = new List<string>();
 
         for (var start = 1; ; start++)
         {
@@ -86,15 +86,12 @@ public sealed class PublishedPortCheck(
                 return;
             }
 
-            shadowed.Add(container.GetMappedPublicPort(containerPort));
+            shadowed.Add(container.GetMappedPublicPort(containerPort).ToString(CultureInfo.InvariantCulture));
 
             if (start == _MaxStarts)
             {
                 throw new InvalidOperationException(
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Another listener answered on {container.Hostname} at every port {container.Image.FullName} was published on ({string.Join(", ", shadowed)}), so no client could reach it."
-                    )
+                    $"Another listener answered on {container.Hostname} at every port {container.Image.FullName} was published on ({string.Join(", ", shadowed)}), so no client could reach it."
                 );
             }
 
