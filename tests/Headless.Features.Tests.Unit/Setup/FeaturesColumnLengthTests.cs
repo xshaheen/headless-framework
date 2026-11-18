@@ -97,23 +97,24 @@ public sealed class FeaturesColumnLengthTests : TestBase
     }
 
     [Theory]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureValuesNameMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureValuesValueMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureValuesProviderNameMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureValuesProviderKeyMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsNameMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsDisplayNameMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsDescriptionMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsDefaultValueMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsProvidersMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureGroupDefinitionsNameMaxLength))]
-    [InlineData(nameof(FeaturesStorageOptions.FeatureGroupDefinitionsDisplayNameMaxLength))]
-    public void should_reject_a_column_length_outside_one_to_four_thousand(string option)
+    [InlineData(nameof(FeaturesStorageOptions.FeatureValuesNameMaxLength), true)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureValuesValueMaxLength), false)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureValuesProviderNameMaxLength), true)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureValuesProviderKeyMaxLength), true)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsNameMaxLength), true)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsDisplayNameMaxLength), false)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsDescriptionMaxLength), false)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsDefaultValueMaxLength), false)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureDefinitionsProvidersMaxLength), false)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureGroupDefinitionsNameMaxLength), true)]
+    [InlineData(nameof(FeaturesStorageOptions.FeatureGroupDefinitionsDisplayNameMaxLength), false)]
+    public void should_reject_a_column_length_outside_one_to_four_thousand(string option, bool indexed)
     {
-        // given — 4000 is the widest sized nvarchar on SQL Server, the narrowest of the supported databases
+        // given — 4000 is the widest sized nvarchar on SQL Server, the narrowest of the supported databases; an
+        // indexed column also stays inside SQL Server's 1700-byte index key, which 4000 characters overflow
         var property = typeof(FeaturesStorageOptions).GetProperty(option)!;
 
-        foreach (var (length, accepted) in new[] { (0, false), (1, true), (4000, true), (4001, false) })
+        foreach (var (length, accepted) in new[] { (0, false), (1, true), (4000, !indexed), (4001, false) })
         {
             using var provider = _Provider(options => property.SetValue(options, length));
 
@@ -174,6 +175,33 @@ public sealed class FeaturesColumnLengthTests : TestBase
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new FeatureDefinitionSerializer(guidGenerator, Options.Create(options));
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void should_reject_index_columns_wider_together_than_the_sql_server_index_key(int overflow, bool accepted)
+    {
+        // given — the widest FeatureValues index holds every key column; nvarchar takes two bytes per character
+        using var provider = _Provider(options =>
+            options.FeatureValuesProviderKeyMaxLength =
+                850 - (options.FeatureValuesNameMaxLength + options.FeatureValuesProviderNameMaxLength) + overflow
+        );
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<FeaturesStorageOptions>>().Value;
+
+        // then
+        if (accepted)
+        {
+            act.Should().NotThrow();
+        }
+        else
+        {
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*FeatureValues (*1702 bytes*1700-byte*FeatureValuesProviderKeyMaxLength*");
+        }
     }
 
     private static ServiceProvider _Provider(Action<FeaturesStorageOptions> configure)

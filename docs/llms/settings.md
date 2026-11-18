@@ -409,7 +409,7 @@ setup.ConfigureStorage(o => o.SettingValuesProviderKeyMaxLength = 128);
 - Each value must be between 1 and 4000. Anything else throws when the options are first read.
 - One option sizes the EF Core model (`HasMaxLength`), the raw providers' tables, and their query parameters. Set it before the tables are created.
 - A definition that does not fit throws `ArgumentOutOfRangeException` when definitions are saved, not at the database.
-- The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey`. SQL Server limits an index key to 1,700 bytes (850 `nvarchar` characters), and PostgreSQL limits a B-tree entry to about 2,700 bytes. Keep the three lengths together under 850, or a row that fills them fails on insert. `Value` is not indexed.
+- The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey`, and the definitions table indexes `Name`. SQL Server limits an index key to 1,700 bytes (850 `nvarchar` characters), so the three values lengths together, and the definitions `Name` length, must each total at most 850. The registration refuses a wider configuration when the options are first read, on every provider, so one configuration stays valid on each database. `Value` is not indexed.
 - `SettingDefinitionsDefaultValueMaxLength` is separate from `SettingValuesValueMaxLength`. Raise both when values and defaults grow together.
 
 **Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column. Change the option and the column in the same release:
