@@ -19,8 +19,14 @@ internal static class DistributedLockTestSupport
     /// <summary>EventId of <c>RegularLockLoggerExtensions.LogTryOnceSafetyDeadlineFired</c>.</summary>
     public const int SafetyDeadlineFiredEventId = 24;
 
-    /// <summary>EventId of <c>RegularLockLoggerExtensions.LogFailedToAcquireLockAfter</c> (routine contention).</summary>
+    /// <summary>
+    /// EventId of <c>RegularLockLoggerExtensions.LogFailedToAcquireLockAfter</c> (Warning: a blocking acquire timed out,
+    /// or a try-once storage call threw).
+    /// </summary>
     public const int FailedToAcquireLockAfterEventId = 13;
+
+    /// <summary>EventId of <c>RegularLockLoggerExtensions.LogFailedToAcquireLock</c> (Debug: the resource was held).</summary>
+    public const int FailedToAcquireLockEventId = 7;
 
     /// <summary>Mirrors <c>_NonBlockingAcquireDeadline</c> in the providers (seconds).</summary>
     public const int NonBlockingAcquireDeadlineSeconds = 10;
@@ -148,6 +154,51 @@ internal static class DistributedLockTestSupport
             {
                 eventIds.Add(eventId.Id);
             }
+        }
+    }
+}
+
+/// <summary>
+/// An <see cref="ILogger{T}"/> that records each entry's EventId and level, so a test can assert the level an
+/// operator sees. Works for internal provider type args, like <see cref="DistributedLockTestSupport.CapturingLogger{T}"/>.
+/// </summary>
+internal sealed class LevelCapturingLogger<T> : ILogger<T>
+{
+    private readonly List<(int EventId, LogLevel Level)> _entries = [];
+
+    public IReadOnlyList<(int EventId, LogLevel Level)> Entries
+    {
+        get
+        {
+            lock (_entries)
+            {
+                return [.. _entries];
+            }
+        }
+    }
+
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull
+    {
+        return null;
+    }
+
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return true;
+    }
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    )
+    {
+        lock (_entries)
+        {
+            _entries.Add((eventId.Id, logLevel));
         }
     }
 }
