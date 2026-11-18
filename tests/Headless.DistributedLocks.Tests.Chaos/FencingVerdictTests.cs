@@ -19,7 +19,7 @@ public sealed class FencingVerdictTests : TestBase
             .Events;
 
         // when
-        var verdict = FencingVerdict.Evaluate(log);
+        var verdict = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
 
         // then
         verdict.Violations.Should().BeEmpty();
@@ -40,12 +40,54 @@ public sealed class FencingVerdictTests : TestBase
             .Events;
 
         // when
-        var verdict = FencingVerdict.Evaluate(log);
+        var verdict = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
 
         // then
         verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRule + ":");
         verdict.DuplicateGrantTokens.Should().Be(1);
         verdict.Evidence.Should().Contain("w2 r Granted token 2 (high-water 2)");
+    }
+
+    [Fact]
+    public void should_fail_a_reissued_token_under_a_durable_sequence_but_only_report_it_under_redis_failover()
+    {
+        // given — the history a Redis failover produced: token 713 accepted, then granted again on the promoted replica
+        var log = new LogBuilder()
+            .Grant("w6", "r", token: 713, highWaterMark: 712)
+            .Write("w6", "r", token: 713, accepted: true)
+            .Release("w6", "r", token: 713)
+            .Grant("w7", "r", token: 713, highWaterMark: 713)
+            .Write("w7", "r", token: 713, accepted: false)
+            .Events;
+
+        // when
+        var durable = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
+        var redis = FencingVerdict.Evaluate(log, FencingContract.RedisFailover);
+
+        // then
+        durable.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRule + ":");
+        durable.Observations.Should().BeEmpty();
+        redis.Violations.Should().BeEmpty();
+        redis.Observations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRule + ":");
+        redis.ObservationEvidence.Should().Contain("w7 r Granted token 713 (high-water 713)");
+        (durable.IssuerBreaks, redis.IssuerBreaks).Should().Be((1, 1));
+    }
+
+    [Fact]
+    public void should_fail_the_accepted_order_rule_under_redis_failover_too()
+    {
+        // given
+        var log = new LogBuilder()
+            .Grant("w1", "r", token: 5, highWaterMark: 0)
+            .Write("w1", "r", token: 5, accepted: true)
+            .Write("w2", "r", token: 5, accepted: true)
+            .Events;
+
+        // when
+        var verdict = FencingVerdict.Evaluate(log, FencingContract.RedisFailover);
+
+        // then
+        verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.AcceptedOrderRule + ":");
     }
 
     [Fact]
@@ -60,7 +102,7 @@ public sealed class FencingVerdictTests : TestBase
             .Events;
 
         // when
-        var verdict = FencingVerdict.Evaluate(log);
+        var verdict = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
 
         // then
         verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.AcceptedOrderRule + ":");
@@ -79,7 +121,7 @@ public sealed class FencingVerdictTests : TestBase
             .Events;
 
         // when
-        var verdict = FencingVerdict.Evaluate(log);
+        var verdict = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
 
         // then — only the last grant, below the accepted 3, breaks the issuer rule
         verdict
@@ -103,7 +145,7 @@ public sealed class FencingVerdictTests : TestBase
             .Events;
 
         // when
-        var verdict = FencingVerdict.Evaluate(log);
+        var verdict = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
 
         // then
         verdict.Violations.Should().BeEmpty();

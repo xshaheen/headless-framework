@@ -5,6 +5,7 @@ using Headless.DistributedLocks;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
+using Tests.Oracle;
 using Tests.Scenarios;
 
 namespace Tests;
@@ -57,6 +58,7 @@ public sealed class SqlServerLockHolderChaosTests(SqlServerLockChaosFixture fixt
             nodes.Locks,
             LockChaosScenario.Options(),
             seed,
+            FencingContract.DurableSequence,
             stop =>
                 LockChaosScenario.RepeatAsync(
                     seed,

@@ -23,7 +23,14 @@ public sealed class LockOracleControlTests : TestBase
         var options = LockChaosScenario.Options(_Run) with { Workers = 4 };
 
         // when
-        var result = await LockChaosScenario.RunAsync(nodes.Locks, options, seed: 7, _NoFaults, AbortToken);
+        var result = await LockChaosScenario.RunAsync(
+            nodes.Locks,
+            options,
+            seed: 7,
+            FencingContract.DurableSequence,
+            _NoFaults,
+            AbortToken
+        );
 
         // then
         var violations = result.Report("InMemory", "S7 control: healthy lock", 7, "no faults");
@@ -40,7 +47,14 @@ public sealed class LockOracleControlTests : TestBase
         var options = LockChaosScenario.Options(_Run) with { Workers = 4 };
 
         // when
-        var result = await LockChaosScenario.RunAsync([sabotaged], options, seed: 7, _NoFaults, AbortToken);
+        var result = await LockChaosScenario.RunAsync(
+            [sabotaged],
+            options,
+            seed: 7,
+            FencingContract.DurableSequence,
+            _NoFaults,
+            AbortToken
+        );
 
         // then
         var violations = result.Report("InMemory", "S7 negative control: reused token", 7, "sabotaged grants");

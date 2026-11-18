@@ -8,13 +8,20 @@ namespace Tests.Scenarios;
 
 /// <summary>The outcome of one lock chaos run: the oracle's verdict, the ledger's holder metrics, and the counts.</summary>
 public sealed record LockChaosResult(
+    FencingContract Contract,
     FencingVerdict Verdict,
     FencingLedger Ledger,
     LockHolderWorkloadCounts Counts,
     TimeSpan Elapsed
 )
 {
-    /// <summary>Records the run through <see cref="ChaosReport"/> and returns the violations to assert on.</summary>
+    private static readonly Lock _ObservationsLock = new();
+
+    /// <summary>
+    /// Records the run through <see cref="ChaosReport"/> and returns the violations to assert on. Issuer breaks the
+    /// contract only reports go to the test output and to <c>observations.md</c> beside the summary, with their log
+    /// slice, so a pass still carries the evidence.
+    /// </summary>
     public IReadOnlyList<string> Report(string store, string scenario, int seed, string faults)
     {
         List<string> violations = [.. Verdict.Violations];
@@ -30,13 +37,38 @@ public sealed record LockChaosResult(
             violations,
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"scenario seed {seed}; {Verdict.Describe(Ledger)}; {Counts}; {faults}; wall {Elapsed.TotalSeconds:F0}s"
+                $"scenario seed {seed}; issuer rule {(Contract.IssuerRuleIsHard ? "hard" : "reported")} ({Contract.Name}); {Verdict.Describe(Ledger)}; {Counts}; {faults}; wall {Elapsed.TotalSeconds:F0}s"
             ),
             Verdict.Evidence,
             line => TestContext.Current.TestOutputHelper?.WriteLine(line)
         );
 
+        if (Verdict.Observations.Count > 0)
+        {
+            _Observe(store, scenario, seed);
+        }
+
         return violations;
+    }
+
+    private void _Observe(string store, string scenario, int seed)
+    {
+        var text = string.Create(
+            CultureInfo.InvariantCulture,
+            $"## {store} · {scenario} ({ChaosRunSettings.Current}, scenario seed {seed}) — reported, not failed\n\n{string.Join('\n', Verdict.Observations)}\n\n```text\n{Verdict.ObservationEvidence}\n```\n\n"
+        );
+        TestContext.Current.TestOutputHelper?.WriteLine(text);
+
+        if (Environment.GetEnvironmentVariable(ChaosRunSettings.SummaryDirectoryVariable) is not { Length: > 0 } dir)
+        {
+            return;
+        }
+
+        lock (_ObservationsLock)
+        {
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "observations.md"), text);
+        }
     }
 }
 
@@ -67,6 +99,7 @@ public static class LockChaosScenario
         IReadOnlyList<IDistributedLock> nodes,
         LockHolderWorkloadOptions options,
         int seed,
+        FencingContract contract,
         Func<CancellationToken, Task> faults,
         CancellationToken cancellationToken
     )
@@ -81,7 +114,8 @@ public static class LockChaosScenario
             .ConfigureAwait(false);
 
         return new LockChaosResult(
-            FencingVerdict.Evaluate(ledger.Snapshot()),
+            contract,
+            FencingVerdict.Evaluate(ledger.Snapshot(), contract),
             ledger,
             counts,
             clock.GetElapsedTime(started)

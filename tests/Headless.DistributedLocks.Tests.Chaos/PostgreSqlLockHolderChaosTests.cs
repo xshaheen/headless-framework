@@ -48,6 +48,7 @@ public sealed class PostgreSqlLockHolderChaosTests(PostgreSqlLockChaosFixture fi
             nodes.Locks,
             options,
             seed,
+            FencingContract.DurableSequence,
             stop =>
                 LockChaosScenario.RepeatAsync(
                     seed,
@@ -81,6 +82,7 @@ public sealed class PostgreSqlLockHolderChaosTests(PostgreSqlLockChaosFixture fi
             sabotaged,
             options,
             seed,
+            FencingContract.DurableSequence,
             stop =>
                 LockChaosScenario.RepeatAsync(
                     seed,

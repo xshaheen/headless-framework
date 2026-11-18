@@ -13,12 +13,17 @@ namespace Tests.Oracle;
 ///   <item>
 ///   <see cref="IssuerRule"/>: the lock never grants a token at or below a token the resource had already accepted
 ///   when the acquire began. A token issued again, or a counter that rolled back, breaks it once a write landed.
+///   It fails the run only where <see cref="FencingContract.IssuerRuleIsHard"/>; elsewhere each break is reported in
+///   <see cref="Observations"/>.
 ///   </item>
 /// </list>
 /// </summary>
 public sealed record FencingVerdict(
     IReadOnlyList<string> Violations,
     string? Evidence,
+    IReadOnlyList<string> Observations,
+    string? ObservationEvidence,
+    int IssuerBreaks,
     int Grants,
     int AcceptedWrites,
     int RejectedWrites,
@@ -36,10 +41,13 @@ public sealed record FencingVerdict(
     private const int _ListedViolations = 10;
 
     /// <summary>Judges <paramref name="events"/>, a log in <see cref="FencingEvent.Sequence"/> order.</summary>
-    public static FencingVerdict Evaluate(IReadOnlyList<FencingEvent> events)
+    public static FencingVerdict Evaluate(IReadOnlyList<FencingEvent> events, FencingContract contract)
     {
         var violations = new List<string>();
+        var observations = new List<string>();
         FencingEvent? firstBreak = null;
+        FencingEvent? firstObserved = null;
+        var issuerBreaks = 0;
         var lastAccepted = new Dictionary<string, long>(StringComparer.Ordinal);
         var granted = new Dictionary<string, HashSet<long>>(StringComparer.Ordinal);
         var highestGranted = new Dictionary<string, long>(StringComparer.Ordinal);
@@ -59,13 +67,22 @@ public sealed record FencingVerdict(
 
                     if (entry.Token <= entry.HighWaterMark)
                     {
-                        violations.Add(
-                            string.Create(
-                                CultureInfo.InvariantCulture,
-                                $"{IssuerRule}: {entry.Worker} was granted {entry.Resource} with token {entry.Token} after the resource had accepted token {entry.HighWaterMark} (#{entry.Sequence})"
-                            )
+                        issuerBreaks++;
+                        var issuerBreak = string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{IssuerRule}: {entry.Worker} was granted {entry.Resource} with token {entry.Token} after the resource had accepted token {entry.HighWaterMark} (#{entry.Sequence})"
                         );
-                        firstBreak ??= entry;
+
+                        if (contract.IssuerRuleIsHard)
+                        {
+                            violations.Add(issuerBreak);
+                            firstBreak ??= entry;
+                        }
+                        else
+                        {
+                            observations.Add(issuerBreak);
+                            firstObserved ??= entry;
+                        }
                     }
 
                     var tokens = granted.TryGetValue(entry.Resource, out var set) ? set : granted[entry.Resource] = [];
@@ -110,17 +127,15 @@ public sealed record FencingVerdict(
             }
         }
 
-        // A broken issuer breaks on every grant after the first break, so list the first few and count the rest.
-        if (violations.Count > _ListedViolations)
-        {
-            var more = violations.Count - _ListedViolations;
-            violations.RemoveRange(_ListedViolations, more);
-            violations.Add(string.Create(CultureInfo.InvariantCulture, $"and {more} more violation(s)"));
-        }
+        _Cap(violations);
+        _Cap(observations);
 
         return new FencingVerdict(
             violations,
             firstBreak is null ? null : _Slice(events, firstBreak),
+            observations,
+            firstObserved is null ? null : _Slice(events, firstObserved),
+            issuerBreaks,
             grants,
             accepted,
             rejected,
@@ -133,8 +148,19 @@ public sealed record FencingVerdict(
     public string Describe(FencingLedger ledger) =>
         string.Create(
             CultureInfo.InvariantCulture,
-            $"grants {Grants}, writes accepted {AcceptedWrites}, stale writes rejected {RejectedWrites}, max concurrent holders {ledger.MaxConcurrentHolders}, overlapping holds {ledger.OverlappingHolds}, duplicate grant tokens {DuplicateGrantTokens}, rolled-back grants {RolledBackGrants}"
+            $"grants {Grants}, writes accepted {AcceptedWrites}, stale writes rejected {RejectedWrites}, max concurrent holders {ledger.MaxConcurrentHolders}, overlapping holds {ledger.OverlappingHolds}, duplicate grant tokens {DuplicateGrantTokens}, rolled-back grants {RolledBackGrants}, issuer breaks {IssuerBreaks}"
         );
+
+    // A broken issuer breaks on every grant after the first break, so list the first few and count the rest.
+    private static void _Cap(List<string> lines)
+    {
+        if (lines.Count > _ListedViolations)
+        {
+            var more = lines.Count - _ListedViolations;
+            lines.RemoveRange(_ListedViolations, more);
+            lines.Add(string.Create(CultureInfo.InvariantCulture, $"and {more} more"));
+        }
+    }
 
     // The entries of the breaking resource around the first break, so the report shows the grant and the write it
     // collided with.

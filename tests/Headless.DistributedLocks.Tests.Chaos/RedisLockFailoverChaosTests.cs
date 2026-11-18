@@ -4,14 +4,16 @@ using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
+using Tests.Oracle;
 using Tests.Scenarios;
 
 namespace Tests;
 
 /// <summary>
 /// S7 on Redis: workers on several nodes take fenced Redis locks through a route the scenario moves from the primary
-/// to a promoted asynchronous replica while writes are in flight. Two grants for one resource are legitimate here; the
-/// oracle asks whether the per-resource fence counter ever hands a new grant a token the resource already accepted.
+/// to a promoted asynchronous replica while writes are in flight. Two grants for one resource, and a fence value issued
+/// again, are documented here (<see cref="FencingContract.RedisFailover"/>), so the run fails only when the protected
+/// resource accepts a write out of order; reissued and rolled-back grants are reported with their log slice.
 /// </summary>
 public sealed class RedisLockFailoverChaosTests : TestBase
 {
@@ -47,6 +49,7 @@ public sealed class RedisLockFailoverChaosTests : TestBase
                 nodes.Locks,
                 LockChaosScenario.Options(timeUntilExpires: TimeSpan.FromSeconds(5)),
                 seed,
+                FencingContract.RedisFailover,
                 stop =>
                     LockChaosScenario.RepeatAsync(
                         seed,
