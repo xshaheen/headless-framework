@@ -131,7 +131,7 @@ builder.Services.AddHeadlessDbContext<
 >(options => options.UseNpgsql(connectionString));
 ```
 
-**Verify:** after `dotnet MyApp.dll resources provision`, `dotnet MyApp.dll resources verify -k EntityFramework` reports `Ok` for `AppDbContext`, and a test that resolves `UserManager<AppUser>` and calls `CreateAsync` gets `IdentityResult.Succeeded`. Unlike `Headless.EntityFramework`'s `AddHeadlessDbContext<TDbContext>()`, the Identity registrations add no `dbcontext-…` readiness health check, so readiness does not report this context.
+**Verify:** after `dotnet MyApp.dll resources provision`, `dotnet MyApp.dll resources verify -k EntityFramework` reports `Ok` for `AppDbContext`, and a test that resolves `UserManager<AppUser>` and calls `CreateAsync` gets `IdentityResult.Succeeded`. Every Identity `AddHeadlessDbContext` and `AddHeadlessDbContextPool` overload adds the same `ready`-tagged `dbcontext-<context full name>` health check as `Headless.EntityFramework`, so readiness reports unhealthy while the Identity database is unreachable.
 
 ### Configuration
 
