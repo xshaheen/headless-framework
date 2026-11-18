@@ -120,9 +120,7 @@ public static class HeadlessPrefixServiceCollectionExtensions
         }
     }
 
-    /// <summary>Marks a service collection that already registered the prefix.</summary>
     private sealed class HeadlessPrefixRegistration;
 
-    /// <summary>Marks a service collection that already applies the prefix to <typeparamref name="TOptions" />.</summary>
     private sealed class HeadlessPrefixApplied<TOptions>;
 }
