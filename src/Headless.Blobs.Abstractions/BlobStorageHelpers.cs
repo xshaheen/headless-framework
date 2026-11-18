@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using Headless.Checks;
 using Headless.Primitives;
 
-namespace Headless.Blobs.Internal;
+namespace Headless.Blobs;
 
 /// <summary>
 /// Shared helpers for blob storage providers.

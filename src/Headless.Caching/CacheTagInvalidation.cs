@@ -3,12 +3,14 @@
 namespace Headless.Caching;
 
 /// <summary>
-/// Shared read-time predicate for Family-2 logical tag-version invalidation. An entry is invalidated when its
-/// birth time (<c>CreatedAt</c>) predates the newest applicable invalidation marker — the max of the global
-/// clear-generation marker and every per-tag marker the entry carries. Each provider owns its own marker store
-/// and computes the newest marker; this helper holds the single comparison so all tiers agree.
+/// The read-time rule that decides whether a tag, clear, or remove marker invalidates a cache entry. An entry is
+/// invalidated when its birth time (<c>CreatedAt</c>) predates the newest applicable marker: the larger of the clear
+/// marker and every per-tag marker the entry carries. Each store owns its marker storage and computes the newest marker;
+/// every built-in store then calls <see cref="IsInvalidated"/>, and a custom store calls it too so all stores agree on a
+/// missing birth time and on an equal timestamp.
 /// </summary>
-internal static class CacheTagInvalidation
+[PublicAPI]
+public static class CacheTagInvalidation
 {
     /// <summary>
     /// Returns whether an entry born at <paramref name="createdAt"/> is invalidated by the newest applicable

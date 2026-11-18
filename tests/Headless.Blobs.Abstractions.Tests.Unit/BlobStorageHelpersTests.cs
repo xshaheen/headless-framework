@@ -2,7 +2,6 @@
 
 using System.Net.Http.Headers;
 using Headless.Blobs;
-using Headless.Blobs.Internal;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 
