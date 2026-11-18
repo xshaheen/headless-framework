@@ -9,7 +9,8 @@ namespace Headless.Messaging.Internal;
 
 /// <summary>
 /// The readiness checks every Messaging host contributes: <c>messaging</c> reports whether the host has started and is
-/// not shutting down, <c>messaging-broker</c> whether it can reach its broker, <c>messaging-consumers</c> whether any
+/// not shutting down, <c>messaging-broker</c> whether it can reach its default broker, <c>messaging-broker-{name}</c>
+/// whether it can reach each named transport's broker, <c>messaging-consumers</c> whether any
 /// consumer is paused, and <c>messaging-outboxes</c> whether every additional outbox is ready to take writes.
 /// </summary>
 /// <remarks>
@@ -27,7 +28,14 @@ internal static class MessagingHealthChecks
 
     public const string OutboxesCheckName = "messaging-outboxes";
 
-    public static void Add(IServiceCollection services, bool hasAdditionalOutboxes)
+    /// <summary>The broker check of the named transport <paramref name="transportName"/>.</summary>
+    public static string BrokerCheckNameOf(string transportName) => $"{BrokerCheckName}-{transportName}";
+
+    public static void Add(
+        IServiceCollection services,
+        bool hasAdditionalOutboxes,
+        IReadOnlyList<string>? transportNames = null
+    )
     {
         // Unhealthy until the bootstrapper has started and from the moment host shutdown begins. Broker reachability is
         // its own check, so an application can grade a broker outage (which the outbox absorbs) apart from a host that is
@@ -68,6 +76,23 @@ internal static class MessagingHealthChecks
             HeadlessHealthCheckTags.Messaging,
             HeadlessHealthCheckTags.HostState
         );
+
+        // Each named transport reports its own broker, judged like the default one, so an outage names the broker that
+        // is down and an application can grade a partner broker apart from its own.
+        foreach (var transportName in transportNames ?? [])
+        {
+            services.AddHeadlessHealthCheck(
+                BrokerCheckNameOf(transportName),
+                (provider, _) =>
+                    provider.GetRequiredService<MessagingTransports>().Get(transportName).Connectivity.IsReachable
+                        ? Task.CompletedTask
+                        : throw new InvalidOperationException(
+                            $"The message broker of transport '{transportName}' is unreachable."
+                        ),
+                HeadlessHealthCheckTags.Messaging,
+                HeadlessHealthCheckTags.HostState
+            );
+        }
 
         // An Open circuit, tripped or forced by an operator, means the consumer takes nothing. HalfOpen is already
         // resuming, so reporting it would only make alerts flap.

@@ -9,7 +9,7 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
 
 ## Orientation
 
-Use `Headless.Messaging` as the composition package, then add exactly one transport provider and one storage provider for a production host. `IBus.PublishAsync` selects broadcast Bus semantics and `IQueue.EnqueueAsync` selects point-to-point Queue semantics; message types remain plain classes, records, or interfaces.
+Use `Headless.Messaging` as the composition package, then add exactly one transport provider and one storage provider for a production host. A host that bridges a second broker adds it as a [named transport](#named-transports). `IBus.PublishAsync` selects broadcast Bus semantics and `IQueue.EnqueueAsync` selects point-to-point Queue semantics; message types remain plain classes, records, or interfaces.
 
 Registration has three parts. A consumer class declares itself with `[BusConsumer(identity)]` or `[QueueConsumer(identity)]` and implements `IConsume<T>` for each message it handles. The Messaging source generator emits one `MessagingModule` per assembly, and the module that owns the consumers contributes it, together with its message contracts, through `services.ConfigureMessaging(...)`. The host calls `AddHeadlessMessaging(...)` once for transport, storage, and options, and tunes consumers by identity.
 
@@ -84,7 +84,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Declare a message contract once, for both lanes**: `m.Message<T>(name, version = "1")` sets the logical name and schema version that publishing and consuming resolve `T` to on both lanes. Chain `.CorrelateBy(...)`, `.OnBus(b => ...)`, and `.OnQueue(q => ...)` for correlation, routing affinity, delivery mode, and provider settings. The message type needs no attribute and no Headless reference. Identical declarations from several modules merge; a different name, version, correlation selector, or lane setting fails startup naming both. Selectors compare by delegate, so share one declaration method rather than writing the same lambda twice.
 - **Never put a secret in a message payload**: a payload is durable, not transient. The serialized body is stored in the published and received tables, kept there for the retention window (`SucceedMessageExpiredAfter` defaults to one day, `FailedMessageExpiredAfter` to 15 days, inbox generations to 30 days), re-sent or re-executed by retries and operator actions, copied to the broker, and shown in full by the dashboard. Put only a reference in the message, such as the user ID and the purpose (`new PasswordSetupRequested(userId, Purpose.Invitation)`), and have the consumer resolve or generate the secret, such as a one-time code or a set-password token, right before it calls the sender, so the secret never leaves that consumer's process. This applies to passwords, one-time codes, reset or invitation tokens, API keys, and connection strings. Messaging has no payload-encryption feature; do not build one for this.
 - **Framework messages carry stable `headless.*` names**: every message a Headless package publishes or consumes is declared by that package as `headless.<domain>.<event>`, version `1`: through `ConfigureMessaging(m => m.Message<T>(...))`, which keeps the packages on the messaging abstractions (HybridCache, Settings, Features, Permissions, and the `Headless.DistributedLocks.Messaging` bridge). The name is a `MessageName` constant on the message type. Host conventions (`UseConventions` prefix, suffix, kebab-case) never rename them, so services with different conventions interoperate on one broker; only `MessagingOptions.MessageNamePrefix` applies, as it does to every name. An application consumer of a framework message declares only its consumer, never a second `Message<T>` for it. The framework messages are `CacheInvalidationMessage` (`headless.caching.hybrid.invalidation`, from `Headless.Caching.Hybrid.Messaging`), `DistributedLockReleased` (`headless.locks.released`, from `Headless.DistributedLocks.Messaging`; `Headless.DistributedLocks` itself references no messaging package), `SettingChangedMessage` (`headless.settings.changed`), `FeatureChangedMessage` (`headless.features.changed`), `PermissionGrantChangedMessage` (`headless.permissions.grant-changed`), and `DynamicPermissionDefinitionsChanged` (`headless.permissions.definitions-changed`).
-- **Host controls are keyed by identity**: `Tune(identity, c => ...)` changes a declared consumer's deployment settings (concurrency, per-key sequencing, rate limit, inbox retention, circuit breaker, failure policy, middleware, provider consumer settings); `Headless:Messaging:Consumers:{identity}` configuration applies after every `Tune`; `ConsumeOnly(...)` limits which competing consumers a host runs. An identity no registered consumer declares fails startup.
+- **Host controls are keyed by identity**: `Tune(identity, c => ...)` changes a declared consumer's deployment settings (concurrency, per-key sequencing, rate limit, inbox retention, circuit breaker, failure policy, middleware, provider consumer settings, and the [named transport](#named-transports) it subscribes on); `Headless:Messaging:Consumers:{identity}` configuration applies after every `Tune`; `ConsumeOnly(...)` limits which competing consumers a host runs. An identity no registered consumer declares fails startup.
 - **The same message can use both lanes**: one contract names the message on both lanes. A Bus consumer and a Queue consumer of the same message have independent subscriptions, inbox rows, middleware, circuits, and retry/backpressure state. Every built-in dual-lane transport declares independent physical lane topology. Startup validates contract routes only on lanes the transport carries, so Kafka (Queue-only) accepts every contract; a Bus consumer on Kafka still fails startup, and a Bus publish on Kafka fails when attempted.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates on the Bus lane. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers; a competing runtime subscription retries by the host's default failure policy. `RuntimeSubscriptionOptions.Identity` is the subscription's consumer identity and Bus subscription name. A competing runtime subscription keeps no inbox record, so a broker redelivery of a message it already stored finds the stored row: a row that is due runs again as its next attempt, keeping its retry count and failure history, and a row whose delayed retry, circuit deferral, or dispatch grace is still ahead is left to retry pickup, as are terminal and leased rows.
 - **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
@@ -556,6 +556,40 @@ services.AddHeadlessMessaging(setup =>
   publish a message through `unit.Outbox` and schedule the job from that message's consumer on the Jobs database.
   The outbox row commits with the unit, and the consumer's inbox and `unit.Jobs` give the job the same guarantee.
 
+### Named transports
+
+A host has one default transport, the one `setup.Use…` registers. When it must publish to and consume from a second broker, for example RabbitMQ for internal events and another broker for a partner integration, register a named transport for it instead of running a second process or wrapping a raw client:
+
+```csharp
+services.AddHeadlessMessaging(setup =>
+{
+    setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
+    setup.UseRabbitMq(builder.Configuration.GetSection("Messaging:Internal")); // default transport
+    setup.AddTransport("partner").UseRabbitMq(builder.Configuration.GetSection("Messaging:Partner"));
+    setup.Tune("partner.order-sync", consumer => consumer.Transport("partner"));
+});
+
+// Publish through the partner broker.
+public sealed record OrderShipped(Guid OrderId);
+
+public sealed class PartnerNotifier([FromKeyedServices("partner")] IBus partnerBus)
+{
+    public Task NotifyAsync(OrderShipped message, CancellationToken cancellationToken) =>
+        partnerBus.PublishAsync(message, cancellationToken);
+}
+```
+
+- **Name.** `AddTransport(name)` takes letters, digits, `-`, and `_`, at most 64 characters (`MessagingSetupBuilder.TransportNameMaxLength`), unique within the host compared case-insensitively. `default` (`MessagingSetupBuilder.DefaultTransportName`) is reserved for the default transport; a duplicate name, a malformed one, `default`, an `AddTransport(name)` without a provider, and a second provider on one `AddTransport(name)` all throw during `AddHeadlessMessaging`. Choose the name once and keep it: every durable row stores it.
+- **Providers.** `AddTransport(name)` returns a `MessagingTransportBuilder`. `UseInMemory()` and `UseRabbitMq(...)` (the `string` host name and the standard overload trio) register a named transport today; the other transports have no named `Use…` member yet. Each named transport builds its own options (named options, validated on start), connection pool, consumer clients, and topology provisioner, so two transports never share a connection or a setting, even two of one provider. A named in-memory transport is a broker of its own: its messages never reach the default in-memory broker.
+- **What is shared.** One storage, one inbox, one retry relay, one failure-policy model, and one dashboard serve every transport. [Additional outboxes](#additional-outboxes) are independent of transports: any unit of work's outbox can hold rows for any transport.
+- **Publishing.** The unkeyed `IBus` and `IQueue` publish through the default transport. The keyed `IBus` and `IQueue` (`[FromKeyedServices("partner")]`, `GetRequiredKeyedService<IBus>("partner")`) publish through the named one, keyed by the name exactly as `AddTransport` spelled it. Inside a unit of work, `unit.Outbox.PublishAsync(message, new OutboxOptions { TransportName = "partner" }, ct)` (and `EnqueueAsync`) picks the transport; `TransportName = null` or `"default"` is the default transport, and a name the host does not register throws `MessagingConfigurationException` before any row is written. Each publish is checked against its own transport's capabilities, so a lane or schedule the named broker does not support is refused there.
+- **Durable rows remember their transport.** The published row stores the transport's name (`transport` / `Transport`, `NULL` for the default transport), so the relay, a retry, a delayed claim, and a dead-owner reclaim send the row through the broker it was published through, also after a restart. Every host that shares the storage must register the same named transports: a host that picks up a row naming a transport it does not register fails the row (`MessageTerminalReason.NoTransport`), as it fails a row whose lane has no transport. `MediumMessage.TransportName`, `MessageView.TransportName`, and the dashboard row's `transport` carry the name.
+- **Consuming.** A consumer subscribes on the default transport unless `Tune(identity, c => c.Transport("partner"))` or `Headless:Messaging:Consumers:{identity}:Transport` binds it to a named one; `Transport("default")` binds it back. It then subscribes on that broker only, never on another. A binding to a name the host does not register fails startup naming the identity, and so does a responder bound to a named transport. `ConsumerMetadata.TransportName` carries the binding, under the spelling `AddTransport` used.
+- **Failure isolation.** Each transport reports its own reachability into its own broker check (see [Health checks](#health-checks)), and its consumer clients are rebuilt alone: when a named broker is down at startup, the host starts, the default transport's consumers run, and the transport check recreates only the missing subscriptions once the broker answers. Its publishes are stored and wait for the relay. Its topology is its own resource (`topology-{name}`) with the default `GateReadiness` startup check, so a named broker that is down holds readiness without stopping the host.
+- **Topology.** `resources provision` creates each named transport's topology from the consumers bound to it. The declared message contracts provision on the default transport only, so a Queue-lane message published through a named transport needs its consumer's topology on that broker, the same as for a foreign producer.
+- **Request/reply** runs on the default transport only: a named transport opens no reply channel, and its capability contribution says so.
+- **Test hosts.** `ReplaceMessagingTransportWithInMemory()` replaces each named broker with a named in-memory transport of its own, so the routing stays as in production, and `AddMessagingTestHarness()` records publishes through every transport.
+
 ## Foreign producers and raw payloads
 
 A producer that does not use Headless, such as a Python worker publishing JSON with its broker's own client, sends none of the Headless envelope headers. By default every consumer client settles such a delivery as malformed before any middleware runs. Declare the contract's lane with `RawPayload()` to consume it through the normal pipeline instead, with retry policy, circuit breaker, poison storage, and inbox deduplication:
@@ -984,6 +1018,37 @@ public static class SetupMessagesMyBroker
     }
 }
 ```
+
+To support [named transports](#named-transports), add the same members to `MessagingTransportBuilder` and register through `transport.RegisterTransport(extension)`. The extension registers everything keyed by `transport.Name`, builds every broker-owned object from options named for that instance (never from the default options or a shared singleton), and marks itself with an unkeyed `MessageQueueMarkerService("MyBroker") { TransportName = name }`:
+
+```csharp no-compile
+extension(MessagingTransportBuilder transport)
+{
+    public MessagingSetupBuilder UseMyBroker(Action<MyBrokerOptions> configure) =>
+        transport.RegisterTransport(new NamedMyBrokerOptionsExtension(transport.Name, configure));
+}
+
+private sealed class NamedMyBrokerOptionsExtension(string name, Action<MyBrokerOptions> configure)
+    : IMessagesOptionsExtension
+{
+    private readonly string _optionsName = "Headless.Messaging.Transport." + name;
+
+    public void AddServices(IServiceCollection services)
+    {
+        services.AddSingleton(new MessageQueueMarkerService("MyBroker") { TransportName = name });
+        services.Configure<MyBrokerOptions, MyBrokerOptionsValidator>(configure, _optionsName);
+        services.AddMessagingProviderCapabilities(name, MessagingProviderCapabilities.Transport(
+            "MyBroker", [MessageLane.Queue], supportsIndependentLaneTopology: true));
+        services.AddKeyedSingleton<IQueueTransport>(name, (sp, _) => new MyBrokerTransport(_Options(sp)));
+        services.AddKeyedSingleton<IConsumerClientFactory>(name, (sp, _) => new MyBrokerConsumerClientFactory(_Options(sp)));
+    }
+
+    private IOptions<MyBrokerOptions> _Options(IServiceProvider sp) =>
+        Options.Create(sp.GetRequiredService<IOptionsMonitor<MyBrokerOptions>>().Get(_optionsName));
+}
+```
+
+A keyed `ITransportTopologyProvisioner` becomes the named transport's `topology-{name}` resource. A named transport registers no `IReplyTransport` and declares `supportsRequestReply: false`.
 
 ### Publishing: `ITransport.SendAsync`
 
@@ -1818,7 +1883,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - Register all middleware while configuring services. The host freezes the middleware registry when messaging bootstraps and caches each (message type, lane) lookup afterwards, so registering a new middleware through the builder after the host has started throws `InvalidOperationException` instead of being ignored.
 - `MessagingOptions.EnablePublishParallelSend` sends durable rows on a sliding window: up to `PublishBatchSize` sends (default derived from the channel size, clamped to 1-500) are in flight at once, and a slot frees as soon as its own send completes, so one slow transport call does not hold the others back. Host shutdown waits for every in-flight send. Sends are unordered within the window, as they were within a batch.
 - Every received row is stored with `headless-exec-instance-id` already naming the receiving host. A successful consume rewrites the stored envelope only when the attempt changed it: another host's stamp replaced (a retry or lease takeover), an exception header recorded by an earlier failed attempt, or a replayed request stripped of its reply address. A plain first-try success leaves the stored content untouched.
-- Consumer deployment settings bind from `Headless:Messaging:Consumers:{identity}` after every `Tune` call: `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, `CircuitBreaker:OpenDuration`, `FailurePolicy:ImmediateRetries`, `FailurePolicy:DelayedRetries`, `FailurePolicy:DelayedInitialDelay`, `FailurePolicy:DelayedMaxDelay`, and a `RateLimit` holding exactly one of `FixedWindow:PermitLimit` with `FixedWindow:Window`, or `TokenBucket:TokenLimit`, `TokenBucket:TokensPerPeriod`, and `TokenBucket:ReplenishmentPeriod`, and `Sequential` (`true` or `false`). The transient-exception predicate and fail rules are code-only. An unknown identity, an unknown setting, an invalid value, or an inbox retention, circuit breaker, or failure policy on an every-instance consumer fails startup.
+- Consumer deployment settings bind from `Headless:Messaging:Consumers:{identity}` after every `Tune` call: `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, `CircuitBreaker:OpenDuration`, `FailurePolicy:ImmediateRetries`, `FailurePolicy:DelayedRetries`, `FailurePolicy:DelayedInitialDelay`, `FailurePolicy:DelayedMaxDelay`, and a `RateLimit` holding exactly one of `FixedWindow:PermitLimit` with `FixedWindow:Window`, or `TokenBucket:TokenLimit`, `TokenBucket:TokensPerPeriod`, and `TokenBucket:ReplenishmentPeriod`, `Sequential` (`true` or `false`), and `Transport` (the name of a [named transport](#named-transports)). The transient-exception predicate and fail rules are code-only. An unknown identity, an unknown setting, an invalid value, or an inbox retention, circuit breaker, or failure policy on an every-instance consumer fails startup.
 
   ```json
   {
@@ -1842,7 +1907,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 
 ### Runtime behavior
 
-Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service. Also registers the `messaging` and `messaging-consumers` readiness checks, `messaging-outboxes` when the host adds an outbox, and the `messaging` host manifest contributor; see [Readiness and host manifest](#readiness-and-host-manifest).
+Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service. Also registers the `messaging` and `messaging-consumers` readiness checks, `messaging-outboxes` when the host adds an outbox, `messaging-broker-{name}` for each `AddTransport(name)`, and the `messaging` host manifest contributor; see [Readiness and host manifest](#readiness-and-host-manifest).
 
 ## Retry Policy
 
@@ -2578,13 +2643,14 @@ Messaging contributes readiness checks automatically; there is no `AddMessagingH
 | --- | --- | --- | --- |
 | `messaging` | `AddHeadlessMessaging` | `Unhealthy` | The host has not started, or host shutdown has begun. Messaging starts in the background after the host already serves requests, so this check is what holds readiness until it has started |
 | `messaging-broker` | `AddHeadlessMessaging` | `Unhealthy` | The broker is unreachable (see [Broker reachability](#broker-reachability)). Applies to consuming and publish-only hosts on every transport. It reads no lifecycle, so it stays healthy while the host starts or stops |
+| `messaging-broker-{name}` | `AddHeadlessMessaging` with at least one `AddTransport(name)` | `Unhealthy` | The [named transport](#named-transports)'s broker is unreachable, judged like `messaging-broker` from that transport's own sends and receives. `{name}` is the name passed to `AddTransport(name)` |
 | `messaging-consumers` | `AddHeadlessMessaging` | `Degraded` | Any consumer circuit is `Open`, whether it tripped or an operator called `ICircuitBreakerMonitor.ForceOpenAsync`. `HalfOpen` reports healthy: it is already resuming, and reporting it would make alerts flap |
 | `messaging-outboxes` | `AddHeadlessMessaging` with at least one `AddOutbox(name)` | `Degraded` | An [additional outbox](#additional-outboxes) is not initialized yet. Its initialization keeps retrying and only units of work on that database are refused, so the host stays ready |
 | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default` | The primary PostgreSQL or SQL Server storage, raw or EF; also tagged `database` | `Unhealthy` | A connection from the storage's options cannot open, or `SELECT 1` on it fails |
 | `messaging-storage-postgresql-outbox-{name}`, `messaging-storage-sqlserver-outbox-{name}` | Each additional PostgreSQL or SQL Server outbox; also tagged `database` | `Unhealthy` | The same probe against that outbox's database. `{name}` is the name passed to `AddOutbox(name)`, so the check keeps its name when registrations are added or reordered |
 | `messaging-nats` | `UseNats` | `Unhealthy` | A NATS `PING` fails or gets no answer within 5 seconds (see [Headless.Messaging.Nats](#headlessmessagingnats)) |
 
-`messaging`, `messaging-broker`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`), and the [`check` command](utilities.md#health-check-command) skips them before the host starts; the storage and NATS checks probe their dependency and run there.
+`messaging`, `messaging-broker`, `messaging-broker-{name}`, `messaging-consumers`, and `messaging-outboxes` read the running host's state, so they also carry `host-state` (`HeadlessHealthCheckTags.HostState`), and the [`check` command](utilities.md#health-check-command) skips them before the host starts; the storage and NATS checks probe their dependency and run there.
 
 The `Degraded` defaults are defaults only: `ConfigureHeadlessHealthCheck("messaging-consumers", o => o.FailureStatus = HealthStatus.Unhealthy)` overrides one, before or after `AddHeadlessMessaging`. The `messaging-nats` timeout is a default too: `ConfigureHeadlessHealthCheck("messaging-nats", o => o.Timeout = ...)` or `Headless:HealthChecks:messaging-nats:Timeout` changes it.
 
@@ -2659,17 +2725,22 @@ Transports that retry a lost broker inside their own receive loop (Azure Service
     { "name": "primary", "storage": "PostgreSQL" },
     { "name": "billing", "storage": "SQL Server" }
   ],
-  "transports": { "bus": "RabbitMQ", "queue": "RabbitMQ" }
+  "transports": {
+    "bus": "RabbitMQ",
+    "queue": "RabbitMQ",
+    "named": [{ "name": "partner", "bus": "RabbitMQ", "queue": "RabbitMQ" }]
+  }
 }
 ```
 
 - **One entry per identity and lane,** ordered by identity, then lane (`bus` or `queue`): an identity that owns a Queue message and consumes Bus messages opens a subscription, with its own tuning, on each lane. `messages` lists every message the entry consumes, by name, with its contract version, the full name of the class that handles it in `consumerType`, and the method that does in `handlerMethod`: `ConsumeAsync` for an `IConsume<T>` consumer, `RespondAsync` for an `IRespond<TRequest, TResponse>` responder. One identity can bind each message to its own class, so the class is named per message.
+- **`transport`** appears only on a consumer bound to a [named transport](#named-transports), with its name.
 - **`delivery`** is `competing` or `every-instance`. **`runState`** is `runs-here` when this host starts clients for the entry and `registered-not-run-here` when its `ConsumeOnly` filter leaves the entry out. An every-instance consumer always runs here.
 - **`consumeOnly`** appears only on a competing consumer of a host that calls `ConsumeOnly`: `listed` or `not-listed`.
 - **Tuning.** `concurrency` is always written. `sequential: true` appears on a consumer tuned [`Sequential()`](#sequential-consumers) and is absent otherwise; beside it, `activeHost` is `keyRouted`, `broker`, `lock`, or `none`. `inboxRetentionSeconds` appears on competing consumers only, because an every-instance subscription stores no inbox rows. `failurePolicy` appears when the consumer has one, with the same fields as Jobs: the delay fields only when `delayedRetries` is above zero, `failOn` and `failWhenRules` only when set. `rateLimit` carries `algorithm` plus `tokenLimit`, `tokensPerPeriod`, and `replenishmentPeriodSeconds` for `token-bucket`, or `permitLimit` and `windowSeconds` otherwise. `circuitBreaker` lists only the overrides the consumer sets (`enabled`, `failureThreshold`, `openDurationSeconds`, and `customTransientPredicate: true` for a custom predicate); unset values fall back to the host-wide options. `middleware` lists per-consumer middleware type names.
 - **`messages`** is the publish side: one entry per `Message<T>(name, version)` contract, ordered by name, with each lane it declares. A lane shows `deliveryMode` only when the contract pins one (`durable` or `direct`; otherwise publishes use the host default), and `routingAffinity` and `rawPayload` only when set.
 - **`outboxes`** lists the primary storage as `primary`, then each additional outbox, in registration order, under the name passed to `AddOutbox(name)`, which its `messaging-storage-…-outbox-{name}` health check also carries. `storage` is the database provider (`PostgreSQL`, `SQL Server`) for relational storage and the storage type name otherwise. A host without storage has none.
-- **`transports`** names the broker of each lane's transport, from `BrokerAddress.Name`; a lane with no transport is absent. The endpoint half of the broker address is never written.
+- **`transports`** names the broker of each lane's default transport, from `BrokerAddress.Name`; a lane with no transport is absent. `named` lists each [named transport](#named-transports) in registration order, under its name, with the same `bus` and `queue` fields, and is absent when the host has none. The endpoint half of the broker address is never written.
 - **Not described:** runtime subscriptions (they attach after startup and are not in the registry), provider-specific consumer configuration, broker addresses, connection strings, and credentials.
 
 ## Messaging runtime effects
@@ -3618,7 +3689,7 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 - **Keys**: a consumer is keyed by its lane, identity, message name, and contract version, so one identity can cover several messages. On the Bus lane one identity is one subscription: the host starts one consumer client for it that binds all its messages. On the Queue lane the host starts one client per message.
 - **Cross-module conflicts fail startup and name both sources**: one identity on two consumer classes in the same lane, and a second Queue consumer for one message. An identical declaration contributed twice registers once.
 - **`Tune(identity, c => ...)`** on the `AddHeadlessMessaging` setup or on `services.ConfigureMessaging(...)` changes a registered consumer's deployment settings on this host: `Concurrency(n)` (`0` is rejected), `RateLimit(ConsumerRateLimit)`, `InboxRetention(TimeSpan)`, `CircuitBreaker(...)`, `FailurePolicy<TPolicy>()` or `FailurePolicy(p => ...)`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches `UseKafka(...)`, `UseNats(...)`, and `UseRabbitMq(...)`. Several `Tune` calls for one identity apply in registration order, so a later value wins and middleware accumulates. `InboxRetention`, `CircuitBreaker`, or `FailurePolicy` on an every-instance consumer fails startup. Tuned middleware implements `IConsumeMiddleware<ConsumeContext>`, runs only for that consumer, runs inside the global and per-message middleware, and is resolved from the delivery scope (registered as scoped when it is not already registered). A consumer that handles several messages takes the settings for each of them. An identity that no registered consumer declares fails startup.
-- **Configuration**: `Headless:Messaging:Consumers:{identity}` binds `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, `CircuitBreaker:OpenDuration`, `FailurePolicy:ImmediateRetries`, `FailurePolicy:DelayedRetries`, `FailurePolicy:DelayedInitialDelay`, `FailurePolicy:DelayedMaxDelay`, `RateLimit` (one `FixedWindow` or `TokenBucket` section; see [Consumer Rate Limit](#consumer-rate-limit)), and `Sequential` (`true` or `false`; see [Sequential consumers](#sequential-consumers)), and applies after every `Tune` call and after the host default fills in. An unknown identity, an unknown setting, or an invalid value fails startup.
+- **Configuration**: `Headless:Messaging:Consumers:{identity}` binds `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, `CircuitBreaker:OpenDuration`, `FailurePolicy:ImmediateRetries`, `FailurePolicy:DelayedRetries`, `FailurePolicy:DelayedInitialDelay`, `FailurePolicy:DelayedMaxDelay`, `RateLimit` (one `FixedWindow` or `TokenBucket` section; see [Consumer Rate Limit](#consumer-rate-limit)), `Sequential` (`true` or `false`; see [Sequential consumers](#sequential-consumers)), and `Transport` (see [Named transports](#named-transports)), and applies after every `Tune` call and after the host default fills in. An unknown identity, an unknown setting, or an invalid value fails startup.
 - **`ConsumeOnly("orders.*", "billing.invoice-projection")`** on the `AddHeadlessMessaging` setup limits which competing consumers this host starts clients for; every-instance consumers are never filtered and always run. An entry is an exact identity or an `owner.*` pattern that matches the first identity segment. Consumers outside the filter stay registered, so the host still publishes their messages; another host consumes them. The filter also scopes the host's retry processor: its received-retry and inbox-orphan pickup queries never lease a row whose consumer identity is outside the filter, so the host never marks another host's healthy inbox row as an orphan or fails its retry as having no subscriber. Runtime subscriptions are never filtered: the pickups also include the identity of every competing runtime subscription attached to the host when the cycle runs, so the host that holds the delegate retries that subscription's failed rows. Every-instance consumers and subscriptions store no rows and add nothing. A host without the filter picks up rows of every identity, including identities no host registers. An entry that matches no registered consumer, or only every-instance consumers (the filter would not affect them), fails startup.
 
 ### Diagnostics
