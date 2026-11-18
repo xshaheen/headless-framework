@@ -882,7 +882,7 @@ ASP.NET Core Identity integration for Headless APIs. Apps that do not use ASP.NE
 - `IdentityBuilder.AddPasswordResetTokenProvider<TUser>()`, `AddPasswordResetCodeProvider<TUser>()`, `AddEmailConfirmationTokenProvider<TUser>()`, `AddEmailConfirmationCodeProvider<TUser>()` — register the provider and make it Identity's password-reset or email-confirmation provider; the code providers share one RFC 6238 `TotpRfc6238Generator`
 - `HeadlessIdentityErrorDescriber`, `IdentityResultExtensions`, and `IdentityMessageDescriber` / `IdentityErrorCodes` (`Headless.Api.Identity.Resources`) — localized `auth:` and `user:` error descriptors
 - `ConfigureApiApplicationCookie()` — answers the Identity cookie's login and access-denied redirects with 401 and 403 instead of a redirect
-- Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme. Both also register `DynamicAuthenticationSchemeProvider`, which picks `ApiKey`, `Basic`, or `Bearer` per request from the credentials it carries for authenticate, challenge, and forbid; the sign-in and sign-out defaults stay the configured ones, because none of those schemes can sign in or out
+- Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme. Both also register `DynamicAuthenticationSchemeProvider`, which picks the API-key, Basic, or bearer scheme per request from the credentials it carries for authenticate, challenge, and forbid, whatever name each scheme was registered under; the sign-in and sign-out defaults stay the configured ones, because none of those schemes can sign in or out
 
 ### Design constraints
 
@@ -923,7 +923,13 @@ builder.Services
         options.CredentialCacheDuration = TimeSpan.FromMinutes(1));
 ```
 
-`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`. Both options classes implement `IHttpCredentialSchemeOptions`, so Headless.OpenApi publishes each registered scheme from its own options: an `apiKey` header scheme named after the scheme, an `apiKey` query scheme (`{scheme}Query`) while the query fallback is on, and an HTTP `basic` scheme for `AddBasicSchema()`.
+`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects a scheme by the handler it was registered with, so a custom name works the same as the canonical one:
+
+- An API key in the header (or, when that scheme allows it, the query parameter) of an `AddApiKey()` scheme selects that scheme; each scheme matches on its own `ApiKeyHeaderName` and `ApiKeyParamName`, so `AddApiKey("PartnerKey", configureOptions: o => o.ApiKeyHeaderName = "X-Partner-Key")` beside the default `ApiKey` scheme routes each header to its own scheme. This check runs first.
+- `Authorization: Basic …` selects the `AddBasicSchema()` scheme.
+- Any other `Authorization` header selects the scheme named `Bearer`, or else a scheme registered with ASP.NET Core's `JwtBearerHandler` (`AddJwtBearer("PartnerJwt")`). Another bearer handler is selected only under the name `Bearer`, or through `AddAuthentication(defaultScheme)`.
+- A scheme under a canonical name (`ApiKey`, `Basic`, `Bearer`) is selected whatever its handler, as before.
+- When several schemes of one kind match a request, the canonical name wins; without it the provider picks none and the configured default scheme applies, the way ASP.NET Core uses a lone registered scheme as the default but never guesses between several. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`. Both options classes implement `IHttpCredentialSchemeOptions`, so Headless.OpenApi publishes each registered scheme from its own options: an `apiKey` header scheme named after the scheme, an `apiKey` query scheme (`{scheme}Query`) while the query fallback is on, and an HTTP `basic` scheme for `AddBasicSchema()`.
 
 ### Runtime behavior
 
