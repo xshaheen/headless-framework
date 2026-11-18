@@ -22,8 +22,7 @@ public sealed class InMemoryChainChildStartTests : TestBase
 
         try
         {
-            var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            await JobsChainChildStartScenarios.RunningChildReadsInProgressAsync(store, AbortToken);
+            await JobsChainChildStartScenarios.RunningChildReadsInProgressAsync(host.Services, AbortToken);
         }
         finally
         {

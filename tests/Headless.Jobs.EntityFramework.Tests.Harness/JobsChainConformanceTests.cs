@@ -1696,8 +1696,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
         try
         {
-            var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-            await JobsChainChildStartScenarios.RunningChildReadsInProgressAsync(store, ct);
+            await JobsChainChildStartScenarios.RunningChildReadsInProgressAsync(host.Services, ct);
         }
         finally
         {

@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.Jobs;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -16,14 +17,18 @@ public static class JobsChainChildStartScenarios
     private static readonly TimeSpan _WaitBudget = TimeSpan.FromSeconds(30);
 
     public static async Task RunningChildReadsInProgressAsync(
-        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        IServiceProvider services,
         CancellationToken cancellationToken
     )
     {
-        // given: a due root with one non-timed child that runs once the root succeeds
+        var store = services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var manager = services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+
+        // given: a run-now root with one non-timed child that runs once the root succeeds
+        // The manager assigns the ids, so the run is keyed by a correlation the chain's nodes inherit from the root.
+        var correlation = Guid.NewGuid().ToString("N");
         var child = new TimeJobEntity
         {
-            Id = Guid.NewGuid(),
             Function = ChainChildStartJobsModule.ChildFunction,
             RunCondition = RunCondition.OnSuccess,
             Retries = 0,
@@ -31,22 +36,21 @@ public static class JobsChainChildStartScenarios
         };
         var root = new TimeJobEntity
         {
-            Id = Guid.NewGuid(),
             Function = ChainChildStartJobsModule.RootFunction,
-            // wall-clock: due now on any store clock; the poll claims it on its next tick.
-            ExecutionTime = DateTime.UtcNow,
+            CorrelationId = correlation,
             Retries = 0,
             RetryIntervals = [0],
             Children = [child],
         };
-        var run = ChainChildStartJobsModule.Track(child.Id);
+        var run = ChainChildStartJobsModule.Track(correlation);
 
         try
         {
-            (await store.AddTimeJobsAsync([root], cancellationToken)).Should().Be(2);
+            // The manager stamps the due time on the store clock and wakes the scheduler, so the run starts at once.
+            await manager.AddAsync(root, cancellationToken);
 
             // when: the child is running
-            await run.Started.Task.WaitAsync(_WaitBudget, cancellationToken);
+            await _WaitForStartAsync(store, run, root.Id, child.Id, cancellationToken);
 
             // then: its start is recorded on the row and on the dashboard's run read
             var stored = await store.GetTimeJobByIdAsync(child.Id, cancellationToken);
@@ -65,7 +69,32 @@ public static class JobsChainChildStartScenarios
         finally
         {
             run.Release.TrySetResult();
-            ChainChildStartJobsModule.Forget(child.Id);
+            ChainChildStartJobsModule.Forget(correlation);
+        }
+    }
+
+    private static async Task _WaitForStartAsync(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        ChainChildStartJobsModule.ChildRun run,
+        Guid rootId,
+        Guid childId,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await run.Started.Task.WaitAsync(_WaitBudget, cancellationToken);
+        }
+        catch (TimeoutException timeout)
+        {
+            var root = await store.GetTimeJobByIdAsync(rootId, cancellationToken);
+            var child = await store.GetTimeJobByIdAsync(childId, cancellationToken);
+
+            throw new TimeoutException(
+                $"The child did not start within {_WaitBudget}: root {root?.Status} (lease {root?.Lease.State}), "
+                    + $"child {child?.Status} (lease {child?.Lease.State}).",
+                timeout
+            );
         }
     }
 
@@ -101,24 +130,24 @@ public static class JobsChainChildStartScenarios
 
 /// <summary>
 /// A root that succeeds at once and a child that reports its start, then waits until the scenario releases it. State is
-/// keyed by the child's id, so suites running in parallel do not share a gate.
+/// keyed by the chain's correlation id, so suites running in parallel do not share a gate.
 /// </summary>
 public sealed class ChainChildStartJobsModule : IJobsModule
 {
     public const string RootFunction = "ChainChildStart_Root";
     public const string ChildFunction = "ChainChildStart_Child";
 
-    private static readonly ConcurrentDictionary<Guid, ChildRun> _Runs = new();
+    private static readonly ConcurrentDictionary<string, ChildRun> _Runs = new(StringComparer.Ordinal);
 
     private ChainChildStartJobsModule() { }
 
-    public static ChildRun Track(Guid childId) => _Runs.GetOrAdd(childId, static _ => new ChildRun());
+    public static ChildRun Track(string correlationId) => _Runs.GetOrAdd(correlationId, static _ => new ChildRun());
 
-    public static void Forget(Guid childId) => _Runs.TryRemove(childId, out _);
+    public static void Forget(string correlationId) => _Runs.TryRemove(correlationId, out _);
 
-    private static async Task _RunChildAsync(Guid jobId, CancellationToken cancellationToken)
+    private static async Task _RunChildAsync(string? correlationId, CancellationToken cancellationToken)
     {
-        if (!_Runs.TryGetValue(jobId, out var run))
+        if (correlationId is null || !_Runs.TryGetValue(correlationId, out var run))
         {
             return;
         }
@@ -135,7 +164,7 @@ public sealed class ChainChildStartJobsModule : IJobsModule
             {
                 [RootFunction] = _Registration(static (_, _, _) => Task.CompletedTask, typeof(ChainRootJob)),
                 [ChildFunction] = _Registration(
-                    static (_, context, cancellationToken) => _RunChildAsync(context.Id, cancellationToken),
+                    static (_, context, cancellationToken) => _RunChildAsync(context.CorrelationId, cancellationToken),
                     typeof(ChainChildJob)
                 ),
             }
