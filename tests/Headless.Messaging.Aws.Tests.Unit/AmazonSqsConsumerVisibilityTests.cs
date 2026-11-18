@@ -441,6 +441,40 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         released.Should().BeEquivalentTo("receipt-1", "receipt-2", "receipt-3");
     }
 
+    [Fact]
+    public async Task should_release_an_inline_message_its_handler_gave_up_on_shutdown_with_the_ones_never_handed_over()
+    {
+        // given: three messages handled inline, one at a time, and a handler that waits until the test ends it
+        _ReceiveOnce(_Message("receipt-1"), _Message("receipt-2"), _Message("receipt-3"));
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var giveUp = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var client = _CreateClient(concurrency: 0);
+        client.OnMessageCallback = async (_, _) =>
+        {
+            handlerStarted.TrySetResult();
+            await giveUp.Task;
+        };
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // when: shutdown has stopped receiving and reached its drain, and the handler then gives up its message
+        // without settling it
+        var drainArmed = _time.WatchForTimer(TimeSpan.FromMinutes(1));
+        var shutdown = client.ShutdownAsync(TimeSpan.FromMinutes(1), AbortToken).AsTask();
+        await drainArmed.Bounded();
+        giveUp.TrySetCanceled(AbortToken);
+        await shutdown.Bounded();
+        await listening.Bounded();
+
+        // then: the handler's message no longer counts as unsettled, so the loop gives it back itself, and shutdown
+        // gives back the two it never handed over
+        var released = _VisibilityChanges()
+            .SelectMany(entries => entries)
+            .Where(entry => entry.VisibilityTimeout == 0)
+            .Select(entry => entry.ReceiptHandle);
+        released.Should().BeEquivalentTo("receipt-1", "receipt-2", "receipt-3");
+    }
+
     private AmazonSqsConsumerClient _CreateClient(byte concurrency, Action<AmazonSqsMessagingOptions>? configure = null)
     {
         var options = new AmazonSqsMessagingOptions
