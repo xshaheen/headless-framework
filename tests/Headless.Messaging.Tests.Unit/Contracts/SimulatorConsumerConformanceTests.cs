@@ -96,6 +96,13 @@ public sealed class SimulatorConsumerConformanceTests : TransportConsumerConform
         base.should_bound_shutdown_while_handler_is_active();
 
     [Fact]
+    public Task should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect() =>
+        TransportStartupRejectionConformance.AssertRoutingAffinityRejectedAsync(
+            setup => setup.UseSimulatedBroker(_simulator.Broker),
+            AbortToken
+        );
+
+    [Fact]
     public Task should_prove_routing_affinity_mapping_or_header() =>
         TransportRoutingAffinityConformance.AssertAsync(_simulator.Driver, AbortToken);
 

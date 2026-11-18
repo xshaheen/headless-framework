@@ -332,9 +332,7 @@ public static class TransportConformanceManifest
                 )
                 .WithScenario(
                     TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                    ConformanceSupport.NotApplicable(
-                        "NATS supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
-                    )
+                    ConformanceSupport.Supported
                 )
                 .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(
@@ -395,9 +393,7 @@ public static class TransportConformanceManifest
                 )
                 .WithScenario(
                     TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                    ConformanceSupport.NotApplicable(
-                        "RabbitMQ supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
-                    )
+                    ConformanceSupport.Supported
                 )
                 .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.DeadLetterSingleCopy, ConformanceSupport.Supported)
@@ -599,9 +595,7 @@ public static class TransportConformanceManifest
                 )
                 .WithScenario(
                     TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                    ConformanceSupport.NotApplicable(
-                        "With provisioning on, Azure Service Bus supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
-                    )
+                    ConformanceSupport.Supported
                 )
                 .WithScenario(TransportConformanceScenario.StaleSettlement, _AzureWorkflowGap)
                 .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, _AzureWorkflowGap)
@@ -722,9 +716,7 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                    ConformanceSupport.NotApplicable(
-                        "InMemory supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
-                    )
+                    ConformanceSupport.Supported
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
@@ -766,9 +758,7 @@ public static class TransportConformanceManifest
                 )
                 .WithScenario(
                     TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                    ConformanceSupport.NotApplicable(
-                        "Redis supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
-                    )
+                    ConformanceSupport.Supported
                 )
                 .WithScenario(
                     TransportConformanceScenario.HeaderBuilderFailureRedelivery,
@@ -890,6 +880,8 @@ public static class TransportConformanceManifest
             );
         }
 
+        _ValidateStartupRejection(profile, errors);
+
         _ValidateLaneRoundTrip(
             profile,
             TransportConformanceScenario.BusRoundTrip,
@@ -904,8 +896,6 @@ public static class TransportConformanceManifest
             "Queue",
             errors
         );
-
-        _ValidateStartupRejection(profile, errors);
 
         if (profile.IsRealBrokerLeafEnabled)
         {
@@ -949,6 +939,7 @@ public static class TransportConformanceManifest
             TransportConformanceScenario.DeadLetterSingleCopy,
             TransportConformanceScenario.StandardHeaderRoundTrip,
             TransportConformanceScenario.HandlerConcurrencyCap,
+            TransportConformanceScenario.StartupRejectionBeforeSideEffects,
         ];
 
         var profile = TransportConformanceProfile
@@ -977,12 +968,6 @@ public static class TransportConformanceManifest
             .WithScenario(
                 TransportConformanceScenario.RequestReplyStartupRejection,
                 ConformanceSupport.NotApplicable("The simulator supports request/reply, so startup accepts it.")
-            )
-            .WithScenario(
-                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                ConformanceSupport.NotApplicable(
-                    "The simulator accepts both lanes and every subscription kind, so startup has nothing to reject."
-                )
             )
             .WithScenario(
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
@@ -1124,41 +1109,22 @@ public static class TransportConformanceManifest
     }
 
     /// <summary>
-    /// Startup rejects a route or consumer only for a lane, a shared lane topology, or an every-instance subscription the
-    /// transport lacks, so a transport that has all of them has nothing to reject and the cell is not applicable; one that
-    /// lacks any of them must prove the rejection or quarantine it. Tying the cell to the descriptor that
-    /// <c>should_match_production_runtime_capabilities</c> checks keeps a provider that drops one of them from keeping a
-    /// stale not-applicable cell.
+    /// Every transport rejects something at startup: a route that requires routing affinity on a destination without a
+    /// native key mapping, which every provider has, and a lane, shared lane topology, or every-instance subscription
+    /// it lacks. So the cell is never not applicable; a provider proves its rejection or quarantines it.
     /// </summary>
     private static void _ValidateStartupRejection(TransportConformanceProfile profile, ICollection<string> errors)
     {
         if (
-            !profile.Scenarios.TryGetValue(
+            profile.Scenarios.TryGetValue(
                 TransportConformanceScenario.StartupRejectionBeforeSideEffects,
                 out var support
             )
+            && support.Status == ConformanceStatus.NotApplicable
         )
         {
-            return;
-        }
-
-        var expected = profile.ExpectedRuntimeCapabilities;
-        var rejectsNothing =
-            expected.SupportsBus
-            && expected.SupportsQueue
-            && expected.SupportsIndependentLaneTopology
-            && expected.SupportsEveryInstance;
-
-        if (rejectsNothing && support.Status != ConformanceStatus.NotApplicable)
-        {
             errors.Add(
-                $"{profile.Provider}: StartupRejectionBeforeSideEffects must be NotApplicable when production supports both lanes, independent lane topology, and every-instance subscriptions, because startup has nothing to reject."
-            );
-        }
-        else if (!rejectsNothing && support.Status == ConformanceStatus.NotApplicable)
-        {
-            errors.Add(
-                $"{profile.Provider}: StartupRejectionBeforeSideEffects cannot be NotApplicable when production lacks a lane, independent lane topology, or every-instance subscriptions, because startup rejects what it lacks."
+                $"{profile.Provider}: StartupRejectionBeforeSideEffects cannot be NotApplicable, because every transport rejects a route that requires routing affinity on a destination without a native key mapping."
             );
         }
     }

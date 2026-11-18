@@ -225,10 +225,9 @@ public sealed class TransportConformanceManifestTests : TestBase
     }
 
     [Fact]
-    public void should_require_startup_rejection_to_be_not_applicable_only_when_production_rejects_nothing()
+    public void should_never_accept_a_not_applicable_startup_rejection_cell()
     {
-        var notApplicable = ConformanceSupport.NotApplicable("Startup has nothing to reject.");
-        var acceptsEverything = TransportConformanceProfile
+        var profile = TransportConformanceProfile
             .CreateDisabled("Example")
             .WithRuntimeCapabilities(
                 "Example",
@@ -237,40 +236,17 @@ public sealed class TransportConformanceManifestTests : TestBase
                 supportsIndependentLaneTopology: true,
                 supportsEveryInstance: true
             );
-        var lacksEveryInstance = acceptsEverything.WithRuntimeCapabilities(
-            "Example",
-            supportsBus: true,
-            supportsQueue: true,
-            supportsIndependentLaneTopology: true,
-            supportsEveryInstance: false
-        );
 
         _StartupRejectionErrors(
-                acceptsEverything.WithScenario(
+                profile.WithScenario(
                     TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                    notApplicable
-                )
-            )
-            .Should()
-            .BeEmpty();
-        _StartupRejectionErrors(
-                acceptsEverything.WithScenario(
-                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                    ConformanceSupport.Supported
-                )
-            )
-            .Should()
-            .ContainSingle(error => error.Contains("must be NotApplicable", StringComparison.Ordinal));
-        _StartupRejectionErrors(
-                lacksEveryInstance.WithScenario(
-                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
-                    notApplicable
+                    ConformanceSupport.NotApplicable("Startup has nothing to reject.")
                 )
             )
             .Should()
             .ContainSingle(error => error.Contains("cannot be NotApplicable", StringComparison.Ordinal));
         _StartupRejectionErrors(
-                lacksEveryInstance.WithScenario(
+                profile.WithScenario(
                     TransportConformanceScenario.StartupRejectionBeforeSideEffects,
                     ConformanceSupport.Supported
                 )

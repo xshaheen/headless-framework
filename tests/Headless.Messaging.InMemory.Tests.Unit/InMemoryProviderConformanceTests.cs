@@ -51,6 +51,13 @@ public sealed class InMemoryProviderConformanceTests : TransportRequestReplyConf
     }
 
     [Fact]
+    public Task should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect() =>
+        TransportStartupRejectionConformance.AssertRoutingAffinityRejectedAsync(
+            CreateDriver().ConfigureRequestReplyTransport,
+            AbortToken
+        );
+
+    [Fact]
     public Task should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply() =>
         TransportRequestReplyConformance.AssertRejectedAtStartupAsync(
             new InMemoryWithoutRequestReplyDriver(new MemoryQueue(NullLogger<MemoryQueue>.Instance)),

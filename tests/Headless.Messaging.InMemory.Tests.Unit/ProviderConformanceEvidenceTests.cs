@@ -19,6 +19,13 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                typeof(InMemoryProviderConformanceTests),
+                nameof(
+                    InMemoryProviderConformanceTests.should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect
+                )
+            ),
+            new(
                 TransportConformanceScenario.RoutingAffinityMappingOrHeader,
                 typeof(InMemoryProviderConformanceTests),
                 nameof(InMemoryProviderConformanceTests.should_prove_routing_affinity_mapping_or_header)
@@ -107,6 +114,22 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
                 TransportConformanceScenario.ConsumerPauseRecovery,
                 typeof(InMemoryBrokerFaultTests),
                 nameof(InMemoryBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.EmptyBodyDispatch,
+                nameof(InMemoryConsumerConformanceTests.should_dispatch_empty_message_body)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.CommitSettlement,
+                nameof(InMemoryConsumerConformanceTests.should_commit_real_delivery_and_prevent_redelivery)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.RejectRedelivery,
+                nameof(InMemoryConsumerConformanceTests.should_reject_real_delivery_and_observe_redelivery)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.BoundedGracefulShutdown,
+                nameof(InMemoryConsumerConformanceTests.should_bound_shutdown_while_handler_is_active)
             ),
             _BindConsumer(
                 TransportConformanceScenario.StaleSettlement,

@@ -15,13 +15,61 @@ namespace Tests;
 public static class TransportStartupRejectionConformance
 {
     /// <summary>
+    /// Proves that a Queue route requiring routing affinity is rejected at bootstrap when the transport has no native key
+    /// mapping for it, before storage is resolved and without reporting ready. Every transport has such a route: one
+    /// without a native mapping at all, or a destination its mapping does not cover, such as a standard SQS queue or an
+    /// Azure Service Bus queue without sessions.
+    /// </summary>
+    /// <param name="configureTransport">
+    /// Selects the provider exactly as a consuming host would, with no native key mapping for
+    /// <paramref name="messageName"/>.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the bootstrap.</param>
+    /// <param name="messageName">The Queue route that requires routing affinity.</param>
+    public static Task AssertRoutingAffinityRejectedAsync(
+        Action<MessagingSetupBuilder> configureTransport,
+        CancellationToken cancellationToken,
+        string messageName = "conformance.startup.required-affinity"
+    ) =>
+        _AssertRejectedAsync(
+            configureTransport,
+            messaging => messaging.Message<StartupProbe>(messageName).OnQueue(queue => queue.RequireRoutingAffinity()),
+            _ => $"*Routing affinity is required but unsupported for '{messageName}'*",
+            cancellationToken
+        );
+
+    /// <summary>
     /// Proves that a transport without every-instance subscriptions rejects an every-instance consumer at bootstrap,
     /// naming the consumer and the provider, before storage is resolved and without reporting ready.
     /// </summary>
     /// <param name="configureTransport">Selects the provider exactly as a consuming host would.</param>
     /// <param name="cancellationToken">Cancels the bootstrap.</param>
-    public static async Task AssertEveryInstanceRejectedAsync(
+    public static Task AssertEveryInstanceRejectedAsync(
         Action<MessagingSetupBuilder> configureTransport,
+        CancellationToken cancellationToken
+    ) =>
+        _AssertRejectedAsync(
+            configureTransport,
+            messaging =>
+            {
+                messaging.Message<StartupProbe>(EveryInstanceProbeModule.MessageName);
+                messaging.AddModule<EveryInstanceProbeModule>();
+            },
+            transport =>
+            {
+                transport
+                    .SupportsEveryInstance.Should()
+                    .BeFalse("only a transport without every-instance subscriptions has this rejection to prove");
+
+                return $"*'{EveryInstanceProbeModule.ConsumerIdentity}'*every-instance*'{transport.Provider}'*";
+            },
+            cancellationToken
+        );
+
+    private static async Task _AssertRejectedAsync(
+        Action<MessagingSetupBuilder> configureTransport,
+        Action<MessagingContributionBuilder> configureMessaging,
+        Func<MessagingProviderCapabilities, string> expectedMessage,
         CancellationToken cancellationToken
     )
     {
@@ -29,11 +77,7 @@ public static class TransportStartupRejectionConformance
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(configureTransport);
-        services.ConfigureMessaging(messaging =>
-        {
-            messaging.Message<EveryInstanceProbe>(EveryInstanceProbeModule.MessageName);
-            messaging.AddModule<EveryInstanceProbeModule>();
-        });
+        services.ConfigureMessaging(configureMessaging);
 
         // Storage is declared but never built: resolving its table names is the first thing a bootstrap that got past
         // validation would do, so a count above zero is a side effect the rejection should have prevented.
@@ -55,28 +99,22 @@ public static class TransportStartupRejectionConformance
         var transport = provider
             .GetServices<MessagingProviderCapabilities>()
             .Single(capabilities => capabilities.Role == MessagingProviderRole.Transport);
-        transport
-            .SupportsEveryInstance.Should()
-            .BeFalse("only a transport without every-instance subscriptions has this rejection to prove");
+        var message = expectedMessage(transport);
 
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
         var act = () => bootstrapper.BootstrapAsync(cancellationToken);
 
-        await act.Should()
-            .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage($"*'{EveryInstanceProbeModule.ConsumerIdentity}'*every-instance*'{transport.Provider}'*");
+        await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage(message);
         bootstrapper.IsStarted.Should().BeFalse("a rejected host never reports readiness");
         Volatile.Read(ref storageResolveCalls).Should().Be(0, "the rejection must come before any storage work");
     }
 
-    private sealed record EveryInstanceProbe;
+    private sealed record StartupProbe;
 
-    private sealed class EveryInstanceProbeConsumer : IConsume<EveryInstanceProbe>
+    private sealed class EveryInstanceProbeConsumer : IConsume<StartupProbe>
     {
-        public ValueTask ConsumeAsync(
-            ConsumeContext<EveryInstanceProbe> context,
-            CancellationToken cancellationToken
-        ) => ValueTask.CompletedTask;
+        public ValueTask ConsumeAsync(ConsumeContext<StartupProbe> context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
     }
 
     private sealed class EveryInstanceProbeModule : IMessagingModule
@@ -86,7 +124,7 @@ public static class TransportStartupRejectionConformance
         public const string ConsumerIdentity = "conformance.startup.every-instance-consumer";
 
         public static void Register(MessagingCatalogBuilder catalog) =>
-            catalog.AddBusConsumer<EveryInstanceProbeConsumer, EveryInstanceProbe>(
+            catalog.AddBusConsumer<EveryInstanceProbeConsumer, StartupProbe>(
                 ConsumerIdentity,
                 everyInstance: true,
                 static (_, _, _) => ValueTask.CompletedTask
