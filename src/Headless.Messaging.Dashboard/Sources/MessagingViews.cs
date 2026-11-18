@@ -472,7 +472,8 @@ internal sealed record MessagingMessageDetail(
 
 /// <summary>
 /// One page of a list over one table of one or more stores: the rows, the stores' summed capped count, and the stores
-/// that did not answer.
+/// that did not answer. Only the first page, the one read without a cursor, carries the count; a later page leaves it
+/// out, so the list keeps the first page's.
 /// </summary>
 /// <remarks>
 /// <see cref="Incomplete"/> is set when a search ran out of time in a store: that store's rows and count are missing,
@@ -481,8 +482,8 @@ internal sealed record MessagingMessageDetail(
 /// </remarks>
 internal sealed record MessagingRowList(
     IReadOnlyList<MessagingRowView> Items,
-    int Count,
-    bool CountCapped,
+    int? Count,
+    bool? CountCapped,
     string? NextCursor,
     IReadOnlyList<string> Unavailable,
     bool Incomplete = false
