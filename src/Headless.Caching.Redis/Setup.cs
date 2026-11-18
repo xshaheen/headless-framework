@@ -208,6 +208,9 @@ public static class SetupRedisCache
         // set one explicitly). Runs after the user's configure action.
         services.PostConfigure<RedisCacheOptions>(name, options => options.CacheName ??= name);
         services.AddOptions<RedisCacheOptions>(name).PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
+        services.ApplyHeadlessPrefix<RedisCacheOptions>(
+            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
+        );
 
         var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
 
@@ -307,6 +310,9 @@ public static class SetupRedisCache
         services.AddCacheProvider();
 
         services.AddOptions<RedisCacheOptions>().PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
+        services.ApplyHeadlessPrefix<RedisCacheOptions>(
+            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
+        );
         services.AddSingletonOptionValue<RedisCacheOptions>();
         services.TryAddKeyedSingleton(
             RedisCacheServiceKeys.ScriptsLoader,
