@@ -133,4 +133,4 @@ Load every row touched by the behavior, not just the package being edited:
 
 ## When the docs and code disagree
 
-Treat the installed package or source at the consumer's resolved version as the executable contract. Report the mismatch and update the canonical domain guide; do not copy the correction into package READMEs. For documentation changes, follow [the authoring contract](../authoring/AUTHORING.md).
+Treat the installed package or source at the consumer's resolved version as the executable contract. Report the mismatch and update the canonical domain guide; do not copy the correction into package READMEs. Contributors changing these guides follow [the repository's documentation rules](../../AGENTS.md#documentation).
