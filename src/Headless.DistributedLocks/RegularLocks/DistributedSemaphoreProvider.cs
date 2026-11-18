@@ -384,7 +384,7 @@ internal sealed class DistributedSemaphoreProvider(
 
         if (removed)
         {
-            releaseSignal.Announce(resource, leaseId);
+            DistributedLockCoreHelpers.AnnounceRelease(releaseSignal, logger, resource, leaseId);
         }
     }
 
