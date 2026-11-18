@@ -34,6 +34,41 @@ public sealed class TusStampedStoreTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_no_expiration_when_the_upload_is_finished()
+    {
+        // given - the disk store keeps an upload's expiration after it completes
+        var fileId = await _sut.CreateFileAsync(3, _ClientMetadata, AbortToken);
+        await _inner.AppendDataAsync(fileId, new MemoryStream([1, 2, 3]), AbortToken);
+        await _inner.SetExpirationAsync(fileId, DateTimeOffset.UnixEpoch, AbortToken);
+
+        // when
+        var expires = await _sut.GetExpirationAsync(fileId, AbortToken);
+
+        // then
+        (await _inner.GetExpirationAsync(fileId, AbortToken))
+            .Should()
+            .Be(DateTimeOffset.UnixEpoch);
+        expires.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task should_report_the_expiration_when_the_upload_lacks_bytes(int written)
+    {
+        // given
+        var fileId = await _sut.CreateFileAsync(3, _ClientMetadata, AbortToken);
+        await _inner.AppendDataAsync(fileId, new MemoryStream(new byte[written]), AbortToken);
+        await _inner.SetExpirationAsync(fileId, DateTimeOffset.UnixEpoch, AbortToken);
+
+        // when
+        var expires = await _sut.GetExpirationAsync(fileId, AbortToken);
+
+        // then
+        expires.Should().Be(DateTimeOffset.UnixEpoch);
+    }
+
+    [Fact]
     public async Task should_write_the_callers_stamp_after_the_clients_metadata()
     {
         // when

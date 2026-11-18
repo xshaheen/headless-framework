@@ -59,14 +59,17 @@ internal sealed class TusContentCheck(
     /// </summary>
     /// <param name="context">tusdotnet's before-write context for the request.</param>
     /// <param name="options">The options of the endpoint the request reached.</param>
-    /// <param name="tenantId">The tenant the request runs in, or <see langword="null"/> for none.</param>
+    /// <param name="readTimeout">
+    /// How long the check waits for the first bytes: tusdotnet's own read timeout, which does not cover a read made
+    /// before the store's.
+    /// </param>
     /// <param name="createdByThisRequest">
     /// Whether the write is the data a creating request carries, not a request of its own.
     /// </param>
     public async Task CheckAsync(
         BeforeWriteContext context,
         TusUploadEndpointOptions options,
-        string? tenantId,
+        TimeSpan readTimeout,
         bool createdByThisRequest
     )
     {
@@ -75,8 +78,29 @@ internal sealed class TusContentCheck(
             return;
         }
 
-        var head = await _PeekAsync(context.HttpContext.Request.BodyReader, context.CancellationToken)
-            .ConfigureAwait(false);
+        byte[] head;
+
+        using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken))
+        {
+            timeout.CancelAfter(readTimeout);
+
+            try
+            {
+                head = await _PeekAsync(context.HttpContext.Request.BodyReader, timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!context.CancellationToken.IsCancellationRequested)
+            {
+                // The client stopped sending. The write must still be refused, not let through: the bytes already
+                // in the pipe would reach the store unchecked and move the offset past zero, and the check runs on
+                // the first write only. The upload stays, still at offset zero, so the client can send it again.
+                context.FailRequest(
+                    HttpStatusCode.RequestTimeout,
+                    "The first bytes of the upload did not arrive in time."
+                );
+
+                return;
+            }
+        }
 
         // A write with no bytes leaves the offset at zero, so the next write is still the first one.
         if (head.Length == 0)
@@ -93,7 +117,6 @@ internal sealed class TusContentCheck(
                         CultureInfo.InvariantCulture,
                         $"The first write of an upload must carry its first {_HeadLength} bytes, or the whole upload when it is shorter."
                     ),
-                    tenantId,
                     createdByThisRequest
                 )
                 .ConfigureAwait(false);
@@ -103,7 +126,7 @@ internal sealed class TusContentCheck(
 
         if (await _FindMismatchAsync(context, options, head).ConfigureAwait(false) is { } mismatch)
         {
-            await _RefuseAsync(context, HttpStatusCode.UnsupportedMediaType, mismatch, tenantId, createdByThisRequest)
+            await _RefuseAsync(context, HttpStatusCode.UnsupportedMediaType, mismatch, createdByThisRequest)
                 .ConfigureAwait(false);
         }
     }
@@ -304,8 +327,9 @@ internal sealed class TusContentCheck(
     }
 
     /// <summary>
-    /// Sets the refusal on <paramref name="context"/> and removes the upload it refuses. The refusal stands
-    /// whether or not the removal succeeds; an upload that could not be removed stays until it expires.
+    /// Sets the refusal on <paramref name="context"/> and removes the upload it refuses, unless the refused bytes
+    /// came with the request that created the upload. The refusal stands whether or not the removal succeeds; an
+    /// upload that could not be removed stays until it expires.
     /// </summary>
     /// <remarks>
     /// An upload that is finished is never removed. A write is matched to its upload before it holds the upload's
@@ -317,7 +341,6 @@ internal sealed class TusContentCheck(
         BeforeWriteContext context,
         HttpStatusCode status,
         string message,
-        string? tenantId,
         bool createdByThisRequest
     )
     {
@@ -325,10 +348,9 @@ internal sealed class TusContentCheck(
 
         if (createdByThisRequest)
         {
-            // tusdotnet still answers a creating request with 201 and reads the new upload's offset to do so,
-            // so the upload must outlive the response.
-            remover.RemoveAfterResponse(context.HttpContext, context.FileId, tenantId);
-
+            // tusdotnet answers a creating request with 201 and the upload's offset whatever this event decides, so
+            // the client never sees this refusal. The upload stays, still empty: the client sends the refused
+            // bytes again as a write of its own, which gets the refusal, and an upload it abandons expires.
             return;
         }
 

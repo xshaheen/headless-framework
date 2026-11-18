@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
+using tusdotnet.FileLocks;
 using tusdotnet.Interfaces;
 using tusdotnet.Models;
 using tusdotnet.Models.Configuration;
@@ -34,45 +36,84 @@ internal sealed class TusConfigurationFactory(
 
         var stampedStore = new TusStampedStore(store, caller);
 
-        // A write to the upload this request created is part of that creating request, not a request of its own.
-        bool createdByThisRequest(string fileId) =>
-            string.Equals(fileId, stampedStore.CreatedFileId, StringComparison.Ordinal);
-
         var configuration = new DefaultTusConfiguration
         {
             Store = stampedStore,
             MaxAllowedUploadSizeInBytesLong = endpointOptions.MaxSize,
             Expiration = new SlidingExpiration(endpointOptions.Expiration),
             AllowedExtensions = _allowedExtensions,
-            Events = new Events
+        };
+
+        configuration.Events = new Events
+        {
+            OnAuthorizeAsync = authorize => authorizer.AuthorizeAsync(authorize, caller),
+            OnBeforeDeleteAsync = authorizer.AuthorizeDeleteAsync,
+            OnBeforeCreateAsync = create =>
+                // Authorization has already refused a creating request that has no owner.
+                TusCreateValidation.ValidateAsync(
+                    create,
+                    endpoint,
+                    endpointOptions,
+                    TusUploadStamp.RequireOwner(caller)
+                ),
+            OnBeforeWriteAsync = async write =>
             {
-                OnAuthorizeAsync = authorize => authorizer.AuthorizeAsync(authorize, caller),
-                OnBeforeDeleteAsync = authorizer.AuthorizeDeleteAsync,
-                OnBeforeCreateAsync = create =>
-                    // Authorization has already refused a creating request that has no owner.
-                    TusCreateValidation.ValidateAsync(
-                        create,
-                        endpoint,
-                        endpointOptions,
-                        TusUploadStamp.RequireOwner(caller)
-                    ),
-                OnBeforeWriteAsync = write =>
-                    contentCheck.CheckAsync(
+                if (await _ExceedsMaxSizeAsync(write, endpointOptions.MaxSize).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                await contentCheck
+                    .CheckAsync(
                         write,
                         endpointOptions,
-                        caller?.TenantId,
-                        createdByThisRequest(write.FileId)
-                    ),
+                        configuration.ClientReadTimeout,
+                        // A write to the upload this request created is the data the creating request carries.
+                        createdByThisRequest: string.Equals(
+                            write.FileId,
+                            stampedStore.CreatedFileId,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .ConfigureAwait(false);
             },
         };
 
         // Left unset, tusdotnet locks a file within this process only.
-        if (fileLockProvider is not null)
-        {
-            configuration.FileLockProvider = fileLockProvider;
-        }
+        var lockProvider = fileLockProvider ?? InMemoryFileLockProvider.Instance;
+
+        configuration.FileLockProvider = store is ITusRequestSnapshotStore snapshotStore
+            ? new TusSnapshotRefreshingLockProvider(lockProvider, snapshotStore)
+            : lockProvider;
 
         return configuration;
+    }
+
+    /// <summary>
+    /// Refuses a write to an upload whose declared length the endpoint no longer allows. tusdotnet checks a length
+    /// against the limit only when a request declares it, so an upload created under a higher limit could otherwise
+    /// finish after the limit was lowered. It runs under the upload's file lock.
+    /// </summary>
+    private static async Task<bool> _ExceedsMaxSizeAsync(BeforeWriteContext context, long maxSize)
+    {
+        var length = await context
+            .Store.GetUploadLengthAsync(context.FileId, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        if (length is null || length <= maxSize)
+        {
+            return false;
+        }
+
+        context.FailRequest(
+            HttpStatusCode.RequestEntityTooLarge,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"The upload is {length} bytes long, which is more than the {maxSize} bytes the endpoint allows."
+            )
+        );
+
+        return true;
     }
 
     /// <summary>

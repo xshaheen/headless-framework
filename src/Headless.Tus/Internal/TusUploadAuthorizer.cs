@@ -2,6 +2,9 @@
 
 using System.Net;
 using Headless.MultiTenancy;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using tusdotnet.Models;
@@ -35,7 +38,7 @@ internal sealed partial class TusUploadAuthorizer(TusUploadBinding binding, ILog
 
         if (caller is null)
         {
-            context.FailRequest(HttpStatusCode.Unauthorized, "The request has no upload owner.");
+            await _RefuseWithoutOwnerAsync(context).ConfigureAwait(false);
 
             return;
         }
@@ -79,7 +82,7 @@ internal sealed partial class TusUploadAuthorizer(TusUploadBinding binding, ILog
             }
             else
             {
-                context.FailRequest(HttpStatusCode.ServiceUnavailable, "The upload store is not available.");
+                TusProtocol.Fail(context, HttpStatusCode.ServiceUnavailable, "The upload store is not available.");
             }
 
             return;
@@ -119,7 +122,8 @@ internal sealed partial class TusUploadAuthorizer(TusUploadBinding binding, ILog
     {
         if (caller.OwnerKey.Length > TusUploadStamp.MaxOwnerKeyLength)
         {
-            context.FailRequest(
+            TusProtocol.Fail(
+                context,
                 HttpStatusCode.BadRequest,
                 string.Create(
                     CultureInfo.InvariantCulture,
@@ -137,7 +141,7 @@ internal sealed partial class TusUploadAuthorizer(TusUploadBinding binding, ILog
 
         if (caller.TenantId is null)
         {
-            context.FailRequest(HttpStatusCode.Forbidden, "The request has no tenant.");
+            TusProtocol.Fail(context, HttpStatusCode.Forbidden, "The request has no tenant.");
 
             return;
         }
@@ -146,7 +150,53 @@ internal sealed partial class TusUploadAuthorizer(TusUploadBinding binding, ILog
         // run the create checks, and that refusal would surface as a server error.
         if (!TenantStorageSegment.IsValid(caller.TenantId))
         {
-            context.FailRequest(HttpStatusCode.Forbidden, "The request's tenant id cannot be used to store uploads.");
+            TusProtocol.Fail(
+                context,
+                HttpStatusCode.Forbidden,
+                "The request's tenant id cannot be used to store uploads."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Refuses a request that has no owner. A caller who is not signed in gets the host's own authentication
+    /// challenge, so the response says how to sign in, as it would behind an authorization policy. A caller who is
+    /// signed in gets 403, because signing in again would not give the request an owner.
+    /// </summary>
+    private static async Task _RefuseWithoutOwnerAsync(AuthorizeContext context)
+    {
+        const string message = "The request has no upload owner.";
+        var httpContext = context.HttpContext;
+
+        if (httpContext.User.Identity?.IsAuthenticated == true)
+        {
+            TusProtocol.Fail(context, HttpStatusCode.Forbidden, message);
+
+            return;
+        }
+
+        var schemes = httpContext.RequestServices.GetService<IAuthenticationSchemeProvider>();
+
+        if (schemes is null || await schemes.GetDefaultChallengeSchemeAsync().ConfigureAwait(false) is null)
+        {
+            TusProtocol.Fail(context, HttpStatusCode.Unauthorized, message);
+
+            return;
+        }
+
+        // The scheme sets the status and its headers, such as WWW-Authenticate for a bearer token or a redirect to
+        // the sign-in page for a cookie; tusdotnet then writes the response with that status.
+        await httpContext.ChallengeAsync().ConfigureAwait(false);
+
+        var challenged = (HttpStatusCode)httpContext.Response.StatusCode;
+
+        if (challenged == HttpStatusCode.Unauthorized || (int)challenged is < 300 or >= 500)
+        {
+            TusProtocol.Fail(context, HttpStatusCode.Unauthorized, message);
+        }
+        else
+        {
+            TusProtocol.Fail(context, challenged);
         }
     }
 
@@ -156,12 +206,10 @@ internal sealed partial class TusUploadAuthorizer(TusUploadBinding binding, ILog
     /// </summary>
     private static void _FailAsNotFound(AuthorizeContext context)
     {
-        // tusdotnet puts these two headers on its own 404 and leaves them off a failed authorization.
-        var headers = context.HttpContext.Response.Headers;
-        headers[TusProtocol.ResumableHeader] = TusProtocol.Version;
-        headers[HeaderNames.CacheControl] = "no-store";
-
-        context.FailRequest(HttpStatusCode.NotFound);
+        // tusdotnet's own 404 carries no-store whatever the request, and TusProtocol adds it only to a status
+        // request.
+        context.HttpContext.Response.Headers[HeaderNames.CacheControl] = "no-store";
+        TusProtocol.Fail(context, HttpStatusCode.NotFound);
     }
 
     [LoggerMessage(

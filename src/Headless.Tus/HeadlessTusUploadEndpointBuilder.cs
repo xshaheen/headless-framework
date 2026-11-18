@@ -57,8 +57,9 @@ public sealed class HeadlessTusUploadEndpointBuilder
     /// <para>
     /// The key a creating request returns is recorded on the upload. Every later request for that upload must
     /// return the same key, compared by ordinal, or it is answered as not found, exactly like a request for an
-    /// upload that does not exist. A request whose key is <see langword="null"/>, empty, or white space is refused
-    /// with 401, and a creating request whose key is longer than 256 characters with 400.
+    /// upload that does not exist. A request whose key is <see langword="null"/>, empty, or white space is refused:
+    /// with the host's authentication challenge when nobody is signed in, and with 403 when the caller is signed
+    /// in. A creating request whose key is longer than 256 characters is refused with 400.
     /// </para>
     /// <para>
     /// The endpoint trusts the key as returned: it does not check that the caller may act for that owner. Return

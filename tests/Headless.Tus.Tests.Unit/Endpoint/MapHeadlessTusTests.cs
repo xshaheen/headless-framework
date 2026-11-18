@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using tusdotnet.Interfaces;
 using tusdotnet.Stores;
 
@@ -85,6 +86,33 @@ public sealed class MapHeadlessTusTests : TestBase
 
         // then
         patched.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+    }
+
+    [Fact]
+    public async Task should_answer_413_to_a_write_when_the_maximum_size_was_lowered_below_the_uploads_length()
+    {
+        // given - an upload created under a 1,000 byte limit, which then drops to 500
+        var maxSize = 1000L;
+        var setup = new TusEndpointTestHostSetup
+        {
+            ConfigureTus = static (tus, store) => tus.UseStore(store).AddUploadEndpoint(static _ => { }),
+            ConfigureServices = services =>
+                services.PostConfigure<TusUploadEndpointOptions>(options => options.MaxSize = maxSize),
+        };
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+        var location = await host.CreateUploadAsync(uploadLength: 1000);
+        using var first = await host.PatchAsync(location, new byte[100], offset: 0);
+        maxSize = 500;
+        host.Services.GetRequiredService<IOptionsMonitorCache<TusUploadEndpointOptions>>().Clear();
+
+        // when - a write small enough on its own
+        using var second = await host.PatchAsync(location, new byte[100], offset: 100);
+
+        // then
+        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        second.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        using var head = await host.HeadAsync(location);
+        head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("100");
     }
 
     [Fact]

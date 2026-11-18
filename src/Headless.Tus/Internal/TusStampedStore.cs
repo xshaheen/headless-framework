@@ -109,9 +109,27 @@ internal sealed class TusStampedStore(ITusStore inner, TusUploadStamp? caller)
         return _Inner<ITusExpirationStore>().SetExpirationAsync(fileId, expires, cancellationToken);
     }
 
-    public Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
+    public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
-        return _Inner<ITusExpirationStore>().GetExpirationAsync(fileId, cancellationToken);
+        var expires = await _Inner<ITusExpirationStore>()
+            .GetExpirationAsync(fileId, cancellationToken)
+            .ConfigureAwait(false);
+
+        // A finished upload never expires. The S3 and Azure stores drop the date when an upload completes, but
+        // tusdotnet's disk store keeps it, and tusdotnet answers 404 for an upload whose date has passed, so a
+        // finished upload would vanish from its client after the resume window.
+        if (expires is null)
+        {
+            return null;
+        }
+
+        var length = await inner.GetUploadLengthAsync(fileId, cancellationToken).ConfigureAwait(false);
+
+        return
+            length is not null
+            && length == await inner.GetUploadOffsetAsync(fileId, cancellationToken).ConfigureAwait(false)
+            ? null
+            : expires;
     }
 
     public Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)

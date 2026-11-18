@@ -198,6 +198,30 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
         _OffsetOf(head).Should().Be(png.Length);
     }
 
+    public virtual async Task should_keep_the_bytes_another_write_stored_while_a_refused_write_to_it_was_waiting()
+    {
+        // given - an endpoint that accepts only PNG images, and an upload on it that holds no bytes yet
+        await _StartHostAsync(scopeByTenant: false);
+        var png = _FileStartingWith([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], length: 10_000);
+        var pdf = _FileStartingWith("%PDF-1.7\n"u8.ToArray(), length: 10_000);
+        var location = await _CreateUploadAsync(_Alice, png.Length, $"filetype {"image/png".ToBase64()}", _ImagesRoute);
+
+        // and a write of the image's first half that lands after a second write was matched to the upload and
+        // before that second write takes the upload's file lock
+        _locks.BeforeNextLock = () => _WriteAsync(_Alice, location, png[..5000], offset: 0);
+
+        // when - the second write sends bytes the endpoint refuses, from the upload's first byte
+        using var refused = await _PatchAsync(_Alice, location, pdf, offset: 0);
+
+        // then - under the lock the upload no longer starts at offset zero, so the write is a conflict and is never
+        // checked or refused, and the bytes the first write stored stay
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using var head = await _HeadAsync(_Alice, location);
+        head.StatusCode.Should().Be(HttpStatusCode.OK);
+        _OffsetOf(head).Should().Be(5000);
+    }
+
     public virtual async Task should_find_an_upload_that_finished_after_the_same_request_first_looked_it_up()
     {
         // given - an upload that lacks its last 200 bytes

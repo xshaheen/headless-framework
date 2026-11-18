@@ -1,8 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.MultiTenancy;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
 
@@ -35,29 +32,6 @@ internal sealed partial class TusUploadRemover(ITusStore store, ILogger<TusUploa
         {
             LogUploadNotRemoved(logger, exception, fileId);
         }
-    }
-
-    /// <summary>
-    /// Removes the upload once the response to <paramref name="httpContext"/> is sent, for a request whose answer
-    /// still needs the upload: tusdotnet reads an upload's offset to build the response to the request that
-    /// created it.
-    /// </summary>
-    /// <param name="httpContext">The request being answered.</param>
-    /// <param name="fileId">The upload to remove.</param>
-    /// <param name="tenantId">The tenant the request runs in, or <see langword="null"/> for none.</param>
-    public void RemoveAfterResponse(HttpContext httpContext, string fileId, string? tenantId)
-    {
-        var currentTenant = httpContext.RequestServices.GetService<ICurrentTenant>();
-
-        httpContext.Response.OnCompleted(async () =>
-        {
-            // The application's tenant scope has ended by now, and a store that keeps uploads per tenant needs
-            // the tenant the upload was created in.
-            using (currentTenant?.Change(tenantId))
-            {
-                await RemoveAsync(fileId).ConfigureAwait(false);
-            }
-        });
     }
 
     [LoggerMessage(

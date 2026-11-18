@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using Microsoft.Net.Http.Headers;
+using tusdotnet.Models;
 using tusdotnet.Models.Configuration;
 
 namespace Headless.Tus.Internal;
@@ -15,12 +17,20 @@ internal static class TusProtocol
     public const string Version = "1.0.0";
 
     /// <summary>
-    /// Refuses the request with the protocol version on the response. tusdotnet leaves the version off a failed
-    /// authorization, and puts it on every other refusal, so it is added here.
+    /// Refuses the request with the headers the protocol asks of every response: the protocol version, and on a
+    /// status request a ban on caching. tusdotnet puts both on its own refusals but leaves them off a failed
+    /// authorization, so a refusal made while authorizing adds them here.
     /// </summary>
     public static void Fail(AuthorizeContext context, HttpStatusCode status, string? message = null)
     {
-        context.HttpContext.Response.Headers[ResumableHeader] = Version;
+        var headers = context.HttpContext.Response.Headers;
+        headers[ResumableHeader] = Version;
+
+        // A cached refusal would keep answering a client after the cause is gone, for example once it signs in.
+        if (context.Intent == IntentType.GetFileInfo)
+        {
+            headers[HeaderNames.CacheControl] = "no-store";
+        }
 
         if (message is null)
         {

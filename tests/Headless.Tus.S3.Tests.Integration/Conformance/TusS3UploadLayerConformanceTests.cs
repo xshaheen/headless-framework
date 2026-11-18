@@ -39,6 +39,10 @@ public sealed class MinioTusS3UploadLayerConformanceTests(TusS3MinioFixture fixt
         base.should_keep_an_upload_that_finished_while_a_refused_write_to_it_was_waiting();
 
     [Fact]
+    public override Task should_keep_the_bytes_another_write_stored_while_a_refused_write_to_it_was_waiting() =>
+        base.should_keep_the_bytes_another_write_stored_while_a_refused_write_to_it_was_waiting();
+
+    [Fact]
     public override Task should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant() =>
         base.should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant();
 
@@ -82,6 +86,10 @@ public sealed class LocalStackTusS3UploadLayerConformanceTests(TusS3LocalStackFi
     [Fact]
     public override Task should_keep_an_upload_that_finished_while_a_refused_write_to_it_was_waiting() =>
         base.should_keep_an_upload_that_finished_while_a_refused_write_to_it_was_waiting();
+
+    [Fact]
+    public override Task should_keep_the_bytes_another_write_stored_while_a_refused_write_to_it_was_waiting() =>
+        base.should_keep_the_bytes_another_write_stored_while_a_refused_write_to_it_was_waiting();
 
     [Fact]
     public override Task should_keep_each_tenants_uploads_from_the_other_when_uploads_are_scoped_by_tenant() =>

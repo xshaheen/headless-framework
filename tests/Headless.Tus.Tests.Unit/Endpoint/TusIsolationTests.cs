@@ -2,10 +2,16 @@
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
 using Headless.Testing.Tests;
 using Headless.Tus;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using tusdotnet;
 using tusdotnet.Interfaces;
 using tusdotnet.Models;
@@ -276,9 +282,75 @@ public sealed class TusIsolationTests : TestBase
         host.User = null;
         using var response = await _SendAsync(host, method, location);
 
-        // then - refused, with the first upload still the only one
+        // then - refused with the protocol version, never cached, and with the first upload still the only one
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.GetValues("Tus-Resumable").Should().ContainSingle().Which.Should().Be("1.0.0");
+
+        if (string.Equals(method, "HEAD", StringComparison.Ordinal))
+        {
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        }
+
         Directory.EnumerateFiles(host.Directory, "*.metadata").Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_answer_with_the_hosts_challenge_when_nobody_is_signed_in()
+    {
+        // given - a host whose authentication scheme says how to sign in
+        var setup = new TusEndpointTestHostSetup
+        {
+            ConfigureServices = static services =>
+                services
+                    .AddAuthentication(ChallengingHandler.SchemeName)
+                    .AddScheme<AuthenticationSchemeOptions, ChallengingHandler>(ChallengingHandler.SchemeName, null),
+        };
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+        host.User = null;
+
+        // when
+        using var response = await host.CreateAsync(uploadLength: 10);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response
+            .Headers.WwwAuthenticate.Should()
+            .ContainSingle()
+            .Which.Scheme.Should()
+            .Be(ChallengingHandler.SchemeName);
+        response.Headers.GetValues("Tus-Resumable").Should().ContainSingle().Which.Should().Be("1.0.0");
+        Directory.EnumerateFileSystemEntries(host.Directory).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_answer_403_when_a_signed_in_caller_has_no_owner()
+    {
+        // given - the caller is signed in, and the endpoint finds no owner for it
+        var setup = new TusEndpointTestHostSetup
+        {
+            ConfigureTus = static (tus, store) =>
+                tus.UseStore(store)
+                    .AddUploadEndpoint(static options => options.MaxSize = TusEndpointTestHost.DefaultMaxSize)
+                    .OwnedBy(static _ => null),
+            ConfigureMiddleware = static app =>
+                app.Use(
+                    static (context, next) =>
+                    {
+                        context.User = new ClaimsPrincipal(new ClaimsIdentity(authenticationType: "Test"));
+
+                        return next(context);
+                    }
+                ),
+        };
+        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+
+        // when
+        using var response = await host.CreateAsync(uploadLength: 10);
+
+        // then - signing in again would not help
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Headers.GetValues("Tus-Resumable").Should().ContainSingle().Which.Should().Be("1.0.0");
+        Directory.EnumerateFileSystemEntries(host.Directory).Should().BeEmpty();
     }
 
     [Theory]
@@ -734,6 +806,29 @@ public sealed class TusIsolationTests : TestBase
             return Fails
                 ? Task.FromException<string>(new IOException("The store is unreachable."))
                 : base.GetUploadMetadataAsync(fileId, cancellationToken);
+        }
+    }
+
+    /// <summary>A scheme that never signs anyone in and challenges with its own name.</summary>
+    private sealed class ChallengingHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder
+    ) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    {
+        public const string SchemeName = "Test";
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            Response.Headers.WWWAuthenticate = SchemeName;
+
+            return Task.CompletedTask;
         }
     }
 }

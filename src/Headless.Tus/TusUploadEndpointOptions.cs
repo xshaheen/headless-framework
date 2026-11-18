@@ -97,7 +97,9 @@ public sealed class TusUploadEndpointOptions
     /// The first write must carry the bytes the check reads, a few hundred, or the whole upload when it is
     /// shorter; a shorter first write is refused with 400, as is one on an upload whose length is still deferred.
     /// A refused upload is deleted. When the refused bytes arrive with the creating request, that request still
-    /// answers 201 with an offset of zero, and the upload is gone on the client's next request.
+    /// answers 201 with an offset of zero and the upload is kept, so the client's next write, which carries the
+    /// same bytes, gets the refusal. A first write whose bytes stop arriving is refused with 408 and keeps the
+    /// upload.
     /// </para>
     /// </remarks>
     public bool VerifyFileSignature { get; set; } = true;

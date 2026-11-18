@@ -37,10 +37,11 @@ public static class TusEndpointRouteBuilderExtensions
         /// <para>
         /// Every upload is bound to the endpoint that created it, to its owner, and to the request's tenant when it
         /// has one. The owner is the key the endpoint's <c>OwnedBy</c> function returns, or the signed-in user's id
-        /// from <c>ICurrentUser</c> when the endpoint has no such function. A request with no owner is refused with
-        /// 401. A request for an upload that another endpoint, owner, or tenant created is answered as not found,
-        /// exactly like a request for an upload that does not exist. Metadata keys that start with
-        /// <c>headless-</c> are reserved for the server: a creating request that sends one is refused with 400.
+        /// from <c>ICurrentUser</c> when the endpoint has no such function. A request with no owner gets the host's
+        /// authentication challenge, or 403 when the caller is signed in. A request for an upload that another
+        /// endpoint, owner, or tenant created is answered as not found, exactly like a request for an upload that
+        /// does not exist. Metadata keys that start with <c>headless-</c> are reserved for the server: a creating
+        /// request that sends one is refused with 400.
         /// </para>
         /// <para>
         /// A creating request must pass the endpoint's rules before the upload starts: required metadata and

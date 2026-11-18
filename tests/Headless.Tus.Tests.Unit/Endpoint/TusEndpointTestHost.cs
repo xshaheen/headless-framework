@@ -342,28 +342,6 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
     }
 
     /// <summary>
-    /// Adds middleware that releases <paramref name="completed"/> after everything the endpoint does once a
-    /// response is sent. The server runs those callbacks last-registered first, and this one is registered before
-    /// the endpoint runs.
-    /// </summary>
-    public static void SignalWhenTheResponseCompletes(IApplicationBuilder app, SemaphoreSlim completed)
-    {
-        app.Use(
-            (context, next) =>
-            {
-                context.Response.OnCompleted(() =>
-                {
-                    completed.Release();
-
-                    return Task.CompletedTask;
-                });
-
-                return next(context);
-            }
-        );
-    }
-
-    /// <summary>
     /// Stands in for the application's authentication and tenant resolution: the request's user and tenant are
     /// the ones its test headers name, entered through the same services an application uses.
     /// </summary>

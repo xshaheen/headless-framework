@@ -1,16 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.IO.Compression;
+using System.IO.Pipelines;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Reflection;
 using FileSignatures;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Headless.Tus;
-using Microsoft.AspNetCore.Builder;
+using Headless.Tus.Internal;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection;
 using OpenMcdf;
 using tusdotnet.Interfaces;
+using tusdotnet.Models.Configuration;
 using tusdotnet.Stores;
 
 namespace Tests.Endpoint;
@@ -23,10 +28,7 @@ public sealed class TusContentCheckTests : TestBase
     private static readonly byte[] _JpegSignature = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46];
 
     /// <summary>A host whose default endpoint has a 1 MiB limit and the rules <paramref name="configure"/> sets.</summary>
-    private static TusEndpointTestHostSetup _Endpoint(
-        Action<TusUploadEndpointOptions> configure,
-        Action<IApplicationBuilder>? middleware = null
-    )
+    private static TusEndpointTestHostSetup _Endpoint(Action<TusUploadEndpointOptions> configure)
     {
         return new TusEndpointTestHostSetup
         {
@@ -37,20 +39,16 @@ public sealed class TusContentCheckTests : TestBase
                         options.MaxSize = TusEndpointTestHost.DefaultMaxSize;
                         configure(options);
                     }),
-            ConfigureMiddleware = middleware,
         };
     }
 
-    private static TusEndpointTestHostSetup _Images(Action<IApplicationBuilder>? middleware = null)
+    private static TusEndpointTestHostSetup _Images()
     {
-        return _Endpoint(
-            static options =>
-            {
-                options.AllowedContentTypes.Add("image/png");
-                options.AllowedContentTypes.Add("image/jpeg");
-            },
-            middleware
-        );
+        return _Endpoint(static options =>
+        {
+            options.AllowedContentTypes.Add("image/png");
+            options.AllowedContentTypes.Add("image/jpeg");
+        });
     }
 
     private static string _Metadata(string? fileName, string? contentType)
@@ -679,33 +677,36 @@ public sealed class TusContentCheckTests : TestBase
     }
 
     [Fact]
-    public async Task should_answer_201_with_offset_zero_and_then_404_when_content_sent_with_the_creating_request_is_refused()
+    public async Task should_answer_the_first_write_with_415_when_content_sent_with_the_creating_request_is_refused()
     {
         // given
-        using var responseCompleted = new SemaphoreSlim(0);
-        var setup = _Images(app => TusEndpointTestHost.SignalWhenTheResponseCompletes(app, responseCompleted));
-        await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
+        await using var host = await TusEndpointTestHost.StartAsync(_Images(), AbortToken);
         var executable = _Executable();
 
         // when
-        using var response = await host.CreateAsync(
+        using var created = await host.CreateAsync(
             executable.Length,
             _Metadata("cat.png", "image/png"),
             configure: request => request.Content = _Body(executable)
         );
-        await responseCompleted.WaitAsync(AbortToken);
+        var location = created.Headers.Location!.ToString();
+        using var head = await host.HeadAsync(location);
+        using var written = await host.PatchAsync(location, executable, offset: 0);
 
-        // then - tusdotnet answers the creating request as created; the upload is removed once that answer is sent
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        response.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
-        await _ShouldBeGoneAsync(host, response.Headers.Location!.ToString());
+        // then - tusdotnet answers the creating request as created with nothing stored; the upload outlives it,
+        // so the client's next write, from offset zero, is the one told why the content is refused
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        created.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
+        head.StatusCode.Should().Be(HttpStatusCode.OK);
+        head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
+        await _ShouldBeRefusedAsync(written, HttpStatusCode.UnsupportedMediaType);
+        await _ShouldBeGoneAsync(host, location);
     }
 
     [Fact]
-    public async Task should_delete_a_refused_upload_in_the_tenant_it_was_created_in_after_the_creating_request()
+    public async Task should_delete_a_refused_upload_in_the_tenant_it_was_created_in()
     {
         // given - a store that records the tenant each delete runs in, as a store that keeps uploads per tenant needs
-        using var responseCompleted = new SemaphoreSlim(0);
         var deletes = new List<string?>();
         var setup = new TusEndpointTestHostSetup
         {
@@ -717,24 +718,64 @@ public sealed class TusContentCheckTests : TestBase
                         options.MaxSize = TusEndpointTestHost.DefaultMaxSize;
                         options.AllowedContentTypes.Add("image/png");
                     }),
-            ConfigureMiddleware = app => TusEndpointTestHost.SignalWhenTheResponseCompletes(app, responseCompleted),
         };
         await using var host = await TusEndpointTestHost.StartAsync(setup, AbortToken);
         host.Tenant = "acme";
         var executable = _Executable();
+        var location = await host.CreateUploadAsync(executable.Length, _Metadata("cat.png", "image/png"));
 
         // when
-        using var response = await host.CreateAsync(
-            executable.Length,
-            _Metadata("cat.png", "image/png"),
-            configure: request => request.Content = _Body(executable)
-        );
-        await responseCompleted.WaitAsync(AbortToken);
+        using var response = await host.PatchAsync(location, executable, offset: 0);
 
         // then
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        await _ShouldBeRefusedAsync(response, HttpStatusCode.UnsupportedMediaType);
         deletes.Should().Equal("acme");
         Directory.EnumerateFileSystemEntries(host.Directory).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_answer_408_and_keep_the_upload_when_the_first_bytes_stop_arriving()
+    {
+        // given - a first write that sends a few bytes and then nothing, on an upload that is still empty
+        await using var host = await TusEndpointTestHost.StartAsync(_Images(), AbortToken);
+        var location = await host.CreateUploadAsync(1000, _Metadata("cat.png", "image/png"));
+        var body = new Pipe();
+        await body.Writer.WriteAsync(_PngSignature, AbortToken);
+        var httpContext = new DefaultHttpContext { RequestServices = host.Services };
+        httpContext.Features.Set<IRequestBodyPipeFeature>(new StalledBody(body.Reader));
+        var write = new BeforeWriteContext
+        {
+            FileId = TusEndpointTestHost.FileIdOf(location),
+            Store = host.Store,
+            UploadOffset = 0,
+            CancellationToken = AbortToken,
+        };
+        // tusdotnet sets the request only through its own pipeline; the property's setter is private to its base.
+        typeof(EventContext<BeforeWriteContext>)
+            .GetProperty(
+                nameof(BeforeWriteContext.HttpContext),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
+            .SetValue(write, httpContext);
+        var options = new TusUploadEndpointOptions { MaxSize = TusEndpointTestHost.DefaultMaxSize };
+        options.AllowedContentTypes.Add("image/png");
+        var sut = host.Services.GetRequiredService<TusContentCheck>();
+
+        // when - real-wait: the read timeout is the behavior under test, so it runs on the real clock
+        await sut.CheckAsync(write, options, TimeSpan.FromMilliseconds(50), createdByThisRequest: false);
+
+        // then - refused, so the bytes in the pipe never reach the store unchecked, and the upload stays empty
+        write.HasFailed.Should().BeTrue();
+        write.ErrorMessage.Should().Be("The first bytes of the upload did not arrive in time.");
+        using var head = await host.HeadAsync(location);
+        head.StatusCode.Should().Be(HttpStatusCode.OK);
+        head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("0");
+    }
+
+    /// <summary>A request body that has sent what its pipe holds and sends nothing more.</summary>
+    private sealed class StalledBody(PipeReader reader) : IRequestBodyPipeFeature
+    {
+        public PipeReader Reader { get; } = reader;
     }
 
     private static ByteArrayContent _Body(byte[] content)
