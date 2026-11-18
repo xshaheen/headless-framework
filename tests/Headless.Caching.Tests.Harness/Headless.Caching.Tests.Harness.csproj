@@ -6,7 +6,7 @@
     <IsTestHarnessProject>true</IsTestHarnessProject>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching\Headless.Caching.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

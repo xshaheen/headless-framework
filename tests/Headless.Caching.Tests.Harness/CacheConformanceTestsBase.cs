@@ -888,6 +888,62 @@ public abstract class CacheConformanceTestsBase : TestBase
         immediate.HasValue.Should().BeFalse();
     }
 
+    public virtual async Task should_report_no_expiration_when_upsert_duration_is_max_value()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // TimeSpan.MaxValue saturates the stamps at DateTime.MaxValue, which means "never expires", not a deadline
+        // thousands of years away.
+        await cache.UpsertEntryAsync(key, "value", new CacheEntryOptions { Duration = TimeSpan.MaxValue }, AbortToken);
+
+        var read = await cache.GetAsync<string>(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        read.Value.Should().Be("value");
+        expiration.Should().BeNull("a DateTime.MaxValue expiry stamp means the entry never expires");
+    }
+
+    public virtual async Task should_report_no_expiration_when_set_entry_stamps_are_max_value()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+
+        await cache.UpsertEntryAsync(
+            key,
+            "seed",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+        var seeded = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
+
+        // A compare-and-set write with DateTime.MaxValue stamps, the shape of a replayed write that had no
+        // expiration: the store must keep no deadline for it.
+        var written = await store.SetEntryAsync(
+            key,
+            new CacheStoreEntryWrite<string>
+            {
+                Value = "value",
+                IsNull = false,
+                LogicalExpiresAt = DateTime.MaxValue,
+                PhysicalExpiresAt = DateTime.MaxValue,
+                CreatedAt = seeded.CreatedAt,
+                ExpectedConcurrencyStamp = seeded.ConcurrencyStamp,
+            },
+            AbortToken
+        );
+
+        var read = await cache.GetAsync<string>(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        written.Should().BeTrue();
+        read.Value.Should().Be("value");
+        expiration.Should().BeNull("a DateTime.MaxValue expiry stamp means the entry never expires");
+    }
+
     public virtual async Task should_extend_entry_when_conditional_factory_reports_not_modified()
     {
         await ResetAsync();
