@@ -23,7 +23,7 @@ internal sealed class SqliteSchemaDatabase : IDisposable
         ConnectionString = $"Data Source=schema-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
         _keepAlive = new SqliteConnection(ConnectionString);
         _keepAlive.Open();
-        Dialect = new SqliteSchemaDialect();
+        Dialect = new SqliteSchemaDialect(this);
     }
 
     public string ConnectionString { get; }
@@ -37,6 +37,12 @@ internal sealed class SqliteSchemaDatabase : IDisposable
 
     /// <summary>Whether the lock is never granted.</summary>
     public bool LockUnavailable { get; set; }
+
+    /// <summary>
+    /// How many history reads still report the history table missing, as a pooled connection whose cached schema
+    /// predates the table does while a writer holds the database.
+    /// </summary>
+    public int StaleHistoryReads { get; set; }
 
     /// <summary>The span the last <c>SELECT capture_activity()</c> statement ran under.</summary>
     public Activity? CapturedActivity { get; private set; }
@@ -109,7 +115,7 @@ internal sealed class SqliteSchemaDatabase : IDisposable
         return 0;
     }
 
-    private sealed class SqliteSchemaDialect : ISchemaDialect
+    private sealed class SqliteSchemaDialect(SqliteSchemaDatabase database) : ISchemaDialect
     {
         public string Name => "Sqlite";
 
@@ -128,8 +134,13 @@ internal sealed class SqliteSchemaDatabase : IDisposable
 
         public string HistoryTableName(string schema) => $"{schema}_history";
 
-        public string ReadHistorySql(string schema) =>
-            $"SELECT feature, version, checksum, description FROM {schema}_history";
+        public string ReadHistorySql(string schema)
+        {
+            // A table no runner creates, so the read fails with "no such table" although the history exists.
+            var table = database.StaleHistoryReads-- > 0 ? $"{schema}_history_not_yet_visible" : $"{schema}_history";
+
+            return $"SELECT feature, version, checksum, description FROM {table}";
+        }
 
         public string HistoryTableExistsSql(string schema) =>
             $"SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = '{schema}_history'";
