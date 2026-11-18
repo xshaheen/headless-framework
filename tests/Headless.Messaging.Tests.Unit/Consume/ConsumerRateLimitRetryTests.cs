@@ -208,7 +208,11 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
                 row => row.StatusName == StatusName.Failed && row.NextRetryAt > stopped.Clock.GetUtcNow(),
                 AbortToken
             );
-            await stopped.ShutDownAsync(AbortToken);
+            // Stopped without driving the clock: this shutdown needs no simulated time, and the throttled row still
+            // waits for its permit while the stop runs, so the waiting-rows keeper re-arms its tick until the stop
+            // cancels that wait. A driver that advances past each tick races the stop in wall time and runs out of
+            // steps whenever the stop is slow.
+            await stopped.StopAsync(AbortToken);
         }
 
         // when: a new host, with a fresh permit, picks the never-run row up. Its first attempt takes the permit and
