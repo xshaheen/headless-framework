@@ -8,6 +8,8 @@ using Confluent.Kafka.Admin;
 using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Kafka;
@@ -51,6 +53,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly HashSet<TopicPartition> _ownedPartitions = [];
     private readonly KafkaConsumerLagTracker _lagTracker;
     private readonly TransportEnvelopeGate _envelopeGate;
+    private readonly ILogger _logger;
 
     // The concrete topics this client subscribed. A topic is its message name verbatim, so a record on one of them
     // belongs to that message even when a foreign producer sent no Headless headers. Replaced, never mutated, so the
@@ -89,6 +92,8 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
         _serviceProvider = serviceProvider;
         _envelopeGate = serviceProvider.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
+        _logger =
+            serviceProvider.GetService<ILogger<KafkaConsumerClient>>() ?? NullLogger<KafkaConsumerClient>.Instance;
         _consumerConfig = consumerConfig;
         _consumerFactory = consumerFactory ?? _BuildConsumer;
         _adminClientFactory = adminClientFactory ?? _BuildAdminClient;
@@ -178,7 +183,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     LogType = MqLogType.ConsumeError,
                     Reason = "An error was encountered when automatically creating topic! -->" + e,
                 };
-                OnLogCallback!(logArgs);
+                _Log(logArgs);
             }
         }
 
@@ -233,6 +238,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         using var pollThread = new KafkaPollThread($"kafka-poll-{_groupId}");
 
         // Built once: the loop polls once per record, so a lambda inside it would allocate a closure per record.
+#pragma warning disable IDE0039 // Fix makes code worse: a local function becomes a new delegate each time the loop passes it.
         Func<ConsumeResult<string, byte[]>?> poll = () =>
         {
             lock (_consumeLock)
@@ -240,6 +246,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return _consumerClient?.Consume(timeout);
             }
         };
+#pragma warning restore IDE0039
 
         // The loop keeps calling Consume while paused instead of waiting at the pause gate: librdkafka counts
         // max.poll.interval.ms between Consume calls whether or not the partitions are paused, so a pause longer than
@@ -383,7 +390,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     LogType = MqLogType.ConsumeRetries,
                     Reason = e.Error.ToString(),
                 };
-                OnLogCallback!(logArgs);
+                _Log(logArgs);
 
                 continue;
             }
@@ -1072,7 +1079,20 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             LogType = MqLogType.ServerConnError,
             Reason = $"An error occurred during connect kafka --> {e.Reason}",
         };
-        OnLogCallback!(logArgs);
+        _Log(logArgs);
+    }
+
+    // A broker error can arrive before the core attaches its log callback (topic creation runs first), so it goes to
+    // the client's own logger rather than being lost or replaced by a NullReferenceException.
+    private void _Log(LogMessageEventArgs logArgs)
+    {
+        if (OnLogCallback is { } onLog)
+        {
+            onLog(logArgs);
+            return;
+        }
+
+        _logger.LogKafkaConsumerEventWithoutCallback(logArgs.LogType, logArgs.Reason);
     }
 
     private static bool _TryGetDelivery(object? sender, out KafkaDelivery delivery)
@@ -1356,4 +1376,19 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             public SortedList<long, long> PendingOffsets { get; } = [];
         }
     }
+}
+
+internal static partial class KafkaConsumerClientLog
+{
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "KafkaConsumerEventWithoutCallback",
+        Level = LogLevel.Warning,
+        Message = "Kafka consumer reported {LogType} before a log callback was attached: {Reason}"
+    )]
+    internal static partial void LogKafkaConsumerEventWithoutCallback(
+        this ILogger logger,
+        MqLogType logType,
+        string? reason
+    );
 }

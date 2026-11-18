@@ -9,11 +9,15 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Tenancy;
 
+// One collection per provider: a collection fails every test in it when any of its fixtures fails to start, so a
+// SQL Server container that cannot start must not take the PostgreSQL classes down with it.
 [CollectionDefinition]
-public sealed class MetadataTenantCollection
+public sealed class PostgreSqlMetadataTenantCollection
     : ICollectionFixture<PostgreSqlMetadataTenantFixture>,
-        ICollectionFixture<SqlServerMetadataTenantFixture>,
         ICollectionFixture<PostgreSqlPlacedMetadataTenantFixture>;
+
+[CollectionDefinition]
+public sealed class SqlServerMetadataTenantCollection : ICollectionFixture<SqlServerMetadataTenantFixture>;
 
 public sealed class PostgreSqlMetadataTenantFixture() : MetadataTenantFixture(TenantDatabaseProvider.PostgreSql);
 
@@ -23,27 +27,27 @@ public sealed class SqlServerMetadataTenantFixture() : MetadataTenantFixture(Ten
 public sealed class PostgreSqlPlacedMetadataTenantFixture()
     : MetadataTenantFixture(TenantDatabaseProvider.PostgreSql, new TenantDataPlacement("tenant_placed", "placed"));
 
-[Collection<MetadataTenantCollection>]
+[Collection<PostgreSqlMetadataTenantCollection>]
 public sealed class PostgreSqlMetadataTenantConformanceTests(PostgreSqlMetadataTenantFixture fixture)
     : MetadataTenantConformanceTests<PostgreSqlMetadataTenantFixture>(fixture);
 
-[Collection<MetadataTenantCollection>]
+[Collection<SqlServerMetadataTenantCollection>]
 public sealed class SqlServerMetadataTenantConformanceTests(SqlServerMetadataTenantFixture fixture)
     : MetadataTenantConformanceTests<SqlServerMetadataTenantFixture>(fixture);
 
-[Collection<MetadataTenantCollection>]
+[Collection<PostgreSqlMetadataTenantCollection>]
 public sealed class PostgreSqlTenantIsolationKitTests(PostgreSqlMetadataTenantFixture fixture)
     : TenantIsolationKitConformanceTests<PostgreSqlMetadataTenantFixture>(fixture);
 
-[Collection<MetadataTenantCollection>]
+[Collection<SqlServerMetadataTenantCollection>]
 public sealed class SqlServerTenantIsolationKitTests(SqlServerMetadataTenantFixture fixture)
     : TenantIsolationKitConformanceTests<SqlServerMetadataTenantFixture>(fixture);
 
-[Collection<MetadataTenantCollection>]
+[Collection<PostgreSqlMetadataTenantCollection>]
 public sealed class PlacedPostgreSqlTenantIsolationKitTests(PostgreSqlPlacedMetadataTenantFixture fixture)
     : TenantIsolationKitConformanceTests<PostgreSqlPlacedMetadataTenantFixture>(fixture);
 
-[Collection<MetadataTenantCollection>]
+[Collection<SqlServerMetadataTenantCollection>]
 public sealed class SqlServerTenantIndexTests(SqlServerMetadataTenantFixture fixture) : TestBase
 {
     public override async ValueTask InitializeAsync()

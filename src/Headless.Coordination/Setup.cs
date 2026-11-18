@@ -142,6 +142,12 @@ public static class SetupCoordinationCore
         {
             services.AddSingletonOptionValue<CoordinationOptions>();
 
+            // Environments sharing one Redis keep their membership keys apart. Relational stores do not read the key
+            // prefix; they keep clusters apart by cluster name.
+            services.ApplyHeadlessPrefix<CoordinationOptions>(
+                static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
+            );
+
             // Keyed so the stored node format never follows the host's IJsonOptionsProvider or global IJsonSerializer;
             // a consumer overrides it only by pre-registering a serializer under this key. The default provider keeps
             // metadata keys as written, so every peer reads back the key the node published.

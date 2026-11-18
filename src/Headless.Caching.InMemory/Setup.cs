@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -159,6 +160,9 @@ public static class SetupInMemoryCache
         // Surface the registered instance name on the headless.cache.name telemetry dimension (unless the user
         // set one explicitly). Runs after the user's configure action.
         services.PostConfigure<InMemoryCacheOptions>(name, options => options.CacheName ??= name);
+        services.ApplyHeadlessPrefix<InMemoryCacheOptions>(
+            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
+        );
 
         services.AddKeyedSingleton<ICache>(
             name,
@@ -183,6 +187,9 @@ public static class SetupInMemoryCache
         // 'No service for type TimeProvider' at resolve time.
         services.TryAddSingleton(TimeProvider.System);
         services.AddCacheProvider();
+        services.ApplyHeadlessPrefix<InMemoryCacheOptions>(
+            static (options, prefix) => options.KeyPrefix = prefix + ":" + options.KeyPrefix
+        );
         services.AddSingletonOptionValue<InMemoryCacheOptions>();
         services.TryAddSingleton<IInMemoryCache, InMemoryCache>();
         services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));

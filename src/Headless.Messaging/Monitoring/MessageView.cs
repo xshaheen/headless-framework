@@ -76,6 +76,12 @@ public class MessageView
     public string? FailureFingerprint { get; set; }
 
     /// <summary>
+    /// Gets or sets the named transport that sends a published row, or <see langword="null"/> for the default transport
+    /// and for a received row. Set by <see cref="IMonitoringApi.ListMessagesAsync"/>.
+    /// </summary>
+    public string? TransportName { get; set; }
+
+    /// <summary>
     /// Gets or sets the tenant of a received inbox row, or <see langword="null"/>. Set by
     /// <see cref="IMonitoringApi.ListMessagesAsync"/>.
     /// </summary>

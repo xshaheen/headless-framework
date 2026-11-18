@@ -86,6 +86,11 @@ internal static class ConsumerTuningApplier
             FailurePolicy = tuning.FailurePolicy ?? metadata.FailurePolicy,
             RateLimit = tuning.RateLimit ?? metadata.RateLimit,
             Sequential = tuning.Sequential ?? metadata.Sequential,
+            TransportName = tuning.Transport is { } transport
+                ? MessagingSetupBuilder.IsDefaultTransport(transport)
+                    ? null
+                    : transport
+                : metadata.TransportName,
         };
     }
 
@@ -158,7 +163,8 @@ internal static class ConsumerTuningApplier
                 settings.InboxRetention,
                 settings.CircuitBreaker,
                 RateLimit: settings.RateLimit,
-                Sequential: settings.Sequential
+                Sequential: settings.Sequential,
+                Transport: settings.Transport
             );
 
             if (
@@ -235,6 +241,7 @@ internal static class ConsumerTuningApplier
         FailurePolicyOverrides? failurePolicy = null;
         ConsumerRateLimit? rateLimit = null;
         bool? sequential = null;
+        string? transport = null;
 
         foreach (var setting in consumer.GetChildren())
         {
@@ -279,11 +286,25 @@ internal static class ConsumerTuningApplier
                     errors.Add($"Configuration '{setting.Path}' must be true or false.");
                 }
             }
+            else if (string.Equals(setting.Key, "Transport", StringComparison.OrdinalIgnoreCase))
+            {
+                if (MessagingSetupBuilder.IsValidTransportName(setting.Value))
+                {
+                    transport = setting.Value;
+                }
+                else
+                {
+                    errors.Add(
+                        $"Configuration '{setting.Path}' must name a transport: letters, digits, '-', and '_', at most "
+                            + $"{MessagingSetupBuilder.TransportNameMaxLength} characters."
+                    );
+                }
+            }
             else
             {
                 errors.Add(
                     $"Configuration '{setting.Path}' is not a consumer setting. The supported settings are "
-                        + "Concurrency, InboxRetention, CircuitBreaker, FailurePolicy, RateLimit, and Sequential."
+                        + "Concurrency, InboxRetention, CircuitBreaker, FailurePolicy, RateLimit, Sequential, and Transport."
                 );
             }
         }
@@ -294,7 +315,8 @@ internal static class ConsumerTuningApplier
             circuitBreaker,
             failurePolicy,
             rateLimit,
-            sequential
+            sequential,
+            transport
         );
     }
 
@@ -527,7 +549,8 @@ internal static class ConsumerTuningApplier
         ConsumerCircuitBreakerOptions? CircuitBreaker,
         FailurePolicyOverrides? FailurePolicy,
         ConsumerRateLimit? RateLimit,
-        bool? Sequential
+        bool? Sequential,
+        string? Transport
     )
     {
         public bool IsEmpty =>
@@ -536,7 +559,8 @@ internal static class ConsumerTuningApplier
             && CircuitBreaker is null
             && FailurePolicy is null
             && RateLimit is null
-            && Sequential is null;
+            && Sequential is null
+            && Transport is null;
     }
 }
 

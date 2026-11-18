@@ -45,27 +45,43 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
 
     public async ValueTask InitializeAsync()
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        // Start the container first, outside the setup budget: the start can include an image pull, and how long a pull
+        // or an emulated SQL Server boot takes depends on the machine's load, not on this fixture. The start follows the
+        // run's cancellation, as HeadlessPostgreSqlFixture's does, and the image's wait strategy decides when it is ready.
+        HeadlessPostgreSqlFixture? postgreSql = null;
+        MsSqlContainer? sqlServer = null;
+
         if (Provider == TenantDatabaseProvider.PostgreSql)
         {
-            // The placement's database is derived from the fixture's own, so the server may be shared with other runs.
-            var postgreSql = new HeadlessPostgreSqlFixture();
+            postgreSql = new HeadlessPostgreSqlFixture();
             _postgreSql = postgreSql;
             await ((IAsyncLifetime)postgreSql).InitializeAsync();
+        }
+        else
+        {
+            // Azure SQL Edge does not prove SQL Server 2022 behavior on ARM hosts, and HeadlessSqlServerFixture runs it
+            // there by default, so this path keeps a private SQL Server 2022 container of its own.
+            sqlServer = new MsSqlBuilder(new DockerImage(TestImages.MsSqlServer, new Platform("linux/amd64")))
+                .WithLabel("type", "tenant-conformance")
+                .Build();
+            _container = sqlServer;
+            await sqlServer.StartAsync(TestContext.Current.CancellationToken);
+        }
+
+        // Bounds the database and schema setup on the running server.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(3));
+
+        if (postgreSql is not null)
+        {
+            // The placement's database is derived from the fixture's own, so the server may be shared with other runs.
             DatabaseName = postgreSql.DerivedDatabaseName(Placement.Database);
             await postgreSql.CreateDatabaseAsync(DatabaseName, timeout.Token);
             _connectionString = postgreSql.ConnectionStringFor(DatabaseName);
         }
         else
         {
-            // Azure SQL Edge does not prove SQL Server 2022 behavior on ARM hosts, and HeadlessSqlServerFixture runs it
-            // there by default, so this path keeps a private SQL Server 2022 container of its own.
-            var container = new MsSqlBuilder(new DockerImage(TestImages.MsSqlServer, new Platform("linux/amd64")))
-                .WithLabel("type", "tenant-conformance")
-                .Build();
-            _container = container;
-            await container.StartAsync(timeout.Token);
-            var connectionString = new SqlConnectionStringBuilder(container.GetConnectionString());
+            var connectionString = new SqlConnectionStringBuilder(sqlServer!.GetConnectionString());
             await using (var connection = new SqlConnection(connectionString.ConnectionString))
             {
                 await connection.OpenAsync(timeout.Token);

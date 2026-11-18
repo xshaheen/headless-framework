@@ -93,6 +93,12 @@ public sealed class PostgreSqlSchemaDialect : ISchemaDialect
     }
 
     /// <inheritdoc />
+    public string HistoryTableExistsSql(string schema)
+    {
+        return $"""SELECT CASE WHEN to_regclass('"{schema}"."{SchemaRunner.HistoryTableName}"') IS NULL THEN 0 ELSE 1 END;""";
+    }
+
+    /// <inheritdoc />
     public string InsertHistorySql(string schema)
     {
         return $"""

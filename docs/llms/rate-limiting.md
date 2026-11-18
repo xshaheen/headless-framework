@@ -197,7 +197,7 @@ await limiter.ResetAsync(attempt, cancellationToken);
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `SubjectKey` | required | Base64 secret of at least 32 bytes. Subjects are HMAC-SHA256'd with it before they reach a cache key. |
-| `KeyPrefix` | `attempts` | First segment of every counter key. Change it when applications share one cache. |
+| `KeyPrefix` | `attempts` | First segment of every counter key. Change it when applications share one cache. Environments that share one cache need no change: the cache puts the host-wide `Headless:Prefix` in front of every key ([Isolation prefix](utilities.md#isolation-prefix)). |
 | `CacheName` | `null` | Named cache instance (`setup.AddNamed(name, ...)`) that holds the counters; `null` uses the registered `IRemoteCache` when there is one, otherwise the default `ICache`. An empty or blank name fails options validation. |
 
 ### Design and runtime behavior

@@ -125,6 +125,18 @@ internal sealed class WaitingRows
     {
         while (true)
         {
+            // Ends once no row waits, and the next Add starts it again: a loop that kept ticking would arm a timer every
+            // tick for nothing until the host disposed it, past the host's stop, so a stopping host would never be
+            // idle on its clock.
+            lock (_sync)
+            {
+                if (_waiting.Count == 0)
+                {
+                    _loop = null;
+                    return;
+                }
+            }
+
             WaitingRow[] snapshot;
             try
             {

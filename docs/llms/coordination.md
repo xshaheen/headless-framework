@@ -22,6 +22,7 @@ The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Se
 - Recovery updates must be idempotent and guarded by owner identity plus non-terminal state.
 - Do not use Coordination as Raft, Paxos, RedLock, leader election, or a generic ownership ledger.
 - Choose stable node ids deliberately. Kubernetes StatefulSet ordinal names are the strongest default; Deployment pod name plus namespace is stable for the pod lifetime; generated ids are local/dev only.
+- Environments that share one Redis set a host-wide `Headless:Prefix`; it goes in front of `CoordinationOptions.KeyPrefix` on the Redis provider (`wt1:coordination:{cluster}:known`). Relational providers do not read the key prefix and keep clusters apart by `ClusterName`. Hosts that share a Jobs database must share the prefix too, and changing it on such a fleet is a full stop, not a rolling deploy: see [Isolation prefix](utilities.md#isolation-prefix).
 - Keep `MembershipLostBehavior.StopApplication` unless every ownership-sensitive worker observes `LocalMembershipLostToken`.
 
 ## How this differs from locks and leases

@@ -66,6 +66,22 @@ public sealed class HostManifestTests : TestBase
         host.GetProperty("applicationName").GetString().Should().NotBeNullOrEmpty();
         host.GetProperty("headlessVersion").GetString().Should().NotBeNullOrEmpty();
         host.GetProperty("runtime").GetString().Should().StartWith(".NET");
+        host.TryGetProperty("prefix", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_state_the_isolation_prefix_in_the_host_section_when_one_is_set()
+    {
+        // when
+        var run = await HostConsoleRun.DescribeAsync(
+            builder => builder.Services.ConfigureHeadlessPrefix("wt1"),
+            AbortToken
+        );
+
+        // then
+        using var document = run.ParseStandardOutput();
+        var host = document.RootElement.GetProperty("sections").GetProperty("host");
+        host.GetProperty("prefix").GetString().Should().Be("wt1");
     }
 
     [Fact]

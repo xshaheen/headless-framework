@@ -585,6 +585,12 @@ export function MessageFields({
         <GridField label="Status">{rowMark(row).label}</GridField>
         <GridField label="Lane">{row.lane}</GridField>
         {kind === 'published' ? <GridField label="Store">{row.store}</GridField> : null}
+        {/* A published row with no transport name goes through the host's default transport, which the server calls `default`. */}
+        {kind === 'published' ? (
+          <GridField label="Transport">
+            <Mono>{row.transport ?? 'default'}</Mono>
+          </GridField>
+        ) : null}
         <GridField label="Retries">{format.number(row.retries)}</GridField>
         <Optional label="Consumer" span={2} value={row.consumer ? <Mono>{row.consumer}</Mono> : undefined} />
         <GridField label="Added" span={2}>
