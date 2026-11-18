@@ -71,6 +71,7 @@ public static class LockChaosScenario
         CancellationToken cancellationToken
     )
     {
+        // wall-clock: the ledger stamps each entry and the report states wall time; nothing is decided on it.
         var clock = TimeProvider.System;
         var ledger = new FencingLedger(clock);
         var store = new FencedResourceStore(ledger);
