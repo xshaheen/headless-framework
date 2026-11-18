@@ -5,7 +5,6 @@ using Headless.Checks;
 using Headless.Context;
 using Headless.Hosting;
 using Headless.Serializer;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -69,65 +68,28 @@ public static class SetupCoordinationCore
             return services;
         }
 
-        internal IServiceCollection AddCoordinationCore<TStore>()
+        /// <summary>
+        /// Registers the coordination core services over <typeparamref name="TStore"/> as the membership store. A
+        /// provider package calls it from its <see cref="ICoordinationProviderOptionsExtension.AddServices"/>, which
+        /// <see cref="HeadlessCoordinationSetupBuilder.RegisterExtension"/> hands to <see cref="AddHeadlessCoordination"/>,
+        /// so the setup builder's options, its single-provider check, and
+        /// <see cref="HeadlessCoordinationSetupBuilder.DisableMembershipHeartbeat"/> apply to a custom store exactly as
+        /// they do to a shipped one.
+        /// </summary>
+        /// <remarks>
+        /// It registers no membership heartbeat: <see cref="AddHeadlessCoordination"/> adds that service unless the host
+        /// disables it. It binds no <see cref="CoordinationOptions"/> source; the setup builder's <c>Configure</c>
+        /// overloads do.
+        /// </remarks>
+        /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public IServiceCollection AddCoordinationCore<TStore>()
             where TStore : class, IMembershipStore
         {
             services.AddOptions<CoordinationOptions, CoordinationOptionsValidator>();
 
             return services._AddCoordinationCore<TStore>();
-        }
-
-        /// <summary>
-        /// Registers coordination core services with <typeparamref name="TStore"/> as the membership store,
-        /// binding <see cref="CoordinationOptions"/> from the supplied delegate with service-provider access.
-        /// Prefer <see cref="AddHeadlessCoordination"/> unless you are implementing a custom provider package.
-        /// </summary>
-        /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
-        /// <param name="optionSetupAction">Delegate that configures <see cref="CoordinationOptions"/>.</param>
-        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        public IServiceCollection AddCoordinationCore<TStore>(
-            Action<CoordinationOptions, IServiceProvider> optionSetupAction
-        )
-            where TStore : class, IMembershipStore
-        {
-            services.Configure<CoordinationOptions, CoordinationOptionsValidator>(optionSetupAction);
-
-            return services._AddCoordinationCore<TStore>()._AddMembershipHeartbeat();
-        }
-
-        /// <summary>
-        /// Registers coordination core services with <typeparamref name="TStore"/> as the membership store,
-        /// binding <see cref="CoordinationOptions"/> from the supplied delegate.
-        /// Prefer <see cref="AddHeadlessCoordination"/> unless you are implementing a custom provider package.
-        /// </summary>
-        /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
-        /// <param name="optionSetupAction">Delegate that configures <see cref="CoordinationOptions"/>.</param>
-        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        public IServiceCollection AddCoordinationCore<TStore>(Action<CoordinationOptions> optionSetupAction)
-            where TStore : class, IMembershipStore
-        {
-            services.Configure<CoordinationOptions, CoordinationOptionsValidator>(optionSetupAction);
-
-            return services._AddCoordinationCore<TStore>()._AddMembershipHeartbeat();
-        }
-
-        /// <summary>
-        /// Registers coordination core services with <typeparamref name="TStore"/> as the membership store,
-        /// binding <see cref="CoordinationOptions"/> from the supplied <see cref="IConfiguration"/> section.
-        /// Prefer <see cref="AddHeadlessCoordination"/> unless you are implementing a custom provider package.
-        /// </summary>
-        /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
-        /// <param name="configuration">The configuration section to bind <see cref="CoordinationOptions"/> from.</param>
-        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        [EditorBrowsable(EditorBrowsableState.Never)]
-        public IServiceCollection AddCoordinationCore<TStore>(IConfiguration configuration)
-            where TStore : class, IMembershipStore
-        {
-            services.Configure<CoordinationOptions, CoordinationOptionsValidator>(configuration);
-
-            return services._AddCoordinationCore<TStore>()._AddMembershipHeartbeat();
         }
 
         private IServiceCollection _AddCoordinationCore<TStore>()

@@ -166,7 +166,7 @@ dotnet add package Headless.Coordination
 
 ### Setup and use
 
-Install a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`, which returns the `IServiceCollection`. `AddCoordinationCore<TStore>` registers the same services over a custom `IMembershipStore`; see [For store authors](#for-store-authors).
+Install a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`, which returns the `IServiceCollection`. A custom `IMembershipStore` plugs into the same call; see [For store authors](#for-store-authors).
 
 ```csharp
 services.AddHeadlessCoordination(setup =>
@@ -236,11 +236,31 @@ services.AddHeadlessCoordination(setup =>
 
 ### Runtime behavior
 
-`AddCoordinationCore<TStore>` always registers the heartbeat service. `AddHeadlessCoordination` registers it unless `DisableMembershipHeartbeat()` is called.
+`AddHeadlessCoordination` registers the heartbeat service unless `DisableMembershipHeartbeat()` is called, whichever store backs it.
 
 ### For store authors
 
-To back membership with another store, implement `IMembershipStore` and register it with `services.AddCoordinationCore<TStore>(options => ...)` (or the `Action<CoordinationOptions, IServiceProvider>` overload) in place of `AddHeadlessCoordination`. That registration always includes the heartbeat service. Applications never call the store; the membership service does.
+To back membership with another store, implement `IMembershipStore` and register it the way the shipped providers do: an `ICoordinationProviderOptionsExtension` whose `AddServices` calls `services.AddCoordinationCore<TStore>()`, handed to `AddHeadlessCoordination` through `RegisterExtension`. `AddCoordinationCore<TStore>()` registers the core services over your store and no heartbeat, so the setup builder's `Configure(...)`, its one-provider check, and `DisableMembershipHeartbeat()` apply to your store as they do to a shipped one. Applications never call the store; the membership service does.
+
+```csharp
+public sealed class MyCoordinationExtension : ICoordinationProviderOptionsExtension
+{
+    public void AddServices(IServiceCollection services)
+    {
+        services.AddCoordinationCore<MyMembershipStore>();
+        // register what MyMembershipStore itself depends on here
+    }
+}
+
+services.AddHeadlessCoordination(setup =>
+{
+    setup.Configure(configuration.GetSection("Headless:Coordination"));
+    setup.RegisterExtension(new MyCoordinationExtension());
+    // setup.DisableMembershipHeartbeat(); // only on a host that drives liveness itself
+});
+```
+
+A store package wraps the `RegisterExtension` call in its own `Use{Store}` extension on `HeadlessCoordinationSetupBuilder`, as `UseRedis` does.
 
 Every member decides with the store's own clock, never the application clock, and must be safe to call concurrently.
 
@@ -256,7 +276,7 @@ Every member decides with the store's own clock, never the application clock, an
 
 A relational store can build its statements on the SQL store kit; see [Store statement kit](sql.md#store-statement-kit-for-provider-authors).
 
-**Verify:** a host built with `AddCoordinationCore<TStore>` reaches `GetLiveNodesAsync()` with its own identity after start. Two hosts that register the same `NodeId` against your store make the second start fail with `MembershipRegistrationRejectedException`.
+**Verify:** a host built with your extension reaches `GetLiveNodesAsync()` with its own identity after start. Two hosts that register the same `NodeId` against your store make the second start fail with `MembershipRegistrationRejectedException`.
 
 ---
 
