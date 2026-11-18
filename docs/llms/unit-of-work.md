@@ -645,7 +645,7 @@ Runs raw-ADO `SqliteConnection` work as a unit of work, so rows that Headless st
 
 ### Design constraints
 
-Observed mode is explicit, as on PostgreSQL. The replaying overload takes a connection factory because `Microsoft.Data.Sqlite` ships no `DbDataSource`. "Same database" (`RelationalDatabaseIdentity`) compares the file path SQLite reports, with symbolic links resolved, so name the file by its real path in every connection string a store and a unit share.
+Observed mode is explicit, as on PostgreSQL. The replaying overload takes a connection factory because `Microsoft.Data.Sqlite` ships no `DbDataSource`. "Same database" (`RelationalDatabaseIdentity`) compares SQLite files by their real path: both the configured path and the path an open connection reports have every symbolic link along them resolved, so a store and a unit that reach one file through different links (the macOS temp directory, `/var` and `/private/var`) share it. A relative path resolves against the process working directory, as SQLite opens it. An in-memory or `file:` URI data source names no comparable file and is refused.
 
 ### Install
 

@@ -3,6 +3,7 @@
 using System.ComponentModel;
 using System.Data.Common;
 using Headless.Checks;
+using Headless.UnitOfWork.Internal;
 
 namespace Headless.UnitOfWork;
 
@@ -19,7 +20,9 @@ namespace Headless.UnitOfWork;
 /// (<c>localhost</c>, <c>127.0.0.1</c>, <c>::1</c>, <c>[::1]</c>, <c>.</c>, <c>(local)</c>) name the same host.
 /// Ports, instance names, and database names are compared exactly; any other difference is a refusal, which
 /// fails loudly and names the mismatch. A connection whose host list names several hosts (Npgsql <c>Host=pg1,pg2</c>)
-/// stands for each listed host, and the candidate must reach only hosts the configured connection lists.
+/// stands for each listed host, and the candidate must reach only hosts the configured connection lists. A SQLite
+/// file is compared by its real path, with every symbolic link along it resolved, so the same file reached through a
+/// symlinked directory is one database; an in-memory or URI SQLite source names no comparable file and is refused.
 /// </remarks>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
@@ -147,6 +150,18 @@ public static class RelationalDatabaseIdentity
     private static HashSet<string> _DataSources(DbConnection connection)
     {
         var sources = new HashSet<string>(StringComparer.Ordinal);
+
+        if (SqliteFileIdentity.IsSqlite(connection))
+        {
+            var file = SqliteFileIdentity.NormalizeDataSource(connection.DataSource);
+            if (file.Length > 0)
+            {
+                sources.Add(file);
+            }
+
+            return sources;
+        }
+
         var source = NormalizeDataSource(connection.DataSource);
         if (source.Length > 0)
         {
