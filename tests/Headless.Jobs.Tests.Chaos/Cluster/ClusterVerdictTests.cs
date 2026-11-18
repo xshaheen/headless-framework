@@ -125,8 +125,10 @@ public sealed class ClusterVerdictTests : TestBase
         verdict.Violations.Should().ContainSingle().Which.Should().Contain($"orphan on row {row}");
     }
 
-    [Fact]
-    public void should_flag_a_completion_that_landed_after_its_run_lost_the_lease()
+    [Theory]
+    [InlineData(JobStatus.Succeeded)]
+    [InlineData(JobStatus.DueDone)]
+    public void should_flag_a_completion_that_landed_after_its_run_lost_the_lease(JobStatus completed)
     {
         // given — the body saw its lease expired on the store clock, yet the row reads Succeeded under that lease
         var job = _Spec(NodeDeathPolicy.Skip);
@@ -138,12 +140,7 @@ public sealed class ClusterVerdictTests : TestBase
             ExpiredOnStoreClock: true
         );
         var ledger = _Ledger([job], _Attempt(job, AttemptEnd.Completed, owner: "c/a@1", observation: lost));
-        var row = new StoreRow(
-            job.Id,
-            JobStatus.Succeeded,
-            new RowLeaseSnapshot(4, RowLeaseState.Settled, null, "c/a@1", 0),
-            0
-        );
+        var row = new StoreRow(job.Id, completed, new RowLeaseSnapshot(4, RowLeaseState.Settled, null, "c/a@1", 0), 0);
 
         // when
         var verdict = ClusterVerdict.Evaluate(ledger, [row], [], _Bound);

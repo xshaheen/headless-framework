@@ -35,7 +35,8 @@ public sealed record ClusterFault(TimeSpan At, ClusterFaultKind Kind, TimeSpan L
 
 /// <summary>
 /// The faults one cluster run injects, picked from its seed alone, so a failed run that printed its seed replays the
-/// same sequence. Faults never overlap: each sits in its own equal slot and ends before the next slot begins.
+/// same sequence. Faults never overlap: each sits in its own equal slot and ends before the next slot begins. Kinds come
+/// from a shuffled bag that refills once empty, so a plan with at least as many faults as kinds injects every kind.
 /// </summary>
 public sealed record ClusterFaultPlan(int Seed, IReadOnlyList<ClusterFault> Faults)
 {
@@ -63,9 +64,18 @@ public sealed record ClusterFaultPlan(int Seed, IReadOnlyList<ClusterFault> Faul
         var longest = TimeSpan.FromTicks((long)(slot.Ticks * 0.45));
         var plan = new List<ClusterFault>(faults);
 
+        var bag = new List<ClusterFaultKind>(pool.Count);
+
         for (var i = 0; i < faults; i++)
         {
-            var kind = pool[random.Next(pool.Count)];
+            if (bag.Count == 0)
+            {
+                bag.AddRange(pool);
+            }
+
+            var drawnAt = random.Next(bag.Count);
+            var kind = bag[drawnAt];
+            bag.RemoveAt(drawnAt);
             var node = random.Next(nodes);
             var drawn = _ShortestFault + ((longest - _ShortestFault) * random.NextDouble());
             var length =

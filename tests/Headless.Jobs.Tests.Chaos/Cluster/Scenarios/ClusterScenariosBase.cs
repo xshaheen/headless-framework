@@ -260,7 +260,8 @@ public abstract class ClusterScenariosBase(ClusterStoreFixture store) : TestBase
         var plan = ClusterFaultPlan.Create(
             seed,
             soak,
-            faults: Math.Max(3, (int)(soak.TotalSeconds / 30)),
+            // At least one of each kind, so every smoke run kills, freezes, partitions both ways, and restarts.
+            faults: Math.Max(Enum.GetValues<ClusterFaultKind>().Length, (int)(soak.TotalSeconds / 30)),
             nodes: cluster.Nodes.Count,
             ClusterTimings.FreezeLength
         );

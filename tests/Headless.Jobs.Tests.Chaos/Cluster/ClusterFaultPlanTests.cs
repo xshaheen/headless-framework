@@ -53,6 +53,19 @@ public sealed class ClusterFaultPlanTests : TestBase
             .HaveCount(Enum.GetValues<ClusterFaultKind>().Length);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(424242)]
+    public void should_inject_every_kind_once_when_the_plan_has_as_many_faults_as_kinds(int seed)
+    {
+        var kinds = Enum.GetValues<ClusterFaultKind>();
+
+        var plan = ClusterFaultPlan.Create(seed, TimeSpan.FromSeconds(90), kinds.Length, nodes: 3, _Freeze);
+
+        plan.Faults.Select(fault => fault.Kind).Should().BeEquivalentTo(kinds);
+    }
+
     [Fact]
     public void should_pass_a_fence_when_the_node_stopped_starting_renewing_and_running_on_time()
     {
