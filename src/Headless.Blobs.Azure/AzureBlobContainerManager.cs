@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Headless.Blobs.Internal;
 using Headless.Threading;
 
 namespace Headless.Blobs.Azure;

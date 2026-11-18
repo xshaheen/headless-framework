@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
-using Headless.Blobs.Internal;
 using Headless.Checks;
 using Headless.MultiTenancy;
 using Headless.Primitives;

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Blobs.Internal;
 using StackExchange.Redis;
 
 namespace Headless.Blobs.Redis;
