@@ -932,7 +932,7 @@ ASP.NET Core Identity integration. Apps that do not use ASP.NET Core Identity do
   - The cost is revocation delay. Until its entry expires, a revoked or deactivated key, an old password, and a user who was locked out, disabled, or had roles or claims changed keep authenticating with the principal the first request built.
   - A Basic cache hit skips the reset of the user's failed-attempt count, so failures from elsewhere add up toward lockout until the next full check.
   - Only successes are cached. A failed credential always runs the full check, so it still counts toward lockout.
-  - Entries expire a fixed time after the request that created them. Hits do not extend them. Each scheme holds at most `CredentialCacheMaxEntries` (default 1000) in a private cache, not the application's `IMemoryCache`. The cache never holds the secret and empties on restart. Expiry follows the registered `TimeProvider`.
+  - Entries expire a fixed time after the request that created them. Hits do not extend them. Each scheme holds at most `CredentialCacheMaxEntries` (default 1000) in a private cache, not the application's `IMemoryCache`. The cache never holds the secret and empties on restart. Each request gets its own copy of the cached principal, so claims a request changes do not reach the next cache hit. Expiry follows the registered `TimeProvider`.
 - `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format durations with Humanizer in the current UI culture. The package ships `Humanizer.Core.ar`, so any Arabic request, `ar-EG` included, gets Arabic durations. Any other culture gets English unless the application references the matching `Humanizer.Core.<culture>` package.
 
 ### Install

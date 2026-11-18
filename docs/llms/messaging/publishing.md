@@ -65,7 +65,7 @@ T:Headless.Messaging.IQueue;Enqueue through unit.Outbox in this assembly — IQu
 
 ### Execution-strategy replay
 
-- **Inside `factory.RunAsync(db, ...)`** a transient failure replays your whole block with a fresh transaction and unit. The first attempt's row rolls back, and the replay publishes again. A `RunAsync` block that publishes through `unit.Outbox` stays retriable under `EnableRetryOnFailure`.
+- **Inside `factory.RunAsync(db, ...)`** a transient failure before the commit starts replays your whole block with a fresh transaction and unit. Once the commit has started, or after `IUnitOfWork.PreventRetry()`, the fault surfaces without a replay, so treat the commit outcome as unknown. The first attempt's row rolls back, and the replay publishes again. A `RunAsync` block that publishes through `unit.Outbox` stays retriable under `EnableRetryOnFailure`.
 - **A `HeadlessDbContext` save that owns its unit** (no caller transaction) ends replay once any event handler returns. A `unit.Outbox` publish from a domain-event handler there calls `IUnitOfWork.PreventRetry()` before it writes, so that save surfaces its fault without replay. Retry it with a fresh context and aggregate graph.
 - **Integration events an entity emitted** stay retriable: the save pipeline keeps and re-publishes them on a replayed attempt. A save that mixes emitted integration events and a `unit.Outbox` publish from a handler is not retriable. See [Headless.EntityFramework.Messaging](../orm.md#headlessentityframeworkmessaging).
 - **A `SaveChangesAsync` inside your own block that dispatched domain or integration events** also ends replay, because it clears the aggregate's events.
@@ -82,7 +82,7 @@ Once a durable row is stored (the standalone write, or the unit's commit for `un
 
 ### Delivery telemetry
 
-`headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` carry `durable` or `direct` only. Whether a row was written inside a transaction travels in the reserved `headless-delivery-coordinated` header as `"true"` or `"false"`. An absent header means unrecorded, never "not coordinated". The dashboard shows it as "Transaction coordinated" (`Yes` / `No` / `Not recorded`), `MessageView.IsCoordinated` is the monitoring projection, and `RecordedMessage.IsCoordinated` exposes it to tests; all three are `bool?`.
+`headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` carry `durable` or `direct` only. The `headless-delivery-requested` and `headless-delivery-resolved` message headers carry the same values. Whether a row was written inside a transaction travels in the reserved `headless-delivery-coordinated` header as `"true"` or `"false"`. An absent header means unrecorded, never "not coordinated". The dashboard shows it as "Transaction coordinated" (`Yes` / `No` / `Not recorded`), `MessageView.IsCoordinated` is the monitoring projection, and `RecordedMessage.IsCoordinated` exposes it to tests; all three are `bool?`.
 
 Jobs follows the same rule: `unit.Jobs` enlists and the injected `IJobScheduler` never does. See [Enlisted Enqueue](../jobs/atomic-enqueue.md#enlisted-enqueue-atomic-enqueue).
 

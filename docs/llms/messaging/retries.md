@@ -123,7 +123,7 @@ A message the policy gives up on is stored as `Failed` with no `NextRetryAt`. Th
 
 `RetryPolicy.RetryStrategy` and `RetryPolicy.MaxPersistedRetries` govern publishing only.
 
-- `RetryStrategy` is a Polly `RetryStrategyOptions`. Its `MaxRetryAttempts` excludes the original execution and controls inline retries.
+- `RetryStrategy` is a Polly `RetryStrategyOptions`. Its `MaxRetryAttempts` excludes the original execution and controls inline retries. Each attempt is reserved before it runs, so a process crash and recovery do not reset the current inline burst.
 - Once the inline budget is spent, Messaging stores `NextRetryAt`, and the retry processor performs up to `MaxPersistedRetries` (default 15) pickups, each with a fresh inline burst. Total attempts are `(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)`. With the defaults (2 and 15) a publish gets 48 attempts.
 - A row already past a lowered cap is claimed, written `Failed` without another send, and fires `OnTerminal` once with `RetriesExhausted`.
 - A permanent publish failure ends without retry (`PermanentFailure`). A stored lane no registered transport serves ends with `NoTransport`.
