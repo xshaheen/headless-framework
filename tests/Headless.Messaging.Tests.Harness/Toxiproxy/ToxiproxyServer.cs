@@ -23,6 +23,13 @@ public sealed class ToxiproxyServer : IAsyncDisposable
     private const int _FirstProxyPort = 8666;
     private const int _MaxProxies = 3;
 
+    // Published proxy ports beyond the cap, so a proxy whose port another host listener holds moves to a spare one.
+    private const int _SpareSlots = 3;
+    private const int _Slots = _MaxProxies + _SpareSlots;
+
+    // A server whose API port keeps landing on a shadowed port means something holds a whole run of them.
+    private const int _MaxStarts = 3;
+
     private static readonly TimeSpan _ForwardingTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan _ProbeAttemptTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan _ProbeInterval = TimeSpan.FromMilliseconds(100);
@@ -34,13 +41,13 @@ public sealed class ToxiproxyServer : IAsyncDisposable
 
     private HttpClient? _http;
     private int _proxies;
+    private int _nextSlot;
 
     private static IContainer _BuildContainer()
     {
         var builder = new ContainerBuilder(_Image).WithPortBinding(_ApiPort, assignRandomHostPort: true);
 
-        // One published port per proxy slot, so the bindings follow the cap CreateProxyAsync enforces.
-        for (var index = 0; index < _MaxProxies; index++)
+        for (var index = 0; index < _Slots; index++)
         {
             builder = builder.WithPortBinding(_FirstProxyPort + index, assignRandomHostPort: true);
         }
@@ -48,20 +55,58 @@ public sealed class ToxiproxyServer : IAsyncDisposable
         return builder
             // Lets the proxy reach a broker published on the Docker host, on Linux CI as well as Docker Desktop.
             .WithExtraHost("host.docker.internal", "host-gateway")
-            .WithWaitStrategy(
-                Wait.ForUnixContainer()
-                    .UntilHttpRequestIsSucceeded(request => request.ForPath("/version").ForPort(_ApiPort))
-            )
+            // The API is checked through its published port after the start, where a reply from another listener is told
+            // apart from one that has not come yet; a host HTTP wait would retry such a reply until it timed out.
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Starting Toxiproxy HTTP server"))
             .Build();
     }
 
+    /// <summary>
+    /// Starts the server and returns once its API answers through its published port, starting it again while another
+    /// listener answers there instead.
+    /// </summary>
+    /// <remarks>
+    /// A desktop Docker engine such as OrbStack or Docker Desktop publishes a port as a listener on the host's wildcard
+    /// address, and Docker hands out host ports in sequence without looking at the host. A host process that already
+    /// holds the same port on <c>127.0.0.1</c>, such as another test's listener on a port the kernel gave it, is the more
+    /// specific match, so every connection to the container's host address reaches that process for the container's whole
+    /// run. Each start takes the next ports in the sequence, so a restart leaves a shadowed API port behind.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The API never answered, or another listener answered at every API port of every start.
+    /// </exception>
     public async ValueTask StartAsync(CancellationToken cancellationToken = default)
     {
-        await _container.StartAsync(cancellationToken).ConfigureAwait(false);
-        _http = new HttpClient
+        var shadowed = new List<string>();
+
+        for (var start = 1; ; start++)
         {
-            BaseAddress = new Uri($"http://{_container.Hostname}:{_container.GetMappedPublicPort(_ApiPort)}"),
-        };
+            if (start > 1)
+            {
+                await _container.StopAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await _container.StartAsync(cancellationToken).ConfigureAwait(false);
+            var host = _container.Hostname;
+            var port = _container.GetMappedPublicPort(_ApiPort);
+            var foreignReply = await _WaitUntilServedAsync(host, port, cancellationToken).ConfigureAwait(false);
+
+            if (foreignReply is null)
+            {
+                _http?.Dispose();
+                _http = new HttpClient { BaseAddress = new Uri($"http://{host}:{port}") };
+                return;
+            }
+
+            shadowed.Add($"{host}:{port} ({foreignReply})");
+
+            if (start == _MaxStarts)
+            {
+                throw new InvalidOperationException(
+                    $"Another listener answered at the Toxiproxy API port of every start: {string.Join(", ", shadowed)}."
+                );
+            }
+        }
     }
 
     /// <summary>
@@ -70,9 +115,19 @@ public sealed class ToxiproxyServer : IAsyncDisposable
     /// Clients connect to <see cref="ToxiproxyProxy.Host"/>:<see cref="ToxiproxyProxy.Port"/> instead of the broker.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The upstream need not be listening yet: Toxiproxy dials it only when a client connects, so a caller may start
     /// the broker after this returns.
+    /// </para>
+    /// <para>
+    /// A published port another host listener holds (see <see cref="StartAsync"/>) cannot reach the proxy, so the proxy
+    /// moves to the next spare published port. Earlier proxies keep theirs, which a restart would not.
+    /// </para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The server has not started, already holds its maximum of proxies, ran out of published ports another listener
+    /// does not hold, or the proxy never answered through its published port.
+    /// </exception>
     public async Task<ToxiproxyProxy> CreateProxyAsync(
         string name,
         int upstreamHostPort,
@@ -85,10 +140,10 @@ public sealed class ToxiproxyServer : IAsyncDisposable
         {
             if (_proxies >= _MaxProxies)
             {
-                throw new InvalidOperationException($"This server publishes {_MaxProxies} proxy ports at most.");
+                throw new InvalidOperationException($"This server hands out {_MaxProxies} proxies at most.");
             }
 
-            var listenPort = _FirstProxyPort + _proxies;
+            var slot = _TakeSlot([]);
 
             // The proxy first forwards to Toxiproxy's own API, which always answers, so the probe below proves the
             // published port reaches the proxy without depending on an upstream the caller may start later.
@@ -98,7 +153,7 @@ public sealed class ToxiproxyServer : IAsyncDisposable
                         new
                         {
                             name,
-                            listen = $"0.0.0.0:{listenPort}",
+                            listen = _Listen(slot),
                             upstream = $"127.0.0.1:{_ApiPort}",
                             enabled = true,
                         },
@@ -110,12 +165,34 @@ public sealed class ToxiproxyServer : IAsyncDisposable
                 await _EnsureSuccessAsync(created, "create proxy", cancellationToken).ConfigureAwait(false);
             }
 
-            // The proxy now holds its listen port, so the slot is taken even if a later step fails.
+            // The proxy now holds its listen port, so it counts against the cap even if a later step fails.
             _proxies++;
 
             var host = _container.Hostname;
-            var port = _container.GetMappedPublicPort(listenPort);
-            await _WaitUntilForwardingAsync(host, port, cancellationToken).ConfigureAwait(false);
+            var shadowed = new List<string>();
+            int port;
+
+            while (true)
+            {
+                port = _container.GetMappedPublicPort(_FirstProxyPort + slot);
+                var foreignReply = await _WaitUntilServedAsync(host, port, cancellationToken).ConfigureAwait(false);
+
+                if (foreignReply is null)
+                {
+                    break;
+                }
+
+                shadowed.Add($"{host}:{port} ({foreignReply})");
+                slot = _TakeSlot(shadowed);
+
+                using var moved = await http.PostAsJsonAsync(
+                        $"/proxies/{name}",
+                        new { listen = _Listen(slot) },
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                await _EnsureSuccessAsync(moved, "move proxy to a spare port", cancellationToken).ConfigureAwait(false);
+            }
 
             using var repointed = await http.PostAsJsonAsync(
                     $"/proxies/{name}",
@@ -133,25 +210,48 @@ public sealed class ToxiproxyServer : IAsyncDisposable
         }
     }
 
+    private int _TakeSlot(List<string> shadowed)
+    {
+        if (_nextSlot >= _Slots)
+        {
+            throw new InvalidOperationException(
+                $"This server publishes {_Slots} proxy ports, and another listener answered at each one left: {string.Join(", ", shadowed)}."
+            );
+        }
+
+        return _nextSlot++;
+    }
+
+    private static string _Listen(int slot)
+    {
+        return $"0.0.0.0:{_FirstProxyPort + slot}";
+    }
+
     // A container runtime's port forwarder (OrbStack, Docker Desktop, docker-proxy) accepts a connection on a
     // published port and then closes it when it cannot reach the container's listener, so a client's first connect
-    // can fail although the proxy exists. Only a reply that came back through the proxy proves the path.
-    private async Task _WaitUntilForwardingAsync(string host, int port, CancellationToken cancellationToken)
+    // can fail although the listener exists. Only a reply that came back through the port proves the path. Returns
+    // null once Toxiproxy's API answers there, or what another listener answered instead, which no retry changes.
+    private async Task<string?> _WaitUntilServedAsync(string host, int port, CancellationToken cancellationToken)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(_ForwardingTimeout);
         var attempts = 0;
-        string? failure;
+        string failure;
 
         while (true)
         {
             attempts++;
-            failure = await _ProbeAsync(host, port, deadline.Token).ConfigureAwait(false);
+            var (outcome, detail) = await _ProbeAsync(host, port, deadline.Token).ConfigureAwait(false);
 
-            if (failure is null)
+            switch (outcome)
             {
-                return;
+                case ProbeOutcome.Served:
+                    return null;
+                case ProbeOutcome.AnotherListener:
+                    return detail;
             }
+
+            failure = detail;
 
             try
             {
@@ -163,20 +263,32 @@ public sealed class ToxiproxyServer : IAsyncDisposable
             }
         }
 
-        // The Toxiproxy log tells a forwarder that never reached the container from a proxy that never accepted.
+        // The Toxiproxy log tells a forwarder that never reached the container from a listener that never accepted.
         var (stdout, stderr) = await _container
             .GetLogsAsync(timestampsEnabled: false, ct: cancellationToken)
             .ConfigureAwait(false);
 
         throw new InvalidOperationException(
-            $"Toxiproxy proxy at {host}:{port} did not answer through its published port within "
+            $"Toxiproxy at {host}:{port} did not answer through its published port within "
                 + $"{_ForwardingTimeout.TotalSeconds:0}s ({attempts} attempts; last: {failure}).\n"
                 + $"Toxiproxy log:\n{stdout}{stderr}"
         );
     }
 
-    // Returns null once Toxiproxy's API answers through the proxy, otherwise what the attempt saw.
-    private static async Task<string?> _ProbeAsync(string host, int port, CancellationToken cancellationToken)
+    private enum ProbeOutcome
+    {
+        NotYet,
+        Served,
+        AnotherListener,
+    }
+
+    // Asks Toxiproxy's API for its version. Any reply other than its 200 is another listener's, since a runtime that
+    // cannot reach the container closes the connection without a byte.
+    private static async Task<(ProbeOutcome Outcome, string Detail)> _ProbeAsync(
+        string host,
+        int port,
+        CancellationToken cancellationToken
+    )
     {
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         attempt.CancelAfter(_ProbeAttemptTimeout);
@@ -200,23 +312,28 @@ public sealed class ToxiproxyServer : IAsyncDisposable
 
                 if (read == 0)
                 {
-                    return $"accepted, then closed after {received} reply bytes";
+                    return received == 0
+                        ? (ProbeOutcome.NotYet, "accepted, then closed without a reply")
+                        : (
+                            ProbeOutcome.AnotherListener,
+                            $"closed after '{Encoding.ASCII.GetString(reply, 0, received)}'"
+                        );
                 }
 
                 received += read;
             }
 
             return reply.AsSpan().SequenceEqual(expected)
-                ? null
-                : $"unexpected reply '{Encoding.ASCII.GetString(reply)}'";
+                ? (ProbeOutcome.Served, string.Empty)
+                : (ProbeOutcome.AnotherListener, $"replied '{Encoding.ASCII.GetString(reply)}'");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return $"no reply within {_ProbeAttemptTimeout.TotalSeconds:0}s";
+            return (ProbeOutcome.NotYet, $"no reply within {_ProbeAttemptTimeout.TotalSeconds:0}s");
         }
         catch (Exception e) when (e is SocketException or IOException)
         {
-            return $"{e.GetType().Name}: {e.Message}";
+            return (ProbeOutcome.NotYet, $"{e.GetType().Name}: {e.Message}");
         }
     }
 

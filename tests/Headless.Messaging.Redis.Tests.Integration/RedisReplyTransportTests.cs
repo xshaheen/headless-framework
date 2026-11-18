@@ -1,15 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Sockets;
 using System.Threading.Channels;
+using DotNet.Testcontainers.Builders;
 using Headless.Messaging;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
+using Headless.Threading;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+using Tests.Helpers;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -24,6 +29,11 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
 {
     // Generous enough for a server under test load; each condition is normally met in well under a second.
     private static readonly TimeSpan _Bound = TimeSpan.FromSeconds(30);
+
+    // A listener whose connect failed reopens through the reply supervisor, which waits at most its back-off ceiling
+    // between passes; once the server serves, the address follows within that wait and one connect, subscribe, and PING
+    // pass on a host under suite load.
+    private static readonly TimeSpan _ReopenBound = ReconnectBackoff.Ceiling + TimeSpan.FromSeconds(30);
 
     private readonly List<RedisConnectionPool> _pools = [];
 
@@ -87,7 +97,14 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         // given
         await using var server = new DelayedRedisServer();
         var received = Channel.CreateUnbounded<TransportMessage>();
-        var transport = _CreateTransport(_CreatePool(server.ConnectionString));
+        var log = new List<(LogLevel Level, EventId EventId, string Message)>();
+        using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(logging =>
+            logging.SetMinimumLevel(LogLevel.Trace).AddProvider(new CapturingLoggerProvider(log))
+        );
+        var transport = new RedisReplyTransport(
+            _CreatePool(server.ConnectionString, loggerFactory: loggerFactory),
+            loggerFactory.CreateLogger<RedisReplyTransport>()
+        );
 
         // when
         await using var listener = await transport.OpenListenerAsync(
@@ -96,10 +113,37 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         );
         var whileDown = listener.WaitForAddressAsync(AbortToken).AsTask();
         whileDown.IsCompleted.Should().BeFalse("no address is handed out while the server is down");
+        // Returns once Redis answers PING through its published port, so the listener's next pass can connect.
         await server.StartAsync(AbortToken);
 
         // then
-        var address = await whileDown.WaitAsync(_Bound, AbortToken);
+        // Each failed pass while the server was down doubled the listener's back-off, up to its ceiling, so the next pass
+        // can be that far away.
+        string address;
+        try
+        {
+            address = await whileDown.WaitAsync(_ReopenBound, AbortToken);
+        }
+        catch (TimeoutException e)
+        {
+            string logged;
+            lock (log)
+            {
+                logged = string.Join(
+                    Environment.NewLine,
+                    log.Select(entry => $"  {entry.Level} {entry.EventId.Name}: {entry.Message}")
+                );
+            }
+
+            throw new TimeoutException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Waited {_ReopenBound.TotalSeconds:0} s for the address once the server was up. The listener and its pool logged:{Environment.NewLine}{logged}"
+                ),
+                e
+            );
+        }
+
         var sender = _CreateTransport(_CreatePool(server.ConnectionString));
         await sender.SendAsync(address, _Reply("after-start"), AbortToken);
         var delivered = await received.Reader.ReadAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
@@ -183,7 +227,11 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         }
     }
 
-    private RedisConnectionPool _CreatePool(string connectionString, int connectionPoolSize = 2)
+    private RedisConnectionPool _CreatePool(
+        string connectionString,
+        int connectionPoolSize = 2,
+        ILoggerFactory? loggerFactory = null
+    )
     {
         var pool = new RedisConnectionPool(
             Options.Create(
@@ -193,7 +241,7 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
                     ConnectionPoolSize = connectionPoolSize,
                 }
             ),
-            NullLoggerFactory.Instance
+            loggerFactory ?? NullLoggerFactory.Instance
         );
         _pools.Add(pool);
 
@@ -226,21 +274,55 @@ internal sealed class DelayedRedisServer : IAsyncDisposable
 {
     private const int _RedisPort = 6379;
 
+    private readonly PublishedPortCheck _check = new(_RedisPort, _PingAsync);
     private readonly RedisContainer _container;
     private readonly BrokerPortForwarder _forwarder;
 
     public DelayedRedisServer()
     {
-        _container = new RedisBuilder(TestImages.Redis).Build();
+        _container = new RedisBuilder(TestImages.Redis).WithWaitStrategy(_check.AddTo(Wait.ForUnixContainer())).Build();
         _forwarder = new BrokerPortForwarder(() => _container, _RedisPort);
     }
 
     /// <summary>The server's address, known before it starts.</summary>
     public string ConnectionString => _forwarder.Address;
 
+    /// <summary>Starts the server and returns once it answers PING through its published port from the test host.</summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        return _container.StartAsync(cancellationToken);
+        return _check.StartAsync(_container, cancellationToken);
+    }
+
+    private static async Task<PublishedPortReply> _PingAsync(NetworkStream stream, CancellationToken cancellationToken)
+    {
+        await stream.WriteAsync("PING\r\n"u8.ToArray(), cancellationToken);
+
+        var expected = "+PONG\r\n"u8.ToArray();
+        var reply = new byte[expected.Length];
+        var received = 0;
+
+        while (received < reply.Length)
+        {
+            var read = await stream.ReadAsync(reply.AsMemory(received), cancellationToken);
+
+            if (read == 0)
+            {
+                // The runtime accepted the connection but cannot reach the server yet.
+                return PublishedPortReply.NotYet;
+            }
+
+            received += read;
+
+            if (reply[0] == (byte)'-')
+            {
+                // An error reply, such as LOADING, is still Redis: it serves once it finishes starting.
+                return PublishedPortReply.NotYet;
+            }
+        }
+
+        return reply.AsSpan().SequenceEqual(expected)
+            ? PublishedPortReply.Container
+            : PublishedPortReply.AnotherListener;
     }
 
     public async ValueTask DisposeAsync()
