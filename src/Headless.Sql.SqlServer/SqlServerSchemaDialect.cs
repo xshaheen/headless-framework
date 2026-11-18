@@ -105,6 +105,12 @@ public sealed class SqlServerSchemaDialect : ISchemaDialect
     }
 
     /// <inheritdoc />
+    public string HistoryTableExistsSql(string schema)
+    {
+        return $"SELECT CASE WHEN OBJECT_ID(N'[{schema}].[{SchemaRunner.HistoryTableName}]', N'U') IS NULL THEN 0 ELSE 1 END;";
+    }
+
+    /// <inheritdoc />
     public string InsertHistorySql(string schema)
     {
         var table = $"[{schema}].[{SchemaRunner.HistoryTableName}]";
