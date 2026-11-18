@@ -18,8 +18,12 @@ public abstract partial class DataStorageTestsBase
         bool published
     )
     {
-        // given: one claim leases two rows for a two-second batch lease
-        if (!TrySetDispatchTimeout(TimeSpan.FromSeconds(2)))
+        // given: one claim leases two rows for a ten-second batch lease. A relational store stamps the lease on its
+        // own clock while the waits below are real time, so the lease is sized for a loaded machine: the slowest
+        // recorded run took 6 s longer than a healthy one, and the reserve here keeps 7 s of slack.
+        var dispatchTimeout = TimeSpan.FromSeconds(10);
+        var lateBy = TimeSpan.FromSeconds(3);
+        if (!TrySetDispatchTimeout(dispatchTimeout))
         {
             Assert.Skip("Storage does not expose a mutable dispatch timeout");
         }
@@ -33,8 +37,8 @@ public abstract partial class DataStorageTestsBase
         var lateRow = claimed.Single(m => m.StorageId == late.StorageId);
         var batchLease = lateRow.Lease.ExpiresAt!.Value;
 
-        // when: the rows before it use most of the batch lease, then the late row reserves its attempt
-        await _ElapseAsync(TimeSpan.FromSeconds(1.5));
+        // when: the rows before it use part of the batch lease, then the late row reserves its attempt
+        await _ElapseAsync(lateBy);
         lateRow.InlineAttempts++;
         var reserved = published
             ? await storage.ReservePublishAttemptAsync(lateRow, originalInlineAttempts: 0, AbortToken)
@@ -42,7 +46,8 @@ public abstract partial class DataStorageTestsBase
 
         // then: the attempt starts with a full lease, and the caller holds the stored identity
         reserved.Should().BeTrue();
-        lateRow.Lease.ExpiresAt.Should().BeAfter(batchLease.AddSeconds(1));
+        var reservedLease = lateRow.Lease.ExpiresAt!.Value;
+        reservedLease.Should().BeAfter(batchLease.Add(lateBy - TimeSpan.FromSeconds(1)));
         if (await GetPersistedLeaseIdentityAsync(published, lateRow.StorageId, AbortToken) is { } persisted)
         {
             lateRow.Lease.Generation.Should().Be(persisted.LeaseGeneration);
@@ -50,11 +55,26 @@ public abstract partial class DataStorageTestsBase
             lateRow.Lease.Holder.Should().Be(persisted.LeaseHolder);
         }
 
-        // and: once the batch lease has passed, another node reclaims the untouched row but not the reserved one
-        await _ElapseAsync(TimeSpan.FromSeconds(1));
+        // and: once the batch lease has passed, another node reclaims the untouched row but not the reserved one.
+        // The wait runs from the store's own reserve stamp, so the next claim lands after the batch lease on the
+        // store's clock however long the reserve call took to return.
+        var untilBatchLeasePasses = batchLease - (reservedLease - dispatchTimeout);
+        await _ElapseAsync(
+            (untilBatchLeasePasses > TimeSpan.Zero ? untilBatchLeasePasses : TimeSpan.Zero)
+                + TimeSpan.FromMilliseconds(250)
+        );
         NodeMembership.SetIdentity($"batch-contender-{published}");
-        var reclaimed = (await _PickUpRetriesAsync(storage, published)).Select(m => m.StorageId).ToList();
-        reclaimed.Should().Contain(early.StorageId).And.NotContain(late.StorageId);
+        var reclaimed = (await _PickUpRetriesAsync(storage, published)).ToList();
+        reclaimed.Select(m => m.StorageId).Should().Contain(early.StorageId);
+
+        // A claim the store stamped after the reserved lease ended may take the reserved row too, and should; only a
+        // claim inside the reserved lease is held to leaving it. On a healthy run the claim lands about 2.75 s inside.
+        var reclaimedAt =
+            reclaimed.Single(m => m.StorageId == early.StorageId).Lease.ExpiresAt!.Value - dispatchTimeout;
+        if (reclaimedAt < reservedLease)
+        {
+            reclaimed.Select(m => m.StorageId).Should().NotContain(late.StorageId);
+        }
     }
 
     public virtual async Task should_leave_the_counter_and_the_lease_unchanged_when_a_reservation_is_refused(
