@@ -274,18 +274,6 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
     }
 
     [Fact]
-    public override Task should_report_no_expiration_when_upsert_duration_is_max_value()
-    {
-        return base.should_report_no_expiration_when_upsert_duration_is_max_value();
-    }
-
-    [Fact]
-    public override Task should_report_no_expiration_when_set_entry_stamps_are_max_value()
-    {
-        return base.should_report_no_expiration_when_set_entry_stamps_are_max_value();
-    }
-
-    [Fact]
     public override Task should_extend_entry_when_conditional_factory_reports_not_modified()
     {
         return base.should_extend_entry_when_conditional_factory_reports_not_modified();
