@@ -143,7 +143,7 @@ public sealed class ToxiproxyServer : IAsyncDisposable
                 throw new InvalidOperationException($"This server hands out {_MaxProxies} proxies at most.");
             }
 
-            var slot = _TakeSlot([]);
+            var slot = _NextFreeSlot([]);
 
             // The proxy first forwards to Toxiproxy's own API, which always answers, so the probe below proves the
             // published port reaches the proxy without depending on an upstream the caller may start later.
@@ -165,8 +165,10 @@ public sealed class ToxiproxyServer : IAsyncDisposable
                 await _EnsureSuccessAsync(created, "create proxy", cancellationToken).ConfigureAwait(false);
             }
 
-            // The proxy now holds its listen port, so it counts against the cap even if a later step fails.
+            // The proxy now holds its listen port, so it and the port count even if a later step fails; a create Toxiproxy
+            // refused holds neither.
             _proxies++;
+            _nextSlot = slot + 1;
 
             var host = _container.Hostname;
             var shadowed = new List<string>();
@@ -183,7 +185,7 @@ public sealed class ToxiproxyServer : IAsyncDisposable
                 }
 
                 shadowed.Add($"{host}:{port} ({foreignReply})");
-                slot = _TakeSlot(shadowed);
+                slot = _NextFreeSlot(shadowed);
 
                 using var moved = await http.PostAsJsonAsync(
                         $"/proxies/{name}",
@@ -192,6 +194,9 @@ public sealed class ToxiproxyServer : IAsyncDisposable
                     )
                     .ConfigureAwait(false);
                 await _EnsureSuccessAsync(moved, "move proxy to a spare port", cancellationToken).ConfigureAwait(false);
+
+                // The shadowed port stays spent: another listener holds it for the container's whole run.
+                _nextSlot = slot + 1;
             }
 
             using var repointed = await http.PostAsJsonAsync(
@@ -210,7 +215,8 @@ public sealed class ToxiproxyServer : IAsyncDisposable
         }
     }
 
-    private int _TakeSlot(List<string> shadowed)
+    // A slot is spent only once a proxy listens there, so a create or move Toxiproxy refused leaves it free.
+    private int _NextFreeSlot(List<string> shadowed)
     {
         if (_nextSlot >= _Slots)
         {
@@ -219,7 +225,7 @@ public sealed class ToxiproxyServer : IAsyncDisposable
             );
         }
 
-        return _nextSlot++;
+        return _nextSlot;
     }
 
     private static string _Listen(int slot)

@@ -515,14 +515,23 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
 /// </remarks>
 internal sealed class RestartableNatsServer : IAsyncDisposable
 {
-    private readonly PublishedPortCheck _check = new(NatsBuilder.NatsClientPort, _ReadGreetingAsync);
+    // The name the server greets with: another test's forwarder to another NATS server greets too, but not with this.
+    private readonly string _identity = $"restartable-{Guid.NewGuid():N}";
+    private readonly PublishedPortCheck _check;
     private readonly IContainer _container;
     private readonly BrokerPortForwarder _forwarder;
 
     public RestartableNatsServer()
     {
+        _check = new PublishedPortCheck(NatsBuilder.NatsClientPort, _ReadGreetingAsync);
         _container = new ContainerBuilder(TestImages.Nats)
-            .WithCommand("--jetstream", "--port", NatsBuilder.NatsClientPort.ToString(CultureInfo.InvariantCulture))
+            .WithCommand(
+                "--jetstream",
+                "--port",
+                NatsBuilder.NatsClientPort.ToString(CultureInfo.InvariantCulture),
+                "--server_name",
+                _identity
+            )
             .WithPortBinding(NatsBuilder.NatsClientPort, assignRandomHostPort: true)
             .WithWaitStrategy(_check.AddTo(Wait.ForUnixContainer().UntilMessageIsLogged("Server is ready")))
             .Build();
@@ -555,34 +564,27 @@ internal sealed class RestartableNatsServer : IAsyncDisposable
         }
     }
 
-    // A NATS server greets every connection with INFO before the client speaks. The PING goes first anyway, so a listener
-    // that waits for the client, such as an HTTP server, answers it and shows it is not NATS.
-    private static async Task<PublishedPortReply> _ReadGreetingAsync(
-        NetworkStream stream,
-        CancellationToken cancellationToken
-    )
+    // A NATS server greets every connection with an INFO line naming it, before the client speaks. The PING goes first
+    // anyway, so a listener that waits for the client, such as an HTTP server, answers it and shows it is not NATS.
+    private async Task<PublishedPortReply> _ReadGreetingAsync(NetworkStream stream, CancellationToken cancellationToken)
     {
         await stream.WriteAsync("PING\r\n"u8.ToArray(), cancellationToken);
 
-        var expected = "INFO "u8.ToArray();
-        var reply = new byte[expected.Length];
-        var received = 0;
+        var greeting = await PublishedPortCheck.ReadReplyAsync(
+            stream,
+            text => text.Contains("\r\n", StringComparison.Ordinal),
+            maxBytes: 4096,
+            cancellationToken
+        );
 
-        while (received < reply.Length)
+        return greeting switch
         {
-            var read = await stream.ReadAsync(reply.AsMemory(received), cancellationToken);
-
-            if (read == 0)
-            {
-                // The runtime accepted the connection but cannot reach the server yet.
-                return PublishedPortReply.NotYet;
-            }
-
-            received += read;
-        }
-
-        return reply.AsSpan().SequenceEqual(expected)
-            ? PublishedPortReply.Container
-            : PublishedPortReply.AnotherListener;
+            // The runtime accepted the connection but cannot reach the server yet.
+            null => PublishedPortReply.NotYet,
+            _ when greeting.StartsWith("INFO ", StringComparison.Ordinal)
+                    && greeting.Contains($"\"server_name\":\"{_identity}\"", StringComparison.Ordinal) =>
+                PublishedPortReply.Container,
+            _ => PublishedPortReply.AnotherListener,
+        };
     }
 }

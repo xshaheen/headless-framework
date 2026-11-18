@@ -274,55 +274,54 @@ internal sealed class DelayedRedisServer : IAsyncDisposable
 {
     private const int _RedisPort = 6379;
 
-    private readonly PublishedPortCheck _check = new(_RedisPort, _PingAsync);
+    // Names this server's snapshot file, which CONFIG GET reads back: another test's forwarder to another Redis also
+    // answers PING, but not with this name.
+    private readonly string _identity = $"delayed-{Guid.NewGuid():N}.rdb";
+    private readonly PublishedPortCheck _check;
     private readonly RedisContainer _container;
     private readonly BrokerPortForwarder _forwarder;
 
     public DelayedRedisServer()
     {
-        _container = new RedisBuilder(TestImages.Redis).WithWaitStrategy(_check.AddTo(Wait.ForUnixContainer())).Build();
+        _check = new PublishedPortCheck(_RedisPort, _ReadIdentityAsync);
+        _container = new RedisBuilder(TestImages.Redis)
+            .WithCommand("--dbfilename", _identity)
+            .WithWaitStrategy(_check.AddTo(Wait.ForUnixContainer()))
+            .Build();
         _forwarder = new BrokerPortForwarder(() => _container, _RedisPort);
     }
 
     /// <summary>The server's address, known before it starts.</summary>
     public string ConnectionString => _forwarder.Address;
 
-    /// <summary>Starts the server and returns once it answers PING through its published port from the test host.</summary>
+    /// <summary>Starts the server and returns once it answers through its published port from the test host.</summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         return _check.StartAsync(_container, cancellationToken);
     }
 
-    private static async Task<PublishedPortReply> _PingAsync(NetworkStream stream, CancellationToken cancellationToken)
+    private async Task<PublishedPortReply> _ReadIdentityAsync(NetworkStream stream, CancellationToken cancellationToken)
     {
-        await stream.WriteAsync("PING\r\n"u8.ToArray(), cancellationToken);
+        await stream.WriteAsync("CONFIG GET dbfilename\r\n"u8.ToArray(), cancellationToken);
 
-        var expected = "+PONG\r\n"u8.ToArray();
-        var reply = new byte[expected.Length];
-        var received = 0;
+        // A CONFIG GET reply is five lines (an array of two bulk strings); an error is one. Read the whole of either, so a
+        // foreign Redis whose reply names another file is told apart without waiting out the attempt.
+        var reply = await PublishedPortCheck.ReadReplyAsync(
+            stream,
+            text => text.Split("\r\n").Length > (text.StartsWith('-') ? 1 : 5),
+            maxBytes: 256,
+            cancellationToken
+        );
 
-        while (received < reply.Length)
+        return reply switch
         {
-            var read = await stream.ReadAsync(reply.AsMemory(received), cancellationToken);
-
-            if (read == 0)
-            {
-                // The runtime accepted the connection but cannot reach the server yet.
-                return PublishedPortReply.NotYet;
-            }
-
-            received += read;
-
-            if (reply[0] == (byte)'-')
-            {
-                // An error reply, such as LOADING, is still Redis: it serves once it finishes starting.
-                return PublishedPortReply.NotYet;
-            }
-        }
-
-        return reply.AsSpan().SequenceEqual(expected)
-            ? PublishedPortReply.Container
-            : PublishedPortReply.AnotherListener;
+            // The runtime accepted the connection but cannot reach the server yet.
+            null => PublishedPortReply.NotYet,
+            // Redis answers LOADING while it reads its data at start, and serves once that finishes.
+            _ when reply.StartsWith("-LOADING", StringComparison.Ordinal) => PublishedPortReply.NotYet,
+            _ when reply.Contains(_identity, StringComparison.Ordinal) => PublishedPortReply.Container,
+            _ => PublishedPortReply.AnotherListener,
+        };
     }
 
     public async ValueTask DisposeAsync()

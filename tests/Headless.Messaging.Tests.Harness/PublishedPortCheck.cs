@@ -2,8 +2,10 @@
 
 using System.Globalization;
 using System.Net.Sockets;
+using System.Text;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
+using Headless.Checks;
 
 namespace Tests;
 
@@ -41,8 +43,10 @@ public enum PublishedPortReply
 /// </remarks>
 /// <param name="containerPort">The container port whose host mapping clients dial.</param>
 /// <param name="probe">
-/// Reads one reply from a fresh connection and names who answered. A probe that writes a request first gets an answer
-/// from a listener that waits for the client to speak, such as an HTTP server.
+/// Reads one reply from a fresh connection and names who answered. The listener that shadows a port can be another
+/// test's forwarder to the same kind of broker, so the probe checks something only this container answers, such as a
+/// name the test started it with, not just the protocol. A probe that writes a request first also gets an answer from
+/// a listener that waits for the client to speak, such as an HTTP server.
 /// </param>
 [PublicAPI]
 public sealed class PublishedPortCheck(
@@ -104,6 +108,44 @@ public sealed class PublishedPortCheck(
             .ConfigureAwait(false);
 
         return _reply is not PublishedPortReply.NotYet;
+    }
+
+    /// <summary>
+    /// Reads ASCII from <paramref name="stream"/> until <paramref name="isComplete"/> holds, the peer closes, or
+    /// <paramref name="maxBytes"/> arrived, for a probe that must see a whole reply before it names who answered.
+    /// </summary>
+    /// <returns>What arrived, or <see langword="null"/> when the peer closed before sending a byte.</returns>
+    public static async Task<string?> ReadReplyAsync(
+        NetworkStream stream,
+        Func<string, bool> isComplete,
+        int maxBytes,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(stream);
+        Argument.IsNotNull(isComplete);
+
+        var buffer = new byte[maxBytes];
+        var received = 0;
+
+        while (received < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(received), cancellationToken).ConfigureAwait(false);
+
+            if (read == 0)
+            {
+                break;
+            }
+
+            received += read;
+
+            if (isComplete(Encoding.ASCII.GetString(buffer, 0, received)))
+            {
+                break;
+            }
+        }
+
+        return received == 0 ? null : Encoding.ASCII.GetString(buffer, 0, received);
     }
 
     private async Task<PublishedPortReply> _ProbeAsync(string host, int port)
