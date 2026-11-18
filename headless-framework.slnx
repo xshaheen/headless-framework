@@ -404,6 +404,21 @@
         <Project Path="tests\Headless.Testing.Tests.Unit\Headless.Testing.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.Testcontainers.Tests.Integration\Headless.Testing.Testcontainers.Tests.Integration.csproj" />
     </Folder>
+    <Folder Name="/LiveQueries/">
+        <Project Path="src\Headless.LiveQueries.Abstractions\Headless.LiveQueries.Abstractions.csproj" />
+        <Project Path="src\Headless.LiveQueries\Headless.LiveQueries.csproj" />
+        <Project Path="src\Headless.LiveQueries.Endpoints\Headless.LiveQueries.Endpoints.csproj" />
+        <Project Path="src\Headless.LiveQueries.EntityFramework\Headless.LiveQueries.EntityFramework.csproj" />
+    </Folder>
+    <Folder Name="/LiveQueries/Demo/">
+        <Project Path="demo\Headless.LiveQueries.Demo\Headless.LiveQueries.Demo.csproj" />
+    </Folder>
+    <Folder Name="/LiveQueries/Tests/">
+        <Project Path="tests\Headless.LiveQueries.Tests.Unit\Headless.LiveQueries.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.LiveQueries.Endpoints.Tests.Unit\Headless.LiveQueries.Endpoints.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.LiveQueries.EntityFramework.Tests.Unit\Headless.LiveQueries.EntityFramework.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.LiveQueries.EntityFramework.Tests.Integration\Headless.LiveQueries.EntityFramework.Tests.Integration.csproj" />
+    </Folder>
     <Folder Name="/MediaIndexing/">
         <Project Path="src\Headless.Media.Indexing.Abstractions\Headless.Media.Indexing.Abstractions.csproj" />
         <Project Path="src\Headless.Media.Indexing\Headless.Media.Indexing.csproj" />
