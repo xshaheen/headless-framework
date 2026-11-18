@@ -45,6 +45,10 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
 
     public async ValueTask InitializeAsync()
     {
+        // Bounds the database and schema setup. Starting a container is not under it, on either provider: the start
+        // can include an image pull, and how long a pull or an emulated SQL Server boot takes depends on the machine's
+        // load, not on this fixture. The container start follows the run's cancellation, as HeadlessPostgreSqlFixture's
+        // does, and the image's own wait strategy decides when it is ready.
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         if (Provider == TenantDatabaseProvider.PostgreSql)
         {
@@ -64,7 +68,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
                 .WithLabel("type", "tenant-conformance")
                 .Build();
             _container = container;
-            await container.StartAsync(timeout.Token);
+            await container.StartAsync(TestContext.Current.CancellationToken);
             var connectionString = new SqlConnectionStringBuilder(container.GetConnectionString());
             await using (var connection = new SqlConnection(connectionString.ConnectionString))
             {

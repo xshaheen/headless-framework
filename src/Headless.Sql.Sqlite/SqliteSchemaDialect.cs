@@ -158,6 +158,19 @@ public sealed class SqliteSchemaDialect : ISchemaDialect
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// A statement that names the history table resolves the name against the connection's cached schema when it is
+    /// prepared. When the name is missing there, SQLite re-checks the cache only if it can take a read lock at once, so
+    /// while a writer holds the database it reports a table created since as missing. <c>sqlite_schema</c> always
+    /// exists, so this query is prepared without that check; running it takes a read lock, waiting out the writer as any
+    /// read does, and reloads the cached schema when another connection changed it.
+    /// </remarks>
+    public string HistoryTableExistsSql(string schema)
+    {
+        return $"SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = '{HistoryTableName(schema)}';";
+    }
+
+    /// <inheritdoc />
     public string InsertHistorySql(string schema)
     {
         return $"""

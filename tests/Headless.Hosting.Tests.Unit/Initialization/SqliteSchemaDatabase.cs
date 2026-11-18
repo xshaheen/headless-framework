@@ -131,6 +131,9 @@ internal sealed class SqliteSchemaDatabase : IDisposable
         public string ReadHistorySql(string schema) =>
             $"SELECT feature, version, checksum, description FROM {schema}_history";
 
+        public string HistoryTableExistsSql(string schema) =>
+            $"SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = '{schema}_history'";
+
         public string InsertHistorySql(string schema) =>
             $"INSERT OR IGNORE INTO {schema}_history VALUES (@Feature, @StepVersion, @Checksum, @Description)";
 
