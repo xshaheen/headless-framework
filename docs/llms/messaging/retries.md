@@ -228,7 +228,7 @@ A per-consumer circuit breaker pauses transport consumption when a dependency is
 
 - **States.** Closed, then Open (transport paused), then HalfOpen (one probe), then Closed (resume) or Open again. Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
 - **Only the probe decides HalfOpen.** A failure or success from a delivery admitted before the circuit opened neither reopens, escalates, nor closes it.
-- **Persisted retries share the circuit.** While Open, received retries of that consumer are deferred to the next probe time. In HalfOpen, one row or delivery owns the probe. Healthy consumers in the same claimed batch dispatch first, so an open consumer cannot monopolize retry pickup.
+- **Persisted retries share the circuit.** While Open, received retries of that consumer are deferred to the next probe time. In HalfOpen, one row or delivery owns the probe. The other claimed rows of that consumer keep their leases and become available again only when those leases expire. Healthy consumers in the same claimed batch dispatch first, so an open consumer cannot monopolize retry pickup.
 - **Force-open wins.** A resume already in flight cannot reopen a circuit that `ForceOpenAsync` or a later trip opened.
 - **Per process.** Each instance keeps its own circuit state. One replica can be open while others are closed.
 - **Every-instance consumers** have no circuit breaker. An override on one fails startup.
@@ -347,6 +347,7 @@ builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
 - `messaging.publish-retry-{lane}-{version}-outbox-{key}` for an [additional outbox](storage.md#additional-outboxes), where `{key}` is a 16-hex-digit hash of the outbox's provider, data source, and database.
 - `{version}` is `MessagingOptions.Version`. Two services that share one lock store must set distinct `Version` values, or matching loops collide and starve each other.
 - Every retry lock is try-once (no wait), leased for that loop's current polling interval, and auto-extended. Contention skips only that loop's cycle. Releasing one sends no lock-release broadcast.
+- When a held retry lock's lease is lost (EventId 79), no new pickup starts under it. A dispatch already in flight is not canceled: its own row lease still governs it.
 
 ### EventIds
 
@@ -365,6 +366,7 @@ builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
 Dead-owner recovery runs on every messaging host, independent of `UseStorageLock`. With a Coordination membership provider registered, the host reclaims the retry leases of node incarnations the membership classifies `Dead`, so their rows run again without waiting for the lease to expire. It reacts to a `NodeLeft` event and also reconciles every `MessagingOptions.DeadNodeReconcileInterval`.
 
 - **`DeadNodeReconcileInterval`** defaults to `null`: half the coordination `DeadRetentionWindow` (15 seconds with default coordination options). An explicit value above that ceiling is clamped, with one warning per host (Coordination EventId 14, `DeadNodeReconcileIntervalClamped`). To reconcile less often, raise `DeadRetentionWindow`.
+- **Idempotent.** A repeated reclaim, or a peer's concurrent reclaim of the same dead owner, is a no-op.
 - **Dead only.** A `Suspected` owner is never reclaimed, so a GC pause or a network blip does not cause duplicate delivery.
 - **Lease expiry is the floor.** A row whose lease expired is recovered by normal pickup either way.
 - **Set Coordination's dead threshold no lower than the retry `DispatchTimeout`.** A node starved long enough to miss heartbeats is declared `Dead` while it may still be dispatching. With `DeadThreshold >= DispatchTimeout` its lease has already lapsed by then. A lower threshold can revoke a valid lease and re-dispatch a row its owner is still handling, which startup reports as Warning EventId 94 (`MessagingDeadThresholdBelowDispatchTimeout`).

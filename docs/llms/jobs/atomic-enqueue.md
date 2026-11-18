@@ -73,6 +73,6 @@ You can also begin a unit explicitly with `await using var unit = await factory.
 
 - A returned entity on the enlisted path means the row enlisted, not that dispatch ran.
 - Post-commit work needs a running host. The commit hands one signal per write to a hosted worker, registered even with `DisableBackgroundServices()`. The worker acquires immediately due jobs, wakes the scheduler, invalidates cached cron expressions, and notifies the dashboard.
-- The worker's queue holds 1,024 signals. A full queue or a stopping host drops the signal with a warning and increments `headless.jobs.post_commit_signals.dropped`. A signal that runs longer than 30 seconds is abandoned. In every case the next fallback poll picks the committed row up: work is delayed, never lost.
+- The worker's queue holds 1,024 signals. A full queue or a stopping host drops the signal with a warning and increments `headless.jobs.post_commit_signals.dropped`. A signal that runs longer than 30 seconds is abandoned. That bound runs on the system clock, so a test host whose `FakeTimeProvider` never advances still frees the worker from a hung send. In every case the next fallback poll picks the committed row up: work is delayed, never lost.
 - A dropped cron-cache invalidation leaves cached cron expressions stale until the entry expires (10 minutes). No claim reads that cache.
 - Committed rows stay authoritative if post-commit work fails.

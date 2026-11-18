@@ -79,7 +79,7 @@ public sealed class ImportCustomers : IJob
 Every claimed time job and cron occurrence holds a lease: a holder, an expiry, and a generation that increases with each claim. Every later write by that attempt (start, renewal, progress, retry, completion, release) lands only while the row still holds that generation with a live lease. A write from an attempt that lost the row is refused, even when the same node has claimed the row again since.
 
 - **Sliding renewal.** A running job renews its lease every `LeaseRenewalInterval` (default `LeaseDuration / 3`; an explicit value must be positive and less than `LeaseDuration`). `LeaseDuration` (default 5 minutes) does not need to exceed the longest job runtime.
-- **Cancel on loss.** A renewal that matches no row (the row was reclaimed or the node has no live identity), or that does not complete within the renewal interval (a hung store), cancels the job's `CancellationToken`. The run writes nothing and leaves its row for reclaim. A handler that ignores the token keeps running, and its late completion matches no row.
+- **Cancel on loss.** A renewal that matches no row (the row was reclaimed or the node has no live identity), or that does not complete within the renewal interval (a hung store), cancels the job's `CancellationToken`. The run writes nothing and leaves its row for reclaim. The renewal cadence follows the registered `TimeProvider`, but each renewal's deadline runs on the system clock, so a host whose fake clock never advances still cancels a job whose store hangs. A handler that ignores the token keeps running, and its late completion matches no row.
 - **Membership loss cancels at once.** When the node loses coordination membership outside a host stop, every job running on it has its token cancelled immediately, without waiting for the next renewal.
 - **Start check.** Before user code starts, the job checks that the node's live identity is the one that claimed the row. With no live identity the node starts nothing and hands the row back to `Idle` with `RetryCount` unchanged.
 - **Stalled runs.** A job stuck `InProgress` whose lease lapses is reclaimed by its `OnNodeDeath` policy within about one `LeaseDuration`, whether or not its node died.
@@ -115,7 +115,7 @@ The durable (EF) store uses `Headless.Coordination` for node identity and dead-n
 - **Registration.** The node registers when the host starts, and the coordination heartbeat beats from then on, so a slow start in another hosted service does not expire it.
 - **Without coordination,** the durable store throws `InvalidOperationException` at startup naming `AddHeadlessCoordination`.
 
-**Verify:** kill a node mid-run. Within about `DeadRetentionWindow` plus one reconcile interval, its runs move by their `OnNodeDeath` policy, and `headless.jobs.reclaims` records them with `headless.jobs.reclaim.reason` = `dead_node` or `orphaned_owner`.
+**Verify:** kill a node mid-run. Within about `DeadRetentionWindow` plus one reconcile interval, its runs move by their `OnNodeDeath` policy. An `InProgress` run whose execution lease is still live waits until that lease lapses, so allow up to `LeaseDuration` more. `headless.jobs.reclaims` records each reclaimed run with `headless.jobs.reclaim.reason` = `dead_node` or `orphaned_owner`.
 
 ## Stop and start the scheduler
 

@@ -222,6 +222,7 @@ builder.Services.AddHeadlessJobs(options =>
 - `SetExceptionHandler<THandler>()` registers the handler as a singleton.
 - `HandleExceptionAsync` runs after each attempt's retry state is persisted, and once more at final failure.
 - Each call is bounded by `OnExhaustedTimeout` on the system clock. A hanging handler is logged and abandoned, so it cannot stall retries.
+- An exception the handler throws is caught and logged. It cannot replace the job's failure or change its stored status.
 - Handlers run only after the attempt's write applied. A run whose terminal write lost to a reclaim calls none.
 - For a retry that waits in the store, the handler runs after the reschedule write, so a slow handler can still run when the retry starts, on this node or another.
 - The job's tenant is restored around both callbacks ([tenancy.md](tenancy.md)).
