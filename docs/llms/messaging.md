@@ -2365,7 +2365,7 @@ await queue.EnqueueAsync(order, new QueueOptions { RoutingAffinityKey = order.Or
 - **A waiting message is not retried early.** A message is stored and acknowledged before it waits for its key, and a stored row becomes eligible for retry pickup after `RetryPolicy.InitialDispatchGrace`. The host puts off that pickup for as long as the message waits, so no host runs it out of turn. A host that stops or crashes leaves its waiting rows to retry pickup, which runs them on whichever host claims them, at most one grace after the last deferral.
 - **Every-instance consumers** cannot be sequential; tuning one so fails startup. An every-instance subscription already runs one client per host and keeps no inbox.
 - **Configuration**: `Headless:Messaging:Consumers:{identity}:Sequential` is `true` or `false` and replaces the `Tune` value. Any other value fails startup. The host manifest writes `sequential: true` for a sequential consumer, with `activeHost` naming how one host takes it in: `keyRouted`, `broker`, `lock`, or `none`.
-- **Logs.** 4142 (Warning): no messaging lock, every host listens. 4143 (Information): this host took the lock and listens. 4144 (Warning): this host lost the lock and stopped listening. 4145 (Warning): acquiring the lock failed; the host tries again after the interval.
+- **Logs.** 4142 (Warning): no messaging lock, every host listens. 4143 (Information): this host took the lock and listens. 4144 (Warning): this host lost the lock and stopped listening. 4145 (Warning): acquiring the lock threw; the host tries again after the interval. A standby host that finds the lock held logs nothing above Debug, so a standby host does not log a Warning every 5 seconds.
 
 ### Transport-Specific Ordering
 
