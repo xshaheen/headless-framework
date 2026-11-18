@@ -94,4 +94,25 @@ public sealed class TransportMessageEqualityTests : TestBase
         left.Equals(right).Should().BeFalse();
         left.GetHashCode().Should().NotBe(right.GetHashCode());
     }
+
+    [Fact]
+    public void should_compare_and_hash_without_throwing_when_message_is_default()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["a"] = "1" };
+        var message = new TransportMessage(headers, "abc"u8.ToArray());
+        var empty = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            ReadOnlyMemory<byte>.Empty
+        );
+        TransportMessage none = default;
+
+        // then
+        none.Equals(default).Should().BeTrue();
+        none.Equals(message).Should().BeFalse();
+        message.Equals(none).Should().BeFalse();
+        none.Equals(empty).Should().BeTrue();
+        none.GetHashCode().Should().Be(empty.GetHashCode());
+        (none == message).Should().BeFalse();
+    }
 }
