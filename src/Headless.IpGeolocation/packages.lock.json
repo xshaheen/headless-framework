@@ -119,10 +119,7 @@
         "type": "Project"
       },
       "headless.ipgeolocation.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
+        "type": "Project"
       }
     }
   }
