@@ -59,9 +59,9 @@ public sealed class LockOracleControlTests : TestBase
         // then
         var violations = result.Report("InMemory", "S7 negative control: reused token", 7, "sabotaged grants");
         sabotaged.Sabotaged.Should().BePositive();
-        violations.Should().Contain(violation => violation.StartsWith(FencingVerdict.IssuerRule + ":"));
-        violations.Should().NotContain(violation => violation.StartsWith(FencingVerdict.AcceptedOrderRule + ":"));
+        violations.Should().Contain(violation => violation.StartsWith(FencingVerdict.IssuerRuleName + ":"));
+        violations.Should().NotContain(violation => violation.StartsWith(FencingVerdict.StoreSelfCheck + ":"));
     }
 
-    private static Task _NoFaults(CancellationToken stop) => Task.CompletedTask;
+    private static Task _NoFaults(FencingLedger ledger, CancellationToken stop) => Task.CompletedTask;
 }

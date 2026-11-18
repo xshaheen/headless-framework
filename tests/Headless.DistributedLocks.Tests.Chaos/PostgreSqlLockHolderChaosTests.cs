@@ -49,7 +49,7 @@ public sealed class PostgreSqlLockHolderChaosTests(PostgreSqlLockChaosFixture fi
             options,
             seed,
             FencingContract.DurableSequence,
-            stop =>
+            (_, stop) =>
                 LockChaosScenario.RepeatAsync(
                     seed,
                     TimeSpan.FromSeconds(1),
@@ -83,7 +83,7 @@ public sealed class PostgreSqlLockHolderChaosTests(PostgreSqlLockChaosFixture fi
             options,
             seed,
             FencingContract.DurableSequence,
-            stop =>
+            (_, stop) =>
                 LockChaosScenario.RepeatAsync(
                     seed,
                     TimeSpan.FromSeconds(1),
@@ -97,7 +97,7 @@ public sealed class PostgreSqlLockHolderChaosTests(PostgreSqlLockChaosFixture fi
         // then
         var violations = result.Report(_Store, "S7 negative control: reused token", seed, killer.ToString());
         sabotaged.Sum(item => item.Sabotaged).Should().BePositive();
-        violations.Should().Contain(violation => violation.StartsWith(FencingVerdict.IssuerRule + ":"));
+        violations.Should().Contain(violation => violation.StartsWith(FencingVerdict.IssuerRuleName + ":"));
     }
 
     private static string _ApplicationName() => "s7-" + Guid.NewGuid().ToString("N")[..12];

@@ -43,55 +43,87 @@ public sealed class FencingVerdictTests : TestBase
         var verdict = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
 
         // then
-        verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRule + ":");
+        verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRuleName + ":");
         verdict.DuplicateGrantTokens.Should().Be(1);
         verdict.Evidence.Should().Contain("w2 r Granted token 2 (high-water 2)");
     }
 
     [Fact]
-    public void should_fail_a_reissued_token_under_a_durable_sequence_but_only_report_it_under_redis_failover()
+    public void should_fail_a_reissued_token_under_redis_failover_when_no_failover_explains_it()
     {
-        // given — the history a Redis failover produced: token 713 accepted, then granted again on the promoted replica
-        var log = new LogBuilder()
-            .Grant("w6", "r", token: 713, highWaterMark: 712)
-            .Write("w6", "r", token: 713, accepted: true)
-            .Release("w6", "r", token: 713)
-            .Grant("w7", "r", token: 713, highWaterMark: 713)
-            .Write("w7", "r", token: 713, accepted: false)
-            .Events;
+        // given — token 713 accepted, then granted again while Redis kept its fence key
+        var log = _Reissue(failoverBetween: false);
 
         // when
         var durable = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
         var redis = FencingVerdict.Evaluate(log, FencingContract.RedisFailover);
 
         // then
-        durable.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRule + ":");
-        durable.Observations.Should().BeEmpty();
+        durable.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRuleName + ":");
+        redis.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRuleName + ":");
+        redis.Observations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_only_observe_a_reissued_token_under_redis_failover_when_a_failover_came_between()
+    {
+        // given — the history a Redis failover produced: 713 granted and accepted, the replica promoted, 713 again
+        var log = _Reissue(failoverBetween: true);
+
+        // when
+        var durable = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
+        var redis = FencingVerdict.Evaluate(log, FencingContract.RedisFailover);
+
+        // then — a durable sequence never excuses it
+        durable.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRuleName + ":");
         redis.Violations.Should().BeEmpty();
-        redis.Observations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRule + ":");
-        redis.ObservationEvidence.Should().Contain("w7 r Granted token 713 (high-water 713)");
+        redis.Observations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRuleName + ":");
+        redis
+            .ObservationEvidence.Should()
+            .Contain("FailoverStarted")
+            .And.Contain("w7 r Granted token 713 (high-water 713)");
         (durable.IssuerBreaks, redis.IssuerBreaks).Should().Be((1, 1));
     }
 
     [Fact]
-    public void should_fail_the_accepted_order_rule_under_redis_failover_too()
+    public void should_fail_a_reissued_token_under_redis_failover_when_the_failover_ended_before_the_token_was_granted()
     {
-        // given
+        // given — the failover finished before 713 was first granted, so it cannot have lost that increment
         var log = new LogBuilder()
-            .Grant("w1", "r", token: 5, highWaterMark: 0)
-            .Write("w1", "r", token: 5, accepted: true)
-            .Write("w2", "r", token: 5, accepted: true)
+            .FailoverStarted()
+            .FailoverEnded()
+            .Grant("w6", "r", token: 713, highWaterMark: 712)
+            .Write("w6", "r", token: 713, accepted: true)
+            .Release("w6", "r", token: 713)
+            .Grant("w7", "r", token: 713, highWaterMark: 713)
             .Events;
 
         // when
         var verdict = FencingVerdict.Evaluate(log, FencingContract.RedisFailover);
 
         // then
-        verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.AcceptedOrderRule + ":");
+        verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.IssuerRuleName + ":");
+    }
+
+    private static IReadOnlyList<FencingEvent> _Reissue(bool failoverBetween)
+    {
+        var log = new LogBuilder()
+            .Grant("w6", "r", token: 713, highWaterMark: 712)
+            .Write("w6", "r", token: 713, accepted: true)
+            .Release("w6", "r", token: 713);
+
+        if (failoverBetween)
+        {
+            log = log.FailoverStarted().FailoverEnded();
+        }
+
+        return log.Grant("w7", "r", token: 713, highWaterMark: 713)
+            .Write("w7", "r", token: 713, accepted: false)
+            .Events;
     }
 
     [Fact]
-    public void should_report_the_accepted_order_rule_when_the_store_accepts_a_lower_token()
+    public void should_fail_the_store_self_check_when_the_store_accepts_a_lower_token()
     {
         // given — a store that compared for equality instead of order would accept 3 after 5
         var log = new LogBuilder()
@@ -105,7 +137,7 @@ public sealed class FencingVerdictTests : TestBase
         var verdict = FencingVerdict.Evaluate(log, FencingContract.DurableSequence);
 
         // then
-        verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.AcceptedOrderRule + ":");
+        verdict.Violations.Should().ContainSingle().Which.Should().StartWith(FencingVerdict.StoreSelfCheck + ":");
     }
 
     [Fact]
@@ -205,6 +237,12 @@ public sealed class FencingVerdictTests : TestBase
                 token,
                 0
             );
+
+        public LogBuilder FailoverStarted() =>
+            _Add("harness", FencingLedger.AllResources, FencingEventKind.FailoverStarted, 0, 0);
+
+        public LogBuilder FailoverEnded() =>
+            _Add("harness", FencingLedger.AllResources, FencingEventKind.FailoverEnded, 0, 0);
 
         public LogBuilder Release(string worker, string resource, long token) =>
             _Add(worker, resource, FencingEventKind.Released, token, 0);

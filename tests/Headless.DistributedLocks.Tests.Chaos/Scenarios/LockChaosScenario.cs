@@ -37,7 +37,7 @@ public sealed record LockChaosResult(
             violations,
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"scenario seed {seed}; issuer rule {(Contract.IssuerRuleIsHard ? "hard" : "reported")} ({Contract.Name}); {Verdict.Describe(Ledger)}; {Counts}; {faults}; wall {Elapsed.TotalSeconds:F0}s"
+                $"scenario seed {seed}; issuer rule {Contract.Issuer} ({Contract.Name}); {Verdict.Describe(Ledger)}; {Counts}; {faults}; wall {Elapsed.TotalSeconds:F0}s"
             ),
             Verdict.Evidence,
             line => TestContext.Current.TestOutputHelper?.WriteLine(line)
@@ -100,7 +100,7 @@ public static class LockChaosScenario
         LockHolderWorkloadOptions options,
         int seed,
         FencingContract contract,
-        Func<CancellationToken, Task> faults,
+        Func<FencingLedger, CancellationToken, Task> faults,
         CancellationToken cancellationToken
     )
     {
