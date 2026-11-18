@@ -10,7 +10,8 @@ namespace Headless.Caching.Scripts;
 /// factory write derived from an existing physical entry); plain writes use a direct SET. Family-2 tag/clear
 /// invalidation reads timestamp markers, so this script no longer maintains any reverse tag index. A non-positive
 /// <c>@keyTtlMs</c> deletes the key instead of writing it, under the same compare, so a write that is already expired
-/// cannot delete a value a concurrent writer stored after the caller read the entry.
+/// cannot delete a value a concurrent writer stored after the caller read the entry. An empty <c>@keyTtlMs</c> writes
+/// the key without a TTL, for an entry that never expires.
 /// </summary>
 /// <remarks>
 /// The concurrency stamp captures only the fixed frame header (the first <c>@headerLen</c> bytes), so the CAS
@@ -34,8 +35,6 @@ internal sealed class CacheTaggedSetScriptDefinition : RedisScriptDefinition
     private CacheTaggedSetScriptDefinition()
         : base(
             """
-            local keyTtlMs = tonumber(@keyTtlMs)
-
             if @expectedValue ~= nil and string.len(@expectedValue) > 0 then
               local current = redis.call('get', @key)
               if current == false then
@@ -46,6 +45,14 @@ internal sealed class CacheTaggedSetScriptDefinition : RedisScriptDefinition
                 return 0
               end
             end
+
+            -- RedisValue.EmptyString is the no-expiry sentinel passed for @keyTtlMs.
+            if @keyTtlMs == '' then
+              redis.call('set', @key, @value)
+              return 1
+            end
+
+            local keyTtlMs = tonumber(@keyTtlMs)
 
             if keyTtlMs <= 0 then
               redis.call('del', @key)

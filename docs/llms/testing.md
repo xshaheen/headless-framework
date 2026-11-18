@@ -441,7 +441,7 @@ Testcontainers fixtures for integration testing.
   - `HeadlessKafkaFixture`
   - `HeadlessAzuriteFixture`
   - `HeadlessLocalStackFixture`
-  - `HeadlessMinioFixture`
+  - `HeadlessMinioFixture` (a plain `ContainerBuilder` container, because Testcontainers removed its MinIO module in 4.16; build a client from the fixture's `ConnectionString` and its `AccessKey` and `SecretKey` constants, not from `Container`)
   - `HeadlessSqlServerFixture` (a database of its own per fixture; architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64; set `HEADLESS_SQLSERVER_IMAGE` to override, see below)
 - `SharedTestContainers` — sharing of one long-lived SQL Server, PostgreSQL, and RabbitMQ container across fixtures and test processes, on by default; set `HEADLESS_TESTCONTAINERS_SHARED=false` to turn it off (see [Shared containers](#shared-containers))
 - `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (`HeadlessRedisContainerExtensions`, namespace `Testcontainers.Redis`) — delete every key in every database by running `redis-cli FLUSHALL` inside the container, so a collection's next test starts clean without a client connection or `allowAdmin`

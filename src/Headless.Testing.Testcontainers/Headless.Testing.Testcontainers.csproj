@@ -16,7 +16,6 @@
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="Testcontainers.Azurite" />
     <PackageReference Include="Testcontainers.LocalStack" />
-    <PackageReference Include="Testcontainers.Minio" />
     <PackageReference Include="Testcontainers.Kafka" />
     <PackageReference Include="Testcontainers.Nats" />
     <PackageReference Include="Testcontainers.PostgreSql" />

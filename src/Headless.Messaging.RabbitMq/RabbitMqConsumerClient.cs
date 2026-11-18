@@ -4,6 +4,8 @@ using Headless.Checks;
 using Headless.Hosting;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -27,6 +29,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly IServiceProvider _serviceProvider;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
     private readonly string _exchangeName;
     private readonly RabbitMqMessagingOptions _rabbitMqOptions;
     private readonly RabbitMqConsumerConfig? _consumerConfig;
@@ -86,6 +89,9 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _connectionChannelPool = connectionChannelPool;
         _serviceProvider = serviceProvider;
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+        _logger =
+            serviceProvider.GetService<ILogger<RabbitMqConsumerClient>>()
+            ?? NullLogger<RabbitMqConsumerClient>.Instance;
         _envelopeGate = serviceProvider.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
         _exchangeName = RabbitMqPhysicalAddress.Exchange(connectionChannelPool.Exchange, lane);
         _rabbitMqOptions = options.Value;
@@ -217,7 +223,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             _channel!,
             _groupConcurrent,
             OnMessageCallback!,
-            OnLogCallback!,
+            _Log,
             _rabbitMqOptions.CustomHeadersBuilder,
             _serviceProvider,
             _kind is ConsumerSubscriptionKind.EveryInstance ? _OnEveryInstanceConsumerCancelledByBroker : null,
@@ -517,7 +523,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                     Reason = ex.Message + "-->" + nameof(channel.QueueDeclareAsync),
                 };
 
-                OnLogCallback!(args);
+                _Log(args);
                 throw;
             }
             catch
@@ -530,6 +536,19 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         {
             _semaphore.Release();
         }
+    }
+
+    // Reads the callback at each event, so the broker consumer sees one attached after it was built, and an event raised
+    // before any callback is attached reaches the client's own logger instead of throwing a NullReferenceException.
+    private void _Log(LogMessageEventArgs args)
+    {
+        if (OnLogCallback is { } onLog)
+        {
+            onLog(args);
+            return;
+        }
+
+        _logger.ConsumerEventWithoutCallback(args.LogType, args.Reason);
     }
 
     private async Task _StartConsumingAsync(RabbitMqBasicConsumer consumer, CancellationToken cancellationToken)
@@ -797,6 +816,16 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             )
             : Task.CompletedTask;
     }
+}
+
+internal static partial class RabbitMqConsumerClientLog
+{
+    [LoggerMessage(
+        EventId = 3015,
+        Level = LogLevel.Warning,
+        Message = "RabbitMQ consumer reported {LogType} before a log callback was attached: {Reason}"
+    )]
+    internal static partial void ConsumerEventWithoutCallback(this ILogger logger, MqLogType logType, string? reason);
 }
 
 internal enum RabbitMqConsumerLifecycleCheckpoint
