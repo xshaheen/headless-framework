@@ -333,6 +333,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
+- Isolation prefix: `Headless:Prefix` (or `ConfigureHeadlessPrefix`) puts one host-wide prefix in front of every name Headless writes to a shared Redis, so several environments can share one server. See [Isolation prefix](#isolation-prefix)
 - Host manifest: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
 - Resource provisioning: `IResourceProvisioner` (provision, verify, purge, delete, status) for external state a feature needs, the `resources` verb of `RunHeadlessAsync(args)` that a deployment runs, `AddDeployStepsOnStartup` for development and test hosts, and `ProvisionResourcesAsync` / `PurgeResourcesAsync` / `DeleteResourcesAsync` on `IServiceProvider`. See [Resource provisioning](#resource-provisioning)
 - Warm-up: `IWarmup` work runs in the background after start, behind the `warmup` readiness check. See [Warm-up](#warm-up)
@@ -556,6 +557,26 @@ A provider package that talks to an external dependency contributes a readiness 
 
   Every community check above takes `failureStatus`, `tags`, and `timeout` at registration; `HeadlessHealthCheckOptions` covers the same three. Prefer a community package when the app needs what these checks deliberately leave out: deciding health from a query's result (`HealthCheckResultBuilder`, for example replication lag), a check for a dependency no Headless provider owns, or a check against a connection string the app does not otherwise use. Register it next to the contributed checks under another name, or drop the contributed one with `RemoveHealthChecks`.
 
+#### Isolation prefix
+
+Several environments that share one Redis, such as worktrees, preview stacks, or sandboxes, keep their data apart by giving each host its own prefix. Set it once, with no code:
+
+```json
+{ "Headless": { "Prefix": "wt1" } }
+```
+
+or as the environment variable `Headless__Prefix=wt1`, or in code with `services.ConfigureHeadlessPrefix("wt1")`, which wins over configuration whether it is called before or after the features are registered.
+
+- **Shape.** Empty (the default) or 1 to 20 lowercase letters, digits, and `-`, neither starting nor ending with `-`. Any other value fails the host's start (`OptionsValidationException` naming `Headless:Prefix`). The character set has no store separator (`:`, `.`, `_`, `/`) and no pattern character, so a prefix cannot reach another environment's names or widen a pattern delete.
+- **Always in front.** The prefix goes before each feature's own key prefix, joined with `:`: a lock on `orders` uses the resource `wt1:distributed-lock:orders`, and a cache with `KeyPrefix = "app:"` writes `wt1:app:{key}`. A custom feature prefix keeps the host prefix in front of it. An empty prefix leaves every name exactly as before.
+- **What it isolates.** Redis and in-memory cache keys and the Redis hybrid invalidation channel ([Caching](caching.md)); regular, semaphore, and read-write lock resources and the Redis lock release channel ([Distributed Locks](distributed-locks.md)); Redis coordination keys ([Coordination](coordination.md)). Features that write through `ICache` or `IDistributedLock` inherit it: idempotency, rate limiting, the cache-factory lock, TUS file locks, tenant-scoped caching, Features, Settings, Permissions, and Jobs.
+- **What it does not isolate.** Database-backed locks (PostgreSQL advisory locks and SQL Server app locks, including the static `SqlServerDistributedLock` helpers), relational coordination (isolated by cluster name), relational storage tables, and blob containers, `Headless.Blobs.Redis` included: environments that share one Redis must give that provider distinct container names. A separate database, schema, or bucket isolates those.
+- **Redis lock keys.** Lock storage hex-encodes the resource inside a hash tag, so a lock key does not start with the prefix and `SCAN wt1:*` does not find it. Cache and coordination keys do start with it.
+- **Visible.** The host logs `Headless names in shared stores start with the prefix '{Prefix}'` once at start, and the [host manifest](#host-manifest) carries it as `host.prefix`.
+- **Not a security boundary.** The prefix separates names; credentials still decide who can reach a store.
+
+A provider package applies the prefix to its own options with `services.ApplyHeadlessPrefix<TOptions>((options, prefix) => ...)`, which runs after all other configuration, for every named instance, once however many registrations call it.
+
 #### Host manifest
 
 A host manifest is a JSON document that lists what each feature registered in the host: Messaging consumer identities with their effective tuning, Jobs functions with theirs. It is read from the same frozen registries the host runs, so it shows the values configuration applied, and it answers "what does this deployed host consume and run?" without starting it.
@@ -606,7 +627,7 @@ The document:
 ```
 
 - `schemaVersion` is `HostManifest.SchemaVersion`; it changes only when a change would break a reader of the old shape.
-- **`host`** is always written: the host environment's application and environment names, the entry assembly's and Headless's informational versions (which carry the source revision when the build stamps one), and the .NET runtime. It names no machine and no address.
+- **`host`** is always written: the host environment's application and environment names, the entry assembly's and Headless's informational versions (which carry the source revision when the build stamps one), and the .NET runtime, and `prefix` when the host has an [isolation prefix](#isolation-prefix). It names no machine and no address.
 - **`healthChecks`** is always written: every registered health check, ordered by name, with its sorted tags, its `failureStatus` (`unhealthy` or `degraded`), and `timeoutSeconds` when it has a timeout. It is read from the configured health check options without running a probe, so a check removed with `RemoveHealthChecks` is absent here as it is from the health endpoints.
 - `sections` has the two built-in sections and one property per registered section, sorted ordinally by name. A feature that is not registered has no section, and a registered section named `host` or `healthChecks` fails the manifest. The [Messaging](messaging.md#host-manifest) and [Jobs](jobs.md#host-manifest) guides document their sections.
 - The manifest never carries connection strings, broker addresses, credentials, provider-specific transport configuration, or runtime state.
