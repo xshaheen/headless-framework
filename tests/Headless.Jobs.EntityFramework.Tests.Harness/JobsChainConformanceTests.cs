@@ -1678,6 +1678,34 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
+    /// A chain child runs under its root's claim and stays <see cref="JobStatus.Idle"/> until it starts. Its start must
+    /// land on that row, so the stored status and the dashboard read <see cref="JobStatus.InProgress"/> while it runs,
+    /// on every claim path (native and the generic CAS fallback alike).
+    /// </summary>
+    public virtual async Task running_chain_child_records_its_start()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost(
+            "chain-child-start",
+            configureJobs: jobs => jobs.AddModule<ChainChildStartJobsModule>(),
+            runBackgroundServices: true
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            await JobsChainChildStartScenarios.RunningChildReadsInProgressAsync(store, ct);
+        }
+        finally
+        {
+            await host.StopAsync(CancellationToken.None);
+        }
+    }
+
+    /// <summary>
     /// A chain persisted while the depth limit was higher, then claimed under a LOWER
     /// <c>MaxChainDepth</c> (the default 10 here), truncates: the claim leases root..depth-10 and leaves deeper nodes
     /// Idle rather than erroring. Seeded directly because <c>EnqueueAsync</c> rejects an over-depth chain — this is the

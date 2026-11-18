@@ -553,6 +553,34 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         childRan.Should().BeTrue("a failing timed-descendant reconcile must not strand the deferred non-timed child");
     }
 
+    [Fact]
+    public async Task does_not_run_a_chain_child_whose_start_write_is_refused()
+    {
+        // given: the root completes, but the child's start matches no row, while its lease still renews
+        var manager = _HealthyManager();
+        var root = _Node("root", () => { });
+        var childRan = false;
+        var child = _Node("child", () => childRan = true);
+        root.TimeJobChildren.Add(child);
+        manager
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.JobId == child.JobId && x.Status == JobStatus.InProgress),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(0));
+        await using var serviceProvider = new ServiceCollection().AddSingleton(manager).BuildServiceProvider();
+        var handler = _Handler(serviceProvider, manager);
+
+        // when
+        await handler.ExecuteTaskAsync(root, isDue: false, cancellationToken: AbortToken);
+
+        // then
+        childRan.Should().BeFalse("a child whose start the store refused must not run");
+        child.LeaseLost.Should().BeTrue();
+        child.LeaseLossReason.Should().Be(JobsLeaseLossReason.StartRejected);
+        root.LeaseLost.Should().BeFalse();
+    }
+
     private static IInternalJobManager _HealthyManager()
     {
         var manager = Substitute.For<IInternalJobManager>();

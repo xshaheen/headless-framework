@@ -706,7 +706,8 @@ public sealed class JobsMetricsTests : TestBase
                 "retry_write_unmatched",
                 "completion_rejected",
                 "release_unmatched",
-                "release_failed"
+                "release_failed",
+                "start_rejected"
             );
     }
 
