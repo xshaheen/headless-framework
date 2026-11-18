@@ -609,6 +609,40 @@ public sealed class PrimitiveGeneratorTests
     }
 
     [Fact]
+    public Task should_generate_all_converters_when_primitive_wraps_another_primitive()
+    {
+        const string source = """
+            using System;
+            using Headless.Generator.Primitives;
+
+            namespace Billing.Money
+            {
+                public readonly partial struct Amount : IPrimitive<decimal>
+                {
+                    public static PrimitiveValidationResult Validate(decimal value) => PrimitiveValidationResult.Ok;
+                }
+            }
+
+            namespace Billing.Catalog
+            {
+                using Billing.Money;
+
+                public readonly partial struct Price : IPrimitive<Amount>
+                {
+                    public static PrimitiveValidationResult Validate(Amount value) =>
+                        value < 0m ? "Price must not be negative" : PrimitiveValidationResult.Ok;
+                }
+            }
+            """;
+
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts + 5),
+            _generateAllOptions
+        );
+    }
+
+    [Fact]
     public Task should_report_unsupported_underlying_type_when_wrapping_a_custom_type()
     {
         const string source = """

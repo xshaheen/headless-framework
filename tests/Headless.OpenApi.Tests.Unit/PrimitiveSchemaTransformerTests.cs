@@ -108,6 +108,44 @@ public sealed class PrimitiveSchemaTransformerTests : TestBase
     }
 
     [Fact]
+    public async Task should_describe_a_primitive_wrapping_another_primitive_as_the_innermost_value()
+    {
+        // The wrapped primitive serializes as its own value, so describing it as an object or a bare string is wrong.
+        var schema = _ObjectSchema();
+
+        await _TransformAsync(schema, typeof(TestPrimitive<ComparablePrimitive<decimal>>));
+
+        schema.Type.Should().Be(JsonSchemaType.Number);
+        schema.Format.Should().Be("decimal");
+        schema.Properties.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_describe_items_of_a_collection_of_nested_primitives()
+    {
+        var schema = new OpenApiSchema { Type = JsonSchemaType.Array };
+
+        await _TransformAsync(schema, typeof(IReadOnlyList<TestPrimitive<ComparablePrimitive<int>>>));
+
+        schema.Items.Should().NotBeNull();
+        schema.Items!.Type.Should().Be(JsonSchemaType.Integer);
+        schema.Items.Format.Should().Be("int32");
+    }
+
+    [Fact]
+    public async Task should_publish_the_tightest_string_length_bounds_across_a_nested_primitive_chain()
+    {
+        // NestedCode allows 4 to 20 characters and wraps ComparableCode, which allows 2 to 10: a value must pass both.
+        var schema = _ObjectSchema();
+
+        await _TransformAsync(schema, typeof(NestedCode));
+
+        schema.Type.Should().Be(JsonSchemaType.String);
+        schema.MinLength.Should().Be(4);
+        schema.MaxLength.Should().Be(10);
+    }
+
+    [Fact]
     public async Task should_leave_a_type_that_is_not_a_primitive_untouched()
     {
         var schema = _ObjectSchema();
@@ -200,4 +238,60 @@ public sealed class UnvalidatedCode : IPrimitive<string>
     public string GetUnderlyingPrimitiveValue() => "";
 
     public static PrimitiveValidationResult Validate(string value) => PrimitiveValidationResult.Ok;
+}
+
+#pragma warning disable CA1036 // Fixtures that only carry interfaces; operators would add code no test exercises.
+/// <summary>A primitive that can itself be wrapped, because <c>IPrimitive&lt;T&gt;</c> requires a comparable value.</summary>
+public readonly record struct ComparablePrimitive<T> : IPrimitive<T>, IComparable, IComparable<ComparablePrimitive<T>>
+    where T : IEquatable<T>, IComparable, IComparable<T>
+{
+    public Type GetUnderlyingPrimitiveType() => typeof(T);
+
+    public T GetUnderlyingPrimitiveValue() => default!;
+
+    public int CompareTo(object? obj) => 0;
+
+    public int CompareTo(ComparablePrimitive<T> other) => 0;
+
+#pragma warning disable CA1000 // False positive: IPrimitive<T> declares Validate as static abstract, so the implementation must be static.
+    public static PrimitiveValidationResult Validate(T value) => PrimitiveValidationResult.Ok;
+#pragma warning restore CA1000
+}
+
+/// <summary>A string primitive that allows 2 to 10 characters and can be wrapped by another primitive.</summary>
+[StringLength(2, 10)]
+public sealed class ComparableCode
+    : IPrimitive<string>,
+        IEquatable<ComparableCode>,
+        IComparable,
+        IComparable<ComparableCode>
+{
+    public Type GetUnderlyingPrimitiveType() => typeof(string);
+
+    public string GetUnderlyingPrimitiveValue() => "";
+
+    public bool Equals(ComparableCode? other) => other is not null;
+
+    public override bool Equals(object? obj) => obj is ComparableCode;
+
+    public override int GetHashCode() => 0;
+
+    public int CompareTo(object? obj) => 0;
+
+    public int CompareTo(ComparableCode? other) => 0;
+
+    public static PrimitiveValidationResult Validate(string value) => PrimitiveValidationResult.Ok;
+}
+
+#pragma warning restore CA1036
+
+/// <summary>A primitive over <see cref="ComparableCode"/> that allows 4 to 20 characters of its own.</summary>
+[StringLength(4, 20)]
+public sealed class NestedCode : IPrimitive<ComparableCode>
+{
+    public Type GetUnderlyingPrimitiveType() => typeof(string);
+
+    public ComparableCode GetUnderlyingPrimitiveValue() => new();
+
+    public static PrimitiveValidationResult Validate(ComparableCode value) => PrimitiveValidationResult.Ok;
 }
