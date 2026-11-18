@@ -89,9 +89,14 @@ internal abstract class InboxTransactionRunner(
 
             handlerEntered = true;
             await handler(unitOfWork, cancellationToken).ConfigureAwait(false);
-            await attempt.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+            // Once the handler returned, its work must commit: shutdown cancels the consume token when it starts, so
+            // a commit bound to it would roll back a finished handler and the next host would run it again. The
+            // completion stays fenced on the attempt's lease, so a lost lease still refuses it, and the
+            // non-transactional tier's success write is uncancellable for the same reason.
+            await attempt.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             var completed = await storage
-                .CompleteReceivedInboxAsync(message, attempt.Transaction, cancellationToken)
+                .CompleteReceivedInboxAsync(message, attempt.Transaction, CancellationToken.None)
                 .ConfigureAwait(false);
             if (!completed)
             {
@@ -100,7 +105,7 @@ internal abstract class InboxTransactionRunner(
 
             try
             {
-                await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception commitException)
             {
