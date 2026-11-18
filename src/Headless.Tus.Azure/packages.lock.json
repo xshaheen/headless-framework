@@ -339,8 +339,8 @@
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.13, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.13, )"
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )"
         }
       },
       "headless.primitives": {
@@ -485,9 +485,9 @@
       },
       "OpenMcdf": {
         "type": "CentralTransitive",
-        "requested": "[3.3.0, )",
-        "resolved": "3.3.0",
-        "contentHash": "a7lcs+yTDzPRRS82KMmU/eVCMKbJrDStD1Yt+6RRZIsDxU006IdxEVkmMLvxt2hB5YS3Imfcxrdwywtv29ogjw=="
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "HO/oY3oEUJw1DEcjSxR/dMEhYbJ/psUH1mZ0OFDhqrDaZg/kEPc4Go1U7eRjYgEgsEqujYueE+0+A67VlttemQ=="
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
