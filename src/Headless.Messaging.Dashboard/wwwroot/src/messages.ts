@@ -249,8 +249,9 @@ export function nodeQuery(node: string): Record<string, string> {
 
 interface MessageListAnswer {
   items: MessageRow[]
-  count: number
-  countCapped: boolean
+  /** Sent with the first page only, the one read without a cursor. */
+  count?: number
+  countCapped?: boolean
   nextCursor?: string | null
   /** The stores that did not answer; their rows are missing from the page. */
   unavailable?: string[]
@@ -289,7 +290,6 @@ function readSearchKey(key: string | undefined): MessageSearch {
 }
 
 export type MessagePage = DashboardListPage<MessageRow> & {
-  count: CappedCount
   unavailable: string[]
   incomplete: boolean
 }
@@ -300,6 +300,7 @@ const flagFields = new Set<keyof MessageFilter>(['terminal', 'retrying', 'held']
 /**
  * One page of a list in the server order `request.sort` names, newest first by default: the first page, or the page
  * after the row `cursor` names. A search goes in the body of the list's search route, so its text never enters a URL.
+ * Only the first page carries the count; the keyset list reads it from there.
  */
 export async function fetchMessages(
   api: DashboardApi,
@@ -365,11 +366,31 @@ export async function fetchMessages(
   return {
     items: answer.items,
     // A store that did not answer, or a search that ran out of time, leaves rows out of the count: it reads as at least.
-    count: { value: answer.count, capped: answer.countCapped || unavailable.length > 0 || incomplete },
+    ...(answer.count === undefined
+      ? {}
+      : {
+          count: { value: answer.count, capped: answer.countCapped === true || unavailable.length > 0 || incomplete },
+        }),
     nextCursor: answer.nextCursor ?? null,
     unavailable,
     incomplete,
   }
+}
+
+/** The capped count of a list's filter, read from its first page of one row. */
+export async function countMessages(
+  api: DashboardApi,
+  kind: MessageKind,
+  node: string,
+  filter: MessageFilter,
+): Promise<CappedCount> {
+  const page = await fetchMessages(api, kind, node, filter, undefined, {}, 1)
+
+  if (!page.count) {
+    throw new Error(`The ${kind} list answered its first page without a count.`)
+  }
+
+  return page.count
 }
 
 /** One row with its headers, body, and failure, read on its node. */

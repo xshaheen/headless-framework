@@ -49,9 +49,9 @@ import { Link, useSearchParams } from '@headless/dashboard-sdk/router'
 import { useModuleStale, useNodeStale, useStreamEvent, useStreamStatus } from '@headless/dashboard-sdk/stream'
 import { useEffect, type ReactNode } from 'react'
 import {
+  countMessages,
   fetchGenerations,
   fetchMessage,
-  fetchMessages,
   markDone,
   nodeQuery,
   readFilter,
@@ -291,17 +291,9 @@ export function useMessagingCounts() {
       if (node) {
         const read = await Promise.all(
           peerCounts.map(async ({ key, kind, params }) => {
-            const page = await fetchMessages(
-              api,
-              kind,
-              node,
-              readFilter(new URLSearchParams(params), kind),
-              undefined,
-              {},
-              1,
-            )
+            const count = await countMessages(api, kind, node, readFilter(new URLSearchParams(params), kind))
 
-            return [key, page.count] as const
+            return [key, count] as const
           }),
         )
 
