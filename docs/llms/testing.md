@@ -435,6 +435,7 @@ Testcontainers fixtures for integration testing.
 - Fixtures for every backing service used in the framework:
   - `HeadlessPostgreSqlFixture` (a database of its own per fixture, see [Logical isolation](#logical-isolation); override `Image` for a server with extensions such as PostGIS)
   - `HeadlessRedisFixture`
+  - `HeadlessRedisClusterFixture` (a Redis Cluster of three primaries in one container; see [Redis Cluster](#redis-cluster))
   - `HeadlessRabbitMqFixture` (a virtual host of its own per fixture)
   - `HeadlessNatsFixture`
   - `HeadlessKafkaFixture`
@@ -473,6 +474,14 @@ The SQL Server, PostgreSQL, and RabbitMQ fixtures attach to one container per im
 - Redis, NATS, Kafka, Azurite, LocalStack, and MinIO stay private: Redis pub/sub and `FLUSHALL` cross its numbered databases, and the others carry no isolation boundary their tests use.
 
 Testcontainers reuse stays banned for test code (`WithReuse` fails the build with RS0030, `eng/BannedSymbols.Testcontainers.txt`): a reused container keeps one run's schema and rows for the next. `SharedTestContainers` is the one place that calls it, with logical isolation around it.
+
+#### Redis Cluster
+
+`HeadlessRedisClusterFixture` runs three primaries (`PrimaryCount`), no replicas, in one container, for code that only runs on a cluster, such as per-hash-slot command splitting. Connect with `ConnectionString`, which seeds every primary; `Endpoints` lists them.
+
+- A cluster client routes by the topology the nodes announce, and a node announces its in-container address by default, which the host cannot reach. Once Docker has mapped the ports, each node announces `127.0.0.1` and its host-mapped port. The cluster bus stays on its container port: the nodes share the container's loopback, so gossip needs no host mapping. The fixture therefore needs a local Docker engine, and fails the start with `NotSupportedException` on a remote one.
+- `UnassignSlotAsync(slot)` takes one hash slot away from its primary, so commands for that slot fail with `CLUSTERDOWN Hash slot not served` while the rest of the cluster keeps serving (`cluster-require-full-coverage no`). Dispose the returned handle to give the slot back; its keys are kept.
+- `FlushAllAsync()` runs `FLUSHALL` on every primary.
 
 #### Readiness from the test host
 

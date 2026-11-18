@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Headless.Caching.Scripts;
 using Headless.Checks;
@@ -1832,6 +1833,11 @@ public sealed class RedisCache(
         var isCluster = IsCluster;
         long deleted = 0;
 
+        // A failed batch or node does not end the sweep: the remaining batches and primaries are still deleted, and the
+        // first failure surfaces afterwards, as the per-slot commands of the other bulk operations do. Stopping at the
+        // first failure would leave every later node's matching keys behind while the caller only sees one slot fail.
+        ExceptionDispatchInfo? firstFailure = null;
+
         foreach (var endpoint in endpoints)
         {
             var server = cacheOptions.ConnectionMultiplexer.GetServer(endpoint);
@@ -1843,26 +1849,51 @@ public sealed class RedisCache(
 
             var keys = new List<RedisKey>();
 
-            await foreach (
-                var key in server.KeysAsync(pattern: pattern, pageSize: _BatchSize).WithCancellation(cancellationToken)
-            )
+            try
             {
-                keys.Add(key);
-
-                if (keys.Count >= _BatchSize)
+                await foreach (
+                    var key in server
+                        .KeysAsync(pattern: pattern, pageSize: _BatchSize)
+                        .WithCancellation(cancellationToken)
+                )
                 {
-                    deleted += await _DeleteKeysAsync([.. keys], isCluster).ConfigureAwait(false);
-                    keys.Clear();
+                    keys.Add(key);
+
+                    if (keys.Count >= _BatchSize)
+                    {
+                        deleted += await deleteBatchAsync([.. keys]).ConfigureAwait(false);
+                        keys.Clear();
+                    }
+                }
+
+                if (keys.Count > 0)
+                {
+                    deleted += await deleteBatchAsync([.. keys]).ConfigureAwait(false);
                 }
             }
-
-            if (keys.Count > 0)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
-                deleted += await _DeleteKeysAsync([.. keys], isCluster).ConfigureAwait(false);
+                // The node's scan failed; its unscanned keys stay, the other nodes are still swept.
+                firstFailure ??= ExceptionDispatchInfo.Capture(e);
             }
         }
 
+        firstFailure?.Throw();
+
         return deleted;
+
+        async Task<long> deleteBatchAsync(RedisKey[] batch)
+        {
+            try
+            {
+                return await _DeleteKeysAsync(batch, isCluster).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                firstFailure ??= ExceptionDispatchInfo.Capture(e);
+                return 0;
+            }
+        }
     }
 
     /// <inheritdoc />
