@@ -570,6 +570,8 @@ services.AddHeadlessMessaging(setup =>
 });
 
 // Publish through the partner broker.
+public sealed record OrderShipped(Guid OrderId);
+
 public sealed class PartnerNotifier([FromKeyedServices("partner")] IBus partnerBus)
 {
     public Task NotifyAsync(OrderShipped message, CancellationToken cancellationToken) =>
