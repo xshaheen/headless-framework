@@ -42,6 +42,11 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
         return fixture.TakeDeadLetteredMessageIdsAsync(session, cancellationToken);
     }
 
+    protected override string DescribeDeadLetterEvidence(TransportConsumerConformanceSession session)
+    {
+        return AzureServiceBusDeliveryJournal.Describe(session.Destination);
+    }
+
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers()
     {
@@ -127,6 +132,7 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
     public async Task should_dead_letter_missing_required_headers_across_consumer_restart()
     {
         var terminalLogs = 0;
+        var deadLetterLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var session = await fixture.CreateQueueSessionAsync(AbortToken);
         await session.StartAsync(
             onLog: log =>
@@ -134,6 +140,7 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
                 if (log.Reason?.Contains("dead-lettered", StringComparison.Ordinal) == true)
                 {
                     Interlocked.Increment(ref terminalLogs);
+                    deadLetterLogged.TrySetResult();
                 }
             },
             cancellationToken: AbortToken
@@ -143,13 +150,7 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
 
         await sender.SendMessageAsync(new ServiceBusMessage("valid-body"), AbortToken);
 
-        using (var timeout = TimeSpan.FromSeconds(15).ToCancellationTokenSource(AbortToken))
-        {
-            while (Volatile.Read(ref terminalLogs) == 0)
-            {
-                await Task.Delay(20, timeout.Token);
-            }
-        }
+        await deadLetterLogged.Task.Bounded();
 
         await session.StopAsync(TimeSpan.FromSeconds(2));
         await using var replacement = await session.CreateReplacementAsync(AbortToken);

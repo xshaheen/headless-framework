@@ -12,7 +12,6 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Time.Testing;
 using NSubstitute.ExceptionExtensions;
 using SqsMessage = Amazon.SQS.Model.Message;
 
@@ -710,7 +709,10 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var maxConcurrent = 0;
         var lockObj = new Lock();
         var messagesProcessed = 0;
-        var tcs = new TaskCompletionSource();
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var limitReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thirdRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         client.OnMessageCallback = async (_, sender) =>
         {
@@ -721,9 +723,15 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 {
                     maxConcurrent = activeTasks;
                 }
+
+                if (activeTasks == concurrencyLimit)
+                {
+                    limitReached.TrySetResult();
+                }
             }
 
-            await Task.Delay(20, AbortToken); // Simulate work
+            // Held until the test has checked the limit, so a handler beyond it would overlap these.
+            await release.Task.Bounded();
 
             lock (lockObj)
             {
@@ -745,6 +753,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .Returns(_ =>
             {
                 var count = Interlocked.Increment(ref receiveCount);
+                if (count == 3)
+                {
+                    // The loop asks for a third message only after it dispatched the second.
+                    thirdRequested.TrySetResult();
+                }
+
                 if (count <= 4)
                 {
                     return Task.FromResult(
@@ -773,7 +787,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource();
         var listeningTask = Task.Run(
             async () =>
             {
@@ -789,14 +803,28 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             AbortToken
         );
 
-        // Wait for every message; a cap check over no handled messages proves nothing.
-        var processedAll = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(4), AbortToken)) == tcs.Task;
-        await cts.CancelAsync();
-        await listeningTask;
+        try
+        {
+            // The limit is reached and the loop has moved on to a third message: with every slot taken it must be
+            // waiting for one, so the semaphore is empty.
+            await limitReached.Task.Bounded();
+            await thirdRequested.Task.Bounded();
+            semaphore.CurrentCount.Should().Be(0, "every slot is held by a running handler");
 
-        // then - max concurrent should not exceed concurrency limit
-        processedAll.Should().BeTrue("all four messages must be handled within the listening window");
-        maxConcurrent.Should().BeInRange(1, concurrencyLimit);
+            // Wait for every message; a cap check over no handled messages proves nothing.
+            release.TrySetResult();
+            await tcs.Task.Bounded();
+        }
+        finally
+        {
+            // A failed check must not leave the handlers or the loop pending.
+            release.TrySetResult();
+            await cts.CancelAsync();
+            await listeningTask;
+        }
+
+        // then - max concurrent reached the limit and did not exceed it
+        maxConcurrent.Should().Be(concurrencyLimit);
     }
 
     [Fact]
@@ -1547,7 +1575,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     {
         // given a queue whose first two receives cannot reach the broker
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingFakeTimeProvider();
         await using var client = new AmazonSqsConsumerClient(
             "test-group",
             1,
@@ -1573,7 +1601,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // when the loop retries through the outage and then polls an empty queue twice more
         using var cts = new CancellationTokenSource();
         var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        await _AdvanceUntilAsync(time, () => Volatile.Read(ref receives) >= 5);
+        await time.AdvanceUntilAsync(() => Volatile.Read(ref receives) >= 5, TimeSpan.FromMinutes(1), AbortToken);
         await cts.CancelAsync();
         try
         {
@@ -1586,19 +1614,5 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // then only the recovery itself is reported, not every later empty poll
         reports.Should().Equal(MqLogType.BrokerUnreachable, MqLogType.BrokerUnreachable, MqLogType.BrokerReachable);
-    }
-
-    // The receive loop waits on the fake clock between polls, and a wait may register just after an advance, so the
-    // clock keeps moving until the loop has done what the test waits for.
-    private static async Task _AdvanceUntilAsync(FakeTimeProvider time, Func<bool> done)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-
-        while (!done())
-        {
-            time.Advance(TimeSpan.FromMinutes(1));
-            await Task.Delay(10, timeout.Token);
-        }
     }
 }

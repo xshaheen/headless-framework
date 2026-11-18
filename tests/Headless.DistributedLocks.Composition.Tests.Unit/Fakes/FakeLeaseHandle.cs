@@ -7,6 +7,9 @@ namespace Tests.Fakes;
 internal sealed class FakeLeaseHandle(TimeProvider timeProvider) : LeaseMonitor.ILeaseHandle
 {
     private readonly Queue<object> _results = [];
+    private readonly Lock _invocationLock = new();
+    private readonly List<(int Count, TaskCompletionSource Signal)> _invocationWaiters = [];
+    private int _invocationCount;
 
     public string Resource { get; init; } = "test-resource";
 
@@ -21,7 +24,33 @@ internal sealed class FakeLeaseHandle(TimeProvider timeProvider) : LeaseMonitor.
 
     public TimeSpan StorageDeadline { get; init; } = TimeSpan.FromSeconds(5);
 
-    public int InvocationCount { get; private set; }
+    public int InvocationCount
+    {
+        get
+        {
+            lock (_invocationLock)
+            {
+                return _invocationCount;
+            }
+        }
+    }
+
+    /// <summary>Completes once the monitor has probed this handle at least <paramref name="count"/> times.</summary>
+    public Task WhenInvokedAsync(int count)
+    {
+        lock (_invocationLock)
+        {
+            if (_invocationCount >= count)
+            {
+                return Task.CompletedTask;
+            }
+
+            var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _invocationWaiters.Add((count, signal));
+
+            return signal.Task;
+        }
+    }
 
     public void Enqueue(LeaseMonitor.LeaseState state)
     {
@@ -36,7 +65,12 @@ internal sealed class FakeLeaseHandle(TimeProvider timeProvider) : LeaseMonitor.
     public Task<LeaseMonitor.LeaseState> RenewOrValidateLeaseAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        InvocationCount++;
+
+        lock (_invocationLock)
+        {
+            _invocationCount++;
+            _invocationWaiters.RemoveAll(waiter => _invocationCount >= waiter.Count && waiter.Signal.TrySetResult());
+        }
 
         if (_results.Count == 0)
         {

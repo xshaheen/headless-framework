@@ -14,6 +14,9 @@ internal sealed partial class RelationalDataStorage
     // branches from the enum keeps a newly added operation type from being silently excluded from retention.
     private static readonly MessagingOperationType[] _HistoryOperationTypes = Enum.GetValues<MessagingOperationType>();
 
+    /// <summary>How many expired receipts one cleanup transaction locks and deletes.</summary>
+    private const int _ReceiptDeleteChunkSize = 100;
+
     public async ValueTask<InboxHistoryRetentionCutoffs> GetInboxHistoryRetentionCutoffsAsync(
         CancellationToken cancellationToken = default
     )
@@ -150,14 +153,19 @@ internal sealed partial class RelationalDataStorage
             }
         }
 
+        // Every sweeper takes a chunk's operation locks in one command, in ascending id order, so two sweepers over
+        // overlapping batches cannot deadlock, and a request holds only its own operation's lock. A chunk bounds how
+        // many locks one transaction holds, and so how long a request on one of them waits.
+        var doomed = candidates
+            .OrderBy(static row => row.CreatedAt)
+            .ThenBy(static row => row.Id)
+            .Take(batchSize)
+            .Select(static row => row.Id)
+            .Order()
+            .ToArray();
+
         var deleted = 0;
-        foreach (
-            var operationId in candidates
-                .OrderBy(static row => row.CreatedAt)
-                .ThenBy(static row => row.Id)
-                .Take(batchSize)
-                .Select(static row => row.Id)
-        )
+        foreach (var chunk in doomed.Chunk(_ReceiptDeleteChunkSize))
         {
             cancellationToken.ThrowIfCancellationRequested();
             deleted += await SqlAutonomousTransaction
@@ -166,18 +174,35 @@ internal sealed partial class RelationalDataStorage
                     _CreateConnection,
                     async (connection, transaction, ct) =>
                     {
-                        await _LockOperationAsync(connection, transaction, operationId, ct).ConfigureAwait(false);
+                        await _LockOperationsAsync(connection, transaction, chunk, ct).ConfigureAwait(false);
 
-                        // Keyed by the primary key, so the type/cutoff predicate is a residual filter, not a seek.
+                        // Runs after the locks, so it sees the receipt and audit of any request it waited behind
+                        // and checks each receipt's age and references again. Keyed by the primary key, so the
+                        // type/cutoff predicate is a residual filter, not a seek.
+                        var list = string.Join(
+                            ',',
+                            Enumerable
+                                .Range(0, chunk.Length)
+                                .Select(static i => "@Id" + i.ToString(CultureInfo.InvariantCulture))
+                        );
                         return await RelationalCommand
                             .ExecuteNonQueryAsync(
                                 connection,
                                 transaction,
-                                $"DELETE FROM {_t.Receipts} WHERE {_t.OperationId}=@OperationId AND {_t.CreatedAt}<=CASE WHEN {_t.OperationType}=@CleanupType THEN @Cleanup ELSE @Operator END AND NOT EXISTS (SELECT 1 FROM {_t.Audit} a WHERE a.{_t.OperationId}=@OperationId);",
+                                $"DELETE FROM {_t.Receipts} WHERE {_t.OperationId} IN ({list}) AND {_t.CreatedAt}<=CASE WHEN {_t.OperationType}=@CleanupType THEN @Cleanup ELSE @Operator END AND {_t.OperationId} NOT IN (SELECT a.{_t.OperationId} FROM {_t.Audit} a WHERE a.{_t.OperationId} IN ({list}));",
                                 CommandTimeoutSeconds,
                                 command =>
                                 {
-                                    _dialect.AddParameter(command, "OperationId", SqlColumnType.Guid, operationId);
+                                    for (var i = 0; i < chunk.Length; i++)
+                                    {
+                                        _dialect.AddParameter(
+                                            command,
+                                            "Id" + i.ToString(CultureInfo.InvariantCulture),
+                                            SqlColumnType.Guid,
+                                            chunk[i]
+                                        );
+                                    }
+
                                     _dialect.AddParameter(
                                         command,
                                         "CleanupType",

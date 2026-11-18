@@ -175,10 +175,10 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         await winnerStarted.Task.Bounded();
         var second = coordinatorB.GetOrAddAsync(_store, key, factory, _CreateOptions(), AbortToken).AsTask();
 
-        while (_lockProvider.AcquireAttempts < 2)
-        {
-            await Task.Delay(10, AbortToken);
-        }
+        // The loser reaches the lock provider synchronously (the store and per-coordinator lock are uncontended), so
+        // its attempt is counted before the call returns and it then parks on the winner's lease.
+        _lockProvider.AcquireAttempts.Should().Be(2);
+        second.IsCompleted.Should().BeFalse("the loser must wait for the winner's lease");
 
         gate.SetResult();
         var results = await Task.WhenAll(first, second);

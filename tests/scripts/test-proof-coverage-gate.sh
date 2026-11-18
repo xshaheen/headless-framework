@@ -170,7 +170,7 @@ if [[ "$(grep -c '<details' <<<"$verification")" -ne 1 ]]; then
   printf 'FAIL: the PR template nests a collapsible inside Verification\n' >&2
   exit 1
 fi
-# The pasted summary is the Verification table, and the author extends it with rows rather than adding tables.
+# Verification is one table: the author condenses each gate run to a row and adds other checks as rows, never tables.
 if [[ "$(grep -c '^| --- ' <<<"$verification")" -ne 1 ]] || ! grep -qxF -- '| Check | Result |' <<<"$verification"; then
   printf 'FAIL: the PR template Verification block is not one Check | Result table\n' >&2
   exit 1

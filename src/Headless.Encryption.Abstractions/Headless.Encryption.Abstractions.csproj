@@ -6,6 +6,11 @@
     <RootNamespace>Headless.Encryption</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Encryption" />
+    <InternalsVisibleTo Include="Headless.Encryption.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Encryption.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
   </ItemGroup>
 </Project>

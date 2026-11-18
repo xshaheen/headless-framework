@@ -411,6 +411,35 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
+    public async Task execute_task_async_fails_the_run_when_a_completed_attempts_scope_dispose_throws_and_the_retry_fails()
+    {
+        var options = new JobsRetryOptions();
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
+            retries: 1,
+            retryOptions: options,
+            configureServices: services => services.AddScoped<ThrowingOnDisposeService>()
+        );
+        context.CachedDelegate = (provider, jobContext, token) =>
+        {
+            attempts.Add(new Attempt(DateTime.UtcNow, jobContext.RetryCount));
+            _ = provider.GetRequiredService<ThrowingOnDisposeService>();
+
+            return jobContext.RetryCount == 0
+                ? Task.CompletedTask
+                : throw new InvalidOperationException("the retry failed");
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+
+        // The scope's dispose is part of the attempt: its failure fails the attempt, so the run is not recorded as a
+        // success that no attempt finished.
+        attempts.Select(x => x.RetryCount).Should().Equal(0, 1);
+        context.Status.Should().Be(JobStatus.Failed);
+        context.AttemptEnd!.Outcome.Should().Be(JobAttemptOutcome.Failed);
+    }
+
+    [Fact]
     public async Task execute_task_async_composes_cross_assembly_execute_middleware_once_per_attempt_and_observes_errors()
     {
         {
@@ -1452,7 +1481,7 @@ public sealed class RetryBehaviorTests : TestBase
             // which hangs. The app clock never moves again.
             timeProvider.Advance(TimeSpan.FromMilliseconds(100));
 
-            await execution.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            await execution.WaitAsync(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken);
         }
         finally
         {
@@ -1507,13 +1536,19 @@ public sealed class RetryBehaviorTests : TestBase
             Retries = 0,
             RetryCount = 0,
             Status = JobStatus.Idle,
-        };
-        context.CachedDelegate = async (_, _, _) =>
-        {
-            while (!context.LeaseLost)
+            CachedDelegate = async (_, _, attemptToken) =>
             {
-                await Task.Delay(5, AbortToken);
-            }
+                // Lease loss is flagged before the attempt token is cancelled; the job then carries on as if the
+                // cancellation had not happened.
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, attemptToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Ignored on purpose: this is the job that ignores cancellation.
+                }
+            },
         };
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -1933,4 +1968,10 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     private sealed class RetryScopeMarker;
+
+    // A scoped service that flushes on dispose, as a unit of work can, and whose flush fails.
+    private sealed class ThrowingOnDisposeService : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => throw new InvalidOperationException("flush on dispose failed");
+    }
 }

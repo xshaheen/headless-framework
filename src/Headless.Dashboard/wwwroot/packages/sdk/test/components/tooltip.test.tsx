@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button } from '../../src/components/button.tsx'
 import { KeyValueTable } from '../../src/components/display/key-value-table.tsx'
 import { DataTable } from '../../src/components/table/data-table.tsx'
@@ -42,6 +42,10 @@ describe('icon actions', () => {
 })
 
 describe('row-action tooltips', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   function Circuits() {
     return (
       <DataTable
@@ -71,12 +75,50 @@ describe('row-action tooltips', () => {
   })
 
   it('opens no tooltip when a row action is clicked', async () => {
-    const user = userEvent.setup()
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     render(<Circuits />)
 
+    // React Aria starts a hover only once the last input was a pointer, and tells the tooltip the input is no longer
+    // the keyboard only on a pointer press. Press elsewhere first, as a mouse user already has, so the click on the
+    // action lands on an armed hover delay with close-on-press in force.
+    await user.click(document.body)
     await user.click(screen.getByRole('button', { name: 'Force open' }))
-    // Past the hover delay, so a tooltip the click left pending would have opened by now.
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    // Firing every timer still pending runs the hover delay, so a tooltip the click left pending opens now.
+    await act(() => vi.runAllTimersAsync())
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('closes the hover tooltip on a click that follows a key pressed elsewhere', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Circuits />)
+    const action = screen.getByRole('button', { name: 'Force open' })
+
+    await user.click(document.body)
+    await user.hover(action)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Force open')
+
+    // A key typed while the pointer rests on the action makes the keyboard the last input; the click must still count
+    // as a pointer press.
+    await user.keyboard('j')
+    await user.click(action)
+    await act(() => vi.runAllTimersAsync())
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('opens no pending hover tooltip on a click that follows a key pressed elsewhere', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Circuits />)
+    const action = screen.getByRole('button', { name: 'Force open' })
+
+    await user.click(document.body)
+    await user.hover(action)
+    await user.keyboard('j')
+    await user.click(action)
+    // Firing every timer still pending runs the hover delay, so a tooltip the click left pending opens now.
+    await act(() => vi.runAllTimersAsync())
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
 })

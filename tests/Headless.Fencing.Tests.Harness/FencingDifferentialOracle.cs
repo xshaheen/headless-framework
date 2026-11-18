@@ -132,6 +132,7 @@ public static class FencingDifferentialOracle
                         or FencingOracleOp.EnlistedGrant
             )
             {
+                // real-wait: the spacing is real elapsed time on the database's own clock, whose coarse resolution is what the tolerance models; no fake clock moves a store's timestamp
                 await Task.Delay(tolerance.ClockSpacing, cancellationToken).ConfigureAwait(false);
             }
 

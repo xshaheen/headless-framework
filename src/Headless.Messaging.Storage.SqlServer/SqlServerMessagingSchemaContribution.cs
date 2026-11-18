@@ -373,6 +373,8 @@ internal static class SqlServerMessagingSchemaContribution
                     [ExceptionInfo] [nvarchar](max) NULL,
                     -- See the received table's failure fingerprint.
                     [FailureFingerprint] [nvarchar](64) NULL,
+                    -- The named transport that sends the row; NULL for the default transport.
+                    [Transport] [nvarchar](64) NULL,
                     -- See the received table's change marker.
                     [ChangedAt] [datetimeoffset](7) NOT NULL CONSTRAINT [DF_{publishedPrefix}_ChangedAt] DEFAULT TODATETIMEOFFSET(SYSUTCDATETIME(), 0),
                     CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)

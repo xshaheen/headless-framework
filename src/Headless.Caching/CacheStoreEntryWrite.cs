@@ -13,10 +13,16 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// <summary>Gets a value indicating whether the stored value represents a cached null sentinel.</summary>
     public required bool IsNull { get; init; }
 
-    /// <summary>Gets the logical expiration timestamp (UTC).</summary>
+    /// <summary>
+    /// Gets the logical expiration timestamp (UTC). <see cref="DateTime.MaxValue"/> means the entry never goes stale:
+    /// stores keep no deadline for it and <c>GetExpirationAsync</c> reports <see langword="null"/>.
+    /// </summary>
     public required DateTime LogicalExpiresAt { get; init; }
 
-    /// <summary>Gets the physical retention expiration timestamp (UTC).</summary>
+    /// <summary>
+    /// Gets the physical retention expiration timestamp (UTC). <see cref="DateTime.MaxValue"/> means the entry is
+    /// retained until it is removed or evicted: stores set no retention deadline (no key TTL) for it.
+    /// </summary>
     public required DateTime PhysicalExpiresAt { get; init; }
 
     /// <summary>Gets the optional idle window used to extend logical expiration.</summary>
@@ -39,6 +45,15 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// construction sites that do not set it stay valid and persist <see langword="null"/>.
     /// </summary>
     public DateTime? CreatedAt { get; init; }
+
+    /// <summary>
+    /// Gets the optional UTC timestamp until which a fail-safe throttle holds back the factory for this entry. The
+    /// coordinator sets it only on the fail-safe throttle restamp, to the restamp's logical expiration; any other
+    /// write leaves it <see langword="null"/>. Stores persist it beside <see cref="CreatedAt"/>, which keeps the
+    /// birth time so direct reads still treat a tag- or clear-invalidated reserve as a miss, and return it
+    /// unchanged through <see cref="CacheStoreEntry{T}.ThrottledUntil"/>; they apply no throttle logic of their own.
+    /// </summary>
+    public DateTime? ThrottledUntil { get; init; }
 
     /// <summary>Gets the optional invalidation tags associated with the cached value.</summary>
     public IReadOnlyCollection<string>? Tags { get; init; }

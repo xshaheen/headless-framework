@@ -15,4 +15,4 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingdashboardk8s)
+- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging/dashboard.md#headlessmessagingdashboardk8s)

@@ -4,6 +4,7 @@ using Headless.Caching;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -37,6 +38,16 @@ public abstract class RedisCacheTestBase(RedisCacheFixture fixture) : TestBase
             Fixture.ScriptsLoader,
             logger
         );
+    }
+
+    /// <summary>
+    /// An app clock for tests that need a later timestamp on a write than on an earlier one. The timestamps the cache
+    /// stamps on its entries and invalidation markers come from the injected clock, so advancing it replaces a real
+    /// wait. Redis expiry is relative to the Redis server's own clock, so a fixed start date does not shorten any TTL.
+    /// </summary>
+    protected static FakeTimeProvider CreateFakeClock()
+    {
+        return new(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
     }
 
     protected async Task FlushAsync()

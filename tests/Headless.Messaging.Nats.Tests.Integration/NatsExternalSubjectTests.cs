@@ -376,6 +376,8 @@ public sealed class NatsExternalSubjectTests(NatsFixture fixture) : TestBase
     {
         public ConcurrentQueue<ExternalRunReceipt> Received { get; } = new();
 
+        private readonly ChangeSignal _arrived = new();
+
         public ValueTask ConsumeAsync(ConsumeContext<ExternalRun> context, CancellationToken cancellationToken)
         {
             Received.Enqueue(
@@ -387,18 +389,14 @@ public sealed class NatsExternalSubjectTests(NatsFixture fixture) : TestBase
                     context.Message.Value
                 )
             );
+            _arrived.Notify();
             return ValueTask.CompletedTask;
         }
 
         public async Task WaitForCountAsync(int count, TimeSpan timeout, CancellationToken cancellationToken)
         {
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(timeout);
-
-            while (Received.Count < count)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(50), deadline.Token);
-            }
+            var reached = await _arrived.WaitUntilAsync(() => Received.Count >= count, timeout, cancellationToken);
+            reached.Should().BeTrue($"{count} message(s) should arrive within {timeout}; got {Received.Count}");
         }
     }
 

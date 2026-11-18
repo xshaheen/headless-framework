@@ -62,6 +62,7 @@ public sealed class PostgreSqlConcurrentStopTests(PostgreSqlJobsCoordinationFixt
                             + "; stop "
                             + stop.Status
                     );
+                // real-wait: the invariant is that the node stays alive on the coordination store's heartbeat clock for the whole drain window, which only elapsing time can show
                 await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
             }
 
@@ -125,6 +126,7 @@ public sealed class PostgreSqlConcurrentStopTests(PostgreSqlJobsCoordinationFixt
                         .BeTrue("the node must stay a member until its interrupted job is handed back");
                 }
 
+                // real-wait: the stop ends when the scheduler cancels the job at its real-time release window, so membership is sampled across that elapsing time
                 await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
             }
 

@@ -511,6 +511,7 @@ public sealed class EndToEndTests : TestBase
     {
         // given — single-attempt budget so failure becomes terminal immediately
         var userCallbackFired = 0;
+        var userCallbackRan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var harness = await _CreateHarnessAsync(
             (services, options) =>
@@ -525,6 +526,7 @@ public sealed class EndToEndTests : TestBase
                 options.Options.RetryPolicy.OnTerminal = (_, _) =>
                 {
                     Interlocked.Increment(ref userCallbackFired);
+                    userCallbackRan.TrySetResult();
                     return Task.CompletedTask;
                 };
             }
@@ -542,7 +544,7 @@ public sealed class EndToEndTests : TestBase
         recorded.Exception!.GetBaseException().Message.Should().Be("Test failure");
 
         // The user-supplied callback also ran (recording wraps, does not replace)
-        await TestHelpers.WaitForAsync(() => userCallbackFired == 1, TimeSpan.FromSeconds(5));
+        await userCallbackRan.Task.Bounded();
         userCallbackFired.Should().Be(1);
 
         harness.Terminal.Should().ContainSingle();
@@ -622,24 +624,6 @@ public sealed class EndToEndTests : TestBase
         finally
         {
             hangGate.Set();
-        }
-    }
-}
-
-file static class TestHelpers
-{
-    public static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
-    {
-        var deadline = DateTimeOffset.UtcNow + timeout;
-
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (condition())
-            {
-                return;
-            }
-
-            await Task.Delay(20);
         }
     }
 }

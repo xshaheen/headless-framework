@@ -747,7 +747,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     {
         var transports = services
             .Where(static d =>
-                d.ServiceType == typeof(MessageQueueMarkerService) && d.Lifetime == ServiceLifetime.Singleton
+                d.ServiceType == typeof(MessageQueueMarkerService)
+                && d.Lifetime == ServiceLifetime.Singleton
+                && !d.IsKeyedService
             )
             .Select(static d => (d.ImplementationInstance as MessageQueueMarkerService)?.Name)
             .ToArray();
@@ -790,7 +792,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         }
     }
 
-    /// <summary>Wraps the last registration of <typeparamref name="TService"/> with a decorator.</summary>
+    /// <summary>
+    /// Wraps the last unkeyed registration of <typeparamref name="TService"/>, the default transport's, and every keyed
+    /// one, a named transport's, with a decorator.
+    /// </summary>
     /// <returns>Whether a registration existed to decorate.</returns>
     private static bool _DecorateLast<TService>(
         IServiceCollection services,
@@ -798,7 +803,20 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     )
         where TService : class
     {
-        var original = services.LastOrDefault(d => d.ServiceType == typeof(TService));
+        // A named transport registers its transports keyed by its name; each is recorded like the default one, so a
+        // publish through it is observed and a consume of it does not wait for a publish record that never comes.
+        foreach (var keyed in services.Where(d => d.ServiceType == typeof(TService) && d.IsKeyedService).ToArray())
+        {
+            var index = services.IndexOf(keyed);
+            services[index] = new ServiceDescriptor(
+                typeof(TService),
+                keyed.ServiceKey,
+                (sp, key) => createDecorator(sp)(_ResolveFromKeyedDescriptor<TService>(sp, keyed, key)),
+                keyed.Lifetime
+            );
+        }
+
+        var original = services.LastOrDefault(d => d.ServiceType == typeof(TService) && !d.IsKeyedService);
 
         if (original is null)
         {
@@ -902,6 +920,30 @@ public sealed class MessagingTestHarness : IAsyncDisposable
                 var logger = sp.GetService<ILogger<RecordingQueueTransport>>();
                 return inner => new RecordingQueueTransport(inner, store, serializer, logger);
             }
+        );
+    }
+
+    /// <summary>Resolves a service from a captured keyed <see cref="ServiceDescriptor"/>.</summary>
+    private static T _ResolveFromKeyedDescriptor<T>(IServiceProvider sp, ServiceDescriptor descriptor, object? key)
+    {
+        if (descriptor.KeyedImplementationInstance is T instance)
+        {
+            return instance;
+        }
+
+        if (descriptor.KeyedImplementationFactory is not null)
+        {
+            return (T)descriptor.KeyedImplementationFactory(sp, key);
+        }
+
+        if (descriptor.KeyedImplementationType is not null)
+        {
+            return (T)ActivatorUtilities.CreateInstance(sp, descriptor.KeyedImplementationType);
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot resolve keyed service of type {typeof(T).Name} from descriptor: "
+                + "descriptor has no implementation type, factory, or instance."
         );
     }
 

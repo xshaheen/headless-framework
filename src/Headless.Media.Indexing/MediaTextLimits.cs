@@ -22,6 +22,11 @@ internal static class MediaTextLimits
     /// <summary>The most bytes buffered from a non-seekable input stream.</summary>
     public const long MaxBufferedBytes = 100L * 1024 * 1024;
 
+    /// <summary>
+    /// The most bytes one Flate-encoded PDF stream may inflate to; PdfPig holds each decoded stream whole in memory.
+    /// </summary>
+    public const long MaxDecodedPdfStreamBytes = 100L * 1024 * 1024;
+
     /// <summary>Open settings that bound every part the Open XML SDK loads.</summary>
     public static OpenSettings OpenXmlSettings => new() { MaxCharactersInPart = MaxCharactersInPart };
 

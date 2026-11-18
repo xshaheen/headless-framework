@@ -150,9 +150,6 @@ public sealed record TransportConformanceProfile(
     /// <summary>The open issue that tracks messaging scenarios no run has proven yet.</summary>
     internal const string GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1277";
 
-    /// <summary>The open issue that tracks the network-fault scenarios no provider has proven yet.</summary>
-    internal const string NetworkFaultGapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1247";
-
     public static TransportConformanceProfile CreateDisabled(string provider)
     {
         var scenarios = Enum.GetValues<TransportConformanceScenario>()
@@ -161,11 +158,7 @@ public sealed record TransportConformanceProfile(
                 scenario =>
                     ConformanceSupport.Unsupported(
                         $"{provider} does not yet have executable evidence for {scenario}.",
-                        scenario
-                            is TransportConformanceScenario.ConnectionDropRecovery
-                                or TransportConformanceScenario.PublishDuringOutage
-                            ? NetworkFaultGapIssueUrl
-                            : GapIssueUrl
+                        GapIssueUrl
                     )
             );
 
@@ -248,6 +241,10 @@ public static class TransportConformanceManifest
 
     /// <summary>The open issue that tracks a delivery budget for the brokers that have none, Kafka and Redis.</summary>
     private const string _DeliveryBudgetIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1288";
+
+    /// <summary>The open issue that tracks the emulator dead-lettering two copies of one message.</summary>
+    private const string _EmulatorDeadLetterDuplicateIssueUrl =
+        "https://github.com/xshaheen/headless-framework/issues/1672";
 
     /// <summary>An Azure Service Bus cell that only the protected, credential-gated workflow can prove.</summary>
     private static readonly ConformanceSupport _AzureWorkflowGap = ConformanceSupport.Unsupported(
@@ -949,7 +946,7 @@ public static class TransportConformanceManifest
             TransportConformanceScenario.StaleSettlement,
             TransportConformanceScenario.HandlerFailureRedelivery,
             TransportConformanceScenario.BoundedGracefulShutdown,
-            TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+            TransportConformanceScenario.KeySequencing,
         ];
 
         TransportConformanceScenario[] provisioned =
@@ -985,6 +982,14 @@ public static class TransportConformanceManifest
                 )
             );
         }
+
+        profile = profile.WithScenario(
+            TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+            ConformanceSupport.Unsupported(
+                "The emulator intermittently dead-letters two copies of a message whose header builder keeps failing; the cause is not yet known.",
+                _EmulatorDeadLetterDuplicateIssueUrl
+            )
+        );
 
         return profile.WithRequestReplyScenarios(
             ConformanceSupport.Unsupported(

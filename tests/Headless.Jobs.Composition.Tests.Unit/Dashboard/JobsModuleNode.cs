@@ -144,10 +144,9 @@ public sealed class DashboardTestJobs : IJobsModule
 /// <summary>Records every change published to this node's streams, and lets a test wait for one.</summary>
 internal sealed class RecordingEventPublisher : IDashboardEventPublisher
 {
-    private static readonly TimeSpan _Limit = TimeSpan.FromSeconds(10);
-
     private readonly Lock _lock = new();
     private readonly List<DashboardChange> _changes = [];
+    private readonly List<(Guid Id, TaskCompletionSource<DashboardChange> Source)> _waiters = [];
 
     public IReadOnlyList<DashboardChange> Changes
     {
@@ -165,27 +164,44 @@ internal sealed class RecordingEventPublisher : IDashboardEventPublisher
         lock (_lock)
         {
             _changes.Add(change);
+
+            // Complete each waiter for this run; the rest stay parked until their own change is published.
+            _waiters.RemoveAll(waiter =>
+            {
+                if (!string.Equals(change.Target.Id, waiter.Id.ToString(), StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                waiter.Source.TrySetResult(change);
+
+                return true;
+            });
         }
     }
 
     public IReadOnlyList<DashboardChange> For(Guid id) =>
         [.. Changes.Where(change => string.Equals(change.Target.Id, id.ToString(), StringComparison.Ordinal))];
 
-    /// <summary>Waits in real time until a change for <paramref name="id"/> is published.</summary>
+    /// <summary>Waits until a change for <paramref name="id"/> is published.</summary>
     public async Task<DashboardChange> WaitForAsync(Guid id, CancellationToken cancellationToken)
     {
-        var limit = DateTime.UtcNow + _Limit;
+        TaskCompletionSource<DashboardChange> source;
 
-        while (DateTime.UtcNow < limit)
+        lock (_lock)
         {
-            if (For(id) is [var first, ..])
+            if (
+                _changes.Find(change => string.Equals(change.Target.Id, id.ToString(), StringComparison.Ordinal)) is
+                { } first
+            )
             {
                 return first;
             }
 
-            await Task.Delay(10, cancellationToken);
+            source = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Add((id, source));
         }
 
-        throw new TimeoutException($"No change for {id} was published.");
+        return await source.Task.WaitAsync(cancellationToken).Bounded();
     }
 }

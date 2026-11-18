@@ -26,7 +26,8 @@ public sealed class RedisReleaseSignalTests(RedisTestFixture fixture) : TestBase
             fixture.ConnectionMultiplexer.Configuration
         );
         await using var holder = _StartReplica(fixture.ConnectionMultiplexer, keyPrefix, TimeProvider.System);
-        await using var waiter = _StartReplica(otherConnection, keyPrefix, new FakeTimeProvider());
+        var waiterClock = new BackoffSignalingFakeTimeProvider();
+        await using var waiter = _StartReplica(otherConnection, keyPrefix, waiterClock);
         var holderLock = holder.GetRequiredService<IDistributedLock>();
         var waiterLock = waiter.GetRequiredService<IDistributedLock>();
         await _WaitForSubscribersAsync(RedisChannel.Literal(keyPrefix + "released"), expected: 2);
@@ -43,8 +44,9 @@ public sealed class RedisReleaseSignalTests(RedisTestFixture fixture) : TestBase
             waitTimeout.Token
         );
 
-        // Let the waiter fail its first attempt and park on the release signal.
-        await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        // The waiter arms its backoff wait on the frozen clock only after its first attempt failed, so it is now parked
+        // on the release signal.
+        await waiterClock.BackoffArmed.Bounded();
         waiting.IsCompleted.Should().BeFalse();
 
         // when
@@ -111,6 +113,27 @@ public sealed class RedisReleaseSignalTests(RedisTestFixture fixture) : TestBase
 
         // then
         decoded.Should().BeFalse();
+    }
+
+    private sealed class BackoffSignalingFakeTimeProvider : FakeTimeProvider
+    {
+        private readonly TaskCompletionSource _backoffArmed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completes once the lock has armed the short wait that separates two acquire attempts.</summary>
+        public Task BackoffArmed => _backoffArmed.Task;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+
+            // The acquire timeout (minutes) is armed before the first attempt; only the backoff between attempts is shorter.
+            if (dueTime > TimeSpan.Zero && dueTime < TimeSpan.FromMinutes(1))
+            {
+                _backoffArmed.TrySetResult();
+            }
+
+            return timer;
+        }
     }
 
     private static ServiceProvider _StartReplica(

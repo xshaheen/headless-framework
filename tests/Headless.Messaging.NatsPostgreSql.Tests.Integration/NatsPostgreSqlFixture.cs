@@ -56,7 +56,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
         private readonly NatsContainer _container = new NatsBuilder(TestImages.Nats)
             .WithLabel("type", "nats-postgresql-nats")
-            .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
+            .WithResourceMapping(_NatsConfig, FilePath.Of("/etc/nats/nats-server.conf"))
             .WithWaitStrategy(
                 Wait.ForUnixContainer()
                     .UntilMessageIsLogged("Server is ready")
@@ -137,6 +137,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
                 catch (NatsException)
                 {
                     await connection.DisposeAsync();
+                    // real-wait: back-off while a freshly started broker container's listener comes up; a refused connection has no readiness event
                     await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt));
                 }
             }

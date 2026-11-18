@@ -1,30 +1,36 @@
 # Headless .NET Framework — Agent Guide
 
-Use this file to route a Headless task. Load only the domain guides that match the work; each guide is the canonical consumer contract for its packages.
+Route a task in an application that uses Headless to the guide that owns it. Each domain guide is the consumer contract for its packages: how to choose, wire, call, observe, verify, and test them.
 
-Repository overview and complete package catalog: [README.md](../../README.md).
+The package catalog is in [README.md](../../README.md).
 
 ## How to use these docs
 
-1. Resolve the exact `Headless.*` package and version from the consumer project.
-2. Find the task in the router below and read the linked domain guide.
-3. Follow that guide's **Agent Rules** before selecting a provider or writing setup code.
-4. Verify public names and examples against the installed package or the matching source tag. `main` documents the current repository, not every released version.
+1. Read the exact `Headless.*` packages and versions from the application's project files.
+2. Find the task in the [task router](#task-router) and read the linked guide's Orientation and Agent Rules before you pick a provider or write setup code.
+3. If the guide has a **Topics** table, read only the topic files whose "Read when" row matches the task.
+4. Finish each setup recipe with its **Verify** step. The wiring is done when that check passes, not when the code compiles.
+5. Check public names against the installed package. These docs describe `main`, which can be ahead of the version the application references.
 
-Package READMEs are discovery pages. They explain why a package exists and link back to its canonical domain guide; they are not API reference.
+Package READMEs only route to these guides; they are not API reference.
 
 ## Framework-wide rules
 
-- Keep provider types at the composition root. Application and domain code depend on framework abstractions such as `ICache`, `IBlobStorage`, `IBus`, or `IEmailSender`.
-- Install only the packages the host uses: normally an abstractions package, the domain runtime/core package, and one provider. Some domains have a different shape; the domain guide owns that exception.
-- Register each feature through its `AddHeadless*` setup builder and select providers there. Do not create a second registration path around the framework.
-- Relational storage features share one connection and one schema by default: register the database once with `AddPostgreSqlSql` or `AddSqlServerSql`, call each feature's parameterless `UsePostgreSql()` or `UseSqlServer()`, and every feature creates its tables in the `headless` schema. [SQL](sql.md#shared-connection-and-schema-for-storage-features) owns the override rules.
-- Provider packages with an external dependency contribute a readiness health check tagged `ready` and `headless` when registered; it never runs at registration and stays off the liveness endpoint. Remove one with `RemoveHealthChecks`. [Utilities](utilities.md#health-checks) owns the list and the opt-out.
-- Preserve explicit durability boundaries. In-memory and `*.Dev` providers are for tests, development, or intentionally ephemeral workloads; they are not production substitutes for durable providers.
-- Keep cancellation tokens end-to-end and use the injected `TimeProvider` for application time. Store-backed leases, locks, and coordination use the store's clock where their guide says so.
-- **Clocks.** The registered `TimeProvider` is for times the application records and for schedules a test drives by advancing it: due times, leases, cancellation observation, retention. A wait that rides out a failure (a retry back-off, a reconnect, the timeout around an I/O call) runs on `TimeProvider.System`, so a host that registers a `FakeTimeProvider` and never advances it still recovers. Messaging resolves those waits from a separate clock registration that defaults to `TimeProvider.System` (`MessagingOptions.BackoffClockServiceKey`), so a test can step through them with its own fake clock while the app clock stays out of them; [Messaging](messaging.md#headlessmessagingtesting) owns the list. Polly pipelines in `src/` keep Polly's default clock: setting `ResiliencePipelineBuilderBase.TimeProvider` is banned (RS0030, `eng/BannedSymbols.Clocks.txt`) except at a call site that suppresses it with its reason. A reconnect loop uses `ReconnectBackoff` (`Headless.Threading`), which defaults to the system clock. One deliberate exception: the relational stores (Sequences, Fencing, Idempotency, Coordination) wait out a deadlock on the registered clock, so a test steps through the retry by advancing it.
-- Treat tenancy, authorization, transactions, retries, ordering, and external side effects as domain contracts. Read every affected guide when a change crosses those boundaries.
-- Prefer framework primitives before adding parallel infrastructure. Search [extensions.md](extensions.md) for guards, results, value objects, collections, IO, concurrency, and URL helpers.
+- Keep provider types at the composition root. Application and domain code depend on abstractions such as `ICache`, `IBlobStorage`, `IBus`, or `IEmailSender`.
+- Install only the packages the host uses: usually an abstractions package, the domain's root package, and one provider. A guide whose domain has another shape says so.
+- Register each feature through its `AddHeadless*` setup builder and pick providers there. Do not register the feature's services a second way around the builder.
+- Register the relational database once with `AddPostgreSqlSql` or `AddSqlServerSql`, then call each storage feature's parameterless `UsePostgreSql()` or `UseSqlServer()`. Every feature then shares the connection and creates its tables in the `headless` schema. [SQL](sql.md#shared-connection-and-schema-for-storage-features) owns the overrides.
+- Create tables, broker topology, and seed data as deploy steps, not at startup: run `resources provision` and `seed`, or `deploy` for both. The host only verifies those resources when it starts. Run `check` before you route traffic to a new build. [Utilities](utilities.md#resource-provisioning) owns the verbs.
+- When environments share one Redis, give each host a `Headless:Prefix`. Every key-value feature puts it in front of its names. Relational storage and blob containers separate environments by database, schema, or bucket instead. [Utilities](utilities.md#isolation-prefix) owns the contract.
+- Expect a readiness health check, tagged `ready` and `headless`, from each provider package with an external dependency. It stays off the liveness endpoint. Remove one with `RemoveHealthChecks`. [Utilities](utilities.md#health-checks) owns the list.
+- Use in-memory and `*.Dev` providers only for tests, development, or work you accept losing. They do not replace durable providers in production.
+- Pass cancellation tokens end to end.
+- Use the registered `TimeProvider` for times the application records and for schedules a test drives by advancing a fake clock: due times, leases, and retention. Waits that ride out a failure (a retry back-off, a reconnect, an I/O timeout) run on `TimeProvider.System`, so a host whose fake clock never advances still recovers. Two exceptions change how you write tests:
+  - Messaging takes its back-off waits from a separate clock registration (`MessagingOptions.BackoffClockServiceKey`, default `TimeProvider.System`), so a test can step through retries with its own fake clock. [Messaging](messaging.md) owns the list of waits.
+  - The relational stores of Sequences, Fencing, Idempotency, and Coordination wait out a deadlock on the registered clock, so a test with a fake clock advances it to let the retry run.
+- For your own reconnect loop, use `ReconnectBackoff` (`Headless.Threading`). It runs on the system clock unless you pass another.
+- Treat tenancy, authorization, transactions, retries, ordering, and external side effects as contracts owned by their guides. When a change crosses one of them, read every guide it touches.
+- Before you write a helper, search [Extensions](extensions.md) for guards, results, value objects, collections, IO, concurrency, and URL helpers.
 
 ## Task router
 

@@ -239,11 +239,9 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         // when
         var stopTask = sut.StopAsync(AbortToken);
 
-        for (var i = 0; i < 6 && !stopTask.IsCompleted; i++)
-        {
-            timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(10, AbortToken);
-        }
+        // The leave budget's timer is created before the leave call reaches the store; advancing earlier would miss it.
+        await store.LeaveEntered.Bounded();
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
 
         // then
         await stopTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -262,11 +260,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         await sut.StartAsync(AbortToken);
 
         // then
-        var deadline = TimeProvider.System.GetTimestamp();
-        while (membership.Identity is null && TimeProvider.System.GetElapsedTime(deadline) < TimeSpan.FromSeconds(5))
-        {
-            await Task.Delay(20, AbortToken);
-        }
+        await membership.WaitForRegistrationAsync(AbortToken).Bounded();
 
         membership.Identity.Should().NotBeNull();
         store.AllocateIncarnationCalls.Should().Be(2);
@@ -316,11 +310,11 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         // a fence the real loop would never see.
         for (var interval = 0; interval < 10; interval++)
         {
-            await _WaitUntilAsync(() => timeProvider.BeatDelays > interval);
+            await timeProvider.WaitForNextBeatParkAsync();
             timeProvider.Advance(options.HeartbeatInterval);
         }
 
-        await _WaitUntilAsync(() => timeProvider.BeatDelays > 10);
+        await timeProvider.WaitForNextBeatParkAsync();
 
         // then: 10s of startup, well past DeadThreshold, and the loop kept the node a member
         store.Heartbeats.Should().HaveCountGreaterThan(10);
@@ -384,7 +378,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         await sut.StartingAsync(AbortToken);
         await membership.RegisterAsync(AbortToken);
         timeProvider.Advance(options.DeadThreshold);
-        await _WaitUntilAsync(() => membership.LocalMembershipLostToken.IsCancellationRequested);
+        await _WaitForCancellationAsync(membership.LocalMembershipLostToken);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -401,17 +395,19 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         // given
         var store = new FakeMembershipStore();
         var participant = new ControlledDrainParticipant();
-        var (sut, timeProvider, membership) = _CreateSut(store, participants: [participant]);
+        var options = new CoordinationOptions();
+        var timeProvider = new BeatDelayTimeProvider(options.HeartbeatInterval);
+        var (sut, _, membership) = _CreateSut(store, options, timeProvider, participants: [participant]);
         using var serviceLifetime = sut;
         await sut.StartingAsync(AbortToken);
         await membership.RegisterAsync(AbortToken);
-        await _WaitUntilAsync(() => store.Heartbeats.Count > 0);
+        await store.WaitForHeartbeatsAsync(1).Bounded();
 
         // when
         var stop = sut.StopAsync(AbortToken);
         await participant.Called.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         var beatsAtStop = store.Heartbeats.Count;
-        await _AdvanceUntilAsync(timeProvider, () => store.Heartbeats.Count >= beatsAtStop + 3);
+        await _AdvanceBeatsAsync(timeProvider, options.HeartbeatInterval, store, beatsAtStop + 3);
 
         // then: three more beats while draining, still a member, not left
         stop.IsCompleted.Should().BeFalse();
@@ -429,18 +425,20 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         // given
         var store = new FakeMembershipStore();
         var participant = new ControlledDrainParticipant();
-        var (sut, timeProvider, membership) = _CreateSut(store, participants: [participant]);
+        var options = new CoordinationOptions();
+        var timeProvider = new BeatDelayTimeProvider(options.HeartbeatInterval);
+        var (sut, _, membership) = _CreateSut(store, options, timeProvider, participants: [participant]);
         using var serviceLifetime = sut;
         await sut.StartingAsync(AbortToken);
         await sut.StartAsync(AbortToken);
         await membership.RegisterAsync(AbortToken);
-        await _WaitUntilAsync(() => store.Heartbeats.Count > 0);
+        await store.WaitForHeartbeatsAsync(1).Bounded();
 
         // when: the host's stop phase returns without waiting for any participant
         await sut.StoppingAsync(AbortToken);
         await sut.StopAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         var beatsAfterStop = store.Heartbeats.Count;
-        await _AdvanceUntilAsync(timeProvider, () => store.Heartbeats.Count >= beatsAfterStop + 2);
+        await _AdvanceBeatsAsync(timeProvider, options.HeartbeatInterval, store, beatsAfterStop + 2);
 
         // then: still a member, and StoppedAsync is what waits for the drain
         store.Leaves.Should().BeEmpty();
@@ -466,7 +464,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         await sut.StartingAsync(AbortToken);
         await sut.StartAsync(AbortToken);
         await membership.RegisterAsync(AbortToken);
-        await _WaitUntilAsync(() => store.Heartbeats.Count > 0);
+        await store.WaitForHeartbeatsAsync(1).Bounded();
         using var stopToken = new CancellationTokenSource();
         await sut.StoppingAsync(stopToken.Token);
         await sut.StopAsync(stopToken.Token).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -546,19 +544,15 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         membership.Identity.Should().BeNull();
     }
 
-    private static async Task _WaitUntilAsync(Func<bool> condition)
+    private static async Task _WaitForCancellationAsync(CancellationToken token)
     {
-        var started = TimeProvider.System.GetTimestamp();
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var registration = token.UnsafeRegister(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            cancelled
+        );
 
-        while (!condition())
-        {
-            if (TimeProvider.System.GetElapsedTime(started) > TimeSpan.FromSeconds(5))
-            {
-                throw new TimeoutException("The condition was not met within 5 seconds.");
-            }
-
-            await Task.Delay(5, AbortToken);
-        }
+        await cancelled.Task.Bounded();
     }
 
     private static (
@@ -613,21 +607,26 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         }
     }
 
-    /// <summary>Steps the app clock in small increments, yielding so the heartbeat loop runs between them.</summary>
-    private static async Task _AdvanceUntilAsync(FakeTimeProvider timeProvider, Func<bool> condition)
+    /// <summary>
+    /// Releases beats one at a time: each park is the loop waiting out one interval after a beat, so advancing once per
+    /// park runs exactly one more beat and never moves the clock before the loop's timer exists.
+    /// </summary>
+    private static async Task _AdvanceBeatsAsync(
+        BeatDelayTimeProvider timeProvider,
+        TimeSpan interval,
+        FakeMembershipStore store,
+        int targetHeartbeats
+    )
     {
-        var started = TimeProvider.System.GetTimestamp();
+        var beats = targetHeartbeats - store.Heartbeats.Count;
 
-        while (!condition())
+        for (var i = 0; i < beats; i++)
         {
-            if (TimeProvider.System.GetElapsedTime(started) > TimeSpan.FromSeconds(5))
-            {
-                throw new TimeoutException("The condition was not met within 5 seconds.");
-            }
-
-            timeProvider.Advance(TimeSpan.FromMilliseconds(250));
-            await Task.Delay(5, AbortToken);
+            await timeProvider.WaitForNextBeatParkAsync();
+            timeProvider.Advance(interval);
         }
+
+        await store.WaitForHeartbeatsAsync(targetHeartbeats).Bounded();
     }
 
     private sealed class ControlledDrainParticipant : INodeDrainParticipant
@@ -690,9 +689,9 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
     // armed for the fence budget instead.
     private sealed class BeatDelayTimeProvider(TimeSpan heartbeatInterval) : FakeTimeProvider
     {
-        private int _beatDelays;
+        private readonly Channel<bool> _parks = Channel.CreateUnbounded<bool>();
 
-        public int BeatDelays => Volatile.Read(ref _beatDelays);
+        public Task WaitForNextBeatParkAsync() => _parks.Reader.ReadAsync(AbortToken).Bounded();
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
@@ -700,7 +699,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
 
             if (dueTime == heartbeatInterval)
             {
-                Interlocked.Increment(ref _beatDelays);
+                _parks.Writer.TryWrite(true);
             }
 
             return timer;

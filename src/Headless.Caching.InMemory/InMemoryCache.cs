@@ -231,7 +231,7 @@ public sealed class InMemoryCache
         // the hot write path previously fetched the clock three times.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var expiresAt = expiration.HasValue
-            ? new DateTime(nowTicks, DateTimeKind.Utc).Add(expiration.Value)
+            ? _ExpiresAt(new DateTime(nowTicks, DateTimeKind.Utc), expiration.Value)
             : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
@@ -317,7 +317,7 @@ public sealed class InMemoryCache
         // N Interlocked.Add calls, and N maintenance checks.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var expiresAt = expiration.HasValue
-            ? new DateTime(nowTicks, DateTimeKind.Utc).Add(expiration.Value)
+            ? _ExpiresAt(new DateTime(nowTicks, DateTimeKind.Utc), expiration.Value)
             : (DateTime?)null;
 
         var count = 0;
@@ -423,7 +423,7 @@ public sealed class InMemoryCache
         // scheduling — mirrors UpsertAsync so the add-only write path fetches the clock once, not three times.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var expiresAt = expiration.HasValue
-            ? new DateTime(nowTicks, DateTimeKind.Utc).Add(expiration.Value)
+            ? _ExpiresAt(new DateTime(nowTicks, DateTimeKind.Utc), expiration.Value)
             : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
@@ -469,7 +469,7 @@ public sealed class InMemoryCache
         // birth time can never land after its own expiry under an advancing clock.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var now = new DateTime(nowTicks, DateTimeKind.Utc);
-        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _ExpiresAt(now, expiration.Value) : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
         if (!_ValidateEntrySize(entrySize))
@@ -554,7 +554,7 @@ public sealed class InMemoryCache
         // birth time can never land after its own expiry under an advancing clock.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var now = new DateTime(nowTicks, DateTimeKind.Utc);
-        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _ExpiresAt(now, expiration.Value) : (DateTime?)null;
         var newSize = _CalculateEntrySize(value);
 
         if (!_ValidateEntrySize(newSize))
@@ -776,7 +776,7 @@ public sealed class InMemoryCache
         // birth/last-access stamp — mirrors the other write paths, which fetch the clock once per call.
         var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var now = new DateTime(nowTicks, DateTimeKind.Utc);
-        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _ExpiresAt(now, expiration.Value) : (DateTime?)null;
 
         long sizeDelta = 0;
         var inserted = false;
@@ -903,7 +903,7 @@ public sealed class InMemoryCache
         key = _GetKey(key);
 
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        var expiresAt = expiration.HasValue ? utcNow.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _ExpiresAt(utcNow, expiration.Value) : (DateTime?)null;
 
         long result;
 
@@ -2086,7 +2086,9 @@ public sealed class InMemoryCache
         // Logical tag/clear invalidation: demote the entry to logically-expired-but-physically-present so the
         // coordinator re-runs the factory but can still serve this reserve stale when the factory fails. Clamp
         // LogicalExpiresAt to now (and drop sliding so it is not re-armed/treated fresh) while keeping the
-        // physical reserve intact.
+        // physical reserve intact. ThrottledUntil is returned as stored: the coordinator, not this read, decides
+        // whether an open fail-safe throttle window holds back the factory, so direct readers of this primitive
+        // (the hybrid cache's L2 read) still see the entry as expired.
         var logicalExpiresAt = existingEntry.LogicalExpiresAt;
         var slidingExpiration = existingEntry.SlidingExpiration;
 
@@ -2111,6 +2113,7 @@ public sealed class InMemoryCache
                 ETag = existingEntry.ETag,
                 LastModifiedAt = existingEntry.LastModifiedAt,
                 CreatedAt = existingEntry.CreatedAt,
+                ThrottledUntil = existingEntry.ThrottledUntil,
                 Tags = existingEntry.Tags,
                 ConcurrencyStamp = existingEntry.ConcurrencyStamp,
             }
@@ -2204,7 +2207,8 @@ public sealed class InMemoryCache
             eagerRefreshAt: entry.EagerRefreshAt,
             etag: entry.ETag,
             lastModifiedAt: entry.LastModifiedAt,
-            createdAt: entry.CreatedAt
+            createdAt: entry.CreatedAt,
+            throttledUntil: entry.ThrottledUntil
         );
 
         if (entry.ExpectedConcurrencyStamp is { } expectedStamp)
@@ -2992,6 +2996,7 @@ public sealed class InMemoryCache
             string? etag = null,
             DateTime? lastModifiedAt = null,
             DateTime? createdAt = null,
+            DateTime? throttledUntil = null,
             long nowTicksOverride = -1
         )
         {
@@ -3015,6 +3020,7 @@ public sealed class InMemoryCache
             ETag = etag;
             LastModifiedAt = lastModifiedAt;
             CreatedAt = createdAt;
+            ThrottledUntil = throttledUntil;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
@@ -3041,7 +3047,9 @@ public sealed class InMemoryCache
             ETag = prototype.ETag;
             LastModifiedAt = prototype.LastModifiedAt;
             // A WithExpiration/WithLogicalExpiration copy is a re-stamp (TTL/logical move only), so the entry's
-            // original birth time is preserved rather than reset.
+            // original birth time is preserved rather than reset. The fail-safe throttle window is not carried:
+            // the only callers are a sliding re-arm (sliding entries are never throttled) and a logical expire,
+            // which must send the next factory read to the factory.
             CreatedAt = prototype.CreatedAt;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
@@ -3072,6 +3080,8 @@ public sealed class InMemoryCache
         internal DateTime? LastModifiedAt { get; }
 
         internal DateTime? CreatedAt { get; }
+
+        internal DateTime? ThrottledUntil { get; }
 
         // Expired at the exact tick (expiresAt <= now): align with the Core (IsFresh/IsPhysicallyPresent),
         // Redis (_IsExpired), and the eviction maintenance loop conventions so every provider and the
@@ -3313,6 +3323,18 @@ public sealed class InMemoryCache
     }
 
     #endregion
+
+    /// <summary>
+    /// The instant an entry written at <paramref name="now"/> expires, or <see langword="null"/> when the sum passes
+    /// <see cref="DateTime.MaxValue"/>: an expiration that long means no expiry, as the Redis provider treats it, rather
+    /// than the <see cref="ArgumentOutOfRangeException"/> <see cref="DateTime.Add(TimeSpan)"/> throws.
+    /// </summary>
+    private static DateTime? _ExpiresAt(DateTime now, TimeSpan expiration)
+    {
+        var expiresAt = now.SafeAdd(expiration);
+
+        return expiresAt == DateTime.MaxValue ? null : expiresAt;
+    }
 }
 
 internal static partial class InMemoryCacheLog

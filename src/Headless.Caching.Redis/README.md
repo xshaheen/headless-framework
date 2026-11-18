@@ -15,4 +15,4 @@ dotnet add package Headless.Caching.Redis
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Caching guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching.md#headlesscachingredis)
+- [Caching guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching/providers.md#headlesscachingredis)

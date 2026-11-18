@@ -120,7 +120,10 @@ public sealed class HybridCacheConcurrencyStampTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
 
         await cache.GetOrAddAsync(key, _ => new ValueTask<string?>("v1"), _FailSafeOptions, AbortToken);
-        await _WaitUntilAsync(async () => (await l2.GetAsync<string>(key, AbortToken)).HasValue);
+        // The in-memory L2 write completes inline in the detached tail, so it has landed once GetOrAdd returns.
+        (await l2.GetAsync<string>(key, AbortToken))
+            .HasValue.Should()
+            .BeTrue("the background L2 write landed");
         _timeProvider.Advance(TimeSpan.FromMinutes(2));
 
         // when — a remove wins while the refresh factory is still running
@@ -222,22 +225,5 @@ public sealed class HybridCacheConcurrencyStampTests : TestBase
 
         _disposables.Clear();
         await base.DisposeAsyncCore().ConfigureAwait(false);
-    }
-
-    private static async Task _WaitUntilAsync(Func<ValueTask<bool>> predicate)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-
-        while (DateTime.UtcNow < deadline)
-        {
-            if (await predicate())
-            {
-                return;
-            }
-
-            await Task.Delay(10);
-        }
-
-        throw new TimeoutException("Background L2 operation did not complete within the budget.");
     }
 }

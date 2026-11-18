@@ -22,6 +22,7 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
 
     protected override async Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken)
     {
+        // real-wait: the lease and TTL the base scenarios advance past are enforced by Redis's own clock (key expiry and the scripts' TIME), which no fake clock moves
         await Task.Delay(amount + TimeSpan.FromMilliseconds(50), TimeProvider.System, cancellationToken);
     }
 
@@ -53,6 +54,12 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
     public override Task should_reacquire_after_slot_expiry()
     {
         return base.should_reacquire_after_slot_expiry();
+    }
+
+    [Fact]
+    public override Task should_fail_to_extend_an_expired_slot_that_no_acquire_has_pruned_yet()
+    {
+        return base.should_fail_to_extend_an_expired_slot_that_no_acquire_has_pruned_yet();
     }
 
     [Fact]

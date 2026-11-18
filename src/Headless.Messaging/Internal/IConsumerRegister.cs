@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Headless.DistributedLocks;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
@@ -32,6 +33,14 @@ internal sealed partial class ConsumerRegister(
 {
     private static readonly TimeSpan _RestartShutdownTimeout = TimeSpan.FromSeconds(2);
 
+    // The lease a sequential subscription's listening host holds. Renewed at a third of it while the host listens, so it
+    // bounds only how long a host that died without releasing keeps the others waiting.
+    internal static readonly TimeSpan ActiveHostLeaseDuration = TimeSpan.FromSeconds(30);
+
+    // How often a host that does not hold a sequential subscription's lock tries for it again. A holder that stops
+    // releases the lock, so this is the usual takeover delay; one acquire per interval per subscription is cheap.
+    internal static readonly TimeSpan ActiveHostRetryInterval = TimeSpan.FromSeconds(5);
+
     private readonly ConcurrentDictionary<string, SubscriptionHandle> _subscriptionHandles = new(
         StringComparer.Ordinal
     );
@@ -56,6 +65,12 @@ internal sealed partial class ConsumerRegister(
 
     private readonly TransportConnectivity _connectivity = serviceProvider.GetRequiredService<TransportConnectivity>();
 
+    // The subscriptions already warned that every host listens to them, so a restart does not repeat the warning.
+    private readonly ConcurrentDictionary<string, byte> _unguardedSequentialLogged = new(StringComparer.Ordinal);
+
+    // Resolved on start, beside the other pipeline services; null only in a host built without messaging's setup.
+    private IDistributedLock? _lockProvider;
+
 #pragma warning disable CA2213 // False positive: the container owns the shared singleton and disposes it with the host.
     private readonly ConsumerRateLimiters? _rateLimiters = serviceProvider.GetService<ConsumerRateLimiters>();
 #pragma warning restore CA2213
@@ -74,6 +89,9 @@ internal sealed partial class ConsumerRegister(
     private ResponderReplies? _responderReplies;
 
     private IConsumerClientFactory _consumerClientFactory = null!;
+
+    // The named transports a subscription can be bound to; absent in a host built without messaging's setup.
+    private MessagingTransports? _transports;
 #pragma warning disable CA2213 // Disposed through the remaining-budget DisposeAsync(TimeSpan) overload.
     private IDispatcher _dispatcher = null!;
 #pragma warning restore CA2213
@@ -96,7 +114,6 @@ internal sealed partial class ConsumerRegister(
 
     private MethodMatcherCache _selector = null!;
     private IMessageSerializer _serializer = null!;
-    private BrokerAddress _serverAddress;
     private CancellationToken _hostStoppingToken;
 #pragma warning disable CA2213 // Disposed under the gate in _TeardownUnderGateAsync after the drain-reacquire.
     private CancellationTokenSource _stoppingCts = new();
@@ -149,8 +166,10 @@ internal sealed partial class ConsumerRegister(
         _serializer = serviceProvider.GetRequiredService<IMessageSerializer>();
         _storage = serviceProvider.GetRequiredService<IDataStorage>();
         _consumerClientFactory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
+        _transports = serviceProvider.GetService<MessagingTransports>();
         _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
         _subscribeInvoker = serviceProvider.GetRequiredService<ISubscribeInvoker>();
+        _lockProvider = serviceProvider.GetKeyedService<IDistributedLock>(MessagingKeys.LockProvider);
 
         try
         {
@@ -874,9 +893,20 @@ internal sealed partial class ConsumerRegister(
         List<Task>? startupTasks = null;
         var establishments = new ConcurrentQueue<Task>();
 
+        // The transports whose broker refused a subscription in this pass: their remaining subscriptions would only wait
+        // out the same connect failure, so they are left for the next pass.
+        HashSet<string>? unreachableTransports = null;
+
         foreach (var match in subscriptions)
         {
             var subscriptionKey = match.Key;
+            var transportKey = subscriptionKey.TransportName ?? string.Empty;
+            if (unreachableTransports?.Contains(transportKey) == true)
+            {
+                continue;
+            }
+
+            var connectivity = _ConnectivityOf(subscriptionKey);
             var handleName = _CreateHandleName(subscriptionKey);
             var everyInstance = subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance;
             var descriptors = match.Value;
@@ -886,6 +916,14 @@ internal sealed partial class ConsumerRegister(
             // in the dispatcher, where it bounds how many keys run at once.
             var sequential = !everyInstance && descriptors.Any(static d => d.Sequential);
             var limit = sequential ? (byte)1 : _selector.GetSubscriptionConcurrentLimit(subscriptionKey);
+
+            // Across hosts, one at a time must take the subscription in, or each would order only its share.
+            var intake = _ResolveSequentialIntake(subscriptionKey, descriptors);
+            var singleActiveConsumer = intake is SequentialIntake.BrokerSingleActiveConsumer;
+            if (intake is SequentialIntake.Unguarded && _unguardedSequentialLogged.TryAdd(handleName, 0))
+            {
+                _logger.LogSequentialIntakeUnguarded(handleName);
+            }
 
             // A runtime subscription carries a handler id; no deploy step knows it, so its client creates its topology.
             var provisionsTopology = descriptors.Any(static d => d.HandlerId is not null);
@@ -897,23 +935,37 @@ internal sealed partial class ConsumerRegister(
                         subscriptionKey,
                         limit,
                         provisionsTopology,
+                        singleActiveConsumer,
                         _stoppingCts.Token
                     )
                     .ConfigureAwait(false);
                 // The probe belongs to no handle, and its failures surface as exceptions here, so its events log and
                 // report connectivity without touching any subscription's health.
-                client.AttachCallbacks(onMessage: null, onLog: log => _WriteLog(log, handle: null, client: null));
+                client.AttachCallbacks(
+                    onMessage: null,
+                    onLog: log => _WriteLog(log, handle: null, client: null, connectivity)
+                );
                 messageNames = await client
                     .FetchMessageNamesAsync(match.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
             }
             catch (BrokerConnectionException e)
             {
-                // This and every later subscription in the pass get no handle, so no handle can carry the failure.
-                _needsFullRestart = true;
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
                 _logger.FailedToConnectToBroker(e);
-                return establishments;
+
+                if (_transports is not { Named.Count: > 0 })
+                {
+                    // This and every later subscription in the pass get no handle, so no handle can carry the failure.
+                    _needsFullRestart = true;
+                    return establishments;
+                }
+
+                // With several brokers, one that is down must not stop the others: the subscriptions of this transport
+                // stay missing, and the next pass recreates exactly those, leaving the running ones alone.
+                _needsPartialRestart = true;
+                (unreachableTransports ??= new HashSet<string>(StringComparer.Ordinal)).Add(transportKey);
+                continue;
             }
 
             var groupCts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
@@ -923,6 +975,7 @@ internal sealed partial class ConsumerRegister(
                 Cts = groupCts,
                 SubscriptionName = handleName,
                 Shape = _GetGroupShape(subscriptionKey, descriptors),
+                Connectivity = connectivity,
                 CircuitKeys = everyInstance
                     ? []
                     : match.Value.Select(CircuitBreakerKeys.For).ToFrozenSet(StringComparer.Ordinal),
@@ -960,6 +1013,33 @@ internal sealed partial class ConsumerRegister(
             // A second client on a sequential subscription would compete for its deliveries and admit them out of order.
             var clientCount = everyInstance || sequential ? 1 : _options.ConsumerThreadCount;
 
+            if (intake is SequentialIntake.DistributedLock)
+            {
+                var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var task = Task
+                    .Factory.StartNew(
+                        () =>
+                            _ListenWhileHoldingLockAsync(
+                                subscriptionKey,
+                                handle,
+                                limit,
+                                provisionsTopology,
+                                messageNames,
+                                startupReady,
+                                groupCts.Token
+                            ),
+                        CancellationToken.None,
+                        TaskCreationOptions.LongRunning,
+                        TaskScheduler.Default
+                    )
+                    .Unwrap();
+
+                handle.ConsumerTasks.Add(task);
+                startupTasks ??= [];
+                startupTasks.Add(startupReady.Task);
+                continue;
+            }
+
             for (var i = 0; i < clientCount; i++)
             {
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -969,18 +1049,17 @@ internal sealed partial class ConsumerRegister(
                         {
                             try
                             {
-                                var failureMark = _connectivity.FailureMark;
+                                var failureMark = connectivity.FailureMark;
                                 var innerClient = await _CreateConsumerClientAsync(
                                         subscriptionKey,
                                         limit,
                                         provisionsTopology,
+                                        singleActiveConsumer,
                                         groupCts.Token
                                     )
                                     .ConfigureAwait(false);
 
                                 await handle.AddClientAsync(innerClient).ConfigureAwait(false);
-
-                                _serverAddress = innerClient.BrokerAddress;
 
                                 _RegisterMessageProcessor(innerClient, subscriptionKey, handle, groupCts.Token);
 
@@ -1004,6 +1083,7 @@ internal sealed partial class ConsumerRegister(
                                         innerClient,
                                         startupReady,
                                         onReady,
+                                        connectivity,
                                         failureMark,
                                         groupCts.Token
                                     )
@@ -1017,7 +1097,7 @@ internal sealed partial class ConsumerRegister(
                             {
                                 startupReady.TrySetException(e);
                                 handle.MarkClientLoopFailed();
-                                _connectivity.ReportBrokerFailure();
+                                connectivity.ReportBrokerFailure();
                                 _logger.FailedToConnectToBroker(e);
                             }
                             catch (Exception e)
@@ -1047,14 +1127,229 @@ internal sealed partial class ConsumerRegister(
         return establishments;
     }
 
+    private SequentialIntake _ResolveSequentialIntake(
+        ConsumerSubscriptionKey subscriptionKey,
+        IReadOnlyList<ConsumerExecutorDescriptor> descriptors
+    )
+    {
+        return SequentialIntakeResolver.Resolve(
+            subscriptionKey,
+            descriptors,
+            _capabilityModel.Providers.FirstOrDefault(static p => p.Role is MessagingProviderRole.Transport),
+            _lockProvider is not null && SequentialIntakeResolver.IsDistributedLockConfigured(_lockProvider)
+        );
+    }
+
+    /// <summary>
+    /// Runs a sequential subscription's one client on this host only while the host holds the subscription's lock, so
+    /// one host at a time takes its deliveries in. A host without the lock creates no client and tries again every
+    /// <see cref="ActiveHostRetryInterval"/>. A holder that loses the lease stops its client and competes again; the
+    /// handlers it already admitted finish, because they run on <paramref name="stoppingToken"/>, not on the lease.
+    /// </summary>
+    private async Task _ListenWhileHoldingLockAsync(
+        ConsumerSubscriptionKey subscriptionKey,
+        SubscriptionHandle handle,
+        byte limit,
+        bool provisionsTopology,
+        ICollection<string> messageNames,
+        TaskCompletionSource startupReady,
+        CancellationToken stoppingToken
+    )
+    {
+        var lockProvider = _lockProvider!;
+        var resource = MessagingKeys.SequentialIntakeResource(
+            _options.Version,
+            subscriptionKey.Lane,
+            subscriptionKey.SubscriptionName
+        );
+
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                var lease = await _TryAcquireActiveHostAsync(lockProvider, resource, handle, stoppingToken)
+                    .ConfigureAwait(false);
+
+                if (lease is null)
+                {
+                    // Another host listens, so this host's start does not wait for the subscription. The next try is
+                    // scheduled before the start completes, so a started host is always already waiting for it.
+                    var retry = Task.Delay(ActiveHostRetryInterval, _backoffClock, stoppingToken);
+                    startupReady.TrySetResult();
+                    await retry.ConfigureAwait(false);
+                    continue;
+                }
+
+                bool lost;
+
+                await using (lease.ConfigureAwait(false))
+                {
+                    _logger.LogSequentialIntakeAcquired(handle.SubscriptionName, resource);
+                    await _ListenUnderLeaseAsync(
+                            subscriptionKey,
+                            handle,
+                            limit,
+                            provisionsTopology,
+                            messageNames,
+                            startupReady,
+                            lease,
+                            stoppingToken
+                        )
+                        .ConfigureAwait(false);
+
+                    // Read while the lease is alive: a disposed lease owes its caller no loss state.
+                    lost = lease.IsLost;
+                }
+
+                if (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                if (lost)
+                {
+                    _logger.LogSequentialIntakeLost(handle.SubscriptionName, resource);
+                    continue;
+                }
+
+                // The client stopped listening on its own and the lock is released, so another host can take over;
+                // this one competes again after the interval instead of rebuilding a client that just stopped.
+                await Task.Delay(ActiveHostRetryInterval, _backoffClock, stoppingToken).ConfigureAwait(false);
+            }
+
+            startupReady.TrySetCanceled(stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            startupReady.TrySetCanceled(stoppingToken);
+        }
+        catch (BrokerConnectionException e)
+        {
+            startupReady.TrySetException(e);
+            handle.MarkClientLoopFailed();
+            _ConnectivityOf(handle).ReportBrokerFailure();
+            _logger.FailedToConnectToBroker(e);
+        }
+        catch (Exception e)
+        {
+            startupReady.TrySetException(e);
+            handle.MarkClientLoopFailed();
+            _logger.ConsumerProcessingLoopFailed(e);
+        }
+    }
+
+    private async Task<IDistributedLease?> _TryAcquireActiveHostAsync(
+        IDistributedLock lockProvider,
+        string resource,
+        SubscriptionHandle handle,
+        CancellationToken stoppingToken
+    )
+    {
+        try
+        {
+            return await lockProvider
+                .TryAcquireAsync(
+                    resource,
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = ActiveHostLeaseDuration,
+                        AcquireTimeout = TimeSpan.Zero,
+                        Monitoring = LockMonitoringMode.AutoExtend,
+                        // Every other host tries once per interval and never waits, so a release wake-up would reach no
+                        // one.
+                        NotifyWaitersOnRelease = false,
+                    },
+                    stoppingToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // A lock store outage leaves the subscription to whichever host still holds it; this one keeps trying.
+            _logger.LogSequentialIntakeAcquireFailed(e, handle.SubscriptionName, resource, ActiveHostRetryInterval);
+            return null;
+        }
+    }
+
+    private async Task _ListenUnderLeaseAsync(
+        ConsumerSubscriptionKey subscriptionKey,
+        SubscriptionHandle handle,
+        byte limit,
+        bool provisionsTopology,
+        ICollection<string> messageNames,
+        TaskCompletionSource startupReady,
+        IDistributedLease lease,
+        CancellationToken stoppingToken
+    )
+    {
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, lease.LostToken);
+        IConsumerClient? client = null;
+
+        try
+        {
+            var failureMark = _ConnectivityOf(handle).FailureMark;
+            client = await _CreateConsumerClientAsync(
+                    subscriptionKey,
+                    limit,
+                    provisionsTopology,
+                    singleActiveConsumer: false,
+                    listening.Token
+                )
+                .ConfigureAwait(false);
+
+            await handle.AddClientAsync(client).ConfigureAwait(false);
+
+            // Admitted deliveries run on the host's token, so losing the lease stops intake but not their handlers.
+            _RegisterMessageProcessor(client, subscriptionKey, handle, stoppingToken);
+
+            await client.SubscribeAsync(messageNames, listening.Token).ConfigureAwait(false);
+            await _AwaitConsumerReadyThenListenAsync(
+                    client,
+                    startupReady,
+                    onReady: null,
+                    _ConnectivityOf(handle),
+                    failureMark,
+                    listening.Token
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (lease.IsLost && !stoppingToken.IsCancellationRequested)
+        {
+            // The lease is gone: stop taking deliveries in, below, and let the caller compete again.
+        }
+        finally
+        {
+            // A handle being disposed shuts its own clients down; otherwise this client is no longer the handle's to
+            // report on, so it leaves the handle before it closes, and a late event from it cannot degrade the handle.
+            if (client is not null && handle.TryRetireClient(client))
+            {
+                await client.ShutdownAsync(_RestartShutdownTimeout, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private TransportConnectivity _ConnectivityOf(SubscriptionHandle handle) => handle.Connectivity ?? _connectivity;
+
+    // A subscription reports into its own broker's connectivity, so one broker's outage never reads as another's.
+    private TransportConnectivity _ConnectivityOf(ConsumerSubscriptionKey subscriptionKey) =>
+        subscriptionKey.TransportName is { } transportName
+        && _transports?.TryGet(transportName, out var transport) == true
+            ? transport.Connectivity
+            : _connectivity;
+
     private Task<IConsumerClient> _CreateConsumerClientAsync(
         ConsumerSubscriptionKey subscriptionKey,
         byte groupConcurrent,
         bool provisionsTopology,
+        bool singleActiveConsumer,
         CancellationToken cancellationToken
     )
     {
-        return _consumerClientFactory.CreateAsync(
+        var factory = subscriptionKey.TransportName is { } transportName
+            ? _transports!.Get(transportName).ConsumerClientFactory
+            : _consumerClientFactory;
+
+        return factory.CreateAsync(
             new ConsumerClientRequest(
                 subscriptionKey.SubscriptionName,
                 groupConcurrent,
@@ -1064,6 +1359,7 @@ internal sealed partial class ConsumerRegister(
             )
             {
                 ProvisionsTopology = provisionsTopology,
+                SingleActiveConsumer = singleActiveConsumer,
             },
             cancellationToken
         );
@@ -1073,6 +1369,12 @@ internal sealed partial class ConsumerRegister(
     // part of the name because a competing and an every-instance subscription never share clients.
     private static string _CreateHandleName(ConsumerSubscriptionKey subscriptionKey)
     {
+        // A named transport's subscription is its own broker object, never the default one's of the same name.
+        if (subscriptionKey.TransportName is { } transportName)
+        {
+            return $"{transportName}/{_CreateHandleName(subscriptionKey with { TransportName = null })}";
+        }
+
         return subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance
             ? string.Create(
                 CultureInfo.InvariantCulture,
@@ -1088,6 +1390,7 @@ internal sealed partial class ConsumerRegister(
         IConsumerClient innerClient,
         TaskCompletionSource startupReady,
         Action? onReady,
+        TransportConnectivity connectivity,
         long failureMark,
         CancellationToken cancellationToken
     )
@@ -1098,7 +1401,7 @@ internal sealed partial class ConsumerRegister(
         {
             await readinessTask.ConfigureAwait(false);
             // A ready client is the success that ends an outage on a transport whose clients the register rebuilds.
-            _connectivity.ReportEstablished(failureMark);
+            connectivity.ReportEstablished(failureMark);
             onReady?.Invoke();
             startupReady.TrySetResult();
             await innerClient.ListeningAsync(_options.ConsumerPollTimeout, cancellationToken).ConfigureAwait(false);
@@ -1117,7 +1420,7 @@ internal sealed partial class ConsumerRegister(
         }
 
         await readinessTask.ConfigureAwait(false);
-        _connectivity.ReportEstablished(failureMark);
+        connectivity.ReportEstablished(failureMark);
 
         // The hook is raised once the subscription receives and runs beside the listening client, so no message
         // published after establishment is lost to it. The listening loop never waits for it: a hook that restarts the
@@ -1391,7 +1694,7 @@ internal sealed partial class ConsumerRegister(
                 (transportMessage, sender) =>
                 {
                     // A delivery proves the broker answers, so it ends any failure run, a sends' run included.
-                    _connectivity.ReportBrokerSuccess();
+                    _ConnectivityOf(clientHandle).ReportBrokerSuccess();
 
                     return _OnEveryInstanceMessageAsync(
                         client,
@@ -1401,7 +1704,7 @@ internal sealed partial class ConsumerRegister(
                         hostShutdownToken
                     );
                 },
-                log => _WriteLog(log, clientHandle, client)
+                log => _WriteLog(log, clientHandle, client, _ConnectivityOf(clientHandle))
             );
 
             return;
@@ -1410,7 +1713,7 @@ internal sealed partial class ConsumerRegister(
         client.AttachCallbacks(
             (transportMessage, sender) =>
             {
-                _connectivity.ReportBrokerSuccess();
+                _ConnectivityOf(clientHandle).ReportBrokerSuccess();
 
                 return _OnCompetingMessageAsync(
                     client,
@@ -1421,7 +1724,7 @@ internal sealed partial class ConsumerRegister(
                     hostShutdownToken
                 );
             },
-            log => _WriteLog(log, clientHandle, client)
+            log => _WriteLog(log, clientHandle, client, _ConnectivityOf(clientHandle))
         );
     }
 
@@ -1430,7 +1733,12 @@ internal sealed partial class ConsumerRegister(
     /// the client was created for. Binding the handle object rather than its name keeps a retired client's late event
     /// on the retired handle, which nothing reads, instead of on its replacement.
     /// </summary>
-    private void _WriteLog(LogMessageEventArgs logMessage, SubscriptionHandle? handle, IConsumerClient? client)
+    private void _WriteLog(
+        LogMessageEventArgs logMessage,
+        SubscriptionHandle? handle,
+        IConsumerClient? client,
+        TransportConnectivity connectivity
+    )
     {
         var reason = LogSanitizer.Sanitize(logMessage.Reason) ?? string.Empty;
 
@@ -1452,7 +1760,7 @@ internal sealed partial class ConsumerRegister(
                     handle?.MarkClientHealthy(client);
                 }
 
-                _connectivity.ReportBrokerSuccess();
+                connectivity.ReportBrokerSuccess();
                 _logger.RabbitMqConsumerRegistered(reason);
                 break;
             case MqLogType.ConsumerUnregistered:
@@ -1460,7 +1768,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ConsumerShutdown:
                 _MarkClientDegraded(handle, client);
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
                 _logger.RabbitMqConsumerShutdown(reason);
                 break;
             case MqLogType.ConsumeError:
@@ -1471,7 +1779,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ServerConnError:
                 _MarkClientDegraded(handle, client);
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
                 _logger.KafkaServerConnectionError(reason);
                 break;
             case MqLogType.ExceptionReceived:
@@ -1482,7 +1790,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ConnectError:
                 _MarkClientDegraded(handle, client);
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
                 _logger.NatsServerConnectionError(reason);
                 break;
             case MqLogType.InvalidIdFormat:
@@ -1504,8 +1812,8 @@ internal sealed partial class ConsumerRegister(
             {
                 // A client that retries on a timer reports every retry. Once the run has made the broker unreachable,
                 // the outage is already logged, so further retries stay quiet until the broker is reachable again.
-                var counted = _connectivity.IsReachable;
-                _connectivity.ReportBrokerFailure();
+                var counted = connectivity.IsReachable;
+                connectivity.ReportBrokerFailure();
                 if (counted)
                 {
                     _logger.TransportBrokerUnreachable(reason);
@@ -1514,7 +1822,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             }
             case MqLogType.BrokerReachable:
-                _connectivity.ReportBrokerSuccess();
+                connectivity.ReportBrokerSuccess();
                 _logger.TransportBrokerReachable(reason);
                 break;
             case MqLogType.SettlementFailed:
@@ -1598,6 +1906,9 @@ internal sealed partial class ConsumerRegister(
         public required string Shape { get; init; }
 
         /// <summary>The lane-qualified circuit keys of the consumer identities this handle's clients deliver to.</summary>
+        // The broker this subscription's clients report their sends and receives into; null reports into the default one.
+        public TransportConnectivity? Connectivity { get; init; }
+
         public FrozenSet<string> CircuitKeys { get; init; } = [];
         public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
@@ -1647,12 +1958,42 @@ internal sealed partial class ConsumerRegister(
         /// </summary>
         public bool IsPausedForEvent => Volatile.Read(ref _isPaused);
 
+        // Clients a sequential subscription stopped when its host lost the lock: they no longer belong to the handle, so
+        // the events they raise while closing must not degrade it.
+        private readonly HashSet<IConsumerClient> _retired = new(ReferenceEqualityComparer.Instance);
+
         public void MarkClientDegraded(IConsumerClient client)
         {
             lock (_healthLock)
             {
-                _degraded.Add(client);
+                if (!_retired.Contains(client))
+                {
+                    _degraded.Add(client);
+                }
             }
+        }
+
+        /// <summary>
+        /// Takes <paramref name="client"/> out of the handle, so its caller shuts it down. Returns
+        /// <see langword="false"/> when the handle is being disposed, which shuts the client down itself.
+        /// </summary>
+        public bool TryRetireClient(IConsumerClient client)
+        {
+            lock (_clientsLock)
+            {
+                if (_disposing || !_clients.Remove(client))
+                {
+                    return false;
+                }
+            }
+
+            lock (_healthLock)
+            {
+                _retired.Add(client);
+                _degraded.Remove(client);
+            }
+
+            return true;
         }
 
         public void MarkClientHealthy(IConsumerClient client)
@@ -1871,6 +2212,48 @@ internal static partial class ConsumerRegisterLog
         string? messageId,
         int retry,
         int retries,
+        TimeSpan delay
+    );
+
+    [LoggerMessage(
+        EventId = 4142,
+        EventName = "SequentialIntakeUnguarded",
+        Level = LogLevel.Warning,
+        Message = "Sequential consumer subscription '{SubscriptionName}' is listened to by every host: its transport does not route each key to one consumer or deliver the subscription to one consumer at a time, and messaging has no distributed lock (UseDistributedLock) to elect one host. Each host orders only the deliveries it receives; run one host, or configure a messaging distributed lock."
+    )]
+    internal static partial void LogSequentialIntakeUnguarded(this ILogger logger, string subscriptionName);
+
+    [LoggerMessage(
+        EventId = 4143,
+        EventName = "SequentialIntakeAcquired",
+        Level = LogLevel.Information,
+        Message = "This host holds lock '{Resource}' and takes in sequential consumer subscription '{SubscriptionName}'."
+    )]
+    internal static partial void LogSequentialIntakeAcquired(
+        this ILogger logger,
+        string subscriptionName,
+        string resource
+    );
+
+    [LoggerMessage(
+        EventId = 4144,
+        EventName = "SequentialIntakeLost",
+        Level = LogLevel.Warning,
+        Message = "This host lost lock '{Resource}' and stopped taking in sequential consumer subscription '{SubscriptionName}'; handlers already running finish, and the host competes for the lock again."
+    )]
+    internal static partial void LogSequentialIntakeLost(this ILogger logger, string subscriptionName, string resource);
+
+    [LoggerMessage(
+        EventId = 4145,
+        EventName = "SequentialIntakeAcquireFailed",
+        Level = LogLevel.Warning,
+        Message = "Acquiring lock '{Resource}' for sequential consumer subscription '{SubscriptionName}' failed; the host tries again in {Delay}."
+    )]
+    internal static partial void LogSequentialIntakeAcquireFailed(
+        this ILogger logger,
+        Exception exception,
+        string subscriptionName,
+        string resource,
         TimeSpan delay
     );
 }

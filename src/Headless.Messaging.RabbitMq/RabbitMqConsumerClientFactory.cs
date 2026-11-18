@@ -42,7 +42,8 @@ internal sealed class RabbitMqConsumerClientFactory(
             request.ProvisionsTopology,
             config,
             lane,
-            kind: request.Kind
+            kind: request.Kind,
+            singleActiveConsumer: request.SingleActiveConsumer
         );
 
         try

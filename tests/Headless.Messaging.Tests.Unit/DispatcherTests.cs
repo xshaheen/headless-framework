@@ -760,7 +760,6 @@ public sealed class DispatcherTests : TestBase
 
         // when
         var disposeTask = dispatcher.DisposeAsync(TimeSpan.FromSeconds(10), AbortToken).AsTask();
-        await Task.Delay(300, AbortToken);
 
         // then
         disposeTask.IsCompleted.Should().BeFalse("shutdown must wait for the send that is still in flight");
@@ -1017,14 +1016,8 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[2], dateTime.AddMilliseconds(100), cancellationToken: AbortToken);
 
-        // Poll until all three messages flow through, or the wall-clock budget elapses. 10 s is
-        // ~8× the slowest scheduled publish (+1 s) and well beyond any plausible thread-pool
-        // starvation in the test suite.
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
-        while (sender.ReceivedMessages.Count < 3 && DateTimeOffset.UtcNow < deadline)
-        {
-            await Task.Delay(20, AbortToken);
-        }
+        // The sender signals each delivery, so the test ends on the third message rather than on a wall-clock bound.
+        await sender.WaitForCountAsync(3, AbortToken).Bounded();
 
         await cts.CancelAsync();
 
@@ -1146,14 +1139,8 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[2], dateTime.AddMilliseconds(100), cancellationToken: AbortToken);
 
-        // Poll for all three messages to land in the sender; the scheduler loop ticks every 50ms,
-        // and a fixed wall-clock delay (e.g. 1200ms) was flaky under CI load when msg[0]'s +1s
-        // schedule slipped past the deadline. We allow up to 5s, then assert the order.
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
-        while (sender.ReceivedMessages.Count < 3 && DateTimeOffset.UtcNow < deadline)
-        {
-            await Task.Delay(50, CancellationToken.None);
-        }
+        // The sender signals each delivery, so the test ends on the third message rather than on a wall-clock bound.
+        await sender.WaitForCountAsync(3, AbortToken).Bounded();
 
         await cts.CancelAsync();
 
@@ -1167,9 +1154,11 @@ public sealed class DispatcherTests : TestBase
     [Fact]
     public async Task should_not_queue_message_when_enqueue_to_scheduler_state_change_is_rejected()
     {
-        // given
+        // given — the store rejects the first message's state change and accepts the sentinel's
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
+        var rejected = _CreateTestMessage(_StorageGuid(1));
+        var sentinel = _CreateTestMessage(_StorageGuid(2));
         _storage
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
@@ -1179,7 +1168,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
-            .Returns(new ValueTask<bool>(false));
+            .Returns(call => new ValueTask<bool>(!ReferenceEquals(call.Arg<MediumMessage>(), rejected)));
 
         await using var dispatcher = new Dispatcher(
             _logger,
@@ -1192,18 +1181,17 @@ public sealed class DispatcherTests : TestBase
         );
         using var cts = new CancellationTokenSource();
 
-        // when
+        // when — the sentinel is due after the rejected message, so a rejected message that leaked into the queue
+        // would reach the sender ahead of it
         await dispatcher.StartAsync(cts.Token);
-        await dispatcher.EnqueueToScheduler(
-            _CreateTestMessage(),
-            DateTimeOffset.UtcNow.AddMilliseconds(50),
-            cancellationToken: AbortToken
-        );
-        await Task.Delay(200, CancellationToken.None);
+        var due = DateTimeOffset.UtcNow;
+        await dispatcher.EnqueueToScheduler(rejected, due.AddMilliseconds(50), cancellationToken: AbortToken);
+        await dispatcher.EnqueueToScheduler(sentinel, due.AddMilliseconds(100), cancellationToken: AbortToken);
+        await sender.WaitForCountAsync(1, AbortToken).Bounded();
         await cts.CancelAsync();
 
         // then
-        sender.Count.Should().Be(0);
+        sender.ReceivedMessages.Should().ContainSingle().Which.Should().BeSameAs(sentinel);
     }
 
     [Fact]
@@ -1510,8 +1498,11 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.StartAsync(cts.Token);
 
         await dispatcher.EnqueueToPublish(_CreateTestMessage(_StorageGuid(1)), AbortToken);
-        await Task.Delay(100, CancellationToken.None);
+        await sender.WaitForCountAsync(1, AbortToken).Bounded();
         await cts.CancelAsync();
+
+        // Disposing joins the processing loops, so a stop request their exit raised has been made by the check below.
+        await dispatcher.DisposeAsync();
 
         lifetime.StopRequested.Should().BeFalse("clean shutdown of the dispatcher must not request host stop");
     }
@@ -1593,10 +1584,7 @@ public sealed class DispatcherTests : TestBase
             enqueue.IsCompletedSuccessfully.Should().BeTrue("a channel with room takes the signal without waiting");
             await enqueue;
 
-            for (var attempt = 0; attempt < 100 && sender.Count != 1; attempt++)
-            {
-                await Task.Delay(10, AbortToken);
-            }
+            await sender.WaitForCountAsync(1, AbortToken).Bounded();
 
             sender.ReceivedMessages.Should().ContainSingle().Which.Should().BeSameAs(message);
             await cts.CancelAsync();
@@ -2238,7 +2226,7 @@ public sealed class DispatcherTests : TestBase
                 await release.Task.ConfigureAwait(false);
                 return OperateResult.Success;
             });
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
         var options = Options.Create(
             new MessagingOptions
             {
@@ -2265,10 +2253,17 @@ public sealed class DispatcherTests : TestBase
         // First dispose: the handler ignores cancellation, so completion must come from the
         // ShutdownTimeout branch (_CompleteTimedOutShutdownAsync), never from the handler.
         var firstDispose = dispatcher.DisposeAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
-        for (var i = 0; i < 100 && !firstDispose.IsCompleted; i++)
+        while (!firstDispose.IsCompleted)
         {
-            timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(10, AbortToken);
+            // The shutdown wait arms its timer after it reads its remaining budget, so one advance can land between
+            // the two; each armed timer gets an advance past the whole budget until the dispose returns.
+            _ = await Task.WhenAny(firstDispose, timeProvider.WaitForArmedTimerAsync());
+            if (firstDispose.IsCompleted)
+            {
+                break;
+            }
+
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
         }
 
         firstDispose.IsCompleted.Should().BeTrue("DisposeAsync must return once ShutdownTimeout expires");
@@ -2415,24 +2410,51 @@ public sealed class DispatcherTests : TestBase
     )
     {
         var committed = (ICommittedMessageDispatcher)dispatcher;
-        await committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), Stopwatch.GetTimestamp());
+
+        // One start for the whole fill: the first enqueue meets an empty channel, and the rest run under an hour.
+        var fillStartedAt = Stopwatch.GetTimestamp();
+        await committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), fillStartedAt);
         await sender.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
-        // Bounded well above any real capacity (ProcessorCount * 500) so a channel that never fills fails the test.
-        for (var accepted = 1; accepted < 1_000_000; accepted++)
+        // Filled under a budget no stall can spend, so an enqueue that completes is one the channel took. Under the
+        // 100 ms real-time default, a thread paused past the budget before its full-channel check drops the signal and
+        // completes too, and counting that drop as accepted waits for a send that never comes. The first enqueue that
+        // stays pending proves the channel full; it is written once the sender frees room, so it counts as accepted.
+        var budget = dispatcher.CommittedCapacityWait;
+        dispatcher.CommittedCapacityWait = TimeSpan.FromHours(1);
+        int accepted;
+        try
         {
-            var message = _CreateTestMessage();
-            var enqueue = committed.EnqueueCommittedMessageAsync(message, Stopwatch.GetTimestamp());
-
-            if (!enqueue.IsCompleted)
+            // Bounded well above any real capacity (ProcessorCount * 500) so a channel that never fills fails the test.
+            for (accepted = 1; accepted < 1_000_000; accepted++)
             {
-                return (accepted, message, enqueue.AsTask());
-            }
+                var enqueue = committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), fillStartedAt);
 
-            await enqueue;
+                if (!enqueue.IsCompleted)
+                {
+                    _ = enqueue.AsTask();
+                    break;
+                }
+
+                await enqueue;
+            }
+        }
+        finally
+        {
+            dispatcher.CommittedCapacityWait = budget;
         }
 
-        throw new InvalidOperationException("The publish channel never filled.");
+        if (accepted == 1_000_000)
+        {
+            throw new InvalidOperationException("The publish channel never filled.");
+        }
+
+        // The message under test waits on the test's own budget; whether it drops at once or after the budget, the
+        // channel never takes it while the sender is gated.
+        var message = _CreateTestMessage();
+        var waiting = committed.EnqueueCommittedMessageAsync(message, Stopwatch.GetTimestamp()).AsTask();
+
+        return (accepted + 1, message, waiting);
     }
 
     private Dispatcher _CreateDispatcher(IMessageSender sender)

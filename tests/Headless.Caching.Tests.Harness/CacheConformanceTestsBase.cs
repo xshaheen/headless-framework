@@ -47,17 +47,32 @@ public abstract class CacheConformanceTestsBase : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var sets = new ConcurrentBag<CacheKeyEventArgs>();
         var hits = new ConcurrentBag<CacheHitEventArgs>();
-        using var _1 = cache.Events.Set.AddHandler(e => sets.Add(e));
-        using var _2 = cache.Events.Hit.AddHandler(e => hits.Add(e));
+        var setSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hitSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var _1 = cache.Events.Set.AddHandler(e =>
+        {
+            sets.Add(e);
+
+            if (string.Equals(e.Key, key, StringComparison.Ordinal))
+            {
+                setSeen.TrySetResult();
+            }
+        });
+        using var _2 = cache.Events.Hit.AddHandler(e =>
+        {
+            hits.Add(e);
+
+            if (string.Equals(e.Key, key, StringComparison.Ordinal))
+            {
+                hitSeen.TrySetResult();
+            }
+        });
 
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         var read = await cache.GetAsync<string>(key, AbortToken);
 
-        // Handlers dispatch through the bounded background FIFO, so poll for both events.
-        await _WaitForCacheEventAsync(() =>
-            sets.Any(e => string.Equals(e.Key, key, StringComparison.Ordinal))
-            && hits.Any(e => string.Equals(e.Key, key, StringComparison.Ordinal))
-        );
+        // Handlers dispatch through the bounded background FIFO, so wait for each handler to see its event.
+        await Task.WhenAll(setSeen.Task, hitSeen.Task).Bounded();
 
         read.HasValue.Should().BeTrue();
         sets.Should().Contain(e => e.Key == key, "the contract UpsertAsync must raise a keyed Set event");
@@ -70,12 +85,21 @@ public abstract class CacheConformanceTestsBase : TestBase
         var cache = CreateCache(Faker.Random.AlphaNumeric(8));
         var key = Faker.Random.AlphaNumeric(10);
         var removes = new ConcurrentBag<CacheKeyEventArgs>();
-        using var _ = cache.Events.Remove.AddHandler(e => removes.Add(e));
+        var removeSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var _ = cache.Events.Remove.AddHandler(e =>
+        {
+            removes.Add(e);
+
+            if (string.Equals(e.Key, key, StringComparison.Ordinal))
+            {
+                removeSeen.TrySetResult();
+            }
+        });
 
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         var removed = await cache.RemoveAsync(key, AbortToken);
 
-        await _WaitForCacheEventAsync(() => removes.Any(e => string.Equals(e.Key, key, StringComparison.Ordinal)));
+        await removeSeen.Task.Bounded();
 
         removed.Should().BeTrue();
         removes.Should().Contain(e => e.Key == key, "the contract RemoveAsync must raise a keyed Remove event");
@@ -95,16 +119,6 @@ public abstract class CacheConformanceTestsBase : TestBase
         // ScopedCache<T> prefixes keys over a shared inner cache, so it must NOT forward the inner hub (would leak
         // cross-scope events with prefixed keys); it returns the shared allocation-free no-op hub instead.
         scoped.Events.Should().BeSameAs(CacheEvents.NoOp);
-    }
-
-    // Handlers dispatch through the bounded FIFO and must be observed with a bounded real-time poll (the fake clock
-    // does not drive the thread pool).
-    private static async Task _WaitForCacheEventAsync(Func<bool> observed)
-    {
-        for (var attempt = 0; attempt < 250 && !observed(); attempt++)
-        {
-            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(20), AbortToken).ConfigureAwait(false);
-        }
     }
 
     #endregion
@@ -484,6 +498,7 @@ public abstract class CacheConformanceTestsBase : TestBase
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        using var backgroundRefreshed = _SubscribeBackgroundRefresh(cache);
         var timerArmed = WatchForTimer(options.FactorySoftTimeout);
         var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task.Bounded();
@@ -492,11 +507,10 @@ public abstract class CacheConformanceTestsBase : TestBase
         var timedOut = await _CompletedWithinBoundAsync(timeoutTask);
         factoryGate.SetResult("fresh");
 
-        await _WaitUntilAsync(async () =>
-        {
-            var cached = await cache.GetAsync<string>(key, AbortToken);
-            return cached is { HasValue: true, Value: "fresh" };
-        });
+        // The coordinator raises the background-refresh event only after the detached factory's value is committed.
+        await _AwaitRefreshAsync(backgroundRefreshed);
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+        cached.Value.Should().Be("fresh");
 
         timedOut.Value.Should().Be("stale");
         timedOut.IsStale.Should().BeTrue();
@@ -615,7 +629,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         hit.Value.Should().Be("v1");
         hit.IsStale.Should().BeFalse();
 
-        await _AwaitEagerRefreshAsync(eagerRefreshed);
+        await _AwaitRefreshAsync(eagerRefreshed);
         (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
     }
 
@@ -646,7 +660,7 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         factoryGate.SetResult("v2");
 
-        await _AwaitEagerRefreshAsync(eagerRefreshed);
+        await _AwaitRefreshAsync(eagerRefreshed);
         (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
         factoryCalls.Should().Be(1);
     }
@@ -872,6 +886,62 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var immediate = await cache.GetAsync<string>(key, AbortToken);
         immediate.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_report_no_expiration_when_upsert_duration_is_max_value()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // TimeSpan.MaxValue saturates the stamps at DateTime.MaxValue, which means "never expires", not a deadline
+        // thousands of years away.
+        await cache.UpsertEntryAsync(key, "value", new CacheEntryOptions { Duration = TimeSpan.MaxValue }, AbortToken);
+
+        var read = await cache.GetAsync<string>(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        read.Value.Should().Be("value");
+        expiration.Should().BeNull("a DateTime.MaxValue expiry stamp means the entry never expires");
+    }
+
+    public virtual async Task should_report_no_expiration_when_set_entry_stamps_are_max_value()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+
+        await cache.UpsertEntryAsync(
+            key,
+            "seed",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+        var seeded = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
+
+        // A compare-and-set write with DateTime.MaxValue stamps, the shape of a replayed write that had no
+        // expiration: the store must keep no deadline for it.
+        var written = await store.SetEntryAsync(
+            key,
+            new CacheStoreEntryWrite<string>
+            {
+                Value = "value",
+                IsNull = false,
+                LogicalExpiresAt = DateTime.MaxValue,
+                PhysicalExpiresAt = DateTime.MaxValue,
+                CreatedAt = seeded.CreatedAt,
+                ExpectedConcurrencyStamp = seeded.ConcurrencyStamp,
+            },
+            AbortToken
+        );
+
+        var read = await cache.GetAsync<string>(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        written.Should().BeTrue();
+        read.Value.Should().Be("value");
+        expiration.Should().BeNull("a DateTime.MaxValue expiry stamp means the entry never expires");
     }
 
     public virtual async Task should_extend_entry_when_conditional_factory_reports_not_modified()
@@ -1125,9 +1195,11 @@ public abstract class CacheConformanceTestsBase : TestBase
             Duration = TimeSpan.FromMinutes(5),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromMinutes(30),
-            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+            // Long enough that the repeat reads below always land inside the window, even on a real clock.
+            FailSafeThrottleDuration = TimeSpan.FromMinutes(1),
             Tags = [tag],
         };
+        var factoryCalls = 0;
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
 
@@ -1141,7 +1213,11 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var result = await cache.GetOrAddAsync<string>(
             key,
-            _ => throw new InvalidOperationException("downstream unavailable"),
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
             options,
             AbortToken
         );
@@ -1149,6 +1225,23 @@ public abstract class CacheConformanceTestsBase : TestBase
         result.HasValue.Should().BeTrue();
         result.Value.Should().Be("value");
         result.IsStale.Should().BeTrue();
+
+        // The failure throttles the factory: repeat factory reads inside the window serve the reserve without
+        // calling it again, while a direct read still misses because the reserve stays invalidated.
+        var throttled = await cache.GetOrAddAsync<string>(
+            key,
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
+            options,
+            AbortToken
+        );
+
+        throttled.Value.Should().Be("value");
+        factoryCalls.Should().Be(1);
+        (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
     }
 
     public virtual async Task should_logically_clear_with_clear_async_preserving_reserves()
@@ -1163,8 +1256,10 @@ public abstract class CacheConformanceTestsBase : TestBase
             Duration = TimeSpan.FromMinutes(5),
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromMinutes(30),
-            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+            // Long enough that the repeat read below always lands inside the window, even on a real clock.
+            FailSafeThrottleDuration = TimeSpan.FromMinutes(1),
         };
+        var factoryCalls = 0;
 
         await cache.GetOrAddAsync(
             taggedKey,
@@ -1189,7 +1284,11 @@ public abstract class CacheConformanceTestsBase : TestBase
         // ...but their fail-safe reserves are preserved: a failing factory still serves the stale value.
         var stale = await cache.GetOrAddAsync<string>(
             untaggedKey,
-            _ => throw new InvalidOperationException("downstream unavailable"),
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
             failSafe,
             AbortToken
         );
@@ -1197,6 +1296,22 @@ public abstract class CacheConformanceTestsBase : TestBase
         stale.HasValue.Should().BeTrue();
         stale.Value.Should().Be("untagged");
         stale.IsStale.Should().BeTrue();
+
+        // The failure throttles the factory on the cleared reserve too, and a direct read still misses.
+        var throttled = await cache.GetOrAddAsync<string>(
+            untaggedKey,
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
+            failSafe,
+            AbortToken
+        );
+
+        throttled.Value.Should().Be("untagged");
+        factoryCalls.Should().Be(1);
+        (await cache.GetAsync<string>(untaggedKey, AbortToken)).HasValue.Should().BeFalse();
 
         // A re-created entry (newer birth time) is unaffected by the earlier clear marker.
         await cache.UpsertAsync(taggedKey, "recreated", TimeSpan.FromMinutes(5), AbortToken);
@@ -1453,7 +1568,19 @@ public abstract class CacheConformanceTestsBase : TestBase
         }
     }
 
-    private static EagerRefreshSignal _SubscribeEagerRefresh(ICache cache)
+    private static RefreshSignal _SubscribeBackgroundRefresh(ICache cache)
+    {
+        var completion = new TaskCompletionSource<CacheRefreshEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        return new RefreshSignal(
+            completion,
+            cache.Events.BackgroundRefresh.AddHandler(args => completion.TrySetResult(args))
+        );
+    }
+
+    private static RefreshSignal _SubscribeEagerRefresh(ICache cache)
     {
         // Subscribe before the read that triggers the refresh: the refresh is detached, so its signal can land at
         // any point afterwards, and the cache buffers a signal only for an event that already has a handler.
@@ -1461,7 +1588,7 @@ public abstract class CacheConformanceTestsBase : TestBase
             TaskCreationOptions.RunContinuationsAsynchronously
         );
 
-        return new EagerRefreshSignal(
+        return new RefreshSignal(
             completion,
             cache.Events.EagerRefresh.AddHandler(args => completion.TrySetResult(args))
         );
@@ -1472,16 +1599,14 @@ public abstract class CacheConformanceTestsBase : TestBase
     /// value has been committed, so a read taken afterwards observes that value without polling — and without moving
     /// the clock, which would otherwise be free to expire the very entry the in-flight refresh is about to rewrite.
     /// </summary>
-    private static async Task _AwaitEagerRefreshAsync(EagerRefreshSignal signal)
+    private static async Task _AwaitRefreshAsync(RefreshSignal signal)
     {
         var args = await signal.Completion.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
         args.Outcome.Should().Be(CacheFactoryOutcome.Success);
     }
 
-    private sealed class EagerRefreshSignal(
-        TaskCompletionSource<CacheRefreshEventArgs> completion,
-        IDisposable registration
-    ) : IDisposable
+    private sealed class RefreshSignal(TaskCompletionSource<CacheRefreshEventArgs> completion, IDisposable registration)
+        : IDisposable
     {
         public Task<CacheRefreshEventArgs> Completion => completion.Task;
 
@@ -1489,22 +1614,6 @@ public abstract class CacheConformanceTestsBase : TestBase
         {
             registration.Dispose();
         }
-    }
-
-    private async ValueTask _WaitUntilAsync(Func<ValueTask<bool>> condition)
-    {
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            if (await condition())
-            {
-                return;
-            }
-
-            await AdvanceAsync(TimeSpan.FromMilliseconds(20));
-            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
-        }
-
-        throw new TimeoutException("Condition was not satisfied within the polling window.");
     }
 
     private static CacheEntryOptions _CreateSlidingOptions(TimeSpan? duration = null, TimeSpan? sliding = null)

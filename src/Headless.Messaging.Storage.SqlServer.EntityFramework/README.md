@@ -15,4 +15,4 @@ dotnet add package Headless.Messaging.Storage.SqlServer.EntityFramework
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingstoragesqlserverentityframework)
+- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging/storage.md#headlessmessagingstoragesqlserverentityframework)

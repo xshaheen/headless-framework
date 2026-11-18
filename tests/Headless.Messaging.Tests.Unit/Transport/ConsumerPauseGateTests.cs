@@ -30,9 +30,8 @@ public sealed class ConsumerPauseGateTests : TestBase
 
         // when
         var waitTask = gate.WaitIfPausedAsync(AbortToken).AsTask();
-        await Task.Delay(50, AbortToken);
 
-        // then
+        // then — the gate decides synchronously, so a gate that let the waiter through would already be complete
         waitTask.IsCompleted.Should().BeFalse();
         gate.IsPaused.Should().BeTrue();
 

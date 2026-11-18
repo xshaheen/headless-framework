@@ -33,6 +33,8 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
         // count holds. A fixed wait let a starved worker finish its spin phase, and park, inside the measured window.
         var before = await _WaitUntilParkedAsync(scheduler, timeProvider);
 
+        // A fake clock fires only timers the pool already armed, so it cannot show a worker re-arming on its own cadence.
+        // real-wait: an idle pool must arm no timer over real elapsed time, which only elapsing it can show
         await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
 
         // Polling armed a timer every few tens of milliseconds per worker.
@@ -44,9 +46,10 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
     [Fact]
     public async Task enqueue_wakes_a_parked_worker()
     {
-        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, TimeProvider.System);
+        var timeProvider = new CountingTimeProvider();
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider);
         await _RunAsync(scheduler, null);
-        await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
+        await _WaitUntilParkedAsync(scheduler, timeProvider);
 
         for (var i = 0; i < 20; i++)
         {
@@ -248,8 +251,7 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
         await _WaitUntilAsync(() => scheduler.ParkedTasks == 3);
 
         var dispose = scheduler.DisposeAsync().AsTask();
-        (await Task.WhenAny(dispose, Task.Delay(_Timeout, AbortToken))).Should().Be(dispose);
-        await dispose;
+        await dispose.Bounded(_Timeout);
     }
 
     [Fact]

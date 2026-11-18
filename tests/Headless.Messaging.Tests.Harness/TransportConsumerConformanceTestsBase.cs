@@ -562,6 +562,16 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
     }
 
     /// <summary>
+    /// What the broker reported about each delivery of <paramref name="session"/> and each dead-letter copy taken from it,
+    /// such as sequence numbers and delivery counts, so a failed single-copy check says whether two copies were sent or
+    /// one copy was returned twice. Empty when the provider records nothing.
+    /// </summary>
+    protected virtual string DescribeDeadLetterEvidence(TransportConsumerConformanceSession session)
+    {
+        return string.Empty;
+    }
+
+    /// <summary>
     /// The largest body the provider accepts with the conformance headers, from the broker's documented message limit;
     /// a leaf that supports the body-size scenario overrides it.
     /// </summary>
@@ -924,7 +934,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
             },
             TimeSpan.FromSeconds(60),
             () =>
-                $"the broker never gave up on a message whose builder kept failing, after {attempts.GetValueOrDefault(poisoned)} attempts"
+                $"the broker never gave up on a message whose builder kept failing, after {attempts.GetValueOrDefault(poisoned)} attempts; {DescribeDeadLetterEvidence(session)}"
         );
 
         (await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken))
@@ -932,12 +942,24 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
             .BeTrue("a message whose builder never succeeded must not reach the consumer");
         attempts[poisoned]
             .Should()
-            .BeInRange(2, deliveryLimit, "the broker must redeliver the message, and only within its budget");
+            .BeInRange(
+                2,
+                deliveryLimit,
+                "the broker must redeliver the message, and only within its budget; {0}",
+                DescribeDeadLetterEvidence(session)
+            );
 
         if (HasDeadLetterDestination)
         {
             deadLettered.AddRange(await TakeDeadLetteredMessageIdsAsync(session, AbortToken));
-            deadLettered.Count(id => string.Equals(id, poisoned, StringComparison.Ordinal)).Should().Be(1);
+            deadLettered
+                .Count(id => string.Equals(id, poisoned, StringComparison.Ordinal))
+                .Should()
+                .Be(
+                    1,
+                    "the broker keeps one dead-letter copy of a message it gave up on; {0}",
+                    DescribeDeadLetterEvidence(session)
+                );
         }
     }
 
@@ -985,7 +1007,11 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
             .Should()
             .BeTrue("a dead-lettered delivery is settled and must not be redelivered");
         deadLettered.AddRange(await TakeDeadLetteredMessageIdsAsync(session, AbortToken));
-        deadLettered.Should().ContainSingle().Which.Should().Be(message.Id);
+        deadLettered
+            .Should()
+            .ContainSingle("a dead-lettered delivery leaves one copy; {0}", DescribeDeadLetterEvidence(session))
+            .Which.Should()
+            .Be(message.Id);
     }
 
     /// <summary>

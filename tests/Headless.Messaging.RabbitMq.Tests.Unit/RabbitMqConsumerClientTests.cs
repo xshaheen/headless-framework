@@ -781,6 +781,39 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_rethrow_queue_declare_timeout_when_no_log_callback_is_attached()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            provisionsTopology: true
+        );
+
+        _channel
+            .QueueDeclareAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<Dictionary<string, object?>>(),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task<QueueDeclareOk>>(_ => throw new TimeoutException("Queue declare timeout"));
+
+        // when
+        var act = async () => await client.ConnectAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowExactlyAsync<TimeoutException>().WithMessage("Queue declare timeout");
+    }
+
+    [Fact]
     public async Task should_release_connect_semaphore_when_channel_setup_throws()
     {
         // given
@@ -1205,9 +1238,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
         try
         {
-            // then - startup remains gated while paused
-            await Task.Delay(100, AbortToken);
-
+            // then - startup remains gated while paused. The channel fakes complete at once, so ListeningAsync has run
+            // synchronously up to its pause gate by now: it has set the prefetch and, being gated, not yet consumed.
+            _channel.ReceivedCalls().Should().Contain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicQosAsync));
             _channel
                 .ReceivedCalls()
                 .Should()

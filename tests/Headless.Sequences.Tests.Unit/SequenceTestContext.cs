@@ -18,7 +18,8 @@ internal sealed class SequenceTestContext
         monitor.CurrentValue.Returns(_ => Options);
 
         Resolver = new SequenceRequestResolver(Tenant, monitor);
-        Generator = new SequenceGenerator(Resolver, Store, Clock);
+        Blocks = new SequenceBlocks(Store, monitor);
+        Generator = new SequenceGenerator(Resolver, Store, Blocks, Clock);
         Feature = new UnitOfWorkSequencesFeature(Resolver, Store, Clock);
 
         Store
@@ -44,6 +45,8 @@ internal sealed class SequenceTestContext
     public ISequenceStore Store { get; } = Substitute.For<ISequenceStore>();
 
     public SequenceRequestResolver Resolver { get; }
+
+    public SequenceBlocks Blocks { get; }
 
     public SequenceGenerator Generator { get; }
 

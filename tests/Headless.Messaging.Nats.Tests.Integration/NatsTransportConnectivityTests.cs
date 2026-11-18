@@ -79,7 +79,7 @@ internal sealed class FixedPortNatsFixture : HeadlessNatsFixture
     protected override NatsBuilder Configure()
     {
         return new NatsBuilder(TestImages.Nats)
-            .WithResourceMapping(_Config, "/etc/nats/nats-server.conf")
+            .WithResourceMapping(_Config, FilePath.Of("/etc/nats/nats-server.conf"))
             .WithWaitStrategy(
                 Wait.ForUnixContainer()
                     .UntilMessageIsLogged("Server is ready")

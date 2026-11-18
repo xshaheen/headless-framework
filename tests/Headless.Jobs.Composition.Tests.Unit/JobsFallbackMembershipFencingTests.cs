@@ -19,9 +19,15 @@ public sealed class JobsFallbackMembershipFencingTests : TestBase
         // lost coordination membership must stop it. Under StopMembershipOnly nothing else stops this loop —
         // before the fix it kept terminalizing other live nodes' lease-lapsed rows indefinitely.
         var manager = Substitute.For<IInternalJobManager>();
+        var ticked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         manager
             .ReclaimStalledResources(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(default(JobReclaimCounts)));
+            .Returns(_ =>
+            {
+                ticked.TrySetResult();
+
+                return Task.FromResult(default(JobReclaimCounts));
+            });
         manager
             .RunTimedOutTickers(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(Array.Empty<JobExecutionState>()));
@@ -62,22 +68,7 @@ public sealed class JobsFallbackMembershipFencingTests : TestBase
         await service.StartAsync(AbortToken);
 
         // Wait until the loop has demonstrably ticked at least once.
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (
-            manager
-                .ReceivedCalls()
-                .All(c =>
-                    !string.Equals(
-                        c.GetMethodInfo().Name,
-                        nameof(manager.ReclaimStalledResources),
-                        StringComparison.Ordinal
-                    )
-                )
-        )
-        {
-            DateTime.UtcNow.Should().BeBefore(deadline, "the fallback loop should tick while membership is intact");
-            await Task.Delay(10, AbortToken);
-        }
+        await ticked.Task.Bounded();
 
         await membershipLostCts.CancelAsync();
 

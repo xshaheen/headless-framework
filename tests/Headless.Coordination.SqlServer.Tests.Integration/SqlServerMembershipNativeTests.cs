@@ -201,10 +201,12 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
             .Be(NodeLivenessState.Alive);
 
         // Aged into the suspicion band -> Suspected.
+        // real-wait: SQL Server SYSUTCDATETIME() ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
         (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Suspected);
 
         // Aged past the dead threshold but still inside the retention window -> Dead.
+        // real-wait: SQL Server SYSUTCDATETIME() ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(
             CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
             AbortToken
@@ -252,6 +254,7 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
 
         // Age past the retention window, then read the targeted path FIRST — before any snapshot read could
         // prune the row. The targeted path must produce absence by classification (null) without writing.
+        // real-wait: SQL Server SYSUTCDATETIME() ages the node's beat, so only real time moves it into the band
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
 
         var state = await store.ReadNodeLivenessAsync(identity, AbortToken);

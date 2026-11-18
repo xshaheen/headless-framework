@@ -44,6 +44,8 @@ public sealed class VisibilityAndTopologyTests(LocalStackTestFixture fixture) : 
             async (_, sender) =>
             {
                 Interlocked.Increment(ref deliveries);
+
+                // real-wait: the handler must outlive the queue's visibility timeout, which the SQS broker (LocalStack) enforces on its own clock; no fake clock can make an in-flight message visible again
                 await Task.Delay(TimeSpan.FromSeconds(6), AbortToken);
                 await consumer.CommitAsync(sender, CancellationToken.None);
                 settled.TrySetResult();

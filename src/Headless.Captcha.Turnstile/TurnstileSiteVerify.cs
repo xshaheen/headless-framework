@@ -127,18 +127,51 @@ internal sealed class TurnstileSiteVerify(
             );
         }
 
-        if (!wire.Success)
+        // Cloudflare only says the token is valid for this site key. Like reCAPTCHA, a token solved on another host or
+        // for another action is refused when the options name the one expected, so code written against the shared
+        // verifier gets the same verdict from either provider.
+        var errorCodes = wire.ErrorCodes;
+        var success = wire.Success;
+
+        if (success)
         {
-            logger?.LogTurnstileValidationFailure(wire.ErrorCodes);
+            List<string>? mismatches = null;
+
+            if (
+                options.ExpectedAction is not null
+                && !string.Equals(wire.Action, options.ExpectedAction, StringComparison.Ordinal)
+            )
+            {
+                (mismatches ??= []).Add("action-mismatch");
+            }
+
+            if (
+                options.ExpectedHostName is not null
+                && !string.Equals(wire.HostName, options.ExpectedHostName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                (mismatches ??= []).Add("hostname-mismatch");
+            }
+
+            if (mismatches is not null)
+            {
+                success = false;
+                errorCodes = [.. errorCodes ?? [], .. mismatches];
+            }
+        }
+
+        if (!success)
+        {
+            logger?.LogTurnstileValidationFailure(errorCodes);
         }
 
         return new TurnstileVerifyResult
         {
-            Success = wire.Success,
+            Success = success,
             ChallengeTimestamp = wire.ChallengeTimestamp,
             HostName = wire.HostName,
             Action = wire.Action,
-            ErrorCodes = wire.ErrorCodes,
+            ErrorCodes = errorCodes,
             CData = wire.CData,
             Metadata = wire.Metadata,
         };

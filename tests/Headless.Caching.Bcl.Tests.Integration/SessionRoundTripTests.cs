@@ -50,6 +50,7 @@ public sealed class SessionRoundTripTests(BclRedisFixture fixture) : TestBase
         writeResponse.EnsureSuccessStatusCode();
         var cookie = writeResponse.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
 
+        // real-wait: Redis enforces the session key's 700 ms sliding TTL on the server's own clock; the two 450 ms gaps straddle it to prove each read renewed it
         await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(450), AbortToken);
 
         using (var readRequest = new HttpRequestMessage(HttpMethod.Get, "/read"))
@@ -61,6 +62,7 @@ public sealed class SessionRoundTripTests(BclRedisFixture fixture) : TestBase
             body.Should().Be("v1");
         }
 
+        // real-wait: second 450 ms gap of the same Redis sliding-TTL check; the session outlives 700 ms only if the first read renewed it
         await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(450), AbortToken);
 
         using (var readRequest = new HttpRequestMessage(HttpMethod.Get, "/read"))

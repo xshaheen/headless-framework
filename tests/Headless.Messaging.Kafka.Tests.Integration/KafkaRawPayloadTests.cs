@@ -47,7 +47,7 @@ public sealed class KafkaRawPayloadTests(KafkaFixture fixture) : TestBase
         );
 
         // then: the handler sees the record under a position id, and the malformed body becomes one poison row
-        await _WaitUntilAsync(() => consumer.Runs.Count == 1, "the handler ran");
+        await consumer.WaitForRunsAsync(1, AbortToken);
         var run = consumer.Runs.Single();
         run.MessageId.Should().Be($"kafka:{topic}:0:{valid.Offset.Value}:{valid.Timestamp.UnixTimestampMs}");
         run.MessageName.Should().Be(topic);
@@ -165,6 +165,7 @@ public sealed class KafkaRawPayloadTests(KafkaFixture fixture) : TestBase
             }
             catch (AlterConsumerGroupOffsetsException) when (DateTime.UtcNow < deadline)
             {
+                // real-wait: the group coordinator rejects the alteration until its session timeout drops the stopped member; the admin client has no event for that
                 await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
             }
         }
@@ -200,7 +201,19 @@ public sealed class KafkaRawPayloadTests(KafkaFixture fixture) : TestBase
 
     private sealed class RawRunConsumer : IConsume<RawRun>
     {
+        private readonly ChangeSignal _handled = new();
+
         public ConcurrentQueue<ObservedRun> Runs { get; } = new();
+
+        public async Task WaitForRunsAsync(int count, CancellationToken cancellationToken)
+        {
+            var reached = await _handled.WaitUntilAsync(
+                () => Runs.Count >= count,
+                TimeSpan.FromSeconds(30),
+                cancellationToken
+            );
+            reached.Should().BeTrue($"{count} handler run(s) should happen within 30 s; saw {Runs.Count}");
+        }
 
         public ValueTask ConsumeAsync(ConsumeContext<RawRun> context, CancellationToken cancellationToken)
         {
@@ -213,6 +226,7 @@ public sealed class KafkaRawPayloadTests(KafkaFixture fixture) : TestBase
                     context.Timestamp
                 )
             );
+            _handled.Notify();
 
             return ValueTask.CompletedTask;
         }

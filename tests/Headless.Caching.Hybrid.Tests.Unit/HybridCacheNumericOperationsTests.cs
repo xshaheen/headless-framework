@@ -44,7 +44,7 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
     }
 
     [Fact]
-    public async Task should_sync_double_increment_result_from_l2_to_l1()
+    public async Task should_drop_l1_and_serve_the_l2_total_after_a_double_increment()
     {
         var (cache, l1, l2, bus) = _CreateCache();
         await using var _ = cache;
@@ -56,7 +56,8 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
         var result = await cache.IncrementAsync(key, 0.5d, expiration, AbortToken);
 
         result.Should().Be(2d);
-        (await l1.GetAsync<double>(key, AbortToken)).Value.Should().Be(2d);
+        (await l1.GetAsync<double>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await cache.GetAsync<double>(key, AbortToken)).Value.Should().Be(2d);
         (await l2.GetAsync<double>(key, AbortToken)).Value.Should().Be(2d);
         await bus.Received(1)
             .PublishAsync(
@@ -66,7 +67,7 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
     }
 
     [Fact]
-    public async Task should_sync_higher_value_to_l1_when_l2_changes()
+    public async Task should_drop_l1_and_serve_the_higher_l2_value_when_set_if_higher_changes_it()
     {
         var (cache, l1, l2, _) = _CreateCache();
         await using var _ = cache;
@@ -77,7 +78,8 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
         var difference = await cache.SetIfHigherAsync(key, 10L, expiration, AbortToken);
 
         difference.Should().Be(5L);
-        (await l1.GetAsync<long>(key, AbortToken)).Value.Should().Be(10L);
+        (await l1.GetAsync<long>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await cache.GetAsync<long>(key, AbortToken)).Value.Should().Be(10L);
         (await l2.GetAsync<long>(key, AbortToken)).Value.Should().Be(10L);
     }
 
@@ -99,7 +101,7 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
     }
 
     [Fact]
-    public async Task should_sync_lower_value_to_l1_when_l2_changes()
+    public async Task should_drop_l1_and_serve_the_lower_l2_value_when_set_if_lower_changes_it()
     {
         var (cache, l1, l2, _) = _CreateCache();
         await using var _ = cache;
@@ -110,7 +112,8 @@ public sealed class HybridCacheNumericOperationsTests : TestBase
         var difference = await cache.SetIfLowerAsync(key, 4d, expiration, AbortToken);
 
         difference.Should().Be(6d);
-        (await l1.GetAsync<double>(key, AbortToken)).Value.Should().Be(4d);
+        (await l1.GetAsync<double>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await cache.GetAsync<double>(key, AbortToken)).Value.Should().Be(4d);
         (await l2.GetAsync<double>(key, AbortToken)).Value.Should().Be(4d);
     }
 

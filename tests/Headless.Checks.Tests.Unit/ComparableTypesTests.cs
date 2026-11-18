@@ -326,4 +326,32 @@ public sealed class ComparableTypesTests
         Argument.IsGreaterThan(oneHour, thirtyMinutes).Should().Be(oneHour);
         Argument.IsLessThan(oneHour, twoHours).Should().Be(oneHour);
     }
+
+    [Fact]
+    public void should_throw_when_comparison_guard_receives_nan()
+    {
+        // given - IComparable orders NaN below every number, which used to let NaN through the "less than" guards
+
+        // when
+        var lessThanOrEqual = () => Argument.IsLessThanOrEqualTo(double.NaN, 1.0);
+        var lessThan = () => Argument.IsLessThan(float.NaN, 1f);
+        var greaterThanOrEqual = () => Argument.IsGreaterThanOrEqualTo(double.NaN, 0.0);
+        var greaterThan = () => Argument.IsGreaterThan(Half.NaN, Half.Zero);
+        var nanBound = () => Argument.IsGreaterThan(5.0, double.NaN);
+
+        // then
+        lessThanOrEqual.Should().ThrowExactly<ArgumentOutOfRangeException>();
+        lessThan.Should().ThrowExactly<ArgumentOutOfRangeException>();
+        greaterThanOrEqual.Should().ThrowExactly<ArgumentOutOfRangeException>();
+        greaterThan.Should().ThrowExactly<ArgumentOutOfRangeException>();
+        nanBound.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void should_return_argument_when_comparison_guard_receives_ordered_floating_point()
+    {
+        // when / then
+        Argument.IsLessThanOrEqualTo(1.0, 1.0).Should().Be(1.0);
+        Argument.IsLessThan(0.5f, 1f).Should().Be(0.5f);
+    }
 }

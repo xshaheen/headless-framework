@@ -204,7 +204,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         // Cleanup
         storageBlocker.TrySetResult();
-        await Task.Delay(50, AbortToken);
     }
 
     [Fact]
@@ -258,29 +257,27 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         await processor.ProcessAsync(context);
 
-        await _EventuallyAsync(() =>
-        {
-            captured.Should().HaveCount(4);
-            captured
-                .Select(call => call.Resource)
-                .Should()
-                .BeEquivalentTo(
-                    MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
-                    MessagingKeys.PublishRetryResource("v1", MessageLane.Queue),
-                    MessagingKeys.ReceiveRetryResource("v1", MessageLane.Bus),
-                    MessagingKeys.ReceiveRetryResource("v1", MessageLane.Queue)
-                );
-            captured
-                .Should()
-                .OnlyContain(call =>
-                    call.Options.Monitoring == LockMonitoringMode.AutoExtend
-                    && call.Options.AcquireTimeout == TimeSpan.Zero
-                    && call.Options.TimeUntilExpires == processor.CurrentPollingInterval
-                    // No acquirer of a retry lock ever waits, so a release broadcast could wake nobody.
-                    && !call.Options.NotifyWaitersOnRelease
-                );
-            return Task.CompletedTask;
-        });
+        await _QuiesceAsync(processor);
+
+        captured.Should().HaveCount(4);
+        captured
+            .Select(call => call.Resource)
+            .Should()
+            .BeEquivalentTo(
+                MessagingKeys.PublishRetryResource("v1", MessageLane.Bus),
+                MessagingKeys.PublishRetryResource("v1", MessageLane.Queue),
+                MessagingKeys.ReceiveRetryResource("v1", MessageLane.Bus),
+                MessagingKeys.ReceiveRetryResource("v1", MessageLane.Queue)
+            );
+        captured
+            .Should()
+            .OnlyContain(call =>
+                call.Options.Monitoring == LockMonitoringMode.AutoExtend
+                && call.Options.AcquireTimeout == TimeSpan.Zero
+                && call.Options.TimeUntilExpires == processor.CurrentPollingInterval
+                // No acquirer of a retry lock ever waits, so a release broadcast could wake nobody.
+                && !call.Options.NotifyWaitersOnRelease
+            );
     }
 
     [Fact]
@@ -308,17 +305,16 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         await processor.ProcessAsync(context);
 
-        await _EventuallyAsync(async () =>
-        {
-            await lockProvider
-                .Received(4)
-                .TryAcquireAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<DistributedLockAcquireOptions?>(),
-                    Arg.Any<CancellationToken>()
-                );
-            captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
-        });
+        await _QuiesceAsync(processor);
+
+        await lockProvider
+            .Received(4)
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
         await storage
             .DidNotReceive()
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>());
@@ -395,17 +391,16 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         receivedLease.MarkLost();
         storageBlocker.TrySetResult();
 
-        await _EventuallyAsync(async () =>
-        {
-            captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
-            await storage
-                .Received(1)
-                .GetReceivedMessagesOfNeedRetryAsync(
-                    MessageLane.Bus,
-                    Arg.Any<IReadOnlyCollection<string>?>(),
-                    Arg.Any<CancellationToken>()
-                );
-        });
+        await _QuiesceAsync(processor);
+
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
+        await storage
+            .Received(1)
+            .GetReceivedMessagesOfNeedRetryAsync(
+                MessageLane.Bus,
+                Arg.Any<IReadOnlyCollection<string>?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -528,9 +523,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLease?>(fakeLock));
 
-        // The TCS fires from inside GetPublishedMessagesOfNeedRetryAsync so the test knows
-        // exactly when _publishedRetryConsumeTask is in the running state. The published task
-        // itself blocks until storageBlocker completes.
+        // The TCS fires once both lanes' published pickups are inside GetPublishedMessagesOfNeedRetryAsync, so the
+        // test knows exactly when every published retry task is in the running state. Each blocks until
+        // storageBlocker completes.
+        var publishedCalls = 0;
         var publishedCallFired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -553,7 +549,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<MessageLane>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                publishedCallFired.TrySetResult();
+                if (Interlocked.Increment(ref publishedCalls) == 2)
+                {
+                    publishedCallFired.TrySetResult();
+                }
+
                 return new ValueTask<IEnumerable<MediumMessage>>(
                     storageBlocker.Task.ContinueWith(_ => (IEnumerable<MediumMessage>)[], TaskScheduler.Default)
                 );
@@ -570,9 +570,13 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
             // when — tick 2: in-progress guard must skip spawning a second published-retry task
             await processor.ProcessAsync(context);
-            await Task.Delay(200, AbortToken);
 
-            // then — exactly one storage pickup despite two ProcessAsync ticks
+            // Releasing the blocked pickup and joining every task the processor started means a second pickup the guard
+            // let through would have reached storage by now.
+            storageBlocker.TrySetResult();
+            await _QuiesceAsync(processor);
+
+            // then — exactly one storage pickup per lane despite two ProcessAsync ticks
             await storage
                 .Received(1)
                 .GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, Arg.Any<CancellationToken>());
@@ -669,26 +673,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         return new ProcessingContext(provider, TimeProvider.System, AbortToken);
     }
 
-    private async Task _EventuallyAsync(Func<Task> assertion)
+    /// <summary>Waits for every pickup the processor has started to finish, so its effects are all visible.</summary>
+    private static async Task _QuiesceAsync(MessageNeedToRetryProcessor processor)
     {
-        var timeoutAt = TimeProvider.System.GetUtcNow() + TimeSpan.FromSeconds(2);
-        Exception? lastFailure = null;
-
-        while (TimeProvider.System.GetUtcNow() < timeoutAt)
-        {
-            try
-            {
-                await assertion();
-                return;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                lastFailure = ex;
-                await Task.Delay(25, AbortToken);
-            }
-        }
-
-        throw lastFailure ?? new TimeoutException("Timed out waiting for assertion to pass.");
+        await Task.WhenAll(processor.Quiesce()).Bounded();
     }
 
     private sealed class TrackingLockProvider(string resourceFilter, TimeProvider timeProvider) : IDistributedLock

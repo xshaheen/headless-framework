@@ -63,8 +63,11 @@ internal sealed class AzureServiceBusConsumerClient(
     private int _disposed;
     private int _hasStartedProcessing;
 
-    // The processors' stop the last pause started, which the next resume waits for before restarting them.
-    private Task _pendingStop = Task.CompletedTask;
+    // Pauses stop the processors and resumes restart them one after another on this chain, so a restart never runs
+    // beside a stop. A processor's stop waits for every handler it dispatched, whichever circuit identity it serves, so
+    // neither a pause nor a resume waits on the chain: each appends its step and returns. Its tail never faults.
+    private readonly Lock _transitionLock = new();
+    private Task _transitions = Task.CompletedTask;
     private ServiceBusAdministrationClient? _administrationClient;
 
 #pragma warning disable CA2213 // Justification: shared client owned and disposed by AzureServiceBusClientPool
@@ -347,8 +350,9 @@ internal sealed class AzureServiceBusConsumerClient(
 
         // A processor's stop does not return until every handler it dispatched has returned, and the circuit breaker
         // pauses from inside the handler whose failure tripped it. Awaiting the stop there would wait on the caller
-        // itself forever, so the pause only starts it and the next resume waits for it.
-        Volatile.Write(ref _pendingStop, _StopProcessorsAsync([.. _GetProcessors()]));
+        // itself forever, so the pause only starts it.
+        List<ServiceBusProcessorFacade> processors = [.. _GetProcessors()];
+        _ = _AppendTransition(() => _StopProcessorsAsync(processors));
     }
 
     private async Task _StopProcessorsAsync(List<ServiceBusProcessorFacade> processors)
@@ -390,18 +394,88 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        // A processor still stopping reports IsProcessing and would be skipped, then finish stopping and stay stopped.
-        // The stop never faults: its failure is logged where it runs.
-        await Volatile.Read(ref _pendingStop).ConfigureAwait(false);
+        // A processor still stopping reports IsProcessing and would be skipped, then finish stopping and stay stopped, so
+        // the restart runs after the stop. That stop drains every running handler, including a long one of another
+        // circuit identity sharing this client, and the circuit's apply gate is held while this call runs: a resume
+        // that waited for it would hold up every pause and resume of that client behind an unrelated handler. Only a
+        // restart with no stop ahead of it runs in this call, so its failure still reaches the caller.
+        bool stopPending;
+        Task restart;
 
-        foreach (var processor in _GetProcessors())
+        lock (_transitionLock)
         {
-            if (processor.IsProcessing)
-            {
-                continue;
-            }
+            stopPending = !_transitions.IsCompleted;
+            restart = _AppendTransitionUnderLock(() =>
+                _RestartProcessorsAsync(stopPending, stopPending ? CancellationToken.None : cancellationToken)
+            );
+        }
 
-            await processor.StartProcessingAsync(cancellationToken).ConfigureAwait(false);
+        if (!stopPending)
+        {
+            await restart.ConfigureAwait(false);
+        }
+    }
+
+    private Task _AppendTransition(Func<Task> step)
+    {
+        lock (_transitionLock)
+        {
+            return _AppendTransitionUnderLock(step);
+        }
+    }
+
+    private Task _AppendTransitionUnderLock(Func<Task> step)
+    {
+        var transition = _RunAfterAsync(_transitions, step);
+
+        // The tail only orders the next step: a failure belongs to whoever awaits the step, or is logged by it.
+        _transitions = transition.ContinueWith(
+            static task => _ = task.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+
+        return transition;
+    }
+
+    private static async Task _RunAfterAsync(Task previous, Func<Task> step)
+    {
+        await previous.ConfigureAwait(false);
+        await step().ConfigureAwait(false);
+    }
+
+    private async Task _RestartProcessorsAsync(bool deferred, CancellationToken cancellationToken)
+    {
+        // A pause that came after this resume, or a shutdown, wins: the processors stay stopped.
+        if (Volatile.Read(ref _disposed) != 0 || _pauseGate.IsPaused)
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var processor in _GetProcessors())
+            {
+                if (processor.IsProcessing)
+                {
+                    continue;
+                }
+
+                await processor.StartProcessingAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        // Nothing awaits a restart that waited for a stop, so it logs its own failure. A start opens no connection, so
+        // it fails only on a processor closed by a shutdown that began after the check above.
+        catch (Exception e) when (deferred)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Failed to restart Azure Service Bus processors after a pause: {e.GetBaseException()}",
+                }
+            );
         }
     }
 
@@ -578,7 +652,15 @@ internal sealed class AzureServiceBusConsumerClient(
 
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.ExceptionReceived, Reason = exceptionMessage };
 
-        OnLogCallback!(logArgs);
+        // The processor can report an error before the core attaches its log callback; the client's logger keeps it.
+        if (OnLogCallback is { } onLog)
+        {
+            onLog(logArgs);
+        }
+        else
+        {
+            logger.ProcessorErrorWithoutCallback(args.Exception, args.ErrorSource, args.EntityPath);
+        }
 
         // The processor retries a lost receive on its own. A failed receive or session accept is the broker; a failed
         // settlement or handler callback is about one message and says nothing about reaching Service Bus.
@@ -1112,4 +1194,16 @@ internal static partial class AzureServiceBusConsumerClientLog
         Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
     )]
     internal static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
+
+    [LoggerMessage(
+        EventId = 3030,
+        Level = LogLevel.Warning,
+        Message = "Azure Service Bus processor reported a {ErrorSource} error on {EntityPath} before a log callback was attached"
+    )]
+    internal static partial void ProcessorErrorWithoutCallback(
+        this ILogger logger,
+        Exception exception,
+        ServiceBusErrorSource errorSource,
+        string entityPath
+    );
 }

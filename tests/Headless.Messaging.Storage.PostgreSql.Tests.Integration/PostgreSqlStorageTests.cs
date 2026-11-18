@@ -108,6 +108,17 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     }
 
     /// <inheritdoc />
+    protected override async Task<System.Data.Common.DbConnection?> OpenDatabaseConnectionAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        return connection;
+    }
+
+    /// <inheritdoc />
     protected override IStorageTableNames GetTableNames()
     {
         _EnsureInitialized();
@@ -800,6 +811,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
             await _WaitForAdvisoryLockWaiterAsync(controlConnection, lockClassId, lockObjectId, AbortToken);
 
             await cancellation.CancelAsync();
+            // real-wait: the cancel request must have time to reach PostgreSQL and abort the blocked COMMIT if the code wrongly honored it; no signal reports a cancellation that did not happen
             await Task.Delay(TimeSpan.FromMilliseconds(500), TimeProvider.System, AbortToken);
             var commitStayedInFlight = !claimTask.IsCompleted;
 
@@ -1124,6 +1136,18 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
     public override Task should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease()
     {
         return base.should_return_unstored_snapshot_when_redelivery_hits_active_receive_lease();
+    }
+
+    [Fact]
+    public override Task should_return_the_rows_counters_and_history_when_a_redelivery_rewrites_a_due_row()
+    {
+        return base.should_return_the_rows_counters_and_history_when_a_redelivery_rewrites_a_due_row();
+    }
+
+    [Fact]
+    public override Task should_leave_a_row_waiting_for_its_retry_untouched_when_the_message_is_redelivered()
+    {
+        return base.should_leave_a_row_waiting_for_its_retry_untouched_when_the_message_is_redelivered();
     }
 
     [Fact]

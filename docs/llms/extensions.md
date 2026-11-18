@@ -5,129 +5,93 @@ packages: Extensions, Primitives, Urls
 
 # Extensions
 
-> Foundational extension methods, domain primitives, value objects, the result pattern, and collection/IO/threading/reflection helpers shared across every Headless package.
+> Base helpers for every Headless app: the result pattern, domain primitives and value objects, paging, and collection, threading, IO, reflection, and BCL extension methods.
 
 ## Orientation
 
-`Headless.Extensions` is the framework's base library — almost every other `Headless.*` package depends on it. It has no DI registration and no configuration; you reference types and call extension methods directly. The surface is organized by namespace, each solving one category of repetitive utility code. The `Headless.Primitives` (value objects, result pattern, paging) and `Headless.Urls` (URL builder) namespaces ship as **separate packages** that `Headless.Extensions` references — so every type below remains available to `Headless.Extensions` consumers transitively, but a consumer who only needs the value model or URL builder can depend on the smaller package directly. Both are documented as their own sections below.
+Three packages make up this domain. None has DI registration or options: you construct the types and call the extension methods directly.
 
-- **`Headless.Primitives`** (separate package) — the result pattern (`ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, `ApiResultError` hierarchy, `ErrorDescriptor`), source-generated domain primitives (`UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber`), validated value objects (`Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`), pagination (`IndexPage<T>`, `ContinuationPage<T>`), `ExtraProperties`, `AsyncEvent<T>`, `NameValue<T>`, `OrderBy`, `File`/`Image`, `PageMetadata`, `TenantInformation`.
-- **`Headless.Urls`** (separate package) — a fluent, mutable `Url` builder/parser plus `QueryParamCollection`, derived from Flurl (MIT).
-- **`Headless.Collections`** — `ParallelForEachAsync` / `ForEachAsync`, `DetectChanges` (added/removed/updated classification), `EquatableArray<T>`, `ComparerFactory`, `TypeList`.
-- **`Headless.Linq`** — `PredicateBuilder` for composing EF Core `Expression<Func<T,bool>>` filters (`And`, `Or`, `Not`, `True`/`False`).
-- **`Headless.Threading`** — `KeyedAsyncLock` (per-key async mutual exclusion), `TransientRetry` (bounded retry with jittered backoff for self-contained work such as an autonomous database transaction), `ReconnectBackoff` (the jittered 1 s → 30 s wait of a reconnect loop), `HeadlessTaskExtensions` (`Forget`, `WithCancellation`, `GetResultOrDefault`, `Task.WhenAllBoundedAsync`), `HeadlessAsyncExExtensions`, `Async` (`RunSync`, deterministic `Using`), `InterlockedExtensions` (`InterlockedRaiseTo` — lock-free raise-only max on a `ref long`).
-- **`Headless.IO`** — stream helpers (`ReadOnlySequenceStream` via `ToStream()`, `NonSeekableStream`, `ActionableStream`, `ReadSlice`, `SizeLimitedReadStream`, `GetAllText`/`GetAllBytes`, `CalculateMd5Async`), `IMimeTypeProvider`/`MimeTypeProvider`, `FileNames` (untrusted-name sanitization), `FileHelper` (resilient read/write), `DirectoryHelper`.
-- **`Headless`** (the root namespace) — cross-cutting types: `IGuidGenerator`, `SequentialGuidType`, `SequentialGuidGenerator`, `SequentialGuid`; `DisposableFactory`, `IHasIsDisposed`; the time providers `FixedTimezoneTimeProvider` and `ChangeableTimezoneTimeProvider` with `TimezoneConstants`; `CultureHelper`, `StringHelper`, `OsHelper`, `ProcessHelper`, `ExecutableFinder`; the constants `RegexPatterns`, `LanguageCodes`, `EnvironmentNames`/`EnvironmentVariables`, `HeadlessDiagnostics`, `SqlErrorCodes`, `RelationalFaults`, `FailureFingerprint`, `SqlLikePattern`, `StorageIdentifier`, `StorageProvider`; and the exceptions `EntityNotFoundException`, `ConflictException`, `UnauthorizedException`, `ForbiddenException`, `TooManyRequestsException`, `ServiceUnavailableException` (unsealed, so a feature derives its own: a dependency the request needs cannot answer; the API handler maps it to 503 with `Cache-Control: no-store`).
-- **`Headless.Reflection`** — `ReflectionHelper` (attribute lookup, generic subclass checks), `HeadlessTypeExtensions` (friendly names, nullable/Task unwrapping), `TypeHelper`, `AssemblyInformation`.
-- **`Headless.Validators`** — `EgyptianNationalIdValidator`, `GeoCoordinateValidator`, `EmailValidator`, `EnumNameValidator` (boolean checks, not FluentValidation rules — see [utilities.md](utilities.md) for `Headless.FluentValidation`). `MobilePhoneNumberValidator` ships in `Headless.PhoneNumbers`.
-- **Smaller namespaces** — claims (`HeadlessClaimsPrincipalExtensions`), `Headless.Http` (`ContentTypes`, `HttpHeaderNames`, `BasicAuthenticationValue`, `HeadlessHttpStatusCodeExtensions`), `Headless.Security` (`JwtClaimTypes`, `UserClaimTypes`, `AuthenticationConstants`, `IPasswordGenerator` / `PasswordGenerator` / `GeneratePasswordOptions`: cryptographically secure password generation from a caller's policy of length, required character sets, and `RequiredUniqueChars`, using `RandomNumberGenerator` for every pick and the shuffle), `Headless.Text` (`LookupNormalizer`, `IgnoreCaseStringComparer`, `FormattedStringValueExtractor`), `Headless.Network` (`IpAddressHelper`), `Headless.Xml` (`XmlHelper`), `Headless.UI` (`DebounceExtensions`), plus extension methods on BCL types in the `System.*` namespaces (`HeadlessStringExtensions`, `HeadlessDateTimeExtensions`, `HeadlessNumberExtensions`, `HeadlessEnumExtensions`, `HeadlessEnumerableExtensions`, …).
+- **`Headless.Extensions`** is the base library that almost every `Headless.*` package references. It references `Headless.Primitives`, so every Primitives type is available through it.
+- **`Headless.Primitives`** holds the value model alone: the result pattern, the built-in domain primitives, value objects, and paging. Reference it directly when a project needs only those types.
+- **`Headless.Urls`** is a fluent, mutable `Url` builder and parser, derived from Flurl's `Url` API. `Headless.Extensions` does not reference it; add it when you need it.
 
-For strongly-typed primitives **you define yourself**, use the source generator in `Headless.Generator.Primitives` (see [utilities.md](utilities.md)); the primitives listed above are the framework's built-in ones generated by it.
+To find a helper, search by capability, then read that entry in [Headless.Extensions](#headlessextensions). Many helpers are extension methods on BCL types and live in the `System.*` namespaces, so they appear without a `using`.
+
+To define your own strongly-typed primitive, use the source generator in `Headless.Generator.Primitives` (see [utilities.md](utilities.md#headlessgeneratorprimitives)). The built-in primitives below come from the same generator.
 
 ## Agent Rules
 
-- Return `ApiResult<T>` / `ApiResult` from service methods for **expected** failures (not found, conflict, validation) instead of throwing. Use `Result<TValue, TError>` when you need a custom error type. Reserve exceptions for programmer errors and truly exceptional conditions.
-- Do **not** use a `default` `ApiResult` / `ApiResult<T>` — it is uninitialized, so both `IsSuccess` and `IsFailure` are false, try-accessors return false, and direct access or branch operations throw. Create results through `Ok`, `Fail`, or a typed factory.
-- Do **not** lazy-cache a computed property via the `field` keyword on any `record` in this package's result/error types (or your own). `ApiResultError.Code` / `Metadata` are deliberately computed on each read so structural record equality stays correct — a `field`-backed cache silently corrupts `Equals`/`GetHashCode`.
-- `Money` arithmetic is **scalar-only** for scaling: `*` and `/` take a `decimal` (e.g. `price * 1.15m`), not another `Money`. `+` and `-` take a `Money` and throw if the currency codes differ. There is no `Money × Money` multiply.
-- `MoneyAmount` is a plain `decimal` primitive with **no currency code**. Use `GetRounded()` for 2-decimal banker's rounding (`MidpointRounding.ToEven`). Use `Money` when you need an amount paired with a currency code.
-- `Range<T>` treats `null` bounds as infinities: `From == null` means unbounded below, and `To == null` means unbounded above. Range-to-range containment, overlap, and `RemoveConflictRangeParts` follow those side-specific semantics; do not use `null` as a concrete point value.
-- `KeyedAsyncLock` hands out a `KeyedAsyncLock.Releaser` struct, not an `IDisposable` class. `LockAsync(key, ct)` returns `ValueTask<Releaser>`, `LockAsync(key, timeout, timeProvider, ct)` returns `ValueTask<Releaser?>`, and `TryLock(key)` returns `Releaser?`. Await each `ValueTask` exactly once: do not await it twice, store it, or call `.Result` before it completes. The timeout overload returns `null` on timeout (it does **not** throw), and `TryLock` returns `null` when the key is held; check for null and degrade. The unbounded overload never returns null. Hold the releaser as a `Releaser`, not as `IDisposable`, or each acquire boxes it. The lock is **non-reentrant**: re-acquiring the same key on the same flow without releasing deadlocks.
-- `Task.WhenAllBoundedAsync(operations, maxConcurrency)` starts the supplied `Func<Task<T>>` operations with at most `maxConcurrency` in flight and returns results in input order. Unlike `ParallelForEachAsync`, it runs every operation to completion even when one fails, then surfaces the failure, like `Task.WhenAll`.
-- `ParallelForEachAsync` does **not** preserve order and defaults to `Environment.ProcessorCount` degree of parallelism (pass `-1` for unlimited). Use `ForEachAsync` when you need ordered, sequential execution with index/cancellation support.
-- Regex access via `RegexPatterns.*` uses a 100 ms match timeout plus `ExplicitCapture` (ReDoS hardening). Matching untrusted input can throw `RegexMatchTimeoutException` — handle it on hostile inputs.
-- Register GUID generation with `AddHeadlessGuidGenerator()` from `Headless.Hosting` (not this package). Resolve `IGuidGenerator` by `SequentialGuidType.Version7` for byte-ordered stores (the default) and only by `SequentialGuidType.SqlServer` for SQL Server clustered primary keys — `Version7` fragments SQL Server indexes.
-- Use `EgyptianNationalIdValidator.IsValid(...)` / `TryParse(...)` and the other `Headless.Validators.*` helpers for boolean checks. For FluentValidation **rules** (`EgyptianNationalId()`, …) use `Headless.FluentValidation` instead, and `Headless.PhoneNumbers` for the phone rules (see [utilities.md](utilities.md)).
-- Use `HeadlessClaimsPrincipalExtensions` (`GetUserId()`, `GetRoles()`, `GetTenantId()`, `AddOrReplace(...)`) for claim reads/writes. `GetRoles()` returns an empty `ImmutableHashSet<string>` (never null) and role values use an ordinal set; role *type* matching is `OrdinalIgnoreCase`.
-- Use the `Headless.IO` stream helpers (`stream.GetAllBytesAsync()`, `stream.GetAllText()`) rather than hand-rolling buffers — they avoid async-over-sync, pre-size buffers when the length is known, and retry transient `IOException`s. Use `ReadSlice` when callers should see clean EOF at a fixed length; use `SizeLimitedReadStream` when exceeding the limit must throw.
-- Use `AssemblyHelper.LoadAssemblies(...)` / `InvokeAllStaticMethods(...)` only with trusted, application-owned plugin folders or assemblies that have already passed your trust checks. They load assemblies into the default load context and can execute public static methods by name; never point them at user-writable upload/cache/temp directories.
-- `TimeUnit.Parse("5m")` is **case-sensitive** on the `m` suffix (`m` = minutes); this avoids month/minute ambiguity. Invalid magnitudes surface as `false` from `TryParse` / an exception from `Parse`, never a silent wrap.
-- `action.Debounce(interval, timeProvider?, onError?)` (`Headless.UI`) coalesces rapid calls into a single trailing-edge run with the **latest** arguments. The wrapped action runs on a thread-pool timer callback, so an exception it throws is routed to the optional `onError` handler — or **swallowed** when none is supplied — and never propagates (an unhandled throw on that callback would crash the process). A generation guard skips superseded schedules, so a call landing as a prior timer fires does not double-run with stale arguments.
+- Return `ApiResult` or `ApiResult<T>` from service methods for expected failures (not found, conflict, validation) instead of throwing. Use `Result<TValue, TError>` when you need your own error type. Throw only for programmer errors and truly exceptional conditions.
+- Create results through `Ok`, `Fail`, a typed factory such as `NotFound`, or the implicit conversion from `T` or `ApiResultError`. Never use a `default` `ApiResult` or `ApiResult<T>`: it is neither success nor failure, its try-accessors return `false`, and direct access or branch operations throw.
+- Scale `Money` only by a `decimal`: `price * 1.15m`. `*` and `/` never take another `Money`. `+` and `-` take a `Money` and throw `InvalidOperationException` when the currency codes differ.
+- Use `Money` when an amount travels with its currency code. `MoneyAmount` is a `decimal` primitive with no currency code; `GetRounded()` rounds it to 2 decimal places with banker's rounding (`MidpointRounding.ToEven`).
+- Treat a `null` bound of `Range<T>` as infinity: a `null` `From` is unbounded below and a `null` `To` is unbounded above. Never use `null` as a concrete point value.
+- Check the result of `KeyedAsyncLock`'s timeout overload and `TryLock` for `null`. `LockAsync(key, timeout, timeProvider, ct)` returns `null` on timeout instead of throwing, and `TryLock(key)` returns `null` while another caller holds the key. Only `LockAsync(key, ct)` never returns `null`.
+- Await each `KeyedAsyncLock` `ValueTask` exactly once. Never await it twice, store it, or read `.Result` before it completes. Hold the result as a `KeyedAsyncLock.Releaser`, not as `IDisposable`, or each acquire boxes it.
+- Never re-acquire a `KeyedAsyncLock` key on the same flow before you release it. The lock is not reentrant, so the second acquire deadlocks.
+- Use `ForEachAsync` when order matters. `ParallelForEachAsync` does not preserve order and defaults to `Environment.ProcessorCount` degree of parallelism; pass `-1` for unlimited.
+- Use `Task.WhenAllBoundedAsync(operations, maxConcurrency)` when every operation must run even if one fails. It keeps at most `maxConcurrency` in flight, returns results in input order, and surfaces the failure after all complete, like `Task.WhenAll`.
+- Handle `RegexMatchTimeoutException` when you match untrusted input with `RegexPatterns.*`. Every pattern has a 100 ms match timeout.
+- Register GUID generation with `AddHeadlessGuidGenerator()` from `Headless.Hosting` (see [utilities.md](utilities.md#headlesshosting)). Resolve the keyed `IGuidGenerator` for `SequentialGuidType.SqlServer` only for SQL Server clustered primary keys, and `SequentialGuidType.Version7` (the default) for byte-ordered stores. `Version7` fragments SQL Server clustered indexes.
+- Use the `Headless.Validators` types (`EgyptianNationalIdValidator.IsValid`, `TryParse`, and the rest) for boolean checks. For FluentValidation rules such as `EgyptianNationalId()`, use `Headless.FluentValidation`, and for phone rules `Headless.PhoneNumbers` (see [utilities.md](utilities.md#headlessfluentvalidation)).
+- Read claims with `HeadlessClaimsPrincipalExtensions` (`GetUserId()`, `GetRoles()`, `GetTenantId()`, `AddOrReplace(...)`). `GetRoles()` never returns `null`.
+- Use the `Headless.IO` stream helpers (`GetAllBytesAsync()`, `GetAllText()`) instead of hand-rolled buffers. Use `SizeLimitedReadStream` when input past a limit must fail, and `ReadSlice` when the reader should see a clean end of stream at a fixed length.
+- Point `AssemblyHelper.LoadAssemblies(...)` and `InvokeAllStaticMethods(...)` only at trusted, application-owned assemblies. They load into the default load context and run public static methods by name. Never point them at a user-writable upload, cache, or temp folder.
+- Write the minutes suffix of `TimeUnit.Parse` in lowercase: `"5m"`. The `m` suffix is case-sensitive, so it is never read as months.
+- Pass an `onError` handler to `action.Debounce(interval, timeProvider?, onError?)` when the action can throw. The action runs on a thread-pool timer callback, so without a handler its exception is swallowed.
 
 ## Core Concepts
 
-`Headless.Extensions` is mostly mechanical helpers, but four ideas shape how the rest of the framework uses it: how failures are modeled, how domain values are typed, how GUIDs are ordered for databases, and how time is made testable.
-
 ### Result pattern vs. exceptions
 
-The package models **expected** outcomes as values, not exceptions. `ApiResult` / `ApiResult<T>` carry either a value or an `ApiResultError`; `Result<TValue, TError>` / `Result<TError>` are the same idea with a caller-chosen error type. `ApiResultError` is an abstract `record` with a small closed hierarchy — `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError` — each exposing a machine-readable `Code` and a human `Message`. The built-in factories are data-compatible with the exception path: conflict results accept a message, one descriptor, or many `ErrorDescriptor` values; unauthorized/forbidden results preserve their descriptors; not-found accepts string/Guid/int/long keys; and validation accepts a field-keyed descriptor map. Message-only conflicts use `ApiResultErrorCodes.Default`, while string-only validation pairs use `ApiResultErrorCodes.ValidationFailed`. Throw only for programmer errors or truly exceptional conditions; return a result for anything a caller is expected to handle.
+`ApiResult` and `ApiResult<T>` carry either a value or an `ApiResultError`. `Result<TValue, TError>` and `Result<TError>` are the same idea with your own error type. `ApiResultError` is an abstract `record` with a closed set of subtypes: `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, and `AggregateError`. Each exposes a machine-readable `Code` and a human `Message`.
+
+The factories carry the same data as the exception path:
+
+- Conflict takes a message, one `ErrorDescriptor`, or many. A message-only conflict uses `ApiResultErrorCodes.Default`.
+- Unauthorized and forbidden keep their descriptors.
+- Not found takes a `string`, `Guid`, `int`, or `long` key.
+- Validation takes a field-keyed descriptor map. A string-only validation pair uses `ApiResultErrorCodes.ValidationFailed`.
 
 ### Domain primitives and value objects
 
-Two distinct mechanisms produce strongly-typed values. **Source-generated primitives** (`UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber`) implement `IPrimitive<T>` and are emitted by `Headless.Generator.Primitives` with equality, JSON, and TypeConverter support — they wrap a single underlying value and validate it on creation. **Hand-written value objects** (`Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`) validate their inputs in the constructor/init and throw on invalid data, so an instance that exists is always valid (e.g. a `GeoCoordinate` can never hold a latitude outside `[-90, 90]`). Both give you value equality. The practical consequence: prefer these over raw `Guid`/`decimal`/`(double, double)` in domain signatures so invalid states are unrepresentable.
+Two kinds of strongly-typed values exist, and both have value equality:
+
+- **Generated primitives** (`UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber`) implement `IPrimitive<T>`, wrap one value, validate it on creation, and come with JSON and `TypeConverter` support.
+- **Hand-written value objects** (`Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`) validate in the constructor and throw on invalid input, so an instance that exists is valid. A `GeoCoordinate` never holds a latitude outside `[-90, 90]`.
+
+Use them in domain signatures instead of a raw `Guid`, `decimal`, or `(double, double)`.
 
 ### GUID ordering strategy
 
-Random GUIDs (`Guid.NewGuid()`) fragment clustered database indexes. `IGuidGenerator` abstracts the ordering choice via `SequentialGuidType`: `Version7` produces RFC 9562 UUIDv7 values whose timestamp sorts correctly for **byte-ordered** stores (PostgreSQL, most key-value stores) and is the framework default; `SqlServer` produces EF Core "comb" GUIDs whose bytes are arranged for SQL Server's `uniqueidentifier` sort order. Picking the wrong one is a real performance footgun — `Version7` fragments SQL Server clustered keys because SQL Server sorts the timestamp bytes last. Registration lives in `Headless.Hosting` (`AddHeadlessGuidGenerator()`, see [utilities.md](utilities.md)); persisted backends should resolve the keyed strategy that matches their storage rather than the unkeyed default.
+`Guid.NewGuid()` fragments clustered indexes. `IGuidGenerator` takes the ordering from `SequentialGuidType`:
 
-### Deterministic time and timezones
+- `Version7` produces RFC 9562 UUIDv7 values that sort correctly in byte-ordered stores such as PostgreSQL. It is the default.
+- `SqlServer` produces EF Core "comb" GUIDs arranged for SQL Server's `uniqueidentifier` sort order. SQL Server sorts the timestamp bytes of a `Version7` value last, so `Version7` fragments its clustered keys.
 
-The package builds on `TimeProvider` so time is injectable and testable. `FixedTimezoneTimeProvider` pins a `TimeZoneInfo` for deterministic local-time conversions; `ChangeableTimezoneTimeProvider` allows a scoped `ChangeTimeZone(...)` that restores on dispose (single-writer; nested changes restore out of order). `TimezoneConstants` resolves its IANA zones through `TimeZoneInfo.FindSystemTimeZoneById`: Linux and macOS read the system time-zone database, and Windows resolves IANA IDs through ICU, so on Windows they fail in NLS or globalization-invariant mode. `timeProvider.Delay(...)` and `timeProvider.CreateCancellationTokenSource(...)` delegate to the BCL's `Task.Delay(TimeSpan, TimeProvider, …)` and `CancellationTokenSource(TimeSpan, TimeProvider)`, so the package needs no `Microsoft.Bcl.TimeProvider`; a consumer that also references that package and imports both `System` and `System.Threading.Tasks` gets an ambiguous call (CS0121) and should drop the reference. Combined with the date/time extension methods (`HeadlessDateTimeExtensions`, `HeadlessDateTimeOffsetExtensions`, `HeadlessTimeSpanExtensions`), this lets domain code avoid `DateTime.UtcNow` — which the Headless SDK bans at compile time (`RS0030`) — and stay unit-testable. `HeadlessDateTimeExtensions.NormalizeToUtc()` is the safe way to coerce a `DateTime` of untrusted `Kind` (external SDKs often return `Unspecified`) to UTC before it becomes a `DateTimeOffset`. For the `ICurrentTimeZone` abstraction, see [context.md](context.md); for which clock owns which decision, see [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
+A store that persists GUIDs resolves the keyed strategy that matches it, not the unkeyed default.
+
+### Deterministic time and time zones
+
+Inject `TimeProvider` for every time your code reads, instead of `DateTime.UtcNow`, so tests drive it with `FakeTimeProvider`. For the `ICurrentTimeZone` abstraction, see [context.md](context.md).
+
+- `FixedTimezoneTimeProvider` pins one `TimeZoneInfo` for local-time conversions.
+- `ChangeableTimezoneTimeProvider.ChangeTimeZone(...)` changes the zone until you dispose its result. It supports one writer: nested changes restore out of order.
+- `TimezoneConstants` resolves IANA zone IDs through `TimeZoneInfo.FindSystemTimeZoneById`. Linux and macOS read the system database. Windows resolves IANA IDs through ICU, so they fail in NLS or globalization-invariant mode.
+- `timeProvider.Delay(...)` and `timeProvider.CreateCancellationTokenSource(...)` call the BCL's `TimeProvider` overloads of `Task.Delay` and `CancellationTokenSource`. If your project also references `Microsoft.Bcl.TimeProvider` and imports both `System` and `System.Threading.Tasks`, the call is ambiguous (CS0121). Remove that package reference.
+- `NormalizeToUtc()` coerces a `DateTime` of untrusted `Kind` to UTC before it becomes a `DateTimeOffset`. External SDKs often return `Unspecified`.
 
 ---
 
 ## Headless.Extensions
 
-The framework's base utility library: extension methods, domain primitives, value objects, the result pattern, and common helpers referenced by nearly every other `Headless.*` package.
+The base utility library: extension methods, helpers, constants, and exceptions shared by every `Headless.*` package.
 
-### API and behavior
-
-- **Result pattern** — `ApiResult` / `ApiResult<T>` with built-in error factories (`NotFound`, `Conflict`, `ValidationFailed`, `Forbidden`, `Unauthorized`); `Result<TValue, TError>` / `Result<TError>` for custom error types; the `ApiResultError` record hierarchy (`NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError`); `ErrorDescriptor` for structured, severity-tagged API errors; `Match`/`Map`/`Bind` combinators with `…Async` overloads.
-- **Domain primitives** (source-generated, with JSON + TypeConverter support) — `UserId`, `AccountId`, `MoneyAmount` (decimal amount, banker's rounding), `Month` (1–12), `PhoneNumber` (country code plus digits-only national number; formatting and normalization ship in `Headless.PhoneNumbers`).
-- **Value objects** (validated on construction) — `Money` (amount + currency code, scalar `*`/`/`, same-code `+`/`-`, total ordering), `GeoCoordinate` / `FullGeoCoordinate` (range-checked lat/long, Haversine distance), `Range<T>` (inclusive/exclusive containment, overlap), `PreferredLocale`, `TimeUnit` (duration-string parsing), `NameValue<T>`, `OrderBy`, `ExtraProperties` (ordinal-keyed property bag), `TenantInformation`, `PageMetadata`, `File` / `Image`.
-- **Pagination** — `IndexPageRequest` / `IndexPage<T>` (offset) and `ContinuationPageRequest` / `ContinuationPage<T>` (cursor), each with `Select` / `Where` projection.
-- **Collections** — `ParallelForEachAsync` (bounded concurrency) and `ForEachAsync` (ordered sequential, with index/cancellation overloads); `DetectChanges` (added/removed/updated/unchanged classification by key); `EquatableArray<T>` (value-equality array wrapper); `ComparerFactory`; `TypeList` / `ITypeList`; `HeadlessEnumerableExtensions` materialization helpers — `AsList` / `AsArray` / `AsICollection` / `AsIList` (→ `IList<T>`) / `AsIReadOnlyCollection` / `AsIReadOnlyList` (→ `IReadOnlyList<T>`) / `AsISet` / `AsHashSet` / `AsDictionary` (return the source as-is when it already matches the requested type, otherwise materialize a copy).
-- **Threading** — `KeyedAsyncLock` (per-key async mutual exclusion, optional timeout-returns-null, sharded, non-reentrant); `TransientRetry.RunAsync` (up to 3 attempts, jittered delay on a `TimeProvider`, caller-supplied transient classification; valued `Func<CancellationToken, ValueTask<T>>` and result-free `Func<CancellationToken, ValueTask>` forms); `HeadlessTaskExtensions` (`Forget`, `WithCancellation`, `GetResultOrDefault`, `WithAggregatedExceptions`, `DelayedAsync`, `WhenAllBoundedAsync`); `HeadlessAsyncExExtensions` (timeout/safe waits over Nito.AsyncEx primitives); `Async.RunSync` / `Async.Using`; `InterlockedExtensions.InterlockedRaiseTo` (lock-free raise-only max on a `ref long`).
-- **LINQ** — `PredicateBuilder` for composing EF Core predicates (`True`/`False` seeds, `And`, `Or`, `Not`, `AndNot`, `OrNot`, and `IEnumerable` folds).
-- **IO** — `ReadOnlySequence<byte>.ToStream()`, `NonSeekableStream`, `ActionableStream` (deterministic one-shot dispose action), `ReadSlice` (clean EOF at a fixed length), `SizeLimitedReadStream` (throws `StreamSizeLimitExceededException` on overflow), `GetAllText`/`GetAllBytes`(`Async`), `WriteText`(`Async`), `CalculateMd5Async`; `FileNames` (untrusted-name sanitization + trusted save names); `FileHelper` (retrying read/write, traversal-safe batch save); `DirectoryHelper` (platform-aware path comparison, sub-directory checks).
-- **Constants** — `RegexPatterns` (compiled, ReDoS-hardened: email, URL, IP, slug, national ID, …), `ContentTypes`, `HttpHeaderNames`, `JwtClaimTypes`, `UserClaimTypes`, `LanguageCodes`, `AuthenticationConstants`, `EnvironmentNames` / `EnvironmentVariables`, `HeadlessDiagnostics` (named `ActivitySource` / `Meter` factories), `StorageIdentifier` / `StorageProvider` (per-provider SQL identifier rules, keyed by the provider enum), `TimezoneConstants`.
-- **SQL `LIKE` patterns** — `SqlLikePattern.Escape` (user text that matches itself literally), `StartsWith` (escaped prefix + `%`), `Contains` (`%` + escaped text + `%`), and `EscapeCharacter` (`\`) for the `ESCAPE` clause or EF Core's `EF.Functions.Like(column, pattern, SqlLikePattern.EscapeCharacter)`.
-- **Relational fault reads** — `RelationalFaults` reads a caught database exception without referencing a driver. `FindDatabaseException(exception)` returns the outermost `DbException` in the inner-exception chain; `GetSqlServerErrorNumbers(dbException)` returns every error number of a SqlClient `SqlException` (`Microsoft.Data.SqlClient` or `System.Data.SqlClient`) in reported order, or an empty list for another driver; `IsUniqueViolation(exception)` takes a failure as thrown (an EF `DbUpdateException`, or the `DbException` itself), finds the database exception with `FindDatabaseException`, and recognizes a duplicate key: SQLSTATE `23505` (PostgreSQL, or any driver that reports SQLSTATE), SQL Server `2627` or `2601` in any error, SQLite extended code `2067` or `1555`. The API exception handler's `g:unique_violation` mapping, the SQL Server dialect's `Classify`, the Jobs EF store, and the unit of work's `RelationalTransientFaults` read through it.
-- **Failure fingerprints** — `FailureFingerprint` groups failures by cause for a dashboard. `Compute(exception)` returns `v1:` followed by 16 lowercase hex characters, computed from the live exception's innermost type and top application frames; `ForCause(cause)` returns `v1:` followed by a fixed cause name (`v1:lease-lapsed`) for a failure that has no exception; `VersionPrefix` is `v1:`. Jobs stores these in `FailureFingerprint` on its run rows (see [jobs.md](jobs.md#failure-fingerprint)).
-- **Reflection** — `ReflectionHelper` (attribute lookup, cached open-generic subclass checks), `HeadlessTypeExtensions` (friendly names, nullable/enum/`Task<T>` unwrapping, base-class enumeration), `TypeHelper`, `AssemblyInformation` (entry-assembly metadata + commit number), `ObjectPropertiesHelper` (cached by-name property set/clear — `TrySetProperty` with a value factory, value-direct `TrySetPropertyValue`, `TrySetPropertyToNull`).
-- **Validation helpers** (boolean checks) — `EgyptianNationalIdValidator` (`IsValid` / `TryParse` → birth date + governorate), `GeoCoordinateValidator`, `EmailValidator` (HTML5 living standard), `EnumNameValidator` (`IsDefinedName` / cached `GetNames` → string is a defined enum member).
-- **ID generation & MIME** — `IGuidGenerator` + `SequentialGuidGenerator` (`Version7` / `SqlServer` strategies); `IMimeTypeProvider` / `MimeTypeProvider`.
-- **Time** — `FixedTimezoneTimeProvider`, `ChangeableTimezoneTimeProvider`, and date/time/number/string extension methods on BCL types.
-- **Claims, HTTP, text, misc.** — `HeadlessClaimsPrincipalExtensions` (claim read/write), `BasicAuthenticationValue`, `HeadlessHttpStatusCodeExtensions`, `LookupNormalizer`, `IgnoreCaseStringComparer`, `DebounceExtensions`, `IpAddressHelper`, `XmlHelper` (XXE-safe XML well-formedness checks — `IsValidXml` / `IsValidXmlAsync` — plus encode/decode), `DisposableFactory` (callback disposables; state-taking `Create<TState>(state, static s => …)` overloads for allocation-sensitive paths), `OsHelper`.
-- **Processes** — `ProcessStartInfo.RunAsTaskAsync` / `ProcessHelper.RunAsTaskAsync` (run to exit, captured `ProcessResult`); `ProcessStartInfo.RunAndStreamAsync` / `ProcessHelper.RunAndStreamAsync` (`IAsyncEnumerable<ProcessStreamedOutput>` of output lines, then the exit code); `Process.TryToKill` (best-effort process-tree kill).
-
-### Design constraints
-
-- **`Money` scaling is scalar-only.** `operator *` and `operator /` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`; there is no `Money × Money` multiply. `operator +` / `operator -` require matching currency codes and throw otherwise. Comparison operators exist against both `Money` and `decimal`, and `Money` is a total order (mixed-code lists sort by code then amount). This shape prevents the nonsensical "money squared" result and keeps rounding centralized.
-- **`Money` ≠ `MoneyAmount`.** `MoneyAmount` is a source-generated `IPrimitive<decimal>` with no currency code; `GetRounded()` rounds to 2 dp using banker's rounding. Use `Money` when an amount must travel with its code. Do not treat `MoneyAmount` as currency-aware.
-- **`Range<T>` uses side-specific infinity semantics for `null` bounds.** A `null` `From` is unbounded below; a `null` `To` is unbounded above. Range-to-range containment, overlap, and `RemoveConflictRangeParts` compare lower and upper bounds separately, so subtracting `[m, p]` from `[null, z]` can return both `[null, predecessor(m)]` and `[successor(p), z]`. The value-level containment overloads still test a single point, so do not use `null` as a concrete point value.
-- **Result/error types are value-equal and free of equality-corrupting caches.** `ApiResultError` is an abstract `record`; computed `Code` and `Metadata` members are not lazy-cached in record backing fields. ApiResult factories snapshot error collections. A default `ApiResult` / `ApiResult<T>` is uninitialized (neither success nor failure); the generic `Result<…>` types retain their guarded default-failure behavior.
-- **`KeyedAsyncLock` timeout returns `null`, is non-reentrant, sharded, and allocation-free on a free key.** The timeout overload returns `null` instead of throwing when the wait elapses, so callers can degrade (skip work / serve stale). The internal semaphore dictionary is sharded into 8–64 stripes (~`ProcessorCount`) to cut contention. Per-key semaphores are reference-counted and leave the dictionary at zero; each shard keeps up to 16 idle semaphores for reuse and disposes the rest, and `Dispose()` disposes them all. Acquiring a free key completes synchronously and allocates nothing: the `ValueTask` wraps a `Releaser` struct. Only a wait for a held key allocates. A `Releaser` records the acquisition it belongs to, so disposing it twice, disposing a copy after the lock was released (even once another caller holds the key), and disposing `default(Releaser)` all do nothing. Argument, disposed, and cancellation failures of the `LockAsync` overloads arrive through the returned `ValueTask`, never as a throw from the call; `TryLock` throws them directly. Re-entering the same key without releasing deadlocks. The timeout overload takes a `TimeProvider`, so tests can drive it with `FakeTimeProvider`.
-- **`TransientRetry.RunAsync` retries only self-contained work, and rethrows unwrapped.** It makes at most `TransientRetry.MaxAttempts` (3) attempts, retries only a failure the caller's `isTransient` predicate accepts, and waits `n × U(10 ms, 50 ms)` before retry `n` on the supplied `TimeProvider` (so tests drive it with `FakeTimeProvider`). The random floor keeps colliding callers from retrying in lockstep. Cancellation is observed before each attempt and during each delay. A rejected failure or the last attempt's failure propagates as thrown, never wrapped. Each attempt must start from scratch (its own connection and transaction); never use it for work inside a caller's transaction, whose failure only the transaction's owner can retry. An overload takes `maxAttempts` and a `retryDelay(failedAttempt)` function for contention on a different time scale; `FileHelper` uses it for 4 attempts with 100/200/400 ms exponential delays, because a file another process briefly locks needs longer waits than a database replay. Both overloads also accept an operation that returns no value (`Func<CancellationToken, ValueTask>`), so work with nothing to return passes its call directly instead of returning a dummy `true`; that form runs through the valued retry loop, so its attempts, delays, predicate, and cancellation are identical.
-- **`ReconnectBackoff` paces a reconnect loop on the system clock.** `WaitAsync(token)` waits the current `Delay`, then doubles the nominal delay from 1 second (`FirstDelay`) up to 30 seconds (`Ceiling`); `Reset()` starts over once the connection is up. Each delay is jittered within `[0.75×, 1×]` of the nominal value, or spread up from the 1 second floor, never above 30 seconds, so a fleet that loses its server at once does not reconnect in step. `WaitAsync` returns `false` when the token is cancelled during the wait instead of throwing. The waits run on `TimeProvider.System` unless a clock is passed, which only a test of the loop itself should do. An instance is not thread-safe: it belongs to the one loop that reconnects. `ReconnectBackoff.Jitter(nominal, floor, random)` exposes the band for a caller that keeps its own nominal delay and floor.
-- **`ParallelForEachAsync` is unordered; `ForEachAsync` is ordered.** `ParallelForEachAsync` delegates to `Parallel.ForEachAsync` (no result order guarantee) and defaults to `Environment.ProcessorCount` parallelism (`-1` = unlimited). `ForEachAsync` runs sequentially, preserves order, checks cancellation before each element, and offers index and per-item `CancellationToken` overloads. Pick deliberately.
-- **`SqlLikePattern` needs the `ESCAPE` clause.** It prefixes `\`, `%`, `_`, and `[` with `\`, so a pattern matches literally only when the query names `\` as the escape character (`LIKE @p ESCAPE '\'`, or the third argument of `EF.Functions.Like`); without it, SQL Server and SQLite treat `\` as an ordinary character, so the escaped text no longer matches the original. Escaping `[` is needed for SQL Server's character classes and harmless on PostgreSQL and SQLite, so one pattern serves every provider. Case sensitivity is the column's collation (or `ILIKE`), not the pattern's. A `null` value throws `ArgumentNullException`: check the filter before building its pattern.
-- **`RelationalFaults` reads every SqlClient error, and only SqlClient's.** `SqlException.Number` is the first error alone, and SQL Server does not always report the duplicate key or deadlock first, so match on `GetSqlServerErrorNumbers`, never on `Number`. A SQL Server number is read only from an exception whose type is SqlClient's, matched by full name, because another driver's number means something else (MySQL reports a lock-wait timeout as `1205`). `FindDatabaseException` walks outer-first, not `GetBaseException()`, because a driver wraps the socket error beneath the exception that carries the code. Every member throws `ArgumentNullException` for a `null` argument.
-- **`FailureFingerprint` is versioned, ignores the message, and needs the live exception.** Every value starts with `VersionPrefix` (`v1:`); a change to the algorithm is a new version, never a change to `v1`, so stored rows keep their groups until they age out. `Compute` unwraps `AggregateException` (its first inner exception) and `TargetInvocationException` only, because those are the wrappers the runtime adds; an exception the code wraps itself (a domain exception around an I/O fault) is fingerprinted as the wrapper. It hashes, with SHA-256, the innermost exception type's full name and the top three stack frames whose declaring type is outside `System.*` and `Microsoft.*`, each as `Namespace.Type.Method` with no line number, a lambda, local function, or async state-machine frame reduced to the method that declares it, and keeps the first 16 hex characters. The message never takes part, because it carries the ids that split one cause into many groups. Call it where the failure is recorded, while the exception still has its stack trace: stored exception text keeps too little to derive the value later, and an exception never thrown hashes its type alone. `ForCause` accepts only lowercase ASCII letters, digits, and hyphens, and refuses a 16-character all-hex name, so a fixed cause never equals a computed value; it throws `ArgumentException` otherwise.
-- **`RegexPatterns` are ReDoS-hardened.** Every pattern is source-generated with `RegexOptions.ExplicitCapture` and a 100 ms `MatchTimeout`, so adversarial input fails fast with `RegexMatchTimeoutException` instead of hanging. `EmailValidator` uses the HTML5 living-standard email pattern (a willful RFC 5321/5322 deviation that permits dot-less domains) with an opt-in `requireDotInDomainName`.
-- **`PhoneNumber` canonicalizes to digits and carries no libphonenumber dependency.** The national number is stored digits-only, so `"555-1234"` equals `"5551234"`, and construction validates a positive country code. `ToString()` returns the raw `+{CountryCode} {Number}`; national, international, and normalized formats, region lookup, and parsing from international format are extension members in `Headless.PhoneNumbers` (see [utilities.md](utilities.md#headlessphonenumbers)).
-- **String comparisons are explicit about culture.** Claim *type* matching is `OrdinalIgnoreCase` while role *values* collect into an ordinal `ImmutableHashSet<string>`; `ExtraProperties` keys use `StringComparer.Ordinal`; identifier/path comparisons in `DirectoryHelper` are case-insensitive on Windows/macOS and case-sensitive on Linux. ID/claim parsing uses `CultureInfo.InvariantCulture`.
-- **Reflection assembly loading is trusted-input only.** `AssemblyHelper.LoadAssemblies(...)` loads every matching `.dll`/`.exe` into the default load context, and `InvokeAllStaticMethods(...)` executes public static methods by name. Use these APIs only for application-owned plugin folders or assemblies that have already passed your trust checks; never point them at user-writable upload/cache/temp directories.
-- **`ObjectPropertiesHelper.TrySetPropertyValue` evaluates its argument eagerly.** The value-direct overload exists so hot paths can skip the per-call lambda of `TrySetProperty(obj, name, () => value)`, but the argument is computed whether or not the target property exists. Keep clock reads, GUID minting, and other observable-on-evaluation values on the `Func` overload (its factory runs only when the property is actually set — the difference is visible under `FakeTimeProvider`); pass only already-materialized values directly. The `TValue`-vs-`Func<TValue>` pair is named differently on purpose: a `TValue` overload beside `Func<TValue>` is ambiguous for `Func`-typed arguments.
-- **`DisposableFactory.Create<TState>` copies state at creation and disposes exactly once.** The state-taking overloads exist for hot paths (ambient-scope restore, per-request switches) where a closure per call is measurable: pass a `static` lambda and put everything it needs in `state` (a tuple works). The state is captured by value at construction — later mutations of a caller's struct local are invisible to the callback — and the callback runs at most once across double `Dispose`/`DisposeAsync`.
-- **IO avoids async-over-sync and guards paths.** `GetAllBytesAsync` / `ReadAllBytesAsync` route through framework `File.*` async APIs and pre-size buffers when the stream length is known; `FileHelper` retries a transient `IOException` up to three times with exponential backoff (100, 200, 400 ms) and rejects rooted paths and traversal sequences before writing; batch save bounds concurrency to `ProcessorCount`. `ActionableStream` fires its dispose action exactly once across `Dispose` / `Close` / `DisposeAsync` and still disposes the inner stream if the action throws. `ReadSlice` returns clean EOF at its boundary; use `SizeLimitedReadStream` when exceeding the boundary must fail, such as when processing untrusted request bodies.
-- **`RunAndStreamAsync` is lazy and owns the process for the enumeration.** The process starts when enumeration begins, not when the method is called, and a start failure throws `InvalidOperationException` from the first `MoveNextAsync`. Standard output and error lines arrive interleaved in callback order, then exactly one `ProcessStreamedOutputType.ExitCode` item ends the sequence after redirected streams drain. Leaving the loop early, throwing from the loop body, or canceling the token kills the process tree and waits for it to exit before the enumerator completes its disposal. Lines buffer without bound while the consumer is slow.
-- **`string.ToSentence()` splits identifier-style names into a sentence.** Words split at underscores, hyphens, spaces, case changes, and letter/digit changes; all-caps runs of two or more letters stay as acronyms, and the rest are lowercased with the first letter capitalized: `ValueWithoutAttributes` → `Value without attributes`, `HTMLParser` → `HTML parser`, `snake_case` → `Snake case`. `null` and empty input return unchanged. It is not localized and is deliberately not named `Humanize()`, so it cannot collide with Humanizer's `string.Humanize()` when both namespaces are imported.
-- **`string.MaskEnd(visibleLength, mask = "***")` names a token without carrying it.** It keeps the first `visibleLength` characters and replaces the rest with `mask`, so a log can tell device tokens or keys apart by prefix (`"device-token-123".MaskEnd(8)` → `device-t***`). A value no longer than the prefix becomes the mask alone, because showing all of a short value hides nothing; `null` stays `null`; the prefix never ends inside a surrogate pair. The prefix is the real value's start, so use it only where those characters are not sensitive themselves; `PrefixMaskRedactor` in `Headless.Logging.Redaction` applies it to a classification.
-- **`GetDisplayName()` falls back to `ToSentence()` of the member name.** Without `[DisplayName]` or `[Display(Name)]`, the member name becomes a sentence as above. An undefined value returns its number unchanged (`999`, `-5`), because a member name never starts with a digit or a sign.
-- **`TimeUnit` parsing is case-sensitive on `m`.** Suffixes are `nanos`, `micros`, `ms`, `s`, `m` (minutes), `h`, `d`; `m` is case-sensitive to avoid minute/month ambiguity, parsing trims the input span rather than allocating a lowercased copy, and overflow surfaces as `false` (`TryParse`) or an exception (`Parse`), never a silent wrap.
-- **`EgyptianNationalIdValidator` decodes the century digit and validates a real date.** The leading digit maps `2 → 1900s`, `3 → 2000s` (any other value fails), and the extracted year/month/day are validated through `DateOnly` so impossible dates (e.g. 30 February) are rejected; the governorate code maps through an ordinal `FrozenDictionary`.
-- **`XmlHelper` parses with an XXE-hardened reader.** `IsValidXml` / `IsValidXmlAsync` (both a `string` and a `Stream` overload) validate well-formedness through a shared `XmlReaderSettings` with `DtdProcessing.Ignore` and `XmlResolver = null`, so inline DTDs are skipped and entity-expansion (billion-laughs) and external-entity (XXE) payloads are never processed. Malformed input returns `false` rather than throwing, so the check is safe on untrusted input.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Extensions
 ```
-
-### Setup and use
-
-#### Result pattern
 
 ```csharp
 using Headless.Primitives;
@@ -148,17 +112,7 @@ var message = result.Match(
 );
 ```
 
-#### Money and MoneyAmount
-
-```csharp
-using Headless.Primitives;
-
-var price = new Money(100m, "USD");
-var withTax = price * 1.15m;          // scalar scaling -> 115.00 USD (banker's rounding)
-var total = price + new Money(20m, "USD"); // same-code addition; throws on code mismatch
-
-var amount = new MoneyAmount(9.875m).GetRounded(); // 9.88 (MidpointRounding.ToEven)
-```
+**Verify:** no startup signal; the package registers nothing. Prove each behavior your code relies on with a unit test assertion, such as `keyedLock.TryLock(key)` returning `null` while another caller holds `key`.
 
 #### Bounded vs. ordered iteration
 
@@ -239,39 +193,68 @@ if (EgyptianNationalIdValidator.IsValid("29901011234567")
 }
 ```
 
+### API by namespace
+
+- **`Headless.Collections`**: `ParallelForEachAsync` (bounded concurrency, unordered) and `ForEachAsync` (sequential and ordered, with index and cancellation overloads); `DetectChanges` (classifies items by key as added, removed, updated, or unchanged); `EquatableArray<T>` (an array with value equality); `ComparerFactory`; `TypeList` and `ITypeList`. The `HeadlessEnumerableExtensions` materializers `AsList`, `AsArray`, `AsICollection`, `AsIList`, `AsIReadOnlyCollection`, `AsIReadOnlyList`, `AsISet`, `AsHashSet`, and `AsDictionary` return the source itself when it already has the requested type, and otherwise copy it.
+- **`Headless.Linq`**: `PredicateBuilder` composes EF Core `Expression<Func<T, bool>>` filters: `True` and `False` seeds, `And`, `Or`, `Not`, `AndNot`, `OrNot`, and folds over an `IEnumerable`.
+- **`Headless.Threading`**: `KeyedAsyncLock` (per-key async mutual exclusion); `TransientRetry.RunAsync` (bounded retry of self-contained work); `ReconnectBackoff` (the wait of a reconnect loop); `HeadlessTaskExtensions` (`Forget`, `WithCancellation`, `GetResultOrDefault`, `WithAggregatedExceptions`, `DelayedAsync`, `WhenAllBoundedAsync`); `HeadlessAsyncExExtensions` (timeout and safe waits over Nito.AsyncEx primitives); `Async.RunSync` and `Async.Using`; `InterlockedExtensions.InterlockedRaiseTo` (a lock-free, raise-only maximum on a `ref long`).
+- **`Headless.IO`**: `ReadOnlySequence<byte>.ToStream()`, `NonSeekableStream`, `ActionableStream` (runs a dispose action once), `ReadSlice`, `SizeLimitedReadStream` (throws `StreamSizeLimitExceededException` past its limit), `GetAllText`, `GetAllBytes`, `WriteText` and their `Async` forms, and `CalculateMd5Async`. `IMimeTypeProvider` and `MimeTypeProvider` map file names to content types. `FileNames` sanitizes untrusted names and builds trusted save names. `FileHelper` reads and writes with retry and saves batches without path traversal. `DirectoryHelper` compares paths the way the platform does and checks sub-directories.
+- **`Headless`** (root namespace): `IGuidGenerator`, `SequentialGuidType`, `SequentialGuidGenerator`, and `SequentialGuid`; `DisposableFactory` and `IHasIsDisposed`; `FixedTimezoneTimeProvider`, `ChangeableTimezoneTimeProvider`, and `TimezoneConstants`; `CultureHelper`, `StringHelper`, `OsHelper`, `ProcessHelper`, and `ExecutableFinder`; the constants `RegexPatterns`, `LanguageCodes`, `EnvironmentNames`, `EnvironmentVariables`, `HeadlessDiagnostics` (named `ActivitySource` and `Meter` factories), `SqlErrorCodes`, `StorageIdentifier`, and `StorageProvider` (SQL identifier rules per provider); `RelationalFaults`, `FailureFingerprint`, and `SqlLikePattern`.
+- **Exceptions** (root namespace): `EntityNotFoundException`, `ConflictException`, `UnauthorizedException`, `ForbiddenException`, `TooManyRequestsException`, and `ServiceUnavailableException`. Derive from `ServiceUnavailableException` when a dependency the request needs cannot answer: the Headless API exception handler maps it and every derived type to 503 with `Cache-Control: no-store`.
+- **`Headless.Reflection`**: `ReflectionHelper` (attribute lookup, cached open-generic subclass checks), `HeadlessTypeExtensions` (friendly names, nullable, enum, and `Task<T>` unwrapping, base-class enumeration), `TypeHelper`, `AssemblyInformation` (entry-assembly metadata and commit number), `AssemblyHelper`, and `ObjectPropertiesHelper` (cached by-name property writes: `TrySetProperty` with a value factory, `TrySetPropertyValue` with a value, and `TrySetPropertyToNull`).
+- **`Headless.Validators`** (boolean checks, not FluentValidation rules): `EgyptianNationalIdValidator` (`IsValid`, and `TryParse` returning the birth date and governorate), `GeoCoordinateValidator`, `EmailValidator`, and `EnumNameValidator` (`IsDefinedName` and cached `GetNames`). `MobilePhoneNumberValidator` ships in `Headless.PhoneNumbers`.
+- **`Headless.Http`**: `ContentTypes`, `HttpHeaderNames`, `BasicAuthenticationValue`, and `HeadlessHttpStatusCodeExtensions`.
+- **`Headless.Security`**: `JwtClaimTypes`, `UserClaimTypes`, `AuthenticationConstants`, and `IPasswordGenerator`, `PasswordGenerator`, and `GeneratePasswordOptions`. The generator builds a password from your policy (length, required character sets, and `RequiredUniqueChars`) and uses `RandomNumberGenerator` for every pick and for the shuffle.
+- **Smaller namespaces**: claims (`HeadlessClaimsPrincipalExtensions`), `Headless.Text` (`LookupNormalizer`, `IgnoreCaseStringComparer`, `FormattedStringValueExtractor`), `Headless.Network` (`IpAddressHelper`), `Headless.Xml` (`XmlHelper`: `IsValidXml`, `IsValidXmlAsync`, encode, and decode), and `Headless.UI` (`DebounceExtensions`).
+- **BCL extensions** in `System.*` namespaces: `HeadlessStringExtensions`, `HeadlessDateTimeExtensions`, `HeadlessDateTimeOffsetExtensions`, `HeadlessTimeSpanExtensions`, `HeadlessNumberExtensions`, `HeadlessEnumExtensions`, `HeadlessEnumerableExtensions`, and more.
+- **Processes**: `ProcessStartInfo.RunAsTaskAsync` and `ProcessHelper.RunAsTaskAsync` run to exit and return a `ProcessResult`. `ProcessStartInfo.RunAndStreamAsync` and `ProcessHelper.RunAndStreamAsync` return an `IAsyncEnumerable<ProcessStreamedOutput>` of output lines followed by the exit code. `Process.TryToKill` kills a process tree on a best-effort basis.
+
 ### Configuration
 
-None. This package has no options and no DI registration; reference its types and call its extension methods directly.
+None. The package has no options and no DI registration.
 
-### Runtime behavior
+### Design and runtime behavior
 
-None. No DI registrations, hosted services, or process-level effects — it is a pure utility library.
+The package registers no services, starts no hosted service, and changes no process-level state.
+
+- **`Money`.** `*` and `/` take a `decimal` factor and round the result to 2 decimal places with `MidpointRounding.ToEven`. `+` and `-` require matching currency codes. Comparison operators accept a `Money` or a `decimal`. `Money` is a total order: a list with mixed codes sorts by code, then by amount.
+- **`Range<T>`.** Range-to-range containment, overlap, and `RemoveConflictRangeParts` compare the lower and upper bounds separately. Subtracting `[m, p]` from `[null, z]` can return both `[null, predecessor(m)]` and `[successor(p), z]`. The value-level containment overloads test a single point.
+- **`KeyedAsyncLock`.** Acquiring a free key completes synchronously and allocates nothing; only a wait for a held key allocates. Disposing a `Releaser` twice, disposing a copy after the lock was released (even after another caller took the key), and disposing `default(Releaser)` all do nothing. The `LockAsync` overloads report argument, disposed, and cancellation failures through the returned `ValueTask`, never as a throw from the call. `TryLock` throws them directly. The timeout overload takes a `TimeProvider`, so tests drive it with `FakeTimeProvider`. `Dispose()` releases the lock's internal resources.
+- **`TransientRetry.RunAsync`.** It makes at most `TransientRetry.MaxAttempts` (3) attempts and retries only a failure your `isTransient` predicate accepts. Before retry `n` it waits `n × U(10 ms, 50 ms)` on the `TimeProvider` you pass, so colliding callers do not retry in step and tests drive it with `FakeTimeProvider`. It checks cancellation before each attempt and during each delay. A rejected failure, or the last attempt's failure, propagates as thrown, never wrapped. Each attempt must start from scratch with its own connection and transaction. Never use it inside a caller's transaction, because only the transaction's owner can retry that work. An overload takes `maxAttempts` and a `retryDelay(failedAttempt)` function for contention on a different time scale. Both overloads accept a `Func<CancellationToken, ValueTask<T>>` or a `Func<CancellationToken, ValueTask>`, with identical attempts, delays, predicate, and cancellation.
+- **`ReconnectBackoff`.** `WaitAsync(token)` waits the current `Delay`, then doubles the nominal delay from `FirstDelay` (1 second) up to `Ceiling` (30 seconds). Call `Reset()` once the connection is up. Each delay is jittered within `[0.75×, 1×]` of the nominal value, never below the 1-second floor or above 30 seconds, so a fleet that loses its server does not reconnect in step. `WaitAsync` returns `false` when the token is cancelled during the wait, instead of throwing. The waits run on `TimeProvider.System` unless you pass a clock; pass one only in a test of the loop itself. An instance is not thread-safe, so give each reconnect loop its own. `ReconnectBackoff.Jitter(nominal, floor, random)` exposes the band for a caller that keeps its own nominal delay and floor.
+- **`ParallelForEachAsync` and `ForEachAsync`.** `ParallelForEachAsync` runs through `Parallel.ForEachAsync` with no order guarantee. `ForEachAsync` runs one item at a time, in order, and checks cancellation before each item.
+- **`SqlLikePattern`.** `Escape` returns user text that matches itself literally, `StartsWith` appends `%` to the escaped text, and `Contains` wraps it in `%`. Each prefixes `\`, `%`, `_`, and `[` with `\`, so the query must name `\` as the escape character: `LIKE @p ESCAPE '\'`, or `EF.Functions.Like(column, pattern, SqlLikePattern.EscapeCharacter)`. Without the escape clause, SQL Server and SQLite treat `\` as an ordinary character and the pattern stops matching. One pattern serves every provider. The column's collation (or `ILIKE`) decides case sensitivity, not the pattern. A `null` value throws `ArgumentNullException`, so check the filter before you build its pattern.
+- **`RelationalFaults`.** It reads a caught database exception without a driver reference. `FindDatabaseException(exception)` returns the outermost `DbException` in the inner-exception chain. `GetSqlServerErrorNumbers(dbException)` returns every error number of a SqlClient `SqlException` (`Microsoft.Data.SqlClient` or `System.Data.SqlClient`) in reported order, or an empty list for another driver. `IsUniqueViolation(exception)` takes the exception as thrown (an EF `DbUpdateException` or the `DbException`) and recognizes SQLSTATE `23505` (PostgreSQL, or any driver that reports SQLSTATE), SQL Server `2627` or `2601` in any error, and SQLite extended code `2067` or `1555`. Match SQL Server errors with `GetSqlServerErrorNumbers`, never with `SqlException.Number`, which holds only the first error, and SQL Server does not always report the duplicate key or deadlock first. Every member throws `ArgumentNullException` for a `null` argument.
+- **`FailureFingerprint`.** It groups failures by cause for a dashboard. `Compute(exception)` returns `v1:` and 16 lowercase hex characters. `ForCause(cause)` returns `v1:` and a fixed cause name (`v1:lease-lapsed`) for a failure with no exception. `VersionPrefix` is `v1:`. Jobs stores the value on its run rows (see [jobs.md](jobs/operations.md#failure-fingerprint)).
+  - `Compute` unwraps only `AggregateException` (its first inner exception) and `TargetInvocationException`. An exception your code wraps around another is fingerprinted as the wrapper.
+  - It hashes the innermost exception type's full name and the top three stack frames whose declaring type is outside `System.*` and `Microsoft.*`, as `Namespace.Type.Method` without line numbers. A lambda, local function, or async state-machine frame counts as its declaring method. The message never takes part, because it carries IDs that split one cause into many groups.
+  - Call `Compute` where you record the failure, while the exception has its stack trace. An exception that was never thrown hashes its type alone.
+  - `ForCause` accepts only lowercase ASCII letters, digits, and hyphens, and refuses a 16-character all-hex name, so a fixed cause never equals a computed value. It throws `ArgumentException` otherwise.
+  - A changed algorithm gets a new version prefix, so stored `v1:` values keep their groups.
+- **`RegexPatterns`.** Every pattern is source-generated with `RegexOptions.ExplicitCapture` and a 100 ms `MatchTimeout`. Every whole-value pattern (email, IP, URL, slug, username, numbers, national ID, dates, and the `StorageIdentifier` patterns) ends in `\z`, so `"a@b.com\n"` does not validate. `EmailValidator` uses the HTML5 living-standard email pattern, which allows a domain without a dot. Pass `requireDotInDomainName` to require one.
+- **String comparisons.** Claim type matching is `OrdinalIgnoreCase`. `GetRoles()` returns an ordinal `ImmutableHashSet<string>`, empty when there are no roles. `ExtraProperties` keys use `StringComparer.Ordinal`. `DirectoryHelper` compares paths case-insensitively on Windows and macOS and case-sensitively on Linux. ID and claim parsing uses `CultureInfo.InvariantCulture`.
+- **`ObjectPropertiesHelper.TrySetPropertyValue`.** It evaluates its argument whether or not the target property exists. Pass a clock read, a new GUID, or any other value with a visible side effect through `TrySetProperty(obj, name, () => value)`, whose factory runs only when the property is set.
+- **`DisposableFactory.Create<TState>`.** Pass a `static` lambda and put what it needs in `state` (a tuple works) to avoid a closure per call. The state is copied at creation, so later changes to a caller's struct local are invisible to the callback. The callback runs at most once across repeated `Dispose` and `DisposeAsync` calls.
+- **IO.** `GetAllBytesAsync` and `ReadAllBytesAsync` use the framework's async `File.*` APIs and pre-size the buffer when the stream length is known. `FileHelper` retries a transient `IOException` up to three times with 100, 200, and 400 ms delays, rejects rooted paths and traversal sequences before writing, and bounds batch-save concurrency to `ProcessorCount`. `ActionableStream` runs its dispose action once across `Dispose`, `Close`, and `DisposeAsync`, and still disposes the inner stream when the action throws.
+- **`RunAndStreamAsync`.** The process starts when enumeration begins, not when you call the method. A start failure throws `InvalidOperationException` from the first `MoveNextAsync`. Standard output and error lines arrive interleaved in the order they were written. One `ProcessStreamedOutputType.ExitCode` item ends the sequence after the redirected streams drain. Leaving the loop early, throwing from its body, or cancelling the token kills the process tree and waits for it to exit. Lines buffer without a bound while the consumer is slow.
+- **`string.ToSentence()`.** It splits an identifier-style name at underscores, hyphens, spaces, case changes, and letter-digit changes. Runs of two or more capitals stay as acronyms. The rest is lowercased with the first letter capitalized: `ValueWithoutAttributes` gives `Value without attributes`, `HTMLParser` gives `HTML parser`, and `snake_case` gives `Snake case`. `null` and empty input return unchanged. It is not localized, and it does not collide with Humanizer's `string.Humanize()` when both namespaces are imported.
+- **`string.MaskEnd(visibleLength, mask = "***")`.** It keeps the first `visibleLength` characters and replaces the rest with `mask`: `"device-token-123".MaskEnd(8)` gives `device-t***`. A value no longer than the prefix becomes the mask alone. `null` stays `null`. The prefix never ends inside a surrogate pair. The prefix shows the real value's start, so use it only where those characters are not sensitive. `PrefixMaskRedactor` applies it to a log classification (see [logging.md](logging.md#headlessloggingredaction)).
+- **`GetDisplayName()`.** Without `[DisplayName]` or `[Display(Name)]`, it returns `ToSentence()` of the member name. An undefined enum value returns its number unchanged (`999`, `-5`).
+- **`TimeUnit`.** Suffixes are `nanos`, `micros`, `ms`, `s`, `m` (minutes), `h`, and `d`. Overflow returns `false` from `TryParse` and throws from `Parse`; it never wraps.
+- **`EgyptianNationalIdValidator`.** The leading digit `2` means the 1900s and `3` the 2000s; any other digit fails. The year, month, and day must form a real date, so 30 February fails.
+- **`XmlHelper`.** `IsValidXml` and `IsValidXmlAsync` (each with a `string` and a `Stream` overload) check well-formedness with DTD processing ignored and no XML resolver. Inline DTDs, entity expansion, and external entities are never processed. Malformed input returns `false` instead of throwing, so the check is safe on untrusted input.
 
 ---
 
 ## Headless.Primitives
 
-### API and behavior
+The value model on its own: the result pattern, built-in domain primitives, value objects, and paging.
 
-- Result pattern: `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ApiResultError` hierarchy, `ErrorDescriptor`, `ApiResultErrorBuilder`.
-- Source-generated domain primitives: `UserId`, `AccountId`, `MoneyAmount`, `Month`, `PhoneNumber` (implement `IPrimitive<T>`).
-- Hand-written value objects: `Money`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `TimeUnit`.
-- Paging: `IndexPage<T>`, `IndexPageRequest`, `ContinuationPage<T>`, `ContinuationPageRequest`, `PageMetadata`, `OrderBy`, `IHasOrderByRequest` / `IHasMultiOrderByRequest`.
-- Misc: `ExtraProperties` / `IHasExtraProperties`, `Locales` / `LocaleAttribute`, `AsyncEvent<T>`, `NameValue` / `NameValue<T>`, `File` / `Image`, `TenantInformation`.
-
-### Design constraints
-
-Split out of `Headless.Extensions` so a consumer can depend on the value model without the full base library; `Headless.Extensions` keeps a `ProjectReference`, so these types stay transitively available. The built-in result factories preserve exception-path data: conflict accepts one or many `ErrorDescriptor` values, authorization accepts descriptors, not-found accepts string/Guid/int/long keys, and validation accepts a field-keyed descriptor map. `ErrorDescriptor` accepts one or more `(Key, Value)` tuples or a `ReadOnlySpan<(string Key, object? Value)>`, pre-sizes a case-insensitive parameter bag, and snapshots the input. Direct tuples use `params ReadOnlySpan<...>`, allowing the compiler to avoid a temporary parameter array; use `WithParam` for incrementally discovered values. String-only validation uses `ApiResultErrorCodes.ValidationFailed`, and error collections are snapshotted. A default `ApiResult` / `ApiResult<T>` is uninitialized (neither success nor failure); try-accessors return false and branch operations throw. `OrderBy(string Property, bool Ascending = true)` defaults to **ascending**. The `…Async` `Map`/`Bind`/`Match` combinators include cancellation-aware overloads whose delegates receive the caller's token.
-
-`GetProperty<T>(name)` on an `IHasExtraProperties` reads a value as `T` whatever CLR type the bag holds, because a bag loaded from JSON holds only what JSON can express. It converts strings (date, time, `Guid`, `TimeSpan`, and number text), `long`/`decimal`/`double`, and scalar `JsonElement` values from a bag deserialized by plain `System.Text.Json`, all with the invariant culture. A `DateTime` string keeps its kind, a `DateTimeOffset` string without an offset reads as UTC, and enum names match case-insensitively. A JSON `null` returns the default value. Use the non-generic `GetProperty(name)` only when you want the stored object as it is.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Primitives
 ```
-
-### Setup and use
 
 ```csharp
 using Headless.Primitives;
@@ -301,36 +284,51 @@ var order = new OrderBy("CreatedAt");                    // ascending by default
 var descending = new OrderBy("CreatedAt", Ascending: false);
 ```
 
+#### Money and MoneyAmount
+
+```csharp
+using Headless.Primitives;
+
+var price = new Money(100m, "USD");
+var withTax = price * 1.15m;          // scalar scaling -> 115.00 USD (banker's rounding)
+var total = price + new Money(20m, "USD"); // same-code addition; throws on code mismatch
+
+var amount = new MoneyAmount(9.875m).GetRounded(); // 9.88 (MidpointRounding.ToEven)
+```
+
+**Verify:** no startup signal; the package registers nothing. Assert the behavior in a unit test: `price + new Money(1m, "EUR")` throws `InvalidOperationException`, and `default(ApiResult<User>)` reports `IsSuccess` and `IsFailure` both `false`.
+
+### API
+
+- **Results:** `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ApiResultError` hierarchy, `ErrorDescriptor`, `ApiResultErrorBuilder`, and `ApiResultErrorCodes`. `Match`, `Map`, and `Bind` have `…Async` forms, including overloads that pass your cancellation token to the delegate.
+- **Generated primitives** (`IPrimitive<T>`): `UserId`, `AccountId`, `MoneyAmount`, `Month` (1 to 12), and `PhoneNumber`.
+- **Value objects:** `Money`, `GeoCoordinate` and `FullGeoCoordinate` (range-checked latitude and longitude, Haversine distance), `Range<T>` (inclusive and exclusive containment, overlap), `PreferredLocale`, and `TimeUnit` (duration strings).
+- **Paging:** `IndexPageRequest` and `IndexPage<T>` (offset), `ContinuationPageRequest` and `ContinuationPage<T>` (cursor), each with `Select` and `Where` projection; `PageMetadata`, `OrderBy`, `IHasOrderByRequest`, and `IHasMultiOrderByRequest`.
+- **Other:** `ExtraProperties` and `IHasExtraProperties`, `Locales` and `LocaleAttribute`, `AsyncEvent<T>`, `NameValue` and `NameValue<T>`, `File` and `Image`, and `TenantInformation`.
+
 ### Configuration
 
-None. Types are constructed directly; no DI registration or options.
+None. You construct the types directly; there is no DI registration or options.
 
-### Runtime behavior
+### Design and runtime behavior
 
-None. No DI registrations or ambient state.
+- **Results.** Factories copy the error collections you pass. A default `ApiResult` or `ApiResult<T>` is neither success nor failure: try-accessors return `false` and branch operations throw. The generic `Result<…>` types keep their guarded default-failure behavior.
+- **`ErrorDescriptor`.** It takes one or more `(Key, Value)` tuples or a `ReadOnlySpan<(string Key, object? Value)>`, copies them into a case-insensitive parameter bag, and keeps no reference to your input. Use `WithParam` to add values you discover one at a time.
+- **`OrderBy(string Property, bool Ascending = true)`** sorts ascending by default.
+- **`PhoneNumber`.** It stores the national number as digits only, so `"555-1234"` equals `"5551234"`, and construction requires a positive country code. `ToString()` returns the raw `+{CountryCode} {Number}`, not a formatted number. Formatting, normalization, region lookup, and parsing from international format are extension members in `Headless.PhoneNumbers` (see [utilities.md](utilities.md#headlessphonenumbers)).
+- **`GetProperty<T>(name)` on `IHasExtraProperties`.** It reads the value as `T` whatever CLR type the bag holds, because a bag loaded from JSON holds only what JSON can express. It converts strings (date, time, `Guid`, `TimeSpan`, and number text), `long`, `decimal`, `double`, and scalar `JsonElement` values from a bag that plain `System.Text.Json` deserialized, all with the invariant culture. A `DateTime` string keeps its kind. A `DateTimeOffset` string without an offset reads as UTC. Enum names match case-insensitively. A JSON `null` returns the default value. Use the non-generic `GetProperty(name)` only to get the stored object as it is.
 
 ---
 
 ## Headless.Urls
 
-### API and behavior
+A fluent, mutable `Url` builder and parser, derived from Flurl's `Url` API, for projects that need URL building without the base library.
 
-- `Url` mutable builder with `Scheme` / `Host` / `Path` / `Query` / `Fragment` accessors.
-- `Url.Parse` / `Url.ParseQueryParams` / `Url.ParsePathSegments` parsing entry points.
-- `AppendPathSegment(s)`, `SetQueryParam` / `AppendQueryParam` / `RemoveQueryParam` with `NullValueHandling` control.
-- `QueryParamCollection` — ordered, duplicate-preserving query-parameter store.
-
-### Design constraints
-
-Derived from [Flurl](https://github.com/tmenier/Flurl)'s `Flurl.Url` API (MIT); attributed in the package's `THIRD-PARTY-NOTICES.md`. Packaged separately from `Headless.Extensions` so URL-only consumers do not pull the base library. `NullValueHandling` has explicit backing values (`NameOnly = 0`, `Remove = 1`, `Ignore = 2`) that must not be reordered.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Urls
 ```
-
-### Setup and use
 
 ```csharp
 using Headless.Urls;
@@ -344,10 +342,20 @@ string result = url.ToString();
 // https://api.example.com/v1/users/42?include=profile
 ```
 
+**Verify:** no startup signal; the package registers nothing. Assert `url.ToString()` equals the expected URL in a unit test.
+
+### API
+
+- `Url` with `Scheme`, `Host`, `Path`, `Query`, and `Fragment` accessors.
+- Parsing: `Url.Parse`, `Url.ParseQueryParams`, and `Url.ParsePathSegments`.
+- Building: `AppendPathSegment`, `AppendPathSegments`, `SetQueryParam`, `AppendQueryParam`, and `RemoveQueryParam`, with `NullValueHandling` to control `null` values.
+- `QueryParamCollection`: an ordered query-parameter store that keeps duplicates.
+
 ### Configuration
 
-None. `Url` is constructed directly; no DI registration or options.
+None. You construct `Url` directly; there is no DI registration or options.
 
-### Runtime behavior
+### Design and runtime behavior
 
-None. Pure value/builder types with no DI registration or ambient state.
+- `SetQueryParam` removes the parameter when the value is `null`, because its `nullValueHandling` defaults to `NullValueHandling.Remove`.
+- `NullValueHandling` has fixed numeric values: `NameOnly = 0`, `Remove = 1`, `Ignore = 2`.

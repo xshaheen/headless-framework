@@ -18,9 +18,25 @@ internal sealed class OutboxMessageWriter(
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
 
+    internal Task<Guid> WriteAsync(
+        PreparedPublishMessage publishRequest,
+        DeliveryDecision decision,
+        CancellationToken cancellationToken
+    )
+    {
+        return WriteAsync(publishRequest, decision, batch: null, transportName: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes the row of one publish. With a <paramref name="batch" />, an enlisted row the storage can batch is held
+    /// for the batch's flush instead of stored now; any other row first flushes the rows the batch holds, so rows are
+    /// always written in publish order.
+    /// </summary>
     internal async Task<Guid> WriteAsync(
         PreparedPublishMessage publishRequest,
         DeliveryDecision decision,
+        OutboxStoreBatch? batch,
+        string? transportName,
         CancellationToken cancellationToken
     )
     {
@@ -40,6 +56,7 @@ internal sealed class OutboxMessageWriter(
                 Origin = publishRequest.Message,
                 Content = serializer.Serialize(publishRequest.Message, transport.Body),
                 Lane = publishRequest.Lane,
+                TransportName = transportName,
             };
 
             // Use the unit of work/transaction captured in the caller's frame — never re-read Current here. If the
@@ -60,6 +77,42 @@ internal sealed class OutboxMessageWriter(
                     dispatcher,
                     static (_, committedDispatcher) => new MessageOutboxBuffer(committedDispatcher)
                 );
+
+                if (batch is not null)
+                {
+                    if (
+                        decision.Coordination is { Transaction: { } transaction, Outbox: null }
+                        && storage is IBatchPublishedMessageStore batchStore
+                    )
+                    {
+                        if (batch.PendingTransaction is { } pending && !ReferenceEquals(pending, transaction))
+                        {
+                            await batch.FlushAsync(cancellationToken).ConfigureAwait(false);
+                        }
+
+                        // The row and its identifier exist now, so the receipt is the one a store would return; the
+                        // span stays open until the flush writes the row.
+                        var held = batchStore.CreatePublishedMessage(envelope, decision.PublishAt);
+                        batch.Hold(
+                            this,
+                            new PendingRow(
+                                publishRequest.MessageName,
+                                held,
+                                envelope.Origin,
+                                publishRequest.Lane,
+                                transport,
+                                traceHandle,
+                                transaction,
+                                unitOfWork,
+                                buffer
+                            )
+                        );
+
+                        return held.StorageId;
+                    }
+
+                    await batch.FlushAsync(cancellationToken).ConfigureAwait(false);
+                }
 
                 var mediumMessage = await _StoreCoordinatedMessageAsync(
                         publishRequest.MessageName,
@@ -125,6 +178,68 @@ internal sealed class OutboxMessageWriter(
             throw;
         }
     }
+
+    /// <summary>
+    /// Writes the rows a batch held, in order, then does for each what a single enlisted store does after its write:
+    /// closes its span and hands the row to the unit's post-commit dispatch.
+    /// </summary>
+    internal async Task FlushAsync(IReadOnlyList<PendingRow> rows, CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var batchStore = (IBatchPublishedMessageStore)storage;
+            await batchStore
+                .StorePublishedMessagesAsync(
+                    [.. rows.Select(static row => (row.MessageName, row.Message))],
+                    rows[0].Transaction,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            foreach (var row in rows)
+            {
+                row.Trace.Activity?.Dispose();
+            }
+
+            throw;
+        }
+        catch (Exception e)
+        {
+            foreach (var row in rows)
+            {
+                _TracingError(row.Trace, e);
+            }
+
+            throw;
+        }
+
+        foreach (var row in rows)
+        {
+            _TracingAfter(row.Trace, row.Origin, row.Lane);
+            _AttachPreparedTransport(row.Message, row.Origin, row.Transport);
+            row.Buffer.Add(row.UnitOfWork, row.Message);
+        }
+    }
+
+    /// <summary>An enlisted row a batch holds until its flush, with what the write needs once it lands.</summary>
+    internal sealed record PendingRow(
+        string MessageName,
+        MediumMessage Message,
+        Message Origin,
+        MessageLane Lane,
+        TransportMessage Transport,
+        MessagingTraceHandle Trace,
+        System.Data.Common.DbTransaction Transaction,
+        IUnitOfWork UnitOfWork,
+        MessageOutboxBuffer Buffer
+    );
 
     // A storage keeps the origin it was given, so the transport serialized for that origin can ride along to the send.
     private static void _AttachPreparedTransport(MediumMessage stored, Message origin, TransportMessage transport)

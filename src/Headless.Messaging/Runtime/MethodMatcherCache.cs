@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-
 namespace Headless.Messaging;
 
 /// <summary>
@@ -14,131 +12,47 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 {
     private readonly Lock _lock = new();
 
-    private ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> _entries = new(
-        StringComparer.Ordinal
-    );
-
-    private ConcurrentDictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>> _laneEntries =
-        new();
-
-    private ConcurrentDictionary<string, byte> _subscriptionConcurrent = new(StringComparer.Ordinal);
-
-    private ConcurrentDictionary<ConsumerSubscriptionKey, byte> _laneSubscriptionConcurrent = new();
-
-    private ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>> _identityEntries =
-        new();
-
-    private FrozenDictionary<InboxExecutorKey, ConsumerExecutorDescriptor> _inboxEntries = FrozenDictionary<
-        InboxExecutorKey,
-        ConsumerExecutorDescriptor
-    >.Empty;
+    // Every lookup reads one immutable snapshot, published and dropped with a single reference write, so a reader that
+    // overlaps a rebuild or an invalidation sees the whole old topology or the whole new one, never a mix of the two
+    // or an empty map that looks valid. Null means the next lookup must rebuild.
+    private Snapshot? _snapshot;
 
     /// <summary>
     /// Get a dictionary of candidates.In the dictionary,
     /// the Key is the subscription name, the Value for the current subscription of candidates
     /// </summary>
-    public ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> GetCandidatesBySubscriptionName()
+    public IReadOnlyDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> GetCandidatesBySubscriptionName()
     {
-        _EnsureEntries();
-        return _entries;
+        return _GetSnapshot().Entries;
     }
 
-    internal ConcurrentDictionary<
+    internal IReadOnlyDictionary<
         ConsumerSubscriptionKey,
         IReadOnlyList<ConsumerExecutorDescriptor>
     > GetCandidatesBySubscription()
     {
-        _EnsureEntries();
-        return _laneEntries;
+        return _GetSnapshot().LaneEntries;
     }
 
-    private void _EnsureEntries()
+    private Snapshot _GetSnapshot()
     {
-        if (!_entries.IsEmpty)
-        {
-            return;
-        }
+        return Volatile.Read(ref _snapshot) ?? _BuildSnapshot();
+    }
 
+    private Snapshot _BuildSnapshot()
+    {
         lock (_lock)
         {
-            if (!_entries.IsEmpty)
+            if (_snapshot is { } current)
             {
-                return;
+                return current;
             }
 
-            var executorCollection = selector.SelectCandidates();
-
-            var entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
-                StringComparer.Ordinal
-            );
-            var laneEntries =
-                new ConcurrentDictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
-            var groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
-            var laneSubscriptionConcurrent = new ConcurrentDictionary<ConsumerSubscriptionKey, byte>();
-            var subscriptionNameCandidates = executorCollection.GroupBy(
-                x => x.SubscriptionName,
-                StringComparer.Ordinal
-            );
-
-            foreach (var item in subscriptionNameCandidates)
-            {
-                var candidates = item.ToList();
-                entries.TryAdd(item.Key, candidates);
-                var maxConcurrency = candidates.Max(c => c.Concurrency);
-                groupConcurrent.TryAdd(item.Key, maxConcurrency);
-            }
-
-            var laneSubscriptionCandidates = executorCollection.GroupBy(x => new ConsumerSubscriptionKey(
-                x.SubscriptionName,
-                x.Lane,
-                x.SubscriptionKind
-            ));
-
-            foreach (var item in laneSubscriptionCandidates)
-            {
-                var candidates = item.ToList();
-                laneEntries.TryAdd(item.Key, candidates);
-                var maxConcurrency = candidates.Max(c => c.Concurrency);
-                laneSubscriptionConcurrent.TryAdd(item.Key, maxConcurrency);
-            }
-
-            // Persisted non-inbox rows carry the consumer identity, not the subscription they arrived on, so a retry
-            // finds its consumer by identity.
-            var identityEntries =
-                new ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
-            foreach (
-                var item in executorCollection.GroupBy(x => new ConsumerIdentityKey(x.ResolvedConsumerIdentity, x.Lane))
-            )
-            {
-                identityEntries.TryAdd(item.Key, item.ToList());
-            }
-
-            // Persisted inbox identities must not use subscription wildcards or their subscription-level caches, so an inbox
-            // row finds its consumer by exact identity, contract version, and message name. Walking the lane entries in
-            // their own order and keeping the first descriptor per key picks the one a scan of them would.
-            var inboxEntries = new Dictionary<InboxExecutorKey, ConsumerExecutorDescriptor>();
-            foreach (var entry in laneEntries)
-            {
-                foreach (var candidate in entry.Value)
-                {
-                    inboxEntries.TryAdd(
-                        new InboxExecutorKey(
-                            candidate.ConsumerIdentity,
-                            candidate.MessageContractVersion,
-                            candidate.MessageName,
-                            entry.Key.Lane
-                        ),
-                        candidate
-                    );
-                }
-            }
-
-            _entries = entries;
-            _laneEntries = laneEntries;
-            _identityEntries = identityEntries;
-            _inboxEntries = inboxEntries.ToFrozenDictionary();
-            _subscriptionConcurrent = groupConcurrent;
-            _laneSubscriptionConcurrent = laneSubscriptionConcurrent;
+            // Selecting and publishing under the lock keeps a fill that started before Invalidate from landing after
+            // it: Invalidate takes the same lock, so it drops whatever this publishes.
+            var snapshot = Snapshot.Create(selector.SelectCandidates());
+            Volatile.Write(ref _snapshot, snapshot);
+            return snapshot;
         }
     }
 
@@ -146,26 +60,19 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     /// <param name="subscriptionName">The subscription name.</param>
     public byte GetSubscriptionConcurrentLimit(string subscriptionName)
     {
-        _EnsureEntries();
-        return _subscriptionConcurrent.TryGetValue(subscriptionName, out var value) ? value : (byte)1;
+        return _GetSnapshot().SubscriptionConcurrent.TryGetValue(subscriptionName, out var value) ? value : (byte)1;
     }
 
     internal byte GetSubscriptionConcurrentLimit(ConsumerSubscriptionKey subscription)
     {
-        _EnsureEntries();
-        return _laneSubscriptionConcurrent.TryGetValue(subscription, out var value) ? value : (byte)1;
+        return _GetSnapshot().LaneSubscriptionConcurrent.TryGetValue(subscription, out var value) ? value : (byte)1;
     }
 
     /// <summary>Gets the message names of every registered consumer across all subscriptions.</summary>
     public List<string> GetAllMessageNames()
     {
-        if (_entries.IsEmpty)
-        {
-            GetCandidatesBySubscriptionName();
-        }
-
         var result = new List<string>();
-        foreach (var item in _entries.Values)
+        foreach (var item in _GetSnapshot().Entries.Values)
         {
             result.AddRange(item.Select(x => x.MessageName));
         }
@@ -189,9 +96,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     {
         matchMessageName = null;
 
-        _EnsureEntries();
-
-        if (_entries.TryGetValue(subscriptionName, out var subscriptionCandidates))
+        if (_GetSnapshot().Entries.TryGetValue(subscriptionName, out var subscriptionCandidates))
         {
             matchMessageName = selector.SelectBestCandidate(messageName, subscriptionCandidates);
 
@@ -208,9 +113,8 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     )
     {
         matchMessageName = null;
-        _EnsureEntries();
 
-        if (_laneEntries.TryGetValue(subscription, out var subscriptionCandidates))
+        if (_GetSnapshot().LaneEntries.TryGetValue(subscription, out var subscriptionCandidates))
         {
             matchMessageName = selector.SelectBestCandidate(messageName, subscriptionCandidates);
             return matchMessageName is not null;
@@ -227,9 +131,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     )
     {
         descriptor = null;
-        _EnsureEntries();
 
-        if (_identityEntries.TryGetValue(new ConsumerIdentityKey(consumerIdentity, lane), out var candidates))
+        if (
+            _GetSnapshot()
+                .IdentityEntries.TryGetValue(new ConsumerIdentityKey(consumerIdentity, lane), out var candidates)
+        )
         {
             descriptor = selector.SelectBestCandidate(messageName, candidates);
             return descriptor is not null;
@@ -246,12 +152,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         [NotNullWhen(true)] out ConsumerExecutorDescriptor? descriptor
     )
     {
-        _EnsureEntries();
-
-        return _inboxEntries.TryGetValue(
-            new InboxExecutorKey(consumerIdentity, contractVersion, contractIdentity, lane),
-            out descriptor
-        );
+        return _GetSnapshot()
+            .InboxEntries.TryGetValue(
+                new InboxExecutorKey(consumerIdentity, contractVersion, contractIdentity, lane),
+                out descriptor
+            );
     }
 
     /// <summary>
@@ -283,21 +188,111 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     /// <summary>Discards the cached topology so the next access rebuilds it from the consumer selector.</summary>
     public void Invalidate()
     {
+        selector.Invalidate();
+
         lock (_lock)
         {
-            _entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
-                StringComparer.Ordinal
-            );
-            _laneEntries =
-                new ConcurrentDictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
-            _subscriptionConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
-            _laneSubscriptionConcurrent = new ConcurrentDictionary<ConsumerSubscriptionKey, byte>();
-            _identityEntries =
-                new ConcurrentDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
-            _inboxEntries = FrozenDictionary<InboxExecutorKey, ConsumerExecutorDescriptor>.Empty;
+            Volatile.Write(ref _snapshot, null);
+        }
+    }
+
+    private sealed class Snapshot
+    {
+        private Snapshot(
+            FrozenDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> entries,
+            FrozenDictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>> laneEntries,
+            FrozenDictionary<string, byte> subscriptionConcurrent,
+            FrozenDictionary<ConsumerSubscriptionKey, byte> laneSubscriptionConcurrent,
+            FrozenDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>> identityEntries,
+            FrozenDictionary<InboxExecutorKey, ConsumerExecutorDescriptor> inboxEntries
+        )
+        {
+            Entries = entries;
+            LaneEntries = laneEntries;
+            SubscriptionConcurrent = subscriptionConcurrent;
+            LaneSubscriptionConcurrent = laneSubscriptionConcurrent;
+            IdentityEntries = identityEntries;
+            InboxEntries = inboxEntries;
         }
 
-        selector.Invalidate();
+        public FrozenDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> Entries { get; }
+
+        public FrozenDictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>> LaneEntries { get; }
+
+        public FrozenDictionary<string, byte> SubscriptionConcurrent { get; }
+
+        public FrozenDictionary<ConsumerSubscriptionKey, byte> LaneSubscriptionConcurrent { get; }
+
+        public FrozenDictionary<ConsumerIdentityKey, IReadOnlyList<ConsumerExecutorDescriptor>> IdentityEntries { get; }
+
+        public FrozenDictionary<InboxExecutorKey, ConsumerExecutorDescriptor> InboxEntries { get; }
+
+        public static Snapshot Create(IReadOnlyList<ConsumerExecutorDescriptor> executorCollection)
+        {
+            var entries = new Dictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(StringComparer.Ordinal);
+            var subscriptionConcurrent = new Dictionary<string, byte>(StringComparer.Ordinal);
+
+            foreach (var item in executorCollection.GroupBy(x => x.SubscriptionName, StringComparer.Ordinal))
+            {
+                var candidates = item.ToList();
+                entries.Add(item.Key, candidates);
+                subscriptionConcurrent.Add(item.Key, candidates.Max(c => c.Concurrency));
+            }
+
+            var laneEntries = new Dictionary<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
+            var laneSubscriptionConcurrent = new Dictionary<ConsumerSubscriptionKey, byte>();
+
+            foreach (
+                var item in executorCollection.GroupBy(x => new ConsumerSubscriptionKey(
+                    x.SubscriptionName,
+                    x.Lane,
+                    x.SubscriptionKind,
+                    x.TransportName
+                ))
+            )
+            {
+                var candidates = item.ToList();
+                laneEntries.Add(item.Key, candidates);
+                laneSubscriptionConcurrent.Add(item.Key, candidates.Max(c => c.Concurrency));
+            }
+
+            var frozenLaneEntries = laneEntries.ToFrozenDictionary();
+
+            // Persisted non-inbox rows carry the consumer identity, not the subscription they arrived on, so a retry
+            // finds its consumer by identity.
+            var identityEntries = executorCollection
+                .GroupBy(x => new ConsumerIdentityKey(x.ResolvedConsumerIdentity, x.Lane))
+                .ToFrozenDictionary(item => item.Key, IReadOnlyList<ConsumerExecutorDescriptor> (item) => [.. item]);
+
+            // Persisted inbox identities must not use subscription wildcards or their subscription-level caches, so an
+            // inbox row finds its consumer by exact identity, contract version, and message name. Walking the lane
+            // entries in their own order and keeping the first descriptor per key picks the one a scan of them would.
+            var inboxEntries = new Dictionary<InboxExecutorKey, ConsumerExecutorDescriptor>();
+            foreach (var entry in frozenLaneEntries)
+            {
+                foreach (var candidate in entry.Value)
+                {
+                    inboxEntries.TryAdd(
+                        new InboxExecutorKey(
+                            candidate.ConsumerIdentity,
+                            candidate.MessageContractVersion,
+                            candidate.MessageName,
+                            entry.Key.Lane
+                        ),
+                        candidate
+                    );
+                }
+            }
+
+            return new Snapshot(
+                entries.ToFrozenDictionary(StringComparer.Ordinal),
+                frozenLaneEntries,
+                subscriptionConcurrent.ToFrozenDictionary(StringComparer.Ordinal),
+                laneSubscriptionConcurrent.ToFrozenDictionary(),
+                identityEntries,
+                inboxEntries.ToFrozenDictionary()
+            );
+        }
     }
 }
 
@@ -308,7 +303,10 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 internal readonly record struct ConsumerSubscriptionKey(
     string SubscriptionName,
     MessageLane Lane,
-    Transport.ConsumerSubscriptionKind Kind = Transport.ConsumerSubscriptionKind.Competing
+    Transport.ConsumerSubscriptionKind Kind = Transport.ConsumerSubscriptionKind.Competing,
+    // The named transport the subscription opens on, null for the default one. Part of the key so a subscription never
+    // mixes consumers bound to different brokers.
+    string? TransportName = null
 );
 
 internal readonly record struct ConsumerIdentityKey(string ConsumerIdentity, MessageLane Lane);

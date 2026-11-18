@@ -98,7 +98,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
-        using var cache = CreateCache(prefix);
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(prefix, timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var tag = Faker.Random.AlphaNumeric(8);
 
@@ -109,8 +110,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
             AbortToken
         );
 
-        // Small delay so the marker timestamp is strictly newer than the entry's birth time (both are ms).
-        await Task.Delay(5, AbortToken);
+        // The marker timestamp must be strictly newer than the entry's birth time (both are ms on the app clock).
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await cache.RemoveByTagAsync(tag, AbortToken);
 
         (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
@@ -153,7 +154,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
-        using var cache = CreateCache(prefix);
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(prefix, timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var oldTag = Faker.Random.AlphaNumeric(8);
         var newTag = Faker.Random.AlphaNumeric(8);
@@ -177,8 +179,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         await cache.RemoveByTagAsync(oldTag, AbortToken);
         (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue();
 
-        // newTag does apply: the entry reads as a miss (delay so the marker postdates the v2 write).
-        await Task.Delay(5, AbortToken);
+        // newTag does apply: the entry reads as a miss (the clock moves so the marker postdates the v2 write).
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await cache.RemoveByTagAsync(newTag, AbortToken);
         (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
     }
@@ -188,7 +190,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
-        using var cache = CreateCache(prefix);
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(prefix, timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var tag = Faker.Random.AlphaNumeric(8);
         var failSafeOptions = new CacheEntryOptions
@@ -202,7 +205,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), failSafeOptions, AbortToken);
 
-        await Task.Delay(5, AbortToken);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await cache.RemoveByTagAsync(tag, AbortToken);
 
         // Direct read misses, but the physical reserve survives.
@@ -228,12 +231,13 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
-        using var cache = CreateCache(prefix);
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(prefix, timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
 
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
 
-        await Task.Delay(5, AbortToken);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await cache.ClearAsync(AbortToken);
 
         // Logical clear: direct read misses, but the key is physically retained (unlike FlushAsync).
@@ -248,7 +252,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
-        using var cache = CreateCache(prefix);
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(prefix, timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var failSafeOptions = new CacheEntryOptions
         {
@@ -260,7 +265,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), failSafeOptions, AbortToken);
 
-        await Task.Delay(5, AbortToken);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await cache.FlushAsync(AbortToken);
 
         // Logical flush (FusionCache Clear(false)): no FLUSHDB — the entry key is physically retained and the
@@ -291,8 +296,11 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
-        // Tiny refresh window so the deleted marker is re-resolved (and seen as absent) immediately.
-        using var cache = CreateCache(prefix, TimeSpan.FromMilliseconds(1));
+        var clock = CreateFakeClock();
+        // One-tick refresh window: the cache measures a marker snapshot's age on its own Stopwatch, which a test cannot
+        // advance, so a window this small is already elapsed at the next read and the deleted marker is re-resolved
+        // (and seen as absent) without waiting.
+        using var cache = CreateCache(prefix, TimeSpan.FromTicks(1), clock);
         var key = Faker.Random.AlphaNumeric(10);
         var tag = Faker.Random.AlphaNumeric(8);
 
@@ -303,7 +311,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
             AbortToken
         );
 
-        await Task.Delay(5, AbortToken);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await cache.RemoveByTagAsync(tag, AbortToken);
         (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
 
@@ -314,7 +322,6 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         // resurrect stale data. So a process that saw the RemoveByTag keeps the entry invalidated even after the
         // marker key is gone (the entry's own physical TTL is the ultimate backstop).
         await Database.KeyDeleteAsync($"{prefix}{_TagMarkerNamespace}{tag}");
-        await Task.Delay(20, AbortToken);
 
         var cached = await cache.GetAsync<string>(key, AbortToken);
         cached
@@ -329,8 +336,10 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
-        // Tiny refresh window so the prune's stale threshold (window * 8) elapses quickly.
-        using var cache = CreateCache(prefix, TimeSpan.FromMilliseconds(1));
+        var clock = CreateFakeClock();
+        // One-tick refresh window: the prune's stale threshold (window * 8) is measured on the cache's own Stopwatch,
+        // which a test cannot advance, so it is already elapsed at each read and the prune runs on every read.
+        using var cache = CreateCache(prefix, TimeSpan.FromTicks(1), clock);
         var key = Faker.Random.AlphaNumeric(10);
         var tag = Faker.Random.AlphaNumeric(8);
         var otherKey = Faker.Random.AlphaNumeric(10);
@@ -351,20 +360,20 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
             AbortToken
         );
 
-        await Task.Delay(5, AbortToken);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await cache.RemoveByTagAsync(tag, AbortToken);
         (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
 
         // Lose the durable marker (in production only a maxmemory eviction can do this — markers carry no TTL).
         await Database.KeyDeleteAsync($"{prefix}{_TagMarkerNamespace}{tag}");
 
-        // Let `tag`'s raised local snapshot age far past the stale threshold, then read a DIFFERENT tag so
-        // _PruneMarkerCacheIfDue runs while `tag` is stale. Raised invalidation markers are exempt from the
+        // `tag`'s raised local snapshot is already past the stale threshold, so reading a DIFFERENT tag makes
+        // _PruneMarkerCacheIfDue run while `tag` is stale. Raised invalidation markers are exempt from the
         // age-prune (they are the raise-only floor); before that exemption these prunes evicted the floor, and
         // with the durable marker also gone the next read of `key` resurrected the invalidated entry.
-        await Task.Delay(50, AbortToken);
-        (await cache.GetAsync<string>(otherKey, AbortToken)).HasValue.Should().BeTrue();
-        await Task.Delay(10, AbortToken);
+        (await cache.GetAsync<string>(otherKey, AbortToken))
+            .HasValue.Should()
+            .BeTrue();
         (await cache.GetAsync<string>(otherKey, AbortToken)).HasValue.Should().BeTrue();
 
         var cached = await cache.GetAsync<string>(key, AbortToken);
@@ -379,8 +388,9 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
         var window = TimeSpan.FromMilliseconds(50);
-        using var writer = CreateCache(prefix, window);
-        using var reader = CreateCache(prefix, window);
+        var clock = CreateFakeClock();
+        using var writer = CreateCache(prefix, window, clock);
+        using var reader = CreateCache(prefix, window, clock);
         var key = Faker.Random.AlphaNumeric(10);
         var tag = Faker.Random.AlphaNumeric(8);
 
@@ -396,11 +406,13 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
             .HasValue.Should()
             .BeTrue();
 
-        // Writer invalidates the tag (writes the L2 marker), delayed so the marker postdates the entry.
-        await Task.Delay(5, AbortToken);
+        // Writer invalidates the tag (writes the L2 marker); the clock moves so the marker postdates the entry.
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await writer.RemoveByTagAsync(tag, AbortToken);
 
         // After the reader's refresh window elapses it re-resolves the marker and sees the invalidation.
+        // A one-tick window would let the marker-cache prune hide a broken freshness check, so this one keeps real time.
+        // real-wait: RedisCache ages the reader's marker snapshot on its own Stopwatch, which no test clock reaches
         await Task.Delay(window + TimeSpan.FromMilliseconds(50), AbortToken);
 
         (await reader.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
@@ -412,7 +424,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         await FlushAsync();
         var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
         // A long window proves the issuing instance does NOT depend on a refresh to observe its own bump.
-        using var cache = CreateCache(prefix, TimeSpan.FromHours(1));
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(prefix, TimeSpan.FromHours(1), clock);
         var key = Faker.Random.AlphaNumeric(10);
         var tag = Faker.Random.AlphaNumeric(8);
 
@@ -423,7 +436,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
             AbortToken
         );
 
-        await Task.Delay(5, AbortToken);
+        clock.Advance(TimeSpan.FromMilliseconds(1));
         await cache.RemoveByTagAsync(tag, AbortToken);
 
         (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();

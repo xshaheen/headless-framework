@@ -29,9 +29,9 @@ internal sealed partial class TenantResolutionMiddleware(
 {
     private readonly TenantTelemetryOptions _telemetryOptions = telemetryOptions.Value;
 
-    // Fires exactly once per process for HEADLESS_TENANCY_MIDDLEWARE_ORDERING. 0 = not yet warned,
+    // Fires exactly once per host for HEADLESS_TENANCY_MIDDLEWARE_ORDERING. 0 = not yet warned,
     // 1 = warned. CompareExchange ensures the warning is emitted by at most one request.
-    private static int _orderingWarningEmitted;
+    private int _orderingWarningEmitted;
 
     /// <summary>Resolves the tenant from the current user claims and restores the previous tenant when the request ends.</summary>
     /// <param name="context">The current HTTP context.</param>
@@ -104,19 +104,10 @@ internal sealed partial class TenantResolutionMiddleware(
         await next(context).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Test seam: resets the once-per-process ordering warning flag so that tests asserting on the
-    /// HEADLESS_TENANCY_MIDDLEWARE_ORDERING log entry can run in any order.
-    /// </summary>
-    internal static void ResetOrderingWarningForTesting()
-    {
-        Volatile.Write(ref _orderingWarningEmitted, 0);
-    }
-
     private void _WarnIfMiddlewareLikelyMisordered(HttpContext context)
     {
         // If AuthenticationMiddleware has not run yet, the consumer almost certainly placed
-        // UseHeadlessTenancy() ahead of UseAuthentication(). Warn once per process to avoid log spam.
+        // UseHeadlessTenancy() ahead of UseAuthentication(). Warn once per host to avoid log spam.
         if (context.Features.Get<IAuthenticationFeature>() is not null)
         {
             return;
@@ -141,7 +132,7 @@ internal sealed partial class TenantResolutionMiddleware(
         Level = LogLevel.Warning,
         Message = "UseHeadlessTenancy() observed an unauthenticated request. If your endpoints expect a "
             + "claims-resolved tenant, place UseHeadlessTenancy() AFTER UseAuthentication() (and before "
-            + "UseAuthorization()). This warning is emitted once per process."
+            + "UseAuthorization()). This warning is emitted once per host."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogMiddlewareOrderingWarning(ILogger logger);

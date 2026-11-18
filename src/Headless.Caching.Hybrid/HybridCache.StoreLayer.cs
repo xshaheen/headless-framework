@@ -168,6 +168,8 @@ public sealed partial class HybridCache
         var timeoutKind = l1StaleCandidate is not null
             ? DistributedCacheTimeoutKind.Soft
             : DistributedCacheTimeoutKind.Hard;
+        var l1Generation = _CaptureL1Generation(key);
+
         var l2Read = await _ReadFromL2Async(
                 key,
                 ct => l2Store.TryGetEntryAsync<T>(key, cancellationToken: ct),
@@ -240,13 +242,7 @@ public sealed partial class HybridCache
         // an L2 reserve is unaffected — it simply is not re-cached into L1.
         if (l2Entry.IsFresh(now) && LocalCache is IFactoryCacheStore l1StoreForPromotion)
         {
-            await _SetLocalEntryAsync(
-                    l1StoreForPromotion,
-                    key,
-                    l2Entry,
-                    expectedConcurrencyStamp: null,
-                    cancellationToken
-                )
+            await _PromoteReadToLocalAsync(l1StoreForPromotion, key, l2Entry, l1Generation, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -426,6 +422,7 @@ public sealed partial class HybridCache
                 ETag = entry.ETag,
                 LastModifiedAt = entry.LastModifiedAt,
                 CreatedAt = entry.CreatedAt,
+                ThrottledUntil = entry.ThrottledUntil,
                 Tags = entry.Tags,
             };
 
@@ -738,6 +735,9 @@ public sealed partial class HybridCache
                 // Carry the birth time into L1 so Family-2 tag/clear markers version-pin the local copy correctly
                 // (a null CreatedAt would bias the promoted entry to invalidated under any marker).
                 CreatedAt = entry.CreatedAt,
+                // Carry the fail-safe throttle window too, so L1 holds back a failing factory on an invalidated
+                // reserve exactly as L2 does.
+                ThrottledUntil = entry.ThrottledUntil,
                 Tags = entry.Tags,
                 ExpectedConcurrencyStamp = expectedConcurrencyStamp,
             };
@@ -769,6 +769,9 @@ public sealed partial class HybridCache
             // Carry the birth time into L1 so Family-2 tag/clear markers version-pin the local copy correctly
             // (a null CreatedAt would bias the promoted entry to invalidated under any marker).
             CreatedAt = entry.CreatedAt,
+            // Carry the fail-safe throttle window too, so L1 holds back a failing factory on an invalidated
+            // reserve exactly as L2 does.
+            ThrottledUntil = entry.ThrottledUntil,
             Tags = entry.Tags,
             ExpectedConcurrencyStamp = expectedConcurrencyStamp,
         };
@@ -851,6 +854,8 @@ public sealed partial class HybridCache
         // Fallback: L2 (or L1) lacks the framed-entry contract, so no tag-carrying single-read primitive is
         // available. The typed byte[] read yields the bytes plus expiration in one round-trip; seed L1 tagless
         // (the only metadata L2 exposes here) exactly as GetAsync<T> does, then write the same bytes out.
+        var l1Generation = _CaptureL1Generation(key);
+
         var l2Read = await _ReadFromL2Async(
                 key,
                 ct => l2Cache.GetWithExpirationAsync<byte[]>(key, ct),
@@ -882,7 +887,8 @@ public sealed partial class HybridCache
         // Seed L1 (bounded by the local ceiling) exactly as GetAsync<T> does, then write the same bytes out.
         var localExpiration = _GetLocalExpiration(l2Read.Value.Expiration);
         _logger.LogSettingLocalCacheKey(key, localExpiration);
-        await LocalCache.UpsertAsync(key, l2Bytes, localExpiration, cancellationToken).ConfigureAwait(false);
+        await _PromoteValueToLocalAsync(key, l2Bytes, localExpiration, l1Generation, cancellationToken)
+            .ConfigureAwait(false);
 
         destination.Write(l2Bytes);
         return true;
@@ -903,6 +909,8 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
+        var l1Generation = _CaptureL1Generation(key);
+
         var l2Read = await _ReadFromL2Async(
                 key,
                 ct => l2Store.TryGetEntryAsync<byte[]>(key, cancellationToken: ct),
@@ -936,8 +944,7 @@ public sealed partial class HybridCache
         // Promote the fresh L2 entry into L1, exactly like the generic IFactoryCacheStore.TryGetEntryAsync cold path:
         // _SetLocalEntryAsync preserves Tags + CreatedAt and applies the local-expiration ceiling, so the seeded L1
         // entry stays version-pinned for Family-2 tag/clear invalidation.
-        await _SetLocalEntryAsync(l1Store, key, l2Entry, expectedConcurrencyStamp: null, cancellationToken)
-            .ConfigureAwait(false);
+        await _PromoteReadToLocalAsync(l1Store, key, l2Entry, l1Generation, cancellationToken).ConfigureAwait(false);
 
         destination.Write(l2Bytes);
         return true;

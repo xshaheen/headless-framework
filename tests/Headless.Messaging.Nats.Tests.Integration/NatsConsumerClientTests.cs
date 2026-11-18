@@ -7,6 +7,7 @@ using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
@@ -164,10 +165,18 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var subject = $"overflow-{Guid.NewGuid():N}"[..30] + ".probe";
         var identity = $"group-{Guid.NewGuid():N}"[..30];
         var dropped = 0;
+        var burstDropped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var listener = _ListenToDroppedEveryInstanceDeliveries(
             identity,
-            () => Interlocked.Increment(ref dropped)
+            () =>
+            {
+                if (Interlocked.Increment(ref dropped) == 2)
+                {
+                    burstDropped.TrySetResult();
+                }
+            }
         );
+        var clock = new DropWindowTimeProvider();
         var options = Options.Create(
             new NatsMessagingOptions
             {
@@ -181,14 +190,17 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             0,
             options,
             _serviceProvider,
+            timeProvider: clock,
             kind: ConsumerSubscriptionKind.EveryInstance
         );
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gapReported = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var gaps = 0;
         client.AttachCallbacks(onMessage: (_, _) => release.Task, onLog: _ => { });
         client.AttachReestablishedCallback(_ =>
         {
             Interlocked.Increment(ref gaps);
+            gapReported.TrySetResult();
             return Task.CompletedTask;
         });
         await client.ConnectAsync(AbortToken);
@@ -213,8 +225,14 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
                 );
             }
 
-            await connection.PingAsync(AbortToken);
-            await Task.Delay(NatsEveryInstanceListener.DropSignalCoalesceWindow * 3, AbortToken);
+            // The clock is fake, so the coalescing window stays open until it is advanced: a signal per drop would
+            // already have reported a gap by the time the burst has two drops.
+            await burstDropped.Task.Bounded();
+            await clock.WindowArmed.Bounded();
+            Volatile.Read(ref gaps).Should().Be(0, "the gap is reported when the coalescing window closes");
+
+            clock.Advance(NatsEveryInstanceListener.DropSignalCoalesceWindow);
+            await gapReported.Task.Bounded();
 
             // then - every drop is counted and the burst is reported to the consumer once
             Volatile.Read(ref dropped).Should().BePositive();
@@ -431,6 +449,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var destination = $"{streamName}.probe";
         var group = $"group-{Guid.NewGuid():N}"[..30];
         var terminalLogs = 0;
+        var terminallyAcknowledged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var session = await fixture.CreateMalformedSessionAsync(streamName, destination, group, AbortToken);
         await session.StartAsync(
             onLog: log =>
@@ -438,6 +457,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
                 if (log.Reason?.Contains("terminally acknowledged", StringComparison.Ordinal) == true)
                 {
                     Interlocked.Increment(ref terminalLogs);
+                    terminallyAcknowledged.TrySetResult();
                 }
             },
             cancellationToken: AbortToken
@@ -446,13 +466,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var result = await session.PublishAsync(_Message(destination, MessageLane.Queue), AbortToken);
         result.Succeeded.Should().BeTrue();
 
-        using (var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken))
-        {
-            while (Volatile.Read(ref terminalLogs) == 0)
-            {
-                await Task.Delay(20, timeout.Token);
-            }
-        }
+        await terminallyAcknowledged.Task.Bounded();
 
         await session.StopAsync(TimeSpan.FromSeconds(2));
         await using var replacement = await session.CreateReplacementAsync(AbortToken);
@@ -766,7 +780,19 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             // server has no pull to deliver to, and the message stays in the stream until the resume.
             await _WaitUntilAsync(() => client.OpenPullCount == 0, "the paused consume to drain its pull");
             await _PublishAsync(subject, "paused-msg"u8.ToArray());
-            await Task.Delay(500, AbortToken);
+
+            // The publish is acknowledged, so the stream holds the message. The server's own account of the durable
+            // shows whether it could have been delivered: no pull is waiting and nothing is out for acknowledgement,
+            // so nothing can be on its way to the client.
+            var js = new NatsJSContext(await fixture.GetConnectionAsync());
+            var durable = await js.GetConsumerAsync(
+                NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
+                NatsPhysicalAddress.BusDurable("test-group"),
+                AbortToken
+            );
+            durable.Info.NumWaiting.Should().Be(0);
+            durable.Info.NumAckPending.Should().Be(0);
+            durable.Info.NumPending.Should().Be(1);
 
             var countWhilePaused = Volatile.Read(ref messageCount);
 
@@ -1139,6 +1165,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         {
             if (Interlocked.Increment(ref deliveries) == 1)
             {
+                // real-wait: the handler must outlast the server's 1 s AckWait, which the broker times on its own clock
                 await Task.Delay(TimeSpan.FromSeconds(4), AbortToken);
                 await client.CommitAsync(sender, AbortToken);
                 settled.TrySetResult();
@@ -1155,9 +1182,9 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             // when
             await _PublishAsync(subject, "slow"u8.ToArray());
             await settled.Task.WaitAsync(TimeSpan.FromSeconds(15), AbortToken);
-            await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
 
-            // then — in-progress signals held the delivery, so JetStream never redelivered it
+            // then — in-progress signals held the delivery, so JetStream never redelivered it. A redelivery would have
+            // reached the handler during its 4 s run, so the count at the commit already covers every ack-wait expiry.
             Volatile.Read(ref deliveries).Should().Be(1);
             var js = new NatsJSContext(await fixture.GetConnectionAsync());
             var consumer = await js.GetConsumerAsync(
@@ -1405,9 +1432,14 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var listening = consumer.ListeningAsync(TimeSpan.FromSeconds(2), cts.Token).AsTask();
         try
         {
-            var completed = await Task.WhenAny(delivered.Task, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
-            completed.Should().BeSameAs(delivered.Task, string.Join(" | ", logs));
-            return await delivered.Task.Bounded();
+            try
+            {
+                return await delivered.Task.Bounded();
+            }
+            catch (TimeoutException e)
+            {
+                throw new TimeoutException($"No delivery; client logs: {string.Join(" | ", logs)}", e);
+            }
         }
         finally
         {
@@ -1503,6 +1535,30 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
             // Normal shutdown.
+        }
+    }
+
+    /// <summary>
+    /// A fake clock that reports when the every-instance listener opens its drop-coalescing window, so the test
+    /// advances time only after the timer it means to fire exists.
+    /// </summary>
+    private sealed class DropWindowTimeProvider : FakeTimeProvider
+    {
+        private readonly TaskCompletionSource _windowArmed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task WindowArmed => _windowArmed.Task;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            // Signaled only after the clock has scheduled the timer, so the advance it triggers fires it.
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+
+            if (dueTime == NatsEveryInstanceListener.DropSignalCoalesceWindow)
+            {
+                _windowArmed.TrySetResult();
+            }
+
+            return timer;
         }
     }
 }

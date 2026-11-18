@@ -20,7 +20,7 @@ public abstract class PatchRequestCountTestsBase(IS3TestBackend backend) : TestB
 
     private readonly TusS3StoreOptions _options = new()
     {
-        Bucket = TusS3StoreFactory.Bucket,
+        Bucket = backend.Bucket,
         Prefix = "patch-counts/",
         PartSize = 8 * _MiB,
     };
@@ -120,6 +120,19 @@ public sealed class MinioPatchRequestCountTests(TusS3MinioFixture fixture) : Pat
 [Collection<TusS3LocalStackFixture>]
 public sealed class LocalStackPatchRequestCountTests(TusS3LocalStackFixture fixture)
     : PatchRequestCountTestsBase(fixture)
+{
+    [Fact]
+    public override Task should_store_a_tail_only_patch_in_three_requests() =>
+        base.should_store_a_tail_only_patch_in_three_requests();
+
+    [Fact]
+    public override Task should_write_one_part_from_a_single_segment_in_the_planned_requests() =>
+        base.should_write_one_part_from_a_single_segment_in_the_planned_requests();
+}
+
+// Cloudflare R2 through a gated client; skips without R2 credentials.
+[Collection<TusS3R2Fixture>]
+public sealed class R2PatchRequestCountTests(TusS3R2Fixture fixture) : PatchRequestCountTestsBase(fixture)
 {
     [Fact]
     public override Task should_store_a_tail_only_patch_in_three_requests() =>

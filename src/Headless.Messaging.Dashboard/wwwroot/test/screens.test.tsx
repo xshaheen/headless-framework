@@ -285,6 +285,29 @@ describe('messaging detail panel', () => {
     expect(body.textContent).not.toContain('headless-corr-id')
   })
 
+  it('names the transport a published row is sent through, and the default one when the row names none', async () => {
+    const actor = user()
+    const partner = message('published', 'Succeeded', { name: 'a.partner', lane: 'Bus', transport: 'partner' })
+    const internal = message('published', 'Succeeded', { name: 'a.internal', lane: 'Bus' })
+    open({ published: [partner, internal] }, { path: 'published' })
+
+    await actor.click(await screen.findByRole('row', { name: /a\.partner/ }))
+    const partnerDelivery = within(screen.getByRole('region', { name: `Message ${partner.id}` })).getByRole('region', {
+      name: 'Delivery',
+    })
+    expect(within(partnerDelivery).getByText('Transport')).toBeTruthy()
+    expect(within(partnerDelivery).getByText('partner')).toBeTruthy()
+
+    await actor.click(screen.getByRole('row', { name: /a\.internal/ }))
+    const internalDelivery = within(screen.getByRole('region', { name: `Message ${internal.id}` })).getByRole(
+      'region',
+      {
+        name: 'Delivery',
+      },
+    )
+    expect(within(internalDelivery).getByText('default')).toBeTruthy()
+  })
+
   it('shows each inbox generation with its number, origin, expiry, and recovery', async () => {
     const actor = user()
     const original = message('received', 'Failed', { messageId: 'm-gen' })

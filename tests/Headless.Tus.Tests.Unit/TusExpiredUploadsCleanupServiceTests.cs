@@ -18,19 +18,30 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
     private static readonly TimeSpan _Interval = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Advances fake time one interval at a time with small real-time yields until the signal
-    /// completes. A single Advance can race the service's async loop before it re-arms
-    /// PeriodicTimer.WaitForNextTickAsync (same pattern as the coordination heartbeat tests).
+    /// Advances fake time by one interval once the service has armed its interval timer, then waits for the signal.
+    /// An advance that lands before the timer exists is lost, because the timer is created against the later time.
     /// </summary>
-    private static async Task _AdvanceUntilAsync(FakeTimeProvider timeProvider, Task signal)
+    private static async Task _AdvanceUntilAsync(TimerArmedTimeProvider timeProvider, Task signal)
     {
-        for (var i = 0; i < 50 && !signal.IsCompleted; i++)
-        {
-            timeProvider.Advance(_Interval);
-            await Task.Delay(10, AbortToken);
-        }
+        await timeProvider.TimerArmed.Bounded();
+        timeProvider.Advance(_Interval);
+        await signal.Bounded();
+    }
 
-        await signal.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    /// <summary>A fake clock that reports when the service creates its periodic timer.</summary>
+    private sealed class TimerArmedTimeProvider : FakeTimeProvider
+    {
+        private readonly TaskCompletionSource _timerArmed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task TimerArmed => _timerArmed.Task;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            _timerArmed.TrySetResult();
+
+            return timer;
+        }
     }
 
     private static TusExpiredUploadsCleanupService _CreateService(
@@ -197,7 +208,7 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
                 return 3;
             });
 
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new TimerArmedTimeProvider();
         using var service = _CreateService(store, timeProvider);
 
         // when
@@ -232,7 +243,7 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
                 return 0;
             });
 
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new TimerArmedTimeProvider();
         using var service = _CreateService(store, timeProvider);
 
         // when

@@ -9,21 +9,27 @@ namespace Headless.Caching;
 
 internal static class RedisCacheEntryFrame
 {
-    // Fixed header layout (v3): [0] Magic, [1] Version, [2] flags, [3..10] logical, [11..18] physical,
-    // [19..26] CreatedAt. The flags byte is full at 8 bits, so CreatedAt has no flag of its own: it is an
-    // always-present fixed field in v3 (presence implied by version), with CreatedAtAbsentSentinel meaning
-    // "no birth time recorded" (legacy/unframed source). Optional sections (sliding, eager, last-modified,
-    // etag, tags) follow the fixed header at HeaderLength.
-    public const int HeaderLength = 27;
+    // Fixed header layout (v4): [0] Magic, [1] Version, [2] flags, [3..10] logical, [11..18] physical,
+    // [19..26] CreatedAt, [27..34] ThrottledUntil. The flags byte is full at 8 bits, so CreatedAt and
+    // ThrottledUntil have no flag of their own: they are always-present fixed fields (presence implied by the
+    // version), with AbsentTimestampSentinel meaning "not recorded". Optional sections (sliding, eager,
+    // last-modified, etag, tags) follow the fixed header at HeaderLength. The concurrency stamp is the whole
+    // fixed header, so a throttle restamp that only moves ThrottledUntil still changes the stamp.
+    public const int HeaderLength = 35;
 
     private const int _CreatedAtOffset = 19;
+    private const int _ThrottledUntilOffset = 27;
 
-    // Sentinel written into the always-present CreatedAt slot when no birth time is known. long.MinValue is far
-    // outside the valid Unix-millisecond range the codec accepts, so it can never collide with a real timestamp.
-    internal const long CreatedAtAbsentSentinel = long.MinValue;
+    // Sentinel written into an always-present timestamp slot (CreatedAt, ThrottledUntil) when no value is known.
+    // long.MinValue is far outside the valid Unix-millisecond range the codec accepts, so it can never collide with
+    // a real timestamp.
+    internal const long AbsentTimestampSentinel = long.MinValue;
 
     internal const byte Magic = 0xFF;
-    internal const byte Version = 0x03;
+
+    // The Lua CAS scripts (CacheRemoveIfEqual, CacheReplaceIfEqual) compare the version byte against this value;
+    // change them together.
+    internal const byte Version = 0x04;
     internal const byte NullFlag = 1 << 0;
     internal const byte HasLogicalExpiresAtFlag = 1 << 1;
     internal const byte HasPhysicalExpiresAtFlag = 1 << 2;
@@ -48,7 +54,8 @@ internal static class RedisCacheEntryFrame
         string? etag = null,
         DateTime? lastModifiedAt = null,
         IReadOnlyCollection<string>? tags = null,
-        DateTime? createdAt = null
+        DateTime? createdAt = null,
+        DateTime? throttledUntil = null
     )
     {
         var valueBytes = isNull ? [] : _ToBytes(value);
@@ -64,6 +71,7 @@ internal static class RedisCacheEntryFrame
             lastModifiedAt,
             tags,
             createdAt,
+            throttledUntil,
             out var payloadOffset
         );
 
@@ -89,7 +97,8 @@ internal static class RedisCacheEntryFrame
         string? etag = null,
         DateTime? lastModifiedAt = null,
         IReadOnlyCollection<string>? tags = null,
-        DateTime? createdAt = null
+        DateTime? createdAt = null,
+        DateTime? throttledUntil = null
     )
     {
         // Frame length must index a byte[]: surface an oversized payload as a clear contract error rather than the
@@ -112,6 +121,7 @@ internal static class RedisCacheEntryFrame
             lastModifiedAt,
             tags,
             createdAt,
+            throttledUntil,
             out var payloadOffset
         );
 
@@ -141,7 +151,8 @@ internal static class RedisCacheEntryFrame
         string? etag = null,
         DateTime? lastModifiedAt = null,
         IReadOnlyCollection<string>? tags = null,
-        DateTime? createdAt = null
+        DateTime? createdAt = null,
+        DateTime? throttledUntil = null
     )
     {
         // valueLength: 0 sizes the buffer to exactly the header + optional-sections prefix.
@@ -156,6 +167,7 @@ internal static class RedisCacheEntryFrame
             lastModifiedAt,
             tags,
             createdAt,
+            throttledUntil,
             out _
         );
 
@@ -194,6 +206,7 @@ internal static class RedisCacheEntryFrame
         DateTime? lastModifiedAt,
         IReadOnlyCollection<string>? tags,
         DateTime? createdAt,
+        DateTime? throttledUntil,
         out int payloadOffset
     )
     {
@@ -290,11 +303,15 @@ internal static class RedisCacheEntryFrame
                 );
             }
 
-            // CreatedAt is an always-present v3 fixed field (no flag bit left). Write the birth time, or the
-            // absent-sentinel when none is known, so decode can distinguish a real timestamp from "unset".
+            // CreatedAt and ThrottledUntil are always-present fixed fields (no flag bit left). Write each value, or
+            // the absent-sentinel when none is known, so decode can distinguish a real timestamp from "unset".
             BinaryPrimitives.WriteInt64LittleEndian(
                 buffer.AsSpan(_CreatedAtOffset, sizeof(long)),
-                createdAt.HasValue ? _ToUnixTimeMilliseconds(createdAt.Value) : CreatedAtAbsentSentinel
+                createdAt.HasValue ? _ToUnixTimeMilliseconds(createdAt.Value) : AbsentTimestampSentinel
+            );
+            BinaryPrimitives.WriteInt64LittleEndian(
+                buffer.AsSpan(_ThrottledUntilOffset, sizeof(long)),
+                throttledUntil.HasValue ? _ToUnixTimeMilliseconds(throttledUntil.Value) : AbsentTimestampSentinel
             );
 
             // Optional sections follow the fixed header in layout order: fixed-width fields first (sliding,
@@ -403,10 +420,12 @@ internal static class RedisCacheEntryFrame
         var logicalMs = hasLogical ? BinaryPrimitives.ReadInt64LittleEndian(span.Slice(3, sizeof(long))) : 0L;
         var physicalMs = hasPhysical ? BinaryPrimitives.ReadInt64LittleEndian(span.Slice(11, sizeof(long))) : 0L;
 
-        // CreatedAt occupies a fixed v3 slot in the header (always present, gated by version not a flag). The
-        // HeaderLength guard above already proved these bytes exist. The absent-sentinel decodes back to null.
+        // CreatedAt and ThrottledUntil occupy fixed slots in the header (always present, gated by version not a
+        // flag). The HeaderLength guard above already proved these bytes exist. The absent-sentinel decodes to null.
         var createdAtMs = BinaryPrimitives.ReadInt64LittleEndian(span.Slice(_CreatedAtOffset, sizeof(long)));
-        var hasCreatedAt = createdAtMs != CreatedAtAbsentSentinel;
+        var hasCreatedAt = createdAtMs != AbsentTimestampSentinel;
+        var throttledUntilMs = BinaryPrimitives.ReadInt64LittleEndian(span.Slice(_ThrottledUntilOffset, sizeof(long)));
+        var hasThrottledUntil = throttledUntilMs != AbsentTimestampSentinel;
 
         var offset = HeaderLength;
 
@@ -446,6 +465,7 @@ internal static class RedisCacheEntryFrame
             || (hasEagerRefresh && _IsOutOfRange(eagerRefreshMs))
             || (hasLastModified && _IsOutOfRange(lastModifiedMs))
             || (hasCreatedAt && _IsOutOfRange(createdAtMs))
+            || (hasThrottledUntil && _IsOutOfRange(throttledUntilMs))
         )
         {
             return DecodedFrame.Unframed;
@@ -462,13 +482,14 @@ internal static class RedisCacheEntryFrame
             LastModifiedAt: hasLastModified ? _FromUnixTimeMilliseconds(lastModifiedMs) : null,
             Tags: decodedTags is { Length: > 0 } ? decodedTags : null,
             CreatedAt: hasCreatedAt ? _FromUnixTimeMilliseconds(createdAtMs) : null,
+            ThrottledUntil: hasThrottledUntil ? _FromUnixTimeMilliseconds(throttledUntilMs) : null,
             ValueSegment: bytes[offset..]
         );
     }
 
     /// <summary>
     /// Decodes only the metadata needed to re-arm a sliding entry (no value, no tags) from a fixed prefix of the
-    /// frame: the 27-byte header plus the sliding field, which is the first optional section and therefore sits
+    /// frame: the fixed header plus the sliding field, which is the first optional section and therefore sits
     /// immediately after the header at <see cref="HeaderLength"/>. Used by the value-free <c>RefreshAsync</c> path
     /// so a large value payload is never transferred just to push out its TTL. Returns <see langword="false"/>
     /// (treat as a miss) when the prefix is not a recognizable framed header, or when a present sliding field is
@@ -494,7 +515,7 @@ internal static class RedisCacheEntryFrame
         var logicalMs = hasLogical ? BinaryPrimitives.ReadInt64LittleEndian(prefix.Slice(3, sizeof(long))) : 0L;
         var physicalMs = hasPhysical ? BinaryPrimitives.ReadInt64LittleEndian(prefix.Slice(11, sizeof(long))) : 0L;
         var createdAtMs = BinaryPrimitives.ReadInt64LittleEndian(prefix.Slice(_CreatedAtOffset, sizeof(long)));
-        var hasCreatedAt = createdAtMs != CreatedAtAbsentSentinel;
+        var hasCreatedAt = createdAtMs != AbsentTimestampSentinel;
 
         var slidingMs = 0L;
 
@@ -739,6 +760,7 @@ internal static class RedisCacheEntryFrame
         DateTime? LastModifiedAt,
         IReadOnlyCollection<string>? Tags,
         DateTime? CreatedAt,
+        DateTime? ThrottledUntil,
         ReadOnlyMemory<byte> ValueSegment
     )
     {
@@ -754,6 +776,7 @@ internal static class RedisCacheEntryFrame
                 LastModifiedAt: null,
                 Tags: null,
                 CreatedAt: null,
+                ThrottledUntil: null,
                 ValueSegment: ReadOnlyMemory<byte>.Empty
             );
     }

@@ -2907,6 +2907,102 @@ public abstract partial class DataStorageTestsBase : TestBase
         }
     }
 
+    public virtual async Task should_return_the_rows_counters_and_history_when_a_redelivery_rewrites_a_due_row()
+    {
+        // given: a row whose first attempt failed, persisted for a retry that is due now
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var stored = await storage.StoreReceivedMessageAsync("due-redelivery", "test-group", message, AbortToken);
+        await _FailReceivedAttemptAsync(storage, stored, RetryDelay.Exactly(TimeSpan.Zero));
+
+        // when: the broker delivers the message again
+        var redelivery = await storage.StoreReceivedMessageAsync("due-redelivery", "test-group", message, AbortToken);
+
+        // then: the redelivery carries the row's own counters, so its lease-and-reserve matches the row
+        redelivery.StorageId.Should().Be(stored.StorageId);
+        redelivery.Retries.Should().Be(1);
+        redelivery.InlineAttempts.Should().Be(1);
+        var original = redelivery.InlineAttempts;
+        redelivery.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(redelivery, TimeSpan.FromMinutes(1), original, AbortToken))
+            .Should()
+            .BeTrue("the redelivery runs the row it rewrote");
+
+        // and: the rewrite kept the row's failure history
+        if (Capabilities.SupportsMonitoringApi)
+        {
+            var row = await storage.GetMonitoringApi().GetReceivedMessageAsync(stored.StorageId, AbortToken);
+            row.Should().NotBeNull();
+            row!.Retries.Should().Be(1);
+            row.ExceptionInfo.Should().Be(_RedeliveryFailure);
+        }
+    }
+
+    public virtual async Task should_leave_a_row_waiting_for_its_retry_untouched_when_the_message_is_redelivered()
+    {
+        // given: a row whose first attempt failed, persisted for a retry an hour away
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var stored = await storage.StoreReceivedMessageAsync("pending-redelivery", "test-group", message, AbortToken);
+        await _FailReceivedAttemptAsync(storage, stored, RetryDelay.Exactly(TimeSpan.FromHours(1)));
+        var before = Capabilities.SupportsMonitoringApi
+            ? await storage.GetMonitoringApi().GetReceivedMessageAsync(stored.StorageId, AbortToken)
+            : null;
+
+        // when: the broker delivers the message again
+        var redelivery = await storage.StoreReceivedMessageAsync(
+            "pending-redelivery",
+            "test-group",
+            message,
+            AbortToken
+        );
+
+        // then: the redelivery gets an unstored candidate, which cannot run the row ahead of its retry
+        redelivery.StorageId.Should().NotBe(stored.StorageId);
+        (await storage.LeaseReceiveAsync(redelivery, TimeSpan.FromMinutes(1), AbortToken))
+            .Should()
+            .BeFalse("the row waits for its planned retry");
+
+        // and: the row keeps its retry, its retry count, and its failure history
+        if (before is not null)
+        {
+            var after = await storage.GetMonitoringApi().GetReceivedMessageAsync(stored.StorageId, AbortToken);
+            after.Should().NotBeNull();
+            after!.StatusName.Should().Be(StatusName.Failed);
+            after.NextRetryAt.Should().Be(before.NextRetryAt);
+            after.Retries.Should().Be(1);
+            after.ExceptionInfo.Should().Be(_RedeliveryFailure);
+        }
+    }
+
+    private const string _RedeliveryFailure = "simulated handler failure";
+
+    /// <summary>Runs one failed attempt on a stored row and persists it for a retry after <paramref name="delay"/>.</summary>
+    private static async Task _FailReceivedAttemptAsync(IDataStorage storage, MediumMessage message, RetryDelay delay)
+    {
+        message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(message, TimeSpan.FromMinutes(1), 0, AbortToken))
+            .Should()
+            .BeTrue();
+
+        message.Retries++;
+        message.ExceptionInfo = _RedeliveryFailure;
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                message,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                delay,
+                keepLease: false,
+                originalRetries: 0,
+                originalInlineAttempts: 1,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+    }
+
     public virtual async Task should_reclaim_published_retry_row_owned_by_dead_node()
     {
         var storage = GetStorage();
@@ -4171,13 +4267,9 @@ public abstract partial class DataStorageTestsBase : TestBase
 
         // Hard timeout — if the secondary-index path regresses to an O(N) scan inside an
         // exclusive lock the storm would either deadlock or take orders of magnitude longer
-        // than 30 seconds. Failing fast surfaces the regression.
-        var stormCompletion = Task.WhenAll(workers);
-        var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
-        var winner = await Task.WhenAny(stormCompletion, timeout);
-        winner
-            .Should()
-            .BeSameAs(stormCompletion, "storm must finish well under 30s — lock starvation suspected otherwise");
+        // than 30 seconds. Failing fast surfaces the regression: a storm that outlives the
+        // 30 s bound fails here with a TimeoutException naming it.
+        await Task.WhenAll(workers).Bounded();
 
         // Exactly one writer should report true (the inserter); all others observe the existing
         // terminal-NULL row and return false. The single-row invariant is then verified via a
@@ -4255,15 +4347,10 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .ToArray();
 
             startGate.Set();
-            var stormCompletion = Task.WhenAll(workers);
-            var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
-            var winner = await Task.WhenAny(stormCompletion, timeout);
-            winner
-                .Should()
-                .BeSameAs(
-                    stormCompletion,
-                    $"storm for consumer={consumerIdentity} must finish well under 30s — lock starvation or deadlock suspected"
-                );
+
+            // A storm that outlives the 30 s bound fails with a TimeoutException naming it: lock starvation or a
+            // deadlock is suspected.
+            await Task.WhenAll(workers).Bounded();
 
             exceptions
                 .Should()
@@ -4347,15 +4434,10 @@ public abstract partial class DataStorageTestsBase : TestBase
                 .ToArray();
 
             startGate.Set();
-            var stormCompletion = Task.WhenAll(workers);
-            var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
-            var winner = await Task.WhenAny(stormCompletion, timeout);
-            winner
-                .Should()
-                .BeSameAs(
-                    stormCompletion,
-                    $"storm for consumer={consumerIdentity} must finish well under 30s — lock starvation or deadlock suspected"
-                );
+
+            // A storm that outlives the 30 s bound fails with a TimeoutException naming it: lock starvation or a
+            // deadlock is suspected.
+            await Task.WhenAll(workers).Bounded();
 
             exceptions
                 .Should()

@@ -479,6 +479,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                     _leaseDuration,
                     owner,
                     reclaimOwn: false,
+                    supersededBefore: null,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -710,6 +711,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                         owner,
                         // Mirrors the acquire predicate's owner arm; the new generation fences off the earlier dispatch.
                         reclaimOwn: true,
+                        supersededBefore: null,
                         cancellationToken
                     )
                     .ConfigureAwait(false)
@@ -804,6 +806,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
                 owner,
                 // Mirrors the acquire predicate's owner arm; the new generation fences off the earlier dispatch.
                 reclaimOwn: true,
+                supersededBefore: null,
                 cancellationToken
             )
             .ConfigureAwait(false);

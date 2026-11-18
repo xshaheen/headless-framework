@@ -34,17 +34,18 @@ internal sealed partial class RedisMembershipStore(
     private RedisCoordinationOptions RedisOptions => redisOptions.Value;
 
     // KeyPrefix and ClusterName are fixed once options bind, but IOptions<T>.Value must not be read in a field
-    // initializer before the options pipeline has run; these lazily cache the invariant Redis keys (and the
-    // brace validation) that every heartbeat and membership read used to rebuild per call.
-    private RedisKey? _knownKey;
-    private RedisKey? _liveKey;
-    private string? _genKeyPrefix;
+    // initializer before the options pipeline has run, so the invariant Redis keys (and the brace validation) are
+    // built on first use. They live in one immutable object published by reference: a reference write is atomic,
+    // while a RedisKey? field is a multi-word struct that a concurrent first call can read half-written (HasValue
+    // set over a default key), which StackExchange.Redis rejects as a null key.
+    private MembershipKeys? _keys;
 
-    private RedisKey _KnownKeyCached() => _knownKey ??= _ClusterKey("known");
+    private MembershipKeys _Keys() => LazyInitializer.EnsureInitialized(ref _keys, _CreateKeys);
 
-    private RedisKey _LiveKeyCached() => _liveKey ??= _ClusterKey("live");
+    private MembershipKeys _CreateKeys() =>
+        new(_ClusterKey("known"), _ClusterKey("live"), $"{Options.KeyPrefix}{{{Options.ClusterName}}}:gen:");
 
-    private string _GenKeyPrefixCached() => _genKeyPrefix ??= $"{Options.KeyPrefix}{{{Options.ClusterName}}}:gen:";
+    private sealed record MembershipKeys(RedisKey Known, RedisKey Live, string GenKeyPrefix);
 
     private IDatabase Db => multiplexer.GetDatabase();
 
@@ -340,17 +341,17 @@ internal sealed partial class RedisMembershipStore(
 
     private RedisKey _LiveKey()
     {
-        return _LiveKeyCached();
+        return _Keys().Live;
     }
 
     private RedisKey _KnownKey()
     {
-        return _KnownKeyCached();
+        return _Keys().Known;
     }
 
     private RedisKey _GenKey(NodeId nodeId)
     {
-        return _GenKeyPrefixCached() + nodeId.Value;
+        return _Keys().GenKeyPrefix + nodeId.Value;
     }
 
     private const string _GenerationFieldPrefix = "__gen:";
@@ -362,7 +363,7 @@ internal sealed partial class RedisMembershipStore(
 
     private string _GenKeyPrefix()
     {
-        return _GenKeyPrefixCached();
+        return _Keys().GenKeyPrefix;
     }
 
     private RedisKey _ClusterKey(string suffix)

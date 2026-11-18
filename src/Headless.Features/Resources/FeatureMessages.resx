@@ -24,4 +24,7 @@
   <data name="features:provider-readonly" xml:space="preserve">
     <value>Feature provider is readonly for provider key: {0} and can't be modified.</value>
   </data>
+  <data name="features:provider-not-allowed" xml:space="preserve">
+    <value>Feature {0} does not allow the {1} provider.</value>
+  </data>
 </root>

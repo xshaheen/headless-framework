@@ -128,6 +128,7 @@ public static class IdempotencyDifferentialOracle
                     is not (IdempotencyOracleOp.Peek or IdempotencyOracleOp.AdvanceTime or IdempotencyOracleOp.Purge)
             )
             {
+                // real-wait: the database's own clock ticks in coarse steps (about 12 ms on Azure SQL Edge), so only real time makes two writes read different store clock values
                 await Task.Delay(tolerance.ClockSpacing, cancellationToken).ConfigureAwait(false);
             }
 

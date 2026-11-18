@@ -192,7 +192,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     [Fact]
     public async Task restart_timeout_does_not_overlap_the_previous_consumer_generation()
     {
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
         var factory = new RestartRaceConsumerClientFactory(blockInitialListenerShutdown: true);
         await using var provider = _CreateProvider(consumerClientFactory: factory, timeProvider: timeProvider);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
@@ -221,12 +221,17 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         await factory.WaitUntilInitialListenerShutdownAsync(AbortToken);
 
         // The restart reads its remaining budget and then arms a timer for it, so one advance can land between the two
-        // and leave the timer due past the advanced clock. Keep advancing, well short of the 30-second health check,
-        // until the restart observes its deadline.
+        // and leave the timer due past the advanced clock. Advance each time a timer is armed, well short of the
+        // 30-second health check, until the restart observes its deadline.
         for (var advanced = 0; advanced < 10 && !restartTask.IsCompleted; advanced++)
         {
+            _ = await Task.WhenAny(restartTask, timeProvider.WaitForArmedTimerAsync());
+            if (restartTask.IsCompleted)
+            {
+                break;
+            }
+
             timeProvider.Advance(TimeSpan.FromSeconds(2));
-            _ = await Task.WhenAny(restartTask, Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken));
         }
 
         await restartTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
@@ -245,7 +250,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     [Fact]
     public async Task full_restart_timeout_does_not_overlap_the_previous_consumer_generation()
     {
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
         var factory = new RestartRaceConsumerClientFactory(blockInitialListenerShutdown: true);
         await using var provider = _CreateProvider(consumerClientFactory: factory, timeProvider: timeProvider);
         var consumerRegister = provider.GetRequiredService<IConsumerRegister>();
@@ -269,11 +274,16 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         var restartTask = consumerRegister.ReStartAsync(force: true, AbortToken).AsTask();
         await factory.WaitUntilInitialListenerShutdownAsync(AbortToken);
 
-        // As above: keep advancing until the restart observes its deadline.
+        // As above: advance each time a timer is armed until the restart observes its deadline.
         for (var advanced = 0; advanced < 10 && !restartTask.IsCompleted; advanced++)
         {
+            _ = await Task.WhenAny(restartTask, timeProvider.WaitForArmedTimerAsync());
+            if (restartTask.IsCompleted)
+            {
+                break;
+            }
+
             timeProvider.Advance(TimeSpan.FromSeconds(2));
-            _ = await Task.WhenAny(restartTask, Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken));
         }
 
         await restartTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);

@@ -132,16 +132,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: "Restore the integration project"
+      # A leg runs a transport's suite and its storage combinations, built once on one runner.
+      - name: "Restore the leg's integration projects"
         env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PROJECT: ${{ matrix.leg.project }}
-        run: make restore-project PROJECT="$PROJECT"
+          PROJECTS: ${{ join(matrix.leg.projects, ' ') }}
+        run: |
+          set -euo pipefail
+          for project in $PROJECTS; do make restore-project PROJECT="$project"; done
 
       - name: "Run the integration suite"
         env:
           TZ: ${{ matrix.leg.tz }}
-          PROJECT: ${{ matrix.leg.project }}
+          PROJECTS: ${{ join(matrix.leg.projects, ' ') }}
           LEG: ${{ matrix.leg.name }}
           # Empty on every pull request, push, and scheduled run, so the drill never fails a real run.
           HEADLESS_CONFORMANCE_DRIFT_DRILL: ${{ inputs.drift_drill }}
@@ -149,7 +151,7 @@ jobs:
           HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA: "Y"
         run: >-
           make test-messaging-integration
-          MESSAGING_INTEGRATION_PROJECTS="$PROJECT"
+          MESSAGING_INTEGRATION_PROJECTS="$PROJECTS"
           MESSAGING_INTEGRATION_RESULTS_DIR="artifacts/test-results/messaging-integration/$LEG"
           MESSAGING_INTEGRATION_REPORT=false
 
@@ -197,8 +199,6 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Restore the chaos project"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
 
       - name: "Run the chaos and soak suite"
@@ -258,8 +258,6 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Restore the messaging unit-test project"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
 
       - name: "Check that every quarantine links an open issue"

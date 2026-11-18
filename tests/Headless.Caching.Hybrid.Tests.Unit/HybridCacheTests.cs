@@ -9,11 +9,17 @@ namespace Tests;
 public sealed class HybridCacheTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
+    private readonly TimerSignalingTimeProvider _clock;
 
     // The HybridCache returned here is disposed per test (via `await using` or an explicit DisposeAsync), but it
     // does not own the injected L1/L2 stores. This fixture collects those raw InMemoryCache instances and disposes
     // them at teardown.
     private readonly List<object> _disposables = [];
+
+    public HybridCacheTests()
+    {
+        _clock = new TimerSignalingTimeProvider(_timeProvider);
+    }
 
     private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IHybridCacheBackplane publisher) _CreateCache(
         HybridCacheOptions? options = null
@@ -21,11 +27,11 @@ public sealed class HybridCacheTests : TestBase
     {
         options ??= new HybridCacheOptions();
         var l1Options = new InMemoryCacheOptions { CloneValues = true };
-        var l1 = new InMemoryCache(_timeProvider, l1Options);
+        var l1 = new InMemoryCache(_clock, l1Options);
 
         // Create a separate in-memory cache as the "distributed" cache for testing
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        var inMemoryCache = new InMemoryCache(_timeProvider, l2Options);
+        var inMemoryCache = new InMemoryCache(_clock, l2Options);
         var l2 = new InMemoryRemoteCacheAdapter(inMemoryCache);
 
         var publisher = Substitute.For<IHybridCacheBackplane>();
@@ -33,7 +39,7 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.CompletedTask);
 
-        var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
+        var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _clock);
 
         _disposables.Add(l1);
         _disposables.Add(inMemoryCache);
@@ -276,9 +282,9 @@ public sealed class HybridCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Random.Int();
         var factoryCallCount = 0;
-        var factoryDelay = TimeSpan.FromMilliseconds(100);
+        var factoryGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // when - launch multiple concurrent requests
+        // when - launch multiple concurrent requests; the factory stays parked until every caller has joined
         var tasks = Enumerable
             .Range(0, 10)
             .Select(_ =>
@@ -288,7 +294,7 @@ public sealed class HybridCacheTests : TestBase
                         async ct =>
                         {
                             Interlocked.Increment(ref factoryCallCount);
-                            await Task.Delay(factoryDelay, ct);
+                            await factoryGate.Task.WaitAsync(ct);
                             return value;
                         },
                         TimeSpan.FromMinutes(5),
@@ -298,6 +304,8 @@ public sealed class HybridCacheTests : TestBase
             )
             .ToArray();
 
+        // The in-memory tiers complete synchronously, so each call returns once it is parked behind the factory.
+        factoryGate.SetResult();
         var results = await Task.WhenAll(tasks);
 
         // then
@@ -1086,12 +1094,10 @@ public sealed class HybridCacheTests : TestBase
     #region Numeric Operations
 
     [Fact]
-    public async Task should_seed_l1_with_zero_when_increment_total_reaches_zero()
+    public async Task should_serve_a_zero_total_after_an_increment_reaches_zero()
     {
-        // given — a decrement that brings the running total back to exactly 0 must keep 0 in L1, not evict it.
-        // Guards against treating the increment's new total of 0 as a "no-op" (the SetIfHigher/Lower difference
-        // convention) and removing the key from L1.
-        var (cache, l1, _, _) = _CreateCache();
+        // given - a decrement that brings the running total back to exactly 0 still reads 0, not a miss
+        var (cache, _, _, _) = _CreateCache();
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
@@ -1102,10 +1108,9 @@ public sealed class HybridCacheTests : TestBase
 
         // then
         result.Should().Be(0L);
-
-        var l1Result = await l1.GetAsync<long>(key, AbortToken);
-        l1Result.HasValue.Should().BeTrue("a 0 total is a valid stored value, not a no-op signal");
-        l1Result.Value.Should().Be(0L);
+        var read = await cache.GetAsync<long>(key, AbortToken);
+        read.HasValue.Should().BeTrue("a 0 total is a valid stored value, not a no-op signal");
+        read.Value.Should().Be(0L);
     }
 
     #endregion
@@ -1288,6 +1293,8 @@ public sealed class HybridCacheTests : TestBase
 
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var published = _SignalOnPublish(publisher);
+        var softTimerArmed = _clock.WatchForTimer(options.FactorySoftTimeout);
 
         async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
@@ -1298,15 +1305,11 @@ public sealed class HybridCacheTests : TestBase
         // when — the caller soft-times-out, then the detached factory completes and writes through the store
         var timedOutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task.Bounded();
-        await _TriggerTimeoutAsync(options.FactorySoftTimeout, timedOutTask);
-        var timedOut = await timedOutTask;
+        await softTimerArmed.Bounded();
+        _timeProvider.Advance(options.FactorySoftTimeout);
+        var timedOut = await timedOutTask.Bounded();
         factoryGate.SetResult(2);
-
-        await _WaitUntilAsync(async () =>
-        {
-            var cached = await cache.GetAsync<int>(key, AbortToken);
-            return cached.HasValue && cached.Value == 2;
-        });
+        await published.Bounded();
 
         // then — the background completion write published exactly one key invalidation
         timedOut.Value.Should().Be(1);
@@ -1328,16 +1331,12 @@ public sealed class HybridCacheTests : TestBase
 
         await cache.GetOrAddAsync(key, _ => new ValueTask<int?>(1), options, AbortToken);
         publisher.ClearReceivedCalls();
+        var published = _SignalOnPublish(publisher);
         _timeProvider.Advance(TimeSpan.FromMinutes(6)); // past the eager point, well before expiration
 
         // when — the fresh hit triggers a background eager refresh that writes the new value
         var hit = await cache.GetOrAddAsync(key, _ => new ValueTask<int?>(2), options, AbortToken);
-
-        await _WaitUntilAsync(async () =>
-        {
-            var cached = await cache.GetAsync<int>(key, AbortToken);
-            return cached.HasValue && cached.Value == 2;
-        });
+        await published.Bounded();
 
         // then — exactly one publish: the eager value write broadcasts, the eager gate restamp does not
         hit.Value.Should().Be(1);
@@ -1679,6 +1678,7 @@ public sealed class HybridCacheTests : TestBase
 
         var key = Faker.Random.AlphaNumeric(10);
         await cache.IncrementAsync(key, 7L, TimeSpan.FromMinutes(5), AbortToken);
+        (await cache.GetAsync<long>(key, AbortToken)).Value.Should().Be(7L); // the read fills L1 from L2
         (await l1.GetAsync<long>(key, AbortToken)).HasValue.Should().BeTrue();
 
         l2.FailWrites = true;
@@ -2195,35 +2195,20 @@ public sealed class HybridCacheTests : TestBase
 
     #region Test Helpers
 
-    // The coordinator arms its delay timer only after the factory has started, so with a fake time provider a
-    // single advance can land before the timer exists. Keep nudging time forward on a real-time cadence until
-    // the caller-observable task completes (mirrors the conformance harness helper).
-    private async ValueTask _TriggerTimeoutAsync(TimeSpan timeout, Task pendingTimeout)
+    // Completes on the first invalidation the hybrid publishes. The background tail writes through the store before it
+    // publishes, so the signal also means the new value landed.
+    private static Task _SignalOnPublish(IHybridCacheBackplane publisher)
     {
-        await Task.Yield();
-        _timeProvider.Advance(timeout);
-
-        for (var attempt = 0; attempt < 50 && !pendingTimeout.IsCompleted; attempt++)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
-            _timeProvider.Advance(TimeSpan.FromMilliseconds(20));
-        }
-    }
-
-    private async ValueTask _WaitUntilAsync(Func<ValueTask<bool>> condition)
-    {
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            if (await condition())
+        var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
             {
-                return;
-            }
+                published.TrySetResult();
+                return ValueTask.CompletedTask;
+            });
 
-            _timeProvider.Advance(TimeSpan.FromMilliseconds(20));
-            await Task.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
-        }
-
-        throw new TimeoutException("Condition was not satisfied within the polling window.");
+        return published.Task;
     }
 
     #endregion

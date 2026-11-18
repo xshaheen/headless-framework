@@ -246,7 +246,7 @@ public sealed class MessagingModuleSourcesTests : TestBase
         // given
         await using var services = _MainStore(out var primary);
         var failed = await MessagingRows.ReceivedFailureAsync(primary, "r-7", cancellationToken: AbortToken);
-        var events = new RecordingEventPublisher();
+        var events = new NotifyingEventPublisher();
         await using var publisher = new MessagingChangePublisher(
             _Stores(primary),
             events,
@@ -257,7 +257,7 @@ public sealed class MessagingModuleSourcesTests : TestBase
         publisher.OnStateWritten(MessageType.Subscribe, failed);
 
         // then
-        var change = await _WaitForAsync(events, failed.StorageId);
+        var change = await events.WaitForAsync(failed.StorageId).Bounded();
         change.Target.Kind.Should().Be("received");
         change.Projection!.Value.GetProperty("status").GetString().Should().Be("Failed");
         var stored = (
@@ -280,7 +280,7 @@ public sealed class MessagingModuleSourcesTests : TestBase
     public async Task should_dispose_the_host_without_throwing_after_a_pipeline_reported_a_state_write()
     {
         // given: a host whose pipelines reach the publisher through the observer registration
-        var events = new RecordingEventPublisher();
+        var events = new NotifyingEventPublisher();
         var app = await MessagingModuleTestHost.StartAsync(
             _time,
             AbortToken,
@@ -290,7 +290,7 @@ public sealed class MessagingModuleSourcesTests : TestBase
         var failed = await MessagingRows.ReceivedFailureAsync(storage, "r-8", cancellationToken: AbortToken);
         var observer = app.Services.GetServices<IMessageStateObserver>().Should().ContainSingle().Subject;
         observer.OnStateWritten(MessageType.Subscribe, failed);
-        await _WaitForAsync(events, failed.StorageId);
+        await events.WaitForAsync(failed.StorageId).Bounded();
 
         // when: the container disposes the publisher once per registration that returned it
         var dispose = async () => await app.DisposeAsync();
@@ -305,14 +305,14 @@ public sealed class MessagingModuleSourcesTests : TestBase
         // given
         await using var services = _MainStore(out var primary);
         var failed = await MessagingRows.ReceivedFailureAsync(primary, "r-9", cancellationToken: AbortToken);
-        var events = new RecordingEventPublisher();
+        var events = new NotifyingEventPublisher();
         await using var publisher = new MessagingChangePublisher(
             _Stores(primary),
             events,
             NullLogger<MessagingChangePublisher>.Instance
         );
         publisher.OnStateWritten(MessageType.Subscribe, failed);
-        await _WaitForAsync(events, failed.StorageId);
+        await events.WaitForAsync(failed.StorageId).Bounded();
         await publisher.DisposeAsync();
 
         // when
@@ -322,26 +322,51 @@ public sealed class MessagingModuleSourcesTests : TestBase
         await again.Should().NotThrowAsync();
     }
 
-    private static async Task<DashboardChange> _WaitForAsync(RecordingEventPublisher events, Guid storageId)
+    // Completes a wait when the matching change is published, instead of polling the list of what was published.
+    private sealed class NotifyingEventPublisher : IDashboardEventPublisher
     {
-        var limit = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        private readonly Lock _lock = new();
+        private readonly List<DashboardChange> _changes = [];
+        private readonly List<(string Suffix, TaskCompletionSource<DashboardChange> Signal)> _waiters = [];
 
-        while (DateTime.UtcNow < limit)
+        public void Publish(DashboardChange change)
         {
-            if (
-                events.Changes.FirstOrDefault(c =>
-                    c.Target.Id.EndsWith(storageId.ToString("D"), StringComparison.Ordinal)
-                ) is
-                { } change
-            )
+            lock (_lock)
             {
-                return change;
-            }
+                _changes.Add(change);
 
-            await Task.Delay(10);
+                foreach (var (suffix, signal) in _waiters)
+                {
+                    if (change.Target.Id.EndsWith(suffix, StringComparison.Ordinal))
+                    {
+                        signal.TrySetResult(change);
+                    }
+                }
+            }
         }
 
-        throw new TimeoutException($"No change for {storageId} was published.");
+        /// <summary>Completes with the change published for the row, including one published before this call.</summary>
+        public Task<DashboardChange> WaitForAsync(Guid storageId)
+        {
+            var suffix = storageId.ToString("D");
+
+            lock (_lock)
+            {
+                var published = _changes.FirstOrDefault(c => c.Target.Id.EndsWith(suffix, StringComparison.Ordinal));
+
+                if (published is not null)
+                {
+                    return Task.FromResult(published);
+                }
+
+                var signal = new TaskCompletionSource<DashboardChange>(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                _waiters.Add((suffix, signal));
+
+                return signal.Task;
+            }
+        }
     }
 
     private ServiceProvider _MainStore(out IDataStorage storage)

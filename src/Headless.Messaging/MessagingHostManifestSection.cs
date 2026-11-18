@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Headless.Checks;
+using Headless.DistributedLocks;
 using Headless.Hosting;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -46,6 +47,14 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
         writer.WriteStartObject();
         writer.WriteStartArray("consumers");
 
+        var transport = _services
+            .GetService<IMessagingCapabilityModel>()
+            ?.Providers.FirstOrDefault(static p => p.Role is MessagingProviderRole.Transport);
+        var transports = _services.GetService<MessagingTransports>();
+        var lockProvider = _services.GetKeyedService<IDistributedLock>(MessagingKeys.LockProvider);
+        var lockConfigured =
+            lockProvider is not null && SequentialIntakeResolver.IsDistributedLockConfigured(lockProvider);
+
         foreach (
             var entry in consumers
                 .GroupBy(static x => (x.ConsumerIdentity, x.Lane))
@@ -53,14 +62,26 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
                 .ThenBy(static x => x.Key.Lane)
         )
         {
-            _WriteConsumer(writer, [.. entry], filter);
+            // A consumer bound to a named transport is judged by that broker's capabilities.
+            var consumerTransport =
+                entry.First().TransportName is { } transportName && transports is not null
+                    ? transports
+                        .Get(transportName)
+                        .Capabilities.Providers.FirstOrDefault(static p => p.Role is MessagingProviderRole.Transport)
+                    : transport;
+            _WriteConsumer(writer, [.. entry], filter, consumerTransport, lockConfigured);
         }
 
         writer.WriteEndArray();
 
         _WriteMessages(writer, _registry.DeclaredRoutes);
         _WriteOutboxes(writer, _services.GetService<MessagingOutboxes>());
-        _WriteTransports(writer, _services.GetService<IBusTransport>(), _services.GetService<IQueueTransport>());
+        _WriteTransports(
+            writer,
+            _services.GetService<IBusTransport>(),
+            _services.GetService<IQueueTransport>(),
+            transports?.Named ?? []
+        );
 
         writer.WriteEndObject();
     }
@@ -146,10 +167,37 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
     }
 
     // The broker name only: the endpoint half of a broker address is a host name or connection target.
-    private static void _WriteTransports(Utf8JsonWriter writer, ITransport? bus, ITransport? queue)
+    private static void _WriteTransports(
+        Utf8JsonWriter writer,
+        ITransport? bus,
+        ITransport? queue,
+        IReadOnlyList<MessagingTransport> named
+    )
     {
         writer.WriteStartObject("transports");
+        _WriteLaneTransports(writer, bus, queue);
 
+        // Each named transport under its chosen name, so an entry keeps its name when registrations are reordered.
+        if (named.Count != 0)
+        {
+            writer.WriteStartArray("named");
+
+            foreach (var transport in named)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("name", transport.Name);
+                _WriteLaneTransports(writer, transport.Bus, transport.Queue);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void _WriteLaneTransports(Utf8JsonWriter writer, ITransport? bus, ITransport? queue)
+    {
         if (bus is not null)
         {
             writer.WriteString("bus", bus.BrokerAddress.Name);
@@ -159,8 +207,6 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
         {
             writer.WriteString("queue", queue.BrokerAddress.Name);
         }
-
-        writer.WriteEndObject();
     }
 
     private static string _DeliveryMode(DeliveryMode deliveryMode) =>
@@ -174,7 +220,9 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
     private static void _WriteConsumer(
         Utf8JsonWriter writer,
         IReadOnlyList<ConsumerMetadata> entries,
-        MessagingConsumeFilter filter
+        MessagingConsumeFilter filter,
+        MessagingProviderCapabilities? transport,
+        bool lockConfigured
     )
     {
         // Tuning applies by identity, so every message entry of one identity and lane carries the same settings.
@@ -184,6 +232,12 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
         writer.WriteString("identity", first.ConsumerIdentity);
         writer.WriteString("lane", _Lane(first.Lane));
         writer.WriteString("delivery", first.EveryInstance ? "every-instance" : "competing");
+
+        if (first.TransportName is { } transportName)
+        {
+            writer.WriteString("transport", transportName);
+        }
+
         writer.WriteString("runState", filter.Allows(first) ? "runs-here" : "registered-not-run-here");
 
         // ConsumeOnly never applies to an every-instance consumer, and an unfiltered host has no list to be in.
@@ -233,6 +287,20 @@ internal sealed class MessagingHostManifestSection(ConsumerRegistry registry, IS
         if (first.Sequential)
         {
             writer.WriteBoolean("sequential", value: true);
+
+            // How hosts share it: by the transport's key routing, by the broker delivering it to one consumer at a
+            // time, by the host that holds the messaging lock, or not at all ("none": every host listens).
+            var intake = SequentialIntakeResolver.Resolve(
+                first.Lane,
+                sequential: !first.EveryInstance,
+                entries.Select(static x => x.MessageName),
+                transport,
+                lockConfigured
+            );
+            if (SequentialIntakeResolver.ManifestValue(intake) is { } activeHost)
+            {
+                writer.WriteString("activeHost", activeHost);
+            }
         }
 
         if (first.CircuitBreakerOverride is { } circuitBreaker)

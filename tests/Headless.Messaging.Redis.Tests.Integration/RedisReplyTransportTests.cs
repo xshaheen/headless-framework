@@ -1,15 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Sockets;
 using System.Threading.Channels;
+using DotNet.Testcontainers.Builders;
 using Headless.Messaging;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
+using Headless.Threading;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Testcontainers.Redis;
+using Tests.Helpers;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -24,6 +29,11 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
 {
     // Generous enough for a server under test load; each condition is normally met in well under a second.
     private static readonly TimeSpan _Bound = TimeSpan.FromSeconds(30);
+
+    // A listener whose connect failed reopens through the reply supervisor, which waits at most its back-off ceiling
+    // between passes; once the server serves, the address follows within that wait and one connect, subscribe, and PING
+    // pass on a host under suite load.
+    private static readonly TimeSpan _ReopenBound = ReconnectBackoff.Ceiling + TimeSpan.FromSeconds(30);
 
     private readonly List<RedisConnectionPool> _pools = [];
 
@@ -43,14 +53,13 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         var keysWhileListening = await fixture.ScanKeysAsync($"*{ReplyAddresses.Prefix}*", AbortToken);
         await listener.DisposeAsync();
 
-        // then
+        // then: closing the listener drains its loop, which unsubscribes the channel before it ends
         delivered.Headers[MessagingHeaders.InReplyTo].Should().Be("first");
         delivered.Body.ToArray().Should().Equal("{\"ok\":true}"u8.ToArray());
         keysWhileListening.Should().BeEmpty("a reply is a PUBLISH, which writes no key");
-        await _UntilAsync(
-            async () => await fixture.CountSubscribersAsync(address, AbortToken) == 0,
-            "closing the listener unsubscribed its channel"
-        );
+        (await fixture.CountSubscribersAsync(address, AbortToken))
+            .Should()
+            .Be(0, "closing the listener unsubscribed its channel");
         (await fixture.ScanKeysAsync($"*{ReplyAddresses.Prefix}*", AbortToken)).Should().BeEmpty();
     }
 
@@ -88,7 +97,14 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         // given
         await using var server = new DelayedRedisServer();
         var received = Channel.CreateUnbounded<TransportMessage>();
-        var transport = _CreateTransport(_CreatePool(server.ConnectionString));
+        var log = new List<(LogLevel Level, EventId EventId, string Message)>();
+        using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(logging =>
+            logging.SetMinimumLevel(LogLevel.Trace).AddProvider(new CapturingLoggerProvider(log))
+        );
+        var transport = new RedisReplyTransport(
+            _CreatePool(server.ConnectionString, loggerFactory: loggerFactory),
+            loggerFactory.CreateLogger<RedisReplyTransport>()
+        );
 
         // when
         await using var listener = await transport.OpenListenerAsync(
@@ -97,10 +113,37 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         );
         var whileDown = listener.WaitForAddressAsync(AbortToken).AsTask();
         whileDown.IsCompleted.Should().BeFalse("no address is handed out while the server is down");
+        // Returns once Redis answers PING through its published port, so the listener's next pass can connect.
         await server.StartAsync(AbortToken);
 
         // then
-        var address = await whileDown.WaitAsync(_Bound, AbortToken);
+        // Each failed pass while the server was down doubled the listener's back-off, up to its ceiling, so the next pass
+        // can be that far away.
+        string address;
+        try
+        {
+            address = await whileDown.WaitAsync(_ReopenBound, AbortToken);
+        }
+        catch (TimeoutException e)
+        {
+            string logged;
+            lock (log)
+            {
+                logged = string.Join(
+                    Environment.NewLine,
+                    log.Select(entry => $"  {entry.Level} {entry.EventId.Name}: {entry.Message}")
+                );
+            }
+
+            throw new TimeoutException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Waited {_ReopenBound.TotalSeconds:0} s for the address once the server was up. The listener and its pool logged:{Environment.NewLine}{logged}"
+                ),
+                e
+            );
+        }
+
         var sender = _CreateTransport(_CreatePool(server.ConnectionString));
         await sender.SendAsync(address, _Reply("after-start"), AbortToken);
         var delivered = await received.Reader.ReadAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
@@ -158,24 +201,6 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         await base.DisposeAsyncCore();
     }
 
-    private static async Task _UntilAsync(Func<Task<bool>> condition, string what)
-    {
-        using var bound = new CancellationTokenSource(_Bound);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(bound.Token, AbortToken);
-
-        while (!await condition())
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(20), linked.Token);
-            }
-            catch (OperationCanceledException e) when (bound.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Gave up after {_Bound} waiting until {what}.", e);
-            }
-        }
-    }
-
     private static async Task<TransportMessage> _SendUntilReceivedAsync(
         RedisReplyTransport sender,
         string address,
@@ -202,7 +227,11 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
         }
     }
 
-    private RedisConnectionPool _CreatePool(string connectionString, int connectionPoolSize = 2)
+    private RedisConnectionPool _CreatePool(
+        string connectionString,
+        int connectionPoolSize = 2,
+        ILoggerFactory? loggerFactory = null
+    )
     {
         var pool = new RedisConnectionPool(
             Options.Create(
@@ -212,7 +241,7 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
                     ConnectionPoolSize = connectionPoolSize,
                 }
             ),
-            NullLoggerFactory.Instance
+            loggerFactory ?? NullLoggerFactory.Instance
         );
         _pools.Add(pool);
 
@@ -245,21 +274,54 @@ internal sealed class DelayedRedisServer : IAsyncDisposable
 {
     private const int _RedisPort = 6379;
 
+    // Names this server's snapshot file, which CONFIG GET reads back: another test's forwarder to another Redis also
+    // answers PING, but not with this name.
+    private readonly string _identity = $"delayed-{Guid.NewGuid():N}.rdb";
+    private readonly PublishedPortCheck _check;
     private readonly RedisContainer _container;
     private readonly BrokerPortForwarder _forwarder;
 
     public DelayedRedisServer()
     {
-        _container = new RedisBuilder(TestImages.Redis).Build();
+        _check = new PublishedPortCheck(_RedisPort, _ReadIdentityAsync);
+        _container = new RedisBuilder(TestImages.Redis)
+            .WithCommand("--dbfilename", _identity)
+            .WithWaitStrategy(_check.AddTo(Wait.ForUnixContainer()))
+            .Build();
         _forwarder = new BrokerPortForwarder(() => _container, _RedisPort);
     }
 
     /// <summary>The server's address, known before it starts.</summary>
     public string ConnectionString => _forwarder.Address;
 
+    /// <summary>Starts the server and returns once it answers through its published port from the test host.</summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        return _container.StartAsync(cancellationToken);
+        return _check.StartAsync(_container, cancellationToken);
+    }
+
+    private async Task<PublishedPortReply> _ReadIdentityAsync(NetworkStream stream, CancellationToken cancellationToken)
+    {
+        await stream.WriteAsync("CONFIG GET dbfilename\r\n"u8.ToArray(), cancellationToken);
+
+        // A CONFIG GET reply is five lines (an array of two bulk strings); an error is one. Read the whole of either, so a
+        // foreign Redis whose reply names another file is told apart without waiting out the attempt.
+        var reply = await PublishedPortCheck.ReadReplyAsync(
+            stream,
+            text => text.Split("\r\n").Length > (text.StartsWith('-') ? 1 : 5),
+            maxBytes: 256,
+            cancellationToken
+        );
+
+        return reply switch
+        {
+            // The runtime accepted the connection but cannot reach the server yet.
+            null => PublishedPortReply.NotYet,
+            // Redis answers LOADING while it reads its data at start, and serves once that finishes.
+            _ when reply.StartsWith("-LOADING", StringComparison.Ordinal) => PublishedPortReply.NotYet,
+            _ when reply.Contains(_identity, StringComparison.Ordinal) => PublishedPortReply.Container,
+            _ => PublishedPortReply.AnotherListener,
+        };
     }
 
     public async ValueTask DisposeAsync()

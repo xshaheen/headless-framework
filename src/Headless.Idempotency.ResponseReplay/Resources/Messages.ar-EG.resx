@@ -37,4 +37,7 @@
   <data name="g:idempotency_key_required" xml:space="preserve">
     <value>نقطة النهاية دي محتاجة ترويسة Idempotency-Key.</value>
   </data>
+  <data name="g:idempotency_response_too_large" xml:space="preserve">
+    <value>الطلب اتنفذ خلاص، بس الرد بتاعه أكبر من إنه يتخزن، فمش هينفع يترجع تاني لو الطلب اتكرر بنفس Idempotency-Key.</value>
+  </data>
 </root>

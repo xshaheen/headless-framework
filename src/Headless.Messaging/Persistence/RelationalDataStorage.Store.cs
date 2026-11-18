@@ -15,6 +15,9 @@ internal sealed partial class RelationalDataStorage
     /// </summary>
     private const int _ReceivedStoreAttempts = 3;
 
+    private const string _NoTransactionConnection =
+        "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back.";
+
     /// <summary>
     /// Persists a published outbox message to the published table. When <paramref name="transaction"/>
     /// is supplied the INSERT participates in the caller's database transaction (transactional outbox).
@@ -89,6 +92,7 @@ internal sealed partial class RelationalDataStorage
                     _t.NextRetryAt,
                     _t.StatusName,
                     _t.MessageId,
+                    _t.Transport,
                     _t.ChangedAt,
                 ],
                 [
@@ -104,11 +108,77 @@ internal sealed partial class RelationalDataStorage
                     $"CASE WHEN @ExpiresAt IS NULL THEN {_dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace")} END",
                     $"CASE WHEN @ExpiresAt IS NULL THEN '{nameof(StatusName.Scheduled)}' WHEN @ExpiresAt <= {_dialect.ShiftByDuration(SqlDialectTokens.Now, "QueueWindow")} THEN '{nameof(StatusName.Queued)}' ELSE '{nameof(StatusName.Delayed)}' END",
                     "@MessageId",
+                    "@Transport",
                     SqlDialectTokens.Now,
                 ],
                 [_t.Added, _t.NextRetryAt]
             )
         );
+    }
+
+    public MediumMessage CreatePublishedMessage(MediumMessage message, DateTimeOffset? publishAt)
+    {
+        return new MediumMessage
+        {
+            StorageId = _guidGenerator.Create(),
+            Origin = message.Origin,
+            Content = _ContentOf(message),
+            Lane = message.Lane,
+            TransportName = message.TransportName,
+            ExpiresAt = publishAt,
+            Retries = 0,
+            InlineAttempts = 0,
+        };
+    }
+
+    /// <summary>
+    /// Inserts published rows of one transaction as one insert statement each, sent together where the provider
+    /// batches commands, so a run of rows costs one round trip instead of one per row.
+    /// </summary>
+    /// <remarks>
+    /// Each row stays its own statement, so it reads the database clock exactly as a single store does, and the
+    /// rows are written in the order given. A provider that cannot batch runs the statements one by one.
+    /// </remarks>
+    public async ValueTask StorePublishedMessagesAsync(
+        IReadOnlyList<(string Name, MediumMessage Message)> rows,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(rows);
+        Argument.IsNotNull(transaction);
+
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var connection = transaction.Connection ?? throw new InvalidOperationException(_NoTransactionConnection);
+        var binds = new Action<DbCommand>[rows.Count];
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var (name, message) = rows[i];
+            binds[i] = command => _BindStorePublished(command, name, message);
+        }
+
+        await RelationalCommand
+            .ExecuteBatchReaderAsync(
+                connection,
+                transaction,
+                _storePublishedSql,
+                CommandTimeoutSeconds,
+                binds,
+                _MaxCommandParameters,
+                async (reader, index, ct) =>
+                {
+                    var (added, nextRetryAt) = await _ReadStoredPublishedAsync(reader, ct).ConfigureAwait(false);
+                    var message = rows[index].Message;
+                    message.Added = added;
+                    message.NextRetryAt = nextRetryAt;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async ValueTask<MediumMessage> _StoreMessageAsync(
@@ -119,24 +189,11 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken
     )
     {
-        var stored = new MediumMessage
-        {
-            StorageId = _guidGenerator.Create(),
-            Origin = message.Origin,
-            Content = _ContentOf(message),
-            Lane = message.Lane,
-            ExpiresAt = publishAt,
-            Retries = 0,
-            InlineAttempts = 0,
-        };
+        var stored = CreatePublishedMessage(message, publishAt);
 
         await using var ownedConnection = transaction is null ? _CreateConnection() : null;
         var connection =
-            transaction?.Connection
-            ?? ownedConnection
-            ?? throw new InvalidOperationException(
-                "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
-            );
+            transaction?.Connection ?? ownedConnection ?? throw new InvalidOperationException(_NoTransactionConnection);
 
         var (added, nextRetryAt) = await RelationalCommand
             .ExecuteReaderAsync(
@@ -144,35 +201,8 @@ internal sealed partial class RelationalDataStorage
                 transaction,
                 _storePublishedSql,
                 CommandTimeoutSeconds,
-                command =>
-                {
-                    _dialect.AddParameter(command, "Id", SqlColumnType.Guid, stored.StorageId);
-                    _BindVersion(command);
-                    _dialect.AddParameter(command, "Name", _NameType, name);
-                    _dialect.AddParameter(command, "Content", _ContentType, stored.Content);
-                    _dialect.AddParameter(
-                        command,
-                        "IntentType",
-                        SqlColumnType.Int16,
-                        MessageLaneCompatibility.ToPersistedValue(stored.Lane)
-                    );
-                    _dialect.AddParameter(command, "ExpiresAt", SqlColumnType.Timestamp, publishAt);
-                    _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
-                    _dialect.AddDuration(command, "QueueWindow", TimeSpan.FromMinutes(1));
-                    _dialect.AddParameter(command, "MessageId", _MessageIdType, message.Origin.Id);
-                },
-                static async (reader, ct) =>
-                {
-                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        throw new InvalidOperationException("The message insert returned no row.");
-                    }
-
-                    return (
-                        await reader.GetFieldValueAsync<DateTimeOffset>(0, ct).ConfigureAwait(false),
-                        await _ReadInstantAsync(reader, 1, ct).ConfigureAwait(false)
-                    );
-                },
+                command => _BindStorePublished(command, name, stored),
+                _ReadStoredPublishedAsync,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -181,6 +211,41 @@ internal sealed partial class RelationalDataStorage
         stored.NextRetryAt = nextRetryAt;
 
         return stored;
+    }
+
+    private void _BindStorePublished(DbCommand command, string name, MediumMessage stored)
+    {
+        _dialect.AddParameter(command, "Id", SqlColumnType.Guid, stored.StorageId);
+        _BindVersion(command);
+        _dialect.AddParameter(command, "Name", _NameType, name);
+        _dialect.AddParameter(command, "Content", _ContentType, stored.Content);
+        _dialect.AddParameter(
+            command,
+            "IntentType",
+            SqlColumnType.Int16,
+            MessageLaneCompatibility.ToPersistedValue(stored.Lane)
+        );
+        _dialect.AddParameter(command, "ExpiresAt", SqlColumnType.Timestamp, stored.ExpiresAt);
+        _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
+        _dialect.AddDuration(command, "QueueWindow", TimeSpan.FromMinutes(1));
+        _dialect.AddParameter(command, "MessageId", _MessageIdType, stored.Origin.Id);
+        _dialect.AddParameter(command, "Transport", _TransportType, stored.TransportName);
+    }
+
+    private static async Task<(DateTimeOffset Added, DateTimeOffset? NextRetryAt)> _ReadStoredPublishedAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The message insert returned no row.");
+        }
+
+        return (
+            await reader.GetFieldValueAsync<DateTimeOffset>(0, cancellationToken).ConfigureAwait(false),
+            await _ReadInstantAsync(reader, 1, cancellationToken).ConfigureAwait(false)
+        );
     }
 
     /// <summary>
@@ -297,10 +362,14 @@ internal sealed partial class RelationalDataStorage
             ExpiresAfter: null,
             DueAfter: Options.RetryPolicy.InitialDispatchGrace,
             message.SequenceKey
-        );
+        )
+        {
+            Delivery = true,
+        };
 
-        // Adopt the authoritative persisted row id: a redelivery that rewrites an existing row keeps that row's id, so
-        // the freshly generated StorageId would be stale and the caller's later state change (by id) would no-op.
+        // Adopt the authoritative persisted row: a redelivery that rewrites an existing row keeps that row's id and
+        // counters, so the generated id would make the caller's later state change (by id) a no-op, and fresh counters
+        // would fail its lease-and-reserve, which compares them with the row's.
         if (
             await _StoreReceivedAsync("messaging.store_received_message", row, cancellationToken)
                 .ConfigureAwait(false) is
@@ -310,6 +379,8 @@ internal sealed partial class RelationalDataStorage
             mediumMessage.StorageId = stored.Id;
             mediumMessage.Added = stored.Added;
             mediumMessage.NextRetryAt = stored.NextRetryAt;
+            mediumMessage.Retries = stored.Retries;
+            mediumMessage.InlineAttempts = stored.InlineAttempts;
         }
 
         return mediumMessage;
@@ -360,13 +431,22 @@ internal sealed partial class RelationalDataStorage
         TimeSpan? ExpiresAfter,
         TimeSpan? DueAfter,
         string? SequenceKey
-    );
+    )
+    {
+        /// <summary>
+        /// Whether the row is a delivery to dispatch, rather than one written terminal. A delivery's redelivery
+        /// rewrites only a due row and keeps its failure history.
+        /// </summary>
+        public bool Delivery { get; init; }
+    }
 
     /// <summary>
     /// Renders the statements that store a received message: the first-delivery insert, the redelivery's locking read,
     /// and its rewrite, with the expiry and due time read from the database clock only when the delivery carries them.
+    /// A <paramref name="delivery"/> rewrite leaves a row whose retry or deferral is still ahead alone, and keeps the
+    /// status and failure history of the row it rewrites.
     /// </summary>
-    private ReceivedStoreSql _RenderStoreReceived(bool hasExpiry, bool hasDue)
+    private ReceivedStoreSql _RenderStoreReceived(bool hasExpiry, bool hasDue, bool delivery = false)
     {
         var expiresAt = hasExpiry ? _dialect.ShiftByDuration(SqlDialectTokens.Now, "ExpiresAfter") : "NULL";
         var nextRetryAt = hasDue ? _dialect.ShiftByDuration(SqlDialectTokens.Now, "DueAfter") : "NULL";
@@ -417,18 +497,28 @@ internal sealed partial class RelationalDataStorage
                     "@SequenceKey",
                     SqlDialectTokens.Now,
                 ],
-                [_t.Id, _t.Added, _t.NextRetryAt],
+                [_t.Id, _t.Added, _t.NextRetryAt, _t.Retries, _t.InlineAttempts],
                 nonInbox
             )
         );
         var lockSql = _dialect.Render(new SqlLockedRead(_receivedTable, identity, [_t.Id], nonInbox));
+        var unleased = $"({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= {SqlDialectTokens.Now})";
+        // A delivery's row is rewritten only once it is due: a row whose retry back-off or circuit deferral is ahead
+        // waits for it, and one whose dispatch is put off is still held by a delivery that waits on some host.
+        var rewriteCondition = delivery
+            ? $"{nonInbox} AND {_terminalGuard} AND {unleased} AND ({_t.NextRetryAt} IS NULL OR {_t.NextRetryAt} <= {SqlDialectTokens.Now})"
+            : $"{nonInbox} AND {_terminalGuard} AND {unleased}";
+        // The redelivery runs the row as the attempt after its last one, so the status and failure history stay.
+        var rewriteSet = delivery
+            ? $"{_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.SequenceKey}=@SequenceKey, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}"
+            : $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_t.SequenceKey}=@SequenceKey, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}";
         var rewriteSql = _dialect.Render(
             new SqlFencedTransition(
                 _receivedTable,
                 [new SqlKeyColumn(_t.Id, "Id")],
-                $"{nonInbox} AND {_terminalGuard} AND ({_t.LeaseState} <> {_t.ActiveLease} OR {_t.LeaseExpiresAt} <= {SqlDialectTokens.Now})",
-                $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_t.SequenceKey}=@SequenceKey, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}",
-                [_t.Id, _t.Added, _t.NextRetryAt]
+                rewriteCondition,
+                rewriteSet,
+                [_t.Id, _t.Added, _t.NextRetryAt, _t.Retries, _t.InlineAttempts]
             )
         );
 
@@ -438,24 +528,27 @@ internal sealed partial class RelationalDataStorage
     private readonly record struct ReceivedStoreSql(string Insert, string Lock, string Rewrite);
 
     /// <summary>Inserts a received message, or rewrites its redelivered non-terminal, unleased row.</summary>
-    /// <returns>The written row's id and database-stamped times, or <see langword="null"/> when a guard refused it.</returns>
+    /// <returns>
+    /// The written row's id, database-stamped times, and counters, or <see langword="null"/> when a guard refused it.
+    /// </returns>
     /// <remarks>
     /// The row's identity is a partial unique index over non-inbox rows keyed by the consumer it was delivered to, so a
     /// redelivery to the same consumer finds the same row. The first delivery is one insert. A
     /// redelivery locks the existing row and rewrites it only while it is neither terminal (a redelivered message must
     /// not turn a Succeeded row back to Failed and fire OnTerminal again) nor leased (releasing the lease of an
-    /// in-flight attempt would let the retry processor pick the row up mid-attempt). The rewrite never resets the
-    /// durable retry counters.
+    /// in-flight attempt would let the retry processor pick the row up mid-attempt). A delivery's redelivery also
+    /// waits for a row that is not yet due, and keeps the row's status and failure history. The rewrite never resets
+    /// the durable retry counters, and returns them.
     /// </remarks>
-    private async ValueTask<(Guid Id, DateTimeOffset Added, DateTimeOffset? NextRetryAt)?> _StoreReceivedAsync(
+    private async ValueTask<StoredReceivedRow?> _StoreReceivedAsync(
         string operation,
         ReceivedRow row,
         CancellationToken cancellationToken
     )
     {
-        var (insertSql, lockSql, rewriteSql) = _storeReceivedSql[
-            (row.ExpiresAfter is null ? 0 : 2) | (row.DueAfter is null ? 0 : 1)
-        ];
+        var (insertSql, lockSql, rewriteSql) = row.Delivery
+            ? _storeDeliverySql
+            : _storeReceivedSql[(row.ExpiresAfter is null ? 0 : 2) | (row.DueAfter is null ? 0 : 1)];
 
         var intentType = MessageLaneCompatibility.ToPersistedValue(row.Lane);
         var identityHash = CreateConsumerIdentityHash(Options.Version, row.MessageId, intentType, row.ConsumerIdentity);
@@ -556,7 +649,7 @@ internal sealed partial class RelationalDataStorage
 
                         if (storedId is not { } id)
                         {
-                            return (Found: false, Stored: ((Guid, DateTimeOffset, DateTimeOffset?)?)null);
+                            return (Found: false, Stored: (StoredReceivedRow?)null);
                         }
 
                         var (transitioned, transitionedRow) = await RelationalCommand
@@ -589,7 +682,7 @@ internal sealed partial class RelationalDataStorage
         }
     }
 
-    private static async Task<(bool Applied, (Guid, DateTimeOffset, DateTimeOffset?)? Row)> _ReadStoredReceivedAsync(
+    private static async Task<(bool Applied, StoredReceivedRow? Row)> _ReadStoredReceivedAsync(
         DbDataReader reader,
         CancellationToken cancellationToken
     )
@@ -601,13 +694,24 @@ internal sealed partial class RelationalDataStorage
 
         return (
             true,
-            (
+            new StoredReceivedRow(
                 reader.GetGuid(1),
                 await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false),
-                await _ReadInstantAsync(reader, 3, cancellationToken).ConfigureAwait(false)
+                await _ReadInstantAsync(reader, 3, cancellationToken).ConfigureAwait(false),
+                reader.GetInt32(4),
+                reader.GetInt32(5)
             )
         );
     }
+
+    /// <summary>A received row as the store wrote it: its id, the database-stamped times, and its counters.</summary>
+    private sealed record StoredReceivedRow(
+        Guid Id,
+        DateTimeOffset Added,
+        DateTimeOffset? NextRetryAt,
+        int Retries,
+        int InlineAttempts
+    );
 
     /// <summary>Deletes a single received message by its storage identifier.</summary>
     /// <returns>1 if the row was deleted; 0 if not found.</returns>

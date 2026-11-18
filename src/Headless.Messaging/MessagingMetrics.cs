@@ -51,6 +51,7 @@ internal static class MessagingMetrics
     internal const string ConsumeTerminalName = "headless.messaging.consume.terminal";
     internal const string BacklogPendingName = "headless.messaging.backlog.pending";
     internal const string BacklogOldestAgeName = "headless.messaging.backlog.oldest_age";
+    internal const string SequentialWaitingName = "headless.messaging.sequential.waiting";
 
     // --- Attribute (tag) names --------------------------------------------------------------------------------
 
@@ -305,6 +306,17 @@ internal static class MessagingMetrics
             description: "How long the oldest still-waiting stored message has waited, per outbox and inbox, as of the backlog sampler's last read; zero when none waits."
         );
 
+    // Every running set of sequential-consumer sequencers of the process, one per dispatcher start. A collection reads
+    // their counters, which the sequencers keep under their own locks: it takes no lock and touches no storage.
+    private static readonly ConcurrentDictionary<ConsumerKeySequencers, byte> _Sequencers = new();
+
+    private static readonly ObservableGauge<long> _SequentialWaiting = MessagingDiagnostics.Meter.CreateObservableGauge(
+        SequentialWaitingName,
+        _ObserveSequentialWaiting,
+        unit: "{message}",
+        description: "Messages a sequential consumer has stored and taken in on this host that wait to run, behind an earlier message of their key or for a free concurrency slot."
+    );
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _ClientSentMessages.Enabled
@@ -331,11 +343,22 @@ internal static class MessagingMetrics
         || _OutboxTerminal.Enabled
         || _ConsumeTerminal.Enabled
         || _BacklogPending.Enabled
-        || _BacklogOldestAge.Enabled;
+        || _BacklogOldestAge.Enabled
+        || _SequentialWaiting.Enabled;
 
     internal static void RegisterBacklogSampler(BacklogSamplingProcessor sampler)
     {
         _BacklogSamplers.TryAdd(sampler, 0);
+    }
+
+    internal static void RegisterSequencers(ConsumerKeySequencers sequencers)
+    {
+        _Sequencers.TryAdd(sequencers, 0);
+    }
+
+    internal static void UnregisterSequencers(ConsumerKeySequencers sequencers)
+    {
+        _Sequencers.TryRemove(sequencers, out _);
     }
 
     internal static void UnregisterBacklogSampler(BacklogSamplingProcessor sampler)
@@ -739,6 +762,28 @@ internal static class MessagingMetrics
             {
                 yield return new Measurement<long>(measurement.Pending, measurement.Tags);
             }
+        }
+    }
+
+    private static IEnumerable<Measurement<long>> _ObserveSequentialWaiting()
+    {
+        // Summed by consumer, so two dispatchers in one process, such as two hosts in a test, report one value per
+        // consumer instead of two measurements with the same attributes.
+        var waiting = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var sequencers in _Sequencers.Keys)
+        {
+            foreach (var (consumerIdentity, count) in sequencers.WaitingByConsumer())
+            {
+                waiting[consumerIdentity] = waiting.GetValueOrDefault(consumerIdentity) + count;
+            }
+        }
+
+        foreach (var (consumerIdentity, count) in waiting)
+        {
+            yield return new Measurement<long>(
+                count,
+                new KeyValuePair<string, object?>(TagConsumerGroupName, consumerIdentity)
+            );
         }
     }
 

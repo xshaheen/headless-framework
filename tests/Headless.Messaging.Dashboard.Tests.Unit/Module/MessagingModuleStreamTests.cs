@@ -20,12 +20,15 @@ namespace Tests.Module;
 /// </summary>
 public sealed class MessagingModuleStreamTests : TestBase
 {
-    private static readonly TimeSpan _Step = TimeSpan.FromMilliseconds(50);
-
     // The shell's default change poll interval.
     private static readonly TimeSpan _ChangeInterval = TimeSpan.FromSeconds(2);
 
-    private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 8, 9, 0, 0, TimeSpan.Zero));
+    // How long the event publisher holds a change before the stream sees it.
+    private static readonly TimeSpan _CoalesceWindow = TimeSpan.FromMilliseconds(250);
+
+    private readonly TimerSignalingFakeTimeProvider _time = new(
+        new DateTimeOffset(2026, 11, 8, 9, 0, 0, TimeSpan.Zero)
+    );
 
     [Fact]
     public async Task should_stream_a_received_failure_on_the_serving_node_without_a_list_request()
@@ -50,10 +53,10 @@ public sealed class MessagingModuleStreamTests : TestBase
         var failedAt = _time.GetUtcNow();
         stored.FailureFingerprint = "v1:declined";
         await storage.ChangeReceiveStateAsync(stored, StatusName.Failed, cancellationToken: AbortToken);
-        await _AdvanceUntilAsync(change);
+        await _AdvanceOneChangeIntervalAsync();
 
         // then
-        var json = await change;
+        var json = await change.Bounded();
         json.GetProperty("module").GetString().Should().Be("messaging");
         json.GetProperty("kind").GetString().Should().Be("received");
         json.GetProperty("id").GetString().Should().Be($"node-a~primary~{stored.StorageId:D}");
@@ -92,10 +95,10 @@ public sealed class MessagingModuleStreamTests : TestBase
         // when: node B fails the row; node A's own pipelines never hear of it
         var failedAt = _time.GetUtcNow();
         await throughB.ChangeReceiveStateAsync(stored, StatusName.Failed, cancellationToken: AbortToken);
-        await _AdvanceUntilAsync(change);
+        await _AdvanceOneChangeIntervalAsync();
 
         // then
-        var json = await change;
+        var json = await change.Bounded();
         json.GetProperty("id").GetString().Should().Be($"node-a~primary~{stored.StorageId:D}");
         json.GetProperty("projection").GetProperty("status").GetString().Should().Be("Failed");
         (_time.GetUtcNow() - failedAt).Should().BeLessThanOrEqualTo(_ChangeInterval + TimeSpan.FromSeconds(1));
@@ -200,18 +203,15 @@ public sealed class MessagingModuleStreamTests : TestBase
         return response;
     }
 
-    // Moves the shared clock in small steps, as real time would pass, until the change arrives or 15 s of real time pass.
-    private async Task _AdvanceUntilAsync(Task change)
+    // The change reader's timer ticks once per interval whether or not the reader is waiting yet, so one advance made
+    // after the timer exists is exactly one read of the store. The change it publishes then waits out the coalescing
+    // window on a timer the publisher arms only once the change arrives.
+    private async Task _AdvanceOneChangeIntervalAsync()
     {
-        var limit = DateTime.UtcNow + TimeSpan.FromSeconds(15);
-
-        while (!change.IsCompleted && DateTime.UtcNow < limit)
-        {
-            _time.Advance(_Step);
-            await Task.Delay(10, AbortToken);
-        }
-
-        change.IsCompleted.Should().BeTrue("the change should reach the stream");
+        await _time.WhenTimerArmed(_ChangeInterval).Bounded();
+        _time.Advance(_ChangeInterval);
+        await _time.WhenTimerArmed(_CoalesceWindow).Bounded();
+        _time.Advance(_CoalesceWindow);
     }
 
     /// <summary>

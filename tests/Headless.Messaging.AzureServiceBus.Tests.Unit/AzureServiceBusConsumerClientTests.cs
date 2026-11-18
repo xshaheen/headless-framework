@@ -761,27 +761,71 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_restart_the_processor_after_the_pending_stop_completes_when_resume_async()
+    public async Task should_return_from_resume_async_without_waiting_for_a_running_handler_of_another_circuit_identity()
     {
-        // given — a listening client paused while a handler still runs, so the processor's stop is pending
+        // given — a client shared by two circuit identities: one identity's handler still runs, and the other identity's
+        // circuit paused the client, so the processor's stop waits on that handler
         var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
         client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
         await client.ListeningAsync(TimeSpan.FromSeconds(5), AbortToken);
         processor.ClearReceivedCalls();
+        var restarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        processor.When(p => p.StartProcessingAsync(Arg.Any<CancellationToken>())).Do(_ => restarted.TrySetResult());
         await client.PauseAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         try
         {
-            // when
+            // when — the pausing identity's circuit resumes
             var resume = client.ResumeAsync(AbortToken).AsTask();
 
-            // then — the restart waits for the stop, so it is not skipped as still processing
-            resume.IsCompleted.Should().BeFalse();
+            // then — the resume returns at once, and the restart waits for the stop instead of being skipped while
+            // the processor still reports processing
+            resume.IsCompletedSuccessfully.Should().BeTrue();
             await processor.DidNotReceive().StartProcessingAsync(Arg.Any<CancellationToken>());
             handlerReturned.TrySetResult();
-            await resume.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            await restarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             await processor.Received(1).StartProcessingAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            handlerReturned.TrySetResult();
+            await client.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task should_keep_the_processor_stopped_when_pause_async_follows_a_resume_still_waiting_for_the_stop()
+    {
+        // given — a paused client whose resume is still waiting for the stop to drain a running handler
+        var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
+        client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
+        await client.ListeningAsync(TimeSpan.FromSeconds(5), AbortToken);
+        processor.ClearReceivedCalls();
+        var secondStop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stops = 0;
+        processor
+            .When(p => p.StopProcessingAsync(Arg.Any<CancellationToken>()))
+            .Do(_ =>
+            {
+                if (Interlocked.Increment(ref stops) == 2)
+                {
+                    secondStop.TrySetResult();
+                }
+            });
+        await client.PauseAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await client.ResumeAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        try
+        {
+            // when — another circuit pauses the client again before the first stop finished
+            await client.PauseAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            handlerReturned.TrySetResult();
+
+            // then — the second stop runs only after the waiting restart's turn, which the later pause cancelled
+            await secondStop.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            await processor.DidNotReceive().StartProcessingAsync(Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -919,6 +963,37 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
 
         // then
         reports.Contains(MqLogType.BrokerUnreachable).Should().Be(reported);
+    }
+
+    [Fact]
+    public async Task should_log_processor_error_through_logger_when_no_log_callback_is_attached()
+    {
+        // given
+        var logger = Substitute.For<ILogger>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        await using var client = new AzureServiceBusConsumerClient(
+            logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
+        var failure = new ServiceBusException("Settlement failed", ServiceBusFailureReason.GeneralError);
+
+        // when
+        await _RaiseProcessorErrorAsync(client, failure, ServiceBusErrorSource.Complete);
+
+        // then
+        logger
+            .Received(1)
+            .Log(
+                LogLevel.Warning,
+                Arg.Any<EventId>(),
+                Arg.Any<Arg.AnyType>(),
+                failure,
+                Arg.Any<Func<Arg.AnyType, Exception?, string>>()
+            );
     }
 
     [Fact]

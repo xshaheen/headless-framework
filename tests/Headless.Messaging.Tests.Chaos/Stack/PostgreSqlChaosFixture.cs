@@ -34,6 +34,15 @@ public sealed class PostgreSqlChaosFixture : ChaosStackFixture
     public override void UseStorage(MessagingSetupBuilder setup, string connectionString) =>
         setup.UsePostgreSql(connectionString);
 
+    protected override void ClearStoragePools() => NpgsqlConnection.ClearAllPools();
+
+    protected override async Task OpenUnpooledProxiedConnectionAsync(CancellationToken cancellationToken)
+    {
+        var unpooled = new NpgsqlConnectionStringBuilder(ProxiedStorageConnectionString) { Pooling = false };
+        await using var connection = new NpgsqlConnection(unpooled.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public override void UseCoordination(HeadlessCoordinationSetupBuilder setup, string connectionString) =>
         setup.UsePostgreSql(connectionString);
 

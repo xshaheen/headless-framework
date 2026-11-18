@@ -3,6 +3,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Api.Identity;
 
@@ -33,14 +34,20 @@ public static class AuthenticationBuilderExtensions
         where TUser : IdentityUser<TUserId>
         where TUserId : IEquatable<TUserId>
     {
-        builder.Services.AddHttpContextAccessor();
-        builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
+        builder.Services.UseDynamicAuthenticationSchemeProvider();
         // The handler builds its principal through Identity's claims factory; make it write the claim types
         // ICurrentUser reads, or the caller authenticates with no user id and no roles.
         builder.Services.ConfigureOptions<HeadlessIdentityClaimTypesSetup>();
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton<CredentialAuthenticationCache>();
+
+        authenticationScheme ??= BasicAuthenticationOptions.DefaultScheme;
+        builder.Services.AddOptions<BasicAuthenticationOptions, BasicAuthenticationOptionsValidator>(
+            authenticationScheme
+        );
 
         return builder.AddScheme<BasicAuthenticationOptions, BasicAuthenticationHandler<TUser, TUserId>>(
-            authenticationScheme ?? BasicAuthenticationOptions.DefaultScheme,
+            authenticationScheme,
             displayName ?? BasicAuthenticationOptions.DefaultScheme,
             configureOptions ?? (_ => { })
         );

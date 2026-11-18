@@ -160,19 +160,15 @@ public sealed class UnregisteredFunctionReleaseTests : TestBase
         );
         await faulted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (!logger.HasError)
-        {
-            DateTime.UtcNow.Should().BeBefore(deadline, "the pool must log the swallowed work-item fault");
-            await Task.Delay(10, AbortToken);
-        }
+        await logger.ErrorLogged.Bounded();
     }
 
     private sealed class CapturingPoolLogger : ILogger<JobsTaskScheduler>
     {
-        private volatile bool _hasError;
+        private readonly TaskCompletionSource _errorLogged = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public bool HasError => _hasError;
+        // Completes once the pool logs the swallowed work-item fault.
+        public Task ErrorLogged => _errorLogged.Task;
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull
@@ -195,7 +191,7 @@ public sealed class UnregisteredFunctionReleaseTests : TestBase
         {
             if (logLevel == LogLevel.Error && exception is InvalidOperationException)
             {
-                _hasError = true;
+                _errorLogged.TrySetResult();
             }
         }
     }

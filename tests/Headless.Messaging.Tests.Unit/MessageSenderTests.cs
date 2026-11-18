@@ -1808,11 +1808,16 @@ public sealed class MessageSenderTests : TestBase
         // given: a send that outlasts several renewal intervals
         var storage = Substitute.For<IDataStorage>();
         var renewals = 0;
+        var twoRenewals = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         storage
             .RenewPublishLeaseAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                Interlocked.Increment(ref renewals);
+                if (Interlocked.Increment(ref renewals) >= 2)
+                {
+                    twoRenewals.TrySetResult();
+                }
+
                 return ValueTask.FromResult(true);
             });
         var transportMessage = _CreateTransportMessage();
@@ -1826,22 +1831,32 @@ public sealed class MessageSenderTests : TestBase
             .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(async _ =>
             {
-                while (Volatile.Read(ref renewals) < 2)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(5), AbortToken);
-                }
-
+                await twoRenewals.Task.Bounded();
                 return OperateResult.Success;
             });
+        var clock = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
         var sender = _CreateSender(
             storage,
             serializer,
             transport,
-            new MessagingOptions { RetryPolicy = { LeaseRenewalInterval = TimeSpan.FromMilliseconds(20) } }
+            new MessagingOptions { RetryPolicy = { LeaseRenewalInterval = TimeSpan.FromMilliseconds(20) } },
+            timeProvider: clock
         );
 
-        // when
-        var result = await sender.SendAsync(_CreateMediumMessage());
+        // when: each renewal interval passes once the loop has armed its wait, until the send has seen two renewals
+        var sending = sender.SendAsync(_CreateMediumMessage());
+        while (!sending.IsCompleted)
+        {
+            _ = await Task.WhenAny(sending, clock.WaitForArmedTimerAsync());
+            if (sending.IsCompleted)
+            {
+                break;
+            }
+
+            clock.Advance(TimeSpan.FromMilliseconds(20));
+        }
+
+        var result = await sending;
 
         // then: the send kept its row and wrote its success
         result.Succeeded.Should().BeTrue();

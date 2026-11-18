@@ -13,7 +13,7 @@ internal sealed class SmtpClientPooledObjectPolicy(IOptionsMonitor<MailkitSmtpOp
     {
         // Read the snapshot for this instance's options name (null = the default pool). A keyed pool must not
         // read CurrentValue, which always binds the default options.
-        return new SmtpClient { Timeout = (int)options.Get(optionsName).Timeout.TotalMilliseconds };
+        return new PooledSmtpClient { Timeout = (int)options.Get(optionsName).Timeout.TotalMilliseconds };
     }
 
     public bool Return(SmtpClient client)

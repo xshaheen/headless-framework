@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Headless;
 using Headless.Api.ServiceDefaults;
 using Headless.Logging;
@@ -14,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using Serilog;
+using Tests.Helpers;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace Tests;
@@ -30,7 +30,7 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
     public async Task should_export_log_written_under_serilog_to_open_telemetry()
     {
         // given
-        var logs = new ConcurrentQueue<CapturedLog>();
+        var logs = new CapturedItems<CapturedLog>();
         await using var app = await _CreateAppAsync(logs);
         var logger = app.Services.GetRequiredService<ILogger<SerilogOpenTelemetryLogTests>>();
 
@@ -38,7 +38,7 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
         LogProbe(logger, 42);
 
         // then
-        var record = await _WaitForLogAsync(logs, AbortToken);
+        var record = await _WaitForLogAsync(logs);
         record.Attributes.Should().ContainSingle(a => a.Key == "OrderId").Which.Value.Should().Be(42);
     }
 
@@ -46,7 +46,7 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
     public async Task should_export_classified_member_redacted_when_redaction_is_registered()
     {
         // given
-        var logs = new ConcurrentQueue<CapturedLog>();
+        var logs = new CapturedItems<CapturedLog>();
         await using var app = await _CreateAppAsync(
             logs,
             services =>
@@ -62,7 +62,7 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
 #pragma warning restore CA1848, CA1873
 
         // then
-        var record = await _WaitForLogAsync(logs, AbortToken);
+        var record = await _WaitForLogAsync(logs);
         var attribute = record.Attributes.Should().ContainSingle(a => a.Key == "Customer").Subject;
         var customer = attribute.Value?.ToString();
         customer.Should().Contain(StarRedactor.Output).And.Contain("Gold").And.NotContain("Alice");
@@ -74,7 +74,7 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
     public async Task should_export_classified_logger_message_parameter_redacted_under_serilog(bool serilogFirst)
     {
         // given: AddHeadlessSerilog wraps its own factory, so it works before or after AddHeadless
-        var logs = new ConcurrentQueue<CapturedLog>();
+        var logs = new CapturedItems<CapturedLog>();
         await using var app = await _CreateAppAsync(
             logs,
             services =>
@@ -89,16 +89,16 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
         LogClassifiedProbe(logger, "alice@example.com", 42);
 
         // then: the parameter reaches the exporter redacted, and the rendered text carries it instead of a {Email} hole
-        var record = await _WaitForLogAsync(logs, AbortToken);
+        var record = await _WaitForLogAsync(logs);
         record.Attributes.Should().Contain(a => a.Key == "Email" && Equals(a.Value, StarRedactor.Output));
         record.Message.Should().Contain(StarRedactor.Output).And.NotContain("{Email}").And.NotContain("alice");
         record.Attributes.Select(a => a.Value?.ToString()).Should().NotContain("alice@example.com");
     }
 
-    private Task<WebApplication> _CreateAppAsync(ConcurrentQueue<CapturedLog> logs) => _CreateAppAsync(logs, _ => { });
+    private Task<WebApplication> _CreateAppAsync(CapturedItems<CapturedLog> logs) => _CreateAppAsync(logs, _ => { });
 
     private async Task<WebApplication> _CreateAppAsync(
-        ConcurrentQueue<CapturedLog> logs,
+        CapturedItems<CapturedLog> logs,
         Action<IServiceCollection> configureServices,
         bool serilogFirst = false
     )
@@ -145,27 +145,8 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
     private static void _AddSerilog(WebApplicationBuilder builder) =>
         builder.AddHeadlessSerilog(new SerilogOptions { WriteToFiles = false });
 
-    private static async Task<CapturedLog> _WaitForLogAsync(
-        ConcurrentQueue<CapturedLog> logs,
-        CancellationToken cancellationToken
-    )
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-
-        while (true)
-        {
-            foreach (var log in logs)
-            {
-                if (log.Message?.StartsWith(_LogMessage, StringComparison.Ordinal) == true)
-                {
-                    return log;
-                }
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
-        }
-    }
+    private static Task<CapturedLog> _WaitForLogAsync(CapturedItems<CapturedLog> logs) =>
+        logs.WaitForAsync(log => log.Message?.StartsWith(_LogMessage, StringComparison.Ordinal) == true);
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = _LogMessage + " for {OrderId}")]
     private static partial void LogProbe(ILogger logger, int orderId);
@@ -195,11 +176,11 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
     private sealed record CapturedLog(string? Message, IReadOnlyList<KeyValuePair<string, object?>> Attributes);
 
     // The SDK pools LogRecord instances, so copy what the assertions read before OnEnd returns.
-    private sealed class LogCaptureProcessor(ConcurrentQueue<CapturedLog> logs) : BaseProcessor<LogRecord>
+    private sealed class LogCaptureProcessor(CapturedItems<CapturedLog> logs) : BaseProcessor<LogRecord>
     {
         public override void OnEnd(LogRecord data)
         {
-            logs.Enqueue(new CapturedLog(data.FormattedMessage, [.. data.Attributes ?? []]));
+            logs.Add(new CapturedLog(data.FormattedMessage, [.. data.Attributes ?? []]));
         }
     }
 }

@@ -19,8 +19,14 @@ internal static class DistributedLockTestSupport
     /// <summary>EventId of <c>RegularLockLoggerExtensions.LogTryOnceSafetyDeadlineFired</c>.</summary>
     public const int SafetyDeadlineFiredEventId = 24;
 
-    /// <summary>EventId of <c>RegularLockLoggerExtensions.LogFailedToAcquireLockAfter</c> (routine contention).</summary>
+    /// <summary>
+    /// EventId of <c>RegularLockLoggerExtensions.LogFailedToAcquireLockAfter</c> (Warning: a blocking acquire timed out,
+    /// or a try-once storage call threw).
+    /// </summary>
     public const int FailedToAcquireLockAfterEventId = 13;
+
+    /// <summary>EventId of <c>RegularLockLoggerExtensions.LogFailedToAcquireLock</c> (Debug: the resource was held).</summary>
+    public const int FailedToAcquireLockEventId = 7;
 
     /// <summary>Mirrors <c>_NonBlockingAcquireDeadline</c> in the providers (seconds).</summary>
     public const int NonBlockingAcquireDeadlineSeconds = 10;
@@ -33,7 +39,9 @@ internal static class DistributedLockTestSupport
     /// Use this, not <see cref="DrainUntilAsync"/>, before asserting that something happened. Advancing a
     /// <see cref="FakeTimeProvider"/> only queues the monitor's continuation on the thread pool; on a loaded machine
     /// that continuation can stay undispatched for longer than any fixed number of yields, and a wait that gave up
-    /// then fails a pre-condition the code was about to meet.
+    /// then fails a pre-condition the code was about to meet. It stays a counted wait: the handle exposes no signal
+    /// for a recorded renewal, and a cadence tick is not one, because a timer of the same length is created between
+    /// the renew returning and the count being incremented.
     /// </remarks>
     public static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {
@@ -55,8 +63,8 @@ internal static class DistributedLockTestSupport
     /// <summary>
     /// Gives queued background work a short, bounded chance to run, stopping early once <paramref name="condition"/>
     /// holds. Use it only before asserting that something did <em>not</em> happen; the budget is a fixed number of
-    /// scheduler turns, so it can end before slow work finishes. To wait for something that must happen, use
-    /// <see cref="WaitUntilAsync"/>.
+    /// scheduler turns, so it can end before slow work finishes. To wait for something that must happen, await the
+    /// signal the work raises (a handle's invocation count, a token's cancellation, an armed timer).
     /// </summary>
     public static async Task DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {
@@ -146,6 +154,51 @@ internal static class DistributedLockTestSupport
             {
                 eventIds.Add(eventId.Id);
             }
+        }
+    }
+}
+
+/// <summary>
+/// An <see cref="ILogger{T}"/> that records each entry's EventId and level, so a test can assert the level an
+/// operator sees. Works for internal provider type args, like <see cref="DistributedLockTestSupport.CapturingLogger{T}"/>.
+/// </summary>
+internal sealed class LevelCapturingLogger<T> : ILogger<T>
+{
+    private readonly List<(int EventId, LogLevel Level)> _entries = [];
+
+    public IReadOnlyList<(int EventId, LogLevel Level)> Entries
+    {
+        get
+        {
+            lock (_entries)
+            {
+                return [.. _entries];
+            }
+        }
+    }
+
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull
+    {
+        return null;
+    }
+
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return true;
+    }
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    )
+    {
+        lock (_entries)
+        {
+            _entries.Add((eventId.Id, logLevel));
         }
     }
 }

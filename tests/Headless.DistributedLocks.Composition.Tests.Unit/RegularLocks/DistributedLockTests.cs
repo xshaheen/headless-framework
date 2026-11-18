@@ -340,15 +340,18 @@ public sealed class DistributedLockTests : TestBase
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
         await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        var acquireTimeout = TimeSpan.FromSeconds(30);
+        var timeProvider = new TimerRecordingTimeProvider();
+        var waiter = _CreateProvider(timeProvider: timeProvider);
         using var cts = new CancellationTokenSource();
 
-        // when
-        var acquireTask = provider.AcquireAsync(
+        // when - cancelled once the waiter is parked on its retry backoff, so the cancel interrupts the wait
+        var acquireTask = waiter.AcquireAsync(
             resource,
-            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+            new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
             cts.Token
         );
-        await Task.Delay(50, AbortToken);
+        await timeProvider.WaitForTimerAsync(dueTime => dueTime < acquireTimeout, AbortToken);
         await cts.CancelAsync();
 
         // then
@@ -590,8 +593,10 @@ public sealed class DistributedLockTests : TestBase
     {
         // given
         var options = new DistributedLockOptions { MaxWaitersPerResource = 2 };
-        var provider = _CreateProvider(options);
+        var timeProvider = new TimerRecordingTimeProvider();
+        var provider = _CreateProvider(options, timeProvider: timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
+        var acquireTimeout = TimeSpan.FromSeconds(30);
 
         // Pre-lock the resource
         await _storage.InsertAsync(options.KeyPrefix + resource, "existing-lock", TimeSpan.FromMinutes(5), AbortToken);
@@ -599,28 +604,30 @@ public sealed class DistributedLockTests : TestBase
         var cts = new CancellationTokenSource();
         try
         {
-            // Start multiple waiters - they will wait for retry
+            // Start multiple waiters - each one is registered once it arms its retry backoff
             _ = provider.TryAcquireAsync(
                 resource,
-                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
                 cts.Token
             );
-            await Task.Delay(100, AbortToken); // Give time for waiter1 to enter retry loop
+            await timeProvider.WaitForTimerAsync(dueTime => dueTime < acquireTimeout, AbortToken); // waiter1 in retry loop
 
             _ = provider.TryAcquireAsync(
                 resource,
-                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
                 cts.Token
             );
-            await Task.Delay(100, AbortToken); // Give time for waiter2 to enter retry loop
+            await timeProvider.WaitForTimerAsync(dueTime => dueTime < acquireTimeout, AbortToken); // waiter2 in retry loop
 
             // when - third waiter should throw immediately when max exceeded
             var act = async () =>
-                await provider.TryAcquireAsync(
-                    resource,
-                    new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
-                    cts.Token
-                );
+                await provider
+                    .TryAcquireAsync(
+                        resource,
+                        new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
+                        cts.Token
+                    )
+                    .Bounded();
 
             // then
             await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Maximum waiters per resource*");
@@ -637,7 +644,9 @@ public sealed class DistributedLockTests : TestBase
     {
         // given
         var options = new DistributedLockOptions { MaxConcurrentWaitingResources = 2 };
-        var provider = _CreateProvider(options);
+        var timeProvider = new TimerRecordingTimeProvider();
+        var provider = _CreateProvider(options, timeProvider: timeProvider);
+        var acquireTimeout = TimeSpan.FromSeconds(30);
 
         // Pre-lock different resources
         await _storage.InsertAsync(options.KeyPrefix + "resource1", "lock1", TimeSpan.FromMinutes(5), AbortToken);
@@ -647,28 +656,30 @@ public sealed class DistributedLockTests : TestBase
         var cts = new CancellationTokenSource();
         try
         {
-            // Start waiters on different resources
+            // Start waiters on different resources; each one is registered once it arms its retry backoff
             _ = provider.TryAcquireAsync(
                 "resource1",
-                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
                 cts.Token
             );
-            await Task.Delay(100, AbortToken);
+            await timeProvider.WaitForTimerAsync(dueTime => dueTime < acquireTimeout, AbortToken);
 
             _ = provider.TryAcquireAsync(
                 "resource2",
-                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
                 cts.Token
             );
-            await Task.Delay(100, AbortToken);
+            await timeProvider.WaitForTimerAsync(dueTime => dueTime < acquireTimeout, AbortToken);
 
             // when - third resource should throw
             var act = async () =>
-                await provider.TryAcquireAsync(
-                    "resource3",
-                    new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
-                    cts.Token
-                );
+                await provider
+                    .TryAcquireAsync(
+                        "resource3",
+                        new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
+                        cts.Token
+                    )
+                    .Bounded();
 
             // then
             await act.Should()
@@ -816,16 +827,16 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_failed_to_acquire_and_tag_metric_contended_when_resource_is_held()
+    public async Task should_log_contention_at_debug_and_tag_metric_contended_when_try_once_finds_resource_held()
     {
-        // given — storage that promptly returns "not acquired" (routine contention, no stall)
+        // given — storage that promptly returns "not acquired": another holder has the lock, the routine outcome a
+        // standby host polling with a try-once acquire sees on every attempt
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(DistributedLockAcquireResult.Failed));
 
-        var captured = new List<int>();
-        var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
+        var logger = new LevelCapturingLogger<DistributedLock>();
 
         using var meterListener = new MeterListener();
         var failedReasons = DistributedLockTestSupport.CaptureFailedReasons(meterListener, "headless.lock.failed");
@@ -840,13 +851,38 @@ public sealed class DistributedLockTests : TestBase
             CancellationToken.None
         );
 
-        // then — routine contention keeps its existing signal; the safety-deadline EventId stays
-        // silent (exclusivity via the isolated substitute logger; metric assertion is Contain-only
-        // because the instrument is process-wide).
+        // then — contention is logged at Debug and nothing reaches Warning; the metric is Contain-only because the
+        // instrument is process-wide.
         result.Should().BeNull();
-        captured.Should().Contain(_FailedToAcquireLockAfterEventId);
-        captured.Should().NotContain(_SafetyDeadlineFiredEventId);
+        logger.Entries.Should().Contain((DistributedLockTestSupport.FailedToAcquireLockEventId, LogLevel.Debug));
+        logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
         failedReasons.Should().Contain(DistributedLockMetrics.ReasonContended);
+    }
+
+    [Fact]
+    public async Task should_log_failed_to_acquire_at_warning_when_try_once_storage_call_throws()
+    {
+        // given — a lock store that is unreachable, a genuine failure an operator must see
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException<DistributedLockAcquireResult>(new TimeoutException("store unreachable")));
+
+        var logger = new LevelCapturingLogger<DistributedLock>();
+        var provider = _CreateProvider(storage: storage, logger: logger);
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
+        );
+
+        // then
+        result.Should().BeNull();
+        logger.Entries.Should().Contain((_FailedToAcquireLockAfterEventId, LogLevel.Warning));
+        logger.Entries.Should().NotContain(e => e.EventId == DistributedLockTestSupport.FailedToAcquireLockEventId);
     }
 
     [Fact]
@@ -1277,22 +1313,26 @@ public sealed class DistributedLockTests : TestBase
     public async Task should_acquire_waiting_lock_with_polling_when_no_release_transport_is_configured()
     {
         // given
-        var provider = _CreateProvider(useSilentSignal: true);
+        var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
         await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        var acquireTimeout = TimeSpan.FromSeconds(30);
+        var timeProvider = new TimerRecordingTimeProvider();
+        var waiter = _CreateProvider(useSilentSignal: true, timeProvider: timeProvider);
 
-        // when
-        var acquireTask = provider.TryAcquireAsync(
+        // when - the release happens only once the waiter is parked on its backoff, and fake time is then the only
+        // thing that can wake it
+        var acquireTask = waiter.TryAcquireAsync(
             resource,
-            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+            new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
             AbortToken
         );
-        await Task.Delay(50, AbortToken);
+        await timeProvider.WaitForTimerAsync(dueTime => dueTime < acquireTimeout, AbortToken);
         await existing.ReleaseAsync();
 
         for (var i = 0; i < 20 && !acquireTask.IsCompleted; i++)
         {
-            _timeProvider.Advance(TimeSpan.FromMilliseconds(500));
+            timeProvider.Advance(TimeSpan.FromMilliseconds(500));
             await Task.Yield();
         }
 

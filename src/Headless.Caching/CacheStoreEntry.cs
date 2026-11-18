@@ -37,6 +37,15 @@ public readonly record struct CacheStoreEntry<T>(
     /// </summary>
     public DateTime? CreatedAt { get; init; }
 
+    /// <summary>
+    /// Gets the optional UTC timestamp until which a fail-safe throttle holds back the factory for this entry. Only
+    /// the fail-safe throttle restamp sets it; every other write clears it. Stores return it as stored and keep
+    /// reporting a tag- or clear-invalidated entry as logically expired; the factory coordinator, with fail-safe
+    /// enabled, serves such a reserve without calling the factory until this time, so a failing factory runs once
+    /// per window instead of on every call. Direct reads ignore it, so they still miss the invalidated entry.
+    /// </summary>
+    public DateTime? ThrottledUntil { get; init; }
+
     /// <summary>Gets the optional invalidation tags associated with the cached value.</summary>
     public IReadOnlyCollection<string>? Tags { get; init; }
 

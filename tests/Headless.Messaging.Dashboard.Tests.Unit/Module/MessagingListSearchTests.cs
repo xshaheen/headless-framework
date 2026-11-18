@@ -32,7 +32,8 @@ public sealed class MessagingListSearchTests : TestBase
     [Fact]
     public async Task should_find_content_from_a_post_body_and_never_log_the_text_searched_for()
     {
-        // given: two published rows, one holding the order number; every log line of the host is captured
+        // given: two published rows, one holding the order number; every log line of the host is captured. The
+        // order number holds no digit or hex letter, so a request timing or id in a log line cannot contain it.
         using var logs = new CapturingLoggerProvider();
         await using var app = await MessagingModuleTestHost.StartAsync(
             _time,
@@ -43,7 +44,7 @@ public sealed class MessagingListSearchTests : TestBase
         var storage = app.Services.GetRequiredService<IDataStorage>();
         var order = await storage.StoreMessageAsync(
             "orders.placed",
-            _Message(new { Order = "ORD-991" }),
+            _Message(new { Order = "ORD-QZX" }),
             cancellationToken: AbortToken
         );
         await storage.StoreMessageAsync(
@@ -54,21 +55,21 @@ public sealed class MessagingListSearchTests : TestBase
         using var client = app.GetTestClient();
 
         // when
-        using var response = await _SearchAsync(client, "published", new { content = "ord-991" });
+        using var response = await _SearchAsync(client, "published", new { content = "ord-qzx" });
 
         // then: one match, served as a list row without its content, and the text in neither the URL nor a log
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.RequestMessage!.RequestUri!.ToString().Should().NotContain("991");
+        response.RequestMessage!.RequestUri!.ToString().Should().NotContainEquivalentOf("qzx");
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         using var document = JsonDocument.Parse(body);
         var items = document.RootElement.GetProperty("items");
         items.GetArrayLength().Should().Be(1);
         items[0].GetProperty("storageId").GetGuid().Should().Be(order.StorageId);
         items[0].TryGetProperty("content", out _).Should().BeFalse();
-        body.Should().NotContain("ORD-991", "a search serves rows, never the body it matched");
+        body.Should().NotContain("ORD-QZX", "a search serves rows, never the body it matched");
         document.RootElement.GetProperty("incomplete").GetBoolean().Should().BeFalse();
         logs.Lines.Should().Contain(line => line.Contains("/published/search", StringComparison.Ordinal));
-        logs.Lines.Should().NotContain(line => line.Contains("991", StringComparison.Ordinal));
+        logs.Lines.Should().NotContain(line => line.Contains("qzx", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -253,6 +254,62 @@ public sealed class MessagingListSearchTests : TestBase
     }
 
     [Fact]
+    public async Task should_count_on_the_first_page_only_and_leave_the_count_out_of_a_later_page()
+    {
+        // given: three rows in the primary store, and an empty outbox whose counts the test records
+        var outboxMonitoring = Substitute.For<IMonitoringApi>();
+        outboxMonitoring
+            .ListMessagesAsync(
+                Arg.Any<MessageListQuery>(),
+                Arg.Any<MessageListPosition?>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new MessageListPage { Items = [] });
+        outboxMonitoring
+            .CountMessagesAsync(Arg.Any<MessageListQuery>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new MessageCount(0, false));
+        var outbox = _QuietOutbox();
+        outbox.GetMonitoringApi().Returns(outboxMonitoring);
+        await using var app = await MessagingModuleTestHost.StartAsync(
+            _time,
+            AbortToken,
+            configure: services =>
+                services.AddSingleton(provider => _Stores(provider.GetRequiredService<IDataStorage>(), outbox))
+        );
+        var storage = app.Services.GetRequiredService<IDataStorage>();
+        foreach (var name in new[] { "orders.a", "orders.b", "orders.c" })
+        {
+            await storage.StoreMessageAsync(name, _Message(new { Order = name }), cancellationToken: AbortToken);
+        }
+
+        using var client = app.GetTestClient();
+        var first = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + "/published?sort=name&limit=2",
+            AbortToken
+        );
+        var counted = _CountReads(outboxMonitoring);
+        var cursor = Uri.EscapeDataString(first.GetProperty("nextCursor").GetString()!);
+
+        // when
+        var second = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + $"/published?sort=name&limit=2&after={cursor}",
+            AbortToken
+        );
+
+        // then: the first page counts every store; the later page reads no count and sends none
+        counted.Should().BePositive();
+        first.TryGetProperty("count", out _).Should().BeTrue();
+        second.TryGetProperty("count", out _).Should().BeFalse();
+        second.TryGetProperty("countCapped", out _).Should().BeFalse();
+        _CountReads(outboxMonitoring)
+            .Should()
+            .Be(counted, "a later page keeps the first page's count instead of reading it again");
+    }
+
+    [Fact]
     public async Task should_list_rows_added_in_a_range_with_an_exclusive_end()
     {
         // given: rows added an hour apart
@@ -365,6 +422,17 @@ public sealed class MessagingListSearchTests : TestBase
             [new("primary", primary, HoldsReceived: true), new(_Outbox, outbox, HoldsReceived: false)],
             TimeSpan.FromMilliseconds(200)
         );
+
+    private static int _CountReads(IMonitoringApi monitoring) =>
+        monitoring
+            .ReceivedCalls()
+            .Count(static call =>
+                string.Equals(
+                    call.GetMethodInfo().Name,
+                    nameof(IMonitoringApi.CountMessagesAsync),
+                    StringComparison.Ordinal
+                )
+            );
 
     private static IDataStorage _FailingOutbox()
     {

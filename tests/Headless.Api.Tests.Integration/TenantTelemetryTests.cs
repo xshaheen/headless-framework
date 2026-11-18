@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless;
 using Headless.Api;
@@ -45,13 +44,13 @@ public sealed partial class TenantTelemetryTests : TestBase
         await _GetAsync(client, "TENANT-1");
 
         // then
-        var record = await capture.WaitForLogAsync(_EndpointLogMessage, AbortToken);
+        var record = await capture.WaitForLogAsync(_EndpointLogMessage);
         record.Attributes.Should().ContainSingle(a => a.Key == "TenantId").Which.Value.Should().Be("TENANT-1");
 
-        var span = await capture.WaitForRequestSpanAsync(AbortToken);
+        var span = await capture.WaitForRequestSpanAsync();
         span.GetTagItem("tenant.id").Should().Be("TENANT-1");
 
-        var child = await capture.WaitForSpanAsync(_ChildSpanName, AbortToken);
+        var child = await capture.WaitForSpanAsync(_ChildSpanName);
         child.GetTagItem("tenant.id").Should().Be("TENANT-1");
     }
 
@@ -67,10 +66,10 @@ public sealed partial class TenantTelemetryTests : TestBase
         await _GetAsync(client, "TENANT-1", nestedTenantId: "TENANT-2");
 
         // then
-        var nested = await capture.WaitForLogAsync(_NestedLogMessage, AbortToken);
+        var nested = await capture.WaitForLogAsync(_NestedLogMessage);
         nested.Attributes.Should().ContainSingle(a => a.Key == "TenantId").Which.Value.Should().Be("TENANT-2");
 
-        var outer = await capture.WaitForLogAsync(_EndpointLogMessage, AbortToken);
+        var outer = await capture.WaitForLogAsync(_EndpointLogMessage);
         outer.Attributes.Should().ContainSingle(a => a.Key == "TenantId").Which.Value.Should().Be("TENANT-1");
     }
 
@@ -86,14 +85,14 @@ public sealed partial class TenantTelemetryTests : TestBase
         await _GetAsync(client, tenantId: null);
 
         // then
-        var record = await capture.WaitForLogAsync(_EndpointLogMessage, AbortToken);
+        var record = await capture.WaitForLogAsync(_EndpointLogMessage);
         // Only the template's own null placeholder value; the processor adds nothing without a tenant.
         record.Attributes.Should().ContainSingle(a => a.Key == "TenantId").Which.Value.Should().BeNull();
 
-        var span = await capture.WaitForRequestSpanAsync(AbortToken);
+        var span = await capture.WaitForRequestSpanAsync();
         span.GetTagItem("tenant.id").Should().BeNull();
 
-        var child = await capture.WaitForSpanAsync(_ChildSpanName, AbortToken);
+        var child = await capture.WaitForSpanAsync(_ChildSpanName);
         child.GetTagItem("tenant.id").Should().BeNull();
     }
 
@@ -178,8 +177,8 @@ public sealed partial class TenantTelemetryTests : TestBase
     /// </summary>
     private sealed class TelemetryCapture
     {
-        private readonly ConcurrentQueue<CapturedLog> _logs = new();
-        private readonly ConcurrentQueue<Activity> _spans = new();
+        private readonly CapturedItems<CapturedLog> _logs = new();
+        private readonly CapturedItems<Activity> _spans = new();
 
         public TelemetryCapture()
         {
@@ -191,78 +190,40 @@ public sealed partial class TenantTelemetryTests : TestBase
 
         public BaseProcessor<Activity> SpanProcessor { get; }
 
-        public Task<CapturedLog> WaitForLogAsync(string message, CancellationToken cancellationToken)
+        public Task<CapturedLog> WaitForLogAsync(string message)
         {
-            return _WaitForAsync(
-                _logs,
-                log => log.Message?.StartsWith(message, StringComparison.Ordinal) == true,
-                cancellationToken
-            );
+            return _logs.WaitForAsync(log => log.Message?.StartsWith(message, StringComparison.Ordinal) == true);
         }
 
-        public Task<Activity> WaitForRequestSpanAsync(CancellationToken cancellationToken)
+        public Task<Activity> WaitForRequestSpanAsync()
         {
             // The ASP.NET Core server span stops after the response is flushed, so it can end after the client
             // has already read the response.
-            return _WaitForAsync(
-                _spans,
-                span =>
-                    span.Kind == ActivityKind.Server
-                    && string.Equals(
-                        span.GetTagItem("url.path") as string,
-                        "/tenant-telemetry",
-                        StringComparison.Ordinal
-                    ),
-                cancellationToken
+            return _spans.WaitForAsync(span =>
+                span.Kind == ActivityKind.Server
+                && string.Equals(span.GetTagItem("url.path") as string, "/tenant-telemetry", StringComparison.Ordinal)
             );
         }
 
-        public Task<Activity> WaitForSpanAsync(string name, CancellationToken cancellationToken)
+        public Task<Activity> WaitForSpanAsync(string name)
         {
-            return _WaitForAsync(
-                _spans,
-                span => string.Equals(span.OperationName, name, StringComparison.Ordinal),
-                cancellationToken
-            );
-        }
-
-        private static async Task<T> _WaitForAsync<T>(
-            ConcurrentQueue<T> items,
-            Func<T, bool> predicate,
-            CancellationToken cancellationToken
-        )
-        {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(10));
-
-            while (true)
-            {
-                foreach (var item in items)
-                {
-                    if (predicate(item))
-                    {
-                        return item;
-                    }
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
-            }
+            return _spans.WaitForAsync(span => string.Equals(span.OperationName, name, StringComparison.Ordinal));
         }
     }
 
-    private sealed class LogCaptureProcessor(ConcurrentQueue<CapturedLog> logs) : BaseProcessor<LogRecord>
+    private sealed class LogCaptureProcessor(CapturedItems<CapturedLog> logs) : BaseProcessor<LogRecord>
     {
         public override void OnEnd(LogRecord data)
         {
-            logs.Enqueue(new CapturedLog(data.FormattedMessage, [.. data.Attributes ?? []]));
+            logs.Add(new CapturedLog(data.FormattedMessage, [.. data.Attributes ?? []]));
         }
     }
 
-    private sealed class SpanCaptureProcessor(ConcurrentQueue<Activity> spans) : BaseProcessor<Activity>
+    private sealed class SpanCaptureProcessor(CapturedItems<Activity> spans) : BaseProcessor<Activity>
     {
         public override void OnEnd(Activity data)
         {
-            spans.Enqueue(data);
+            spans.Add(data);
         }
     }
 }

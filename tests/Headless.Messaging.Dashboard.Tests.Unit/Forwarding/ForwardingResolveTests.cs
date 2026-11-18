@@ -164,7 +164,7 @@ public sealed class ForwardingResolveTests : TestBase
             && call.Uri.AbsolutePath.EndsWith("/peer/changes/start", StringComparison.Ordinal)
         );
         reader.Watch("node-b");
-        await _AdvanceUntilAsync(started);
+        await started.Bounded();
         using var client = MessagingCommandHost.Client(nodeA);
         var cookie = await MessagingCommandHost.SignInAsync(client, "ops", AbortToken);
         const string query = "order-7";
@@ -178,7 +178,10 @@ public sealed class ForwardingResolveTests : TestBase
             query,
             AbortToken
         );
-        await _AdvanceUntilAsync(relayed);
+
+        // The reader's timer already exists once it has sent its start call, and one poll interval queues one tick.
+        _time.Advance(PeerChangeReader.PollInterval);
+        await relayed.Bounded();
         var after = await _ResolveAsync(client, cookie, query);
 
         // then: within the 5 seconds the answer would be reused, node B is asked again and shows the new row
@@ -294,18 +297,4 @@ public sealed class ForwardingResolveTests : TestBase
 
     private Task<WebApplication> _StartAAsync() =>
         ForwardingHost.StartAsync("node-a", _network, _discoveryA, _time, _log, AbortToken);
-
-    // Moves the shared clock in small steps, as real time would pass, until the task completes or 15 s of real time pass.
-    private async Task _AdvanceUntilAsync(Task awaited)
-    {
-        var limit = DateTime.UtcNow + TimeSpan.FromSeconds(15);
-
-        while (!awaited.IsCompleted && DateTime.UtcNow < limit)
-        {
-            _time.Advance(TimeSpan.FromMilliseconds(50));
-            await Task.Delay(10, AbortToken);
-        }
-
-        awaited.IsCompleted.Should().BeTrue("the reader should get there");
-    }
 }

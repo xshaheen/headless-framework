@@ -87,9 +87,8 @@ public sealed class BootstrapperTests : TestBase
         await bootstrapper.BootstrapAsync(ownerCts.Token);
         bootstrapper.IsStarted.Should().BeTrue();
 
+        // Cancel runs the owner token's callbacks before it returns, so a stop wired to it has already begun.
         await ownerCts.CancelAsync();
-
-        await Task.Delay(100, AbortToken);
 
         processor.DisposeCount.Should().Be(0);
         bootstrapper.IsStarted.Should().BeTrue();

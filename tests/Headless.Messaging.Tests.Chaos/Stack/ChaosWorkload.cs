@@ -93,6 +93,7 @@ public sealed class ChaosWorkConsumer(MessageLedger ledger, HostBehavior host) :
         var work = host.NextWork();
         if (work > TimeSpan.Zero)
         {
+            // real-wait: the run must stay in flight while shutdown budgets, broker timeouts and store-clock leases expire in real time around it
             await Task.Delay(work, cancellationToken).ConfigureAwait(false);
         }
 

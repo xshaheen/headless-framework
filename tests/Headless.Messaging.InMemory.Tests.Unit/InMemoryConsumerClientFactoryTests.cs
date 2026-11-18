@@ -180,6 +180,9 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         }
 
         var received = new int[clients.Length];
+        var delivered = clients
+            .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+            .ToArray();
         for (var i = 0; i < clients.Length; i++)
         {
             var index = i;
@@ -188,6 +191,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
                     onMessage: (_, _) =>
                     {
                         Interlocked.Increment(ref received[index]);
+                        delivered[index].TrySetResult();
                         return Task.CompletedTask;
                     },
                     onLog: null
@@ -216,12 +220,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         );
 
         // then
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        while (received.Any(count => Volatile.Read(ref count) == 0))
-        {
-            await Task.Delay(20, timeout.Token);
-        }
+        await Task.WhenAll(delivered.Select(signal => signal.Task.Bounded()));
 
         received.Should().AllBeEquivalentTo(1);
         await cts.CancelAsync();

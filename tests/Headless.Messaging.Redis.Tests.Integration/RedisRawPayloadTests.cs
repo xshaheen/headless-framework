@@ -48,10 +48,12 @@ public sealed class RedisRawPayloadTests(RedisMessagingFixture fixture) : TestBa
             )
             && (await database.StreamPendingAsync(stream, group)).PendingMessageCount == 0
         );
-        await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
 
-        // then: the inbox recognizes the message id and the handler does not run again
-        recorder.Count.Should().Be(1);
+        // then: the inbox recognizes the message id and the handler does not run again. A sentinel appended behind the
+        // rewound entry is read after it, so its delivery marks the point a second run would already have shown.
+        await database.StreamAddAsync(stream, "body", """{"value":"sentinel-after-redelivery"}""");
+        (await recorder.NextAsync(TimeSpan.FromSeconds(15), AbortToken)).Value.Should().Be("sentinel-after-redelivery");
+        recorder.Count.Should().Be(2);
 
         // when: a foreign producer appends an entry whose body is not JSON
         var malformedId = (await database.StreamAddAsync(stream, "body", "not-json")).ToString();
@@ -60,8 +62,9 @@ public sealed class RedisRawPayloadTests(RedisMessagingFixture fixture) : TestBa
         var storage = provider.GetRequiredService<IDataStorage>();
         await _WaitUntilAsync(async () => await _CountFailedAsync(storage, name) == 1);
         await _WaitUntilAsync(async () => (await database.StreamPendingAsync(stream, group)).PendingMessageCount == 0);
-        await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
-        recorder.Count.Should().Be(1);
+        await database.StreamAddAsync(stream, "body", """{"value":"sentinel-after-poison"}""");
+        (await recorder.NextAsync(TimeSpan.FromSeconds(15), AbortToken)).Value.Should().Be("sentinel-after-poison");
+        recorder.Count.Should().Be(3);
         (await _CountFailedAsync(storage, name)).Should().Be(1);
         malformedId.Should().NotBe(entryId);
     }

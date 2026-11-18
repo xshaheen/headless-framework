@@ -129,17 +129,10 @@ public sealed class GetOrAddAsyncTests : TestBase
         var task1 = cache.GetOrAddAsync("same-key", slowFactory, _DefaultExpiration, AbortToken);
         await factoryStarted.Task.Bounded();
 
-        var task2Started = new TaskCompletionSource();
-        var task2 = Task.Run(
-            async () =>
-            {
-                task2Started.SetResult();
-                return await cache.GetOrAddAsync("same-key", slowFactory, _DefaultExpiration, AbortToken);
-            },
-            AbortToken
-        );
-        await task2Started.Task.Bounded();
-        await Task.Delay(50, AbortToken); // Give task2 time to block
+        // The in-memory store read completes synchronously, so this call returns only once task2 is parked behind
+        // task1's in-flight factory (or has completed): no sleep is needed to let it block.
+        var task2 = cache.GetOrAddAsync("same-key", slowFactory, _DefaultExpiration, AbortToken).AsTask();
+        task2.IsCompleted.Should().BeFalse("the joiner must wait for the in-flight factory");
 
         factoryCanComplete.SetResult();
         var results = await Task.WhenAll(task1.AsTask(), task2);
@@ -196,11 +189,16 @@ public sealed class GetOrAddAsyncTests : TestBase
         );
 
         // then - both factories should start concurrently (different keys don't block each other)
-        var bothStarted = Task.WhenAll(key1Started.Task, key2Started.Task);
-        var completed = await Task.WhenAny(bothStarted, Task.Delay(1000, AbortToken));
-        completed.Should().Be(bothStarted, "different keys should not block each other");
+        try
+        {
+            // Each factory parks on bothAcquired, so both can only start if the keys do not share a lock.
+            await Task.WhenAll(key1Started.Task, key2Started.Task).Bounded();
+        }
+        finally
+        {
+            bothAcquired.TrySetResult();
+        }
 
-        bothAcquired.SetResult();
         var results = await Task.WhenAll(task1, task2);
         results.Select(r => r.Value).Should().Contain("value1").And.Contain("value2");
     }
@@ -255,12 +253,16 @@ public sealed class GetOrAddAsyncTests : TestBase
         );
 
         // then - factory2 should start immediately (instance-based locking, not global)
-        var factory2StartedResult = await Task.WhenAny(factory2Started.Task, Task.Delay(500, AbortToken));
-        factory2StartedResult
-            .Should()
-            .Be(factory2Started.Task, "factory2 should start immediately because cache2 has its own lock");
+        try
+        {
+            // factory1 is still parked, so factory2 can only start if cache2 does not share cache1's lock.
+            await factory2Started.Task.Bounded();
+        }
+        finally
+        {
+            factory1CanComplete.TrySetResult();
+        }
 
-        factory1CanComplete.SetResult();
         await Task.WhenAll(task1, task2);
     }
 
@@ -301,9 +303,8 @@ public sealed class GetOrAddAsyncTests : TestBase
             AbortToken
         );
 
-        var completed = await Task.WhenAny(task, Task.Delay(1000, AbortToken));
-        completed.Should().Be(task, "second call should complete without deadlock");
-        secondCallCompleted.Should().BeTrue();
+        await task.Bounded();
+        secondCallCompleted.Should().BeTrue("the second call should complete without deadlock");
     }
 
     [Fact]

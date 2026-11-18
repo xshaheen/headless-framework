@@ -5,86 +5,135 @@ packages: Features.Abstractions, Features, Features.Storage.EntityFramework, Fea
 
 # Feature Management
 
-> Dynamic feature flags and feature value management with hierarchical resolution (Tenant > Edition > Default), caching, and database persistence via EF Core, PostgreSQL, or SQL Server.
+> Feature flags and feature values per tenant and edition, resolved Tenant > Edition > Default, cached, and stored through EF Core, PostgreSQL, or SQL Server.
 
 ## Orientation
 
-Install `Headless.Features.Abstractions` plus `Headless.Features` and exactly one storage provider:
+Install `Headless.Features.Abstractions`, `Headless.Features`, and exactly one storage provider:
 
-- `Headless.Features.Abstractions` — interfaces (`IFeatureManager`, `IFeatureDefinitionProvider`, `IFeatureDefinitionManager`)
-- `Headless.Features` — full implementation with caching, value providers, and the definitions seeder
-- `Headless.Features.Storage.EntityFramework` — EF Core persistence using the consumer's `DbContext`
-- `Headless.Features.Storage.PostgreSql` — raw ADO.NET persistence for PostgreSQL (no EF dependency)
-- `Headless.Features.Storage.SqlServer` — raw ADO.NET persistence for SQL Server (no EF dependency)
+| Package | Role |
+| --- | --- |
+| `Headless.Features.Abstractions` | `IFeatureManager`, `IFeatureDefinitionProvider`, `IFeatureDefinitionManager`, `unit.Features` |
+| `Headless.Features` | The implementation, caching, value providers, the definitions seeder, and the HTTP gate (`[RequiresFeature]`) |
+| `Headless.Features.Storage.EntityFramework` | Storage in your own `DbContext`, tables created by EF migrations |
+| `Headless.Features.Storage.PostgreSql` | Raw ADO.NET storage for PostgreSQL, tables created by `resources provision` |
+| `Headless.Features.Storage.SqlServer` | Raw ADO.NET storage for SQL Server, tables created by `resources provision` |
 
-Feature gates on HTTP endpoints are ASP.NET Core authorization requirements (see [Gating HTTP endpoints](#gating-http-endpoints)), so `AddHeadlessFeatures` alone enforces them. `Headless.Features.Abstractions` references no ASP.NET Core package; `Headless.Features`, which owns the gate types, references only the host-agnostic `Microsoft.AspNetCore.Authorization` package, so console and worker hosts run every package above without the ASP.NET runtime.
+`Headless.Features` references only the host-agnostic `Microsoft.AspNetCore.Authorization` package, so console and worker hosts run every package above without the ASP.NET Core runtime.
 
-Typical registration:
+Default registration:
 
 ```csharp
-// Required dependencies
+// Required: a cache, a distributed lock, TimeProvider, and IGuidGenerator.
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
-// 1. Register feature definitions
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
-
-// 2. Register the management core + storage in one call
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
-`AddHeadlessFeatures` requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered before it is called.
+**Verify:** the host starts. A missing cache fails the start with `MissingRequiredServiceException`. A `DbContext` without the feature entities fails it with `InvalidOperationException` naming `modelBuilder.ConfigureHeadlessFeatures(this)`. In a test, `await features.GetAsync("MaxUsers")` returns the definition's `DefaultValue`.
 
 ## Agent Rules
 
-- Inject `IFeatureManager` to read or write feature values. Do NOT use `Microsoft.FeatureManagement` — this is a separate system with a different model.
-- Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`. Register the provider with `services.AddFeatureDefinitionProvider<T>()`.
-- Value resolution order is Tenant > Edition > Default. When no provider is specified, `GetAsync` walks providers from highest to lowest priority and returns the first non-null value.
-- `AddHeadlessFeatures(configure)` is the single entry point — it registers the management core automatically alongside the selected storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) can be registered per application.
-- To tune management options, call `setup.ConfigureManagement(options => ...)` inside the `AddHeadlessFeatures` block. An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<FeatureManagementOptions>(...)` also works and composes regardless of call order.
-- To tune storage options (schema, table names), call `setup.ConfigureStorage(o => ...)` inside the `AddHeadlessFeatures` block. The `IConfiguration` overload binds the `Headless:Features:Storage` section instead.
-- For EF storage: register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) and call `modelBuilder.ConfigureHeadlessFeatures(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The factory must be a singleton (the default lifetime of all four registrations): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
-- The `FeatureDefinitions` seeder writes static definitions to the database, and only when the host seeds — do NOT call `IDynamicFeatureDefinitionStore.SaveAsync` directly. Seeding is opt-in: see [Definition Seeding](#definition-seeding).
-- Feature value caching is automatic. `IFeatureManager` and `unit.Features` writes invalidate the affected cache entries (an enlisted write only after its unit commits), and so do direct writes to the EF `IFeatureValueRecordRepository`; a distributed cache propagates the eviction across nodes. A direct write to the PostgreSQL or SQL Server repository, raw SQL, or a direct `DbContext` write leaves the cache stale.
-- To make a feature value write atomic with your other writes, call it on the unit you hold: `unit.Features.SetForTenantAsync(...)`, `unit.Features.SetAsync(...)`, `unit.Features.DeleteAsync(...)`. The injected `IFeatureManager` never joins a unit. See [Writing feature values inside a unit of work](#writing-feature-values-inside-a-unit-of-work).
-- Custom value providers must implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write). Register with `services.AddFeatureValueProvider<T>()`. The last-registered provider has the highest resolution priority. Every multi-name read (`GetAllAsync(featureNames)`, `GetAllAsync(providerName, …)`, the multi-name `IsEnabledAsync` / `EnsureEnabledAsync`) asks each provider once with the whole pending batch through `IFeatureValueReadProvider.GetAllAsync`, so a custom read provider must implement it or its features silently disappear from bulk results. `FeatureManager` writes through `IFeatureValueProvider.SetAllAsync`; its default implementation calls `SetAsync` / `ClearAsync` once per entry, so a custom provider overrides it when its source can apply a batch atomically.
-- `FeatureDefinition.Providers` restricts which providers can read/write a feature. An empty list means all providers are allowed — the most common case.
-- Gate HTTP access with `[RequiresFeature("FeatureName")]` on controllers, actions, or Minimal API handlers, with `.RequireAuthorization(policy => policy.RequireFeatures("FeatureName"))` on endpoints or route groups, or with `.WithMetadata(new RequiresFeatureAttribute("FeatureName"))`. The attribute is authorization data that ASP.NET Core's authorization middleware enforces through the handler `AddHeadlessFeatures` registers; no other registration exists. Use `[DisableFeatureCheck]` or `.WithMetadata(new DisableFeatureCheckAttribute())` to bypass a controller-level or group-level gate. A disabled feature fails authorization like a missing permission: 403, or 401 for an anonymous caller, with `Headless.Api` putting the localized "feature currently unavailable" text in the 403 `detail`; see [Gating HTTP endpoints](#gating-http-endpoints).
-- `SetAsync` with `forceToSet: false` (default) skips the write when the supplied value equals the fallback value of the next lower-priority provider. Set `forceToSet: true` when you must persist the value explicitly (e.g., `GrantAsync`/`RevokeAsync` always use `forceToSet: true`).
-- To write several features at once, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>` keyed by feature name; a `null` value clears that feature. It checks every name, the provider, and its writability before writing anything, so an undefined name or a read-only provider rejects the whole batch with `ConflictException` and changes nothing. The built-in stores (EF, PostgreSQL, SQL Server) then write the batch in one transaction, so a failed write leaves every value as it was, and a successful one publishes a single `FeatureChangedMessage` listing every name. `forceToSet` applies to each value as it does for the single-name call. An empty dictionary writes and announces nothing. The single-name `SetAsync` is the one-entry case of this call. Clearing a value removes only the row stored under the exact provider key the provider resolves, not that feature under every key of the provider. Atomicity holds per provider: when several registered providers share `providerName`, each writes the batch in its own transaction. The store-backed providers open their own connection and transaction, so an `IFeatureManager` write does not join a unit of work the caller has open, and rolling that unit back does not undo it; `unit.Features` is the write that does. When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries (up to three attempts); the last writer's value wins.
-- `DeleteAsync` removes all feature values for a given provider and key (e.g., all tenant overrides for a deleted tenant). It silently skips read-only providers.
-- The raw-DDL providers (PostgreSQL / SqlServer) never write DDL when the host starts: they only verify the schema and fail fast when a step is missing. Create the tables by running `resources provision` at deploy time, also when a migrations job owns the schema, because every step is idempotent; see [Resource provisioning](utilities.md#resource-provisioning). EF storage uses migrations.
+- Inject `IFeatureManager` to read and write feature values. Do not use `Microsoft.FeatureManagement`. It is a separate system with a different model.
+- Define features in an `IFeatureDefinitionProvider` with `context.AddGroup(...)` and `group.AddChild(...)`. Register it with `services.AddFeatureDefinitionProvider<T>()`.
+- Call `AddHeadlessFeatures(setup => ...)` once with one storage provider (`UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`). A second, different storage provider throws at startup. Calling `AddHeadlessFeatures` again with the same provider is safe.
+- Register `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`. The start fails with `MissingRequiredServiceException` when the cache is missing. Registration order does not matter.
+- Use the hybrid cache (`UseHybrid`) in production. Every feature gate reads the value cache. On `UseRedis` alone, each feature check is one network round trip, and a second check of the same name in the same request repeats it. [Permissions](permissions.md#grant-store-and-caching) gives the round-trip count of a whole tenant-scoped request.
+- Tune options inside the `AddHeadlessFeatures` block: `setup.ConfigureManagement(...)` for `FeatureManagementOptions`, `setup.ConfigureStorage(...)` for schema and table names. `ConfigureStorage(IConfiguration)` binds the `Headless:Features:Storage` section. `services.Configure<FeatureManagementOptions>(...)` also works in any order.
+- For EF storage, register a singleton `IDbContextFactory<TContext>` and call `modelBuilder.ConfigureHeadlessFeatures(this)` in `OnModelCreating`. `AddDbContextFactory`, `AddPooledDbContextFactory`, `AddHeadlessDbContext`, and `AddHeadlessDbContextPool` all register a singleton factory. A scoped or transient factory fails the start with `InvalidServiceLifetimeException`.
+- For PostgreSQL or SQL Server storage, run `resources provision` (or `deploy`) at deploy time. The host start never creates tables. It verifies them and fails when a step is missing. See [Resource provisioning](utilities.md#resource-provisioning).
+- Run the `seed` verb to save definitions to the database. Do not call `IDynamicFeatureDefinitionStore.SaveAsync` yourself. See [Definition seeding](#definition-seeding).
+- Write through `IFeatureManager` or `unit.Features`. Both update the value cache. A write through raw SQL, a direct `DbContext`, or the PostgreSQL or SQL Server repository leaves the cache stale until it expires.
+- To commit a feature value with your other writes, write on the unit you hold: `unit.Features.SetForTenantAsync(...)`. The injected `IFeatureManager` never joins a unit. See [Writing feature values inside a unit of work](#writing-feature-values-inside-a-unit-of-work).
+- `SetAsync` with `forceToSet: false` (the default) stores nothing when the value equals what the next lower provider supplies. Pass `forceToSet: true` to persist the value anyway. `GrantAsync` and `RevokeAsync` always force.
+- To write several features atomically, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>`. See [Writing values](#writing-values).
+- `DeleteAsync(providerName, providerKey)` removes every value of one provider key, for example every override of a deleted tenant. It skips read-only providers.
+- `FeatureDefinition.Providers` limits which providers may hold a value. An empty list allows all. A write through another provider throws `ConflictException` with error code `features:provider-not-allowed`, and reads ignore a value another provider holds. A feature limited to `Edition` cannot be overridden by a tenant value.
+- Gate HTTP endpoints with `[RequiresFeature("Name")]`, `.WithMetadata(new RequiresFeatureAttribute("Name"))`, or `.RequireAuthorization(policy => policy.RequireFeatures("Name"))`. A disabled feature returns 403 (401 for an anonymous caller). `IFeatureManager.EnsureEnabledAsync` in application code throws `ConflictException` instead, returned as 409. See [Gating HTTP endpoints](#gating-http-endpoints).
+- Never combine `[AllowAnonymous]` with a feature gate. `[AllowAnonymous]` skips all authorization, feature requirements included.
+- Keep feature names, provider names, and provider keys free of leading or trailing white space, NUL characters, and lone UTF-16 surrogates. Every read and write throws `ArgumentException` for such a key instead of trimming it, because SQL Server ignores trailing spaces when it compares keys and would merge `"acme "` with `"acme"`. Normalize keys at your own boundary.
 
 ## Core Concepts
 
-### Feature Definitions vs. Feature Values
+### Definitions and values
 
-A *feature definition* describes a feature's metadata: its name, default value, visibility, and which value providers are allowed to supply a value. Definitions are registered statically at startup via `IFeatureDefinitionProvider` and optionally persisted to the database by the `FeatureDefinitions` seeder. A *feature value* is the resolved runtime state of a feature for a specific subject (e.g., a specific tenant ID or edition ID). Definitions live in `IStaticFeatureDefinitionStore` / `IDynamicFeatureDefinitionStore`; values live in `IFeatureValueStore` backed by `IFeatureValueRecordRepository`.
+A *feature definition* is a feature's metadata: name, default value, display text, client visibility, allowed providers, and child features. You declare definitions in code through `IFeatureDefinitionProvider`. The `FeatureDefinitions` seeder can also save them to the database. A *feature value* is the stored value for one subject, such as a tenant id or an edition id.
 
-### Value Providers and Resolution Order
+```csharp
+public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
+{
+    public void Define(IFeatureDefinitionContext context)
+    {
+        var group = context.AddGroup("App.Features");
 
-Feature values are resolved by a chain of `IFeatureValueReadProvider` implementations registered in priority order. The three built-in providers, from lowest to highest priority, are: `DefaultValue` (reads from `FeatureDefinition.DefaultValue`), `Edition`, and `Tenant`. `IFeatureManager.GetAsync` walks the chain from highest priority to lowest and returns the first non-null result. The registration order in the DI container controls precedence: the last-added provider has the highest priority. Custom providers added via `services.AddFeatureValueProvider<T>()` are appended after `Tenant` and thus have the highest priority of all.
+        group.AddChild(new FeatureDefinitionCreateOptions { Name = "MaxUsers", DefaultValue = "10" });
+        group.AddChild(new FeatureDefinitionCreateOptions { Name = "EnableReports", DefaultValue = "false" });
 
-### Static Store vs. Dynamic Store
+        // Nested child features
+        var billingFeature = group.AddChild(
+            new FeatureDefinitionCreateOptions { Name = "Billing", DefaultValue = "false" }
+        );
+        billingFeature.AddChild(
+            new FeatureDefinitionCreateOptions { Name = "Billing.Invoices", DefaultValue = "false" }
+        );
+    }
+}
+```
 
-The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog once at startup by invoking all registered `IFeatureDefinitionProvider` implementations. It is thread-safe and lazily initialized. The *dynamic store* (`IDynamicFeatureDefinitionStore`) reads feature definitions from the database, caches them in-process with a configurable expiry (`DynamicDefinitionsMemoryCacheExpiration`, default 30 seconds), and coordinates cross-instance refreshes via a distributed cache stamp and a distributed lock. The dynamic store is disabled by default (`IsDynamicFeatureStoreEnabled = false`); enable it only when feature definitions must be edited at runtime without redeployment. When it is enabled, the `FeatureDefinitions` [warm-up](utilities.md#warm-up) loads it through `IDynamicFeatureDefinitionStore.GetGroupsAsync` after the host starts, so the first request does not wait on the database; the `warmup` readiness check reports `Unhealthy` until that load succeeds, and a failed load is retried in the background. With the dynamic store disabled, the warm-up does nothing and does not hold readiness.
+`AddGroup` takes a name. You cannot construct a `FeatureGroupDefinition` yourself.
 
-### Feature Value Caching
+### Resolution order
 
-`FeatureValueStore` caches resolved feature values to avoid repeated database reads. The cache is backed by the registered `ICache` (or a named cache instance when `FeatureManagementOptions.FeatureValueCacheName` is set). When `IFeatureManager.SetAsync` writes a value, `FeatureValueStore` writes the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). A write through `unit.Features` touches the cache only after its unit commits, and then writes the committed values; a unit that rolls back leaves the cache as it was, and a cache fault after the commit is logged rather than thrown. Direct EF `IFeatureValueRecordRepository` writes also update the affected cache entry — the repository writes it after `SaveChangesAsync`, or after the unit commits for an enlisted write — so a repository-level write bypassing the manager is still reflected on the next read. Writes that bypass the EF repository (the PostgreSQL or SQL Server repository called directly, raw SQL, direct `DbContext`) leave the cache stale. The EF repository writes to the same cache the store reads, the named one when `FeatureValueCacheName` is set. A reader that misses the cache loads the whole provider scope and fills only the entries that are still absent, and every write stores a value (a delete stores an empty entry) rather than removing the entry. A write that lands between a reader's load and its fill therefore wins, instead of being overwritten by the older value until the entry expires. After its commit, a store write (`SetAsync`, `SetAllAsync`, `DeleteAsync`, and their enlisted forms) reads the written names back from the repository and stores what it finds. It swaps each entry in only while the entry still holds what the write read (`ICache.SyncWithSourceAsync`), and it retries when another write got there first. Two writers whose cache updates land in the opposite order to their commits therefore leave the last committed value cached, at the cost of one extra repository read per write. A hybrid cache's peers still learn of a write through its backplane, so the window between nodes is the backplane's, as for every entry.
+Three built-in providers resolve a value, from lowest to highest priority: `DefaultValue` (the definition's `DefaultValue`), `Edition`, and `Tenant`. With no provider named, `GetAsync` asks the highest-priority provider first and returns the first non-null value. The constants are on `FeatureValueProviderNames`.
+
+A custom provider added with `services.AddFeatureValueProvider<T>()` goes after `Tenant`, so it has the highest priority of all. The last provider registered wins.
+
+`Tenant` and `Edition` resolve their key as the explicit provider key when you pass one (`GetForTenantAsync(name, tenantId)`), else the ambient tenant or its edition. Reads and writes use the same rule, so a value written for one tenant reads back for that tenant only.
 
 ### Edition resolution outside a request
 
-`EditionFeatureValueProvider` resolves the ambient tenant's edition. The edition claim (`UserClaimTypes.EditionId`) on the current principal is used only when the principal belongs to that tenant: its `tenant_id` claim matches `ICurrentTenant.Id` (or it has none), and the feature manager has not switched to another tenant on the caller's behalf. Otherwise, and whenever no principal is set (a job or a message consumer restores the tenant, not the principal), the provider asks the optional `ITenantEditionResolver` the app registers (`services.AddSingleton<ITenantEditionResolver, MyResolver>()`), which maps a tenant id to its edition. Without one, those reads see no edition value. The framework asks the resolver on every such read, so cache its answer.
+The `Edition` provider reads the edition of the ambient tenant. It takes the edition claim (`UserClaimTypes.EditionId`) from the current principal only when that principal belongs to the tenant: its `tenant_id` claim matches `ICurrentTenant.Id` or is absent, and the manager has not switched to another tenant for the call.
 
-The same rule protects writes. `SetForTenantAsync` (and `SetAsync` for the Tenant provider) clears a value that equals what the tenant would inherit. When the manager cannot tell the edition of the tenant being written (no matching principal and no resolver), it stores the value as written instead of comparing it with the caller's chain, so a host administrator's downgrade is never dropped as a no-op. `GetForTenantAsync(name, tenantId)` and `GetAllForTenantAsync(tenantId)` with fallback read the edition of `tenantId`, not the caller's.
+Otherwise, and whenever no principal exists (a job or a message consumer restores the tenant, not the principal), the provider calls your `ITenantEditionResolver`, if you registered one:
 
-**Use the hybrid cache in production.** The feature value cache is read on every request that reaches a feature gate, so this package expects `UseHybrid` (an in-process L1 in front of the distributed cache), where a warm read costs no network trip. On a distributed-only cache (`UseRedis`), each feature check is one round trip on the request path (every provider's entry is read in one batch), and nothing memoizes a result within a request: a second feature check of the same name in the same request repeats the trip. [Permissions](permissions.md#grant-store-and-caching) gives the round-trip count of a whole tenant-scoped request.
+```csharp
+builder.Services.AddSingleton<ITenantEditionResolver, MyEditionResolver>();
+```
+
+`ITenantEditionResolver.GetEditionIdAsync(tenantId, cancellationToken)` maps a tenant id to its edition id. Without a resolver, those reads see no edition value. The framework calls the resolver on every such read, so cache its answer.
+
+Writes follow the same rule. `SetForTenantAsync` clears a value that equals what the tenant inherits. When the manager cannot tell the edition of the tenant being written (no matching principal and no resolver), it stores the value as written instead of comparing it with the caller's edition. A host administrator's downgrade is therefore never dropped as a no-op. `GetForTenantAsync(name, tenantId)` and `GetAllForTenantAsync(tenantId)` with fallback read the edition of `tenantId`, not the caller's.
+
+### Static and dynamic definition stores
+
+By default, definitions come only from code, built once and held in memory.
+
+Set `IsDynamicFeatureStoreEnabled = true` only when definitions must change at runtime without a redeploy. The dynamic store then reads definitions from the database and caches them in process for `DynamicDefinitionsMemoryCacheExpiration` (default 30 seconds), coordinating instances through a distributed cache stamp and a distributed lock. The `FeatureDefinitions` [warm-up](utilities.md#warm-up) loads it after the host starts. The `warmup` readiness check reports `Unhealthy` until that load succeeds, and a failed load retries in the background. With the dynamic store off, the warm-up does nothing and does not hold readiness.
+
+### Value caching
+
+Resolved values are cached in the registered `ICache`, or in the named cache `FeatureManagementOptions.FeatureValueCacheName` selects. You do not invalidate anything yourself:
+
+- `IFeatureManager` writes and deletes update the affected cache entries. A distributed or hybrid cache propagates the change to other nodes through `CacheInvalidationMessage`, so the window between nodes is the cache backplane's.
+- A write through `unit.Features` updates the cache only after its unit commits. A rolled-back unit leaves the cache unchanged. A cache fault after the commit is logged, not thrown.
+- A direct write to the EF `IFeatureValueRecordRepository` also updates the cache.
+- A write through raw SQL, a direct `DbContext`, or the PostgreSQL or SQL Server repository leaves the cache stale.
+- Concurrent writers and readers leave the last committed value cached. Each store write costs one extra repository read to guarantee this.
 
 ### Reacting to a change
 
-`FeatureManager` publishes one `FeatureChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`, listing every name that call changed, so an instance holding a resolved value learns it is stale instead of polling for it. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too. Wire contract: `AddHeadlessFeatures` declares the message as `headless.features.changed`, contract version `1` (`FeatureChangedMessage.MessageName`), so the consumer below needs no `Message<T>` declaration of its own. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
+`IFeatureManager` publishes one `FeatureChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`. It lists every feature name the call changed, with `ProviderName` and `ProviderKey` for the scope. Use it to refresh state you copied out of the feature manager instead of polling.
+
+- **Consume on every instance.** The state lives in each process, so use an [every-instance consumer](messaging/consumers.md#every-instance-bus-delivery). Delivery is at most once, so also reload in `OnSubscriptionEstablishedAsync`.
+- **Wire contract.** The message name is `headless.features.changed`, contract version `1` (`FeatureChangedMessage.MessageName`). `AddHeadlessFeatures` declares it, so your consumer needs no `Message<T>` declaration. Naming conventions (`UseConventions`) do not rename it. Only `MessagingOptions.MessageNamePrefix` applies.
+- **Names only.** The message never carries values. Re-read on receipt. A re-read is idempotent and does not depend on delivery order.
+- **The writer re-reads too.** `OriginHostName` names the writing host for logs and telemetry. Do not filter on it.
+- **Messaging is optional.** Without `AddHeadlessMessaging`, writes work and nothing is published. A failed publish is logged and never fails the committed write. A consumer that must converge without a bus needs a periodic refresh.
+- **Ordering with commits.** An `IFeatureManager` write commits before it returns, even inside your own `RunAsync(db, …)`, and the message goes out after that commit. A `unit.Features` write publishes from the unit's post-commit callback, under the tenant that wrote it. A rolled-back unit publishes nothing. A crash between the commit and the publish loses the message.
+- **Race with cache invalidation.** `FeatureChangedMessage` and `CacheInvalidationMessage` travel on separate subscriptions with no ordering. On a hybrid cache, a peer can re-read before its local tier is evicted and get the old value. When the first re-read shows no change, re-read again a few seconds later, or rely on a periodic refresh.
 
 ```csharp
 [BusConsumer("app.reload-tenant-features", EveryInstance = true)]
@@ -125,19 +174,23 @@ public sealed class ReloadTenantFeatures(TenantFeatureCache cache) : IConsume<Fe
 }
 ```
 
-The message carries feature names and the scope where they changed, never values. Values would increase broker payloads and make delivery order load-bearing, so the message is only a re-read trigger. Re-reading is idempotent and order-free. `OriginHostName` names the host that wrote the change (`IHostIdentityAccessor.HostName`) for logs and telemetry. Do not filter on it. The writing process holds copies too, since the manager knows nothing about a value that a consumer copied into a field, so the origin must re-read like every other instance.
+**Verify:** in an integration test with messaging, call `SetForTenantAsync` for a tracked feature and assert the consumer reloaded.
 
-`IBus` is optional. A host that never calls `AddHeadlessMessaging` writes feature values exactly as before and publishes nothing. A failed publish is logged and never fails the write that already succeeded. In both cases, a peer keeps its copy until it re-reads for its own reasons, so a consumer that must converge without a bus still needs a periodic refresh.
+### Writing values
 
-The announcement follows a committed write. An `IFeatureManager` write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. It commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new value. A write through `unit.Features` joins the unit instead, and its message is published from the unit's post-commit callback under the tenant that made the write; a unit that rolls back publishes nothing. That callback is process-local, so a crash between the commit and the publish loses the announcement, the same outcome as a failed publish.
+`SetAsync(name, value, providerName, providerKey, forceToSet)` writes one value. `SetAsync(values, providerName, providerKey, forceToSet)` writes a batch from an `IReadOnlyDictionary<string, string?>` keyed by feature name. The single-name call is the one-entry batch.
 
-This signal is separate from cache coherence, which `FeatureValueStore` already handles. A store-backed write updates or evicts its cache entry, and a distributed cache propagates the change through `CacheInvalidationMessage`. `FeatureChangedMessage` covers state that the framework cannot see, such as a value that a consumer copied into a field.
-
-The two messages travel on separate subscriptions, and nothing orders them. With a hybrid cache, a peer can receive `FeatureChangedMessage` before its own `CacheInvalidationMessage`, re-read, and get the old value from its local tier. A consumer that re-reads once on the announcement then stays stale until its next refresh. Re-read again a few seconds later when the first read shows no change, or rely on a periodic refresh.
+- A `null` value clears that feature's row under the exact provider key the provider resolves. It does not clear the feature under other keys.
+- Every name, the provider, and its writability are checked before anything is written. An undefined name or a read-only provider rejects the whole batch with `ConflictException` and changes nothing.
+- The built-in stores write the batch in one transaction. A failed write leaves every value unchanged. A successful one publishes a single `FeatureChangedMessage` listing every name.
+- An empty dictionary writes and publishes nothing.
+- Atomicity holds per provider. When several registered providers share `providerName`, each writes the batch in its own transaction.
+- The stores open their own connection and transaction. An `IFeatureManager` write does not join a unit of work you have open, and rolling that unit back does not undo it. Use `unit.Features` for that.
+- When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries, up to three attempts. The last writer wins.
 
 ### Writing feature values inside a unit of work
 
-`unit.Features` is the enlisted receiver for feature value writes, an accessor `Headless.Features.Abstractions` adds to `IUnitOfWork` (namespace `Headless.UnitOfWork`). It offers `SetAsync` (one name or a dictionary batch), `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `SetForEditionAsync`, and `DeleteAsync(providerName, providerKey)`. Every read and write of a call runs on the unit's connection and transaction, so the value commits or rolls back with the caller's other writes:
+`unit.Features` is the write that joins your unit. `Headless.Features.Abstractions` adds it to `IUnitOfWork` (namespace `Headless.UnitOfWork`). It offers `SetAsync` (one name or a dictionary batch), `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `SetForEditionAsync`, and `DeleteAsync(providerName, providerKey)`. Each call runs on the unit's connection and transaction, so the value commits or rolls back with your other writes:
 
 ```csharp
 await factory.RunAsync(db, async (unit, ct) =>
@@ -148,67 +201,50 @@ await factory.RunAsync(db, async (unit, ct) =>
 }, ct);
 ```
 
-- **Which unit joins.** Any unit with a live relational transaction on the database the storage is configured for: an EF unit (`BeginAsync(db)`, `RunAsync(db, …)`) or a raw-ADO unit (`BeginAsync(connection)`), on any of the three stores. A unit on another database, a resource-less unit, or one that already completed is refused with `InvalidOperationException` before any write, and the unit stays usable.
-- **Inherited values.** Before storing a value, the manager compares it with the next provider's value and stores nothing when they match (unless `forceToSet`). Inside a unit, a store-backed provider reads that fallback inside the unit's transaction, so it sees a value the same unit already wrote; definition defaults are read as usual. A custom read provider that reads the unit's database overrides `IFeatureValueReadProvider.GetOrDefaultEnlistedAsync` to do the same.
-- **Deleting a scope.** `unit.Features.DeleteAsync` asks each writable provider registered under the name to delete every value it stores for the key (`IFeatureValueProvider.DeleteAllEnlistedAsync`), including values whose definition no longer exists.
-- **One attempt.** An `IFeatureManager` batch is read and saved again when a concurrent writer collides with it. An enlisted batch is tried once: a failed statement aborts the unit's transaction, so the collision surfaces to the unit's owner.
-- **After commit.** The committed values are written to the cache and `FeatureChangedMessage` is published from the unit's `OnCompleted` callbacks. A rolled-back unit does neither.
-- **Replay.** Inside an owned `RunAsync` block the writes replay with the block. Inside an observed unit (a domain-event handler running in the `HeadlessDbContext` save pipeline) the first write calls `IUnitOfWork.PreventRetry()`.
-- **EF store with a retrying execution strategy.** A context configured with `EnableRetryOnFailure` joins a unit only from inside `RunAsync(db, …)`. From a raw-ADO unit it is refused with an `InvalidOperationException` that names `RunAsync(db, …)`.
-- **Custom extensions.** A custom `IFeatureValueProvider` or `IFeatureValueRecordRepository` joins through its `SetAllEnlistedAsync` / `DeleteAllEnlistedAsync` / `*EnlistedAsync` members, which default to throwing `NotSupportedException`; `StoreFeatureValueProvider` and the three stores implement them. `IUnitOfWorkFeatures` is registered as its own singleton `FeatureManager`, so a host that replaces `IFeatureManager` keeps the framework's enlisted path.
+- **Which unit joins.** Any unit with a live relational transaction on the database the storage uses: an EF unit (`BeginAsync(db)`, `RunAsync(db, …)`) or a raw ADO.NET unit (`BeginAsync(connection)`), on all three stores. A unit on another database, a unit with no resource, or a completed unit throws `InvalidOperationException` before any write, and the unit stays usable. `unit.Features` also throws `InvalidOperationException` when `AddHeadlessFeatures` was not called.
+- **EF with a retrying execution strategy.** A context with `EnableRetryOnFailure` joins only from inside `RunAsync(db, …)`. From a raw ADO.NET unit it throws `InvalidOperationException` naming `RunAsync(db, …)`.
+- **Inherited values.** The no-op comparison with the next provider reads inside the unit's transaction, so it sees values the same unit already wrote.
+- **Deleting a scope.** `unit.Features.DeleteAsync` deletes every value each writable provider stores for the key, including values whose definition no longer exists.
+- **One attempt.** An enlisted batch is not retried on a concurrent-writer collision. The failed statement aborts the unit's transaction, and the unit's owner decides whether to run the unit again.
+- **After commit.** The cache update and `FeatureChangedMessage` run after the unit commits. A rolled-back unit does neither.
+- **Replay.** Inside an owned `RunAsync` block, the writes replay with the block. Inside an observed unit (a domain-event handler in the `HeadlessDbContext` save pipeline), the first write calls `IUnitOfWork.PreventRetry()`.
+- **Replacing `IFeatureManager`.** `unit.Features` keeps using the framework's implementation.
 
-### Definition Seeding
+**Verify:** in a test, throw after `unit.Features.SetForTenantAsync(...)` inside `RunAsync` and assert `GetForTenantAsync` still returns the old value.
 
-`AddHeadlessFeatures` registers an `ISeeder` named `FeatureDefinitions`. When `SaveStaticFeaturesToDatabase` is true, it saves the static feature definitions through `IDynamicFeatureDefinitionStore.SaveAsync` (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; any other failure surfaces from the seed run after the last retry. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` still retries in real time. A definition's `ExtraProperties` are stored with `JsonConstants.DefaultStorageJsonOptions` on every provider: keys keep their case, and values read back as `string`, `bool`, `long`, `decimal`, or `JsonElement` (read them with `GetProperty<T>(name)`). The seeder compares in that stored shape, so re-seeding unchanged definitions writes nothing and `seed --verify` reports the store current.
+### Definition seeding
 
-The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`); in development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
+`AddHeadlessFeatures` registers a seeder named `FeatureDefinitions`. When `SaveStaticFeaturesToDatabase` is true (the default), it saves the code definitions to the database under a distributed lock.
 
-A host that never seeds still serves its static definitions from memory, and the dynamic store loads on its first read. But:
+- The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`). In development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
+- A failed save retries up to 10 times with jittered exponential back-off, capped at 30 seconds, on the system clock. A `FakeTimeProvider` does not speed the retries up. Cancellation, `ArgumentException`, and `NotSupportedException` fail at once. A failed seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup`.
+- Re-seeding unchanged definitions writes nothing.
+- A definition's `ExtraProperties` keep their key case. Values read back as `string`, `bool`, `long`, `decimal`, or `JsonElement`. Read them with `GetProperty<T>(name)`.
+- A definition value too long for its column throws `ArgumentOutOfRangeException` when definitions are saved. See [Column lengths](#column-lengths).
 
-- Definitions listed in `DeletedFeatures` or `DeletedFeatureGroups` are not removed from the database.
-- Other applications that share the database keep serving stale definitions, because the common stamp is not bumped.
+A host that never seeds still serves its code definitions from memory. But definitions listed in `DeletedFeatures` or `DeletedFeatureGroups` stay in the database, and other applications sharing the database keep serving stale definitions.
+
+**Verify:** `dotnet app.dll seed verify` reports the store current after a seed run.
 
 ## Choosing a Provider
 
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
-| `Headless.Features.Storage.EntityFramework` | You already use EF Core and want schema managed via EF migrations | You need to avoid an EF dependency or want zero-overhead ADO.NET | Portable across any EF-supported DB; startup validates that all feature entities are in the EF model before hosted services start |
-| `Headless.Features.Storage.PostgreSql` | You use PostgreSQL and want no EF Core dependency | You run SQL Server or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against PostgreSQL naming rules |
-| `Headless.Features.Storage.SqlServer` | You use SQL Server and want no EF Core dependency | You run PostgreSQL or need EF migrations for schema management | Creates schema idempotently via raw DDL when the deployment runs `resources provision`; identifier names are validated against SQL Server naming rules |
+| `Headless.Features.Storage.EntityFramework` | You use EF Core and manage schema with EF migrations | You want no EF dependency | Works on any EF-supported database. The start fails when a feature entity is missing from the model |
+| `Headless.Features.Storage.PostgreSql` | You use PostgreSQL without EF Core | You run SQL Server or want EF migrations | `resources provision` creates the tables. Table names are checked against PostgreSQL identifier rules |
+| `Headless.Features.Storage.SqlServer` | You use SQL Server without EF Core | You run PostgreSQL or want EF migrations | `resources provision` creates the tables. Table names are checked against SQL Server identifier rules |
 
 ---
 
 ## Headless.Features.Abstractions
 
-Defines the unified interface for feature management and feature flags across different storage providers.
+The contracts application code calls. It references no ASP.NET Core package.
 
-### API and behavior
-
-- `IFeatureManager` — reads and writes feature values across the registered provider chain; supports single-feature and bulk queries with optional provider targeting and fallback
-- `unit.Features` (`HeadlessUnitOfWorkFeaturesExtensions`, namespace `Headless.UnitOfWork`) — returns the `UnitOfWorkFeatures` bound to the unit: `SetAsync` (single or batch), `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `SetForEditionAsync`, `DeleteAsync`, each running inside the unit's transaction. Throws `InvalidOperationException` when `AddHeadlessFeatures` was not called or the unit is no longer active
-- `IUnitOfWorkFeatures` — the `IUnitOfWorkFeature` behind `unit.Features`; takes the unit per call. Bridge seam, hidden from IntelliSense
-- `IFeatureDefinitionProvider` — contributes feature groups and feature definitions at startup via `IFeatureDefinitionContext`
-- `IFeatureDefinitionManager` — looks up and enumerates all registered feature definitions
-- `FeatureDefinition` — describes a feature's name, default value, display metadata, allowed providers, and child features (tree structure); implements `ICanAddChildFeature` for fluent `AddChild(...)`
-- `FeatureDefinitionCreateOptions` — initializer-based feature metadata with a required `Name`; optional values remain additive without constructor churn
-- `FeatureGroupDefinition` — organizes related `FeatureDefinition` instances; supports `GetFlatFeatures()` for depth-first enumeration; also implements `ICanAddChildFeature`
-- `ICanAddChildFeature` — shared fluent contract (`AddChild(...)`) implemented by both `FeatureGroupDefinition` and `FeatureDefinition` so top-level and nested features build the same way (renamed from `ICanCreateChildFeature`)
-- `IFeatureDefinitionContext` — passed to each provider's `Define`; exposes `AddGroup(name, displayName)`, `GetGroupOrDefault(name)`, and `RemoveGroup(name)`. Groups are created by name — there is no instance-taking `AddGroup(FeatureGroupDefinition)` overload (the group ctor is internal, so consumers cannot construct one)
-- `FeatureValue` — record returned by `GetAsync`/`GetAllAsync` carrying the resolved string value and the `FeatureValueProvider` that supplied it; provider-scoped bulk reads (`GetAllAsync(providerName, …)`, `GetAllForTenantAsync`, `GetAllForEditionAsync`, `GetAllDefaultAsync`) return `IReadOnlyList<FeatureValue>`
-- `IFeatureManager.GetAllAsync(IReadOnlySet<string> featureNames)` — resolves a named set through the full provider chain in one call, exactly as `GetAsync(name)` resolves one; returns a `Dictionary<string, FeatureValue>` where a feature with no value maps to a `FeatureValue` whose `Value` is `null`, and undefined names are omitted. Each provider is asked once with the whole pending batch (one cache round-trip per store-backed provider) rather than once per feature.
-- `FeatureValueProviderNames` — constants `Tenant`, `Edition`, `DefaultValue` for targeting built-in providers
-- Extension methods on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`. The multi-name `IsEnabledAsync(requiresAll, featureNames)` and `EnsureEnabledAsync(requiresAll, featureNames)` resolve every name through one `GetAllAsync(featureNames)` call instead of one provider-chain walk per name; an undefined name still reports through `GetAsync` exactly as the per-name loop did.
-- Scoped extension methods: `GetForTenantAsync`, `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `DeleteForTenantAsync` (tenant); equivalent `*ForEditionAsync` / `*ToEditionAsync` set (edition); `GetDefaultAsync`, `GetAllDefaultAsync` (default provider)
-
-This package references no ASP.NET Core package. The HTTP gate types (`RequiresFeatureAttribute`, `DisableFeatureCheckAttribute`, `FeatureRequirement`) live in `Headless.Features`, the same split `Headless.Permissions` uses.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Features.Abstractions
 ```
-
-### Setup and use
 
 ```csharp
 public sealed class BillingService(IFeatureManager features)
@@ -241,90 +277,32 @@ public sealed class TenantOnboardingService(IFeatureManager features)
 }
 ```
 
-#### Defining Features
+**Verify:** in a test with no stored value, `IsEnabledAsync("EnableReports")` returns `false` and `GetAsync<int>("MaxUsers")` returns `10`, the definition defaults.
 
-```csharp
-public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
-{
-    public void Define(IFeatureDefinitionContext context)
-    {
-        var group = context.AddGroup("App.Features");
+### API and behavior
 
-        group.AddChild(new FeatureDefinitionCreateOptions { Name = "MaxUsers", DefaultValue = "10" });
-        group.AddChild(new FeatureDefinitionCreateOptions { Name = "EnableReports", DefaultValue = "false" });
-
-        // Nested child features
-        var billingFeature = group.AddChild(
-            new FeatureDefinitionCreateOptions { Name = "Billing", DefaultValue = "false" }
-        );
-        billingFeature.AddChild(
-            new FeatureDefinitionCreateOptions { Name = "Billing.Invoices", DefaultValue = "false" }
-        );
-    }
-}
-```
-
-### Configuration
-
-None. This is an abstractions-only package.
-
-### Runtime behavior
-
-None.
+- `IFeatureManager.GetAsync(name, …)` returns a `FeatureValue` with the resolved string value and the `FeatureValueProvider` that supplied it.
+- `IFeatureManager.GetAllAsync(IReadOnlySet<string> featureNames)` resolves a set of names through the full chain in one call and returns a `Dictionary<string, FeatureValue>`. A feature with no value maps to a `FeatureValue` whose `Value` is `null`. Undefined names are omitted. Each provider is asked once for the whole set, so prefer it over a loop of `GetAsync`.
+- `GetAllAsync(providerName, …)`, `GetAllForTenantAsync`, `GetAllForEditionAsync`, and `GetAllDefaultAsync` read one provider's values and return `IReadOnlyList<FeatureValue>`.
+- Extension members on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`. The multi-name `IsEnabledAsync(requiresAll, featureNames)` and `EnsureEnabledAsync(requiresAll, featureNames)` read every name in one `GetAllAsync` call.
+- `EnsureEnabledAsync` throws `ConflictException` for a disabled feature. The Headless exception handler returns it as 409 with error code `g:feature_currently_not_available`.
+- Tenant members: `GetForTenantAsync`, `GetAllForTenantAsync`, `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `DeleteForTenantAsync`. Edition members follow the same pattern (`*ForEditionAsync`, `*ToEditionAsync`). Default members: `GetDefaultAsync`, `GetAllDefaultAsync`.
+- `FeatureValueProviderNames` holds the constants `Tenant`, `Edition`, and `DefaultValue`.
+- `FeatureGroupDefinition.GetFlatFeatures()` lists a group's features depth first.
 
 ---
 
 ## Headless.Features
 
-Core implementation of feature management with caching, value providers, and definition management.
+The implementation, the registration, and the HTTP gate.
 
-### API and behavior
-
-- `FeatureManager` — full implementation of `IFeatureManager`; walks the registered provider chain, caches results, and coordinates writes with cache invalidation. Also implements `IUnitOfWorkFeatures`; its constructor takes `ICurrentTenant` to stamp an enlisted write's change announcement
-- `IFeatureValueProvider` / `IFeatureValueReadProvider` — read-write and read-only contracts for custom value providers. `GetOrDefaultEnlistedAsync` reads inside a unit (default: the ordinary read); `SetAllEnlistedAsync` and `DeleteAllEnlistedAsync` write inside one (default: throw `NotSupportedException`); `StoreFeatureValueProvider` implements all three
-- `IFeatureValueStore` — cached value reads and writes; `GetOrDefaultEnlistedAsync`, `SetAllEnlistedAsync`, and `DeleteEnlistedAsync` do the same work inside a unit, bypassing the cache on reads and writing the committed values to it after the unit commits. `FeatureValueStore` takes an `ILogger<FeatureValueStore>`
-- `IFeatureValueRecordRepository` — storage contract; `GetListEnlistedAsync` and `SaveEnlistedAsync` run on a unit's connection and transaction, and default to throwing `NotSupportedException` for a third-party repository that cannot join a unit
-- Built-in value providers: `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider` (takes `ICurrentPrincipalAccessor`, `ICurrentTenant`, and an optional `ITenantEditionResolver`), `TenantFeatureValueProvider`
-- `ITenantEditionResolver` — optional app-supplied map from a tenant id to its edition, used where no principal of that tenant carries the edition claim
-- `IStaticFeatureDefinitionStore` — builds the feature catalog lazily and thread-safely from all registered `IFeatureDefinitionProvider` implementations
-- `IDynamicFeatureDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
-- `FeatureDefinitions` seeder — saves static definitions when the host seeds, with up to 10 jittered exponential-back-off retries capped at 30 seconds
-- `FeatureDefinitions` warm-up — loads the dynamic store into its in-process cache after the start, behind readiness, when `IsDynamicFeatureStoreEnabled` is true
-- `FeatureManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle, and named cache routing
-- `FeaturesStorageOptions` — schema, table name, and column length configuration shared across all storage providers
-- `RelationalFeaturesOptions` — base of `PostgreSqlFeaturesOptions` and `SqlServerFeaturesOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
-- `HeadlessFeaturesSetupBuilder` — fluent builder returned to `AddHeadlessFeatures`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
-- `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
-- `services.AddFeatureValueProvider<T>()` — registers a custom `IFeatureValueReadProvider` (idempotent by type)
-- `RequiresFeatureAttribute` — gates a controller class, action, or Minimal API handler on one or more features; `IsAnd` property controls AND vs. OR policy (default: OR). It implements `IAuthorizationRequirementData`, so on HTTP the authorization middleware adds a `FeatureRequirement` to the endpoint's policy; other call sites evaluate it through `IMethodInvocationFeatureCheckerService`. An attribute with no feature names adds no requirement
-- `DisableFeatureCheckAttribute` — bypasses every feature requirement on one action or endpoint, including a controller-level, route-group, or route-convention gate; other policies still apply. On Minimal APIs, put it on the handler or add it with `.WithMetadata(new DisableFeatureCheckAttribute())`
-- `FeatureRequirement(string[] featureNames, bool requiresAll)` — the authorization requirement behind the attribute. Its handler fails a disabled feature with the localized "feature currently unavailable" text as the `AuthorizationFailureReason`. An empty list throws `ArgumentException`
-- `AuthorizationPolicyBuilder.RequireFeatures(params string[] features)` / `RequireFeatures(bool requiresAll, params string[] features)` (namespace `Microsoft.AspNetCore.Authorization`) — adds a `FeatureRequirement` to a policy: `.RequireAuthorization(policy => policy.RequireFeatures("Reports"))` or `options.AddPolicy("Reports", policy => policy.RequireFeatures("Reports"))`
-- `IMethodInvocationFeatureCheckerService.CheckAsync(context, cancellationToken)` — evaluates the `[RequiresFeature]` attributes of a `MethodInfo` (method plus, for a public method, its declaring type); for interceptors and other non-HTTP call sites
-- `IClientVisibleFeaturesReader` (`Headless.Features`) — `GetAsync(PrincipalContext, …)` returns the effective value of every feature whose definition is `IsVisibleToClients`, keyed by name, for example to include in the configuration an application returns to its front end. Headless ships no endpoint; see the client-config recipe in `docs/llms/permissions.md`
-
-### Design constraints
-
-- `IClientVisibleFeaturesReader` resolves for the principal and tenant in its `PrincipalContext`, not the ambient ones: it switches `ICurrentPrincipalAccessor` and `ICurrentTenant` to the context for the duration of the read and restores them afterwards. Pass `TenantId: null` for the host. This is what makes it safe inside a login or token-refresh response, where the newly issued principal is not yet ambient.
-
-- Value providers are registered with the last-added provider having the highest resolution priority. The built-in order is `DefaultValue` → `Edition` → `Tenant` (Tenant wins). Custom providers added via `AddFeatureValueProvider<T>()` are appended after `Tenant` and therefore have the highest priority. This matters when writing custom providers that must override built-in resolution.
-- `TenantFeatureValueProvider` and `EditionFeatureValueProvider` resolve their store key as `providerKey ?? ambient` — an explicit key (e.g. `GetForTenantAsync(name, tenantId)`) always wins, and a `null` key falls back to `ICurrentTenant.Id` / the ambient tenant's edition (see [Edition resolution outside a request](#edition-resolution-outside-a-request)). A custom `StoreFeatureValueProvider` whose key needs I/O overrides `NormalizeProviderKeyAsync`. The same rule applies to reads and writes, so a value written for one tenant is read back for that tenant only.
-- **Keys must be text every provider keeps unchanged.** Every `IFeatureValueStore` entry point throws `ArgumentException` before touching storage when a feature name, provider name, or provider key starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Every provider must keep a key unchanged, so the store also refuses a NUL character (PostgreSQL cannot store it) and an unpaired UTF-16 surrogate (SqlClient sends it as U+FFFD, so SQL Server would merge keys that differ only in which lone surrogate they carry). The rule is `Argument.IsPortableKey`. Normalize keys at your own boundary; the store refuses rather than trims.
-- `AddHeadlessFeatures` is guarded on `IFeatureManager` so it is safe to call more than once (only the first call registers the core; the storage extension always applies). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
-- Nothing writes definitions at startup unless the host opts in to seeding; see [Definition Seeding](#definition-seeding). A failed `FeatureDefinitions` seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`.
-- `FeatureValueRecord` implements `ICreateAudit` / `IUpdateAudit`, carrying `CreatedAt` (stamped on insert) and `UpdatedAt` (stamped on update). On the EF path these are populated by the Headless audit save-processor; the raw-SQL PostgreSQL / SQL Server providers stamp them from the registered `TimeProvider`. Features scope tenancy through `ProviderName`/`ProviderKey` (e.g. `ProviderName == "Tenant"` with the tenant id in `ProviderKey`) — there is deliberately no first-class `TenantId` column nor `IMultiTenant`; a scoping value provider expresses tenant, edition, and other scopes uniformly. This is an intentional divergence from `PermissionGrantRecord`, not drift.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Features
 ```
 
-### Setup and use
-
-Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessFeatures`:
-
-> A caching provider is a hard prerequisite. This package references `Headless.Caching.Abstractions` only, so the `ICache` that `FeatureValueStore` reads through — or the named cache it takes from `ICacheProvider` when `FeatureValueCacheName` is set — comes from `AddHeadlessCaching(...)` with a provider (`UseInMemory` / `UseRedis` / `UseHybrid`). `AddHeadlessFeatures` declares it via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without one is refused at startup with a `MissingRequiredServiceException` rather than failing on the first feature check. Registration order does not matter — the check runs at host start.
+Register the required services, then `AddHeadlessFeatures` with a storage provider:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -341,18 +319,20 @@ builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
-#### Custom Value Provider
+To add a custom value provider:
 
 ```csharp
 // T must implement IFeatureValueReadProvider (read-only) or IFeatureValueProvider (read-write)
 builder.Services.AddFeatureValueProvider<MyCustomFeatureValueProvider>();
 ```
 
+**Verify:** the host starts. Without a cache registration, the start fails with `MissingRequiredServiceException`. After `dotnet app.dll seed`, `dotnet app.dll seed verify` reports the `FeatureDefinitions` seeder current.
+
 ### Configuration
 
 #### FeatureManagementOptions
 
-Configure via `setup.ConfigureManagement(...)` or `services.Configure<FeatureManagementOptions>(...)`:
+Set through `setup.ConfigureManagement(...)` (an `(options, IServiceProvider)` overload exists) or `services.Configure<FeatureManagementOptions>(...)`:
 
 ```csharp
 services.AddHeadlessFeatures(setup =>
@@ -378,11 +358,11 @@ services.AddHeadlessFeatures(setup =>
 });
 ```
 
-All lock- and cache-expiry options default to reasonable production values. The validator rejects empty lock keys and zero/negative expiry spans.
+The validator rejects an empty lock key and a zero or negative expiry.
 
 #### FeaturesStorageOptions
 
-Configure schema and table names via `setup.ConfigureStorage(...)`:
+Set schema and table names through `setup.ConfigureStorage(...)`, or bind them from `Headless:Features:Storage`:
 
 ```csharp
 services.AddHeadlessFeatures(setup =>
@@ -398,11 +378,13 @@ services.AddHeadlessFeatures(setup =>
 });
 ```
 
-Every object follows its database's naming convention. On PostgreSQL the tables, columns, primary keys, and indexes are snake_case (`feature_values`, `provider_key`, `pk_feature_values`, `ix_feature_values_provider_name_provider_key`); on SQL Server and other databases they are PascalCase (`FeatureValues`, `ProviderKey`, `PK_FeatureValues`, `IX_FeatureValues_ProviderName_ProviderKey`). A table-name option left `null` takes that convention's default. A table name you set is used verbatim, and its key and index names derive from it (`pk_MyValues`). The raw providers and the EF mapping produce the same names on the same database. Because PostgreSQL silently truncates identifiers longer than 63 bytes, every provider refuses a configured table name whose longest derived PostgreSQL key or index name would exceed that: at most 23 characters for the values table, 49 for definitions, and 55 for groups.
+- On PostgreSQL, tables, columns, keys, and indexes are snake_case (`feature_values`, `provider_key`, `pk_feature_values`, `ix_feature_values_provider_name_provider_key`). On SQL Server and other databases they are PascalCase (`FeatureValues`, `ProviderKey`, `PK_FeatureValues`, `IX_FeatureValues_ProviderName_ProviderKey`). The raw providers and the EF mapping produce the same names on the same database.
+- A table name you set is used verbatim, and its key and index names derive from it (`pk_MyValues`).
+- PostgreSQL truncates identifiers longer than 63 bytes, so every provider refuses a table name whose longest derived key or index name would exceed that: at most 23 characters for the values table, 49 for definitions, and 55 for groups.
 
 ##### Column lengths
 
-Every string column's maximum length is an option on `FeaturesStorageOptions`. The defaults are the lengths the tables always had, so an application that sets none gets the same schema:
+Each string column's maximum length is an option on `FeaturesStorageOptions`:
 
 | Option | Column | Default |
 | --- | --- | --- |
@@ -422,14 +404,15 @@ Every string column's maximum length is an option on `FeaturesStorageOptions`. T
 setup.ConfigureStorage(o => o.FeatureValuesProviderKeyMaxLength = 128);
 ```
 
-Each value must be between 1 and 4000, the widest sized `nvarchar` on SQL Server; the registration refuses anything else when the options are first read. One option drives every reader: the EF Core model (`HasMaxLength`), the raw providers' `CREATE TABLE`, and the size of the raw providers' lookup parameters. Set it in `ConfigureStorage`, or bind it from the `Headless:Features:Storage` section, before the tables are created. `FeatureDefinitionSerializer` checks each definition against the same options and throws `ArgumentOutOfRangeException` for a value that would not fit, so an over-long definition fails when definitions are saved instead of at the database; the definition record constructors no longer check length.
+- Each value must be between 1 and 4000. The registration refuses anything else when the options are first read.
+- One option sets the EF Core model, the raw providers' `CREATE TABLE`, and their parameter sizes. Set it before the tables are created.
+- A definition value that does not fit throws `ArgumentOutOfRangeException` when definitions are saved.
+- The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey`. Keep those three lengths together under 850. SQL Server limits a nonclustered index key to 1700 bytes (850 `nvarchar` characters), and PostgreSQL limits a B-tree entry to about 2700 bytes. A row that exceeds the limit fails on insert. `Value` is not indexed.
 
-The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey`. SQL Server limits a nonclustered index key to 1700 bytes, which is 850 `nvarchar` characters, and PostgreSQL limits a B-tree entry to about 2700 bytes. Keep the three lengths together under 850, or a row that fills them fails on insert. `Value` is not indexed.
+**Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column, and `resources provision` never re-runs an applied step. Change the option and the column in the same release:
 
-**Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column: the schema runner records a step as applied and never re-runs it, and EF Core changes a column only through a migration. Change the option and the column in the same release:
-
-- **EF Core storage**: change the option, then add a migration (`dotnet ef migrations add WidenFeatureValueProviderKeyColumn`). The model now maps the new length, so the migration contains the `AlterColumn`. Apply it as you apply every migration.
-- **Raw PostgreSQL or SQL Server storage**: run the `ALTER` with the tool that owns your schema, then deploy the option. `resources provision` does not widen a column.
+- **EF Core storage**: change the option, then add a migration (`dotnet ef migrations add WidenFeatureValueProviderKeyColumn`). It contains the `AlterColumn`.
+- **Raw PostgreSQL or SQL Server storage**: run the `ALTER` with the tool that owns your schema, then deploy the option.
 
   ```sql
   -- PostgreSQL: widening a varchar changes metadata only and keeps its indexes
@@ -439,33 +422,46 @@ The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey
   ALTER TABLE [headless].[FeatureValues] ALTER COLUMN [ProviderKey] nvarchar(128) NULL;
   ```
 
-Widen the column before, or together with, the code that writes longer values. Narrowing a column that already holds longer values fails on both databases, so shorten the data first.
+Widen the column before, or with, the code that writes longer values. Narrowing a column that holds longer values fails on both databases, so shorten the data first.
 
 ### Runtime behavior
 
-- Registers `IFeatureManager` (`FeatureManager`) as singleton, like the permission and setting managers; a replacement `IFeatureManager` must be singleton-safe, because the singleton feature authorization handler holds it
-- Registers `IClientVisibleFeaturesReader` as transient
-- Registers `IUnitOfWorkFeatures` (a `FeatureManager`) as singleton, and calls `AddUnitOfWork()` so `IUnitOfWorkFactory` resolves
-- Registers an `AsyncLocal`-backed `CurrentTenant` as the `ICurrentTenant` fallback (the same fallback Permissions, Settings, Messaging, and Jobs use); any real tenancy registration replaces it
-- Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
-- Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
-- Registers the `FeatureDefinitions` seeder (`ISeeder`); it runs only when the host seeds
-- Registers the `FeatureDefinitions` warm-up (`IWarmup`), which adds the `warmup` readiness check; it loads and gates readiness only when `IsDynamicFeatureStoreEnabled` is true
-- Registers `IMethodInvocationFeatureCheckerService` as singleton
-- Registers the feature authorization handler (singleton, once however often `AddHeadlessFeatures` runs). It reads every feature named by the policy's `FeatureRequirement`s in one `IFeatureManager.GetAllAsync` call, then decides each requirement from those values, so a group and an endpoint gate cost one read and calls `AddAuthorizationCore()`, which only adds services the host has not registered
+- `IFeatureManager` is a singleton. A replacement must be singleton-safe, because the feature authorization handler holds it.
+- `AddHeadlessFeatures` registers an `AsyncLocal` `ICurrentTenant` fallback. A real tenancy registration replaces it.
+- `AddHeadlessFeatures` calls `AddUnitOfWork()`, so `IUnitOfWorkFactory` resolves.
+- The `FeatureDefinitions` warm-up adds the `warmup` readiness check. It loads and holds readiness only when `IsDynamicFeatureStoreEnabled` is true.
+
+### Custom value providers
+
+Implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write) and register it with `services.AddFeatureValueProvider<T>()`. Registration is idempotent by type, and the provider takes the highest priority.
+
+- Implement `IFeatureValueReadProvider.GetAllAsync`. Every multi-name read (`GetAllAsync(featureNames)`, `GetAllAsync(providerName, …)`, multi-name `IsEnabledAsync` and `EnsureEnabledAsync`) asks each provider once with the whole batch through it. Without it, the provider's features disappear from bulk results.
+- `IFeatureValueProvider.SetAllAsync` defaults to one `SetAsync` or `ClearAsync` per entry. Override it when your source can apply a batch atomically.
+- To join a unit of work, override `GetOrDefaultEnlistedAsync` (defaults to the ordinary read), `SetAllEnlistedAsync`, and `DeleteAllEnlistedAsync` (both default to throwing `NotSupportedException`). A custom `IFeatureValueRecordRepository` likewise implements `GetListEnlistedAsync` and `SaveEnlistedAsync`.
+
+### Client-visible features
+
+`IClientVisibleFeaturesReader.GetAsync(PrincipalContext, …)` returns the effective value of every feature whose definition sets `IsVisibleToClients`, keyed by name. Use it to build the configuration your front end receives. Headless ships no endpoint. See the client-config recipe in [Permissions](permissions.md).
+
+It resolves for the principal and tenant in the `PrincipalContext`, not the ambient ones, and restores the ambient ones afterwards. Pass `TenantId: null` for the host. That makes it safe in a login or token-refresh response, where the new principal is not yet ambient.
 
 ### Gating HTTP endpoints
 
-A feature gate is an ASP.NET Core authorization requirement, so `AddHeadlessFeatures` plus the host's ordinary `AddAuthorization()` / `UseAuthorization()` enforce it. No HTTP-specific registration exists to forget.
+A feature gate is an ASP.NET Core authorization requirement. `AddHeadlessFeatures` plus the host's ordinary `AddAuthorization()` and `UseAuthorization()` enforce it. No other registration exists.
 
-- **Declaring a gate.** `[RequiresFeature]` on a controller, an action, or a Minimal API handler; `.WithMetadata(new RequiresFeatureAttribute(...))` on an endpoint, a route group, or `MapControllers()`; or a policy, `.RequireAuthorization(policy => policy.RequireFeatures(...))`. Each attribute or policy adds its own `FeatureRequirement`, so a controller and an action requirement, or a group and an endpoint requirement, must both pass. `[DisableFeatureCheck]` on an action or handler, or `.WithMetadata(new DisableFeatureCheckAttribute())`, skips every feature requirement on that endpoint, whichever shape declared it.
-- **Which shape.** The attribute and metadata shapes add only the feature requirement, so the fallback policy still applies to the endpoint. `RequireAuthorization(policy => policy.RequireFeatures(...))` adds no user requirement either, but like any `RequireAuthorization` call it gives the endpoint its own authorization data, so the fallback policy no longer applies there; prefer the metadata shape when the fallback policy matters.
-- **Composition.** The requirement joins the endpoint's other authorization data in one policy: a `[Authorize("Reports.View")]` permission and a `[RequiresFeature("Reports")]` both apply. A feature gate is not `[Authorize]`, so on an endpoint without `[Authorize]` the fallback policy still applies, and the gate adds no authenticated-user requirement of its own.
-- **Anonymous callers.** A feature is the tenant's or edition's state, not a right of the caller, so the gate applies to anonymous callers too: with the feature off they get ASP.NET Core's challenge (401), as any failed authorization does for an anonymous caller; with it on they pass unless another policy requires a user. `[AllowAnonymous]` skips ASP.NET Core authorization entirely, feature requirements included, so never combine it with a feature gate; an endpoint that must serve anonymous callers behind a gate needs no `[Authorize]` and no fallback policy that requires a user.
-- **Failure.** A disabled feature fails the evaluation with `Fail(new AuthorizationFailureReason(...))`, its message the localized "feature currently unavailable" text resolved in the request culture (so `UseRequestLocalization()` must run before `UseAuthorization()`). An authenticated caller gets 403; with `Headless.Api`'s status-codes rewriter (`AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()`, wired by `AddHeadless()` / `UseHeadless()`) the 403 is the standard forbidden problem with the failure reasons as `detail`, so a caller missing both a permission and a feature still learns about the feature. An anonymous caller is challenged (401). Without `Headless.Api`, ASP.NET Core's bare 403 applies.
-- **403 at the endpoint, 409 in code.** The endpoint gate is authorization: it decides whether this request may reach the endpoint, so it fails the way every authorization requirement does. `IFeatureManager.EnsureEnabledAsync` in application code is a business rule: it throws `ConflictException`, which the Headless exception handler returns as 409 with the `g:feature_currently_not_available` error code, the response a domain operation gives when the current state forbids it.
-- **Fail-closed wiring.** `AddHeadlessFeatures` registers the authorization handler services, so `WebApplication` adds the authorization middleware itself when the host never calls `UseAuthorization()`, and a host that never calls `AddAuthorization()` fails at startup instead of serving gated endpoints unchecked (MVC's `AddControllers()` calls `AddAuthorization()` for you). The gate needs `UseAuthorization()` after routing: a host that calls `UseRouting()` without it, or with the implicit middleware ahead of routing, skips feature requirements, as ASP.NET Core does for its own requirement attributes. Call `UseAuthorization()` after `UseRouting()`, and `UseStatusCodesRewriter()` before it so the rewriter wraps authorization.
-- Code outside HTTP, such as an interceptor or a job, checks the same attributes through `IMethodInvocationFeatureCheckerService`, or calls `IFeatureManager.EnsureEnabledAsync` directly.
+- **Declare a gate.** Use `[RequiresFeature]` on a controller, an action, or a Minimal API handler. Use `.WithMetadata(new RequiresFeatureAttribute(...))` on an endpoint, a route group, or `MapControllers()`. Or use a policy: `.RequireAuthorization(policy => policy.RequireFeatures(...))`, or `options.AddPolicy("Reports", policy => policy.RequireFeatures("Reports"))`.
+- **Several names.** `RequiresFeatureAttribute` passes when any listed feature is on. Set `IsAnd = true` to require all. `RequireFeatures(requiresAll: true, ...)` does the same for a policy. An attribute with no names adds no requirement. A `FeatureRequirement` with no names throws `ArgumentException`.
+- **Stacking.** Each attribute or policy adds its own requirement. A controller gate and an action gate, or a group gate and an endpoint gate, must both pass.
+- **Opt out.** `[DisableFeatureCheck]` on an action or handler, or `.WithMetadata(new DisableFeatureCheckAttribute())`, skips every feature requirement on that endpoint, however it was declared. Other policies still apply.
+- **Which shape.** The attribute and metadata shapes keep the fallback policy in force on the endpoint. `RequireAuthorization(policy => ...)` gives the endpoint its own authorization data, so the fallback policy no longer applies there. Prefer the metadata shape when the fallback policy matters.
+- **Composition.** The feature requirement joins the endpoint's other authorization data in one policy. `[Authorize("Reports.View")]` and `[RequiresFeature("Reports")]` both apply. A feature gate adds no authenticated-user requirement of its own.
+- **Anonymous callers.** The gate applies to anonymous callers too. With the feature off, they get a 401 challenge. With it on, they pass unless another policy requires a user. `[AllowAnonymous]` skips all authorization, feature requirements included, so never combine it with a feature gate.
+- **Failure.** A disabled feature fails authorization with the localized "feature currently unavailable" text, in the request culture, so call `UseRequestLocalization()` before `UseAuthorization()`. An authenticated caller gets 403. With `Headless.Api`'s status-codes rewriter (wired by `AddHeadless()` and `UseHeadless()`), the 403 is the standard forbidden problem with the failure reasons as `detail`. Without `Headless.Api`, the caller gets ASP.NET Core's bare 403.
+- **403 at the endpoint, 409 in code.** The endpoint gate fails like any authorization requirement. `IFeatureManager.EnsureEnabledAsync` in application code is a business rule: it throws `ConflictException`, returned as 409 with `g:feature_currently_not_available`.
+- **Fail-closed wiring.** When the host never calls `UseAuthorization()`, `WebApplication` adds the authorization middleware itself. A host that never calls `AddAuthorization()` fails at startup instead of serving gated endpoints unchecked. `AddControllers()` calls `AddAuthorization()` for you.
+- **Middleware order.** Call `UseAuthorization()` after `UseRouting()`, and `UseStatusCodesRewriter()` before it. A host that calls `UseRouting()` without `UseAuthorization()`, or with the implicit middleware ahead of routing, skips feature requirements.
+- **Outside HTTP.** An interceptor or a job checks the same attributes through `IMethodInvocationFeatureCheckerService.CheckAsync(context, cancellationToken)`, which reads the `[RequiresFeature]` attributes of a method and, for a public method, its declaring type. Or call `IFeatureManager.EnsureEnabledAsync` directly.
+- **Cost.** One request reads every feature its requirements name in one `GetAllAsync` call.
 
 ```csharp
 builder.AddHeadless();
@@ -506,30 +502,19 @@ public sealed class ReportsController : ControllerBase
 }
 ```
 
+**Verify:** in a `HeadlessTestServer` test, revoke the feature for the tenant and assert the gated endpoint returns 403 for an authenticated caller and 401 for an anonymous one, then grant it and assert 200.
+
 ---
 
 ## Headless.Features.Storage.EntityFramework
 
-Entity Framework Core storage implementation for feature management.
+Feature storage in your own `DbContext`. The package ships no `DbContext` of its own.
 
-### API and behavior
-
-- `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via the `HeadlessFeaturesSetupBuilder`
-- `modelBuilder.ConfigureHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
-- `modelBuilder.ConfigureHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
-- EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`. An enlisted call (`unit.Features`) takes a context from the registered factory, points it at the unit's open connection and transaction for that call, and gives the context its own connection back before disposing it, so a pooled context never keeps the unit's connection
-- `FeatureValueRecord` maps `CreatedAt` / `UpdatedAt` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
-- `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
-- Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any feature entity is missing from the model
-- Value uniqueness declared as a pair of filtered unique indexes — `(Name, ProviderName, ProviderKey) WHERE "ProviderKey" IS NOT NULL` and `(Name, ProviderName) WHERE "ProviderKey" IS NULL` — matching the raw-DDL providers, so NULL-key values stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite)
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Features.Storage.EntityFramework
 ```
-
-### Setup and use
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
@@ -555,54 +540,34 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
+Then add an EF migration for the feature tables. The EF provider writes no DDL.
+
+**Verify:** the host starts. A context that does not map the feature entities fails the start with `InvalidOperationException`: "the registered DbContext ... does not contain ... Call `modelBuilder.ConfigureHeadlessFeatures(this)`".
+
 ### Configuration
 
-`FeaturesStorageOptions` defaults:
-
-- `Schema = "headless"`, the schema every Headless feature shares (see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features))
-- `FeatureValuesTableName = null`: `feature_values` on PostgreSQL, `FeatureValues` elsewhere
-- `FeatureDefinitionsTableName = null`: `feature_definitions` on PostgreSQL, `FeatureDefinitions` elsewhere
-- `FeatureGroupDefinitionsTableName = null`: `feature_group_definitions` on PostgreSQL, `FeatureGroupDefinitions` elsewhere
-- Every `*MaxLength` option defaults to the length its column always had; see [Column lengths](#column-lengths) for the list and for changing one after the tables exist
-
-The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any features entity is missing.
-
-The EF provider writes no DDL; create its tables with EF migrations.
+- `ConfigureHeadlessFeatures(this)` reads `FeaturesStorageOptions` from the context's service provider and picks the naming style from the database provider: snake_case on Npgsql, PascalCase on every other provider.
+- `ConfigureHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` takes options you already hold. Pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database.
+- `FeaturesStorageOptions` defaults: `Schema = "headless"`, the schema every Headless feature shares (see [Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)). Table names default to `feature_values`, `feature_definitions`, and `feature_group_definitions` on PostgreSQL, and `FeatureValues`, `FeatureDefinitions`, and `FeatureGroupDefinitions` elsewhere. See [Column lengths](#column-lengths).
+- Identifier names are validated against SQL Server rules, the stricter set.
 
 ### Runtime behavior
 
-- Registers `IFeatureDefinitionRecordRepository` (`EfFeatureDefinitionRecordRepository<TContext>`) as singleton
-- Registers `IFeatureValueRecordRepository` (`EfFeatureValueRecordRecordRepository<TContext>`) as singleton
-- Registers validated `FeaturesStorageOptions`
-- Registers `FeaturesEntityStartupValidator<TContext>` as an `IHeadlessStartupValidator`
+- Reads use a fresh context from `IDbContextFactory<TContext>` with `AsNoTracking()`. Writes commit through their own context, so they do not enlist in your outer transaction. Use `unit.Features` for that.
+- `CreatedAt` and `UpdatedAt` on each value row are stamped by the Headless audit save-processor on `SaveChanges`.
+- Value uniqueness uses two filtered unique indexes, `(Name, ProviderName, ProviderKey)` where `ProviderKey` is not null and `(Name, ProviderName)` where it is null, so values without a key stay unique on databases that treat NULLs as distinct (PostgreSQL, SQLite).
 
 ---
 
 ## Headless.Features.Storage.PostgreSql
 
-PostgreSQL raw-DDL storage for feature management.
+Raw ADO.NET feature storage for PostgreSQL.
 
-### API and behavior
-
-- `setup.UsePostgreSql(string connectionString)` — registers the PostgreSQL storage provider from a connection string
-- `setup.UsePostgreSql(IConfiguration configuration)` — binds `PostgreSqlFeaturesOptions` from a configuration section
-- `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
-- `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
-- `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table and index creation as schema steps (`Features/1` tables, `Features/2` indexes) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`feature_values`, `provider_key`, `ix_feature_values_provider_name_provider_key`)
-- Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
-- `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds), inherited from `RelationalFeaturesOptions`
-- Shares `FeaturesStorageOptions` with the EF provider (schema, table names)
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Features.Storage.PostgreSql
 ```
-
-### Setup and use
-
-Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` registers the management core automatically.
 
 ```csharp
 builder.Services.AddPostgreSqlSql(connectionString);
@@ -629,51 +594,37 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
-### Configuration
+`UsePostgreSql()` with no argument uses the connection from `AddPostgreSqlSql`; see [Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features). The other overloads take a connection string, an `IConfiguration` section bound to `PostgreSqlFeaturesOptions`, an `Action<PostgreSqlFeaturesOptions>`, or an `Action<PostgreSqlFeaturesOptions, IServiceProvider>`.
 
-#### Options
+**Verify:** `dotnet app.dll resources provision` creates the tables, and `dotnet app.dll resources verify` then succeeds. A host started before provisioning fails at startup because the schema step is missing.
+
+### Configuration
 
 `PostgreSqlFeaturesOptions`:
 
 | Option | Default | Description |
 |---|---|---|
 | `ConnectionString` | `""` | PostgreSQL connection string (required). |
-| `CommandTimeout` | 30 seconds | Timeout for DDL/DML commands. |
+| `CommandTimeout` | 30 seconds | Timeout for each command. |
 
-Configure schema and table names through `FeaturesStorageOptions` via `setup.ConfigureStorage(...)`.
+Set schema and table names through `setup.ConfigureStorage(...)`.
 
 ### Runtime behavior
 
-- Registers the features schema contribution; `resources provision` applies it, and a host start only verifies it
-- Registers the shared relational repositories from `Headless.Features`, over the PostgreSQL dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
+- `resources provision` applies two schema steps through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts): `Features/1` (tables) and `Features/2` (indexes). Names are snake_case.
+- The host start only verifies the steps. See [Resource provisioning](utilities.md#resource-provisioning).
 
 ---
 
 ## Headless.Features.Storage.SqlServer
 
-SQL Server raw-DDL storage for feature management.
+Raw ADO.NET feature storage for SQL Server.
 
-### API and behavior
-
-- `setup.UseSqlServer(string connectionString)` — registers the SQL Server storage provider from a connection string
-- `setup.UseSqlServer(IConfiguration configuration)` — binds `SqlServerFeaturesOptions` from a configuration section
-- `setup.UseSqlServer(Action<SqlServerFeaturesOptions> configure)` — overload for full option control
-- `setup.UseSqlServer(Action<SqlServerFeaturesOptions, IServiceProvider> configure)` — overload with service-provider access for late-bound configuration
-- `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Table, index, and table-type creation as one schema step (`Features/1`) that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts)
-- Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
-- `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds), inherited from `RelationalFeaturesOptions`
-- Shares `FeaturesStorageOptions` with the EF provider (schema, table names)
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Features.Storage.SqlServer
 ```
-
-### Setup and use
-
-Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` registers the management core automatically.
 
 ```csharp
 builder.Services.AddSqlServerSql(connectionString);
@@ -700,20 +651,22 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
-### Configuration
+`UseSqlServer()` with no argument uses the connection from `AddSqlServerSql`; see [Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features). The other overloads take a connection string, an `IConfiguration` section bound to `SqlServerFeaturesOptions`, an `Action<SqlServerFeaturesOptions>`, or an `Action<SqlServerFeaturesOptions, IServiceProvider>`.
 
-#### Options
+**Verify:** `dotnet app.dll resources provision` creates the tables, and `dotnet app.dll resources verify` then succeeds. A host started before provisioning fails at startup because the schema step is missing.
+
+### Configuration
 
 `SqlServerFeaturesOptions`:
 
 | Option | Default | Description |
 |---|---|---|
 | `ConnectionString` | `""` | SQL Server connection string (required). |
-| `CommandTimeout` | 30 seconds | Timeout for DDL/DML commands. |
+| `CommandTimeout` | 30 seconds | Timeout for each command. |
 
-Configure schema and table names through `FeaturesStorageOptions` via `setup.ConfigureStorage(...)`.
+Set schema and table names through `setup.ConfigureStorage(...)`.
 
 ### Runtime behavior
 
-- Registers the features schema contribution; `resources provision` applies it, and a host start only verifies it
-- Registers the shared relational repositories from `Headless.Features`, over the SQL Server dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
+- `resources provision` applies one schema step, `Features/1` (tables, indexes, and table types), through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). Names are PascalCase.
+- The host start only verifies the step. See [Resource provisioning](utilities.md#resource-provisioning).

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using System.Threading.Channels;
 using Headless.Jobs;
 using Headless.Testing.Tests;
@@ -112,17 +111,29 @@ public sealed class JobProgressReporterTests : TestBase
     public async Task should_stop_writing_once_the_execution_lost_its_lease()
     {
         var owns = true;
-        var (reporter, time, writes, manager) = _Create(ownsExecution: () => Volatile.Read(ref owns));
+        var consulted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (reporter, time, writes, manager) = _Create(ownsExecution: () =>
+        {
+            var owned = Volatile.Read(ref owns);
+
+            if (!owned)
+            {
+                consulted.TrySetResult();
+            }
+
+            return owned;
+        });
         reporter.Report(new JobProgress(10));
         await _NextWriteAsync(writes);
 
         Volatile.Write(ref owns, false);
         reporter.Report(new JobProgress(90, "from a zombie handler"));
-        for (var tick = 0; tick < 5; tick++)
-        {
-            time.Advance(_Interval);
-            await Task.Delay(10, AbortToken);
-        }
+        await time.NextTimerAsync(AbortToken).Bounded();
+        time.Advance(_Interval);
+
+        // The writer either consults ownership and stops, or (without the check) writes; waiting for either keeps a
+        // missing check from passing before the writer has run.
+        _ = await Task.WhenAny(consulted.Task, writes.Reader.WaitToReadAsync(AbortToken).AsTask()).Bounded();
 
         await reporter.StopAsync();
         writes
@@ -182,12 +193,12 @@ public sealed class JobProgressReporterTests : TestBase
 
     private static (
         JobProgressReporter Reporter,
-        FakeTimeProvider Time,
+        TimerSignalingTimeProvider Time,
         Channel<JobProgress> Writes,
         IInternalJobManager Manager
     ) _Create(Func<JobProgress, bool>? write = null, Func<bool>? ownsExecution = null)
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var writes = Channel.CreateUnbounded<JobProgress>();
         var manager = Substitute.For<IInternalJobManager>();
         manager
@@ -221,24 +232,16 @@ public sealed class JobProgressReporterTests : TestBase
         return await writes.Reader.ReadAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
     }
 
-    // The writer registers its interval wait only after the previous write returns, on a pool thread, so the test
-    // keeps advancing fake time until that wait has been armed and fired. Extra intervals are harmless: with nothing
-    // pending the writer just waits for the next report.
-    private static async Task<JobProgress> _AdvanceUntilWriteAsync(FakeTimeProvider time, Channel<JobProgress> writes)
+    // The writer arms its interval wait only after the previous write returns, on a pool thread; advancing before that
+    // would fire nothing, because the wait would then be created against the later time.
+    private static async Task<JobProgress> _AdvanceUntilWriteAsync(
+        TimerSignalingTimeProvider time,
+        Channel<JobProgress> writes
+    )
     {
-        var waited = Stopwatch.StartNew();
-        while (true)
-        {
-            if (writes.Reader.TryRead(out var progress))
-            {
-                return progress;
-            }
+        await time.NextTimerAsync(AbortToken).Bounded();
+        time.Advance(_Interval);
 
-            waited
-                .Elapsed.Should()
-                .BeLessThan(TimeSpan.FromSeconds(10), "the throttled write should follow the interval");
-            time.Advance(_Interval);
-            await Task.Delay(10, AbortToken);
-        }
+        return await _NextWriteAsync(writes);
     }
 }

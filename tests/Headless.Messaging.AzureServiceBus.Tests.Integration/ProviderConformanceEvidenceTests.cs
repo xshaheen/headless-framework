@@ -162,6 +162,11 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 )
             ),
             new(
+                TransportConformanceScenario.KeySequencing,
+                typeof(AzureServiceBusEmulatorTransportTests),
+                nameof(AzureServiceBusEmulatorTransportTests.should_run_one_key_at_a_time_on_a_sequential_consumer)
+            ),
+            new(
                 TransportConformanceScenario.ConsumerPauseRecovery,
                 typeof(AzureServiceBusEmulatorBrokerFaultTests),
                 nameof(AzureServiceBusEmulatorBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
@@ -178,12 +183,6 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
             _BindEmulator(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(AzureServiceBusEmulatorConsumerClientHarnessTests.should_bound_shutdown_while_handler_is_active)
-            ),
-            _BindEmulator(
-                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-                nameof(
-                    AzureServiceBusEmulatorConsumerClientHarnessTests.should_redeliver_then_give_up_when_the_header_builder_fails_transiently
-                )
             ),
         ];
 

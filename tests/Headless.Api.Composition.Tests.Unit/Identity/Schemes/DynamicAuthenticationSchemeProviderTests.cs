@@ -5,7 +5,9 @@ using Headless.Http;
 using Headless.Security;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Identity.Schemes;
@@ -196,9 +198,7 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
     [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultAuthenticateSchemeAsync))]
     [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultChallengeSchemeAsync))]
     [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultForbidSchemeAsync))]
-    [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignInSchemeAsync))]
-    [InlineData(nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignOutSchemeAsync))]
-    public async Task should_work_for_all_get_default_methods(string methodName)
+    public async Task should_select_the_request_scheme_for_authenticate_challenge_and_forbid(string methodName)
     {
         // given
         var context = _CreateContext();
@@ -215,10 +215,6 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
                 await provider.GetDefaultChallengeSchemeAsync(),
             nameof(DynamicAuthenticationSchemeProvider.GetDefaultForbidSchemeAsync) =>
                 await provider.GetDefaultForbidSchemeAsync(),
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignInSchemeAsync) =>
-                await provider.GetDefaultSignInSchemeAsync(),
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignOutSchemeAsync) =>
-                await provider.GetDefaultSignOutSchemeAsync(),
             _ => throw new ArgumentOutOfRangeException(nameof(methodName)),
         };
 
@@ -227,7 +223,211 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
         result!.Name.Should().Be(AuthenticationConstants.Schemas.ApiKey);
     }
 
+    [Fact]
+    public async Task should_keep_the_configured_sign_in_and_sign_out_schemes_when_request_carries_header_credentials()
+    {
+        // given - none of the header schemes can sign in or out, so selecting one made SignOutAsync() throw
+        var context = _CreateContext();
+        context.Request.Headers[HttpHeaderNames.ApiKey] = "test-api-key";
+        _httpContextAccessor.HttpContext.Returns(context);
+        var provider = _CreateProvider();
+
+        // when
+        var signIn = await provider.GetDefaultSignInSchemeAsync();
+        var signOut = await provider.GetDefaultSignOutSchemeAsync();
+
+        // then
+        signIn!.Name.Should().Be(AuthenticationConstants.Schemas.Bearer);
+        signOut!.Name.Should().Be(AuthenticationConstants.Schemas.Bearer);
+    }
+
+    [Fact]
+    public async Task should_select_a_custom_named_api_key_scheme()
+    {
+        // given
+        var provider = _CreateCustomProvider(
+            options => options.AddScheme(_PartnerKey, b => b.HandlerType = _ApiKeyHandler),
+            (_PartnerKey, new ApiKeyAuthenticationSchemeOptions())
+        );
+        _httpContextAccessor.HttpContext.Returns(_CreateContext(HttpHeaderNames.ApiKey, "test-api-key"));
+
+        // when
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result!.Name.Should().Be(_PartnerKey);
+    }
+
+    [Fact]
+    public async Task should_select_the_api_key_scheme_whose_own_header_the_request_carries()
+    {
+        // given
+        var provider = _CreateCustomProvider(
+            options =>
+            {
+                options.AddScheme(AuthenticationConstants.Schemas.ApiKey, b => b.HandlerType = _ApiKeyHandler);
+                options.AddScheme(_PartnerKey, b => b.HandlerType = _ApiKeyHandler);
+            },
+            (AuthenticationConstants.Schemas.ApiKey, new ApiKeyAuthenticationSchemeOptions()),
+            (_PartnerKey, new ApiKeyAuthenticationSchemeOptions { ApiKeyHeaderName = "X-Partner-Key" })
+        );
+        _httpContextAccessor.HttpContext.Returns(_CreateContext("X-Partner-Key", "partner-key"));
+
+        // when
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result!.Name.Should().Be(_PartnerKey);
+    }
+
+    [Fact]
+    public async Task should_prefer_the_canonical_api_key_scheme_when_several_match()
+    {
+        // given
+        var provider = _CreateCustomProvider(
+            options =>
+            {
+                options.AddScheme(_PartnerKey, b => b.HandlerType = _ApiKeyHandler);
+                options.AddScheme(AuthenticationConstants.Schemas.ApiKey, b => b.HandlerType = _ApiKeyHandler);
+            },
+            (AuthenticationConstants.Schemas.ApiKey, new ApiKeyAuthenticationSchemeOptions()),
+            (_PartnerKey, new ApiKeyAuthenticationSchemeOptions())
+        );
+        _httpContextAccessor.HttpContext.Returns(_CreateContext(HttpHeaderNames.ApiKey, "test-api-key"));
+
+        // when
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result!.Name.Should().Be(AuthenticationConstants.Schemas.ApiKey);
+    }
+
+    [Fact]
+    public async Task should_fall_back_to_the_configured_default_when_several_custom_api_key_schemes_match()
+    {
+        // given
+        var provider = _CreateCustomProvider(
+            options =>
+            {
+                options.AddScheme(_PartnerKey, b => b.HandlerType = _ApiKeyHandler);
+                options.AddScheme("VendorKey", b => b.HandlerType = _ApiKeyHandler);
+            },
+            (_PartnerKey, new ApiKeyAuthenticationSchemeOptions()),
+            ("VendorKey", new ApiKeyAuthenticationSchemeOptions())
+        );
+        _httpContextAccessor.HttpContext.Returns(_CreateContext(HttpHeaderNames.ApiKey, "test-api-key"));
+
+        // when
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result!.Name.Should().Be(_Cookies);
+    }
+
+    [Fact]
+    public async Task should_select_a_custom_named_basic_scheme()
+    {
+        // given
+        var provider = _CreateCustomProvider(options =>
+            options.AddScheme("partner-basic", b => b.HandlerType = _BasicHandler)
+        );
+        _httpContextAccessor.HttpContext.Returns(
+            _CreateContext(HttpHeaderNames.Authorization, "Basic dXNlcm5hbWU6cGFzc3dvcmQ=")
+        );
+
+        // when
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result!.Name.Should().Be("partner-basic");
+    }
+
+    [Fact]
+    public async Task should_select_a_custom_named_jwt_bearer_scheme()
+    {
+        // given
+        var provider = _CreateCustomProvider(options =>
+            options.AddScheme("PartnerJwt", b => b.HandlerType = typeof(JwtBearerHandler))
+        );
+        _httpContextAccessor.HttpContext.Returns(_CreateContext(HttpHeaderNames.Authorization, "Bearer token"));
+
+        // when
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result!.Name.Should().Be("PartnerJwt");
+    }
+
+    [Fact]
+    public async Task should_prefer_the_canonical_bearer_scheme_over_another_jwt_bearer_scheme()
+    {
+        // given
+        var provider = _CreateCustomProvider(options =>
+        {
+            options.AddScheme("PartnerJwt", b => b.HandlerType = typeof(JwtBearerHandler));
+            options.AddScheme(AuthenticationConstants.Schemas.Bearer, b => b.HandlerType = typeof(JwtBearerHandler));
+        });
+        _httpContextAccessor.HttpContext.Returns(_CreateContext(HttpHeaderNames.Authorization, "Bearer token"));
+
+        // when
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result!.Name.Should().Be(AuthenticationConstants.Schemas.Bearer);
+    }
+
+    [Fact]
+    public async Task should_select_a_scheme_added_after_the_first_request()
+    {
+        // given
+        var provider = _CreateCustomProvider(_ => { }, (_PartnerKey, new ApiKeyAuthenticationSchemeOptions()));
+        _httpContextAccessor.HttpContext.Returns(_CreateContext(HttpHeaderNames.ApiKey, "test-api-key"));
+        (await provider.GetDefaultAuthenticateSchemeAsync())!.Name.Should().Be(_Cookies);
+
+        // when
+        provider.AddScheme(new AuthenticationScheme(_PartnerKey, displayName: null, _ApiKeyHandler));
+        var result = await provider.GetDefaultAuthenticateSchemeAsync();
+
+        // then
+        result!.Name.Should().Be(_PartnerKey);
+    }
+
     #region Helpers
+
+    private const string _PartnerKey = "PartnerKey";
+    private const string _Cookies = "Cookies";
+
+    // The provider classifies schemes by handler type and never constructs the handler.
+    private static readonly Type _ApiKeyHandler = typeof(ApiKeyAuthenticationHandler<IdentityUser<Guid>, Guid>);
+    private static readonly Type _BasicHandler = typeof(BasicAuthenticationHandler<IdentityUser<Guid>, Guid>);
+
+    private DynamicAuthenticationSchemeProvider _CreateCustomProvider(
+        Action<AuthenticationOptions> addSchemes,
+        params (string Scheme, ApiKeyAuthenticationSchemeOptions Options)[] apiKeyOptions
+    )
+    {
+        var options = new AuthenticationOptions { DefaultScheme = _Cookies };
+        options.AddScheme<TestAuthHandler>(_Cookies, null);
+        addSchemes(options);
+
+        var monitor = Substitute.For<IOptionsMonitor<ApiKeyAuthenticationSchemeOptions>>();
+        monitor.Get(Arg.Any<string>()).Returns(new ApiKeyAuthenticationSchemeOptions());
+
+        foreach (var (scheme, schemeOptions) in apiKeyOptions)
+        {
+            monitor.Get(scheme).Returns(schemeOptions);
+        }
+
+        return new DynamicAuthenticationSchemeProvider(_httpContextAccessor, Options.Create(options), monitor);
+    }
+
+    private static DefaultHttpContext _CreateContext(string header, string value)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers[header] = value;
+
+        return context;
+    }
 
     private DynamicAuthenticationSchemeProvider _CreateProvider()
     {

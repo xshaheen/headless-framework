@@ -260,6 +260,15 @@ for event in pull_request push; do
 done
 pass "a pull request or push that reaches one messaging suite runs every leg, so the drift report can judge each cell"
 
+# A storage combination runs inside its transport's leg, so a change that reaches only the combination still has to
+# select the run and name that leg.
+nats_postgresql=tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj
+printf '{"integration_tests": ["%s"]}\n' "$nats_postgresql" > "$scratch/affected.json"
+expect "scope runs every leg when only a combination suite is reached" 0 "${scope[@]}" select --event pull_request --base "$head_sha" --affected-report "$scratch/affected.json"
+[[ "$(value mode)" == "legs" && "$(legs_selected)" == "$leg_count" ]] || fail "scope: a change reaching only a combination suite does not run every leg: $(value legs)"
+contains "scope names the combination's transport leg" "reason=affected since ${head_sha:0:12}: nats"
+pass "a change that reaches only a storage combination selects its transport's leg"
+
 printf '{"integration_tests": ["tests/Headless.Features.Tests.Integration/Headless.Features.Tests.Integration.csproj"]}\n' > "$scratch/affected.json"
 expect "scope skips an unrelated pull request" 0 "${scope[@]}" select --event pull_request --base "$head_sha" --affected-report "$scratch/affected.json"
 [[ "$(value run_legs)" == "false" && "$(value run_chaos)" == "false" && "$(value legs)" == "[]" ]] || fail "scope: a pull request affecting no messaging suite still runs legs"

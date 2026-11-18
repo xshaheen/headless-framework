@@ -37,16 +37,20 @@ public sealed class TenantOutputCachePolicyTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_the_misordering_once_per_process_when_resolution_has_not_run()
+    public async Task should_log_the_misordering_once_per_host_when_resolution_has_not_run()
     {
-        // The only test that leaves resolution unrun, so the process-wide once-guard is still open here.
-        var logger = new ListLogger();
-        var policy = new TenantOutputCachePolicy(logger);
+        // One policy instance per host: a second host must still get its own Error, which a static guard swallowed.
+        var firstHostLogger = new ListLogger();
+        var secondHostLogger = new ListLogger();
+        var firstHost = new TenantOutputCachePolicy(firstHostLogger);
+        var secondHost = new TenantOutputCachePolicy(secondHostLogger);
 
-        await policy.CacheRequestAsync(_CreateContext(tenantId: null, resolutionRan: false), AbortToken);
-        await policy.CacheRequestAsync(_CreateContext(tenantId: null, resolutionRan: false), AbortToken);
+        await firstHost.CacheRequestAsync(_CreateContext(tenantId: null, resolutionRan: false), AbortToken);
+        await firstHost.CacheRequestAsync(_CreateContext(tenantId: null, resolutionRan: false), AbortToken);
+        await secondHost.CacheRequestAsync(_CreateContext(tenantId: null, resolutionRan: false), AbortToken);
 
-        logger.Entries.Should().ContainSingle().Which.Should().Be(LogLevel.Error);
+        firstHostLogger.Entries.Should().ContainSingle().Which.Should().Be(LogLevel.Error);
+        secondHostLogger.Entries.Should().ContainSingle().Which.Should().Be(LogLevel.Error);
     }
 
     [Fact]

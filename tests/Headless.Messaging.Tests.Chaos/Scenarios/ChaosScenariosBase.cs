@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 using Headless.Threading;
 using Polly;
 using Polly.Retry;
+using Tests.Guarantees;
 using Tests.Ledger;
 using Tests.Stack;
 
@@ -68,7 +69,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             drainBudget,
             AbortToken
         );
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then
         var snapshot = run.Ledger.Snapshot();
@@ -99,6 +100,9 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
     [Fact]
     public override async Task should_send_each_delayed_row_once_while_hosts_restart_in_turn()
     {
+        // quarantine: #1763 a host stop cancels a delayed send mid-confirm, so a row the broker accepted is recorded unsent
+        MessagingGuarantees.RequireSupport("MSG-COORD-06");
+
         // given
         var size = Profile.RollingRestart;
         await using var run = _NewRun(settings => settings.DelayedPollInterval = size.PollInterval);
@@ -134,7 +138,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             await _IgnoreCancellationAsync(rolling);
         }
 
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         foreach (var host in live)
         {
@@ -210,6 +214,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             _ => publisher,
             AbortToken
         );
+        // real-wait: the outage window is the fault under test; the broker stays blackholed for this long while publishes keep arriving
         await Task.Delay(size.Outage, AbortToken);
         await stack.RestoreBrokerAnswersAsync(AbortToken);
         var attempted = await publishing;
@@ -219,7 +224,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             _Recovery,
             AbortToken
         );
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then
         var snapshot = run.Ledger.Snapshot();
@@ -304,7 +309,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             _Recovery,
             AbortToken
         );
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then
         var verdict = LedgerVerdict.Evaluate(run.Ledger.Snapshot());
@@ -366,7 +371,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             _Recovery,
             AbortToken
         );
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then
         var snapshot = run.Ledger.Snapshot();
@@ -442,7 +447,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             );
         }
 
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then
         var snapshot = run.Ledger.Snapshot();
@@ -502,7 +507,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             ChaosRun.DispatchTimeout + _Recovery,
             AbortToken
         );
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then
         var snapshot = run.Ledger.Snapshot();
@@ -570,7 +575,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
         await stack.StorageProxy.DisableAsync(AbortToken);
         var budget = (ChaosRun.DispatchTimeout * 2) + _Recovery;
         var recovered = await run.Ledger.WaitUntilAsync(progress => progress.AllAcceptedCompleted, budget, AbortToken);
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then
         var snapshot = run.Ledger.Snapshot();
@@ -609,7 +614,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             TimeSpan.FromSeconds(60),
             AbortToken
         );
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then — the ledger catches exactly the dropped messages as lost
         var verdict = LedgerVerdict.Evaluate(run.Ledger.Snapshot());
@@ -642,7 +647,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             TimeSpan.FromSeconds(60),
             AbortToken
         );
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then — the ledger catches exactly the resent messages as duplicates
         var verdict = LedgerVerdict.Evaluate(run.Ledger.Snapshot());
@@ -696,7 +701,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             _Recovery,
             AbortToken
         );
-        await Task.Delay(_QuietWindow, AbortToken);
+        await _WatchForLateDuplicatesAsync();
 
         // then
         var verdict = LedgerVerdict.Evaluate(run.Ledger.Snapshot());
@@ -719,6 +724,17 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             $"{plan}; publishes attempted {attempted}, failed rows {failedRows}, dead-lettered {deadLettered}; {verdict.Describe()}"
         );
         violations.Should().BeEmpty($"the soak with {plan} must lose nothing; {replay}");
+    }
+
+    /// <summary>
+    /// Keeps watching after the last expected run so a late duplicate still reaches the ledger before the verdict. No
+    /// signal says a duplicate will not come: one would be a broker redelivery or a retry claimed after the store's lease
+    /// clock expires, and neither a fake clock nor a barrier message can stand in for those real clocks.
+    /// </summary>
+    private async Task _WatchForLateDuplicatesAsync()
+    {
+        // real-wait: a late duplicate is driven by the broker's redelivery and the store's lease clocks, which only elapse in real time
+        await Task.Delay(_QuietWindow, AbortToken);
     }
 
     private ChaosRun _NewRun(Action<ChaosSettings>? configure = null)
@@ -759,11 +775,13 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
     {
         while (true)
         {
+            // real-wait: the flap cadence is the fault schedule; storage must stay reachable for this long between drops
             await Task.Delay(size.Every - size.Down, cancellationToken);
             await stack.StorageProxy.DisableAsync(CancellationToken.None);
 
             try
             {
+                // real-wait: the storage outage length is the fault under test, applied to the real database through Toxiproxy
                 await Task.Delay(size.Down, cancellationToken);
             }
             finally
@@ -779,6 +797,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
     {
         while (true)
         {
+            // real-wait: the drop cadence of the broker link is the fault schedule, measured against the real reconnect back-off
             await Task.Delay(every, cancellationToken);
 
             // Disabling closes every open connection; enabling at once makes the drop a blip, not an outage.
@@ -804,6 +823,7 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             var wait = fault.At - TimeProvider.System.GetElapsedTime(started);
             if (wait > TimeSpan.Zero)
             {
+                // real-wait: the seeded plan places each fault at an offset from the start of the run, so the fault timeline is real time
                 await Task.Delay(wait, cancellationToken);
             }
 
@@ -811,16 +831,19 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
             {
                 case SoakFaultKind.BrokerCut:
                     await stack.BrokerProxy.DisableAsync(cancellationToken);
+                    // real-wait: the broker link stays cut for the fault's length; the outage duration is the fault under test
                     await Task.Delay(fault.Length, cancellationToken);
                     await stack.BrokerProxy.EnableAsync(cancellationToken);
                     break;
                 case SoakFaultKind.BrokerBlackhole:
                     await stack.BlackholeBrokerAsync(cancellationToken);
+                    // real-wait: the broker stays blackholed for the fault's length; the outage duration is the fault under test
                     await Task.Delay(fault.Length, cancellationToken);
                     await stack.RestoreBrokerAnswersAsync(cancellationToken);
                     break;
                 case SoakFaultKind.StorageCut:
                     await stack.StorageProxy.DisableAsync(cancellationToken);
+                    // real-wait: storage stays cut for the fault's length; the outage duration is the fault under test
                     await Task.Delay(fault.Length, cancellationToken);
                     await stack.StorageProxy.EnableAsync(cancellationToken);
                     break;

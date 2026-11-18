@@ -9,8 +9,8 @@ namespace Tests;
 
 public sealed class RedisCacheEntryFrameTests
 {
-    private const int _HeaderLength = 27;
-    private const int _SlidingHeaderLength = 35;
+    private const int _HeaderLength = 35;
+    private const int _SlidingHeaderLength = 43;
     private const byte _HasSlidingExpirationFlag = 1 << 3;
     private const byte _HasEagerRefreshAtFlag = 1 << 4;
     private const byte _HasETagFlag = 1 << 5;
@@ -141,7 +141,7 @@ public sealed class RedisCacheEntryFrameTests
     }
 
     [Fact]
-    public void should_round_trip_created_at_in_fixed_v3_slot()
+    public void should_round_trip_created_at_in_fixed_header_slot()
     {
         var createdAt = new DateTime(2026, 06, 02, 09, 45, 10, 500, DateTimeKind.Utc);
 
@@ -154,7 +154,7 @@ public sealed class RedisCacheEntryFrameTests
         );
         var decoded = _Decode(encoded);
 
-        // CreatedAt is an always-present v3 fixed-header field at offset 19 (no flag bit).
+        // CreatedAt is an always-present fixed-header field at offset 19 (no flag bit).
         BinaryPrimitives
             .ReadInt64LittleEndian(encoded.AsSpan(19, sizeof(long)))
             .Should()
@@ -170,6 +170,33 @@ public sealed class RedisCacheEntryFrameTests
         var decoded = _Decode(encoded);
 
         decoded.CreatedAt.Should().BeNull();
+        decoded.ThrottledUntil.Should().BeNull();
+        decoded.ValueSegment.ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
+    }
+
+    [Fact]
+    public void should_round_trip_throttled_until_in_fixed_header_slot()
+    {
+        var createdAt = new DateTime(2026, 06, 02, 09, 45, 10, 500, DateTimeKind.Utc);
+        var throttledUntil = createdAt.AddMinutes(3);
+
+        var encoded = _Encode(
+            "value",
+            isNull: false,
+            logicalExpiresAt: null,
+            physicalExpiresAt: null,
+            createdAt: createdAt,
+            throttledUntil: throttledUntil
+        );
+        var decoded = _Decode(encoded);
+
+        // ThrottledUntil is an always-present fixed-header field at offset 27, kept apart from CreatedAt.
+        BinaryPrimitives
+            .ReadInt64LittleEndian(encoded.AsSpan(27, sizeof(long)))
+            .Should()
+            .Be(new DateTimeOffset(throttledUntil).ToUnixTimeMilliseconds());
+        decoded.ThrottledUntil.Should().Be(throttledUntil);
+        decoded.CreatedAt.Should().Be(createdAt);
         decoded.ValueSegment.ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
     }
 
@@ -349,12 +376,25 @@ public sealed class RedisCacheEntryFrameTests
     }
 
     [Fact]
-    public void should_emit_version_three_frames()
+    public void should_emit_version_four_frames()
     {
         var encoded = _Encode("value", isNull: false, logicalExpiresAt: null, physicalExpiresAt: null);
 
         encoded[0].Should().Be(0xFF);
-        encoded[1].Should().Be(0x03);
+        encoded[1].Should().Be(0x04);
+    }
+
+    [Fact]
+    public void should_decode_version_three_payload_as_unframed_miss()
+    {
+        // A retired v3 frame has no ThrottledUntil slot, so its value segment starts eight bytes earlier.
+        var bytes = new byte[_HeaderLength + 5];
+        bytes[0] = 0xFF;
+        bytes[1] = 0x03;
+
+        var decoded = _Decode(_RedisValue(bytes));
+
+        decoded.IsFramed.Should().BeFalse();
     }
 
     [Fact]
@@ -376,7 +416,7 @@ public sealed class RedisCacheEntryFrameTests
     {
         var bytes = new byte[_HeaderLength];
         bytes[0] = 0xFF;
-        bytes[1] = 0x04;
+        bytes[1] = 0x05;
 
         var decoded = _Decode(_RedisValue(bytes));
 
@@ -466,7 +506,8 @@ public sealed class RedisCacheEntryFrameTests
         string? etag = null,
         DateTime? lastModifiedAt = null,
         IReadOnlyCollection<string>? tags = null,
-        DateTime? createdAt = null
+        DateTime? createdAt = null,
+        DateTime? throttledUntil = null
     )
     {
         return RedisCacheEntryFrame.Encode(
@@ -479,7 +520,8 @@ public sealed class RedisCacheEntryFrameTests
             etag,
             lastModifiedAt,
             tags,
-            createdAt
+            createdAt,
+            throttledUntil
         );
     }
 

@@ -5,12 +5,14 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Hosting;
 
 /// <summary>
 /// Writes the <c>host</c> section every host manifest carries: which application and build this is, so two manifests
-/// can be told apart and matched to a deployment.
+/// can be told apart and matched to a deployment, and the isolation prefix its shared-store names start with, when it
+/// has one.
 /// </summary>
 /// <remarks>
 /// The versions are informational versions, which carry the source revision when the build stamps one. Nothing here
@@ -44,6 +46,12 @@ internal sealed class HostInfoManifestSection(IServiceProvider services) : IHost
         }
 
         writer.WriteString("runtime", RuntimeInformation.FrameworkDescription);
+
+        if (services.GetService<IOptions<HeadlessPrefixOptions>>()?.Value.Prefix is { Length: > 0 } prefix)
+        {
+            writer.WriteString("prefix", prefix);
+        }
+
         writer.WriteEndObject();
     }
 

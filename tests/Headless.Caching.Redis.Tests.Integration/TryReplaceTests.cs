@@ -162,14 +162,15 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
         // given — re-upserting the same value rewrites the physical timestamp in the frame header,
         // so a whole-blob compare would fail; only a value-segment comparison succeeds.
         await FlushAsync();
-        using var cache = CreateCache();
+        var clock = CreateFakeClock();
+        using var cache = CreateCache(timeProvider: clock);
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();
         await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
 
         // Re-upsert the identical value at a later instant so the header bytes (physical timestamp) drift
-        await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+        clock.Advance(TimeSpan.FromMilliseconds(50));
         await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
 
         // when

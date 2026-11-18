@@ -6,7 +6,6 @@ using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -31,7 +30,7 @@ public sealed class SqlServerSequenceDeadlockRetryTests(SqlServerSequencesFixtur
     public async Task should_wait_on_the_clock_before_retrying_a_deadlock_victim_then_succeed()
     {
         // given: a counter row the store's next increment will update
-        var clock = new FakeTimeProvider();
+        var clock = new TimerArmedFakeTimeProvider();
         await using var services = await _CreateServicesAsync(clock);
         var store = services.GetRequiredService<ISequenceStore>();
         var key = new SequenceKey("", "deadlock", "");
@@ -69,24 +68,19 @@ public sealed class SqlServerSequenceDeadlockRetryTests(SqlServerSequencesFixtur
 
         await holderTransaction.CommitAsync(AbortToken);
 
-        // then: the victim waits on the frozen clock instead of retrying at once
-        await Task.Delay(TimeSpan.FromMilliseconds(300), AbortToken);
+        // then: the victim arms its back-off timer on the frozen clock instead of retrying at once
+        var armed = clock.WaitForArmedTimerAsync(AbortToken);
+        var first = await Task.WhenAny(armed, increment).Bounded();
+        first.Should().BeSameAs(armed, "the deadlock victim waits on the clock instead of retrying at once");
         increment.IsCompleted.Should().BeFalse();
 
         // and: once the clock moves past the delay, the retry runs in a fresh transaction and succeeds
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        clock.Advance(await armed);
 
-        while (!increment.IsCompleted)
-        {
-            clock.Advance(TimeSpan.FromMilliseconds(5));
-            await Task.Delay(TimeSpan.FromMilliseconds(10), timeout.Token);
-        }
-
-        (await increment).Should().Be(2);
+        (await increment.Bounded()).Should().Be(2);
     }
 
-    private async Task<ServiceProvider> _CreateServicesAsync(FakeTimeProvider clock)
+    private async Task<ServiceProvider> _CreateServicesAsync(TimerArmedFakeTimeProvider clock)
     {
         await fixture.ExecuteAsync(
             $"IF OBJECT_ID(N'{_Schema}.deadlock_gate', N'U') IS NOT NULL DROP TABLE {_Gate};"

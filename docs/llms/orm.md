@@ -5,204 +5,187 @@ packages: EntityFramework.Primitives, EntityFramework, EntityFramework.Messaging
 
 # ORM
 
-> ORM domain: `Headless.EntityFramework.Primitives` for reusable EF primitives, `Headless.EntityFramework` for relational stores with framework conventions and built-in unit-of-work support, `Headless.EntityFramework.Messaging` for the outbox bridge, and `Headless.Couchbase` for document storage via Couchbase.
+> Persistence through EF Core (`Headless.EntityFramework`, with `Headless.EntityFramework.Primitives` and the `Headless.EntityFramework.Messaging` outbox bridge) or Couchbase (`Headless.Couchbase`).
 
 ## Orientation
 
 Choose by storage model:
 
-- `Headless.EntityFramework.Primitives` — provider-neutral EF Core primitives. Use it from storage feature packages that need shared converters, primitive mappings, or query helpers without taking a dependency on `HeadlessDbContext` or its application-level save pipeline.
-- `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for audit fields, EF model-driven audit-log capture, soft-delete, multi-tenancy filters, DDD event dispatch (domain + integration), and transaction-aware save behavior. References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkFactory.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` are always available — there is no separate opt-in adapter. See [Unit of Work](unit-of-work.md) for the underlying contract. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
-- `Headless.EntityFramework.Messaging` — add-on bridge. Supplies the real `IHeadlessOutboxDispatcher` so integration events emitted by EF entities are written to the messaging outbox atomically with the business data. Add it when entities emit integration payloads. It is not an alternative provider — it is always used alongside `Headless.EntityFramework`.
-- `Headless.Couchbase` — document database via Couchbase. Provides `CouchbaseBucketContext`, `IBucketContextProvider`, `ICouchbaseClustersProvider`, `DocumentSetExtensions`, and `ICouchbaseManager`. Adds no relational conventions — no EF, no global filters, no auditing pipeline.
+- `Headless.EntityFramework`: the default for any relational store (PostgreSQL, SQL Server, SQLite). It provides `HeadlessDbContext` with audit fields, EF model-driven audit-log capture, soft delete, tenant filters, domain and integration events, and a save pipeline that joins the unit of work. Unit-of-work support is built in: `IUnitOfWorkFactory.BeginAsync(db)`, `Enlist(db, transaction)`, and `RunAsync(db, …)` work with no extra package. [Unit of Work](unit-of-work.md) owns that contract.
+- `Headless.EntityFramework.Primitives`: provider-neutral EF Core converters, primitive mappings, and query helpers, with no `HeadlessDbContext` and no save pipeline. Reference it alone when you need only those helpers.
+- `Headless.EntityFramework.Messaging`: an add-on to `Headless.EntityFramework`, never an alternative. It supplies `IHeadlessOutboxDispatcher`, so integration events that entities emit are written to the messaging outbox in the same transaction as the business rows. Add it when entities emit integration events.
+- `Headless.Couchbase`: document storage through `CouchbaseBucketContext`, `IBucketContextProvider`, `ICouchbaseClustersProvider`, `DocumentSetExtensions`, and `ICouchbaseManager`. It has no global filters, no auditing, and no events.
 
-Use these packages for ORM-level persistence primitives. For raw SQL connection factories and Dapper-style access, use the SQL packages instead.
+For raw SQL connection factories and Dapper-style access, use the [SQL](sql.md) packages.
 
 ### The two-tier event model
 
-`HeadlessDbContext` collects two kinds of events during `SaveChanges` and dispatches each through its own seam:
+`HeadlessDbContext` collects two kinds of events during `SaveChanges` and dispatches each through its own interface:
 
-- **Domain events** (plain payloads emitted by `IDomainEventEmitter` entities) — in-process and in-transaction, published through `IDomainEventDispatcher` before commit. Opt in with `.AddDomainEvents()` (in `Headless.EntityFramework`).
-- **Integration events** (plain payloads emitted by `IIntegrationEventEmitter` entities) — distributed, enqueued to the transactional outbox through `IHeadlessOutboxDispatcher` and delivered to the broker after commit by the messaging relay. Opt in with `.AddIntegrationEventOutbox()` (in `Headless.EntityFramework.Messaging`).
+- **Domain events**: payloads that `IDomainEventEmitter` entities emit. They run in process, inside the save transaction, through `IDomainEventDispatcher`, before the business rows are written. Opt in with `.AddDomainEvents()` (in `Headless.EntityFramework`).
+- **Integration events**: payloads that `IIntegrationEventEmitter` entities emit. They go to the transactional outbox through `IHeadlessOutboxDispatcher` before commit, and the messaging relay delivers them to the broker after commit. Opt in with `.AddIntegrationEventOutbox()` (in `Headless.EntityFramework.Messaging`).
+
+Neither tier is registered by default. No startup check covers them: a save throws `InvalidOperationException` naming the missing registration, and only when an entity emits an event for that tier.
 
 ## Agent Rules
 
-- The outbox dispatcher accepts captured `EventContext<object>` values. Preserve their IDs and business context, including null root causation/system tenant, across save and persistence retry; do not recapture at dispatch.
-- Treat `Headless.EntityFramework.Primitives` as the provider-neutral primitives package and `Headless.EntityFramework` as the application-facing relational package with unit-of-work support built in; the messaging outbox bridge is the one remaining opt-in adapter, while `Headless.Couchbase` is the document provider. Do not invent an ORM umbrella package.
-- Use `Headless.EntityFramework.Primitives` for provider-neutral EF converters, primitive mappings, and query helpers; do not reference the full `Headless.EntityFramework` package solely for those APIs.
-- **Use `AddHeadlessDbContext<TDbContext>(...)` or `AddHeadlessDbContextPool<TDbContext>(...)`, not raw `AddDbContext`.** The raw registration misses the Headless service set, DI-registered interceptor auto-attachment, the `IDbContextFactory<TDbContext>` singleton, request-scope binding, and the compiled-query cache key replacement. Both Headless registrations add all of these.
-- **Choose pooled or per-scope registration.** `AddHeadlessDbContextPool<TDbContext>` leases contexts from an EF pool and saves per-request context construction and service resolution; prefer it for high-throughput services. Use `AddHeadlessDbContext<TDbContext>` when the context constructor takes scoped services or the options callback needs scoped services. See [Registration modes and scope binding](#registration-modes-and-scope-binding).
-- `HeadlessDbContext` has one constructor parameter: `protected HeadlessDbContext(DbContextOptions options)`. Declare subclasses as `AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)`. Subclasses must override `public abstract string? DefaultSchema { get; }` — an empty string or `null` means use the provider default, a non-empty string sets `modelBuilder.HasDefaultSchema`.
-- Always call `base.OnModelCreating(modelBuilder)` and `base.ConfigureConventions(configurationBuilder)` in `HeadlessDbContext` subclasses. Skipping `ConfigureConventions` drops the Headless model conventions: the audit and concurrency-stamp mapping, client-side Guid keys, `DateTime` normalization, and the soft-delete and tenant filters. The conventions reach every entity type, including one introduced with `modelBuilder.Entity<T>()` after the base call.
-- A facet you configure explicitly keeps your value, whether you configure it before or after `base.OnModelCreating`. The Headless conventions fill in only what you left unconfigured: rename the `IsDeleted` column, map the key as store-generated, or replace a `DateTime` converter, and the convention leaves it alone. Fluent configuration of an audit actor navigation (`CreatedBy`, `UpdatedBy`, `DeletedBy`, `RestoredBy`) replaces the Headless one-way reference.
-- Pass model-shaping state (a schema or table name, a feature flag, a tenant-specific mapping) through a primary-constructor parameter, a field initializer, a property that returns a constant, or the options. The `HeadlessDbContext` and `HeadlessIdentityDbContext` constructors attach the change-tracker handlers, which reads the change tracker and the model, so `OnModelCreating` runs before a derived constructor body and sees none of its assignments. EF Core caches that model per context type for the life of the process.
-- Soft delete is filtered by default. Load a row to restore with `IgnoreNotDeletedFilter()`, then call `Restore(...)` or set `IsDeleted = false`.
-- Put `IDeleteAudit` on the root of an inheritance hierarchy. EF Core applies query filters only to a hierarchy root, so when only a derived type implements it, nothing filters that type: queries return its soft-deleted rows, and `IgnoreNotDeletedFilter()` changes nothing. Model building logs the `HeadlessDerivedDeleteAuditNotFiltered` warning naming the type and its root. If the root must stay hard-deleted, filter `IsDeleted` in each query on the derived set yourself.
-- The framework has no suspension audit or filter. **Migration:** model suspension as your own domain state, and add an explicit filter where you relied on `NotSuspendedFilter`.
-- A required navigation to a filtered principal becomes an inner join and drops the dependent row as well. Make the navigation optional or bypass the filter on that query.
-- Configure automatic audit capture in the EF model with `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attributes; unconfigured entities follow `AuditLogOptions.AuditByDefault`.
-- **A pooled context keeps no per-request state in its own fields.** The pool reuses the instance across scopes; the Headless scoped collaborators are resolved from the bound scope on each use, but a field you add to the subclass is not reset. A pooled context declares exactly one public constructor taking its `DbContextOptions` plus, optionally, singleton services.
-- Declare third-party roots with `IsTenantOwned()` after `base.OnModelCreating(modelBuilder)`. Finalized metadata drives tenant filters, the optional write guard, and SQL concurrency predicates. `IMultiTenant` remains the default ownership signal; `IsNotTenantOwned()` explicitly excludes a root.
-- Enable tenant validation and Added-transition stamping with `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))`. SQL tenant concurrency predicates remain active without the guard.
-- Enable `GuardTenantReads()` on the same builder so queries over entities with a required tenant column throw `MissingTenantContextException` instead of returning no rows when no tenant is set. Nullable tenant columns keep returning host rows. `IgnoreMultiTenancyFilter()` lifts it; `ITenantWriteGuardBypass` does not.
-- Create a fresh `DbContext` for each tenant scope. `TenantId` reads the active ambient tenant dynamically, but query filters cannot sanitize entities already tracked by `FindAsync`.
-- **`IgnoreMultiTenancyFilter()` is read-side only.** It does not relax write protection under `GuardTenantWrites()`. When the same code path writes, also wrap the save in `ITenantWriteGuardBypass.BeginBypass()` — the two bypasses are independent.
-- Use `IUnitOfWorkFactory.RunAsync(db, (unit, ct) => …)` for multi-step EF operations that must be atomic under retry execution strategies (e.g. SQL Server `EnableRetryOnFailure`). It begins a unit of work on the context inside the execution strategy, hands it to the operation, and completes it after commit, so `unit.Outbox` publishes and `unit.Jobs` writes made inside enlist and drain atomically. The factory is the only receiver that opens a transaction — a context carries no transaction helper of its own, and there is no "plain, no unit-of-work" overload. Inject `IUnitOfWorkFactory` (singleton) at the call site; it works the same for a `HeadlessDbContext`, a `HeadlessIdentityDbContext`, and a plain `DbContext`, and `RunAsync(connection, …)` covers `SqlConnection` / `NpgsqlConnection` (see [Unit of Work](unit-of-work.md)). `RunAsync(db, …)` on a context that already carries a live unit joins it, so a service can self-wrap and still compose under a caller's transaction; code handed only the context reads the unit with `db.UnitOfWork()`, and a raw-ADO helper handed `db.Database.GetDbConnection()` joins the same unit through `RunAsync(connection, …)`.
-- `AddHeadlessDbContextServices(...)` returns `IHeadlessDbContextBuilder`; chain `.AddDomainEvents()` and `.AddIntegrationEventOutbox()` off it to opt in to each event tier. `.AddDomainEvents()` lives in `Headless.EntityFramework`; `.AddIntegrationEventOutbox()` lives in `Headless.EntityFramework.Messaging` and is parameterless.
-- **There is no startup validation for event tiers.** A runtime guard throws `InvalidOperationException` at save time, only when an entity actually emits an event for a tier that is not registered. The guard message names the exact registration to add.
-- Customize the save pipeline through `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of a built-in processor. Replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
-- Apply module-specific EF mappings explicitly through `ModelBuilder` extensions inside `OnModelCreating`: `modelBuilder.ConfigureHeadlessAuditLog(...)`, `modelBuilder.ConfigureHeadlessFeatures(...)`, `modelBuilder.ConfigureHeadlessPermissions(...)`, `modelBuilder.ConfigureHeadlessSettings(...)`. These read schema and table names from validated `*StorageOptions`.
-- **A pipeline-owned save does not replay once a domain-event handler has returned.** The execution strategy replays only the save, resuming the drain after the last handler that returned, so it would never run that handler again: whatever the handler wrote outside the change tracker (`db.Database.ExecuteSql…`, a raw-ADO block joined through `db.Database.GetDbConnection()`, `unit.TransactionLocks`) would roll back with the failed attempt while the aggregate commits. The pipeline cannot see what a handler wrote, so after any handler returns it calls `IUnitOfWork.PreventRetry()`, and a later transient fault (a deadlock in the base save, a dropped connection, a fault in a later handler) surfaces to the caller without replay; retry with a fresh context and aggregate graph. A fault before any handler returned, including one inside the first handler, still replays, and the handler runs again from its start, so local handlers must remain replay-safe and keep external effects out of the transaction. A save whose events have no handlers, or that carries only integration events, keeps its replay. The transactional outbox can commit atomically with application state; delivery and external effects remain at-least-once and require idempotency.
-- **Enlisted write retry boundary.** A Jobs write or a `unit.Outbox` publish enlisted in a *pipeline-owned* save (observed mode, from a domain-event handler) calls `IUnitOfWork.PreventRetry()`, which prevents automatic retries of that save because the handler is not re-run on replay and the row is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. The same writes issued directly inside a caller's own `RunAsync(db, …)` block leave it replayable, because the replay re-runs the block. A caller-owned save that dispatched domain or integration events ends replay of that block instead: the save clears the emitters, so a replayed block would find nothing to re-dispatch. Saves whose only enlisted writes are entity-emitted integration events retain their existing retry behavior.
-- Raw SQL commands and stored procedures bypass query filters and the write guard. Supply explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL. Bulk `ExecuteUpdate` and `ExecuteDelete` consume query filters but skip the save guard.
-- Tenant concurrency tokens protect detached updates and deletes against a different persisted tenant. A zero-row SQL result remains `DbUpdateConcurrencyException`; never translate it into a tenancy exception or assume local handlers did not run.
-- Consumers own tenant column storage and equality configuration. Review new required columns, keys, and indexes in migrations; no automatic backfill or default tenant is supplied.
-- Do not mix framework concurrency stamping with ASP.NET Identity `ConcurrencyStamp` ownership on identity entities.
-- Keep persistence concurrency versions provider-native: PostgreSQL maps a `uint` property to `xmin` with `IsRowVersion()`, while SQL Server maps a `byte[]` property to `rowversion`. Derive HTTP entity tags at the API boundary; do not model a provider-neutral `byte[]` property as a database-generated row version.
-- For Couchbase, use `CouchbaseBucketContext` + `IBucketContextProvider` and keep cluster/bucket names explicit. `DocumentSetExtensions` are constrained to `IEntity` models.
+- Register a context with `AddHeadlessDbContext<TDbContext>(...)` or `AddHeadlessDbContextPool<TDbContext>(...)`, not raw `AddDbContext`. Raw registration misses the Headless services, DI-registered interceptor attachment, the `IDbContextFactory<TDbContext>` singleton, request-scope binding, and the compiled-query cache key replacement.
+- Prefer `AddHeadlessDbContextPool<TDbContext>` for high-throughput services. Use `AddHeadlessDbContext<TDbContext>` when the context constructor or the options callback needs scoped services. See [Registration modes and scope binding](#registration-modes-and-scope-binding).
+- Keep no per-request state in fields of a pooled context. The pool does not reset fields you add. A pooled context declares exactly one public constructor that takes its `DbContextOptions` and, optionally, singleton services.
+- Declare a subclass as `AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)`; `protected HeadlessDbContext(DbContextOptions options)` is the only base constructor. Override `public abstract string? DefaultSchema { get; }`: `null` or empty uses the provider default, and a non-empty string calls `modelBuilder.HasDefaultSchema`.
+- Call `base.OnModelCreating(modelBuilder)` and `base.ConfigureConventions(configurationBuilder)` in every subclass. Without `ConfigureConventions`, the context loses the audit and concurrency-stamp mapping, client-side Guid keys, `DateTime` normalization, and the soft-delete and tenant filters.
+- Pass model-shaping state (a schema or table name, a feature flag, a tenant-specific mapping) through a primary-constructor parameter, a field initializer, a constant property, or the options. `OnModelCreating` runs during the base constructor, before a derived constructor body, so it sees none of that body's assignments. EF Core caches the model per context type for the life of the process.
+- Run multi-step atomic work through `IUnitOfWorkFactory.RunAsync(db, (unit, ct) => …)`, not a hand-opened transaction. It is the only API that opens a transaction under a retrying execution strategy (for example, SQL Server `EnableRetryOnFailure`), and there is no overload without a unit of work. Inject the singleton `IUnitOfWorkFactory`. See [Resilient Transactions](#resilient-transactions).
+- Chain `.AddDomainEvents()` and `.AddIntegrationEventOutbox()` off `AddHeadlessDbContextServices(...)`, which returns `IHeadlessDbContextBuilder`. `.AddIntegrationEventOutbox()` lives in `Headless.EntityFramework.Messaging` and takes no parameters.
+- Keep domain-event handlers replay-safe and keep external effects out of them. After the first handler returns, a pipeline-owned save no longer retries. See [Retry and replay](#retry-and-replay).
+- Customize the save pipeline with `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`, and opt out of a built-in processor with `options.RemoveSaveEntryProcessor<TProcessor>()`. Replace `IHeadlessSaveChangesPipeline` only when you need full control of the save.
+- Configure audit capture in the EF model with `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attribute. Unconfigured entities follow `AuditLogOptions.AuditByDefault`.
+- Load a soft-deleted row with `IgnoreNotDeletedFilter()`, then call `Restore(...)` or set `IsDeleted = false`. The soft-delete filter hides it otherwise.
+- Put `IDeleteAudit` on the root of an inheritance hierarchy. EF Core filters only hierarchy roots, so a derived-only `IDeleteAudit` type is never filtered and `IgnoreNotDeletedFilter()` changes nothing. Model building logs the `HeadlessDerivedDeleteAuditNotFiltered` warning naming the type and its root. If the root must stay hard-deleted, filter `IsDeleted` yourself in each query on the derived set.
+- Model suspension as your own domain state with your own filter. The framework has no suspension audit or filter.
+- Make a navigation to a filtered principal optional, or bypass the filter on that query. A required navigation becomes an inner join and drops the dependent row too.
+- Declare tenant ownership of a third-party root with `IsTenantOwned()` after `base.OnModelCreating(modelBuilder)`. `IMultiTenant` is the default ownership signal, and `IsNotTenantOwned()` excludes a root.
+- Wrap a host or admin write in `ITenantWriteGuardBypass.BeginBypass()` when `GuardTenantWrites()` is on. `IgnoreMultiTenancyFilter()` lifts only the read filter, and the two bypasses are independent.
+- Create a fresh `DbContext` for each tenant scope. The tenant filter reads the current tenant on every query, but `FindAsync` can return an entity already tracked under another tenant.
+- Add explicit tenant predicates and authorization to raw SQL and stored procedures. They bypass the query filters and the write guard, and `BeginBypass()` has no effect on them. Bulk `ExecuteUpdate` and `ExecuteDelete` apply the query filters but skip the write guard.
+- Treat a zero-row update or delete as `DbUpdateConcurrencyException`, as EF Core reports it. Never translate it into a tenancy exception, and never assume that domain-event handlers did not run.
+- Write your own migrations for tenant columns, keys, and indexes. Headless supplies no backfill and no default tenant. See [Tenant schema rollout](#tenant-schema-rollout).
+- Leave `ConcurrencyStamp` on ASP.NET Identity entities to Identity. Do not add framework concurrency stamping to them.
+- Map concurrency versions natively: a `uint` property to `xmin` with `IsRowVersion()` on PostgreSQL, and a `byte[]` property to `rowversion` on SQL Server. Derive HTTP entity tags at the API boundary. Do not model a provider-neutral `byte[]` as a database-generated row version.
+- Map feature storage tables with the `ModelBuilder` extensions inside `OnModelCreating`: `ConfigureHeadlessAuditLog(...)`, `ConfigureHeadlessFeatures(...)`, `ConfigureHeadlessPermissions(...)`, and `ConfigureHeadlessSettings(...)`.
+- Preserve each `EventContext<object>` in a custom `IHeadlessOutboxDispatcher`: keep its IDs and business context, including a null root cause or system tenant, across save and retry. Never recapture at dispatch.
+- For Couchbase, use `CouchbaseBucketContext` with `IBucketContextProvider` and name the cluster and bucket explicitly. `DocumentSetExtensions` accept only `IEntity` models.
 
 ## Core Concepts
 
 ### HeadlessDbContext conventions
 
-`HeadlessDbContext` is a framework-aware `DbContext` base that layers conventions on top of EF Core:
-
-- **Guid key generation is client-side.** Every `IEntity<Guid>` mapped in a `HeadlessDbContext` is configured `ValueGenerated.Never` with an EF Core value generator that produces the key client-side when the entity transitions to `Added` — never database-generated. The key is therefore known before `SaveChanges`, making it usable for foreign keys, outbox rows, and domain events in the same unit of work. The `IGuidGenerator` strategy is provider-keyed: `SqlServer` comb for SQL Server, `Version7` for other providers.
-- **The Guid key generator resolves `IGuidGenerator` from the context's application service provider** and caches it per provider. A per-scope context, with singleton options too, carries its scope, so a scoped generator resolves per scope. A pooled context carries the root provider, so register a replacement generator as a singleton there: a scoped registration resolved from the root fails DI scope validation, and otherwise one instance serves the whole host.
-- **Numeric keys are not generated by Headless.** Entities using `IEntity<long>` or other numeric key types own their own EF/database/provider generation strategy.
-- **`DefaultSchema` controls the schema for all entities.** Return `null` or empty string to use the provider default. Return a non-empty string to call `modelBuilder.HasDefaultSchema(DefaultSchema)`.
-- **Convention configuration is applied automatically** via `ConfigureConventions`, including value converters for `Money`, `Month`, `AccountId`, `UserId`, `Locale`, `ExtraProperties`, and `DateTime` normalization.
-- **The entity mapping is a model convention.** For every non-owned `IEntity` type it maps the `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `IHasConcurrencyStamp`, and `IHasExtraProperties` columns, each audit actor navigation as an optional one-way reference with `DeleteBehavior.Restrict`, and the Guid key generator; it normalizes `DateTime` properties of every entity type, owned types and those declared only on a TPH-derived type included, and adds `NotDeletedFilter` to `IDeleteAudit` roots, warning at model build for a derived `IDeleteAudit` type under a root that is not one. Explicit configuration of any of these facets wins over the convention.
-- **`IDbContextFactory<TDbContext>` is registered automatically** as a singleton by both `AddHeadlessDbContext<TDbContext>` and `AddHeadlessDbContextPool<TDbContext>`, so background services and initializers can create detached contexts without a separate `AddDbContextFactory` call. See [Registration modes and scope binding](#registration-modes-and-scope-binding) for how a factory-created context gets its services.
+- **Guid keys are generated on the client.** Every `IEntity<Guid>` is mapped `ValueGenerated.Never`, and a value generator assigns the key when the entity becomes `Added`. The key exists before `SaveChanges`, so foreign keys, outbox rows, and domain events in the same unit can use it. The `IGuidGenerator` strategy depends on the provider: `SqlServer` comb on SQL Server and `Version7` elsewhere, both time-ordered to limit index fragmentation.
+- **The Guid generator resolves `IGuidGenerator` from the context's application service provider.** A per-scope context resolves a scoped generator per scope. A pooled context uses the root provider, so register a replacement generator as a singleton: a scoped one fails DI scope validation, and without validation one instance serves the whole host.
+- **Headless does not generate numeric keys.** An `IEntity<long>` or other numeric key uses your own EF, database, or provider strategy.
+- **`DefaultSchema` sets the schema of every entity.** `null` or empty uses the provider default.
+- **`ConfigureConventions` adds value converters** for `Money`, `Month`, `AccountId`, `UserId`, `Locale`, `ExtraProperties`, and `DateTime` normalization.
+- **Entity mapping is a model convention.** For every non-owned `IEntity` it maps the `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `IHasConcurrencyStamp`, and `IHasExtraProperties` columns, maps each audit actor navigation (`CreatedBy`, `UpdatedBy`, `DeletedBy`, `RestoredBy`) as an optional one-way reference with `DeleteBehavior.Restrict`, and adds the Guid key generator. It normalizes `DateTime` properties on every entity type, owned types and TPH-derived properties included, and adds `NotDeletedFilter` to `IDeleteAudit` roots. The convention reaches entity types added with `modelBuilder.Entity<T>()` after the base call.
+- **Your explicit configuration wins.** Configure a facet before or after `base.OnModelCreating`, and the convention leaves it alone: rename the `IsDeleted` column, map the key as store-generated, or replace a `DateTime` converter. Fluent configuration of an audit actor navigation replaces the Headless one-way reference.
+- **`IDbContextFactory<TDbContext>` is registered as a singleton** by both `AddHeadlessDbContext<TDbContext>` and `AddHeadlessDbContextPool<TDbContext>`, so background services create contexts without `AddDbContextFactory`.
 
 ### Registration modes and scope binding
 
-A `HeadlessDbContext` splits its state in two. The model, EF configuration, and change-tracker handlers belong to the context instance; EF snapshots handlers attached in the constructor and restores them on every pool lease. The scoped collaborators (save pipeline, audit persistence, save-entry processors) are not stored on the context: they are resolved lazily from the DI scope bound to the current use. The ambient tenant (the singleton `ICurrentTenant`), the guard options, and the write-guard bypass are singletons read without opening a scope; the tenant is read on every access, so it is never captured. A scoped or transient `ICurrentTenant` registration fails host startup with `InvalidServiceLifetimeException`, since a context created outside a scope would capture it for the host's lifetime. This split is what makes the context safe to pool.
+A `HeadlessDbContext` does not store its scoped collaborators (save pipeline, audit persistence, save-entry processors). It resolves them from the DI scope bound to the current use. It reads the singleton `ICurrentTenant`, the guard options, and the write-guard bypass on every access, without a scope. That is why the context is safe to pool. A scoped or transient `ICurrentTenant` registration fails host startup with `InvalidServiceLifetimeException`.
 
-| Registration | Instance per scope | Factory (`IDbContextFactory<TDbContext>`) | Constructor may take |
+| Registration | Instance per scope | `IDbContextFactory<TDbContext>` | Constructor may take |
 | --- | --- | --- | --- |
 | `AddHeadlessDbContext<TDbContext>(optionsAction, [configureHeadlessOptions], contextLifetime = Scoped, optionsLifetime)` | New instance per scope | Creates a DI scope per context and disposes it with the context | Its options plus scoped or singleton services |
-| `AddHeadlessDbContextPool<TDbContext>(optionsAction, [configureHeadlessOptions], poolSize = 1024)` | Leased from the pool, returned when the scope is disposed | EF's `PooledDbContextFactory` | Exactly one public constructor: its options plus, optionally, singleton services |
+| `AddHeadlessDbContextPool<TDbContext>(optionsAction, [configureHeadlessOptions], poolSize = 1024)` | Leased from the pool, returned when the scope ends | EF Core's `PooledDbContextFactory<TDbContext>` | Exactly one public constructor: its options plus, optionally, singleton services |
 
-- `contextLifetime` must be `Scoped` (the default); `Singleton` and `Transient` throw `ArgumentException`. A transient context would hand a domain-event handler that injects the context another instance than the one being saved, without its unit of work, so `db.UnitOfWork()?.Outbox.PublishAsync(…)` in the handler would silently publish nothing. Use `IDbContextFactory<TDbContext>` for a context outside the request scope.
-- **Options lifetime of the per-scope registration.** `optionsLifetime` defaults to `Scoped` on every `AddHeadlessDbContext` overload, the Identity context's included: the options are built in every scope, as EF Core builds them. Pass `optionsLifetime: ServiceLifetime.Singleton` to build the options extensions once, from the root provider, and share them across every scope and every `IDbContextFactory<TDbContext>` context, which saves rebuilding the options (about 15 KB) per scope. Each scope gets a copy that differs only in carrying that scope as its application provider, so a context created by hand over the options (`new AppDbContext(options)`) still uses the request scope and a scoped `IGuidGenerator` still resolves per scope. Singleton options are an assertion that every input is the same for every request, and nothing checks it. The options action runs once per application, with the root provider, and every options configuration and DI-registered interceptor is resolved from the root. Do not pass `Singleton` when the action reads ambient per-request or per-tenant state (a connection string from a static field or an `AsyncLocal`, a closure over `IHttpContextAccessor`), or creates a connection, an `NpgsqlDataSource`, or an interceptor per call: every scope would get the first build's values, so a database-per-tenant application would run every tenant on the first tenant's connection, silently. A scoped `IInterceptor` resolved from the root fails DI scope validation, and without validation one instance serves the whole host.
-- The pooled overloads take `Action<DbContextOptionsBuilder>` or `Action<IServiceProvider, DbContextOptionsBuilder>`. The provider is the root provider: pooled options are built once and are singletons, so the callback must not resolve scoped services.
+- **`contextLifetime` must be `Scoped`**, the default. `Singleton` and `Transient` throw `ArgumentException`, because a domain-event handler that injects a transient context gets a different instance with no unit of work, and `db.UnitOfWork()?.Outbox.PublishAsync(…)` publishes nothing. Use `IDbContextFactory<TDbContext>` outside the request scope.
+- **`optionsLifetime` defaults to `Scoped`** on every `AddHeadlessDbContext` overload, the Identity context's included, so the options are built in every scope. Pass `ServiceLifetime.Singleton` to build them once from the root provider and share them across scopes and factory contexts, which saves about 15 KB of options per scope. Each scope still gets a copy bound to that scope, so `new AppDbContext(options)` uses the request scope and a scoped `IGuidGenerator` still resolves per scope.
+- **Do not pass `Singleton` options when the options action reads per-request or per-tenant state** (a connection string from a static field or an `AsyncLocal`, a closure over `IHttpContextAccessor`), or creates a connection, an `NpgsqlDataSource`, or an interceptor per call. The action then runs once with the root provider, every scope gets the first build's values, and a database-per-tenant application runs every tenant on the first tenant's connection with no error. Nothing checks this. A scoped `IInterceptor` resolved from the root fails DI scope validation.
+- **Pooled options are singletons.** The pooled overloads take `Action<DbContextOptionsBuilder>` or `Action<IServiceProvider, DbContextOptionsBuilder>`, and the provider is the root provider, so the callback must not resolve scoped services.
 
 How a context gets its scope:
 
-- **Resolved from DI** (either Headless registration): bound to the resolving scope. Disposing the scope disposes the per-scope context or returns the pooled one. Disposing a scope-resolved pooled context yourself does nothing, as with EF Core's own `AddDbContextPool`: the scope returns it once, when it ends.
-- **Built over per-scope options** — a plain EF `AddDbContext<TDbContext>()` (whose options lifetime defaults to scoped), or `new` over options carrying `UseApplicationServiceProvider(scope.ServiceProvider)`: the options' application provider is that scope, so the context uses it. The scope is borrowed; the context does not dispose it. A plain `AddDbContext` with `optionsLifetime: ServiceLifetime.Singleton` (which EF Core requires when `AddDbContextFactory` is registered for the same type) carries the root provider instead, so its context falls into the next case and does not see the request's scoped services; register it with `AddHeadlessDbContext` or `AddHeadlessDbContextPool` to keep the request scope.
-- **Created outside any scope** — from a pooled or stock EF `IDbContextFactory`, or with `new` over options whose application provider is the root: the context opens a private DI scope the first time it needs a scoped collaborator (the save pipeline on `SaveChanges`) and disposes that scope when the context is disposed or returned to the pool. A read-only context created this way opens no scope. With an `AddHeadlessDbContext` or `AddHeadlessDbContextPool` registration, the context's own type resolves to that context inside its private scope, so a domain-event handler that injects the context receives the instance being saved and reads the save's unit through `db.UnitOfWork()`, as it does for a scope-resolved context.
-- **No application service provider at all**: the first operation that needs services throws `InvalidOperationException` naming the three remedies (resolve it from DI, create it through `IDbContextFactory`, or build its options with `UseApplicationServiceProvider(...)`).
+- **Resolved from DI** (either Headless registration): bound to the resolving scope. Ending the scope disposes a per-scope context or returns a pooled one. Disposing a scope-resolved pooled context yourself does nothing, as with EF Core's `AddDbContextPool`.
+- **Built over per-scope options**: a plain EF `AddDbContext<TDbContext>()` (scoped options by default), or `new` over options with `UseApplicationServiceProvider(scope.ServiceProvider)`. The context uses that scope and does not dispose it. A plain `AddDbContext` with `optionsLifetime: ServiceLifetime.Singleton`, which EF Core requires when `AddDbContextFactory` is registered for the same type, carries the root provider instead and does not see the request's scoped services. Register it with `AddHeadlessDbContext` or `AddHeadlessDbContextPool` to keep the request scope.
+- **Created outside any scope**: from a pooled or stock EF `IDbContextFactory`, or `new` over options whose application provider is the root. The context opens a private DI scope the first time it needs a scoped collaborator (the save pipeline on `SaveChanges`), and disposes it when the context is disposed or returned to the pool. A read-only context opens no scope. Under a Headless registration, the context type resolves to the same instance inside that private scope, so a domain-event handler that injects the context gets the instance being saved and reads its unit with `db.UnitOfWork()`.
+- **No application service provider**: the first operation that needs services throws `InvalidOperationException` naming three remedies: resolve it from DI, create it through `IDbContextFactory`, or build its options with `UseApplicationServiceProvider(...)`.
 
 `IHeadlessDbContext.ServiceProvider` returns the provider of the bound or private scope.
 
-So plain EF registrations (`AddDbContext<TDbContext>()`, `AddDbContextFactory<TDbContext>()`, `AddPooledDbContextFactory<TDbContext>()`) also work with a `HeadlessDbContext`, provided the Headless services are registered (`AddHeadlessDbContextServices()`). `AddHeadlessDbContext` and `AddHeadlessDbContextPool` remain the recommended path: they also bind the request scope, attach DI-registered interceptors, and register the Headless services. A plain registration attaches DI-registered interceptors by calling `options.AddDiRegisteredInterceptors(serviceProvider)` (namespace `Microsoft.EntityFrameworkCore`) from its `(serviceProvider, options)` action.
+Plain EF registrations (`AddDbContext<TDbContext>()`, `AddDbContextFactory<TDbContext>()`, `AddPooledDbContextFactory<TDbContext>()`) also work with a `HeadlessDbContext` when you register the Headless services with `AddHeadlessDbContextServices()`. To attach DI-registered interceptors there, call `options.AddDiRegisteredInterceptors(serviceProvider)` (namespace `Microsoft.EntityFrameworkCore`) from the `(serviceProvider, options)` action.
 
 ### Global query filters
 
-Two named global filters apply according to finalized tenant metadata and the audit interfaces:
+| Applies to | Filter name constant | Bypass extension |
+| --- | --- | --- |
+| `IsTenantOwned()` roots, or `IMultiTenant` by default | `HeadlessQueryFilters.MultiTenancyFilter` | `IgnoreMultiTenancyFilter()` |
+| `IDeleteAudit` roots | `HeadlessQueryFilters.NotDeletedFilter` | `IgnoreNotDeletedFilter()` |
 
-| Interface | Filter name constant | Bypass extension |
-|---|---|---|
-| `IsTenantOwned()` or default `IMultiTenant` ownership | `HeadlessQueryFilters.MultiTenancyFilter` | `IgnoreMultiTenancyFilter()` |
-| `IDeleteAudit` | `HeadlessQueryFilters.NotDeletedFilter` | `IgnoreNotDeletedFilter()` |
+The constants are EF Core named-filter names (for example, `"MultiTenantFilter"`). Your own filters stay in place. A bypass applies to one `IQueryable<T>` chain and writes a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with the caller member and file.
 
-Filter names are string constants (e.g. `"MultiTenantFilter"`) used by EF Core's named-filter API. `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same query filters, so bulk operations are tenant-scoped by default. They bypass `SaveChanges`, including its guard and automatic tenant concurrency predicates.
-
-Bypasses emit a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with the caller member + file for auditability. They are scoped to a single `IQueryable<T>` chain.
+`ExecuteUpdate(...)` and `ExecuteDelete(...)` apply the same filters, so bulk operations are tenant-scoped by default. They skip `SaveChanges`, so they skip the write guard and the tenant concurrency predicates.
 
 ### Save pipeline and auditing
 
-`HeadlessDbContext.SaveChanges` / `SaveChangesAsync` delegate to `IHeadlessSaveChangesPipeline`, which orchestrates a fixed default chain of `IHeadlessSaveEntryProcessor` instances before the underlying EF save:
+`SaveChanges` and `SaveChangesAsync` run `IHeadlessSaveChangesPipeline`, which runs this chain of `IHeadlessSaveEntryProcessor` instances before the EF save:
 
-1. `HeadlessEntitySaveEntryProcessor` — stamps tenant IDs and concurrency stamps. Guid keys are produced earlier (at `Add` time) by the EF Core value generators, not here.
-2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete audit fields for `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit` entities. Every modified save restamps `UpdatedAt`/`UpdatedById`. An `IsDeleted` transition stamps the delete or restore pair and keeps the opposite pair as history. A non-null value the save set explicitly wins. A delete, restore, or update with no actor, neither given nor resolved from `ICurrentUser`, records a null actor id rather than the previous actor; a same-save `Update(now, byId, by)` still wins.
-3. `HeadlessLocalEventSaveEntryProcessor` — emits `EntityCreated`, `EntityUpdated`, `EntityDeleted`, `EntityChanged` lifecycle domain events on `IDomainEventEmitter` entities. With the built-in dispatcher (`.AddDomainEvents()`), it emits a lifecycle event only when an `IDomainEventHandler<>` for that exact event type is registered, closed or open generic. A custom `IDomainEventDispatcher` receives every lifecycle event.
-4. `HeadlessMessageCollectorSaveEntryProcessor` — collects pending domain + integration events onto the save context.
+1. `HeadlessEntitySaveEntryProcessor`: stamps tenant IDs and concurrency stamps. Guid keys were already assigned when the entity was added.
+2. `HeadlessAuditSaveEntryProcessor`: stamps the create, update, and delete audit fields of `ICreateAudit`, `IUpdateAudit`, and `IDeleteAudit` entities. Every modified save restamps `UpdatedAt` and `UpdatedById`. An `IsDeleted` transition stamps the delete or restore pair and keeps the opposite pair as history. A non-null value the save set explicitly wins. A delete, restore, or update with no actor, neither given nor resolved from `ICurrentUser`, records a null actor ID, not the previous actor; a same-save `Update(now, byId, by)` still wins.
+3. `HeadlessLocalEventSaveEntryProcessor`: emits the `EntityCreated`, `EntityUpdated`, `EntityDeleted`, and `EntityChanged` lifecycle domain events on `IDomainEventEmitter` entities. With the built-in dispatcher, it emits a lifecycle event only when an `IDomainEventHandler<>` for that exact type is registered, closed or open generic. A custom `IDomainEventDispatcher` receives every lifecycle event.
+4. `HeadlessMessageCollectorSaveEntryProcessor`: collects pending domain and integration events.
 
-Custom processors registered via `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` are inserted **before** the terminal lifecycle and message-collector processors, so app-specific mutations and queued messages are visible to the framework collectors. The same type can be re-registered — the prior entry is replaced, not duplicated. Use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of a built-in processor entirely.
+A processor you add with `AddSaveEntryProcessor<TProcessor>` runs before the last two, so lifecycle events and collected messages see its changes. Adding the same type again replaces the earlier entry.
 
-An audited save issues one database save when every audit row's entity id is known at capture: inserts with client-assigned keys (such as the Guid keys the value generators produce at `Add`), updates, and deletes. Audit rows for inserts whose key the store generates (identity, sequence, database default) follow in a second save once the key exists. `SaveChanges` returns the count of the caller's rows only; audit rows are never counted. This applies only to a store that adds rows to the saving context (`IAuditLogStore.AddsToSavingContext`, true for the EF store); the raw ADO.NET stores still write after the entity save succeeds.
+An audited save issues one database save when every audit row's entity ID is known at capture: inserts with client-assigned keys, updates, and deletes. Audit rows for inserts whose key the store generates (identity, sequence, database default) follow in a second save. `SaveChanges` returns the count of your rows only, never audit rows. This holds for the EF audit store; the raw ADO.NET audit stores write after the entity save succeeds.
 
-EF Core leaves a principal `Unchanged` when only its navigations change (a child added to or removed from a collection); the framework does not track that case, so no update stamp, audit row, or `EntityUpdated` event is raised for the principal itself. The child rows carry their own.
+After the audit save, your saved entities keep their saved values and store-generated read-backs (concurrency tokens, computed columns) in the change tracker, so a second `SaveChanges` on the same tracked entity in the same scope succeeds.
 
-The full save-transaction order within a `HeadlessDbContext` pipeline-owned transaction is:
+EF Core leaves a principal `Unchanged` when only its navigations change (a child added to or removed from a collection). The principal then gets no update stamp, audit row, or `EntityUpdated` event. The child rows carry their own.
 
-1. Captured Domain occurrences drained via `IDomainEventDispatcher` to quiescence, followed by final audit capture (before business save)
-2. Business `SaveChanges` to the database
-3. Audit persistence
-4. Integration events enqueued to the outbox via `IHeadlessOutboxDispatcher` (before commit)
-5. Transaction commit
+Within a pipeline-owned transaction, a save runs in this order:
 
-Audit persistence suppresses the saved entries around its own audit-row save (Unchanged, Detached for deletes) and then restores them, current values included. An entity saved with audit rows therefore keeps its saved values and store-generated reads-back (concurrency tokens, computed columns) in the change tracker, and a second `SaveChanges` on the same tracked entity in the same scope matches rows normally instead of failing the concurrency check.
+1. Domain events dispatched through `IDomainEventDispatcher` until no new ones appear, then final audit capture.
+2. Business `SaveChanges`.
+3. Audit persistence.
+4. Integration events enqueued to the outbox through `IHeadlessOutboxDispatcher`.
+5. Commit.
 
 ### DDD aggregate support
 
-`HeadlessDbContext` supports domain-driven design aggregate patterns:
-
-- Entities implementing `IDomainEventEmitter` can emit plain payloads that are collected and published via `IDomainEventDispatcher` inside the save transaction. Handlers that enlist further changes into the same `SaveChanges` are supported because publication precedes the business save.
-- Entities implementing `IIntegrationEventEmitter` can emit integration payloads objects that are enqueued to the transactional outbox via `IHeadlessOutboxDispatcher`. Each event is routed through the active unit of work's enlisted outbox (`unit.Outbox.PublishAsync<TConcrete>`) using a cached compiled delegate (one per runtime event type) for allocation efficiency.
-- Both tiers are opt-in: neither `IDomainEventDispatcher` nor `IHeadlessOutboxDispatcher` is registered by default. The runtime guard fires only when events are actually emitted against a missing tier — zero false positives at startup.
-- With the built-in dispatcher, a domain event that no registered handler observes is not dispatched and does not make the save open a transaction. An aggregate save with no handlers, no integration events, and no audit rows therefore runs as one plain EF Core save; its pending domain events are still cleared after the save. The check reads the container's registrations (`IServiceProviderIsService`), so a handler registered through an open generic counts, and a container that cannot answer is treated as having handlers.
+- Handlers of domain events can change more entities in the same `SaveChanges`, because dispatch runs before the business save. Each drain pass picks up newly emitted events and newly tracked emitters. Each tracked entity gets lifecycle events once per save.
+- A save rejects more than 1,024 domain events, lifecycle events included, before any business row is written, which stops recursive emission. Final audit capture includes handler changes and newly tracked entities.
+- A successful save clears only the batch it captured. Events emitted after the drain stay pending.
+- With the built-in dispatcher, a domain event that no registered handler observes is not dispatched and does not open a transaction. An aggregate save with no handlers, no integration events, and no audit rows runs as one plain EF Core save, and its pending domain events are still cleared. A handler registered as an open generic counts. A container that cannot answer `IServiceProviderIsService` is treated as having handlers.
 
 ### Outbox-within-save-transaction bridge
 
-`Headless.EntityFramework.Messaging` is the seam that keeps `Headless.EntityFramework` free of any messaging dependency while still guaranteeing atomic outbox writes:
+With `Headless.EntityFramework.Messaging` registered, a save writes integration events this way:
 
-1. The save pipeline settles which unit owns its transaction before any dispatch runs: with no transaction on the context it opens one and enlists it (`IUnitOfWorkFactory.Enlist(db, transaction)`, observed mode — the pipeline commits); with a caller-owned transaction it reads the unit bound to the context (`db.UnitOfWork()`, recorded by `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, …)`) and refuses the save when there is none. It then hands that unit to `IHeadlessOutboxDispatcher.DispatchAsync(unit, events, ct)`; the dispatcher throws on a resource-less unit rather than dispatching non-atomically.
-2. The `OutboxIntegrationEventDispatcher` publishes each integration event through that unit's `Outbox` (`OutboxOptions`, always durable), so the outbox writer buffers the row inside the unit's transaction — not sent to the broker in-band. It deliberately does not use `IBus`: that publisher is autonomous, and its rows would survive the save's rollback.
-3. `IUnitOfWork.CompleteAsync` drains the buffered dispatch after the transaction commits; a rollback (explicit or abandoned) discards it.
+1. The save pipeline picks the unit that owns its transaction. With no transaction on the context, it opens one, enlists it with `IUnitOfWorkFactory.Enlist(db, transaction)`, and commits it. With a caller-owned transaction, it uses the unit bound to the context (`db.UnitOfWork()`, set by `BeginAsync(db)`, `Enlist(db, tx)`, or `RunAsync(db, …)`), and refuses a save that carries integration events when there is none. The dispatcher also throws on a unit with no resource instead of publishing outside the transaction.
+2. The dispatcher publishes each event through that unit's `Outbox`, always durable, so the row is written inside the unit's transaction and nothing is sent to the broker yet. It never uses `IBus`, whose rows would survive a rollback.
+3. `IUnitOfWork.CompleteAsync` sends the buffered messages after commit. A rollback, explicit or abandoned, discards them.
+4. The messaging relay also sweeps committed rows for crash recovery. On PostgreSQL the relay is the main delivery path with bounded latency; pick the outbox storage provider on `AddHeadlessMessaging` with that in mind.
 
-On a transactional messaging consume path, the same compatible local transaction also owns the current fenced inbox completion. This atomic boundary covers enlisted EF state and rows the handler publishes through `context.UnitOfWork.Outbox`, not handler entry, `IBus`/`IQueue` publishes (which never join the unit), `Direct`, or external effects.
-4. The background messaging relay sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path; pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
+On a transactional messaging consume path, the same local transaction also completes the inbox entry. The atomic boundary covers enlisted EF state and rows the handler publishes through `context.UnitOfWork.Outbox`. It does not cover handler entry, `IBus` or `IQueue` publishes (which never join the unit), `Direct`, or external effects.
 
-Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses this bridge entirely — it reads the database transaction log and is a host-infrastructure decision, not a package option.
+Change Data Capture (for example, Debezium reading the transaction log) is a host-infrastructure alternative that skips this bridge. It is not a package option.
+
+### Retry and replay
+
+These rules apply when the execution strategy retries (for example, SQL Server `EnableRetryOnFailure`).
+
+- **No replay after commit starts.** Both a pipeline-owned `SaveChanges` and `IUnitOfWorkFactory.RunAsync(db, …)` retry eligible failures only before commit. Once commit begins, or after `IUnitOfWork.PreventRetry()`, the exception reaches you without replay. A pipeline-owned save whose commit may have reached the database throws `UnitOfWorkInDoubtException` (the driver's fault as `InnerException`), and its unit fails with `InDoubt`. A commit that certainly failed throws its own exception and fails the unit with `Faulted`. Reconcile an in-doubt commit with your own idempotency before you repeat the operation. A fault in an `OnCompleted` callback is logged, and the save returns its count, because the rows are already durable.
+- **`RunAsync(db, …)` replays on a cleared change tracker.** Each replay starts with an empty tracker, so the block re-reads its rows. A context that tracked entities before `RunAsync` began does not replay; the transient fault reaches you.
+- **A pipeline-owned save stops replaying once a domain-event handler returns.** A replay re-runs only the save, not the handlers that already returned, so anything such a handler wrote outside the change tracker (`db.Database.ExecuteSql…`, a raw-ADO block on `db.Database.GetDbConnection()`, `unit.TransactionLocks`, a Jobs write, a `unit.Outbox` publish) would be lost while the aggregate commits. The pipeline therefore calls `IUnitOfWork.PreventRetry()` after the first handler returns. A later transient fault (a deadlock in the business save, a dropped connection, a fault in a later handler) reaches you; retry with a fresh context and aggregate graph. A fault before any handler returned, including inside the first handler, still replays, and the handler runs again from its start.
+- **Saves that keep replay**: a save whose events have no handlers, a save that carries only integration events, and Jobs or `unit.Outbox` writes issued directly in your own `RunAsync(db, …)` block, because the replay re-runs the block.
+- **A caller-owned save that dispatched events ends replay of its `RunAsync` block.** The save clears the emitters, so a replayed block would have nothing to dispatch.
+- **Save completion is not commit.** A pipeline-owned save accepts changes only after commit succeeds. Inside a caller-owned transaction, each successful save clears its own event batch before the caller commits, and later saves capture only new events. After a known rollback of the caller's transaction, dispose the context, drop its aggregate graph, and recover through a fresh unit and your own idempotency. Replaying a command can create new event IDs.
+- **Delivery stays at-least-once.** The outbox commits atomically with your rows, but broker delivery and external effects can repeat. Make handlers idempotent.
 
 ## Choosing a Provider
 
 | | `Headless.EntityFramework` | `Headless.Couchbase` |
-|---|---|---|
-| **Storage model** | Relational (PostgreSQL, SQL Server, SQLite, …) | Document (Couchbase bucket + collections) |
-| **Use when** | Strong consistency, rich queries, schema-enforced invariants, auditing, multi-tenancy, DDD aggregates, outbox integration events | Flexible schema, horizontal scaling, KV-first access patterns, Couchbase N1QL queries |
-| **Avoid when** | Schema-less or flexible-schema documents; extreme horizontal write scale | ACID transactions across multiple entities/tables; when strong relational queries or auditing conventions are needed |
-| **Global filters** | `IMultiTenant`, `IDeleteAudit` — automatic | None; consumers implement their own query predicates |
-| **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit` | None |
-| **Events** | Domain events (in-process) + integration events (outbox) | None |
-| **Transactions** | EF Core execution strategy + `IUnitOfWorkFactory.RunAsync(db, …)` (always unit-of-work-aware) | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task>)` |
-| **DI** | `AddHeadlessDbContext<TDbContext>(...)` | `AddHeadlessCouchbase()` for the framework providers; the consumer supplies `ICouchbaseClusterOptionsProvider` + `ICouchbaseTransactionConfigProvider` |
-
-`Headless.EntityFramework.Messaging` is an add-on to `Headless.EntityFramework`, not a competing provider. It does not appear in the table above.
+| --- | --- | --- |
+| **Storage model** | Relational (PostgreSQL, SQL Server, SQLite) | Document (Couchbase bucket and collections) |
+| **Use when** | Strong consistency, rich queries, schema-enforced invariants, auditing, multi-tenancy, DDD aggregates, outbox integration events | Flexible schema, horizontal scaling, key-value access, N1QL queries |
+| **Avoid when** | Schema-less documents or extreme horizontal write scale | ACID transactions across many entities, relational queries, or auditing |
+| **Global filters** | `IMultiTenant` and `IDeleteAudit`, automatic | None; write your own predicates |
+| **Auditing** | Automatic through `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit` | None |
+| **Events** | Domain events (in process) and integration events (outbox) | None |
+| **Transactions** | `IUnitOfWorkFactory.RunAsync(db, …)` under the EF execution strategy | Couchbase Transactions through `ExecuteTransactionAsync(Func<AttemptContext, Task>)` |
+| **Registration** | `AddHeadlessDbContext<TDbContext>(...)` | `AddHeadlessCouchbase()`, plus your `ICouchbaseClusterOptionsProvider` and `ICouchbaseTransactionConfigProvider` |
 
 ---
 
 ## Headless.EntityFramework.Primitives
 
-### API and behavior
+Provider-neutral EF Core primitives for code that does not use `HeadlessDbContext`.
 
-- Provider-neutral converters and comparers for dates, JSON-backed values, locales, extra properties, and Headless primitives.
-- Money and phone model configuration plus pagination, ordering, data-grid, date aggregation, entity lookup, and asynchronous lookup helpers.
-- `FirstByIdAsync(id, ct)` loads an `IEntity<TKey>` by key, and `FirstOrNotFoundAsync(entity, key, ct)` returns the first element of any query, typically a projection. Both throw `EntityNotFoundException` (404 through the API exception handler) naming the entity type and key when nothing matches. `FirstOrNotFoundAsync` requires a reference-type element, because a default value type cannot be told apart from a match.
-- Generic model/configuration helpers that do not require `HeadlessDbContext` or runtime policy.
-- The audit capture policy for the EF model: `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)` (`HeadlessAuditPolicyExtensions`, namespace `Microsoft.EntityFrameworkCore`). They only write model annotations; `Headless.EntityFramework`'s audit capture reads them. `model.GetAuditPolicies(options)` and `entityType.GetAuditPolicy(options)` (`HeadlessAuditModelPolicyExtensions`, same namespace) read the resolved policy back as `AuditEntityPolicy` and `AuditPropertyPolicy`, through the same rules capture uses. A storage package that maps its own tables, such as Jobs, uses them to keep its rows out of an application context's audit log.
-- `DateTimeKind.Unspecified` is treated as an already-UTC relational value and stamped without shifting its clock value.
-
-### Design constraints
-
-- This package is intentionally independent of `HeadlessDbContext`. Storage feature packages can consume its EF primitives without inheriting application-level ORM behavior.
-- `NormalizeDateTimeValueConverter` is the single UTC-normalization API; Core does not expose a parallel converter family.
-- `ExtraProperties`, `File`, and `Image` columns compare by what they store, without serializing on each change-detection pass. Two `ExtraProperties` bags are equal when they hold the same keys with values that serialize to the same JSON, whatever the key order or boxing, and the snapshot deep-copies nested mutable values: an in-place edit of a nested value is saved, and reassigning an equal value issues no `UPDATE`. `File` and `Image` compare every stored member, `Metadata` regardless of key order and `UploadedAt` with its offset (`DateTimeOffset.EqualsExact`).
-- `ExtraProperties` values read back as the types JSON can express: strings (including dates, times, `Guid`, and `TimeSpan` values), `long`, `decimal` or `double`, `bool`, and `JsonElement` for nested objects and arrays. Read a typed value with `GetProperty<T>(name)`, which converts those back with the invariant culture: a `decimal` keeps every digit, a UTC `DateTime` keeps `DateTimeKind.Utc`, a `DateTimeOffset` keeps its offset, and enum names match case-insensitively. The raw `GetProperty(name)` and the indexer return the stored type, so `bag["at"]` is a `string` after a reload even when a `DateTime` was written.
-- A converter that stores a mutable reference type (a collection, dictionary, or object) as JSON needs a value comparer too. Without one, EF compares references and misses in-place edits, so they are never saved. Pair `JsonValueConverter<T>` with `JsonValueComparer<T>`, which treats two values as equal when they serialize to the same JSON and snapshots by deep copy; pass the converter's `JsonSerializerOptions` to both.
-- The package has no database-provider, hosting, interception, tenancy, or save-pipeline dependency. Its only audit dependency is `Headless.AuditLog.Abstractions`, for the `SensitiveDataStrategy` that `IsAuditSensitive(...)` takes; the capture itself lives in `Headless.EntityFramework`.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.EntityFramework.Primitives
 ```
-
-### Setup and use
 
 ```csharp
 using Headless.EntityFramework;
@@ -223,65 +206,35 @@ modelBuilder.Entity<ScheduledWork>(entity =>
 var page = await dbContext.Set<ScheduledWork>().ToIndexPageAsync(0, 25, cancellationToken);
 ```
 
+**Verify:** no startup signal; the package registers nothing. Assert the mapping in a test: `db.Model.FindEntityType(typeof(ScheduledWork))!.FindProperty(nameof(ScheduledWork.CreatedAt))!.GetValueConverter()` is a `NormalizeDateTimeValueConverter`.
+
 ### Configuration
 
-Converters accept optional EF Core mapping hints. Query and model helpers are opt-in and require no Headless runtime registration.
+Converters accept optional EF Core mapping hints. Query and model helpers need no registration.
 
-### Runtime behavior
+### Design and runtime behavior
 
-None. The package performs no dependency-injection registration.
+- Provides converters and comparers for dates, JSON-backed values, locales, extra properties, and Headless primitives; money and phone model configuration; and pagination, ordering, data-grid, date aggregation, and lookup helpers.
+- `FirstByIdAsync(id, ct)` loads an `IEntity<TKey>` by key. `FirstOrNotFoundAsync(entity, key, ct)` returns the first element of any query, typically a projection, and requires a reference-type element. Both throw `EntityNotFoundException` (404 through the API exception handler) naming the entity type and key when nothing matches.
+- `ToIndexPageAsync(index: -1, size: N)` returns the final page, not the last `N` rows, and sets the returned `IndexPage.Index` to the real zero-based page index. EF queries use `Skip` and `Take`, so the provider translates the slice to SQL.
+- The audit policy extensions `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)` (`HeadlessAuditPolicyExtensions`, namespace `Microsoft.EntityFrameworkCore`) only write model annotations; `Headless.EntityFramework` reads them at save. `model.GetAuditPolicies(options)` and `entityType.GetAuditPolicy(options)` (`HeadlessAuditModelPolicyExtensions`) return the resolved `AuditEntityPolicy` and `AuditPropertyPolicy` by the same rules capture uses.
+- `NormalizeDateTimeValueConverter` is the UTC-normalization converter. It treats `DateTimeKind.Unspecified` as an already-UTC value and does not shift it.
+- `ExtraProperties`, `File`, and `Image` columns compare by stored content. Two `ExtraProperties` bags are equal when they hold the same keys with values that serialize to the same JSON, whatever the key order or boxing. The snapshot deep-copies nested values, so an in-place edit of a nested value is saved and reassigning an equal value issues no `UPDATE`. `File` and `Image` compare every stored member: `Metadata` regardless of key order, and `UploadedAt` with its offset.
+- `ExtraProperties` values read back as JSON types: strings (dates, times, `Guid`, and `TimeSpan` included), `long`, `decimal` or `double`, `bool`, and `JsonElement` for nested objects and arrays. Read a typed value with `GetProperty<T>(name)`, which converts with the invariant culture: a `decimal` keeps every digit, a UTC `DateTime` keeps `DateTimeKind.Utc`, a `DateTimeOffset` keeps its offset, and enum names match case-insensitively. `GetProperty(name)` and the indexer return the stored type, so `bag["at"]` is a `string` after a reload even when you wrote a `DateTime`.
+- Pair a JSON converter for a mutable reference type (a collection, dictionary, or object) with a value comparer. Without one, EF compares references and never saves in-place edits. Use `JsonValueConverter<T>` with `JsonValueComparer<T>`, and pass the same `JsonSerializerOptions` to both.
+- The package depends on no database provider, hosting, tenancy, or save pipeline. Its one audit dependency is `Headless.AuditLog.Abstractions`, for the `SensitiveDataStrategy` that `IsAuditSensitive(...)` takes.
 
 ---
 
 ## Headless.EntityFramework
 
-Entity Framework Core integration with framework conventions and save pipeline orchestration.
+`HeadlessDbContext`, its registrations, and the save pipeline for relational stores. It includes `Headless.EntityFramework.Primitives`.
 
-### API and behavior
-
-- `HeadlessDbContext` base context — single `protected HeadlessDbContext(DbContextOptions options)` constructor and a `public abstract string? DefaultSchema { get; }` override
-- `IHeadlessDbContext` interface implemented by `HeadlessDbContext` and `HeadlessIdentityDbContext` — shared seam for the unit-of-work-aware transaction helpers and the factory
-- DI registration via `AddHeadlessDbContext<TDbContext>(...)` (one instance per scope) or `AddHeadlessDbContextPool<TDbContext>(...)` (pooled); both register the context, `IDbContextFactory<TDbContext>`, DI-registered interceptor auto-attachment, and the Headless services
-- Both registrations contribute the `dbcontext-{TDbContext full name}` readiness health check (tags `ready`, `headless`, `database`), which is Microsoft's `AddDbContextCheck<TDbContext>` (`Database.CanConnectAsync` on the context of the check's own scope), wrapped so a failure reports fixed text instead of the driver message. See [Health checks](utilities.md#health-checks).
-- Application-generated Guid keys: every `IEntity<Guid>` is configured `ValueGenerated.Never`; key is produced client-side at add time via a provider-keyed `IGuidGenerator` (`SqlServer` comb, `Version7` for others). Numeric keys are not generated by Headless.
-- Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` entities
-- EF-native automatic audit-log policy via `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`; `EfAuditChangeCapture` reads the finalized model without reflecting over domain attributes
-- Finalized tenant ownership via `IsTenantOwned()` and `IsNotTenantOwned()`, with mapped or shadow string properties and `IMultiTenant` defaults
-- Two named global query filters: `MultiTenancyFilter` (tenant-owned metadata) and `NotDeletedFilter` (`IDeleteAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()`
-- Selected unique indexes gain tenant scope through `IsTenantScoped()` without changing primary keys
-- Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
-- `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
-- Tenant SQL concurrency predicates for updates and deletes, plus an optional tenant write guard (`CrossTenantWriteException`, `MissingTenantContextException`)
-- Two-tier event dispatch collected inside `SaveChanges`: domain events via `IDomainEventDispatcher` before commit (`.AddDomainEvents()`), integration events via `IHeadlessOutboxDispatcher` in-transaction before commit (`.AddIntegrationEventOutbox()`, from `Headless.EntityFramework.Messaging`)
-- `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
-- Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
-- References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkFactory.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` and `db.UnitOfWork()` are available without a separate adapter package. `RunAsync(db, …)` is the resilient, unit-of-work-aware transaction entry point: it begins a unit of work on the context inside the EF execution strategy, runs the operation, and completes the unit after commit, so outbox rows and job writes made inside enlist and drain atomically
-- Transitively exposes the provider-neutral converters, model helpers, pagination, ordering, data-grid, date aggregation, and lookup APIs from `Headless.EntityFramework.Primitives`
-- `services.AddDbContextMigrations<TContext>()` makes the context's EF Core migrations a [resource provisioner](utilities.md#resource-provisioning) of kind `EntityFramework`, named after the context: `resources provision` (or `AddDeployStepsOnStartup` in development) applies them, `resources verify` names each pending migration, and a host start fails while one is pending. It runs after every `Schema` resource whatever the registration order, so a migration can add a column generated from a framework function or a foreign key to a framework table; a script-based deploy applies the exported Headless schema script before the EF migration script or bundle for the same reason. Purge and delete are unsupported. Registering it again does nothing
-- `IDbContextFactory<TDbContext>` auto-registered as singleton: `HeadlessDbContextFactory<TDbContext>` for per-scope registration, EF's `PooledDbContextFactory<TDbContext>` for pooled registration
-
-### Design constraints
-
-- **Poolable because scoped services are bound, not captured.** The context resolves its save pipeline, audit persistence, and entry processors from the scope bound to the current use, and reads the tenant from the singleton `ICurrentTenant` on each access, so a pooled instance carries nothing from a prior request. Fields a subclass adds are the exception: the pool does not reset them, so a pooled subclass must not keep per-request state.
-- **Client-side Guid generation is intentional.** The key is available before `SaveChanges`, so it can be used for foreign keys, outbox rows, and domain events in the same unit of work. The `Version7` (time-ordered) and `SqlServer` comb strategies ensure monotonic insertion order per provider, limiting index fragmentation.
-- **Unit-of-work support ships in the core package; there is no opt-in adapter.** `HeadlessDbContext` / `HeadlessIdentityDbContext` saves automatically coordinate with the unit of work bound to the context (by `BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)`). With no transaction on the context the pipeline opens one, enlists it in observed mode, saves, commits, and completes the unit; with a caller-owned transaction that carries integration events, a unit bound to that context is required or the save throws before any dispatch (see [Unit of Work](unit-of-work.md)). The binding lives on the context object, so a context created through `IDbContextFactory<TDbContext>` (which uses its own DI scope) needs no special handling: a domain-event handler resolved in that scope reads the same unit through `db.UnitOfWork()`, and the outbox dispatcher receives it as an argument.
-- **Unknown commit outcomes are not replayed.** Both owned `SaveChanges` and `IUnitOfWorkFactory.RunAsync(db, …)` retry eligible failures before commit starts. Once commit begins, or after `IUnitOfWork.PreventRetry()`, an exception is surfaced without replay because the database may already have committed; reconcile using durable application idempotency before repeating the operation. A pipeline-owned save whose commit may have reached the database throws `UnitOfWorkInDoubtException` (the driver's fault as `InnerException`), and its unit fails with `InDoubt`; a commit that certainly failed throws its own exception and fails the unit with `Faulted`, the same classification `CompleteAsync` applies to an owned unit. A fault in an after-commit callback (`OnCompleted`) is logged, and the save returns its count, because the rows are already durable.
-- **`RunAsync(db, …)` replays on a cleared change tracker.** Each replayed attempt starts with the context's tracker cleared, so the block re-reads its rows instead of reusing entities the failed attempt edited or accepted. A context that tracked entities before `RunAsync` began does not replay; the transient fault surfaces. See [Unit of Work](unit-of-work.md).
-- **A pipeline-owned save does not replay once a domain-event handler has returned.** The execution strategy replays only the save, resuming the drain after the last handler that returned, so it would never run that handler again: whatever the handler wrote outside the change tracker (`db.Database.ExecuteSql…`, a raw-ADO block joined through `db.Database.GetDbConnection()`, `unit.TransactionLocks`) would roll back with the failed attempt while the aggregate commits. The pipeline cannot see what a handler wrote, so after any handler returns it calls `IUnitOfWork.PreventRetry()`, and a later transient fault (a deadlock in the base save, a dropped connection, a fault in a later handler) surfaces to the caller without replay; retry with a fresh context and aggregate graph. A fault before any handler returned, including one inside the first handler, still replays, and the handler runs again from its start, so local handlers must remain replay-safe and keep external effects out of the transaction. A save whose events have no handlers, or that carries only integration events, keeps its replay. The transactional outbox can commit atomically with application state; delivery and external effects remain at-least-once and require idempotency.
-- **Enlisted write retry boundary.** A Jobs write or a `unit.Outbox` publish enlisted in a *pipeline-owned* save (observed mode, from a domain-event handler) calls `IUnitOfWork.PreventRetry()`, which prevents automatic retries of that save because the handler is not re-run on replay and the row is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. The same writes issued directly inside a caller's own `RunAsync(db, …)` block leave it replayable, because the replay re-runs the block. A caller-owned save that dispatched domain or integration events ends replay of that block instead: the save clears the emitters, so a replayed block would find nothing to re-dispatch. Saves whose only enlisted writes are entity-emitted integration events retain their existing retry behavior.
-- **Finite nested drain and exact batches.** Before business save, ordered drain passes recollect newly populated buffers and newly tracked emitters. Each tracked entity runs lifecycle synthesis once per save. A hard limit of 1,024 Domain occurrences per save, including lifecycle occurrences, rejects recursive emission before business persistence. Final audit capture includes handler mutations and newly tracked entities. Successful save clears only captured batches; occurrences appended after the drain remain pending.
-- **Save completion is distinct from commit.** Owned saves defer EF acceptance until physical commit succeeds. Within a caller-owned transaction, each successful save clears its own batch before the caller commits; subsequent saves capture new occurrences only. A known outer rollback requires disposing the context and abandoning its aggregate graph, then recovering through a fresh unit of work and application-owned idempotency. Replaying a command can create new occurrence IDs. Unknown commit outcomes require durable outcome verification and never imply known rollback.
-- **Negative index pagination is page-from-end.** `ToIndexPageAsync(index: -1, size: N)` returns the final page, not just the last `N` rows, and normalizes the returned `IndexPage.Index` to the actual zero-based page index. EF queries use `Skip`/`Take` so providers can translate the slice to SQL.
-- **The EF model is the automatic audit policy source.** The fluent policy stays in this ORM package because built-in change capture is EF-specific, while audit storage remains provider-independent. Domain entities carry no audit marker or attributes, and there is no duplicate provider-neutral policy registry.
-- **Concurrency versions are provider-native.** Configure optimistic-concurrency properties explicitly for the selected database. PostgreSQL uses a `uint` property mapped to the `xmin` system column with `IsRowVersion()`; SQL Server uses a `byte[]` property mapped to `rowversion`. HTTP entity tags belong to `Headless.Api.Abstractions` and are derived from these versions at the API boundary.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.EntityFramework
 ```
-
-### Setup and use
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)
@@ -312,7 +265,9 @@ builder.Services.AddHeadlessDbContextServices()
     .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher from the bridge package
 ```
 
-If an entity emits domain events but `.AddDomainEvents()` was not called, or emits integration events but `.AddIntegrationEventOutbox()` was not called, the save throws an `InvalidOperationException` naming the missing registration. Guards fire only when events are actually emitted.
+To apply the context's EF Core migrations as a deploy step, add `services.AddDbContextMigrations<AppDbContext>()`. It registers a [resource provisioner](utilities.md#resource-provisioning) of kind `EntityFramework`, named after the context: `resources provision` (or `AddDeployStepsOnStartup` in development) applies the migrations, `resources verify` names each pending migration, and the host fails to start while one is pending. It runs after every `Schema` resource whatever the registration order, so a migration can reference a framework table or function. For a script-based deploy, apply the exported Headless schema script before the EF migration script or bundle. Purge and delete are unsupported. Registering it twice does nothing.
+
+**Verify:** the readiness health check `dbcontext-{TDbContext full name}` (tags `ready`, `headless`, `database`) reports healthy; see [Health checks](utilities.md#health-checks). It runs `Database.CanConnectAsync` on a context from its own scope and reports fixed text instead of the driver message on failure. With `AddDbContextMigrations`, `resources verify` lists no pending migration. The event tiers have no startup signal: a save that emits an event for an unregistered tier throws `InvalidOperationException` naming the registration to add.
 
 #### Resilient Transactions
 
@@ -342,16 +297,17 @@ var productId = await unitOfWork.RunAsync(
     },
     cancellationToken: ct
 );
-
 ```
 
-`RunAsync(db, …)` always begins a unit of work on the context inside the execution strategy and hands it to the operation as `unit`. Work enlisted on that unit — outbox rows, job writes, `OnCompleted` registrations — commits with the entity batch and drains after the commit. See [Unit of Work](unit-of-work.md).
+`RunAsync(db, …)` begins a unit of work on the context inside the execution strategy and passes it to the operation as `unit`. Work enlisted on `unit` (outbox rows, job writes, `OnCompleted` registrations) commits with the entity rows and runs or sends after commit. It works the same for a `HeadlessDbContext`, a `HeadlessIdentityDbContext`, and a plain `DbContext`, and `RunAsync(connection, …)` covers `SqlConnection` and `NpgsqlConnection`.
+
+`RunAsync(db, …)` on a context that already carries a live unit joins that unit, so a service can wrap itself and still compose under a caller's transaction. Code that receives only the context reads the unit with `db.UnitOfWork()`. A raw-ADO helper that receives `db.Database.GetDbConnection()` joins the same unit through `RunAsync(connection, …)`. Replay rules are in [Retry and replay](#retry-and-replay); the full contract is in [Unit of Work](unit-of-work.md).
+
+**Verify:** in an integration test, throw inside the operation after `SaveChangesAsync` and assert that the row is absent afterward.
 
 ### Configuration
 
 #### Global Filters
-
-The tenant filter follows finalized ownership metadata. The soft-delete filter follows `IDeleteAudit`. Existing application filters are preserved. Bypass per-query with the matching extension method:
 
 ```csharp
 // Read soft-deleted entities for admin purposes
@@ -372,11 +328,11 @@ var view = await dbContext.Products
 var allTenants = await dbContext.Products.IgnoreMultiTenancyFilter().IgnoreNotDeletedFilter().ToListAsync(ct);
 ```
 
-Each bypass emits a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with caller member + file.
+[Global query filters](#global-query-filters) lists the filters and their bypass rules.
 
 #### Automatic Audit Policy
 
-Configure automatic audit capture on EF entity and property metadata inside `OnModelCreating` or an `IEntityTypeConfiguration<TEntity>`:
+Configure audit capture on entity and property metadata in `OnModelCreating` or an `IEntityTypeConfiguration<TEntity>`:
 
 ```csharp
 modelBuilder.Entity<Patient>(patient =>
@@ -390,11 +346,11 @@ modelBuilder.Entity<Patient>(patient =>
 modelBuilder.Entity<InternalJob>().ExcludeFromAudit();
 ```
 
-Entity policy is tri-state: explicit `IsAudited()` or `ExcludeFromAudit()` wins, while an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner. Derived types inherit the nearest configured base policy unless overridden.
+- Entity policy has three states: explicit `IsAudited()` or `ExcludeFromAudit()` wins, and an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner. Derived types inherit the nearest configured base policy unless they override it.
+- Property precedence: framework default exclusions, then explicit `ExcludeFromAudit()`, then the `PropertyFilter` veto, then sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `SensitiveDataStrategy`. `IsEnabled` is the master switch, and `EntityFilter` is the final entity veto.
+- The raw PostgreSQL and SQL Server audit packages are storage providers for this capture. They do not define a second policy.
 
-Property precedence is: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `SensitiveDataStrategy`. `IsEnabled` remains the master switch and `EntityFilter` remains the final entity veto.
-
-To assert coverage in an application test, read the resolved policy back from the built model with the options the host runs with:
+**Verify:** read the resolved policy from the built model in a test, with the options the host runs with:
 
 ```csharp
 var options = host.Services.GetRequiredService<IOptions<AuditLogOptions>>().Value;
@@ -404,25 +360,22 @@ policies.Where(p => !p.EntityType.IsOwned() && !p.IsAudited).Should().BeEmpty();
 policies.SelectMany(p => p.Properties).Where(p => p.Property.Name.Contains("NationalId") && !p.IsSensitive).Should().BeEmpty();
 ```
 
-`AuditEntityPolicy.IsAudited` is the effective answer; `ConfiguredIsAudited` is `null` for an entity no `IsAudited()` or `ExcludeFromAudit()` call covers, so a test can require an explicit decision for every entity. `AuditPropertyPolicy` reports `IsSensitive`, the effective `SensitiveDataStrategy`, and `IsCaptured`. An owned type reports the root owner its metadata names (`PolicyEntityType`); at save time an owned entry follows its runtime owner, so a derived owner's override of a base owner's policy shows only on the derived owner's own policy.
-
-The raw PostgreSQL and SQL Server audit packages are storage providers. They can receive entries from this EF capture pipeline, but they do not define a second audit policy system.
+`AuditEntityPolicy.IsAudited` is the effective answer. `ConfiguredIsAudited` is `null` for an entity no `IsAudited()` or `ExcludeFromAudit()` call covers, so a test can require an explicit decision for every entity. `AuditPropertyPolicy` reports `IsSensitive`, the effective `SensitiveDataStrategy`, and `IsCaptured`. An owned type reports the root owner its metadata names (`PolicyEntityType`). At save time an owned entry follows its runtime owner, so a derived owner's override shows only on the derived owner's own policy.
 
 #### Tenant Write Guard
 
-Disabled by default. `TenantGuardOptions.GuardWrites` is read-only to consumers. Enable validation and tenant stamping through the tenancy builder:
+Off by default. `TenantGuardOptions.GuardWrites` is read-only; turn the guard on through the tenancy builder:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
-When enabled, a missing tenant is stamped from `ICurrentTenant.Id` before the entry becomes Added, including detached-to-Added state transitions. Supplied tenant values are preserved. Adding under tenant A and saving under B fails instead of rewriting ownership.
+- With the guard on, a missing tenant is stamped from `ICurrentTenant.Id` when the entry becomes `Added`, including a detached-to-Added transition. A supplied tenant value is kept. Adding under tenant A and saving under tenant B fails instead of changing ownership.
+- A missing ambient tenant, or a missing required tenant on an `Added` entry, throws `MissingTenantContextException`. A cross-tenant write, or a mismatch between an existing row's original and current tenant, throws `CrossTenantWriteException`. This covers updates, physical deletes, soft deletes, and changes inside supported owned graphs. A required tenant key can fail during tracking, before `SaveChanges`.
+- Entities owned only through metadata (`IsTenantOwned()` with no `IMultiTenant`) are stamped only under the guard. Without it, assign the tenant property before tracking. Without the guard, save-time stamping covers only `IMultiTenant` entities.
+- Guard errors raise before domain-event handlers run. A SQL concurrency failure can raise after handlers ran, because the business save follows dispatch. A failed save prevents the outbox rows from persisting, but does not undo local or external handler effects.
 
-Missing ambient context or a missing required tenant on an Added entry throws `MissingTenantContextException`. Cross-tenant writes and existing-row original/current tenant mismatches throw `CrossTenantWriteException`. This covers updates, physical deletes, soft deletes, and changes confined to supported owned graphs. Required tenant keys can cause a failure during tracking, before `SaveChanges`.
-
-Metadata-only entities require the guard for automatic stamping. Without it, assign the mapped or shadow tenant before tracking. Legacy unguarded save-time stamping remains limited to `IMultiTenant` entities.
-
-For intentional host/admin writes, use `ITenantWriteGuardBypass.BeginBypass()`:
+For an intentional host or admin write, use `ITenantWriteGuardBypass.BeginBypass()`:
 
 ```csharp
 var bypass = serviceProvider.GetRequiredService<ITenantWriteGuardBypass>();
@@ -433,29 +386,30 @@ using (bypass.BeginBypass())
 }
 ```
 
-`IgnoreMultiTenancyFilter()` does not relax the write guard. `BeginBypass()` disables only the in-memory guard; SQL tenant predicates, required columns, and database constraints remain. Bypass does not supply a valid original tenant value.
+`BeginBypass()` turns off only the in-memory guard. SQL tenant predicates, required columns, and database constraints still apply, and the bypass does not supply a valid original tenant value.
 
-Every tenant-owned root uses its tenant property as a concurrency token alongside existing tokens. Generated updates and deletes match the original tenant, including detached writes. A forged tenant matching the ambient context cannot target a row belonging to another tenant. If SQL affects zero rows, EF throws `DbUpdateConcurrencyException` unchanged.
+The tenant property of every tenant-owned root is a concurrency token alongside your own tokens, with or without the guard. Generated updates and deletes match the original tenant, detached writes included, so a forged tenant that matches the ambient one cannot target another tenant's row. When SQL affects zero rows, EF throws `DbUpdateConcurrencyException` unchanged.
 
-Early guard errors occur before local handler dispatch. SQL concurrency failures can occur after local handlers run because business persistence follows local dispatch. A failed database save prevents durable outbox persistence, but does not undo local or external handler effects.
-
-Bulk `ExecuteUpdate` and `ExecuteDelete` use query filters but skip the save guard and its generated concurrency predicates. Raw SQL commands and stored procedures bypass both filters and the guard. Supply explicit tenant predicates and authorization; wrapping raw SQL in `BeginBypass()` adds no protection.
+**Verify:** in a test with the guard on and no current tenant, saving a new tenant-owned entity throws `MissingTenantContextException`.
 
 #### Tenant Read Guard
 
-Disabled by default and independent of the write guard. `TenantGuardOptions.GuardReads` is read-only to consumers:
+Off by default and independent of the write guard. `TenantGuardOptions.GuardReads` is read-only:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantReads()));
 ```
 
-When enabled, the multi-tenancy filter on an entity with a required tenant column throws `MissingTenantContextException` at query execution when `ICurrentTenant.Id` is null or white space. This covers materializing queries, `ExecuteUpdate`, `ExecuteDelete`, `Include`, and navigation loads, and the exception reaches the caller unwrapped. Entities with a nullable tenant column are not guarded and keep returning host rows. Among framework entities only tenant-owned Identity is affected.
+- With the guard on, a query over an entity with a required tenant column throws `MissingTenantContextException` at execution when `ICurrentTenant.Id` is null or white space, instead of returning no rows. This covers materializing queries, `ExecuteUpdate`, `ExecuteDelete`, `Include`, and navigation loads. The exception reaches you unwrapped.
+- Entities with a nullable tenant column are not guarded and keep returning host rows. Among framework entities, only tenant-owned Identity is affected.
+- `IgnoreMultiTenancyFilter()` lifts the guard for that query. `ITenantWriteGuardBypass.BeginBypass()` does not. Raw SQL and `FindAsync` hits on tracked entities run no filter, so the guard does not apply to them.
+- A later registration that resolves the options to disabled fails host startup with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`. See [EF Tenant Read Guard](multi-tenancy/entity-framework.md#ef-tenant-read-guard).
 
-`IgnoreMultiTenancyFilter()` removes the guard for that query. `ITenantWriteGuardBypass.BeginBypass()` does not. Raw SQL and `FindAsync` hits on tracked entities run no filter, so the guard does not apply to them. A later registration that resolves the options to disabled fails host startup with `HEADLESS_TENANCY_EF_READ_GUARD_DISABLED`. See [EF Tenant Read Guard](multi-tenancy.md#ef-tenant-read-guard).
+**Verify:** in a test with the guard on and no current tenant, a query over a required-tenant entity throws `MissingTenantContextException`.
 
 #### Tenant ownership
 
-Configure ownership after the base model call. These declarations take effect at model finalization, after application mappings:
+Declare ownership after the base model call. The declarations take effect at model finalization, after your mappings:
 
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -472,32 +426,31 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 }
 ```
 
-`TenantRow` has `Id`, `Owner`, and `Code` properties; `ShadowTenantRow` has an `Id` and no tenant CLR member. Neither needs `IMultiTenant`. `IsTenantOwned(propertyName = "TenantId")` and `IsNotTenantOwned()` support generic and non-generic entity builders. Explicit root configuration overrides interface defaults. Metadata readers `IsTenantOwned()`, `GetTenantPropertyName()`, and `GetTenantOwnerEntityType()` expose the resolved policy.
+`TenantRow` has `Id`, `Owner`, and `Code` properties. `ShadowTenantRow` has an `Id` and no tenant CLR member. Neither needs `IMultiTenant`.
 
-Metadata-only roots require a tenant. Existing `IMultiTenant` nullability remains unchanged outside the Identity opt-in, including nullable host rows. Configure ownership on the hierarchy root. Shared-row and JSON owned graphs inherit that policy and cannot declare a separate one.
+- `IsTenantOwned(propertyName = "TenantId")` and `IsNotTenantOwned()` work on generic and non-generic entity builders. Explicit root configuration overrides interface defaults. The metadata readers `IsTenantOwned()`, `GetTenantPropertyName()`, and `GetTenantOwnerEntityType()` return the resolved policy.
+- Roots owned only through metadata require a tenant. `IMultiTenant` keeps its existing nullability outside tenant-owned Identity, so nullable host rows remain.
+- Configure ownership on the hierarchy root. Shared-row and JSON owned graphs inherit it and cannot declare their own.
+- Supported roots are keyed, non-shared CLR types mapped to one table, with TPH for inheritance. Model finalization rejects keyless or shared CLR types, TPT and TPC, table fragments, separate roots sharing a table, and separately stored owned entities. The tenant property must be a `string` and must not be database-generated.
+- `IsTenantScoped()` adds the tenant column once, ascending, to one selected unique index. It keeps the index's property order, directions, names, filters, uniqueness, and supported annotations. Other indexes, primary keys, and relationships stay unchanged. An unsupported positional provider annotation fails model validation instead of changing the index.
+- You configure tenant column types, conversions, collations, and database validation in your own model and migrations. Headless picks no collation, adds no check constraint, rejects no trailing spaces, and never trims or normalizes tenant IDs. The write guard compares IDs ordinally in memory, while queries, concurrency predicates, unique indexes, and foreign keys use database equality, so make sure distinct IDs stay distinct under that equality.
 
-Supported roots are keyed, non-shared CLR types mapped to one table, with TPH for inheritance. Model finalization rejects keyless or shared CLR types, TPT/TPC, table fragments, separate roots sharing a table, and separately stored owned entities. Tenant properties must have CLR type `string` and must not be database-generated.
-
-`IsTenantScoped()` selects one unique index and appends the tenant column once in ascending order. It preserves existing property order, directions, model/database names, filters, uniqueness, and supported annotations. Unselected indexes, primary keys, and relationships remain unchanged. Unsupported positional provider annotations fail model validation rather than changing index semantics.
-
-Consumers configure tenant column types, conversions, collations, and database validation in their own EF model and migrations. Headless does not choose a collation, add tenant-ID check constraints, or reject trailing spaces. It preserves supplied IDs without trimming or normalization. The write guard compares IDs ordinally in memory; queries, concurrency predicates, unique indexes, and foreign keys use database equality. Consumers must ensure that distinct canonical IDs remain distinct under that equality and that storage conversions preserve identity.
-
-`TenantId` reads the active ambient tenant on each access. Use a fresh context for each tenant scope: changing `ICurrentTenant` cannot remove entities from the change tracker, and `FindAsync` can return an already tracked entity without running a filtered query.
+**Verify:** in a test, `db.Model.FindEntityType(typeof(TenantRow))!.GetTenantPropertyName()` returns `"Owner"`.
 
 #### Tenant schema rollout
 
-Consumers own migrations and tenant assignment. For existing data:
+You own migrations and tenant assignment. For existing data:
 
 1. Add new tenant columns as nullable.
-2. Backfill from verified application ownership relationships. Do not assign a silent default tenant.
-3. Validate tenant identity, equality, lengths, and the application's ID format. Resolve duplicate business names within each tenant and parent-child tenant mismatches.
-4. Apply required columns, consumer-configured storage rules, alternate keys, composite foreign keys, and selected unique indexes as applicable. Review generated SQL for the deployed provider before enabling the new model.
+2. Backfill from verified application ownership. Do not assign a default tenant.
+3. Validate tenant identity, equality, lengths, and your ID format. Resolve duplicate business names within each tenant and parent-child tenant mismatches.
+4. Apply required columns, storage rules, alternate keys, composite foreign keys, and tenant-scoped unique indexes. Review the generated SQL for your provider before you enable the new model.
 
-Existing `IMultiTenant` columns gain tenant concurrency-token metadata without forced changes to their types, collations, or check constraints. The framework neither creates consumer migrations nor backfills rows.
+Existing `IMultiTenant` columns become concurrency tokens with no change to their types, collations, or constraints.
 
 #### Module Model Mapping
 
-Each feature-storage EF package exposes a `ModelBuilder` extension. Call them inside `OnModelCreating` after `base.OnModelCreating(modelBuilder)`:
+Each feature-storage EF package exposes a `ModelBuilder` extension. Call it in `OnModelCreating` after `base.OnModelCreating(modelBuilder)`:
 
 ```csharp
 protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -510,7 +463,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 }
 ```
 
-These read `Schema` and `*TableName` from validated `*StorageOptions` and apply them consistently across providers.
+Each extension reads `Schema` and the `*TableName` values from its validated `*StorageOptions`.
 
 #### Custom Save Processors
 
@@ -532,15 +485,13 @@ builder.Services.AddHeadlessDbContextServices(options =>
 });
 ```
 
-Custom processors are inserted before the terminal lifecycle and message-collector processors.
+Custom processors run before the lifecycle-event and message-collector processors. See [Save pipeline and auditing](#save-pipeline-and-auditing).
 
 #### Event Dispatch
 
-Within a pipeline-owned transaction, the order is: domain events via `IDomainEventDispatcher` → business `SaveChanges` → audit persistence → integration events via `IHeadlessOutboxDispatcher` → commit.
+[Save pipeline and auditing](#save-pipeline-and-auditing) gives the order inside a save. A custom `IHeadlessOutboxDispatcher` receives `IReadOnlyList<EventContext<object>>` in both of its methods. Keep each snapshot through retries: the Messaging bridge uses `EventId` as `MessageId` and publishes `Payload` with the captured correlation, causation, and tenant.
 
-Custom `IHeadlessOutboxDispatcher` implementations receive `IReadOnlyList<EventContext<object>>` in both dispatch methods. Preserve the snapshot through retries: the Messaging bridge uses `EventId` as `MessageId` and publishes `Payload` with the captured correlation, causation, and tenant.
-
-A completed local drain is not repeated by persistence retry; a failed local handler can run again. Atomic outbox persistence does not promise exactly-once delivery or external effects. Each successful save clears only its saved batch, including when a caller-owned transaction has not yet committed.
+A completed local drain is not repeated by a persistence retry, but a failed local handler can run again. The outbox commits atomically with your rows; it does not make delivery or external effects exactly-once.
 
 #### Value Converters
 
@@ -551,52 +502,31 @@ modelBuilder.Entity<Order>().Property(o => o.Total).HasConversion<MoneyAmountVal
 configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueConverter>();
 ```
 
-### Runtime behavior
+### Design and runtime behavior
 
-- Registers `IHeadlessSaveChangesPipeline`, the default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`)
-- Registers `IDbContextFactory<TDbContext>` as singleton. Per-scope registration uses `HeadlessDbContextFactory<TDbContext>`, which creates a DI scope per context and disposes it with the context. Pooled registration uses EF's `PooledDbContextFactory<TDbContext>`; a factory-created context opens a private scope only when it first needs a scoped collaborator
-- Registers `IDbContextOptionsConfiguration<TDbContext>` that auto-attaches DI-registered `IInterceptor` instances to EF's option pipeline (covers both `AddHeadlessDbContext` and consumer's own `AddDbContext`). Interceptors resolve from the provider the options are built from: scoped options (the `AddHeadlessDbContext` default) take a scoped interceptor from their scope, while singleton or pooled options resolve from the root, where a scoped interceptor fails scope validation
-- Registers the singleton `IUnitOfWorkFactory` (idempotent `AddUnitOfWork()`, via `Headless.UnitOfWork.EntityFramework`)
-- `.AddDomainEvents()` registers `IDomainEventDispatcher` (via `services.AddHeadlessDomainEventDispatcher()`); `.AddIntegrationEventOutbox()` (from `Headless.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`; neither is registered by default
-- Registers `TenantGuardOptions` and `ITenantWriteGuardBypass` (always; both guards are disabled by default). The bypass uses `TryAddSingleton`, as `AddHeadlessTenancy` does, so one instance serves both paths and a consumer registration made first wins
-- Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`, by type so `AddHeadless()` replaces it with the HTTP user in either call order), `ICorrelationIdProvider`
-- Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
-- Registers nothing into EF Core's internal service provider: Headless services resolve from the application provider, and the tenant query filter reads the executing context's tenant as a query parameter, so one compiled plan serves every tenant
-- Registers `IAmbientDbTransactionAccessor` and `IAuditChangeCapture` (`EfAuditChangeCapture`), which reads the finalized EF model policy
+- `IHeadlessDbContext` is implemented by `HeadlessDbContext` and `HeadlessIdentityDbContext`.
+- Registers `IHeadlessSaveChangesPipeline` and the default processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`).
+- Registers `IDbContextFactory<TDbContext>` as a singleton. Under `AddHeadlessDbContext`, each factory context gets its own DI scope, disposed with it. Under `AddHeadlessDbContextPool`, a factory context opens a private scope only when it first needs a scoped service.
+- Attaches every DI-registered `IInterceptor` to the context options, for `AddHeadlessDbContext` and for your own `AddDbContext`. Interceptors resolve from the provider the options are built from: scoped options (the `AddHeadlessDbContext` default) take a scoped interceptor from their scope, while singleton or pooled options resolve from the root, where a scoped interceptor fails scope validation.
+- Registers the singleton `IUnitOfWorkFactory` (through `Headless.UnitOfWork.EntityFramework`).
+- `.AddDomainEvents()` registers `IDomainEventDispatcher`. `.AddIntegrationEventOutbox()` registers `IHeadlessOutboxDispatcher`.
+- Registers `TenantGuardOptions` and `ITenantWriteGuardBypass` always, with both guards off. The bypass registration is `TryAddSingleton`, shared with `AddHeadlessTenancy`, so your earlier registration wins.
+- Registers with `TryAddSingleton`, so your own registration wins: `TimeProvider.System`; keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default; `ICurrentTenantAccessor`; `ICurrentUser` as `NullCurrentUser`, which `AddHeadless()` replaces with the HTTP user in either call order; and `ICorrelationIdProvider`.
+- Registers `ICurrentTenant` as `CurrentTenant`, replacing only the framework fallback `NullCurrentTenant` and keeping your own implementation.
+- Registers `IAmbientDbTransactionAccessor` and `IAuditChangeCapture`, which reads the audit policy from the finalized EF model.
+- One compiled query plan serves every tenant; the tenant filter passes the current tenant as a query parameter.
 
 ---
 
 ## Headless.EntityFramework.Messaging
 
-Bridge package that supplies the real `IHeadlessOutboxDispatcher` for EF integration-event outbox dispatch.
+Supplies `IHeadlessOutboxDispatcher`, so integration events from EF entities are written to the messaging outbox in the save transaction.
 
-### API and behavior
-
-- Transactional outbox enlistment in the EF save transaction, so outbox rows commit atomically with the business data
-- Preserves each `EventContext<object>` snapshot: `EventId` becomes Messaging `MessageId`; correlation, immediate causation, and tenant remain the values captured at emission
-- Routes each concrete integration payload to the active unit of work's `Outbox.PublishAsync<TConcrete>` through a cached compiled invoker (`IntegrationEventPublishInvokerCache`) — one compiled delegate per runtime event type for allocation efficiency
-- Both sync (`Dispatch`) and async (`DispatchAsync`) save paths via `OutboxIntegrationEventDispatcher`
-- `.AddIntegrationEventOutbox()` builder extension on `IHeadlessDbContextBuilder`
-
-### Design constraints
-
-- **Unit-of-work enlistment.** The save pipeline makes its transaction the scope's current unit of work (enlisting its own transaction, or adopting one the caller began with `BeginAsync(db)`) before this dispatcher runs. The dispatcher requires a resource-bearing unit and throws before publishing otherwise; it then publishes through that unit's `Outbox`, so the outbox writer buffers the rows inside the unit's transaction — not sent to the broker in-band. `IUnitOfWork.CompleteAsync` drains the buffered dispatch after commit; any rollback discards it. Outbox rows commit atomically with the business data.
-- **Occurrence forwarding.** The bridge forwards captured integration occurrences and publishes their concrete payloads through Messaging's existing contract name/version resolver. Application handlers derive new facts with new occurrence IDs and the immediate Domain parent as causation; forwarding an existing occurrence keeps its ID. There is no Domain durable-contract registry.
-- **Captured absence.** Each durable publish sets `SuppressAmbientBusinessContext = true`, so a captured root cause or system tenant cannot be replaced by unrelated consume/tenant state at save time. `TenantContextRequired = true` still rejects a captured null tenant. Diagnostic trace propagation and registered Messaging contracts remain independent.
-- **Save and recovery.** Persistence retry within a pipeline-owned save reuses the captured IDs and completed local drain. Each successful caller-owned save clears only its saved batch; outer commit persists all staged batches, while a known outer rollback requires a fresh context and aggregate graph. An unknown commit result requires durable outcome verification or application idempotency before replay. Broker delivery and external effects remain at-least-once.
-- **Direct handler publishes.** In a pipeline-owned save, a domain handler's own `unit.Outbox` write prevents execution-strategy retry (`IUnitOfWork.PreventRetry()`) because the completed occurrence will not run again to restore its rolled-back outbox row. After failure, use a fresh context and aggregate graph. Captured integration events remain replayable through this bridge, and a publish issued directly in the caller's own `RunAsync(db, …)` block is replayed with the block; a save inside that block that dispatched handlers ends the block's replay, because its clear leaves a replayed block nothing to re-dispatch.
-- **Custom dispatchers.** Both `IHeadlessOutboxDispatcher` methods receive `IReadOnlyList<EventContext<object>>`. Serialize `context.Payload` while preserving `context.EventId`, correlation, causation, and tenant; dispatch never recaptures identity.
-- **Post-commit delivery.** `IUnitOfWork.CompleteAsync` triggers the buffered dispatch after commit; the background relay also sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path. Pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
-- **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. It references `Headless.UnitOfWork.EntityFramework` for the enlistment contract, while the core `Headless.EntityFramework` package remains independent of messaging.
-- **CDC alternative.** Change Data Capture (e.g. Debezium reading the database transaction log) is an advanced alternative deployment for capturing integration events outside the application process; it bypasses this dispatcher entirely and is a host-infrastructure decision, not a package option.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.EntityFramework.Messaging
 ```
-
-### Setup and use
 
 ```csharp
 // Chain after AddHeadlessDbContextServices:
@@ -613,42 +543,43 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
-`.AddIntegrationEventOutbox()` is parameterless — the dispatcher has no options. Broker, storage, and retry behavior are configured on `AddHeadlessMessaging`. Once registered, integration events emitted by `IIntegrationEventEmitter` entities during a save are enqueued to the outbox before commit and delivered after commit.
+`.AddIntegrationEventOutbox()` takes no parameters, and the dispatcher has no options. Configure broker, storage, and retries on `AddHeadlessMessaging`; see [Messaging](messaging.md).
+
+**Verify:** in an integration test, save an entity that emits an integration event. Without this registration the save throws `InvalidOperationException` naming `.AddIntegrationEventOutbox()`. With it, the save succeeds and the message reaches a consumer of that event type after commit.
 
 ### Configuration
 
-None. (Configured via `AddHeadlessMessaging`.)
+None. Configure messaging through `AddHeadlessMessaging`.
 
-### Runtime behavior
+### Design and runtime behavior
 
-- Registers `IHeadlessOutboxDispatcher` as scoped (`TryAdd`) — `OutboxIntegrationEventDispatcher` (stateless; publishes each event through the `Outbox` of the unit the save pipeline hands it)
-- Registers `IntegrationEventPublishInvokerCache` as singleton (`TryAdd`)
+- Registers `IHeadlessOutboxDispatcher` as scoped with `TryAdd`. The dispatcher is stateless and publishes through the `Outbox` of the unit the save pipeline passes to it. It throws before publishing when that unit has no resource. See [Outbox-within-save-transaction bridge](#outbox-within-save-transaction-bridge).
+- Keeps each `EventContext<object>`: `EventId` becomes the Messaging `MessageId`, and correlation, immediate causation, and tenant stay the values captured at emission. Each durable publish sets `SuppressAmbientBusinessContext = true`, so consume or tenant state at save time cannot replace a captured null root cause or system tenant. `TenantContextRequired = true` still rejects a captured null tenant.
+- Publishes each concrete payload through Messaging's contract name and version resolver. Handlers that derive new facts get new event IDs with the domain parent as causation; forwarding an existing event keeps its ID.
+- Sends a save's integration events in one batch: on PostgreSQL and SQL Server the rows go to the database as one batch of insert statements (split under SQL Server's parameter limit), in event order, while the save's transaction holds its locks. A store failure surfaces from `SaveChanges` as the driver exception, before commit. SQLite, and any provider without `DbBatch`, sends one statement per row.
+- Publish middleware turns batching off. A publish that middleware may wrap is stored on its own. Any Bus-lane publish middleware registered through the messaging builder applies to every message type, so it turns batching off for the whole save. Messaging tenant propagation (`tenancy.Messaging(m => m.PropagateTenant())`) registers publish middleware on both lanes, so it turns batching off for every event.
+- Retry inside a pipeline-owned save reuses the captured IDs and the completed local drain. [Retry and replay](#retry-and-replay) covers recovery after rollback or an in-doubt commit.
 
 ---
 
 ## Headless.Couchbase
 
-Couchbase integration for bucket-context based document access, transactions, and collection management.
+Document access through bucket contexts, Couchbase Transactions, and scope, collection, and index management.
 
-### API and behavior
-
-- `CouchbaseBucketContext` base context over Linq2Couchbase `BucketContext` — exposes typed `Query<T>(scope, collection)` for N1QL and `ExecuteTransactionAsync(Func<AttemptContext, Task>)` for Couchbase Transactions
-- `IBucketContextProvider` / `BucketContextProvider` — resolves typed contexts per cluster key + bucket name + default scope; wires cluster and transaction objects via `ICouchbaseClustersProvider`
-- `ICouchbaseClustersProvider` / `CouchbaseClustersProvider` — manages cluster connections keyed by `clusterKey`, each lazily initialized and cached; returns a `CouchbaseClusterConnection` (cluster + transaction manager) per call to `GetClusterAsync`
-- `DocumentSetExtensions` — KV operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `GetAllReplicasAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) typed against `IEntity` models; keys are derived from `IEntity.GetKey()`
-- `ICouchbaseManager` / `CouchbaseManager` — idempotent scope, collection, and index bootstrapping with Polly retry (configurable via `CouchbaseManagerOptions`: `MaxRetries`, `RetryDelay`, `Timeout`); `CreateScopeAsync`, `CreateCollectionsAsync`, `CreateSecondaryIndexAsync`, `BuildDeferredIndexesAsync`
-- `ICouchbaseClusterOptionsProvider` — consumer-supplied cluster connection options per cluster key
-- `ICouchbaseTransactionConfigProvider` — consumer-supplied transaction configuration per cluster key
-- `CouchbaseEventingFunctionsSeeder` — seeds eventing functions from embedded resources
-- `SetupCouchbase.AddHeadlessCouchbase()` — registers the framework-owned providers (`ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, `ICouchbaseAssemblyCollectionsReader`) in one call; overloads accept `IConfiguration`, `Action<CouchbaseManagerOptions>`, or `Action<CouchbaseManagerOptions, IServiceProvider>` to tune the manager's resilience options
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Couchbase
 ```
 
-### Setup and use
+```csharp
+// Supply the two application-specific providers (or register the shipped defaults):
+services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider>();
+services.AddSingleton<ICouchbaseTransactionConfigProvider, MyTransactionConfigProvider>();
+
+// Register the framework-owned providers in one call:
+services.AddHeadlessCouchbase();
+```
 
 ```csharp
 using Couchbase;
@@ -689,36 +620,36 @@ await context.ExecuteTransactionAsync(async attempt =>
 });
 ```
 
+Bootstrap scopes, collections, and indexes with `ICouchbaseManager` from a deploy step, such as an `IResourceProvisioner` that `resources provision` runs. Its operations are idempotent.
+
+**Verify:** invalid `CouchbaseManagerOptions` fail host startup. Connection has no startup signal: a cluster that is not ready logs `Failed to connect to the cluster {ClusterKey}` on first access, and the operation then fails at call time. Prove the wiring with a first `IBucketContextProvider.GetAsync` call and a document read in an integration test.
+
 ### Configuration
 
 - Implement and register `ICouchbaseClusterOptionsProvider` to supply cluster options (connection string, credentials) per cluster key.
 - Implement and register `ICouchbaseTransactionConfigProvider` to supply transaction configuration per cluster key.
-- Optionally tune the manager's Polly resilience via `CouchbaseManagerOptions` (`MaxRetries`, default 3; `RetryDelay`, default 500 ms; `Timeout`, default 10 s) using the `AddHeadlessCouchbase(IConfiguration)` / `AddHeadlessCouchbase(Action<CouchbaseManagerOptions>)` / `AddHeadlessCouchbase(Action<CouchbaseManagerOptions, IServiceProvider>)` overloads; options are validated (FluentValidation) on startup.
-- Resolve `IBucketContextProvider` from DI to get typed bucket contexts.
-- Use `ICouchbaseManager` from a deploy step, such as an `IResourceProvisioner` that `resources provision` runs, to bootstrap scopes, collections, and indexes idempotently.
+- Tune the manager's retry policy with `CouchbaseManagerOptions` through the `AddHeadlessCouchbase(IConfiguration)`, `AddHeadlessCouchbase(Action<CouchbaseManagerOptions>)`, or `AddHeadlessCouchbase(Action<CouchbaseManagerOptions, IServiceProvider>)` overload:
 
-```csharp
-// Supply the two application-specific providers (or register the shipped defaults):
-services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider>();
-services.AddSingleton<ICouchbaseTransactionConfigProvider, MyTransactionConfigProvider>();
+| Option | Default | Validation |
+| --- | --- | --- |
+| `MaxRetries` | 3 | Greater than 0 |
+| `RetryDelay` | 500 ms | Zero or more |
+| `Timeout` | 10 s | Over 10 ms and under 24 h |
 
-// Register the framework-owned providers in one call:
-services.AddHeadlessCouchbase();
-```
+### Design and runtime behavior
 
-### Runtime behavior
-
-- `AddHeadlessCouchbase()` registers `ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, and `ICouchbaseAssemblyCollectionsReader` as singletons via `TryAdd` (a consumer's own registration wins). It does not register `ICouchbaseClusterOptionsProvider` or `ICouchbaseTransactionConfigProvider` — those remain the consumer's responsibility.
-- Cluster connections are lazily initialized and cached per `CouchbaseClustersProvider` instance (a singleton within one container) by `clusterKey`; separate containers hold independent connections. Each cluster waits up to 1 minute for readiness on first access; a readiness failure is logged but does not throw (operations fail at call time).
-- `CouchbaseManager` caches scope/collection specs per `clusterKey + bucketName` in-memory to reduce repeated `GetAllScopesAsync` calls; cache is invalidated on scope creation.
-- The manager's retry back-off, its overall `Timeout`, and its pause between creating a collection and its primary index run on the system clock. It takes no `TimeProvider`, so a host that registers a `FakeTimeProvider` (a test host) still retries and times out in real time.
-- `ExecuteTransactionAsync` follows the SDK contract: the transaction commits when the operation returns and rolls back when it throws. The SDK reruns the whole operation on transient conflicts, so keep it free of side effects outside the transaction. The transaction types come from `CouchbaseNetClient` (`Couchbase.Client.Transactions` namespace); the deprecated `Couchbase.Transactions` package is no longer referenced.
-- `CouchbaseBucketContext.ExecuteTransactionAsync` emits `Information` logs on success and `Error` logs on failure via structured logging.
+- `AddHeadlessCouchbase()` registers `ICouchbaseClustersProvider`, `IBucketContextProvider`, `ICouchbaseManager`, and `ICouchbaseAssemblyCollectionsReader` as singletons with `TryAdd`, so your own registration wins. It does not register `ICouchbaseClusterOptionsProvider` or `ICouchbaseTransactionConfigProvider`.
+- `CouchbaseBucketContext` exposes `Query<T>(scope, collection)` for N1QL and `ExecuteTransactionAsync(Func<AttemptContext, Task>)` for Couchbase Transactions. `IBucketContextProvider` resolves a typed context per cluster key, bucket name, and default scope.
+- `DocumentSetExtensions` cover key-value operations (`GetAsync`, `ExistsAsync`, `UpsertAsync`, `InsertAsync`, `ReplaceAsync`, `RemoveAsync`, `UnlockAsync`, `TouchAsync`, `GetAndLockAsync`, `GetAnyReplicaAsync`, `GetAllReplicasAsync`, `LookupInAsync`, `MutateInAsync`, `ScanAsync`) on `IEntity` models, keyed by `IEntity.GetKey()`.
+- `ICouchbaseManager` provides `CreateScopeAsync`, `CreateCollectionsAsync`, `CreateSecondaryIndexAsync`, and `BuildDeferredIndexesAsync`. It caches scope and collection specs per cluster key and bucket name in memory, and clears the cache when it creates a scope. `CouchbaseEventingFunctionsSeeder` seeds eventing functions from embedded resources.
+- `ICouchbaseClustersProvider.GetClusterAsync` returns a `CouchbaseClusterConnection` (cluster and transaction manager). Each cluster connects lazily on first access and is cached per provider instance (one per container) by cluster key. First access waits up to 1 minute for readiness; a readiness failure is logged and does not throw.
+- The manager's retry back-off, its `Timeout`, and its pause between creating a collection and its primary index use the system clock. A test host with a `FakeTimeProvider` still retries and times out in real time.
+- `ExecuteTransactionAsync` commits when the operation returns and rolls back when it throws. The SDK reruns the whole operation on transient conflicts, so keep side effects outside the transaction out of it. It logs `Information` on success and `Error` on failure. The transaction types come from `CouchbaseNetClient`, namespace `Couchbase.Client.Transactions`.
 
 ### Cancellation (Couchbase)
 
-- The async provider seams (`ICouchbaseClusterOptionsProvider.GetAsync`, `ICouchbaseTransactionConfigProvider.GetAsync`, `ICouchbaseClustersProvider.GetClusterAsync`, `IBucketContextProvider.GetAsync`) and `CouchbaseBucketContext.ExecuteTransactionAsync` accept an optional trailing `CancellationToken`.
-- `DocumentSetExtensions.GetAllReplicasAsync` returns one task per replica and accepts `GetAllReplicasOptions`; pass the caller token through `GetAllReplicasOptions.CancellationToken(...)`.
-- Because clusters are created once per provider and cached by `clusterKey`, the token passed to `GetClusterAsync` governs only the connection attempt that first materializes a cluster; callers that receive an already-cached cluster complete without observing the token.
-- `ICluster.BucketAsync` exposes no cancellation overload, so `IBucketContextProvider.GetAsync` honors the token before opening the bucket, not during.
-- The Couchbase transactions SDK (`Transactions.RunAsync`) exposes no `CancellationToken` hook, so `ExecuteTransactionAsync` observes the token only before the transaction begins; once the SDK transaction loop starts it runs to completion, SDK timeout, or failure. Bound in-transaction duration with `PerTransactionConfig` (timeout / durability) instead.
+- `ICouchbaseClusterOptionsProvider.GetAsync`, `ICouchbaseTransactionConfigProvider.GetAsync`, `ICouchbaseClustersProvider.GetClusterAsync`, `IBucketContextProvider.GetAsync`, and `CouchbaseBucketContext.ExecuteTransactionAsync` accept an optional trailing `CancellationToken`.
+- `DocumentSetExtensions.GetAllReplicasAsync` returns one task per replica. Pass the token through `GetAllReplicasOptions.CancellationToken(...)`.
+- The token passed to `GetClusterAsync` governs only the attempt that first connects a cluster. A caller that gets a cached cluster completes without observing it.
+- `IBucketContextProvider.GetAsync` observes the token before it opens the bucket, not during, because `ICluster.BucketAsync` has no cancellation overload.
+- `ExecuteTransactionAsync` observes the token only before the transaction begins, because the SDK's `Transactions.RunAsync` has no cancellation hook. Bound the transaction's duration with `PerTransactionConfig` (timeout and durability) instead.

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
@@ -19,12 +20,12 @@ namespace Tests;
 /// </summary>
 public sealed class JobsOrphanedOwnerSweepTests : TestBase
 {
-    private static readonly TimeSpan _waitBudget = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _waitBudget = HeadlessTestTaskExtensions.DefaultTimeout;
 
     [Fact]
     public async Task reclaims_owners_absent_from_the_liveness_snapshot_and_leaves_observable_owners_alone()
     {
-        var manager = _Manager();
+        var (manager, calls) = _Manager();
         var aliveIdentity = new NodeIdentity(new NodeId("alive"), new NodeIncarnation(2));
         var suspectedIdentity = new NodeIdentity(new NodeId("slow"), new NodeIncarnation(4));
         manager
@@ -77,17 +78,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
 
         try
         {
-            await _WaitForAsync(() =>
-                manager
-                    .ReceivedCalls()
-                    .Any(c =>
-                        string.Equals(
-                            c.GetMethodInfo().Name,
-                            nameof(manager.ReleaseDeadNodeResources),
-                            StringComparison.Ordinal
-                        )
-                    )
-            );
+            await calls.Reached(nameof(IInternalJobManager.ReleaseDeadNodeResources)).Bounded();
 
             await manager
                 .Received(1)
@@ -108,7 +99,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         // The dead-owner bridge reclaims each Dead identity once; rows a dead owner still holds after that (or after a
         // missed NodeLeft) must not wait for the identity to be pruned — up to RedisKnownNodeRetention (7 days) on
         // Redis. A Suspected owner may still be alive and renewing, so it is never swept.
-        var manager = _Manager();
+        var (manager, calls) = _Manager();
         var deadIdentity = new NodeIdentity(new NodeId("dead"), new NodeIncarnation(5));
         var suspectedIdentity = new NodeIdentity(new NodeId("slow"), new NodeIncarnation(4));
         manager
@@ -147,17 +138,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
 
         try
         {
-            await _WaitForAsync(() =>
-                manager
-                    .ReceivedCalls()
-                    .Any(c =>
-                        string.Equals(
-                            c.GetMethodInfo().Name,
-                            nameof(manager.ReleaseDeadNodeResources),
-                            StringComparison.Ordinal
-                        )
-                    )
-            );
+            await calls.Reached(nameof(IInternalJobManager.ReleaseDeadNodeResources)).Bounded();
 
             await manager
                 .Received(1)
@@ -179,7 +160,8 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         var identity = new NodeIdentity(new NodeId("new-owner"), new NodeIncarnation(1));
         var ownerScanCompleted = false;
         var snapshotObservedRegistration = false;
-        var manager = _Manager();
+        var tickedAfterSnapshot = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (manager, _) = _Manager();
         manager
             .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
@@ -188,13 +170,27 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
                 return Task.FromResult<string[]>([newlyRegisteredOwner]);
             });
 
+        // RunTimedOutTickers runs after the orphan sweep inside the same iteration, so a run after the snapshot read
+        // proves the sweep finished with the registered owner visible, and any (defective) reclaim was already issued.
+        manager
+            .RunTimedOutTickers(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Volatile.Read(ref snapshotObservedRegistration))
+                {
+                    tickedAfterSnapshot.TrySetResult();
+                }
+
+                return Task.FromResult(Array.Empty<JobExecutionState>());
+            });
+
         var membership = Substitute.For<INodeMembership>();
         membership.ClusterName.Returns(_Cluster);
         membership
             .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                snapshotObservedRegistration = ownerScanCompleted;
+                Volatile.Write(ref snapshotObservedRegistration, ownerScanCompleted);
                 IReadOnlyList<NodeLivenessSnapshot> snapshots = ownerScanCompleted
                     ?
                     [
@@ -219,7 +215,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
 
         try
         {
-            await _WaitForAsync(() => snapshotObservedRegistration);
+            await tickedAfterSnapshot.Task.Bounded();
 
             await manager
                 .DidNotReceive()
@@ -234,7 +230,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
     [Fact]
     public async Task does_not_start_the_release_batch_after_local_membership_is_lost()
     {
-        var manager = _Manager();
+        var (manager, _) = _Manager();
         manager
             .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<string[]>([_Tag("ghost@1")]));
@@ -286,7 +282,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         // the sweep's FIRST read, whichever that is. Scan-first: the owner is not in the scan yet and this
         // iteration ignores it. Snapshot-first (the defect): the owner is in the scan but not the earlier
         // snapshot, and a live node's fresh claims are put through the dead-node release.
-        var manager = _Manager();
+        var (manager, calls) = _Manager();
         var interleavedIdentity = new NodeIdentity(new NodeId("late"), new NodeIncarnation(1));
         var registered = false;
 
@@ -332,17 +328,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         {
             // RunTimedOutTickers runs after the orphan sweep inside the same iteration, so observing it proves
             // the sweep completed both reads and any (defective) reclaim would already have been issued.
-            await _WaitForAsync(() =>
-                manager
-                    .ReceivedCalls()
-                    .Any(c =>
-                        string.Equals(
-                            c.GetMethodInfo().Name,
-                            nameof(manager.RunTimedOutTickers),
-                            StringComparison.Ordinal
-                        )
-                    )
-            );
+            await calls.Reached(nameof(IInternalJobManager.RunTimedOutTickers)).Bounded();
 
             await manager
                 .DidNotReceive()
@@ -359,7 +345,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
     {
         // In-memory path: no coordination provider, single-process ownership — nothing can be orphaned and no
         // snapshot exists to diff against.
-        var manager = _Manager();
+        var (manager, calls) = _Manager();
         var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
         ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
 
@@ -370,17 +356,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
         try
         {
             // Let the loop demonstrably tick at least once.
-            await _WaitForAsync(() =>
-                manager
-                    .ReceivedCalls()
-                    .Any(c =>
-                        string.Equals(
-                            c.GetMethodInfo().Name,
-                            nameof(manager.ReclaimStalledResources),
-                            StringComparison.Ordinal
-                        )
-                    )
-            );
+            await calls.Reached(nameof(IInternalJobManager.ReclaimStalledResources)).Bounded();
 
             await manager.DidNotReceive().GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>());
         }
@@ -395,7 +371,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
     {
         // Two apps share one Jobs store under different coordination clusters. This node's snapshot lists only its
         // own cluster, so the other app's live owner is absent from it without being orphaned.
-        var manager = _Manager();
+        var (manager, calls) = _Manager();
         var self = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
         var otherCluster = NodeOwnerTag.Format("billing", self);
         manager
@@ -424,17 +400,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
 
         try
         {
-            await _WaitForAsync(() =>
-                manager
-                    .ReceivedCalls()
-                    .Any(c =>
-                        string.Equals(
-                            c.GetMethodInfo().Name,
-                            nameof(manager.ReleaseDeadNodeResources),
-                            StringComparison.Ordinal
-                        )
-                    )
-            );
+            await calls.Reached(nameof(IInternalJobManager.ReleaseDeadNodeResources)).Bounded();
 
             await manager
                 .Received(1)
@@ -456,30 +422,37 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
 
     private static string _Tag(NodeIdentity identity) => NodeOwnerTag.Format(_Cluster, identity);
 
-    private static async Task _WaitForAsync(Func<bool> condition)
+    private static (IInternalJobManager Manager, ManagerCalls Calls) _Manager()
     {
-        var deadline = DateTime.UtcNow.Add(_waitBudget);
-        while (!condition())
-        {
-            DateTime.UtcNow.Should().BeBefore(deadline, "the fallback loop should have reached the assertion state");
-            await Task.Delay(10, AbortToken);
-        }
-    }
-
-    private static IInternalJobManager _Manager()
-    {
+        var calls = new ManagerCalls();
         var manager = Substitute.For<IInternalJobManager>();
         manager
             .ReclaimStalledResources(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(default(JobReclaimCounts)));
+            .Returns(_ =>
+            {
+                calls.Record(nameof(IInternalJobManager.ReclaimStalledResources));
+
+                return Task.FromResult(default(JobReclaimCounts));
+            });
         manager
             .RunTimedOutTickers(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(Array.Empty<JobExecutionState>()));
+            .Returns(_ =>
+            {
+                calls.Record(nameof(IInternalJobManager.RunTimedOutTickers));
+
+                return Task.FromResult(Array.Empty<JobExecutionState>());
+            });
         manager
             .ReleaseDeadNodeResources(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(default(JobReclaimCounts)));
+            .Returns(_ =>
+            {
+                calls.Record(nameof(IInternalJobManager.ReleaseDeadNodeResources));
+
+                return Task.FromResult(default(JobReclaimCounts));
+            });
         manager.GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(Array.Empty<string>()));
-        return manager;
+
+        return (manager, calls);
     }
 
     private static FallbackServiceHarness _Service(
@@ -539,5 +512,18 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             await taskScheduler.DisposeAsync().ConfigureAwait(false);
             await serviceProvider.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Lets a test wait for the fallback loop to reach a manager call instead of polling the substitute.</summary>
+    private sealed class ManagerCalls
+    {
+        private readonly ConcurrentDictionary<string, TaskCompletionSource> _reached = new(StringComparer.Ordinal);
+
+        public void Record(string method) => _Source(method).TrySetResult();
+
+        public Task Reached(string method) => _Source(method).Task;
+
+        private TaskCompletionSource _Source(string method) =>
+            _reached.GetOrAdd(method, static _ => new(TaskCreationOptions.RunContinuationsAsynchronously));
     }
 }

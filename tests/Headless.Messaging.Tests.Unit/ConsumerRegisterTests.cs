@@ -810,7 +810,7 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task should_wait_consumer_tasks_using_configured_timeout_not_legacy_two_seconds_when_pulse()
     {
-        var fakeTime = new FakeTimeProvider();
+        var fakeTime = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
         await using var provider = _CreateProvider(configureServices: services =>
             services.AddSingleton<TimeProvider>(fakeTime)
         );
@@ -845,18 +845,27 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var pulse = register.PulseAsync(removeCircuitState: true, waitTimeout: TimeSpan.FromSeconds(30));
 
-        // Past the legacy hardcoded 2s bound: under the configured 30s budget the wait must
-        // still be pending. The old fixed 2s WaitAsync would already have expired here.
-        fakeTime.Advance(TimeSpan.FromSeconds(3));
-        await Task.Delay(50, AbortToken);
-        pulse.IsCompleted.Should().BeFalse("PulseAsync must honor the configured waitTimeout, not the legacy 2s");
+        try
+        {
+            // Past the legacy hardcoded 2s bound: under the configured 30s budget the wait must
+            // still be pending. The old fixed 2s WaitAsync would already have expired here.
+            await fakeTime.WaitForArmedTimerAsync();
+            fakeTime.Advance(TimeSpan.FromSeconds(3));
+            pulse.IsCompleted.Should().BeFalse("PulseAsync must honor the configured waitTimeout, not the legacy 2s");
 
-        fakeTime.Advance(TimeSpan.FromSeconds(17));
-        stillRunning.TrySetResult();
-        await pulse.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            fakeTime.Advance(TimeSpan.FromSeconds(17));
+            stillRunning.TrySetResult();
+            await pulse.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        receivedShutdownTimeout.Should().Be(TimeSpan.FromSeconds(10));
-        await client.Received(1).ShutdownAsync(Arg.Is(TimeSpan.FromSeconds(10)), Arg.Any<CancellationToken>());
+            receivedShutdownTimeout.Should().Be(TimeSpan.FromSeconds(10));
+            await client.Received(1).ShutdownAsync(Arg.Is(TimeSpan.FromSeconds(10)), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            // A failed assertion must not leave the consumer task pending: disposing the register waits on it, and
+            // nothing advances the fake clock by then, so the failure would hang the run instead of failing the test.
+            stillRunning.TrySetResult();
+        }
     }
 
     [Fact]
@@ -1187,7 +1196,7 @@ public sealed class ConsumerRegisterTests : TestBase
         RecordingDataStorage Storage,
         Headless.Messaging.IMessageSerializer Serializer,
         ServiceProvider Provider,
-        FakeTimeProvider BackoffClock
+        TimerArmedSignalClock BackoffClock
     ) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
@@ -1401,6 +1410,22 @@ public sealed class ConsumerRegisterTests : TestBase
     private sealed class OrderedReceiveMiddlewareC(ReceiveMiddlewareRecorder recorder)
         : OrderedReceiveMiddleware(recorder, "C");
 
+    private sealed class OrderedReceiveMiddlewareD(ReceiveMiddlewareRecorder recorder)
+        : OrderedReceiveMiddleware(recorder, "D");
+
+    private sealed class OrderedReceiveMiddlewareE(ReceiveMiddlewareRecorder recorder)
+        : OrderedReceiveMiddleware(recorder, "E");
+
+    private sealed class SkippingReceiveMiddleware(ReceiveMiddlewareRecorder recorder) : IReceiveMiddleware
+    {
+        public ValueTask InvokeAsync(ReceiveContext context, Func<ValueTask> next)
+        {
+            recorder.Invoked("skip");
+            context.Skip("filtered");
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class RecordingReceiveMiddleware : IReceiveMiddleware
     {
         public Func<ReceiveContext, Func<ValueTask>, ValueTask> Behavior { get; set; } = static (_, next) => next();
@@ -1510,7 +1535,7 @@ public sealed class ConsumerRegisterTests : TestBase
         configureServices?.Invoke(services);
 
         // The admission retries wait on the back-off clock, which the delivery steps through instead of sleeping.
-        var backoffClock = new FakeTimeProvider();
+        var backoffClock = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
         services.AddKeyedSingleton<TimeProvider>(MessagingOptions.BackoffClockServiceKey, backoffClock);
 
         var provider = services.BuildServiceProvider();
@@ -1590,8 +1615,70 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // then
         recorder.Constructions.Should().BeEquivalentTo(["A", "B", "C"]);
-        recorder.Invocations.Should().BeEquivalentTo(["A", "B", "C"]);
+        recorder.Invocations.Should().Equal("B", "C", "A");
         run.Client.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_run_global_receive_middleware_by_ascending_priority_before_per_message_middleware()
+    {
+        // given: global middleware out of priority order with a tie (B then E at 10), and a per-message
+        // middleware whose priority is lower than every global one
+        var recorder = new ReceiveMiddlewareRecorder();
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware: null,
+            "receive-order",
+            "{}"u8.ToArray(),
+            configureServices: services =>
+            {
+                services.AddSingleton(recorder);
+                var builder = new MessagingBuilder(services);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareA>().WithPriority(30);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareB>().WithPriority(10);
+                builder
+                    .AddReceiveMiddlewareFor<OrderedReceiveMiddlewareD, BootstrapReadyMessage>(MessageLane.Bus)
+                    .WithPriority(-100);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareC>().WithPriority(20);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareE>().WithPriority(10);
+            }
+        );
+
+        // then: lower priority runs first and wraps the rest; ties keep registration order; global
+        // middleware wraps per-message middleware whatever their priorities
+        recorder.Invocations.Should().Equal("B", "E", "C", "A", "D");
+        run.Client.CommitCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_log_the_receive_middleware_that_skipped_when_an_outer_middleware_called_next()
+    {
+        // given: an outer middleware that calls next and an inner one that skips
+        var recorder = new ReceiveMiddlewareRecorder();
+        var logs = new List<(LogLevel Level, EventId EventId, string Message)>();
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware: null,
+            "receive-skip-named",
+            "{}"u8.ToArray(),
+            configureServices: services =>
+            {
+                services.AddSingleton(recorder);
+                services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs));
+                var builder = new MessagingBuilder(services);
+                builder.AddReceiveMiddleware<SkippingReceiveMiddleware>().WithPriority(20);
+                builder.AddReceiveMiddleware<OrderedReceiveMiddlewareA>().WithPriority(10);
+            }
+        );
+
+        // then
+        recorder.Invocations.Should().Equal("A", "skip");
+        run.Client.CommitCount.Should().Be(1);
+        var skipped = logs.Should().ContainSingle(entry => entry.EventId.Id == 99).Subject;
+        skipped.Message.Should().Contain(typeof(SkippingReceiveMiddleware).FullName!);
+        skipped.Message.Should().NotContain(typeof(OrderedReceiveMiddlewareA).FullName!);
     }
 
     [Fact]
@@ -2980,13 +3067,24 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     /// <summary>Runs one delivery through the client's callback, advancing the back-off clock until it settles.</summary>
-    private static async Task _DeliverAsync(IConsumerClient client, TransportMessage transport, FakeTimeProvider clock)
+    private static async Task _DeliverAsync(
+        IConsumerClient client,
+        TransportMessage transport,
+        TimerArmedSignalClock clock
+    )
     {
         var delivery = client.OnMessageCallback!(transport, null);
         while (!delivery.IsCompleted)
         {
-            clock.Advance(TimeSpan.FromMilliseconds(250));
-            await Task.Delay(TimeSpan.FromMilliseconds(1), AbortToken);
+            // Each back-off wait arms its timer after the delivery decides to wait, so an advance only counts once
+            // that timer exists; one step past the longest back-off (about 2.5 s) fires it.
+            _ = await Task.WhenAny(delivery, clock.WaitForArmedTimerAsync());
+            if (delivery.IsCompleted)
+            {
+                break;
+            }
+
+            clock.Advance(TimeSpan.FromSeconds(5));
         }
 
         await delivery;

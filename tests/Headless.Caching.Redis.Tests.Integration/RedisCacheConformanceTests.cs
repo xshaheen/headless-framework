@@ -37,11 +37,13 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 
     protected override async ValueTask AdvancePastExpirationAsync(TimeSpan expiration)
     {
+        // real-wait: the shared conformance suite's expiries are Redis TTLs enforced on the Redis server clock, which no app clock can advance
         await TimeProvider.System.Delay(expiration + TimeSpan.FromMilliseconds(250), AbortToken);
     }
 
     protected override async ValueTask AdvanceAsync(TimeSpan duration)
     {
+        // real-wait: the shared conformance suite's windows are Redis TTLs enforced on the Redis server clock, which no app clock can advance
         await TimeProvider.System.Delay(duration, AbortToken);
     }
 
@@ -190,13 +192,16 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
 
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
         var firstRead = await cache.GetAsync<string>(key, AbortToken);
 
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
         var secondRead = await cache.GetAsync<string>(key, AbortToken);
 
         // Idle a full window past the last read so the entry lapses.
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await Task.Delay(sliding + TimeSpan.FromSeconds(1), AbortToken);
         var idleRead = await cache.GetAsync<string>(key, AbortToken);
 
@@ -219,11 +224,13 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
         var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(30), SlidingExpiration = sliding };
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await Task.Delay(TimeSpan.FromSeconds(1.5), AbortToken);
 
         var earlyRead = await cache.GetAsync<string>(key, AbortToken);
         var expiration = await cache.GetExpirationAsync(key, AbortToken);
 
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
         var idleRead = await cache.GetAsync<string>(key, AbortToken);
 
@@ -249,11 +256,13 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 
         for (var i = 0; i < 3; i++)
         {
+            // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
             await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
             (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue();
         }
 
         // 1.5s after the last keep-alive read: inside the re-armed sliding window (2s), past the 4s cap.
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await Task.Delay(TimeSpan.FromMilliseconds(1500), AbortToken);
         var capped = await cache.GetAsync<string>(key, AbortToken);
 
@@ -273,10 +282,12 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
 
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await Task.Delay(TimeSpan.FromSeconds(1), AbortToken);
         (await cache.ExistsAsync(key, AbortToken)).Should().BeTrue();
 
         // Past the original window (metadata read did not re-arm) -> expired.
+        // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
         await Task.Delay(sliding, AbortToken);
         var expired = await cache.GetAsync<string>(key, AbortToken);
 
@@ -323,6 +334,18 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     public override Task should_expire_immediately_when_upsert_duration_is_non_positive()
     {
         return base.should_expire_immediately_when_upsert_duration_is_non_positive();
+    }
+
+    [Fact]
+    public override Task should_report_no_expiration_when_upsert_duration_is_max_value()
+    {
+        return base.should_report_no_expiration_when_upsert_duration_is_max_value();
+    }
+
+    [Fact]
+    public override Task should_report_no_expiration_when_set_entry_stamps_are_max_value()
+    {
+        return base.should_report_no_expiration_when_set_entry_stamps_are_max_value();
     }
 
     [Fact]

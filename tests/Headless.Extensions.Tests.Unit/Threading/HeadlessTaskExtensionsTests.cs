@@ -90,16 +90,17 @@ public sealed class HeadlessTaskExtensionsTests : TestBase
             await Task.CompletedTask;
         }
 
-        // when
+        // when — DelayedAsync arms its timer on the provided clock before it returns, so the clock can be advanced
         var task = Task.DelayedAsync(delay, action, timeProvider: fakeTime, cancellationToken: AbortToken);
 
-        // then - action should not execute before advancing time
-        await Task.Delay(50, AbortToken);
+        // then - action should not execute before the delay elapses, not even a tick short of it
+        actionExecuted.Should().BeFalse();
+        fakeTime.Advance(delay - TimeSpan.FromMilliseconds(1));
         actionExecuted.Should().BeFalse();
 
         // advance time past the delay
-        fakeTime.Advance(delay + TimeSpan.FromMilliseconds(100));
-        await task;
+        fakeTime.Advance(TimeSpan.FromMilliseconds(101));
+        await task.Bounded();
 
         actionExecuted.Should().BeTrue();
     }
@@ -233,8 +234,8 @@ public sealed class HeadlessTaskExtensionsTests : TestBase
         // when
         var run = Task.WhenAllBoundedAsync(operations, maxConcurrency);
 
-        // then — only the first window starts until a slot frees
-        await Task.Delay(50, AbortToken);
+        // then — each operation up to the bound has started by the time the call returns, and no more: the rest wait
+        // for a slot, which only a gate release frees
         lock (started)
         {
             started.Should().Equal(0, 1, 2);

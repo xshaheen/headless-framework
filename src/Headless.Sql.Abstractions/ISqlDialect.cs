@@ -124,6 +124,10 @@ public interface ISqlDialect
     void AddDuration(DbCommand command, string parameter, TimeSpan duration);
 
     /// <summary>Binds a value typed for its column, so comparisons use the column's collation and indexes.</summary>
+    /// <remarks>
+    /// A <see cref="ReadOnlyMemory{T}" /> of <see cref="byte" /> is bound without a copy when the engine allows it, so
+    /// its bytes must stay unchanged until the command has run.
+    /// </remarks>
     void AddParameter(DbCommand command, string parameter, SqlColumnType type, object? value);
 
     /// <summary>Returns a keyset predicate: the row's <paramref name="columns" /> tuple sorts after the parameters.</summary>

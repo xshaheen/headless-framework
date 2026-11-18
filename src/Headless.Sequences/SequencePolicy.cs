@@ -25,6 +25,27 @@ public sealed record SequencePolicy
     public SequenceMode Mode { get; init; } = SequenceMode.Fast;
 
     /// <summary>
+    /// Gets how many values a fast-mode call reserves from the database at once; at least 1. The default is 1: every
+    /// value is its own database call, and values come out in call order across every host.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Above 1, <see cref="ISequenceGenerator.NextAsync" /> and <see cref="ISequenceGenerator.NextNumberAsync" /> reserve
+    /// a block of this many values in one database call and hand them out from memory, one block per counter key on
+    /// each host. Every value is still issued once, but numbering is no longer monotonic across hosts: two hosts hand out
+    /// values from their own blocks, so their numbers interleave. Unused values of a block are lost, as gaps, when the
+    /// process stops, when the key is evicted (see <see cref="SequencesOptions.MaxCachedBlocks" />), when the policy's
+    /// step or block size changes, and when a document-number period ends. A block never spans a reset: each period is
+    /// its own key.
+    /// </para>
+    /// <para>
+    /// Only <see cref="SequenceMode.Fast" /> accepts a value above 1. A gap-free or reported policy with one fails options
+    /// validation at startup. <see cref="ISequenceGenerator.ReserveAsync" /> always reserves its own range directly.
+    /// </para>
+    /// </remarks>
+    public int BlockSize { get; init; } = 1;
+
+    /// <summary>
     /// Gets the template a document number is formatted with, or <see langword="null" /> to format the bare value.
     /// </summary>
     /// <remarks>
