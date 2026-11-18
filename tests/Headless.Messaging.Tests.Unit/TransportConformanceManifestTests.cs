@@ -205,14 +205,78 @@ public sealed class TransportConformanceManifestTests : TestBase
     }
 
     [Fact]
-    public void should_default_optional_scenarios_to_unsupported()
+    public void should_report_every_scenario_a_profile_has_not_declared()
     {
-        var profile = TransportConformanceProfile.CreateDisabled("Example");
+        var profile = TransportConformanceProfile
+            .CreateDisabled("Example")
+            .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported);
 
-        profile
-            .Scenarios[TransportConformanceScenario.BrokerInterruptionRecovery]
-            .Status.Should()
-            .Be(ConformanceStatus.Unsupported);
+        var errors = TransportConformanceManifest.GetValidationErrors(profile);
+
+        profile.Scenarios.Keys.Should().Equal(TransportConformanceScenario.QueueRoundTrip);
+        errors
+            .Should()
+            .Contain(
+                Enum.GetValues<TransportConformanceScenario>()
+                    .Where(scenario => scenario != TransportConformanceScenario.QueueRoundTrip)
+                    .Select(scenario => $"Example is missing the {scenario} conformance cell.")
+            );
+        errors.Should().NotContain("Example is missing the QueueRoundTrip conformance cell.");
+    }
+
+    [Fact]
+    public void should_require_startup_rejection_to_be_not_applicable_only_when_production_rejects_nothing()
+    {
+        var notApplicable = ConformanceSupport.NotApplicable("Startup has nothing to reject.");
+        var acceptsEverything = TransportConformanceProfile
+            .CreateDisabled("Example")
+            .WithRuntimeCapabilities(
+                "Example",
+                supportsBus: true,
+                supportsQueue: true,
+                supportsIndependentLaneTopology: true,
+                supportsEveryInstance: true
+            );
+        var lacksEveryInstance = acceptsEverything.WithRuntimeCapabilities(
+            "Example",
+            supportsBus: true,
+            supportsQueue: true,
+            supportsIndependentLaneTopology: true,
+            supportsEveryInstance: false
+        );
+
+        _StartupRejectionErrors(
+                acceptsEverything.WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    notApplicable
+                )
+            )
+            .Should()
+            .BeEmpty();
+        _StartupRejectionErrors(
+                acceptsEverything.WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.Supported
+                )
+            )
+            .Should()
+            .ContainSingle(error => error.Contains("must be NotApplicable", StringComparison.Ordinal));
+        _StartupRejectionErrors(
+                lacksEveryInstance.WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    notApplicable
+                )
+            )
+            .Should()
+            .ContainSingle(error => error.Contains("cannot be NotApplicable", StringComparison.Ordinal));
+        _StartupRejectionErrors(
+                lacksEveryInstance.WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.Supported
+                )
+            )
+            .Should()
+            .BeEmpty();
     }
 
     [Fact]
@@ -352,7 +416,8 @@ public sealed class TransportConformanceManifestTests : TestBase
         var matching = MessagingProviderCapabilities.Transport(
             "NATS JetStream",
             [MessageLane.Bus, MessageLane.Queue],
-            supportsIndependentLaneTopology: true
+            supportsIndependentLaneTopology: true,
+            supportsEveryInstance: true
         );
         var drifted = MessagingProviderCapabilities.Transport(
             "NATS JetStream",
@@ -369,6 +434,10 @@ public sealed class TransportConformanceManifestTests : TestBase
             .GetMismatchErrors(drifted)
             .Should()
             .Contain(error => error.Contains("independent-lane", StringComparison.Ordinal));
+        expected
+            .GetMismatchErrors(drifted)
+            .Should()
+            .Contain(error => error.Contains("every-instance", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -422,6 +491,18 @@ public sealed class TransportConformanceManifestTests : TestBase
             readme.Should().Contain($"| `{scenario}` | {string.Join(" | ", cells)} |");
         }
     }
+
+    private static List<string> _StartupRejectionErrors(TransportConformanceProfile profile) =>
+        [
+            .. TransportConformanceManifest
+                .GetValidationErrors(profile)
+                .Where(error =>
+                    error.Contains(
+                        nameof(TransportConformanceScenario.StartupRejectionBeforeSideEffects),
+                        StringComparison.Ordinal
+                    )
+                ),
+        ];
 
     private static string _FindRepositoryRoot()
     {

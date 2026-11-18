@@ -79,6 +79,10 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 nameof(KafkaConsumerClientConformanceTests.should_round_trip_queue_message_body_and_headers)
             ),
             _Bind(
+                TransportConformanceScenario.EmptyBodyDispatch,
+                nameof(KafkaConsumerClientConformanceTests.should_dispatch_empty_message_body)
+            ),
+            _Bind(
                 TransportConformanceScenario.CommitSettlement,
                 nameof(KafkaConsumerClientConformanceTests.should_commit_real_delivery_and_prevent_redelivery)
             ),

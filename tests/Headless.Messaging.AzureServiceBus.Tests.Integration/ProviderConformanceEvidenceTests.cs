@@ -184,6 +184,20 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(AzureServiceBusEmulatorConsumerClientHarnessTests.should_bound_shutdown_while_handler_is_active)
             ),
+            new(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                typeof(AzureServiceBusEmulatorStartupRejectionTests),
+                nameof(
+                    AzureServiceBusEmulatorStartupRejectionTests.should_reject_an_every_instance_consumer_at_startup_when_provisioning_is_off
+                )
+            ),
+            new(
+                TransportConformanceScenario.RequestReplyStartupRejection,
+                typeof(AzureServiceBusEmulatorStartupRejectionTests),
+                nameof(
+                    AzureServiceBusEmulatorStartupRejectionTests.should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply
+                )
+            ),
         ];
 
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();

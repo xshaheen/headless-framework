@@ -15,39 +15,39 @@ public sealed class InMemoryProviderConformanceTests : TransportRequestReplyConf
 {
     protected override ValueTask<TransportProviderConformanceDriver> CreateDriverAsync()
     {
-        return ValueTask.FromResult<TransportProviderConformanceDriver>(_CreateDriver());
+        return ValueTask.FromResult<TransportProviderConformanceDriver>(CreateDriver());
     }
 
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_header() =>
-        TransportRoutingAffinityConformance.AssertAsync(_CreateDriver(), AbortToken);
+        TransportRoutingAffinityConformance.AssertAsync(CreateDriver(), AbortToken);
 
     [Fact]
     public Task should_run_one_key_at_a_time_on_a_sequential_consumer() =>
-        TransportKeySequencingConformance.AssertAsync(_CreateDriver(), AbortToken);
+        TransportKeySequencingConformance.AssertAsync(CreateDriver(), AbortToken);
 
     [Fact]
     public Task should_deliver_one_bus_copy_per_consumer_identity_while_replicas_compete()
     {
-        return TransportProviderConformance.AssertBusConsumerIdentitiesAsync(_CreateDriver(), AbortToken);
+        return TransportProviderConformance.AssertBusConsumerIdentitiesAsync(CreateDriver(), AbortToken);
     }
 
     [Fact]
     public Task should_deliver_every_bus_message_to_every_every_instance_replica()
     {
-        return TransportProviderConformance.AssertBusEveryInstanceAsync(_CreateDriver(), AbortToken);
+        return TransportProviderConformance.AssertBusEveryInstanceAsync(CreateDriver(), AbortToken);
     }
 
     [Fact]
     public Task should_deliver_one_owned_queue_copy_across_replicas()
     {
-        return TransportProviderConformance.AssertQueueOwnershipAsync(_CreateDriver(), AbortToken);
+        return TransportProviderConformance.AssertQueueOwnershipAsync(CreateDriver(), AbortToken);
     }
 
     [Fact]
     public Task should_isolate_same_logical_name_between_bus_and_queue()
     {
-        return TransportProviderConformance.AssertSameNameLaneIsolationAsync(_CreateDriver(), AbortToken);
+        return TransportProviderConformance.AssertSameNameLaneIsolationAsync(CreateDriver(), AbortToken);
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class InMemoryProviderConformanceTests : TransportRequestReplyConf
             AbortToken
         );
 
-    private static InMemoryProviderConformanceDriver _CreateDriver()
+    internal static InMemoryProviderConformanceDriver CreateDriver()
     {
         return new InMemoryProviderConformanceDriver(new MemoryQueue(NullLogger<MemoryQueue>.Instance));
     }
@@ -96,7 +96,7 @@ public sealed class InMemoryProviderConformanceTests : TransportRequestReplyConf
         }
     }
 
-    private class InMemoryProviderConformanceDriver(MemoryQueue queue) : TransportProviderConformanceDriver
+    internal class InMemoryProviderConformanceDriver(MemoryQueue queue) : TransportProviderConformanceDriver
     {
         private static readonly TransportConformanceProfile _Profile = TransportConformanceManifest.Providers[
             "InMemory"
@@ -126,8 +126,21 @@ public sealed class InMemoryProviderConformanceTests : TransportRequestReplyConf
             return ValueTask.FromResult(queue.HasReplyListener(replyAddress));
         }
 
-        public override async ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+        public override ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
             TransportConformanceEndpoint endpoint,
+            CancellationToken cancellationToken
+        )
+        {
+            return CreateSessionAsync(endpoint, concurrency: 1, cancellationToken);
+        }
+
+        /// <summary>
+        /// Opens a session whose consumer hands over at most <paramref name="concurrency"/> deliveries at once; its
+        /// replacement joins the same group on the same in-process broker, as a restarted consumer would.
+        /// </summary>
+        public async ValueTask<TransportConsumerConformanceSession> CreateSessionAsync(
+            TransportConformanceEndpoint endpoint,
+            byte concurrency,
             CancellationToken cancellationToken
         )
         {
@@ -140,7 +153,7 @@ public sealed class InMemoryProviderConformanceTests : TransportRequestReplyConf
             };
 #pragma warning restore CA2000
             var consumer = await new InMemoryConsumerClientFactory(queue, TimeProvider.System).CreateAsync(
-                endpoint.ToRequest(),
+                endpoint.ToRequest(concurrency),
                 cancellationToken
             );
             await consumer.SubscribeAsync([endpoint.LogicalName], cancellationToken);
@@ -149,7 +162,8 @@ public sealed class InMemoryProviderConformanceTests : TransportRequestReplyConf
                 endpoint.LogicalName,
                 producer,
                 consumer,
-                TimeSpan.FromSeconds(1)
+                TimeSpan.FromSeconds(1),
+                createReplacementSession: token => CreateSessionAsync(endpoint, concurrency, token)
             );
         }
     }

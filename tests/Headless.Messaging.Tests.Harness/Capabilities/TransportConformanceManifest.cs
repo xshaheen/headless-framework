@@ -54,12 +54,13 @@ public sealed record TransportRuntimeCapabilityExpectation(
     string Provider,
     bool SupportsBus,
     bool SupportsQueue,
-    bool SupportsIndependentLaneTopology
+    bool SupportsIndependentLaneTopology,
+    bool SupportsEveryInstance
 )
 {
     public static TransportRuntimeCapabilityExpectation Disabled(string provider)
     {
-        return new TransportRuntimeCapabilityExpectation(provider, false, false, false);
+        return new TransportRuntimeCapabilityExpectation(provider, false, false, false, false);
     }
 
     public IReadOnlyList<string> GetMismatchErrors(MessagingProviderCapabilities actual)
@@ -93,6 +94,13 @@ public sealed record TransportRuntimeCapabilityExpectation(
         {
             errors.Add(
                 $"{Provider}: production independent-lane topology support is {actual.SupportsIndependentLaneTopology}; manifest expects {SupportsIndependentLaneTopology}."
+            );
+        }
+
+        if (actual.SupportsEveryInstance != SupportsEveryInstance)
+        {
+            errors.Add(
+                $"{Provider}: production every-instance support is {actual.SupportsEveryInstance}; manifest expects {SupportsEveryInstance}."
             );
         }
 
@@ -147,27 +155,16 @@ public sealed record TransportConformanceProfile(
     TransportMalformedEnvelopeBound? MalformedEnvelopeBound
 )
 {
-    /// <summary>The open issue that tracks messaging scenarios no run has proven yet.</summary>
-    internal const string GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1277";
-
     /// <summary>The open issue that tracks the network-fault scenarios no provider has proven yet.</summary>
     internal const string NetworkFaultGapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1247";
 
+    /// <summary>
+    /// Starts a profile that declares no scenario. Every scenario must then be declared explicitly, so a scenario added
+    /// later fails the manifest's validation on each provider until that provider decides its cell.
+    /// </summary>
     public static TransportConformanceProfile CreateDisabled(string provider)
     {
-        var scenarios = Enum.GetValues<TransportConformanceScenario>()
-            .ToDictionary(
-                scenario => scenario,
-                scenario =>
-                    ConformanceSupport.Unsupported(
-                        $"{provider} does not yet have executable evidence for {scenario}.",
-                        scenario
-                            is TransportConformanceScenario.ConnectionDropRecovery
-                                or TransportConformanceScenario.PublishDuringOutage
-                            ? NetworkFaultGapIssueUrl
-                            : GapIssueUrl
-                    )
-            );
+        var scenarios = new Dictionary<TransportConformanceScenario, ConformanceSupport>();
 
         return new TransportConformanceProfile(
             provider,
@@ -187,7 +184,8 @@ public sealed record TransportConformanceProfile(
         string provider,
         bool supportsBus,
         bool supportsQueue,
-        bool supportsIndependentLaneTopology
+        bool supportsIndependentLaneTopology,
+        bool supportsEveryInstance
     )
     {
         return this with
@@ -196,7 +194,8 @@ public sealed record TransportConformanceProfile(
                 provider,
                 supportsBus,
                 supportsQueue,
-                supportsIndependentLaneTopology
+                supportsIndependentLaneTopology,
+                supportsEveryInstance
             ),
         };
     }
@@ -253,11 +252,33 @@ public static class TransportConformanceManifest
     private const string _EmulatorDeadLetterDuplicateIssueUrl =
         "https://github.com/xshaheen/headless-framework/issues/1672";
 
+    /// <summary>The open issue that tracks the in-memory consumer dropping a delivery whose callback throws.</summary>
+    private const string _InMemoryCallbackFailureIssueUrl =
+        "https://github.com/xshaheen/headless-framework/issues/1759";
+
+    /// <summary>The open issue that tracks the real-namespace cells only the protected Azure workflow can prove.</summary>
+    private const string _AzureWorkflowIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1760";
+
+    /// <summary>The open issue that tracks the emulator cells no emulator leaf runs yet.</summary>
+    private const string _EmulatorGapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1761";
+
     /// <summary>An Azure Service Bus cell that only the protected, credential-gated workflow can prove.</summary>
     private static readonly ConformanceSupport _AzureWorkflowGap = ConformanceSupport.Unsupported(
         "Needs the protected Azure workflow to execute; no run has proven it yet.",
-        TransportConformanceProfile.GapIssueUrl
+        _AzureWorkflowIssueUrl
     );
+
+    /// <summary>An emulator cell the emulator can run once its leaf declares the entity or option the scenario needs.</summary>
+    private static readonly ConformanceSupport _EmulatorGap = ConformanceSupport.Unsupported(
+        "The emulator leaf does not run this scenario yet: it needs an entity in Emulator/Config.json, a session option the fixture does not take, or an emulator copy of the real-namespace leaf test.",
+        _EmulatorGapIssueUrl
+    );
+
+    private static ConformanceSupport _NetworkFaultGap(string provider) =>
+        ConformanceSupport.Unsupported(
+            $"{provider} has no network-fault leaf yet.",
+            TransportConformanceProfile.NetworkFaultGapIssueUrl
+        );
 
     private static readonly TransportConformanceScenario[] _MandatoryBaselineScenarios =
     [
@@ -281,7 +302,8 @@ public static class TransportConformanceManifest
                     "NATS JetStream",
                     supportsBus: true,
                     supportsQueue: true,
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
                 .WithMalformedEnvelopeBound("JetStream terminal ACK", 1, TimeSpan.FromSeconds(3))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
@@ -307,6 +329,12 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.RequestReplyStartupRejection,
                     ConformanceSupport.NotApplicable("NATS supports request/reply, so startup accepts it.")
+                )
+                .WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.NotApplicable(
+                        "NATS supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
+                    )
                 )
                 .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(
@@ -337,7 +365,8 @@ public static class TransportConformanceManifest
                     "RabbitMQ",
                     supportsBus: true,
                     supportsQueue: true,
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
                 .WithMalformedEnvelopeBound("basic.reject with requeue disabled", 1, TimeSpan.FromSeconds(3))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
@@ -364,6 +393,12 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.RequestReplyStartupRejection,
                     ConformanceSupport.NotApplicable("RabbitMQ supports request/reply, so startup accepts it.")
                 )
+                .WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.NotApplicable(
+                        "RabbitMQ supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
+                    )
+                )
                 .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.DeadLetterSingleCopy, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
@@ -388,7 +423,8 @@ public static class TransportConformanceManifest
                     "Amazon SQS",
                     supportsBus: true,
                     supportsQueue: true,
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: false
                 )
                 .WithMalformedEnvelopeBound("SQS deletion after terminal classification", 1, TimeSpan.FromSeconds(5))
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
@@ -421,6 +457,10 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.Supported
+                )
                 .WithScenario(TransportConformanceScenario.HeaderBuilderFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.DeadLetterSingleCopy,
@@ -450,7 +490,8 @@ public static class TransportConformanceManifest
                     "Kafka",
                     supportsBus: false,
                     supportsQueue: true,
-                    supportsIndependentLaneTopology: false
+                    supportsIndependentLaneTopology: false,
+                    supportsEveryInstance: false
                 )
                 .WithMalformedEnvelopeBound(
                     "consumer offset committed past the rejected record",
@@ -488,6 +529,7 @@ public static class TransportConformanceManifest
                     ConformanceSupport.Supported
                 )
                 .WithScenario(TransportConformanceScenario.HeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.CommitSettlement, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
@@ -534,7 +576,8 @@ public static class TransportConformanceManifest
                     "Azure Service Bus",
                     supportsBus: true,
                     supportsQueue: true,
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
                 .WithMalformedEnvelopeBound("Service Bus dead-letter settlement", 1, TimeSpan.FromSeconds(10))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
@@ -550,25 +593,26 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.BrokerInterruptionRecovery,
-                    ConformanceSupport.Unsupported(
-                        "The suite runs against a managed Azure Service Bus namespace, which a test cannot restart.",
-                        TransportConformanceProfile.GapIssueUrl
+                    ConformanceSupport.NotApplicable(
+                        "A managed Azure Service Bus namespace cannot be restarted by a test; the emulator profile proves the client's recovery from a broker restart."
                     )
                 )
                 .WithScenario(
-                    TransportConformanceScenario.StaleSettlement,
-                    ConformanceSupport.Unsupported(
-                        "Needs the protected Azure workflow to execute; no run has proven it yet.",
-                        TransportConformanceProfile.GapIssueUrl
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.NotApplicable(
+                        "With provisioning on, Azure Service Bus supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
                     )
                 )
+                .WithScenario(TransportConformanceScenario.StaleSettlement, _AzureWorkflowGap)
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, _AzureWorkflowGap)
+                .WithScenario(TransportConformanceScenario.EmptyBodyDispatch, _AzureWorkflowGap)
+                .WithScenario(TransportConformanceScenario.MalformedEnvelopeTerminalSettlement, _AzureWorkflowGap)
+                .WithScenario(TransportConformanceScenario.KeySequencing, _AzureWorkflowGap)
                 .WithScenario(
-                    TransportConformanceScenario.HandlerFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "Needs the protected Azure workflow to execute; no run has proven it yet.",
-                        TransportConformanceProfile.GapIssueUrl
-                    )
+                    TransportConformanceScenario.ConnectionDropRecovery,
+                    _NetworkFaultGap("Azure Service Bus")
                 )
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, _NetworkFaultGap("Azure Service Bus"))
                 .WithRequestReplyScenarios(
                     ConformanceSupport.Unsupported(
                         "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
@@ -584,7 +628,7 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.PerKeyOrdering,
                     ConformanceSupport.Unsupported(
                         "Ordering by key needs a session-enabled entity, which the conformance leaf does not provision, and the protected Azure workflow to run it.",
-                        TransportConformanceProfile.GapIssueUrl
+                        _AzureWorkflowIssueUrl
                     )
                 )
                 .WithScenario(TransportConformanceScenario.BodySizeLimit, _AzureWorkflowGap)
@@ -604,7 +648,8 @@ public static class TransportConformanceManifest
                     "InMemory",
                     supportsBus: true,
                     supportsQueue: true,
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
                 .WithMalformedEnvelopeBound("invalid in-process delivery discarded", 1, TimeSpan.FromSeconds(1))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
@@ -649,6 +694,37 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.MessageExpiry,
                     ConformanceSupport.NotApplicable("InMemory has no message time-to-live.")
+                )
+                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, _NetworkFaultGap("InMemory"))
+                .WithScenario(TransportConformanceScenario.PublishDuringOutage, _NetworkFaultGap("InMemory"))
+                .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.BrokerInterruptionRecovery,
+                    ConformanceSupport.NotApplicable(
+                        "The in-memory broker lives in the host process, so it cannot restart under a host that keeps running."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.HandlerFailureRedelivery,
+                    ConformanceSupport.Unsupported(
+                        "A delivery whose callback throws is logged and dropped instead of redelivered.",
+                        _InMemoryCallbackFailureIssueUrl
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.DeadLetterSingleCopy,
+                    ConformanceSupport.NotApplicable(
+                        "InMemory has no dead-letter destination, so a dead-letter settles the delivery as a commit does."
+                    )
+                )
+                .WithScenario(TransportConformanceScenario.StandardHeaderRoundTrip, ConformanceSupport.Supported)
+                .WithScenario(TransportConformanceScenario.HandlerConcurrencyCap, ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.NotApplicable(
+                        "InMemory supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
+                    )
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
@@ -660,7 +736,8 @@ public static class TransportConformanceManifest
                     "Redis",
                     supportsBus: true,
                     supportsQueue: true,
-                    supportsIndependentLaneTopology: true
+                    supportsIndependentLaneTopology: true,
+                    supportsEveryInstance: true
                 )
                 .WithMalformedEnvelopeBound("Redis Stream entry acknowledged", 1, TimeSpan.FromSeconds(5))
                 .WithScenario(TransportConformanceScenario.QueueRoundTrip, ConformanceSupport.Supported)
@@ -686,6 +763,12 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.RequestReplyStartupRejection,
                     ConformanceSupport.NotApplicable("Redis supports request/reply, so startup accepts it.")
+                )
+                .WithScenario(
+                    TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                    ConformanceSupport.NotApplicable(
+                        "Redis supports both lanes, independent lane topology, and every-instance subscriptions, so startup has nothing to reject."
+                    )
                 )
                 .WithScenario(
                     TransportConformanceScenario.HeaderBuilderFailureRedelivery,
@@ -822,6 +905,8 @@ public static class TransportConformanceManifest
             errors
         );
 
+        _ValidateStartupRejection(profile, errors);
+
         if (profile.IsRealBrokerLeafEnabled)
         {
             foreach (var scenario in _MandatoryBaselineScenarios)
@@ -872,7 +957,8 @@ public static class TransportConformanceManifest
                 SimulatedBroker.ProviderName,
                 supportsBus: true,
                 supportsQueue: true,
-                supportsIndependentLaneTopology: true
+                supportsIndependentLaneTopology: true,
+                supportsEveryInstance: true
             )
             // In-process, so a stray delivery shows within microseconds; a short window keeps the fast tier fast.
             .WithMalformedEnvelopeBound(
@@ -971,7 +1057,8 @@ public static class TransportConformanceManifest
                 "Azure Service Bus",
                 supportsBus: true,
                 supportsQueue: true,
-                supportsIndependentLaneTopology: true
+                supportsIndependentLaneTopology: true,
+                supportsEveryInstance: false
             )
             .WithMalformedEnvelopeBound("Service Bus dead-letter settlement", 1, TimeSpan.FromSeconds(10));
 
@@ -990,20 +1077,90 @@ public static class TransportConformanceManifest
             );
         }
 
-        profile = profile.WithScenario(
-            TransportConformanceScenario.HeaderBuilderFailureRedelivery,
-            ConformanceSupport.Unsupported(
-                "The emulator intermittently dead-letters two copies of a message whose header builder keeps failing; the cause is not yet known.",
-                _EmulatorDeadLetterDuplicateIssueUrl
-            )
-        );
+        TransportConformanceScenario[] notYetRun =
+        [
+            TransportConformanceScenario.EmptyBodyDispatch,
+            TransportConformanceScenario.StandardHeaderRoundTrip,
+            TransportConformanceScenario.HandlerConcurrencyCap,
+            TransportConformanceScenario.DeadLetterSingleCopy,
+            TransportConformanceScenario.MessageExpiry,
+            TransportConformanceScenario.BodySizeLimit,
+            TransportConformanceScenario.PerKeyOrdering,
+            TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
+            TransportConformanceScenario.RawPayloadConsumption,
+        ];
 
-        return profile.WithRequestReplyScenarios(
-            ConformanceSupport.Unsupported(
-                "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
-                _AzureServiceBusReplyChannelIssueUrl
+        foreach (var scenario in notYetRun)
+        {
+            profile = profile.WithScenario(scenario, _EmulatorGap);
+        }
+
+        return profile
+            .WithScenario(
+                TransportConformanceScenario.HeaderBuilderFailureRedelivery,
+                ConformanceSupport.Unsupported(
+                    "The emulator intermittently dead-letters two copies of a message whose header builder keeps failing; the cause is not yet known.",
+                    _EmulatorDeadLetterDuplicateIssueUrl
+                )
             )
-        );
+            // Provisioning off takes every-instance subscriptions away, and request/reply has no reply channel yet; both
+            // are refused at bootstrap, before any connection opens.
+            .WithScenario(TransportConformanceScenario.StartupRejectionBeforeSideEffects, ConformanceSupport.Supported)
+            .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
+            .WithScenario(
+                TransportConformanceScenario.ConnectionDropRecovery,
+                _NetworkFaultGap("Azure Service Bus Emulator")
+            )
+            .WithScenario(
+                TransportConformanceScenario.PublishDuringOutage,
+                _NetworkFaultGap("Azure Service Bus Emulator")
+            )
+            .WithRequestReplyScenarios(
+                ConformanceSupport.Unsupported(
+                    "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
+                    _AzureServiceBusReplyChannelIssueUrl
+                )
+            );
+    }
+
+    /// <summary>
+    /// Startup rejects a route or consumer only for a lane, a shared lane topology, or an every-instance subscription the
+    /// transport lacks, so a transport that has all of them has nothing to reject and the cell is not applicable; one that
+    /// lacks any of them must prove the rejection or quarantine it. Tying the cell to the descriptor that
+    /// <c>should_match_production_runtime_capabilities</c> checks keeps a provider that drops one of them from keeping a
+    /// stale not-applicable cell.
+    /// </summary>
+    private static void _ValidateStartupRejection(TransportConformanceProfile profile, ICollection<string> errors)
+    {
+        if (
+            !profile.Scenarios.TryGetValue(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                out var support
+            )
+        )
+        {
+            return;
+        }
+
+        var expected = profile.ExpectedRuntimeCapabilities;
+        var rejectsNothing =
+            expected.SupportsBus
+            && expected.SupportsQueue
+            && expected.SupportsIndependentLaneTopology
+            && expected.SupportsEveryInstance;
+
+        if (rejectsNothing && support.Status != ConformanceStatus.NotApplicable)
+        {
+            errors.Add(
+                $"{profile.Provider}: StartupRejectionBeforeSideEffects must be NotApplicable when production supports both lanes, independent lane topology, and every-instance subscriptions, because startup has nothing to reject."
+            );
+        }
+        else if (!rejectsNothing && support.Status == ConformanceStatus.NotApplicable)
+        {
+            errors.Add(
+                $"{profile.Provider}: StartupRejectionBeforeSideEffects cannot be NotApplicable when production lacks a lane, independent lane topology, or every-instance subscriptions, because startup rejects what it lacks."
+            );
+        }
     }
 
     private static void _ValidateLaneRoundTrip(

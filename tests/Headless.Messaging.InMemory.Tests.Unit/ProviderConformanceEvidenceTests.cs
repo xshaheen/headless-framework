@@ -103,12 +103,38 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
                 TransportConformanceScenario.RequestReplyCallerCleanup,
                 nameof(InMemoryProviderConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
             ),
+            new(
+                TransportConformanceScenario.ConsumerPauseRecovery,
+                typeof(InMemoryBrokerFaultTests),
+                nameof(InMemoryBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    InMemoryConsumerConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(InMemoryConsumerConformanceTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    InMemoryConsumerConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
         ];
 
         // Every bound method is itself an xUnit test in this assembly, so it already runs on its own;
         // this test only proves the manifest and the bindings still line up.
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
+
+    private static TransportConformanceTestBinding _BindConsumer(
+        TransportConformanceScenario scenario,
+        string method
+    ) => new(scenario, typeof(InMemoryConsumerConformanceTests), method);
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(InMemoryProviderConformanceTests), method);
