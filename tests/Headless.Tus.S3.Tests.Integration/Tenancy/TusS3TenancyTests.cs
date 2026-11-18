@@ -25,6 +25,9 @@ public abstract class TusS3TenancyTestsBase(IS3TestBackend backend) : TestBase
     private const string _Globex = "globex";
 
     private readonly S3TestClient _client = backend.CreateClient();
+
+    // The S3 server stamps a multipart upload with its own clock, and the store compares that stamp with this one.
+    // wall-clock: the fake clock starts at the real time the S3 server stamps uploads with.
     private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
 
     private readonly TusS3StoreOptions _options = new()

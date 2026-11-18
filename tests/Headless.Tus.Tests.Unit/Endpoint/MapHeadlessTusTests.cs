@@ -219,12 +219,13 @@ public sealed class MapHeadlessTusTests : TestBase
         var location = created.Headers.Location!.ToString();
 
         // then
+        // wall-clock: tusdotnet computes Upload-Expires from the system clock and takes no TimeProvider.
         _ExpiresAt(created).Should().BeCloseTo(DateTimeOffset.UtcNow.AddHours(24), TimeSpan.FromMinutes(1));
 
         // given - the stored deadline is moved near, so only a write that restarts the window can move it back
         await host.Store.SetExpirationAsync(
             TusEndpointTestHost.FileIdOf(location),
-            DateTimeOffset.UtcNow.AddHours(1),
+            DateTimeOffset.UtcNow.AddHours(1), // wall-clock: as above
             AbortToken
         );
 
@@ -233,6 +234,7 @@ public sealed class MapHeadlessTusTests : TestBase
 
         // then
         patched.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        // wall-clock: as above
         _ExpiresAt(patched).Should().BeCloseTo(DateTimeOffset.UtcNow.AddHours(24), TimeSpan.FromMinutes(1));
     }
 

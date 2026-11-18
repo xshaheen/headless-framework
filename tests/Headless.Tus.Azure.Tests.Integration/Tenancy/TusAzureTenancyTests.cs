@@ -137,6 +137,8 @@ public sealed class TusAzureTenancyTests(TusAzureFixture fixture) : TestBase
     {
         // given - an expired upload in each of two tenants and one kept outside any tenant, as an upload created
         // before the application scoped its uploads is, plus a live upload and a finished one that must survive
+        // The store under test checks expiry against the system clock, so the deadlines lie around the real time.
+        // wall-clock: the store under test runs on the system clock.
         var past = DateTimeOffset.UtcNow.AddMinutes(-10);
         var unscopedStore = _CreateUnscopedStore();
         var unscoped = await _AppendToNewAsync(unscopedStore, 1_000, Faker.Random.Bytes(300));
@@ -144,7 +146,7 @@ public sealed class TusAzureTenancyTests(TusAzureFixture fixture) : TestBase
 
         var acme = await _CreateExpiringAsync(_Acme, 1_000, past);
         var globex = await _CreateExpiringAsync(_Globex, 1_000, past);
-        var live = await _CreateExpiringAsync(_Globex, 1_000, DateTimeOffset.UtcNow.AddHours(2));
+        var live = await _CreateExpiringAsync(_Globex, 1_000, DateTimeOffset.UtcNow.AddHours(2)); // wall-clock: as above
         var finished = await _CreateExpiringAsync(_Acme, 300, past);
 
         // and another writer's blob under the prefix, in a folder the store never names, carrying a passed expiry

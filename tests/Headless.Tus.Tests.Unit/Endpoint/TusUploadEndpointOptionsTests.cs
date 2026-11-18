@@ -109,6 +109,7 @@ public sealed class TusUploadEndpointOptionsTests : TestBase
         DateTimeOffset
             .ParseExact(expires, "R", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal)
             .Should()
+            // wall-clock: tusdotnet computes Upload-Expires from the system clock and takes no TimeProvider.
             .BeCloseTo(DateTimeOffset.UtcNow.Add(expiration), TimeSpan.FromMinutes(1));
     }
 
