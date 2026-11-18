@@ -2413,21 +2413,45 @@ public sealed class DispatcherTests : TestBase
         await committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), Stopwatch.GetTimestamp());
         await sender.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
-        // Bounded well above any real capacity (ProcessorCount * 500) so a channel that never fills fails the test.
-        for (var accepted = 1; accepted < 1_000_000; accepted++)
+        // Filled under a budget no stall can spend, so an enqueue that completes is one the channel took. Under the
+        // 100 ms real-time default, a thread paused past the budget before its full-channel check drops the signal and
+        // completes too, and counting that drop as accepted waits for a send that never comes. The first enqueue that
+        // stays pending proves the channel full; it is written once the sender frees room, so it counts as accepted.
+        var budget = dispatcher.CommittedCapacityWait;
+        dispatcher.CommittedCapacityWait = TimeSpan.FromHours(1);
+        int accepted;
+        try
         {
-            var message = _CreateTestMessage();
-            var enqueue = committed.EnqueueCommittedMessageAsync(message, Stopwatch.GetTimestamp());
-
-            if (!enqueue.IsCompleted)
+            // Bounded well above any real capacity (ProcessorCount * 500) so a channel that never fills fails the test.
+            for (accepted = 1; accepted < 1_000_000; accepted++)
             {
-                return (accepted, message, enqueue.AsTask());
-            }
+                var enqueue = committed.EnqueueCommittedMessageAsync(_CreateTestMessage(), Stopwatch.GetTimestamp());
 
-            await enqueue;
+                if (!enqueue.IsCompleted)
+                {
+                    _ = enqueue.AsTask();
+                    break;
+                }
+
+                await enqueue;
+            }
+        }
+        finally
+        {
+            dispatcher.CommittedCapacityWait = budget;
         }
 
-        throw new InvalidOperationException("The publish channel never filled.");
+        if (accepted == 1_000_000)
+        {
+            throw new InvalidOperationException("The publish channel never filled.");
+        }
+
+        // The message under test waits on the test's own budget; whether it drops at once or after the budget, the
+        // channel never takes it while the sender is gated.
+        var message = _CreateTestMessage();
+        var waiting = committed.EnqueueCommittedMessageAsync(message, Stopwatch.GetTimestamp()).AsTask();
+
+        return (accepted + 1, message, waiting);
     }
 
     private Dispatcher _CreateDispatcher(IMessageSender sender)

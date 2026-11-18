@@ -370,8 +370,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         _time.Advance(TimeSpan.FromSeconds(5));
         await shutdown.Bounded();
 
-        // then: the two never handed over and the stuck one are made visible at once, then the client is disposed.
-        // The receive loop gives back the messages it never dispatched itself as it ends, so listening is awaited first.
+        // then: the two never handed over and the stuck one are made visible at once, then the client is disposed
         await listening.Bounded();
         var released = _VisibilityChanges()
             .SelectMany(entries => entries)
@@ -379,6 +378,67 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
             .Select(entry => entry.ReceiptHandle);
         released.Should().BeEquivalentTo("receipt-1", "receipt-2", "receipt-3");
         _sqs.Received(1).Dispose();
+    }
+
+    [Fact]
+    public async Task should_release_the_never_dispatched_messages_when_a_visibility_call_outlasts_the_shutdown_budget()
+    {
+        // given: three messages, one slot, a handler that never finishes, and a heartbeat extension in flight that
+        // holds the visibility gate until the test answers it
+        _ReceiveOnce(_Message("receipt-1"), _Message("receipt-2"), _Message("receipt-3"));
+        var beatInFlight = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishBeat = new TaskCompletionSource<ChangeMessageVisibilityBatchResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _sqs.ChangeMessageVisibilityBatchAsync(
+                Arg.Any<string>(),
+                Arg.Any<List<ChangeMessageVisibilityBatchRequestEntry>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var entries = call.Arg<List<ChangeMessageVisibilityBatchRequestEntry>>();
+                if (entries.TrueForAll(static entry => entry.VisibilityTimeout != 0))
+                {
+                    beatInFlight.TrySetResult();
+                    return finishBeat.Task;
+                }
+
+                lock (_visibilityLock)
+                {
+                    _visibilityChanges.Add([.. entries]);
+                }
+
+                return Task.FromResult(new ChangeMessageVisibilityBatchResponse());
+            });
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var client = _CreateClient(concurrency: 1);
+        client.OnMessageCallback = async (_, _) =>
+        {
+            handlerStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, AbortToken);
+        };
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), AbortToken).AsTask();
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        _time.Advance(TimeSpan.FromSeconds(10));
+        await beatInFlight.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // when: shutdown stops receiving while the gate is held, and its 5 s budget runs out on the stuck handler
+        var drainArmed = _time.WatchForTimer(TimeSpan.FromSeconds(5));
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken).AsTask();
+        await drainArmed.Bounded();
+        _time.Advance(TimeSpan.FromSeconds(5));
+        finishBeat.TrySetResult(new ChangeMessageVisibilityBatchResponse());
+        await shutdown.Bounded();
+        await listening.Bounded();
+
+        // then: the messages the receive loop never handed over went back with the stuck one, whatever the loop was
+        // doing when the budget ran out
+        var released = _VisibilityChanges()
+            .SelectMany(entries => entries)
+            .Where(entry => entry.VisibilityTimeout == 0)
+            .Select(entry => entry.ReceiptHandle);
+        released.Should().BeEquivalentTo("receipt-1", "receipt-2", "receipt-3");
     }
 
     private AmazonSqsConsumerClient _CreateClient(byte concurrency, Action<AmazonSqsMessagingOptions>? configure = null)
