@@ -88,6 +88,39 @@ describe('row-action tooltips', () => {
     await act(() => vi.runAllTimersAsync())
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
+
+  it('closes the hover tooltip on a click that follows a key pressed elsewhere', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Circuits />)
+    const action = screen.getByRole('button', { name: 'Force open' })
+
+    await user.click(document.body)
+    await user.hover(action)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Force open')
+
+    // A key typed while the pointer rests on the action makes the keyboard the last input; the click must still count
+    // as a pointer press.
+    await user.keyboard('j')
+    await user.click(action)
+    await act(() => vi.runAllTimersAsync())
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('opens no pending hover tooltip on a click that follows a key pressed elsewhere', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Circuits />)
+    const action = screen.getByRole('button', { name: 'Force open' })
+
+    await user.click(document.body)
+    await user.hover(action)
+    await user.keyboard('j')
+    await user.click(action)
+    // Firing every timer still pending runs the hover delay, so a tooltip the click left pending opens now.
+    await act(() => vi.runAllTimersAsync())
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
 })
 
 describe('disabled reasons', () => {
