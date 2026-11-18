@@ -158,12 +158,7 @@ public sealed class DstSoakTests : TestBase
                 fires
                     .OrderBy(fire => fire.Function, StringComparer.Ordinal)
                     .ThenBy(fire => fire.ScheduledFor)
-                    .Select(fire =>
-                        string.Create(
-                            CultureInfo.InvariantCulture,
-                            $"{fire.Function} {fire.ScheduledFor:O} recovery={fire.IsRecoveryRun}"
-                        )
-                    )
+                    .Select(fire => $"{fire.Function} {fire.ScheduledFor:O} recovery={fire.IsRecoveryRun}")
             );
 
             return new SoakResult(violations, counts, evidence);
@@ -199,9 +194,7 @@ public sealed class DstSoakTests : TestBase
                 )
             )
                 .Where(x => x.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress)
-                .Select(x =>
-                    string.Create(CultureInfo.InvariantCulture, $"{x.Function}@{x.ExecutionTime:O}={x.Status}")
-                )
+                .Select(x => $"{x.Function}@{x.ExecutionTime:O}={x.Status}")
                 .ToList();
 
             if (behind.Count == 0 && unfinished.Count == 0)
@@ -211,8 +204,7 @@ public sealed class DstSoakTests : TestBase
 
             pending = $"behind [{string.Join(", ", behind)}], unfinished [{string.Join(", ", unfinished)}]";
             clock.Advance(_Nudge);
-            // real-wait: the scheduler runs on the thread pool after the fake clock fires its timer, and nothing signals
-            // when it has dispatched and finished; the store is the only observable, so the scenario polls it
+            // real-wait: the scheduler runs on the thread pool after the fake clock fires its timer and signals nothing when it settles, so the scenario polls the store
             await Task.Delay(_SettlePoll, ct);
         }
 

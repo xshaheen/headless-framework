@@ -59,8 +59,8 @@ public abstract class CronRaceScenarioTests<TFixture>(TFixture fixture) : TestBa
                 return fixture.BuildHost(
                     $"cron-race-{i}",
                     timeProvider: new SkewedTimeProvider(skews[i]),
-                    runBackgroundServices: true,
                     configureJobs: jobs => jobs.AddModule<SchedulingChaosJobsModule>(),
+                    runBackgroundServices: true,
                     configureServices: services =>
                     {
                         services.AddSingleton(log);
@@ -183,7 +183,7 @@ public abstract class CronRaceScenarioTests<TFixture>(TFixture fixture) : TestBa
     private static List<DateTime> _Owed(DateTime anchor, DateTime windowEnd)
     {
         List<DateTime> owed = [];
-        var first = new DateTime((anchor.Ticks / _Cadence.Ticks + 1) * _Cadence.Ticks, DateTimeKind.Utc);
+        var first = new DateTime(((anchor.Ticks / _Cadence.Ticks) + 1) * _Cadence.Ticks, DateTimeKind.Utc);
 
         for (var instant = first; instant <= windowEnd; instant += _Cadence)
         {

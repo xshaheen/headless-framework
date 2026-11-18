@@ -126,13 +126,8 @@ public sealed record CronInstantVerdict(
         var lines = fires
             .Where(fire => bad.Contains(fire.ScheduledFor))
             .OrderBy(fire => fire.ScheduledFor)
-            .Select(fire =>
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{fire.ScheduledFor:O} node={fire.Node} recovery={fire.IsRecoveryRun}"
-                )
-            )
-            .Concat(Missing.Select(instant => string.Create(CultureInfo.InvariantCulture, $"{instant:O} MISSING")));
+            .Select(fire => $"{fire.ScheduledFor:O} node={fire.Node} recovery={fire.IsRecoveryRun}")
+            .Concat(Missing.Select(instant => $"{instant:O} MISSING"));
 
         return string.Join('\n', lines);
     }

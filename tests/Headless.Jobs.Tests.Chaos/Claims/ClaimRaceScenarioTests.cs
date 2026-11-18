@@ -47,7 +47,6 @@ public abstract class ClaimRaceScenarioTests<TFixture>(TFixture fixture) : TestB
             .Select(i =>
                 fixture.BuildHost(
                     string.Create(CultureInfo.InvariantCulture, $"claim-race-{i}"),
-                    runBackgroundServices: true,
                     configureJobs: jobs =>
                         jobs.AddModule<ClaimChaosJobsModule>()
                             // Every node sweeps for due rows each second, so all sixteen race every row, not only the
@@ -55,6 +54,7 @@ public abstract class ClaimRaceScenarioTests<TFixture>(TFixture fixture) : TestB
                             .ConfigureScheduler(scheduler =>
                                 scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(1)
                             ),
+                    runBackgroundServices: true,
                     configureServices: services =>
                     {
                         services.AddSingleton(ledger);
@@ -80,7 +80,7 @@ public abstract class ClaimRaceScenarioTests<TFixture>(TFixture fixture) : TestB
                     Id = Guid.NewGuid(),
                     Function = ClaimChaosJobsModule.Function,
                     Description = "seeded",
-                    ExecutionTime = start + spread * i / rowCount,
+                    ExecutionTime = start + (spread * i / rowCount),
                     Retries = 0,
                 })
                 .ToList();

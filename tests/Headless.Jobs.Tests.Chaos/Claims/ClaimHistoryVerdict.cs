@@ -143,7 +143,7 @@ public sealed record ClaimHistoryVerdict(
         var sharedGeneration = observations
             .Where(x => x.State == RowLeaseState.Active && x.Holder is not null)
             .GroupBy(x => (x.JobId, x.Generation))
-            .Where(x => x.Select(o => o.Holder).Distinct(StringComparer.Ordinal).Count() > 1)
+            .Where(x => x.Select(o => o.Holder).Distinct(StringComparer.Ordinal).Skip(1).Any())
             .Select(x =>
                 string.Create(
                     CultureInfo.InvariantCulture,
