@@ -1,13 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Threading.Channels;
 using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
 using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
+using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -39,9 +42,23 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
     // Generous enough for a server under test load; each condition is normally met in well under a second.
     private static readonly TimeSpan _Bound = TimeSpan.FromSeconds(30);
 
+    // One connect, subscribe, and PING round trip on a host under suite load.
+    private static readonly TimeSpan _PassAllowance = TimeSpan.FromSeconds(30);
+
+    // A connection the client already opened reconnects on its own, waiting at most its reconnect ceiling between
+    // attempts, so once the server serves again the address is back within that wait and one pass.
+    private static readonly TimeSpan _ReconnectBound =
+        NatsOpts.Default.ReconnectWaitMax + NatsOpts.Default.ReconnectJitter + _PassAllowance;
+
+    // A listener whose first connect failed reopens through the reply supervisor, whose back-off caps at its ceiling.
+    private static readonly TimeSpan _ReopenBound = ReconnectBackoff.Ceiling + _PassAllowance;
+
     private readonly List<NatsConnectionPool> _pools = [];
     private readonly List<ILoggerFactory> _loggerFactories = [];
     private readonly ChangeSignal _logged = new();
+
+    // What the listener and its pool logged in the restart tests, which a timed-out step reports.
+    private readonly List<(LogLevel Level, EventId EventId, string Message)> _diagnostics = [];
 
     [Fact]
     public async Task should_store_requests_in_the_operator_stream_but_never_a_reply_in_any_stream()
@@ -76,11 +93,11 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         // given
         await using var server = new RestartableNatsServer();
         await server.StartAsync(AbortToken);
-        var listenerPool = _CreatePool(server.ConnectionString);
+        var listenerPool = _CreatePool(server.ConnectionString, _diagnostics);
         var received = Channel.CreateUnbounded<TransportMessage>();
-        await using var listener = await _CreateTransport(listenerPool)
+        await using var listener = await _CreateTransport(listenerPool, _diagnostics)
             .OpenListenerAsync((reply, _) => received.Writer.WriteAsync(reply, AbortToken), AbortToken);
-        var address = await _WithinBoundAsync(listener.WaitForAddressAsync(AbortToken), "the first address");
+        var address = await _WithinBoundAsync(listener.WaitForAddressAsync(AbortToken), "the first address", _Bound);
 
         // The client raises a connection's events one at a time, each to its handlers in the order they were added. The
         // listener added its handler when it opened, so by the time this one runs the listener has withdrawn the address.
@@ -92,14 +109,17 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         };
 
         // when
+        // The restart returns once the server greets a connection through its new port, and the server closed the old
+        // connection when it stopped.
         await server.RestartAsync(AbortToken);
-        await _WithinBoundAsync(disconnected.Task, "the disconnect");
+        await _WithinBoundAsync(disconnected.Task, "the disconnect", _Bound);
 
         // The listener hands the address out again only after the server answered a PING sent behind the re-sent SUB,
         // so a reply sent from then on cannot miss the subscription.
         var addressAfterRestart = await _WithinBoundAsync(
             listener.WaitForAddressAsync(AbortToken),
-            "the address after the reconnect"
+            "the address after the reconnect",
+            _ReconnectBound
         );
 
         // then
@@ -110,7 +130,11 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         // A sender on a fresh connection, so the reply reaches the listener only through the restarted server.
         await _CreateTransport(_CreatePool(server.ConnectionString))
             .SendAsync(addressAfterRestart, _Reply("after-restart"), AbortToken);
-        var delivered = await _WithinBoundAsync(received.Reader.ReadAsync(AbortToken), "the reply after the restart");
+        var delivered = await _WithinBoundAsync(
+            received.Reader.ReadAsync(AbortToken),
+            "the reply after the restart",
+            _Bound
+        );
         delivered.Headers[MessagingHeaders.InReplyTo].Should().Be("after-restart");
     }
 
@@ -120,22 +144,22 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         // given
         await using var server = new RestartableNatsServer();
         var received = Channel.CreateUnbounded<TransportMessage>();
-        var transport = _CreateTransport(_CreatePool(server.ConnectionString));
+        var transport = _CreateTransport(_CreatePool(server.ConnectionString, _diagnostics), _diagnostics);
 
         // when
         await using var listener = await transport.OpenListenerAsync(
             (reply, _) => received.Writer.WriteAsync(reply, AbortToken),
             AbortToken
         );
-        var whileDown = listener.WaitForAddressAsync(AbortToken).AsTask();
+        var whileDown = listener.WaitForAddressAsync(AbortToken);
         whileDown.IsCompleted.Should().BeFalse("no address is handed out while the server is down");
         await server.StartAsync(AbortToken);
 
         // then
-        var address = await whileDown.WaitAsync(_Bound, AbortToken);
+        var address = await _WithinBoundAsync(whileDown, "the address once the server is up", _ReopenBound);
         var sender = _CreateTransport(_CreatePool(server.ConnectionString));
         await sender.SendAsync(address, _Reply("after-start"), AbortToken);
-        var delivered = await received.Reader.ReadAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
+        var delivered = await _WithinBoundAsync(received.Reader.ReadAsync(AbortToken), "the reply", _Bound);
         delivered.Headers[MessagingHeaders.InReplyTo].Should().Be("after-start");
     }
 
@@ -322,41 +346,67 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         );
     }
 
-    // Names the step whose wait ran out, so a timeout under load says which of them was slow.
-    private static async Task<T> _WithinBoundAsync<T>(ValueTask<T> pending, string step)
+    // Names the step whose wait ran out, with what the listener and its pool logged, so a timeout under load says which
+    // step was slow and whether the client kept failing to connect or was still waiting out a back-off.
+    private async Task<T> _WithinBoundAsync<T>(ValueTask<T> pending, string step, TimeSpan bound)
     {
         try
         {
-            return await pending.AsTask().WaitAsync(_Bound, AbortToken);
+            return await pending.AsTask().WaitAsync(bound, AbortToken);
         }
         catch (TimeoutException e)
         {
-            throw new TimeoutException(
-                string.Create(CultureInfo.InvariantCulture, $"Waited {_Bound.TotalSeconds:0} s for {step}."),
-                e
-            );
+            throw _StepTimedOut(step, bound, e);
         }
     }
 
-    private static async Task _WithinBoundAsync(Task pending, string step)
+    private async Task _WithinBoundAsync(Task pending, string step, TimeSpan bound)
     {
         try
         {
-            await pending.WaitAsync(_Bound, AbortToken);
+            await pending.WaitAsync(bound, AbortToken);
         }
         catch (TimeoutException e)
         {
-            throw new TimeoutException(
-                string.Create(CultureInfo.InvariantCulture, $"Waited {_Bound.TotalSeconds:0} s for {step}."),
-                e
+            throw _StepTimedOut(step, bound, e);
+        }
+    }
+
+    private TimeoutException _StepTimedOut(string step, TimeSpan bound, TimeoutException inner)
+    {
+        string logged;
+        lock (_diagnostics)
+        {
+            logged = string.Join(
+                Environment.NewLine,
+                _diagnostics.Select(entry => $"  {entry.Level} {entry.EventId.Name}: {entry.Message}")
             );
         }
+
+        return new TimeoutException(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Waited {bound.TotalSeconds:0} s for {step}. The listener and its pool logged:{Environment.NewLine}{logged}"
+            ),
+            inner
+        );
     }
 
     private NatsConnectionPool _CreatePool(string servers)
     {
         var pool = new NatsConnectionPool(
             NullLogger<NatsConnectionPool>.Instance,
+            Options.Create(new NatsMessagingOptions { Servers = servers })
+        );
+        _pools.Add(pool);
+
+        return pool;
+    }
+
+    private NatsConnectionPool _CreatePool(string servers, List<(LogLevel Level, EventId EventId, string Message)> log)
+    {
+        var pool = new NatsConnectionPool(
+            _CreateLoggerFactory(log).CreateLogger<NatsConnectionPool>(),
             Options.Create(new NatsMessagingOptions { Servers = servers })
         );
         _pools.Add(pool);
@@ -374,6 +424,11 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         List<(LogLevel Level, EventId EventId, string Message)> log
     )
     {
+        return new NatsReplyTransport(pool, _CreateLoggerFactory(log).CreateLogger<NatsReplyTransport>());
+    }
+
+    private ILoggerFactory _CreateLoggerFactory(List<(LogLevel Level, EventId EventId, string Message)> log)
+    {
         // Fully qualified: the test base exposes a LoggerFactory property of its own.
         // The factory filters at Information unless told otherwise, and the stream check logs its outcome at Debug.
         var factory = Microsoft.Extensions.Logging.LoggerFactory.Create(logging =>
@@ -382,7 +437,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
                 .AddProvider(new NotifyingLoggerProvider(new CapturingLoggerProvider(log), _logged))
         );
         _loggerFactories.Add(factory);
-        return new NatsReplyTransport(pool, factory.CreateLogger<NatsReplyTransport>());
+        return factory;
     }
 
     private static List<(LogLevel Level, EventId EventId, string Message)> _Entries(
@@ -453,15 +508,32 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
 /// already know, so they reconnect to the restarted server rather than lose it. It is never reused, so a restarted
 /// server stays this test's.
 /// </summary>
+/// <remarks>
+/// Only the client port is published, and every start returns once the server greets a connection through it from the
+/// test host. The stock NATS builder also publishes its monitoring port and waits on it through the host, and a start
+/// whose port another host listener holds would wait there forever; see <see cref="PublishedPortCheck"/>.
+/// </remarks>
 internal sealed class RestartableNatsServer : IAsyncDisposable
 {
-    private readonly NatsContainer _container;
+    // The name the server greets with: another test's forwarder to another NATS server greets too, but not with this.
+    private readonly string _identity = $"restartable-{Guid.NewGuid():N}";
+    private readonly PublishedPortCheck _check;
+    private readonly IContainer _container;
     private readonly BrokerPortForwarder _forwarder;
 
     public RestartableNatsServer()
     {
-        _container = new NatsBuilder(TestImages.Nats)
+        _check = new PublishedPortCheck(NatsBuilder.NatsClientPort, _ReadGreetingAsync);
+        _container = new ContainerBuilder(TestImages.Nats)
+            .WithCommand(
+                "--jetstream",
+                "--port",
+                NatsBuilder.NatsClientPort.ToString(CultureInfo.InvariantCulture),
+                "--server_name",
+                _identity
+            )
             .WithPortBinding(NatsBuilder.NatsClientPort, assignRandomHostPort: true)
+            .WithWaitStrategy(_check.AddTo(Wait.ForUnixContainer().UntilMessageIsLogged("Server is ready")))
             .Build();
         _forwarder = new BrokerPortForwarder(() => _container, NatsBuilder.NatsClientPort);
     }
@@ -471,13 +543,13 @@ internal sealed class RestartableNatsServer : IAsyncDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        return _container.StartAsync(cancellationToken);
+        return _check.StartAsync(_container, cancellationToken);
     }
 
     public async Task RestartAsync(CancellationToken cancellationToken)
     {
         await _container.StopAsync(cancellationToken);
-        await _container.StartAsync(cancellationToken);
+        await _check.StartAsync(_container, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -490,5 +562,29 @@ internal sealed class RestartableNatsServer : IAsyncDisposable
         {
             await _forwarder.DisposeAsync();
         }
+    }
+
+    // A NATS server greets every connection with an INFO line naming it, before the client speaks. The PING goes first
+    // anyway, so a listener that waits for the client, such as an HTTP server, answers it and shows it is not NATS.
+    private async Task<PublishedPortReply> _ReadGreetingAsync(NetworkStream stream, CancellationToken cancellationToken)
+    {
+        await stream.WriteAsync("PING\r\n"u8.ToArray(), cancellationToken);
+
+        var greeting = await PublishedPortCheck.ReadReplyAsync(
+            stream,
+            text => text.Contains("\r\n", StringComparison.Ordinal),
+            maxBytes: 4096,
+            cancellationToken
+        );
+
+        return greeting switch
+        {
+            // The runtime accepted the connection but cannot reach the server yet.
+            null => PublishedPortReply.NotYet,
+            _ when greeting.StartsWith("INFO ", StringComparison.Ordinal)
+                    && greeting.Contains($"\"server_name\":\"{_identity}\"", StringComparison.Ordinal) =>
+                PublishedPortReply.Container,
+            _ => PublishedPortReply.AnotherListener,
+        };
     }
 }
