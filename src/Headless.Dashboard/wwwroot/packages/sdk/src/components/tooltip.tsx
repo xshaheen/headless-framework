@@ -2,11 +2,11 @@
 // near their size budget.
 'use no memo'
 
-import type { ReactElement, ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import type { Dispatch, ReactElement, ReactNode, SetStateAction } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { useFocusVisible } from 'react-aria/useFocusVisible'
 import { flushSync } from 'react-dom'
-import { Tooltip as AriaTooltip, TooltipTrigger } from 'react-aria-components'
+import { Tooltip as AriaTooltip, TooltipContext, TooltipTrigger } from 'react-aria-components'
 
 export interface TooltipProps {
   /** What the tooltip says: the control's name, and under it why it is disabled, when it is. */
@@ -28,11 +28,15 @@ export function Tooltip({ content, children }: TooltipProps) {
   // React Aria closes a tooltip on any key pressed on its control. A keyboard user keeps the one they focused until
   // they move on or press Esc (WCAG 1.4.13), so a key that moves nothing, such as an arrow at a grid's edge, does not
   // take the name away; a pointer press still closes it, and a click opens none.
-  const shouldCloseOnPress = useShouldCloseOnPress()
+  const { isFocusVisible } = useFocusVisible()
+  const [isPointerPress, setIsPointerPress] = useState(false)
+  // Once React Aria has rendered the switch to a pointer, its value is current again, so a later key keeps the tooltip.
+  if (isPointerPress && !isFocusVisible) setIsPointerPress(false)
 
   return (
-    <TooltipTrigger delay={400} closeDelay={0} shouldCloseOnPress={shouldCloseOnPress}>
+    <TooltipTrigger delay={400} closeDelay={0} shouldCloseOnPress={!isFocusVisible || isPointerPress}>
       {children}
+      {isFocusVisible ? <PointerPressWatch onPointerPress={setIsPointerPress} /> : null}
       <AriaTooltip placement="bottom" offset={4} containerPadding={8} className={tooltipSurface}>
         {content}
       </AriaTooltip>
@@ -40,26 +44,27 @@ export function Tooltip({ content, children }: TooltipProps) {
   )
 }
 
-/** Whether a press on the control closes its tooltip: a pointer press does, a key does not. */
-function useShouldCloseOnPress() {
-  const { isFocusVisible } = useFocusVisible()
-  const [isPointerPress, setIsPointerPress] = useState(false)
-  // Once React Aria has rendered the switch to a pointer, its value is current again, so a later key keeps the tooltip.
-  if (isPointerPress && !isFocusVisible) setIsPointerPress(false)
+/**
+ * Renders a pointer press on the trigger before the trigger handles it. React Aria renders the switch from keyboard to
+ * pointer only after the pointerdown that caused it, but the trigger reads `shouldCloseOnPress` during that
+ * pointerdown, so a click after a key would leave a hover tooltip open or let a pending one open. A capture listener
+ * runs before the press reaches the control. It renders synchronously only for a press on this trigger, because a
+ * synchronous render flushes every pending update on the page.
+ */
+function PointerPressWatch({ onPointerPress }: { onPointerPress: Dispatch<SetStateAction<boolean>> }) {
+  const context = useContext(TooltipContext)
+  const triggerRef = context && 'triggerRef' in context ? context.triggerRef : undefined
 
   useEffect(() => {
-    if (!isFocusVisible) return
-    // React Aria renders the switch to a pointer only after the pointerdown that caused it, but the trigger reads
-    // shouldCloseOnPress during that pointerdown. After a key, the click would see the keyboard's value and leave a
-    // hover tooltip open, or let a pending one open. This capture listener runs before the press reaches the control,
-    // so the switch renders first.
-    function onPointerDown() {
-      flushSync(() => setIsPointerPress(true))
+    function onPointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && triggerRef?.current?.contains(event.target)) {
+        flushSync(() => onPointerPress(true))
+      }
     }
 
     document.addEventListener('pointerdown', onPointerDown, true)
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
-  }, [isFocusVisible])
+  }, [triggerRef, onPointerPress])
 
-  return !isFocusVisible || isPointerPress
+  return null
 }
