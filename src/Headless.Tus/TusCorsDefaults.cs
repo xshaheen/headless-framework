@@ -25,11 +25,15 @@ public static class TusCorsDefaults
 
     /// <summary>
     /// Request headers a tus client sends (<c>Access-Control-Allow-Headers</c>): the protocol
-    /// header, the <c>Upload-*</c> request headers, the PATCH content type, and
-    /// <c>X-HTTP-Method-Override</c> for clients behind proxies that block PATCH/DELETE.
+    /// header, the <c>Upload-*</c> request headers, the PATCH content type,
+    /// <c>X-HTTP-Method-Override</c> for clients behind proxies that block PATCH/DELETE, and
+    /// <c>Authorization</c> for a client that sends a bearer token.
     /// </summary>
-    /// <remarks>Same list as tusdotnet's <c>CorsHelper.GetAllowedHeaders()</c>.</remarks>
-    public static IReadOnlyList<string> AllowedHeaders { get; } = [.. CorsHelper.GetAllowedHeaders()];
+    /// <remarks>
+    /// tusdotnet's <c>CorsHelper.GetAllowedHeaders()</c> plus <c>Authorization</c>, which tusdotnet leaves
+    /// out: without it a browser refuses to send an authenticated upload request to another origin.
+    /// </remarks>
+    public static IReadOnlyList<string> AllowedHeaders { get; } = [.. CorsHelper.GetAllowedHeaders(), "Authorization"];
 
     /// <summary>HTTP methods the tus 1.0.0 protocol uses (<c>Access-Control-Allow-Methods</c>), plus <c>GET</c>.</summary>
     /// <remarks>
@@ -48,7 +52,9 @@ public static class TusCorsPolicyBuilderExtensions
         /// <summary>
         /// Applies the tus protocol's CORS surface to the policy: allowed request headers,
         /// exposed response headers, and allowed methods (see <see cref="TusCorsDefaults"/>).
-        /// Origins and credentials remain the caller's decision.
+        /// Origins and credentials remain the caller's decision: a client that signs in with a
+        /// cookie also needs <c>AllowCredentials()</c>, and a client that sends another
+        /// authentication header needs it added to the allowed headers.
         /// </summary>
         /// <returns>the same builder for chaining</returns>
         public CorsPolicyBuilder WithTusHeaders()

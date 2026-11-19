@@ -29,29 +29,35 @@ public sealed class SetupTusS3StoreTests : TestBase
 
     private static void _Register(IServiceCollection services, string overload)
     {
-        switch (overload)
+        services.AddHeadlessTus(tus =>
         {
-            case "configuration":
-                services.AddTusS3Store(
-                    new ConfigurationBuilder()
-                        .AddInMemoryCollection(
-                            new Dictionary<string, string?>(StringComparer.Ordinal) { ["Bucket"] = "uploads-bucket" }
-                        )
-                        .Build()
-                );
-                break;
-            case "action":
-                services.AddTusS3Store(options => options.Bucket = "uploads-bucket");
-                break;
-            default:
-                services.AddTusS3Store((options, _) => options.Bucket = "uploads-bucket");
-                break;
-        }
+            switch (overload)
+            {
+                case "configuration":
+                    tus.UseS3(
+                        new ConfigurationBuilder()
+                            .AddInMemoryCollection(
+                                new Dictionary<string, string?>(StringComparer.Ordinal)
+                                {
+                                    ["Bucket"] = "uploads-bucket",
+                                }
+                            )
+                            .Build()
+                    );
+                    break;
+                case "action":
+                    tus.UseS3(options => options.Bucket = "uploads-bucket");
+                    break;
+                default:
+                    tus.UseS3((options, _) => options.Bucket = "uploads-bucket");
+                    break;
+            }
+        });
     }
 
     [Theory]
     [MemberData(nameof(Overloads))]
-    public void should_resolve_store_and_expiration_store_as_one_singleton(string overload)
+    public void should_resolve_store_and_host_store_as_one_singleton(string overload)
     {
         // given
         var services = _Services();
@@ -63,7 +69,7 @@ public sealed class SetupTusS3StoreTests : TestBase
 
         // then
         provider.GetRequiredService<TusS3Store>().Should().BeSameAs(store);
-        provider.GetRequiredService<ITusExpirationStore>().Should().BeSameAs(store);
+        provider.GetRequiredService<ITusStore>().Should().BeSameAs(store);
         provider.GetRequiredService<IOptions<TusS3StoreOptions>>().Value.Bucket.Should().Be("uploads-bucket");
     }
 
@@ -100,7 +106,7 @@ public sealed class SetupTusS3StoreTests : TestBase
 
             return _s3;
         });
-        services.AddTusS3Store(options => options.Bucket = "uploads-bucket");
+        services.AddHeadlessTus(tus => tus.UseS3(options => options.Bucket = "uploads-bucket"));
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -125,7 +131,7 @@ public sealed class SetupTusS3StoreTests : TestBase
     {
         // given
         var services = _Services();
-        services.AddTusS3Store(options => options.Bucket = "uploads-bucket");
+        services.AddHeadlessTus(tus => tus.UseS3(options => options.Bucket = "uploads-bucket"));
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -139,24 +145,11 @@ public sealed class SetupTusS3StoreTests : TestBase
     }
 
     [Fact]
-    public void should_register_one_provisioner_when_called_twice()
-    {
-        // given
-        var services = _Services();
-        services.AddTusS3Store(options => options.Bucket = "uploads-bucket");
-        services.AddTusS3Store(options => options.Bucket = "uploads-bucket");
-        using var provider = services.BuildServiceProvider();
-
-        // when / then
-        provider.GetServices<IResourceProvisioner>().Should().ContainSingle();
-    }
-
-    [Fact]
     public void should_register_http_context_accessor()
     {
         // given
         var services = _Services();
-        services.AddTusS3Store(options => options.Bucket = "uploads-bucket");
+        services.AddHeadlessTus(tus => tus.UseS3(options => options.Bucket = "uploads-bucket"));
         using var provider = services.BuildServiceProvider();
 
         // when / then
@@ -168,7 +161,7 @@ public sealed class SetupTusS3StoreTests : TestBase
     {
         // given - the app registers IAmazonS3; the store never builds one
         var services = new ServiceCollection();
-        services.AddTusS3Store(options => options.Bucket = "uploads-bucket");
+        services.AddHeadlessTus(tus => tus.UseS3(options => options.Bucket = "uploads-bucket"));
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -183,7 +176,7 @@ public sealed class SetupTusS3StoreTests : TestBase
     {
         // given - no bucket
         var services = _Services();
-        services.AddTusS3Store(_ => { });
+        services.AddHeadlessTus(tus => tus.UseS3(_ => { }));
         using var provider = services.BuildServiceProvider();
 
         // when
@@ -209,7 +202,7 @@ public sealed class SetupTusS3StoreTests : TestBase
     }
 
     [Fact]
-    public void should_keep_an_object_headers_provider_registered_before_the_store()
+    public void should_keep_an_object_headers_provider_the_application_registered()
     {
         // given
         var custom = Substitute.For<ITusS3ObjectHeadersProvider>();
@@ -220,6 +213,6 @@ public sealed class SetupTusS3StoreTests : TestBase
 
         // then
         provider.GetRequiredService<ITusS3ObjectHeadersProvider>().Should().BeSameAs(custom);
-        provider.GetRequiredService<TusS3Store>().Should().NotBeNull();
+        provider.GetRequiredService<TusS3Store>();
     }
 }

@@ -20,6 +20,7 @@ Headless tenancy keeps one canonical tenant id ambient for the current async flo
 | `Headless.EntityFramework` | Tenant query filters, `.EntityFramework(ef => ef.GuardTenantWrites().GuardTenantReads())`. |
 | `Headless.Messaging`, `Headless.Jobs` | `.Messaging(...)` and `.Jobs(...)`: capture the tenant when a message is published or a job is scheduled, restore it around the handler, and optionally require one. |
 | `Headless.Blobs.MultiTenancy` | `.Blobs(blobs => blobs.ScopeByTenant())`: tenant-scoped blob paths. |
+| `Headless.Tus` | `.Tus(tus => tus.ScopeByTenant())`: every resumable upload needs a tenant, and the `UseS3` and `UseAzure` stores keep each tenant's uploads under their own path. See [TUS tenant scoping](tus.md#tenant-scoping). |
 | `Headless.Permissions` | Scopes permission grant cache keys by tenant with no setup. |
 
 Pick how HTTP requests get their tenant:
@@ -85,6 +86,7 @@ Call `UseHeadlessTenancy()` after your own `UseAuthentication()` and before your
 - Mark every `IgnoreMultiTenancyFilter()` call with a `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario. It bypasses reads only. Wrap an intentional cross-tenant write in `ITenantWriteGuardBypass.BeginBypass()`.
 - Never retry `CrossTenantWriteException`. Exclude it from catch-all retry policies: a retry fails the same way or, if the ambient tenant changed, persists the unsafe write.
 - In a tenant-aware host, scope blobs with `.Blobs(blobs => blobs.ScopeByTenant())` and tenant-owned caches with `services.AddTenantScopedCache<T>()`. Files and cache entries have no tenant column. See [Blobs and caches](multi-tenancy/blobs-and-caches.md).
+- In a tenant-aware host that serves resumable uploads, add `.Tus(tus => tus.ScopeByTenant())`. An upload endpoint already answers 404 to a caller outside the upload's tenant. The seam refuses an upload created with no tenant (403) and gives each tenant its own storage path. Run a job that reads an upload through a scoped store inside `currentTenant.Change(tenantId)`. See [TUS tenant scoping](tus.md#tenant-scoping).
 - Expect the shared `t:` permission cache scope for host-level work with no tenant. It is shared, not isolated.
 - For recurring per-tenant work, fan out from a system-scope cron job to one time job per tenant with an explicit `JobOptions.TenantId`. Cron jobs never carry a tenant. See [Cron Fan-Out](multi-tenancy/background-work.md#cron-fan-out).
 - Configure `.Catalog(...)` only when you need identifier resolution or tenant metadata. Read [Tenant catalog](multi-tenancy/catalog.md) first: the catalog needs a caching provider, and every store write needs a cache eviction.
@@ -132,6 +134,7 @@ A test that builds the host, such as one using `WebApplicationFactory`, runs the
 - `UseHeadlessTenancy()` before `UseAuthentication()` sees no authenticated principal, so no request gets a tenant.
 - The host-level permission cache scope `t:` is shared, not tenant-isolated.
 - `ScopeByTenant()` does not wrap a store registered directly as `IBlobStorage`, and never wraps `IBlobContainerManager`.
+- `.Tus(tus => tus.ScopeByTenant())` gives a per-tenant path only to the `UseS3` and `UseAzure` stores. A store passed to `UseStore` keeps its own layout, and an endpoint mapped with tusdotnet's `MapTus` checks no tenant at all.
 - `RemoveByTagAsync`, `ClearAsync`, and `FlushAsync` on a tenant-scoped `ICache<T>` act on the whole underlying cache.
 - `IgnoreMultiTenancyFilter()` bypasses reads only. Guarded writes still fail.
 
@@ -150,6 +153,7 @@ The tenant context and catalog contracts, with their default implementations.
     - `MissingTenantContextException`: an operation needs a tenant and none is ambient. Over HTTP it maps to 403 `g:tenant_required`.
     - `CrossTenantWriteException`: a guarded write targets another tenant's row. Over HTTP it maps to 409 `g:cross_tenant_write`.
     - `TenantMismatchException`: `EnterOrVerify` found a different ambient tenant. Over HTTP it maps to 403 `g:tenant_mismatch`.
+    - `TenantStorageSegment.IsValid(tenantId)`: whether a tenant id can be one storage path segment. It starts and ends with a lowercase ASCII letter or digit and holds only lowercase ASCII letters, digits, `.`, `_`, and `-`. Blob path-prefix scoping and TUS tenant scoping both apply it, so an id one accepts the other accepts too.
 - **Tenant catalog contracts** (wired by `Headless.MultiTenancy`'s `.Catalog(...)`):
     - `TenantInfo`: non-sealed tenant metadata with `Id` (canonical id), `Identifier` (public name), `Name`, `IsEnabled`, and `ExtraProperties`.
     - `ITenantStore`: the read-only store contract, `FindByIdentifierAsync(normalizedIdentifier)` and `FindByIdAsync(id)`.
@@ -202,7 +206,7 @@ The root tenancy registration, its startup validation, tenant-scoped caches, ten
 
 ### API and behavior
 
-- `AddHeadlessTenancy(Action<HeadlessTenancyBuilder> configure)`: registers the posture manifest and the tenancy startup validation, then runs `configure`. Feature packages add the builder methods: `.Http(...)` and `.Authorization(...)` (`Headless.Api`), `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, `.Blobs(...)` (`Headless.Blobs.MultiTenancy`), and `.Catalog(...)` and `.Telemetry(...)` (this package). Calling it more than once is safe.
+- `AddHeadlessTenancy(Action<HeadlessTenancyBuilder> configure)`: registers the posture manifest and the tenancy startup validation, then runs `configure`. Feature packages add the builder methods: `.Http(...)` and `.Authorization(...)` (`Headless.Api`), `.Messaging(...)`, `.Jobs(...)`, `.EntityFramework(...)`, `.Blobs(...)` (`Headless.Blobs.MultiTenancy`), `.Tus(...)` (`Headless.Tus`), and `.Catalog(...)` and `.Telemetry(...)` (this package). Calling it more than once is safe.
 - **Startup validation.** Before any hosted service starts, every tenancy validator runs. An `Error` diagnostic fails the host with `HeadlessTenancyValidationException` (an `InvalidOperationException`) whose message lists each `CODE: message`. When it is the only failing startup validator, the host sees it unwrapped. Alongside other failures it is an inner exception of a `StartupValidationException`. Warnings and information diagnostics are logged with their code. The `check` and `describe` verbs run the same validation.
 - `TenantPostureManifest` and `TenantPostureStatus`: a singleton record of which seams each feature configured, with status `Configured < Propagating < Guarded < Enforcing`. It holds no tenant data. A record creates no enforcement.
 - **Custom seams.** `HeadlessTenancyBuilder` exposes `Services`, `Manifest`, and `RecordSeam(seam, status, capabilities)`. When a seam is recorded more than once, the strongest status wins. Middleware calls `TenantPostureManifest.MarkRuntimeApplied(seam, marker)` when it is added to the pipeline, so a validator can check that it was.
