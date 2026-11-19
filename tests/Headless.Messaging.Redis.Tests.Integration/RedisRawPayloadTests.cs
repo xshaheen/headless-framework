@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Redis;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
@@ -36,17 +37,23 @@ public sealed class RedisRawPayloadTests(RedisMessagingFixture fixture) : TestBa
         // then
         received.Value.Should().Be("from-python");
         received.MessageId.Should().Be($"redis:{stream}:{entryId}");
-        await _WaitUntilAsync(async () => (await database.StreamPendingAsync(stream, group)).PendingMessageCount == 0);
+        await Eventually.UntilAsync(
+            _ => database.StreamPendingAsync(stream, group),
+            p => p.PendingMessageCount == 0,
+            cancellationToken: AbortToken
+        );
 
         // when: the group is rewound, so Redis delivers the same entry again
         await database.ExecuteAsync("XGROUP", "SETID", stream, group, "0");
-        await _WaitUntilAsync(async () =>
-            string.Equals(
-                (await database.StreamGroupInfoAsync(stream)).Single().LastDeliveredId,
-                entryId,
-                StringComparison.Ordinal
-            )
-            && (await database.StreamPendingAsync(stream, group)).PendingMessageCount == 0
+        await Eventually.UntilAsync(
+            async _ =>
+                string.Equals(
+                    (await database.StreamGroupInfoAsync(stream)).Single().LastDeliveredId,
+                    entryId,
+                    StringComparison.Ordinal
+                )
+                && (await database.StreamPendingAsync(stream, group)).PendingMessageCount == 0,
+            cancellationToken: AbortToken
         );
 
         // then: the inbox recognizes the message id and the handler does not run again. A sentinel appended behind the
@@ -60,8 +67,16 @@ public sealed class RedisRawPayloadTests(RedisMessagingFixture fixture) : TestBa
 
         // then: it is stored as poisoned, settled, and never handled
         var storage = provider.GetRequiredService<IDataStorage>();
-        await _WaitUntilAsync(async () => await _CountFailedAsync(storage, name) == 1);
-        await _WaitUntilAsync(async () => (await database.StreamPendingAsync(stream, group)).PendingMessageCount == 0);
+        await Eventually.UntilAsync(
+            _ => _CountFailedAsync(storage, name),
+            count => count == 1,
+            cancellationToken: AbortToken
+        );
+        await Eventually.UntilAsync(
+            _ => database.StreamPendingAsync(stream, group),
+            p => p.PendingMessageCount == 0,
+            cancellationToken: AbortToken
+        );
         await database.StreamAddAsync(stream, "body", """{"value":"sentinel-after-poison"}""");
         (await recorder.NextAsync(TimeSpan.FromSeconds(15), AbortToken)).Value.Should().Be("sentinel-after-poison");
         recorder.Count.Should().Be(3);
@@ -101,17 +116,14 @@ public sealed class RedisRawPayloadTests(RedisMessagingFixture fixture) : TestBa
 
     private async Task<string> _WaitForConsumerGroupAsync(IDatabase database, string stream)
     {
-        string? group = null;
-        await _WaitUntilAsync(async () =>
-        {
-            if (!await database.KeyExistsAsync(stream))
-            {
-                return false;
-            }
-
-            group = (await database.StreamGroupInfoAsync(stream)).FirstOrDefault().Name;
-            return group is not null;
-        });
+        var group = await Eventually.UntilAsync(
+            async _ =>
+                await database.KeyExistsAsync(stream)
+                    ? (await database.StreamGroupInfoAsync(stream)).FirstOrDefault().Name
+                    : null,
+            name => name is not null,
+            cancellationToken: AbortToken
+        );
 
         return group!;
     }
@@ -132,16 +144,6 @@ public sealed class RedisRawPayloadTests(RedisMessagingFixture fixture) : TestBa
             );
 
         return page.TotalItems;
-    }
-
-    private async Task _WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        using var timeout = TimeSpan.FromSeconds(15).ToCancellationTokenSource(AbortToken);
-
-        while (!await condition())
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
-        }
     }
 
     public sealed record RawProbe(string Value);

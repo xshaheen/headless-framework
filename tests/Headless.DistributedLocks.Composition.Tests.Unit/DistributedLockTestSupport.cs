@@ -2,7 +2,9 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Headless.Testing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
@@ -46,22 +48,17 @@ internal static class DistributedLockTestSupport
     /// for a recorded renewal, and a cadence tick is not one, because a timer of the same length is created between
     /// the renew returning and the count being incremented.
     /// </remarks>
-    public static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
-    {
-        var start = TimeProvider.System.GetTimestamp();
-
-        while (!condition())
-        {
-            if (TimeProvider.System.GetElapsedTime(start) >= HeadlessTestTaskExtensions.DefaultTimeout)
-            {
-                throw new TimeoutException(
-                    $"The condition did not hold within {HeadlessTestTaskExtensions.DefaultTimeout}."
-                );
-            }
-
-            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
-        }
-    }
+    public static Task WaitUntilAsync(
+        Func<bool> condition,
+        CancellationToken cancellationToken = default,
+        [CallerArgumentExpression(nameof(condition))] string? conditionExpression = null
+    ) =>
+        Eventually.UntilAsync(
+            condition,
+            interval: TimeSpan.FromMilliseconds(1),
+            cancellationToken: cancellationToken,
+            conditionExpression: conditionExpression
+        );
 
     /// <summary>
     /// Gives queued background work a short, bounded chance to run, stopping early once <paramref name="condition"/>
