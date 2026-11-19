@@ -61,18 +61,19 @@ namespace Headless.Tus;
 /// outside an HTTP request, each store call fences from its own read.
 /// </para>
 /// <para>
-/// The store never creates its container. <c>AddTusAzureStore</c> registers it as a provisioned
+/// The store never creates its container. <c>UseAzure</c> registers it as a provisioned
 /// resource, so a deploy step creates it with <c>resources provision -k AzureBlob</c> and a
 /// starting host only checks that it exists; a manually constructed store needs the container
 /// created beforehand.
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed partial class TusAzureStore
+public sealed partial class TusAzureStore : ITusRequestSnapshotStore
 {
     private static readonly GuidFileIdProvider _DefaultFileIdProvider = new();
 
     private readonly TusAzureStoreOptions _options;
+    private readonly TusTenantScope? _tenantScope;
     private readonly ITusAzureBlobHttpHeadersProvider _blobHttpHeadersProvider;
     private readonly ITusFileIdProvider _fileIdProvider;
     private readonly ILoggerFactory _loggerFactory;
@@ -108,6 +109,11 @@ public sealed partial class TusAzureStore
     /// optional accessor that lets the store read a blob's properties and block list once per tus request; without
     /// it the store reads them on every call and stays correct
     /// </param>
+    /// <remarks>
+    /// A store constructed here keeps every upload outside any tenant, whatever the application's tenancy setup
+    /// says. Only the store <c>UseAzure</c> registers keeps each tenant's uploads under a path segment of their
+    /// own once the application calls <c>tenancy.Tus(t => t.ScopeByTenant())</c>.
+    /// </remarks>
     public TusAzureStore(
         BlobServiceClient blobServiceClient,
         TusAzureStoreOptions options,
@@ -117,6 +123,31 @@ public sealed partial class TusAzureStore
         TimeProvider? timeProvider = null,
         IHttpContextAccessor? httpContextAccessor = null
     )
+        : this(
+            blobServiceClient,
+            options,
+            tenantScope: null,
+            blobHttpHeadersProvider,
+            fileIdProvider,
+            loggerFactory,
+            timeProvider,
+            httpContextAccessor
+        ) { }
+
+    /// <summary>
+    /// Initializes the store <c>UseAzure</c> registers, which asks <paramref name="tenantScope"/> on every call
+    /// which tenant's uploads the call is about.
+    /// </summary>
+    internal TusAzureStore(
+        BlobServiceClient blobServiceClient,
+        TusAzureStoreOptions options,
+        TusTenantScope? tenantScope,
+        ITusAzureBlobHttpHeadersProvider? blobHttpHeadersProvider,
+        ITusFileIdProvider? fileIdProvider,
+        ILoggerFactory? loggerFactory,
+        TimeProvider? timeProvider,
+        IHttpContextAccessor? httpContextAccessor
+    )
     {
         Argument.IsNotNull(options);
         // The store is factory-constructed (no DI/IOptions pipeline), so validation runs here to fail fast on
@@ -124,6 +155,7 @@ public sealed partial class TusAzureStore
         new TusAzureStoreOptionsValidator().ValidateAndThrow(options);
 
         _options = options;
+        _tenantScope = tenantScope;
         _blobHttpHeadersProvider = blobHttpHeadersProvider ?? new DefaultTusAzureBlobHttpHeadersProvider();
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -148,11 +180,11 @@ public sealed partial class TusAzureStore
                 .ConfigureAwait(false);
 
             file.ETag = response.Value.ETag;
-            _memo.Set(file.FileId, file);
+            _memo.Set(file.BlobName, file);
         }
         catch (Exception e)
         {
-            _ForgetAfterFailedWrite(file.FileId, e);
+            _ForgetAfterFailedWrite(file, e);
 
             throw;
         }
@@ -194,17 +226,17 @@ public sealed partial class TusAzureStore
             if (committedLength is { } length)
             {
                 file.CurrentContentLength = length;
-                _memo.Set(file.FileId, file);
+                _memo.Set(file.BlobName, file);
             }
             else
             {
                 // The commit does not report the new length, so the next call of this request reads the blob.
-                _memo.Remove(file.FileId);
+                _memo.Remove(file.BlobName);
             }
         }
         catch (Exception e)
         {
-            _ForgetAfterFailedWrite(file.FileId, e);
+            _ForgetAfterFailedWrite(file, e);
 
             throw;
         }
@@ -214,13 +246,13 @@ public sealed partial class TusAzureStore
     /// Drops what this request remembers about an upload after a write failed: the caller changed the kept state for
     /// a write that did not land, so the next call, a retry included, must read the blob again.
     /// </summary>
-    private void _ForgetAfterFailedWrite(string fileId, Exception e)
+    private void _ForgetAfterFailedWrite(TusAzureFile file, Exception e)
     {
-        _memo.Remove(fileId);
+        _memo.Remove(file.BlobName);
 
         if (e is RequestFailedException { Status: 412 })
         {
-            _logger.StaleWriteRejected(fileId);
+            _logger.StaleWriteRejected(file.FileId);
         }
     }
 
@@ -256,7 +288,9 @@ public sealed partial class TusAzureStore
 
     private async Task<TusAzureFile?> _LoadFileAsync(BlobClient client, string fileId, CancellationToken token)
     {
-        if (_memo.TryGet(fileId, out var memoized))
+        // Keyed by blob name, not file id: the name holds the tenant, so a request that changes the ambient tenant
+        // is never handed the blob another tenant keeps under the same id.
+        if (_memo.TryGet(client.Name, out var memoized))
         {
             return memoized;
         }
@@ -265,7 +299,7 @@ public sealed partial class TusAzureStore
 
         if (file is not null)
         {
-            _memo.Set(fileId, file);
+            _memo.Set(client.Name, file);
         }
 
         return file;
@@ -355,16 +389,24 @@ public sealed partial class TusAzureStore
         return _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
     }
 
+    /// <summary>
+    /// The name of the blob that holds the upload the current call is about: under the ambient tenant's folder
+    /// when uploads are scoped by tenant, otherwise outside any tenant. Asked on every call, because the store is
+    /// one instance for the host and the tenant is the caller's.
+    /// </summary>
+    /// <exception cref="Headless.MultiTenancy.MissingTenantContextException">
+    /// Uploads are scoped by tenant and no tenant is ambient.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The ambient tenant id cannot be used as a path segment.</exception>
     private string _GetBlobName(string fileId)
     {
-        return TusBlobName.Build(_options.BlobPrefix, fileId);
+        return TusBlobName.Build(_options.BlobPrefix, fileId, _tenantScope?.GetSegment());
     }
 
-    private string _ExtractFileIdFromBlobName(string blobName)
+    /// <inheritdoc />
+    void ITusRequestSnapshotStore.ForgetRequestSnapshot(string fileId)
     {
-        var prefix = _options.BlobPrefix.EnsureEndsWith('/');
-
-        return blobName.StartsWith(prefix, StringComparison.Ordinal) ? blobName[prefix.Length..] : string.Empty;
+        _memo.Remove(_GetBlobName(fileId));
     }
 }
 

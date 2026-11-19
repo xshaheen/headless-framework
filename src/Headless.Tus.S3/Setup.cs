@@ -14,76 +14,86 @@ using tusdotnet.Interfaces;
 
 namespace Headless.Tus;
 
-/// <summary>
-/// DI registration helpers for the S3 TUS store.
-/// </summary>
-/// <remarks>
-/// Registration is optional: tusdotnet composes stores inside <c>DefaultTusConfiguration</c> factories, so
-/// constructing <c>TusS3Store</c> manually remains supported. Use these extensions when the store should participate
-/// in the host's options pipeline (configuration binding, FluentValidation, <c>ValidateOnStart</c>) and be resolved
-/// from DI in the configuration factory.
-/// </remarks>
+/// <summary>Extension methods to select the S3 TUS store.</summary>
 [PublicAPI]
-public static class SetupTusS3Store
+public static class SetupTusS3
 {
-    extension(IServiceCollection services)
+    extension(HeadlessTusSetupBuilder setup)
     {
         /// <summary>
-        /// Registers <see cref="TusS3Store"/> as a singleton with options bound from <paramref name="config"/> and
-        /// validated at startup.
+        /// Uses <see cref="TusS3Store"/> as the host's tus store, with options bound from
+        /// <paramref name="configuration"/> and validated at startup.
         /// </summary>
-        /// <param name="config">configuration section to bind <see cref="TusS3StoreOptions"/> from</param>
-        /// <returns>the same service collection for chaining</returns>
+        /// <param name="configuration">The configuration section to bind <see cref="TusS3StoreOptions"/> from.</param>
+        /// <returns>The builder for chaining.</returns>
         /// <remarks>
         /// Requires an <see cref="IAmazonS3"/> registration configured for the provider (for R2: path style,
         /// authentication region <c>auto</c>, and <c>WHEN_REQUIRED</c> checksums). An
-        /// <c>ITusS3ObjectHeadersProvider</c> or <c>ITusFileIdProvider</c> registered before this call is honored;
-        /// otherwise the defaults apply. The bucket is registered as a
-        /// provisioned resource of kind <c>S3Bucket</c>: a deploy step creates it with <c>resources provision</c>,
-        /// and a starting host holds readiness until it exists.
+        /// <c>ITusS3ObjectHeadersProvider</c> or <c>ITusFileIdProvider</c> the application registers is honored;
+        /// otherwise the defaults apply. The bucket is registered as a provisioned resource of kind
+        /// <c>S3Bucket</c>: a deploy step creates it with <c>resources provision</c>, and a starting host holds
+        /// readiness until it exists.
         /// </remarks>
-        public IServiceCollection AddTusS3Store(IConfiguration config)
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public HeadlessTusSetupBuilder UseS3(IConfiguration configuration)
         {
-            Argument.IsNotNull(config);
-            services.Configure<TusS3StoreOptions, TusS3StoreOptionsValidator>(config);
+            Argument.IsNotNull(configuration);
 
-            return _AddTusS3StoreCore(services);
+            setup.RegisterStore<TusS3Store>(services =>
+            {
+                services.Configure<TusS3StoreOptions, TusS3StoreOptionsValidator>(configuration);
+                _AddStoreCore(services);
+            });
+
+            return setup;
         }
 
-        /// <inheritdoc cref="AddTusS3Store(IServiceCollection, IConfiguration)"/>
-        /// <param name="setupAction">delegate configuring <see cref="TusS3StoreOptions"/></param>
-        public IServiceCollection AddTusS3Store(Action<TusS3StoreOptions> setupAction)
+        /// <inheritdoc cref="UseS3(HeadlessTusSetupBuilder, IConfiguration)"/>
+        /// <param name="setupAction">Delegate configuring <see cref="TusS3StoreOptions"/>.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public HeadlessTusSetupBuilder UseS3(Action<TusS3StoreOptions> setupAction)
         {
             Argument.IsNotNull(setupAction);
-            services.Configure<TusS3StoreOptions, TusS3StoreOptionsValidator>(setupAction);
 
-            return _AddTusS3StoreCore(services);
+            setup.RegisterStore<TusS3Store>(services =>
+            {
+                services.Configure<TusS3StoreOptions, TusS3StoreOptionsValidator>(setupAction);
+                _AddStoreCore(services);
+            });
+
+            return setup;
         }
 
-        /// <inheritdoc cref="AddTusS3Store(IServiceCollection, IConfiguration)"/>
-        /// <param name="setupAction">delegate configuring <see cref="TusS3StoreOptions"/> with access to the service provider</param>
-        public IServiceCollection AddTusS3Store(Action<TusS3StoreOptions, IServiceProvider> setupAction)
+        /// <inheritdoc cref="UseS3(HeadlessTusSetupBuilder, IConfiguration)"/>
+        /// <param name="setupAction">Delegate configuring <see cref="TusS3StoreOptions"/> with access to the service provider.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public HeadlessTusSetupBuilder UseS3(Action<TusS3StoreOptions, IServiceProvider> setupAction)
         {
             Argument.IsNotNull(setupAction);
-            services.Configure<TusS3StoreOptions, TusS3StoreOptionsValidator>(setupAction);
 
-            return _AddTusS3StoreCore(services);
+            setup.RegisterStore<TusS3Store>(services =>
+            {
+                services.Configure<TusS3StoreOptions, TusS3StoreOptionsValidator>(setupAction);
+                _AddStoreCore(services);
+            });
+
+            return setup;
         }
     }
 
-    private static IServiceCollection _AddTusS3StoreCore(IServiceCollection services)
+    private static void _AddStoreCore(IServiceCollection services)
     {
-        // A repeated call keeps the first store (TryAdd), so it must not register a second provisioner either.
-        var storeAlreadyRegistered = services.Any(static d => d.ServiceType == typeof(TusS3Store));
-
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ITusS3ObjectHeadersProvider, DefaultTusS3ObjectHeadersProvider>();
         // Lets the store read an upload's state once per tus request instead of once per store call.
         services.AddHttpContextAccessor();
 
-        services.TryAddSingleton(provider => new TusS3Store(
+        services.AddSingleton(provider => new TusS3Store(
             provider.GetRequiredService<IAmazonS3>(),
             provider.GetRequiredService<IOptions<TusS3StoreOptions>>().Value,
+            // Registered by AddHeadlessTus: the store keeps each tenant's uploads apart once the application's
+            // tenancy setup scopes uploads by tenant.
+            provider.GetRequiredService<TusTenantScope>(),
             provider.GetRequiredService<ITusS3ObjectHeadersProvider>(),
             provider.GetService<ITusFileIdProvider>(),
             provider.GetService<ILoggerFactory>(),
@@ -91,19 +101,10 @@ public static class SetupTusS3Store
             provider.GetService<IHttpContextAccessor>()
         ));
 
-        if (!storeAlreadyRegistered)
-        {
-            services.AddResourceProvisioner(static provider => new TusS3BucketProvisioner(
-                provider.GetRequiredService<IAmazonS3>(),
-                provider.GetRequiredService<IOptions<TusS3StoreOptions>>().Value,
-                provider.GetService<ILoggerFactory>()
-            ));
-        }
-
-        // Lets cross-cutting consumers (e.g. AddTusExpiredUploadsCleanup) resolve the store by its tusdotnet capability
-        // interface without knowing the provider.
-        services.TryAddSingleton<ITusExpirationStore>(provider => provider.GetRequiredService<TusS3Store>());
-
-        return services;
+        services.AddResourceProvisioner(static provider => new TusS3BucketProvisioner(
+            provider.GetRequiredService<IAmazonS3>(),
+            provider.GetRequiredService<IOptions<TusS3StoreOptions>>().Value,
+            provider.GetService<ILoggerFactory>()
+        ));
     }
 }

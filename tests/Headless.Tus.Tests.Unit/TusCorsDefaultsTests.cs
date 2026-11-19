@@ -30,7 +30,14 @@ public sealed class TusCorsDefaultsTests : TestBase
     {
         TusCorsDefaults
             .AllowedHeaders.Should()
-            .Contain(["Tus-Resumable", "Upload-Length", "Upload-Metadata", "Upload-Checksum", "Content-Type"]);
+            .Contain([
+                "Tus-Resumable",
+                "Upload-Length",
+                "Upload-Metadata",
+                "Upload-Checksum",
+                "Content-Type",
+                "Authorization",
+            ]);
     }
 
     [Fact]

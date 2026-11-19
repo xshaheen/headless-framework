@@ -1040,6 +1040,9 @@ internal sealed partial class ConsumerRegister(
                 continue;
             }
 
+            // Read once: the handle disposes its token source after cancelling it, and a disposed source refuses .Token.
+            var groupToken = groupCts.Token;
+
             for (var i = 0; i < clientCount; i++)
             {
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1055,43 +1058,54 @@ internal sealed partial class ConsumerRegister(
                                         limit,
                                         provisionsTopology,
                                         singleActiveConsumer,
-                                        groupCts.Token
+                                        groupToken
                                     )
                                     .ConfigureAwait(false);
 
                                 await handle.AddClientAsync(innerClient).ConfigureAwait(false);
 
-                                _RegisterMessageProcessor(innerClient, subscriptionKey, handle, groupCts.Token);
+                                _RegisterMessageProcessor(innerClient, subscriptionKey, handle, groupToken);
 
                                 Action? onReady = null;
                                 if (everyInstance)
                                 {
                                     onReady = () =>
                                         establishments.Enqueue(
-                                            _RaiseSubscriptionEstablished(handleName, descriptors, groupCts.Token)
+                                            _RaiseSubscriptionEstablished(handleName, descriptors, groupToken)
                                         );
 
                                     // A transport that recovers the subscription on its own reports it here, so the
                                     // consumer learns about a gap the core never saw.
                                     innerClient.AttachReestablishedCallback(_ =>
-                                        _RaiseSubscriptionEstablished(handleName, descriptors, groupCts.Token)
+                                        _RaiseSubscriptionEstablished(handleName, descriptors, groupToken)
                                     );
                                 }
 
-                                await innerClient.SubscribeAsync(messageNames, groupCts.Token).ConfigureAwait(false);
+                                await innerClient.SubscribeAsync(messageNames, groupToken).ConfigureAwait(false);
                                 await _AwaitConsumerReadyThenListenAsync(
                                         innerClient,
                                         startupReady,
                                         onReady,
                                         connectivity,
                                         failureMark,
-                                        groupCts.Token
+                                        groupToken
                                     )
                                     .ConfigureAwait(false);
+
+                                // A client listens until its subscription stops, so one that returned while the
+                                // subscription runs consumes nothing more: report it, and the next transport check
+                                // rebuilds the subscription.
+                                if (!groupToken.IsCancellationRequested)
+                                {
+                                    handle.MarkClientLoopFailed();
+                                    _logger.LogConsumerClientStoppedListening(handleName);
+                                }
                             }
-                            catch (OperationCanceledException)
+                            // Only the subscription's own cancellation is a stop; a client's internal cancellation that
+                            // ends its loop is a failure, handled below.
+                            catch (OperationCanceledException) when (groupToken.IsCancellationRequested)
                             {
-                                startupReady.TrySetCanceled(groupCts.Token);
+                                startupReady.TrySetCanceled(groupToken);
                             }
                             catch (BrokerConnectionException e)
                             {
@@ -1214,6 +1228,7 @@ internal sealed partial class ConsumerRegister(
 
                 // The client stopped listening on its own and the lock is released, so another host can take over;
                 // this one competes again after the interval instead of rebuilding a client that just stopped.
+                _logger.LogConsumerClientStoppedListening(handle.SubscriptionName);
                 await Task.Delay(ActiveHostRetryInterval, _backoffClock, stoppingToken).ConfigureAwait(false);
             }
 
@@ -1417,6 +1432,13 @@ internal sealed partial class ConsumerRegister(
         if (completedTask == listeningTask)
         {
             await listeningTask.ConfigureAwait(false);
+
+            // A client that returned before it was ready will never be: waiting for it would hold the start forever.
+            if (!readinessTask.IsCompleted)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new InvalidOperationException("The consumer client stopped listening before it was ready.");
+            }
         }
 
         await readinessTask.ConfigureAwait(false);
@@ -2256,4 +2278,12 @@ internal static partial class ConsumerRegisterLog
         string resource,
         TimeSpan delay
     );
+
+    [LoggerMessage(
+        EventId = 4146,
+        EventName = "ConsumerClientStoppedListening",
+        Level = LogLevel.Error,
+        Message = "A consumer client of subscription '{SubscriptionName}' stopped listening before its subscription was stopped; the subscription consumes nothing on it until it is rebuilt."
+    )]
+    internal static partial void LogConsumerClientStoppedListening(this ILogger logger, string subscriptionName);
 }

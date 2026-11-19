@@ -114,6 +114,8 @@ internal sealed class NatsEveryInstanceListener
 
             if (subscriptions.Count == 0)
             {
+                // Nothing to read, but the loop still lives until the caller stops it.
+                await NatsConsumerClient.WaitUntilCanceledAsync(_timeProvider, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
