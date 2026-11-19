@@ -930,7 +930,18 @@ internal sealed class AwsBlobStorage(
             initiate.Metadata[key] = head.Metadata[key];
         }
 
-        var initiated = await s3.InitiateMultipartUploadAsync(initiate, cancellationToken).ConfigureAwait(false);
+        InitiateMultipartUploadResponse initiated;
+
+        try
+        {
+            initiated = await s3.InitiateMultipartUploadAsync(initiate, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            // A missing destination bucket reports false, as the single CopyObject's 404 does.
+            return false;
+        }
+
         initiated.HttpStatusCode.EnsureSuccessStatusCode();
 
         var uploadId =
@@ -1078,8 +1089,8 @@ internal sealed class AwsBlobStorage(
                     };
                     var deleteResponse = await s3.DeleteObjectAsync(deleteRequest, ct).ConfigureAwait(false);
 
-                    // S3 DeleteObject returns 204 even for a missing key (the SDK signals real failures by
-                    // throwing), so a source-already-absent race is unobservable here in practice.
+                    // Without If-Match, S3 returns 204 even for a missing key. With it, a source deleted since the
+                    // copy throws 404; the helper then finds the source gone and keeps the destination copy.
                     return deleteResponse.HttpStatusCode.IsSuccessStatusCode();
                 },
                 sourceExistsAsync: ct => _ExistsAsync(sourceBucket, sourceKey, ct),

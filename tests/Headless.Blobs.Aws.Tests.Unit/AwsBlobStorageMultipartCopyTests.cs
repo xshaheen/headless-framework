@@ -225,6 +225,46 @@ public sealed class AwsBlobStorageMultipartCopyTests : TestBase
     }
 
     [Fact]
+    public async Task copy_returns_false_when_the_destination_bucket_is_missing()
+    {
+        _ArrangeSource(12 * _MiB);
+        _ArrangeMultipart();
+        _s3.InitiateMultipartUploadAsync(Arg.Any<InitiateMultipartUploadRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonS3Exception("NoSuchBucket") { StatusCode = HttpStatusCode.NotFound });
+        var sut = _CreateSut();
+
+        var copied = await sut.CopyAsync(_Source, _Destination, AbortToken);
+
+        copied.Should().BeFalse();
+        await _s3.DidNotReceiveWithAnyArgs().CopyPartAsync(default!, AbortToken);
+        await _s3.DidNotReceiveWithAnyArgs().AbortMultipartUploadAsync(default!, AbortToken);
+    }
+
+    [Fact]
+    public async Task move_keeps_the_destination_when_the_conditional_source_delete_finds_the_source_gone()
+    {
+        // given: the source was deleted after the copy, so the If-Match delete reports 404.
+        _ArrangeSource(12 * _MiB);
+        _ArrangeMultipart();
+        _s3.GetObjectMetadataAsync("bucket", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound });
+        _s3.DeleteObjectAsync(Arg.Any<DeleteObjectRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonS3Exception("NoSuchKey") { StatusCode = HttpStatusCode.NotFound });
+        var sut = _CreateSut();
+
+        // when
+        var moved = await sut.MoveAsync(_Source, _Destination, AbortToken);
+
+        // then: the copy is the only surviving version, so it is kept.
+        moved.Should().BeTrue();
+        await _s3.DidNotReceive()
+            .DeleteObjectAsync(
+                Arg.Is<DeleteObjectRequest>(request => request.Key == "big/target.bin"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task copy_aborts_the_upload_when_completing_it_fails()
     {
         _ArrangeSource(12 * _MiB);
