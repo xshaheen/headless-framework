@@ -61,6 +61,57 @@ public sealed class TransportReplacementTests : TestBase
     }
 
     [Fact]
+    public async Task should_replace_a_named_rabbitmq_transport_with_a_named_in_memory_one()
+    {
+        // given
+        const string partner = "partner";
+        var builder = _CreateHostBuilder();
+        builder.Services.AddHeadlessMessaging(setup =>
+        {
+            _UseUnreachableRabbitMq(setup);
+            setup
+                .AddTransport(partner)
+                .UseRabbitMq(options =>
+                {
+                    options.HostName = _UnreachableHost;
+                    options.Port = _UnreachablePort;
+                    options.UserName = "headless-tests";
+                    options.Password = "not-a-real-secret";
+                });
+            setup.Tune("tests.messaging-testing.order-created", consumer => consumer.Transport(partner));
+            _UseInMemoryStorage(setup);
+        });
+        builder.Services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<OrderCreatedEvent>("order-created");
+            messaging.AddModule<OrderCreatedModule>();
+        });
+        builder.Services.ReplaceMessagingTransportWithInMemory().AddMessagingTestHarness();
+        using var host = builder.Build();
+
+        // when
+        await _StartAsync(host);
+        var harness = host.Services.GetRequiredService<MessagingTestHarness>();
+        await host
+            .Services.GetRequiredKeyedService<IBus>(partner)
+            .PublishAsync(new OrderCreatedEvent("SWAP-NAMED", 10m), cancellationToken: AbortToken);
+        var consumed = await harness.WaitForConsumedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        consumed.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("SWAP-NAMED");
+        host.Services.GetRequiredKeyedService<IBusTransport>(partner)
+            .BrokerAddress.Name.Should()
+            .Be(_InMemoryBrokerName);
+        host.Services.GetRequiredKeyedService<IConsumerClientFactory>(partner)
+            .GetType()
+            .Assembly.GetName()
+            .Name.Should()
+            .Be("Headless.Messaging.InMemory");
+
+        await host.StopAsync(AbortToken);
+    }
+
+    [Fact]
     public async Task should_fail_startup_on_invalid_nats_options_when_transport_is_not_replaced()
     {
         // given — the same invalid options the replacement test starts with, proving they do fail validation

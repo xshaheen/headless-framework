@@ -111,4 +111,10 @@ public sealed record ConsumerMetadata(
     /// handle the messages that share a routing affinity key one at a time.
     /// </summary>
     internal bool Sequential { get; init; }
+
+    /// <summary>
+    /// The named transport <c>Tune</c> or <c>Headless:Messaging:Consumers:{identity}:Transport</c> configuration bound
+    /// this consumer to, or <see langword="null"/> when it subscribes on the default transport.
+    /// </summary>
+    public string? TransportName { get; init; }
 }

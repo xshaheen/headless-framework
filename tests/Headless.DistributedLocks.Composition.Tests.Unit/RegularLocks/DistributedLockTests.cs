@@ -827,16 +827,16 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_failed_to_acquire_and_tag_metric_contended_when_resource_is_held()
+    public async Task should_log_contention_at_debug_and_tag_metric_contended_when_try_once_finds_resource_held()
     {
-        // given — storage that promptly returns "not acquired" (routine contention, no stall)
+        // given — storage that promptly returns "not acquired": another holder has the lock, the routine outcome a
+        // standby host polling with a try-once acquire sees on every attempt
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(DistributedLockAcquireResult.Failed));
 
-        var captured = new List<int>();
-        var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
+        var logger = new LevelCapturingLogger<DistributedLock>();
 
         using var meterListener = new MeterListener();
         var failedReasons = DistributedLockTestSupport.CaptureFailedReasons(meterListener, "headless.lock.failed");
@@ -851,13 +851,38 @@ public sealed class DistributedLockTests : TestBase
             CancellationToken.None
         );
 
-        // then — routine contention keeps its existing signal; the safety-deadline EventId stays
-        // silent (exclusivity via the isolated substitute logger; metric assertion is Contain-only
-        // because the instrument is process-wide).
+        // then — contention is logged at Debug and nothing reaches Warning; the metric is Contain-only because the
+        // instrument is process-wide.
         result.Should().BeNull();
-        captured.Should().Contain(_FailedToAcquireLockAfterEventId);
-        captured.Should().NotContain(_SafetyDeadlineFiredEventId);
+        logger.Entries.Should().Contain((DistributedLockTestSupport.FailedToAcquireLockEventId, LogLevel.Debug));
+        logger.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
         failedReasons.Should().Contain(DistributedLockMetrics.ReasonContended);
+    }
+
+    [Fact]
+    public async Task should_log_failed_to_acquire_at_warning_when_try_once_storage_call_throws()
+    {
+        // given — a lock store that is unreachable, a genuine failure an operator must see
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException<DistributedLockAcquireResult>(new TimeoutException("store unreachable")));
+
+        var logger = new LevelCapturingLogger<DistributedLock>();
+        var provider = _CreateProvider(storage: storage, logger: logger);
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
+        );
+
+        // then
+        result.Should().BeNull();
+        logger.Entries.Should().Contain((_FailedToAcquireLockAfterEventId, LogLevel.Warning));
+        logger.Entries.Should().NotContain(e => e.EventId == DistributedLockTestSupport.FailedToAcquireLockEventId);
     }
 
     [Fact]
@@ -1174,6 +1199,40 @@ public sealed class DistributedLockTests : TestBase
 
         // then
         _releaseSignal.Received(1).Announce(resource, acquiredLock.LeaseId);
+    }
+
+    [Fact]
+    public async Task should_release_and_log_when_the_release_signal_throws()
+    {
+        // given — a signal that breaks its no-throw contract, as a custom or broker-backed one might
+        var logger = new LevelCapturingLogger<DistributedLock>();
+        var releaseSignal = Substitute.For<IDistributedLockReleaseSignal>();
+        releaseSignal
+            .When(x => x.Announce(Arg.Any<string>(), Arg.Any<string>()))
+            .Do(_ => throw new InvalidOperationException("broker unavailable"));
+        var provider = new DistributedLock(
+            _storage,
+            releaseSignal,
+            new DistributedLockOptions(),
+            _guidGenerator,
+            _timeProvider,
+            logger
+        );
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        var act = async () => await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
+
+        // then — the confirmed release stands and the failure is logged as a warning
+        await act.Should().NotThrowAsync();
+        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
+        releaseSignal.Received(1).Announce(resource, acquiredLock!.LeaseId);
+        logger
+            .Entries.Should()
+            .Contain((DistributedLockTestSupport.ReleaseSignalAnnounceFailedEventId, LogLevel.Warning));
     }
 
     [Fact]

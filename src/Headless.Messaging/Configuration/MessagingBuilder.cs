@@ -411,8 +411,14 @@ public sealed class MessageStorageMarkerService(string name)
 /// <exception cref="ArgumentException"><paramref name="name"/> is empty or white space.</exception>
 public sealed class MessageQueueMarkerService(string name)
 {
-    /// <summary>Gets the transport's display name.</summary>
+    /// <summary>Gets the transport provider's display name.</summary>
     public string Name { get; } = Argument.IsNotNullOrWhiteSpace(name);
+
+    /// <summary>
+    /// Gets the name of the named transport this provider serves, as passed to
+    /// <see cref="MessagingSetupBuilder.AddTransport"/>, or <see langword="null"/> for the default transport.
+    /// </summary>
+    public string? TransportName { get; init; }
 }
 
 /// <summary>

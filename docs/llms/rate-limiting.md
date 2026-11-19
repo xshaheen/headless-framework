@@ -9,13 +9,13 @@ packages: RateLimiting
 
 ## Orientation
 
-Use `IAttemptLimiter` from `Headless.RateLimiting` to cap how often one subject may do one thing: send a verification code to a phone number, request a password reset for an email address, submit a PIN for a card. The subject is usually known before any account exists, which is why these budgets cannot hang off a user id.
+Use `IAttemptLimiter` from `Headless.RateLimiting` to cap how often one subject may do one thing: send a verification code to a phone number, request a password reset for an email address, submit a PIN for a card. The subject is usually known before any account exists, so these budgets cannot hang off a user id.
 
-The limiter counts in fixed windows over `ICache.IncrementAsync`, so every replica that shares a Redis or hybrid cache shares one budget, and a restart does not hand anyone a fresh allowance.
+The limiter counts in fixed windows in `ICache`. Every replica that shares a Redis or hybrid cache shares one budget, and a restart does not hand anyone a fresh allowance.
 
-For coarse per-request throughput shedding at the HTTP edge, use `Microsoft.AspNetCore.RateLimiting`. Its limiters are in-process, so their limits apply per replica. That is acceptable for load shedding and wrong for quotas that guard a secret; put those behind `IAttemptLimiter` in the handler.
+For coarse per-request load shedding at the HTTP edge, use `Microsoft.AspNetCore.RateLimiting`. Its limiters are in-process, so their limits apply per replica. That is acceptable for load shedding and wrong for a quota that guards a secret. Put such a quota behind `IAttemptLimiter` in the handler.
 
-The framework ships no edge limiter, because which endpoints get which limits and who counts as the caller are application policy. It ships the pieces every application would otherwise rewrite: the 429 response (`UseHeadlessProblemDetails`), an IP partition key that groups an IPv6 host's /64 (`GetIpAddressPartition`), and health endpoints that are never limited. [HTTP edge limits](#http-edge-limits) shows the wiring.
+The framework ships no edge limiter: which endpoints get which limits, and who counts as the caller, are application policy. It ships the pieces every application would otherwise rewrite: the 429 response (`UseHeadlessProblemDetails`), an IP partition key that groups an IPv6 host's /64 (`GetIpAddressPartition`), and health endpoints that are never limited. [HTTP edge limits](#http-edge-limits) shows the wiring.
 
 ## Agent Rules
 
@@ -119,6 +119,8 @@ public sealed class EdgeLimit
 public readonly record struct EdgeLimitKey(string Surface, string Caller, int PermitLimit, TimeSpan Window);
 ```
 
+**Verify:** in an integration test against the host, send one request more than `PermitLimit` within the window from one caller. The last response is 429 with a `Retry-After` header and `error.code` `g:rate_limit_exceeded`, and `/health` still returns 200.
+
 ### Design and runtime behavior
 
 - `UseHeadlessProblemDetails()` sets `RejectionStatusCode` to 429 and `OnRejected` to write `IProblemDetailsCreator.TooManyRequests` with `error.code` `g:rate_limit_exceeded` (`GeneralErrorCodes.RateLimitExceeded`), a `Retry-After` header in whole seconds rounded up (at least 1), and `Cache-Control: no-store`. The body's `retryAfter` matches the header. A named policy with its own `OnRejected` still overrides it for its endpoints.
@@ -146,7 +148,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(builder.Configuratio
 builder.Services.AddAttemptLimiter(builder.Configuration.GetSection("AttemptLimiter"));
 ```
 
-`AddAttemptLimiter` also accepts `Action<AttemptLimiterOptions>` and `Action<AttemptLimiterOptions, IServiceProvider>`. Host startup fails when the cache the limiter counts in is not registered.
+`AddAttemptLimiter` also accepts `Action<AttemptLimiterOptions>` and `Action<AttemptLimiterOptions, IServiceProvider>`.
 
 The default `ICache` is usually tuned as a cache, with LRU eviction and no persistence. An evicted or lost counter reopens its budget, so point the counters at a store that does not evict and survives restarts with a named instance:
 
@@ -181,6 +183,8 @@ public sealed class SendLoginCodeHandler(IAttemptLimiter limiter, ISmsSender sms
 }
 ```
 
+**Verify:** the host start throws `MissingRequiredServiceException` when the cache the limiter counts in is not registered, and throws `OptionsValidationException` when `SubjectKey` is not base64 for at least 32 bytes. In a test, call `AcquireAsync` `limit + 1` times with one purpose and subject: the last result has `IsAllowed` `false` and `Remaining` 0. An unreachable store does not fail the start; the first attempt throws `AttemptLimiterUnavailableException`.
+
 For a verification flow, keep the result and reset once the code is consumed:
 
 ```csharp
@@ -197,7 +201,7 @@ await limiter.ResetAsync(attempt, cancellationToken);
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `SubjectKey` | required | Base64 secret of at least 32 bytes. Subjects are HMAC-SHA256'd with it before they reach a cache key. |
-| `KeyPrefix` | `attempts` | First segment of every counter key. Change it when applications share one cache. |
+| `KeyPrefix` | `attempts` | First segment of every counter key. Change it when applications share one cache. Environments that share one cache need no change: the cache puts the host-wide `Headless:Prefix` in front of every key ([Isolation prefix](utilities.md#isolation-prefix)). |
 | `CacheName` | `null` | Named cache instance (`setup.AddNamed(name, ...)`) that holds the counters; `null` uses the registered `IRemoteCache` when there is one, otherwise the default `ICache`. An empty or blank name fails options validation. |
 
 ### Design and runtime behavior
@@ -206,7 +210,7 @@ await limiter.ResetAsync(attempt, cancellationToken);
 - `ThrowIfRejected(error)` throws `Headless.TooManyRequestsException`. With `Headless.Api` problem details registered, that maps to 429, the `Retry-After` header in whole seconds rounded up, and `retryAfter` plus the optional `error` in the body. Outside HTTP, catch it or read `IsAllowed` instead.
 - Lowering a quota's `Limit` applies to the running window on the next attempt. Changing its `Window` starts every subject on a fresh counter, because the window length is part of the key.
 - Cache keys have the shape `{KeyPrefix}:v1:{purpose}:{windowSeconds}:{windowNumber}:{fingerprint}`. The fingerprint is a base64url HMAC of the purpose and subject, so the same subject yields unrelated fingerprints under different purposes.
-- With `CacheName` `null` on a hybrid host (`AddRedisTier` plus `UseHybrid`), the counters go straight to the remote tier, not through the hybrid: the limiter only increments and reads the returned total, so a hybrid write would add a local-tier upsert and an every-instance invalidation broadcast to each attempt for a local copy nothing reads. The choice is `IServiceProvider.GetRemoteOrDefaultCache()` from `Headless.Caching.Abstractions`, the same one `Headless.Idempotency.Caching` makes. A hybrid whose remote tier is only a named instance (`RemoteCacheName`) registers no `IRemoteCache`, so the limiter counts through the hybrid; set `CacheName` to the remote instance's name to skip it.
-- The startup check only probes the registration: the default `ICache` when `CacheName` is `null`, otherwise the keyed `ICache` under that name. It resolves nothing and makes no round trip to the store, so an unreachable Redis still fails on the first attempt, not at startup. A missing registration throws `MissingRequiredServiceException` naming the `AddNamed` call to add.
-- A cache failure in `AcquireAsync` or `ResetAsync` throws `AttemptLimiterUnavailableException` (`Purpose`, and the store's exception as `InnerException`). Its message names only the purpose, because a store's own text can name the server or the counter key. It derives from `Headless.ServiceUnavailableException`, so with `Headless.Api` problem details registered it maps to 503 with `Cache-Control: no-store` and no `Retry-After`, and no caller has to catch and scrub it. The caller's own cancellation still surfaces as `OperationCanceledException`.
+- With `CacheName` `null` on a hybrid host (`AddRedisTier` plus `UseHybrid`), the counters go straight to the registered `IRemoteCache`, not through the hybrid, so an attempt adds no local-tier write or invalidation broadcast. A hybrid whose remote tier is only a named instance (`RemoteCacheName`) registers no `IRemoteCache`, so the limiter counts through the hybrid. Set `CacheName` to the remote instance's name to skip it.
+- The startup check looks only at the registration: the default `ICache` when `CacheName` is `null`, otherwise the keyed `ICache` under that name. It makes no round trip to the store. A missing registration throws `MissingRequiredServiceException` naming the `AddNamed` call to add.
+- A cache failure in `AcquireAsync` or `ResetAsync` throws `AttemptLimiterUnavailableException` (`Purpose`, and the store's exception as `InnerException`). Its message names only the purpose, never the server or the counter key, so you can return it as is. It derives from `Headless.ServiceUnavailableException`, so with `Headless.Api` problem details registered it maps to 503 with `Cache-Control: no-store` and no `Retry-After`. The caller's own cancellation still surfaces as `OperationCanceledException`.
 - `AttemptResult` is publicly constructible, so a test can stub `IAttemptLimiter` without a cache: `new AttemptResult("otp-delivery", count: 6, limit: 5, retryAfter: TimeSpan.FromSeconds(30))` is a refusal. `ResetToken` is the opaque handle `ResetAsync` needs; a hand-built result has none, and the built-in limiter's `ResetAsync` throws `ArgumentException` for it. A custom `IAttemptLimiter` puts its own reset state in the token.

@@ -17,7 +17,7 @@ export function ShortcutList({ isOpen, onOpenChange }: { isOpen: boolean; onOpen
 
   return (
     <Dialog isOpen={isOpen} onOpenChange={onOpenChange} title="Keyboard shortcuts">
-      <dl className="hd-kv">
+      <dl className="m-0 grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-2">
         {rows.map((row) => (
           <Fragment key={`${row.keys.join(' ')} ${row.action}`}>
             <dt>

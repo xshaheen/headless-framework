@@ -2,10 +2,13 @@
 
 namespace Tests.Tenancy;
 
+// One collection per provider: a collection fails every test in it when any of its fixtures fails to start, so a
+// SQL Server container that cannot start must not take the PostgreSQL classes down with it.
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class IdentityTenantCollection
-    : ICollectionFixture<PostgreSqlIdentityTenantFixture>,
-        ICollectionFixture<SqlServerIdentityTenantFixture>;
+public sealed class PostgreSqlIdentityTenantCollection : ICollectionFixture<PostgreSqlIdentityTenantFixture>;
+
+[CollectionDefinition(DisableParallelization = true)]
+public sealed class SqlServerIdentityTenantCollection : ICollectionFixture<SqlServerIdentityTenantFixture>;
 
 public sealed class PostgreSqlIdentityTenantFixture()
     : TenantIdentityFixture<DefaultIdentityPolicy>(TenantDatabaseProvider.PostgreSql);
@@ -13,10 +16,10 @@ public sealed class PostgreSqlIdentityTenantFixture()
 public sealed class SqlServerIdentityTenantFixture()
     : TenantIdentityFixture<DefaultIdentityPolicy>(TenantDatabaseProvider.SqlServer);
 
-[Collection<IdentityTenantCollection>]
+[Collection<PostgreSqlIdentityTenantCollection>]
 public sealed class PostgreSqlIdentityTenantConformanceTests(PostgreSqlIdentityTenantFixture fixture)
     : IdentityTenantConformanceTests<PostgreSqlIdentityTenantFixture>(fixture);
 
-[Collection<IdentityTenantCollection>]
+[Collection<SqlServerIdentityTenantCollection>]
 public sealed class SqlServerIdentityTenantConformanceTests(SqlServerIdentityTenantFixture fixture)
     : IdentityTenantConformanceTests<SqlServerIdentityTenantFixture>(fixture);

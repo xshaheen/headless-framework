@@ -10,15 +10,19 @@ internal sealed class Bus : IBus
 
     private readonly MessagePublisher _publisher;
 
+    // The named transport a keyed instance publishes through; null for the default transport.
+    private readonly PublishTarget? _target;
+
     /// <summary>
     /// The DI-registered constructor. This surface is autonomous: it never reads a caller's unit of work, so
     /// it is a singleton that framework singletons can depend on, and a publish made while a unit is active
     /// writes a standalone durable row. Callers that want the row inside their unit's transaction publish
     /// through the unit-of-work outbox instead.
     /// </summary>
-    internal Bus(MessagePublisher publisher)
+    internal Bus(MessagePublisher publisher, PublishTarget? target = null)
     {
         _publisher = publisher;
+        _target = target;
     }
 
     internal Bus(
@@ -63,7 +67,8 @@ internal sealed class Bus : IBus
             options,
             unitOfWork: null,
             requireCoordination: false,
-            cancellationToken
+            cancellationToken,
+            _target
         );
     }
 }

@@ -552,23 +552,24 @@ public sealed partial class SchemaRunner(
         CancellationToken cancellationToken
     )
     {
-        var rows = new List<HistoryRow>();
-
         try
         {
-            await using var command = _CreateCommand(connection);
-            command.CommandText = dialect.ReadHistorySql(schema);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var reported = await _TryReadHistoryRowsAsync(connection, dialect, schema, cancellationToken)
+                .ConfigureAwait(false);
 
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            if (reported is not null)
             {
-                rows.Add(new HistoryRow(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+                return reported;
             }
-        }
-        catch (Exception ex) when (dialect.IsObjectNotFound(ex))
-        {
-            // No history table: nothing was applied here, and the comparison reports every step missing.
-            LogHistoryAbsent(_logger, dialect.Name, schema);
+
+            // "Not found" can come from a pooled connection's cached catalog that predates another runner creating the
+            // table (SQLite, while a writer holds the database). Reported as absent, it would fail a verify that runs
+            // just after another replica applied the steps, so the catalog decides, and a table it finds is read again.
+            if (await _HistoryTableExistsAsync(connection, dialect, schema, cancellationToken).ConfigureAwait(false))
+            {
+                return await _ReadHistoryRowsAsync(connection, dialect, schema, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (DbException ex)
         {
@@ -578,7 +579,62 @@ public sealed partial class SchemaRunner(
             );
         }
 
+        // No history table: nothing was applied here, and the comparison reports every step missing.
+        LogHistoryAbsent(_logger, dialect.Name, schema);
+
+        return [];
+    }
+
+    // Null when the dialect reports the history table missing.
+    private async Task<List<HistoryRow>?> _TryReadHistoryRowsAsync(
+        DbConnection connection,
+        ISchemaDialect dialect,
+        string schema,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await _ReadHistoryRowsAsync(connection, dialect, schema, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (dialect.IsObjectNotFound(ex))
+        {
+            return null;
+        }
+    }
+
+    private async Task<List<HistoryRow>> _ReadHistoryRowsAsync(
+        DbConnection connection,
+        ISchemaDialect dialect,
+        string schema,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = new List<HistoryRow>();
+        await using var command = _CreateCommand(connection);
+        command.CommandText = dialect.ReadHistorySql(schema);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rows.Add(new HistoryRow(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        }
+
         return rows;
+    }
+
+    private async Task<bool> _HistoryTableExistsAsync(
+        DbConnection connection,
+        ISchemaDialect dialect,
+        string schema,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = _CreateCommand(connection);
+        command.CommandText = dialect.HistoryTableExistsSql(schema);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture) != 0;
     }
 
     private static List<SchemaMismatch> _Compare(

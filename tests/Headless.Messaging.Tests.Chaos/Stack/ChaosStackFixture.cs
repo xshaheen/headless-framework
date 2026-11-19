@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Testing.Testcontainers;
@@ -16,6 +17,8 @@ namespace Tests.Stack;
 public abstract class ChaosStackFixture : IAsyncLifetime
 {
     private const string _BlackholeToxic = "chaos-blackhole";
+    private static readonly TimeSpan _StorageRouteTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _StorageRouteProbeInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly RabbitMqComponent _rabbitMq = new();
     private readonly ToxiproxyServer _toxiproxy = new();
@@ -104,13 +107,27 @@ public abstract class ChaosStackFixture : IAsyncLifetime
         _blackholed = false;
     }
 
-    /// <summary>Puts both routes back to healthy, whatever an interrupted scenario left behind.</summary>
+    /// <summary>
+    /// Puts both routes back to healthy, whatever an interrupted scenario left behind, and returns once the storage
+    /// route opens a new connection again.
+    /// </summary>
     public async Task RestoreNetworkAsync()
     {
         await RestoreBrokerAnswersAsync(CancellationToken.None).ConfigureAwait(false);
         await BrokerProxy.EnableAsync(CancellationToken.None).ConfigureAwait(false);
         await StorageProxy.EnableAsync(CancellationToken.None).ConfigureAwait(false);
+
+        // A driver can keep the faults of the cut it just saw: SqlClient's pool replays a failed open for up to a
+        // minute, so the next scenario's first host would fail at its schema step on a fault that is already over.
+        ClearStoragePools();
+        await _WaitUntilStorageRouteOpensAsync().ConfigureAwait(false);
     }
+
+    /// <summary>Drops every pooled storage connection, with any failure state the driver keeps per pool.</summary>
+    protected abstract void ClearStoragePools();
+
+    /// <summary>Opens and closes one unpooled connection through <see cref="StorageProxy"/>.</summary>
+    protected abstract Task OpenUnpooledProxiedConnectionAsync(CancellationToken cancellationToken);
 
     /// <summary>Counts the messages a queue holds, read straight from the broker.</summary>
     public async Task<uint> CountQueuedAsync(string queue, CancellationToken cancellationToken)
@@ -131,6 +148,28 @@ public abstract class ChaosStackFixture : IAsyncLifetime
         var declared = await channel.QueueDeclarePassiveAsync(queue, cancellationToken).ConfigureAwait(false);
 
         return declared.MessageCount;
+    }
+
+    // The proxy acknowledges an enable before the container runtime's port forwarder reaches its listener again, so a
+    // first connect can still be reset; only a connection that opened proves the route is back.
+    private async Task _WaitUntilStorageRouteOpensAsync()
+    {
+        // wall-clock: the probe's deadline bounds a real network wait, so it is measured on the monotonic clock
+        var started = TimeProvider.System.GetTimestamp();
+
+        while (true)
+        {
+            try
+            {
+                await OpenUnpooledProxiedConnectionAsync(CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+            catch (DbException) when (TimeProvider.System.GetElapsedTime(started) < _StorageRouteTimeout)
+            {
+                // real-wait: the port forwarder recovers on its own real-time schedule, which no test clock drives
+                await Task.Delay(_StorageRouteProbeInterval).ConfigureAwait(false);
+            }
+        }
     }
 
     private sealed class RabbitMqComponent : HeadlessRabbitMqFixture

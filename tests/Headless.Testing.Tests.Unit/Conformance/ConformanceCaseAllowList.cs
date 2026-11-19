@@ -17,6 +17,16 @@ internal static class ConformanceCaseAllowList
     public static readonly IReadOnlyList<ConformanceSkip> Entries =
     [
         new(
+            "HybridCacheConformanceTests",
+            "should_report_no_expiration_when_upsert_duration_is_max_value",
+            "The hybrid cache reports the L1 entry's remaining time, and HybridCacheOptions.DefaultLocalExpiration caps L1 retention, so a never-expiring entry reports that cap instead of null. The InMemory and Redis classes, its two tiers, run the case."
+        ),
+        new(
+            "HybridCacheConformanceTests",
+            "should_report_no_expiration_when_set_entry_stamps_are_max_value",
+            "The hybrid cache reports the L1 entry's remaining time, and HybridCacheOptions.DefaultLocalExpiration caps L1 retention, so a never-expiring entry reports that cap instead of null. The InMemory and Redis classes, its two tiers, run the case."
+        ),
+        new(
             "InMemoryDataStorageTests",
             "should_return_a_row_committed_late_inside_the_overlap_window",
             "The in-memory store has no transactions: every write is visible when it is stamped, so no row can commit after a later one and the overlap window has nothing late to catch."

@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Headless.Checks;
+using Headless.Messaging.Internal;
 using Headless.Messaging.RequestReply;
 using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
@@ -30,6 +33,15 @@ public sealed partial class MessagingSetupBuilder : IMessagingBuilder
     /// store a host registers has a distinct name.
     /// </summary>
     public const string PrimaryOutboxName = "primary";
+
+    /// <summary>
+    /// The name of the default transport, the one <c>setup.Use…</c> registers. <see cref="AddTransport"/> refuses it, and
+    /// <c>Tune(identity, c =&gt; c.Transport(DefaultTransportName))</c> binds a consumer back to the default transport.
+    /// </summary>
+    public const string DefaultTransportName = "default";
+
+    /// <summary>The longest transport name <see cref="AddTransport"/> accepts, the width of the stored column.</summary>
+    public const int TransportNameMaxLength = 64;
 
     private readonly List<string> _consumeOnly = [];
 
@@ -184,6 +196,103 @@ public sealed partial class MessagingSetupBuilder : IMessagingBuilder
     // \z, not $: in .NET $ also matches before a final newline, which would admit "billing\n" beside "billing".
     [GeneratedRegex(@"^[A-Za-z0-9_-]+\z", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, 100)]
     private static partial Regex _OutboxNamePattern { get; }
+
+    /// <summary>
+    /// Adds a named transport, a second broker beside the default transport, for example
+    /// <c>setup.AddTransport("partner").UseRabbitMq(...)</c>.
+    /// </summary>
+    /// <param name="name">
+    /// The transport's name, unique within the host: letters, digits, <c>-</c>, and <c>_</c>, at most
+    /// <see cref="TransportNameMaxLength"/> characters, compared case-insensitively. <see cref="DefaultTransportName"/>
+    /// is reserved for the default transport.
+    /// </param>
+    /// <returns>A builder that accepts only the provider of the new transport.</returns>
+    /// <remarks>
+    /// <para>
+    /// The named transport shares the host's storage, inbox, retry relay, failure policies, and dashboard. Its own are the
+    /// broker connection, the consumer clients, the topology, the capability checks, and the broker health check
+    /// (<c>messaging-broker-{name}</c>), so an outage of one broker does not stop the other.
+    /// </para>
+    /// <para>
+    /// Publish through it with the keyed <see cref="IBus"/> and <see cref="IQueue"/>
+    /// (<c>[FromKeyedServices("partner")] IBus bus</c>), or inside a unit of work with
+    /// <see cref="OutboxOptions.TransportName"/> on <c>unit.Outbox</c>. Bind a consumer to it with
+    /// <c>Tune(identity, c =&gt; c.Transport("partner"))</c> or the
+    /// <c>Headless:Messaging:Consumers:{identity}:Transport</c> setting. Each durable row records the transport it was
+    /// published through, so the relay sends it through the same broker after a restart.
+    /// </para>
+    /// <para>Request/reply runs on the default transport only.</para>
+    /// <code>
+    /// services.AddHeadlessMessaging(setup =>
+    /// {
+    ///     setup.UsePostgreSql(connectionString);
+    ///     setup.UseRabbitMq(internalBroker => internalBroker.HostName = "rabbit-internal");
+    ///     setup.AddTransport("partner").UseRabbitMq(partner => partner.HostName = "rabbit-partner");
+    ///     setup.Tune("partner.order-sync", consumer => consumer.Transport("partner"));
+    /// });
+    /// </code>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> is not a valid transport name, is <see cref="DefaultTransportName"/>, or names a transport
+    /// this host already registered.
+    /// </exception>
+    public MessagingTransportBuilder AddTransport(string name)
+    {
+        ValidateTransportName(name);
+
+        if (IsDefaultTransport(name))
+        {
+            throw new ArgumentException(
+                $"Transport name '{name}' is reserved for the default transport. Choose another name.",
+                nameof(name)
+            );
+        }
+
+        if (TransportBuilders.Exists(builder => string.Equals(builder.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ArgumentException(
+                $"A transport named '{name}' is already registered on this host. Give each transport its own name.",
+                nameof(name)
+            );
+        }
+
+        var builder = new MessagingTransportBuilder(this, name);
+        TransportBuilders.Add(builder);
+        Services.AddSingleton(new MessagingTransportRegistration(name));
+
+        return builder;
+    }
+
+    internal List<MessagingTransportBuilder> TransportBuilders { get; } = [];
+
+    /// <summary>Whether <paramref name="name"/> is a well-formed transport name.</summary>
+    internal static bool IsValidTransportName([NotNullWhen(true)] string? name) =>
+        name is { Length: > 0 and <= TransportNameMaxLength } && _OutboxNamePattern.IsMatch(name);
+
+    /// <summary>Whether <paramref name="name"/> names the default transport.</summary>
+    internal static bool IsDefaultTransport(string? name) =>
+        name is null || string.Equals(name, DefaultTransportName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Returns <paramref name="name"/> when it is a well-formed transport name, and throws otherwise.</summary>
+    internal static string ValidateTransportName(
+        string name,
+        [CallerArgumentExpression(nameof(name))] string? paramName = null
+    )
+    {
+        Argument.IsNotNull(name, paramName: paramName);
+
+        if (!IsValidTransportName(name))
+        {
+            throw new ArgumentException(
+                $"Transport name '{name}' must contain only letters, digits, '-', and '_', and be at most "
+                    + $"{TransportNameMaxLength} characters.",
+                paramName
+            );
+        }
+
+        return name;
+    }
 
     /// <summary>
     /// Enables this host to send requests with <see cref="IRequestClient"/> and await their replies, for example

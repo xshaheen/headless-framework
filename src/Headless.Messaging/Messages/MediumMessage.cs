@@ -37,6 +37,13 @@ public class MediumMessage
 
     public required MessageLane Lane { get; set; }
 
+    /// <summary>
+    /// The named transport, registered with <c>setup.AddTransport(name)</c>, that sends this published row, or
+    /// <see langword="null"/> for the default transport. Stored with the row, so the relay sends it through the broker it
+    /// was published through. Always <see langword="null"/> on a received row: its consumer identity names the transport.
+    /// </summary>
+    public string? TransportName { get; set; }
+
     public DateTimeOffset Added { get; set; }
 
     public DateTimeOffset? ExpiresAt { get; set; }

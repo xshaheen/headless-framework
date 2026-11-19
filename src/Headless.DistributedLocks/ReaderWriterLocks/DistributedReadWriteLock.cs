@@ -425,7 +425,7 @@ internal sealed class DistributedReadWriteLock(
             }
         }
 
-        releaseSignal.Announce(resource, leaseId);
+        DistributedLockCoreHelpers.AnnounceRelease(releaseSignal, logger, resource, leaseId);
     }
 
     private async Task<IDistributedLease?> _TryAcquireAsync(

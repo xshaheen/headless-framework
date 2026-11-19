@@ -888,6 +888,7 @@ internal sealed partial class InMemoryDataStorage(
             Origin = message.Origin,
             Content = _ContentOf(message),
             Lane = message.Lane,
+            TransportName = message.TransportName,
             Added = added,
             ExpiresAt = publishAt,
             NextRetryAt = publishAt is null ? added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace) : null,
@@ -902,6 +903,7 @@ internal sealed partial class InMemoryDataStorage(
             Origin = _CloneOrigin(stored.Origin),
             Content = stored.Content,
             Lane = stored.Lane,
+            TransportName = stored.TransportName,
             Retries = stored.Retries,
             InlineAttempts = stored.InlineAttempts,
             Added = stored.Added,
@@ -1813,6 +1815,7 @@ internal sealed partial class InMemoryDataStorage(
             ExceptionInfo = m.ExceptionInfo,
             FailureFingerprint = m.FailureFingerprint,
             Lane = m.Lane,
+            TransportName = m.TransportName,
         };
     }
 

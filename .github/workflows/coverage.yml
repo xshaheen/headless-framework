@@ -69,14 +69,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # Built before the NuGet token exists, so an npm lifecycle script cannot read it.
+      # Built in its own step, so the .NET build below only embeds wwwroot/dist.
       - name: "Build dashboard SPAs"
         run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
 
       - name: "Build solution"
         env:
           BuildDashboardSpa: "false"
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make rebuild MSBUILD_ARGS=-p:RunAnalyzers=false
 
       - name: "Run unit tests with coverage"

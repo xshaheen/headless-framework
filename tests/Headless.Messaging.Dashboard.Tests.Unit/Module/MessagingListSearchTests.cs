@@ -254,6 +254,62 @@ public sealed class MessagingListSearchTests : TestBase
     }
 
     [Fact]
+    public async Task should_count_on_the_first_page_only_and_leave_the_count_out_of_a_later_page()
+    {
+        // given: three rows in the primary store, and an empty outbox whose counts the test records
+        var outboxMonitoring = Substitute.For<IMonitoringApi>();
+        outboxMonitoring
+            .ListMessagesAsync(
+                Arg.Any<MessageListQuery>(),
+                Arg.Any<MessageListPosition?>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new MessageListPage { Items = [] });
+        outboxMonitoring
+            .CountMessagesAsync(Arg.Any<MessageListQuery>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new MessageCount(0, false));
+        var outbox = _QuietOutbox();
+        outbox.GetMonitoringApi().Returns(outboxMonitoring);
+        await using var app = await MessagingModuleTestHost.StartAsync(
+            _time,
+            AbortToken,
+            configure: services =>
+                services.AddSingleton(provider => _Stores(provider.GetRequiredService<IDataStorage>(), outbox))
+        );
+        var storage = app.Services.GetRequiredService<IDataStorage>();
+        foreach (var name in new[] { "orders.a", "orders.b", "orders.c" })
+        {
+            await storage.StoreMessageAsync(name, _Message(new { Order = name }), cancellationToken: AbortToken);
+        }
+
+        using var client = app.GetTestClient();
+        var first = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + "/published?sort=name&limit=2",
+            AbortToken
+        );
+        var counted = _CountReads(outboxMonitoring);
+        var cursor = Uri.EscapeDataString(first.GetProperty("nextCursor").GetString()!);
+
+        // when
+        var second = await MessagingModuleTestHost.GetJsonAsync(
+            client,
+            MessagingModuleTestHost.Api + $"/published?sort=name&limit=2&after={cursor}",
+            AbortToken
+        );
+
+        // then: the first page counts every store; the later page reads no count and sends none
+        counted.Should().BePositive();
+        first.TryGetProperty("count", out _).Should().BeTrue();
+        second.TryGetProperty("count", out _).Should().BeFalse();
+        second.TryGetProperty("countCapped", out _).Should().BeFalse();
+        _CountReads(outboxMonitoring)
+            .Should()
+            .Be(counted, "a later page keeps the first page's count instead of reading it again");
+    }
+
+    [Fact]
     public async Task should_list_rows_added_in_a_range_with_an_exclusive_end()
     {
         // given: rows added an hour apart
@@ -366,6 +422,17 @@ public sealed class MessagingListSearchTests : TestBase
             [new("primary", primary, HoldsReceived: true), new(_Outbox, outbox, HoldsReceived: false)],
             TimeSpan.FromMilliseconds(200)
         );
+
+    private static int _CountReads(IMonitoringApi monitoring) =>
+        monitoring
+            .ReceivedCalls()
+            .Count(static call =>
+                string.Equals(
+                    call.GetMethodInfo().Name,
+                    nameof(IMonitoringApi.CountMessagesAsync),
+                    StringComparison.Ordinal
+                )
+            );
 
     private static IDataStorage _FailingOutbox()
     {

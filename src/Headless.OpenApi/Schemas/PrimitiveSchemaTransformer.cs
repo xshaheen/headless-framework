@@ -85,26 +85,44 @@ internal sealed class PrimitiveSchemaTransformer : IOpenApiSchemaTransformer
     }
 
     // The generated constructor enforces the attribute's bounds unless it opts out with validate: false, in which case
-    // the bounds describe nothing a request is held to.
+    // the bounds describe nothing a request is held to. A primitive wrapping another primitive is held to every
+    // primitive in its chain, so the tightest bounds win.
     private static void _ApplyStringLength(OpenApiSchema schema, Type primitiveType, Type valueType)
     {
-        if (
-            valueType != typeof(string)
-            || Attribute.GetCustomAttribute(primitiveType, typeof(StringLengthAttribute))
-                is not StringLengthAttribute { Validate: true } length
-        )
+        if (valueType != typeof(string))
         {
             return;
         }
 
-        if (length.MinimumLength > 0)
+        var minimum = 0;
+        var maximum = int.MaxValue;
+
+        for (Type? current = primitiveType; current is not null; current = _DirectValueType(current))
         {
-            schema.MinLength = length.MinimumLength;
+            if (
+                Attribute.GetCustomAttribute(current, typeof(StringLengthAttribute)) is StringLengthAttribute
+                {
+                    Validate: true
+                } length
+            )
+            {
+                minimum = Math.Max(minimum, length.MinimumLength);
+
+                if (length.MaximumLength > 0)
+                {
+                    maximum = Math.Min(maximum, length.MaximumLength);
+                }
+            }
         }
 
-        if (length.MaximumLength > 0)
+        if (minimum > 0)
         {
-            schema.MaxLength = length.MaximumLength;
+            schema.MinLength = minimum;
+        }
+
+        if (maximum != int.MaxValue)
+        {
+            schema.MaxLength = maximum;
         }
     }
 
@@ -120,12 +138,25 @@ internal sealed class PrimitiveSchemaTransformer : IOpenApiSchemaTransformer
         return valueType is not null;
     }
 
+    // A primitive may wrap another primitive (Price : IPrimitive<Amount>); its JSON is the innermost value's.
+    private static Type? _FindValueType(Type type)
+    {
+        var valueType = _DirectValueType(type);
+
+        while (valueType is not null && _DirectValueType(valueType) is { } inner)
+        {
+            valueType = inner;
+        }
+
+        return valueType;
+    }
+
     [UnconditionalSuppressMessage(
         "Trimming",
         "IL2070:Unrecognized reflection pattern",
         Justification = "A trimmed interface list only hides a primitive, which then keeps the native schema."
     )]
-    private static Type? _FindValueType(Type type)
+    private static Type? _DirectValueType(Type type)
     {
         if (!typeof(IPrimitive).IsAssignableFrom(type))
         {

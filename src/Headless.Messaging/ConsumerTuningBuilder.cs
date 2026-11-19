@@ -29,6 +29,7 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     private FailurePolicyDefinition? _failurePolicy;
     private ConsumerRateLimit? _rateLimit;
     private bool? _sequential;
+    private string? _transport;
 
     internal ConsumerTuningBuilder(string identity)
     {
@@ -158,6 +159,25 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     }
 
     /// <summary>
+    /// Binds this consumer to the named transport registered with <c>setup.AddTransport(name)</c>, so it subscribes on
+    /// that broker only, for example <c>Tune("partner.order-sync", consumer =&gt; consumer.Transport("partner"))</c>.
+    /// </summary>
+    /// <remarks>
+    /// A consumer that is not bound subscribes on the default transport. The name is checked when messaging starts: a
+    /// name no <c>AddTransport</c> call registers fails startup. <see cref="MessagingSetupBuilder.DefaultTransportName"/>
+    /// binds the consumer back to the default transport.
+    /// </remarks>
+    /// <param name="name">The transport's name, as passed to <c>setup.AddTransport(name)</c>.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is not a valid transport name.</exception>
+    public ConsumerTuningBuilder Transport(string name)
+    {
+        _transport = MessagingSetupBuilder.ValidateTransportName(name);
+        return this;
+    }
+
+    /// <summary>
     /// Runs <typeparamref name="TMiddleware"/> around every delivery to this consumer on this host, inside the global and
     /// per-message consume middleware. The middleware is resolved from each attempt's own service scope, the one the
     /// consumer runs in; when it is not registered yet, it is registered as scoped.
@@ -194,7 +214,8 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
             _circuitBreaker,
             _failurePolicy,
             _rateLimit,
-            _sequential
+            _sequential,
+            _transport
         );
 
     internal static TimeSpan ValidateInboxRetention(TimeSpan retention)
@@ -219,7 +240,8 @@ internal sealed record ConsumerTuning(
     ConsumerCircuitBreakerOptions? CircuitBreaker,
     FailurePolicyDefinition? FailurePolicy = null,
     ConsumerRateLimit? RateLimit = null,
-    bool? Sequential = null
+    bool? Sequential = null,
+    string? Transport = null
 );
 
 /// <summary>One <c>Tune</c> call recorded in the service collection.</summary>

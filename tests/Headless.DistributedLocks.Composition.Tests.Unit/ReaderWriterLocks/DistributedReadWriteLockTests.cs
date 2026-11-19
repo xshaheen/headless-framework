@@ -196,6 +196,43 @@ public sealed class DistributedReadWriteLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_and_log_when_the_release_signal_throws()
+    {
+        // given — a signal that breaks its no-throw contract, as a custom or broker-backed one might
+        var logger = new LevelCapturingLogger<DistributedReadWriteLock>();
+        var releaseSignal = Substitute.For<IDistributedLockReleaseSignal>();
+        releaseSignal
+            .When(x => x.Announce(Arg.Any<string>(), Arg.Any<string>()))
+            .Do(_ => throw new InvalidOperationException("broker unavailable"));
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
+        storage
+            .ReleaseWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        var provider = new DistributedReadWriteLock(
+            storage,
+            releaseSignal,
+            new DistributedLockOptions(),
+            _guidGenerator,
+            _timeProvider,
+            logger
+        );
+        var resource = Faker.Random.AlphaNumeric(10);
+        var leaseId = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var act = async () => await provider.ReleaseAsync(ReaderWriterLockMode.Write, resource, leaseId);
+
+        // then — the confirmed release stands and the failure is logged as a warning
+        await act.Should().NotThrowAsync();
+        await storage.Received(1).ReleaseWriteAsync(Arg.Any<string>(), leaseId, Arg.Any<CancellationToken>());
+        releaseSignal.Received(1).Announce(resource, leaseId);
+        logger
+            .Entries.Should()
+            .Contain((DistributedLockTestSupport.ReleaseSignalAnnounceFailedEventId, LogLevel.Warning));
+    }
+
+    [Fact]
     public async Task should_announce_release_through_the_release_signal()
     {
         // given

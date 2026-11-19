@@ -95,21 +95,22 @@ public sealed class PermissionsColumnLengthTests : TestBase
     }
 
     [Theory]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionGrantsNameMaxLength))]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionGrantsProviderNameMaxLength))]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionGrantsTenantIdMaxLength))]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionGrantsProviderKeyMaxLength))]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionDefinitionsNameMaxLength))]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionDefinitionsDisplayNameMaxLength))]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionDefinitionsProvidersMaxLength))]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionGroupDefinitionsNameMaxLength))]
-    [InlineData(nameof(PermissionsStorageOptions.PermissionGroupDefinitionsDisplayNameMaxLength))]
-    public void should_reject_a_column_length_outside_one_to_four_thousand(string option)
+    [InlineData(nameof(PermissionsStorageOptions.PermissionGrantsNameMaxLength), true)]
+    [InlineData(nameof(PermissionsStorageOptions.PermissionGrantsProviderNameMaxLength), true)]
+    [InlineData(nameof(PermissionsStorageOptions.PermissionGrantsTenantIdMaxLength), true)]
+    [InlineData(nameof(PermissionsStorageOptions.PermissionGrantsProviderKeyMaxLength), true)]
+    [InlineData(nameof(PermissionsStorageOptions.PermissionDefinitionsNameMaxLength), true)]
+    [InlineData(nameof(PermissionsStorageOptions.PermissionDefinitionsDisplayNameMaxLength), false)]
+    [InlineData(nameof(PermissionsStorageOptions.PermissionDefinitionsProvidersMaxLength), false)]
+    [InlineData(nameof(PermissionsStorageOptions.PermissionGroupDefinitionsNameMaxLength), true)]
+    [InlineData(nameof(PermissionsStorageOptions.PermissionGroupDefinitionsDisplayNameMaxLength), false)]
+    public void should_reject_a_column_length_outside_one_to_four_thousand(string option, bool indexed)
     {
-        // given — 4000 is the widest sized nvarchar on SQL Server, the narrowest of the supported databases
+        // given — 4000 is the widest sized nvarchar on SQL Server, the narrowest of the supported databases; an
+        // indexed column also stays inside SQL Server's 1700-byte index key, which 4000 characters overflow
         var property = typeof(PermissionsStorageOptions).GetProperty(option)!;
 
-        foreach (var (length, accepted) in new[] { (0, false), (1, true), (4000, true), (4001, false) })
+        foreach (var (length, accepted) in new[] { (0, false), (1, true), (4000, !indexed), (4001, false) })
         {
             using var provider = _Provider(options => property.SetValue(options, length));
 
@@ -165,6 +166,39 @@ public sealed class PermissionsColumnLengthTests : TestBase
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new PermissionDefinitionSerializer(guidGenerator, Options.Create(options));
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void should_reject_index_columns_wider_together_than_the_sql_server_index_key(int overflow, bool accepted)
+    {
+        // given — the widest PermissionGrants index holds every key column; nvarchar takes two bytes per character
+        using var provider = _Provider(options =>
+            options.PermissionGrantsProviderKeyMaxLength =
+                850
+                - (
+                    options.PermissionGrantsTenantIdMaxLength
+                    + options.PermissionGrantsNameMaxLength
+                    + options.PermissionGrantsProviderNameMaxLength
+                )
+                + overflow
+        );
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<PermissionsStorageOptions>>().Value;
+
+        // then
+        if (accepted)
+        {
+            act.Should().NotThrow();
+        }
+        else
+        {
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*PermissionGrants (*1702 bytes*1700-byte*PermissionGrantsProviderKeyMaxLength*");
+        }
     }
 
     private static ServiceProvider _Provider(Action<PermissionsStorageOptions> configure)

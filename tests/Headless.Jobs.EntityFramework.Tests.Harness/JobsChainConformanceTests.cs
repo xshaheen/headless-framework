@@ -12,6 +12,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
@@ -470,7 +471,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
 
             // Hydration rebuilds the full non-timed subtree to MaxChainDepth (n1..n5 + n3-catch = 6 nodes).
-            var candidates = await _PollEarliestUntilPresentAsync(persistence, rootId, ct);
+            var candidates = await _PeekRootAsync(host, rootId, ct);
             var hydratedRoot = candidates.Single(x => x.Id == rootId);
             var allIds = _FlattenIds(hydratedRoot).ToArray();
             allIds.Should().HaveCount(6, "hydration must rebuild every non-timed descendant to the configured depth");
@@ -637,7 +638,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var timedId = (await _ChildrenAsync(rootId, ct)).Single().Id;
 
             // Claim the root -> it is now Queued (non-terminal). The timed child is a boundary: never claimed with it.
-            await _ClaimRootAsync(persistence, rootId, ct);
+            await _ClaimRootAsync(host, rootId, ct);
             (await _ReadNodeAsync(rootId, ct)).Status.Should().Be(JobStatus.Queued);
 
             var earliest = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
@@ -682,7 +683,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var successId = children.Single(c => c.Condition == RunCondition.OnSuccess).Id;
             var failureId = children.Single(c => c.Condition == RunCondition.OnFailure).Id;
 
-            var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
+            var claimedRoot = await _ClaimRootAsync(host, rootId, ct);
             await _MarkTerminalAsync(persistence, rootId, claimedRoot.Lease, JobStatus.Succeeded, ct);
 
             var beforeReconcile = DateTime.UtcNow;
@@ -735,7 +736,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var rootId = await scheduler.EnqueueAsync(builder.Build(), ct);
             var childId = (await _ChildrenAsync(rootId, ct)).Single().Id;
 
-            var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
+            var claimedRoot = await _ClaimRootAsync(host, rootId, ct);
             await _MarkTerminalAsync(persistence, rootId, claimedRoot.Lease, JobStatus.Succeeded, ct);
             await persistence.ApplyParentTerminalRunConditionsAsync(rootId, ct);
 
@@ -793,7 +794,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var failureId = rootChildren.Single(c => c.Condition == RunCondition.OnFailure).Id;
             var grandchildId = (await _ChildrenAsync(successId, ct)).Single().Id;
 
-            var claimedRoot = await _ClaimRootAsync(persistence, rootId, ct);
+            var claimedRoot = await _ClaimRootAsync(host, rootId, ct);
             await _MarkTerminalAsync(persistence, rootId, claimedRoot.Lease, JobStatus.Failed, ct);
 
             // Skip-only safety net over the failed parent's timed children. The return COUNT is deliberately not
@@ -1285,7 +1286,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var grandchild = _NewChild(child.Id, RunCondition.OnSuccess, executionTime: null);
             await persistence.AddTimeJobsAsync([root, child, grandchild], ct);
 
-            var candidates = await _PollEarliestUntilPresentAsync(persistence, root.Id, ct);
+            var candidates = await _PeekRootAsync(host, root.Id, ct);
 
             // The seam fires between the root claim and the first descendant lease and invalidates root ownership.
             var cas = _BuildCas(
@@ -1346,8 +1347,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             // mirrors production (each poller reads its own array) and matters because ClaimTimeJobsAsync mutates the
             // candidate's UpdatedAt in place on a win; sharing one array would leak the winner's new value into the
             // loser's optimistic gate and let both "win".
-            var candidatesA = await _PollEarliestUntilPresentAsync(persistence, root.Id, ct);
-            var candidatesB = await _PollEarliestUntilPresentAsync(persistence, root.Id, ct);
+            var candidatesA = await _PeekRootAsync(host, root.Id, ct);
+            var candidatesB = await _PeekRootAsync(host, root.Id, ct);
 
             var ownerA = _BuildCas(host, "owner-a@1");
             var ownerB = _BuildCas(host, "owner-b@1");
@@ -1398,7 +1399,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             var ownerA = _BuildCas(host, "owner-a@1");
             var claimedByA = await ownerA
-                .ClaimTimeJobsAsync(await _PollEarliestUntilPresentAsync(persistence, root.Id, ct), ct)
+                .ClaimTimeJobsAsync(await _PeekRootAsync(host, root.Id, ct), ct)
                 .ToArrayAsync(ct);
             _FlattenIds(claimedByA.Should().ContainSingle().Subject)
                 .Should()
@@ -1410,7 +1411,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             var ownerB = _BuildCas(host, "owner-b@1");
             var claimedByB = await ownerB
-                .ClaimTimeJobsAsync(await _PollEarliestUntilPresentAsync(persistence, root.Id, ct), ct)
+                .ClaimTimeJobsAsync(await _PeekRootAsync(host, root.Id, ct), ct)
                 .ToArrayAsync(ct);
 
             _FlattenIds(claimedByB.Should().ContainSingle().Subject)
@@ -1449,7 +1450,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             var timedChild = _NewChild(root.Id, RunCondition.OnFailure, DateTime.UtcNow.AddHours(1));
             await persistence.AddTimeJobsAsync([root, child, grandchild, timedChild], ct);
 
-            var claimed = await _ClaimRootAsync(persistence, root.Id, ct);
+            var claimed = await _ClaimRootAsync(host, root.Id, ct);
             var owner = claimed.Lease.Holder!;
             var rootRow = JobsLeaseTables.TimeJob(root.Id, claimed.Lease.Generation);
             var start = new JobExecutionState { FunctionName = "chain", ClaimOwner = owner }.SetProperty(
@@ -1511,8 +1512,8 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             await persistenceA.AddTimeJobsAsync([root, child, grandchild], ct);
 
             // Each node peeks its own snapshot (same persisted UpdatedAt, distinct objects) before either claims.
-            var candA = await _PollEarliestUntilPresentAsync(persistenceA, root.Id, ct);
-            var candB = await _PollEarliestUntilPresentAsync(persistenceB, root.Id, ct);
+            var candA = await _PeekRootAsync(hostA, root.Id, ct);
+            var candB = await _PeekRootAsync(hostB, root.Id, ct);
 
             var claimedA = await persistenceA.QueueTimeJobsAsync(candA, ct).ToArrayAsync(ct);
             var claimedB = await persistenceB.QueueTimeJobsAsync(candB, ct).ToArrayAsync(ct);
@@ -1707,7 +1708,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
             await persistence.AddTimeJobsAsync([.. nodes], ct);
 
-            var candidates = await _PollEarliestUntilPresentAsync(persistence, nodes[0].Id, ct);
+            var candidates = await _PeekRootAsync(host, nodes[0].Id, ct);
             var claimed = await persistence.QueueTimeJobsAsync(candidates, ct).ToArrayAsync(ct);
             claimed.Should().Contain(x => x.Id == nodes[0].Id, "the claim completes without a MAXRECURSION error");
 
@@ -1896,39 +1897,66 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         }
     }
 
-    /// <summary>Polls the main peek until the root surfaces (absorbs coordination-membership warm-up), then returns it.</summary>
-    private static async Task<TimeJobEntity[]> _PollEarliestUntilPresentAsync(
-        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> persistence,
-        Guid rootId,
-        CancellationToken ct
-    )
+    /// <summary>
+    /// Peeks <paramref name="host" />'s main candidate window and returns the snapshot holding the root. The peek
+    /// returns nothing until the node holds a stamp owner, and it drops a row once its execution time is more than one
+    /// second behind the clock, handing it to the fallback sweep. A root seeded at "now + 1 s" therefore ages out of
+    /// the peek two seconds after the seed, which a loaded run spends on membership warm-up or on the steps between seed
+    /// and peek. So the peek waits for the stamp owner, then makes the root due now just before it reads.
+    /// UpdatedAt stays untouched, so two snapshots peeked for a race still carry the same optimistic gate value, and the
+    /// time-job claims gate on UpdatedAt, never on the execution time.
+    /// </summary>
+    private async Task<TimeJobEntity[]> _PeekRootAsync(IHost host, Guid rootId, CancellationToken ct)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (true)
+        await JobsCoordinationFixtureExtensions.WaitForStampOwnerAsync(host, ct);
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        // The re-armed root stays in the window for one second. A pause that long between the re-arm and the peek
+        // (a stalled thread pool or database under load) re-arms it again; a peek that keeps missing a root it was just
+        // handed is a defect, so the attempts are counted, not timed.
+        const int attempts = 3;
+
+        for (var attempt = 1; ; attempt++)
         {
+            await _ArmRootAsync(rootId, ct);
             var candidates = (await persistence.GetEarliestTimeJobsAsync(ct)).Jobs;
+
             if (Array.Exists(candidates, x => x.Id == rootId))
             {
                 return candidates;
             }
 
-            if (DateTime.UtcNow > deadline)
+            if (attempt == attempts)
             {
-                throw new InvalidOperationException($"Chain root {rootId} never surfaced as a claim candidate.");
+                throw new InvalidOperationException(
+                    $"Chain root {rootId} is not a claim candidate after {attempts} peeks, each just after the root was "
+                        + "made due, although the node holds a stamp owner."
+                );
             }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(200), ct);
         }
     }
 
-    /// <summary>Claims the chain root through the native claim path (root -> Queued), returning the claimed root.</summary>
-    private static async Task<TimeJobEntity> _ClaimRootAsync(
-        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> persistence,
-        Guid rootId,
-        CancellationToken ct
-    )
+    private async Task _ArmRootAsync(Guid rootId, CancellationToken ct)
     {
-        var candidates = await _PollEarliestUntilPresentAsync(persistence, rootId, ct);
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        // Due now on the store's clock, not this process's: the claim's due check compares against the store, so a
+        // database container whose clock lags the host would see a root armed by the host clock as not yet due. Not
+        // "now + 1 s" either: SQL Server's claim reads GETUTCDATE(), rounded to about 3 ms, so a claim a millisecond
+        // after the arm could see that as not yet due too. The claim's one-second due slack absorbs the rounding.
+        command.CommandText = fixture.Sql(
+            $"UPDATE {fixture.QualifiedTimeJobsTable} SET \"ExecutionTime\" = {fixture.UtcNowSqlExpression} WHERE \"Id\" = @id;"
+        );
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", rootId);
+        (await command.ExecuteNonQueryAsync(ct)).Should().Be(1, "the root to peek must exist");
+    }
+
+    /// <summary>Claims the chain root through the native claim path (root -> Queued), returning the claimed root.</summary>
+    private async Task<TimeJobEntity> _ClaimRootAsync(IHost host, Guid rootId, CancellationToken ct)
+    {
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var candidates = await _PeekRootAsync(host, rootId, ct);
         var claimed = await persistence.QueueTimeJobsAsync(candidates, ct).ToArrayAsync(ct);
         var root = Array.Find(claimed, x => x.Id == rootId);
 

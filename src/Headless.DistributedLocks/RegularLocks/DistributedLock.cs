@@ -385,13 +385,20 @@ public sealed class DistributedLock(
         var attemptToken = linkedCts?.Token ?? safetyCts.Token;
         DistributedLockAcquireResult acquireResult;
         var safetyDeadlineFired = false;
+        var insertFaulted = false;
         var acquireTimestamp = timeProvider.GetTimestamp();
 
         try
         {
             // A faulted insert already ran its cleanup inside the helper; with a single attempt that cleanup is
             // also the last one, so no exit cleanup is needed here.
-            (acquireResult, _) = await _TryInsertAsync(resource, leaseId, timeUntilExpires, timestamp, attemptToken)
+            (acquireResult, insertFaulted) = await _TryInsertAsync(
+                    resource,
+                    leaseId,
+                    timeUntilExpires,
+                    timestamp,
+                    attemptToken
+                )
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -427,10 +434,18 @@ public sealed class DistributedLock(
                 DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonStalled);
                 logger.LogTryOnceSafetyDeadlineFired(resource, leaseId, timeWaitedForLock);
             }
-            else
+            else if (insertFaulted)
             {
                 DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
                 logger.LogFailedToAcquireLockAfter(resource, leaseId, timeWaitedForLock);
+            }
+            else
+            {
+                // A try-once caller expects to find the lock held and acts on the null (a standby host, a skipped
+                // tick), so a held lock is routine and logs at Debug like the reader-writer and semaphore try-once
+                // paths; only a store fault keeps the Warning above.
+                DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
+                logger.LogFailedToAcquireLock(resource, leaseId);
             }
 
             return null;
@@ -712,7 +727,7 @@ public sealed class DistributedLock(
         // The announcement wakes waiters immediately; if skipped, waiters retry via backoff.
         if (removed && notifyWaiters)
         {
-            releaseSignal.Announce(resource, leaseId);
+            DistributedLockCoreHelpers.AnnounceRelease(releaseSignal, logger, resource, leaseId);
         }
 
         logger.LogReleaseReleased(resource, leaseId);
