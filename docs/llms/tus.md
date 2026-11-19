@@ -423,7 +423,7 @@ Every refusal is a tus response with a plain-text body and `Tus-Resumable`. A re
 
 | Status | When |
 | --- | --- |
-| `400` | Missing required metadata; an empty upload where none is allowed; a `headless-` metadata key; an owner key over 256 characters; metadata over the store's limit; a first write too short for the first-bytes check; a validator failure with no status. |
+| `400` | Missing required metadata; an empty upload where none is allowed; a `headless-` metadata key; an owner key over 256 characters; metadata over the store's limit; a first write too short for the first-bytes check; an `Upload-Length` below the bytes a deferred-length upload already holds (the length stays deferred, so the client can declare the right one); a validator failure with no status. |
 | `401` | No owner key and nobody signed in. A registered authentication scheme's challenge sets the response instead. |
 | `403` | No owner key and the caller is signed in; tenant scoping with no tenant or an invalid tenant id on create; a client `DELETE` of a finished upload. |
 | `404` | Unknown file id; another endpoint's, owner's, or tenant's upload; no stamp; an expired upload; `Upload-Concat`. |
