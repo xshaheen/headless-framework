@@ -250,6 +250,24 @@ public sealed class ConsumerHealthTests : TestBase
         host.Register().IsHealthy().Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_finish_a_restart_unhealthy_when_a_client_stops_listening_before_it_is_ready()
+    {
+        // given: clients that return from listening at once and never report ready
+        await using var host = await LedgerHosts.StartAsync(new PipelineProbe(), AbortToken);
+        host.ClientFactory().WrapClients(static inner => new NeverReadyClient(inner));
+
+        // when: a rebuild starts them; a start that waited for their readiness would never finish
+        var restart = host.Register().ReStartAsync(force: true, AbortToken).AsTask();
+        var outcome = await Record.ExceptionAsync(() => restart.WaitAsync(TimeSpan.FromSeconds(10), AbortToken));
+
+        // then
+        outcome
+            .Should()
+            .NotBeOfType<TimeoutException>("a client that stopped before it was ready must fail the start");
+        host.Register().IsHealthy().Should().BeFalse();
+    }
+
     private static void _TwoClients(MessagingSetupBuilder setup) => setup.Options.ConsumerThreadCount = 2;
 
     private static void _OpenOnFirstFailure(MessagingSetupBuilder setup)
@@ -379,6 +397,57 @@ public sealed class ConsumerHealthTests : TestBase
                 _logged.TrySetResult();
             }
         }
+    }
+
+    /// <summary>A client that returns from listening at once and whose readiness never completes.</summary>
+    private sealed class NeverReadyClient(IConsumerClient inner) : IConsumerClient
+    {
+        public BrokerAddress BrokerAddress => inner.BrokerAddress;
+
+        public Action<LogMessageEventArgs>? OnLogCallback => inner.OnLogCallback;
+
+        public Func<TransportMessage, object?, Task>? OnMessageCallback => inner.OnMessageCallback;
+
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) =>
+            new(Task.Delay(Timeout.Infinite, cancellationToken));
+
+        public ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default) =>
+            inner.ShutdownAsync(timeout, cancellationToken);
+
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
+
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => inner.FetchMessageNamesAsync(messageNames, cancellationToken);
+
+        public ValueTask SubscribeAsync(
+            IEnumerable<string> messageNames,
+            CancellationToken cancellationToken = default
+        ) => inner.SubscribeAsync(messageNames, cancellationToken);
+
+        public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default) =>
+            inner.CommitAsync(sender, cancellationToken);
+
+        public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default) =>
+            inner.RejectAsync(sender, cancellationToken);
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+            inner.PauseAsync(cancellationToken);
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+            inner.ResumeAsync(cancellationToken);
+
+        public void AttachCallbacks(
+            Func<TransportMessage, object?, Task>? onMessage,
+            Action<LogMessageEventArgs>? onLog
+        ) => inner.AttachCallbacks(onMessage, onLog);
+
+        public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished) =>
+            inner.AttachReestablishedCallback(onReestablished);
     }
 
     /// <summary>
