@@ -203,6 +203,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     private static RowLeaseSnapshot _BarrierLease(RowLeaseSnapshot lease, DateTimeOffset deadline) =>
         new(lease.Generation, RowLeaseState.Active, deadline, Holder: null, TakeoverCount: 0);
 
+    private static bool _StartsExecution(JobExecutionState context) =>
+        context.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status)) && context.Status == JobStatus.InProgress;
+
     private static bool _IsNonTerminal(JobStatus status) =>
         status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
 
@@ -756,6 +759,12 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 return Task.FromResult(0);
             }
 
+            // A start needs a row not yet running, so a duplicate start of the same claim cannot restart it.
+            if (_StartsExecution(functionContext) && !ChainRunConditionRules.CanStart(job.Status, job.ParentId))
+            {
+                return Task.FromResult(0);
+            }
+
             var updatedTicker = _CloneTicker(job);
             _ApplyFunctionContextToTicker(updatedTicker, functionContext);
 
@@ -1115,10 +1124,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             if (_timeJobs.TryGetValue(row.Key, out var job))
             {
                 // #316 claim→start recheck: the claimed generation must still be current under the claim owner, and
-                // the InProgress transition needs a Queued row so a duplicate same-owner scheduler wrapper cannot
-                // revalidate a running row. Starting keeps the lease as it is.
+                // the InProgress transition needs a row not yet running so a duplicate same-owner scheduler wrapper
+                // cannot revalidate a running row. Starting keeps the lease as it is.
                 var canTransitionToInProgress =
-                    functionContext.Status != JobStatus.InProgress || job.Status == JobStatus.Queued;
+                    functionContext.Status != JobStatus.InProgress
+                    || ChainRunConditionRules.CanStart(job.Status, job.ParentId);
 
                 if (
                     !_IsNonTerminal(job.Status)

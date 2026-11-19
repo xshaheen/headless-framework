@@ -34,10 +34,11 @@ public sealed partial class TusS3Store
     {
         Argument.IsPositiveOrZero(uploadLength);
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
         try
         {
-            var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+            var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
             if (upload is null || upload.State is { Status: TusS3UploadStatus.Gone })
             {
@@ -52,7 +53,7 @@ public sealed partial class TusS3Store
                 // completing state already holds that length, so the request goes on to finish the completion.
                 if (state.CompletingFromDeclaredLength && state.UploadLength == uploadLength)
                 {
-                    await _FinishCompletionAsync(fileId, upload).ConfigureAwait(false);
+                    await _FinishCompletionAsync(keys, fileId, upload).ConfigureAwait(false);
 
                     return;
                 }
@@ -104,13 +105,13 @@ public sealed partial class TusS3Store
                 state.ExpiresAtBeforeCompleting = state.ExpiresAt;
             }
 
-            var written = await _stateStore.UpdateAsync(fileId, upload, cancellationToken).ConfigureAwait(false);
+            var written = await _stateStore.UpdateAsync(keys, fileId, upload, cancellationToken).ConfigureAwait(false);
 
             _logger.LogS3UploadLengthSet(fileId, uploadLength);
 
             if (state.Status == TusS3UploadStatus.Completing)
             {
-                await _FinishCompletionAsync(fileId, written).ConfigureAwait(false);
+                await _FinishCompletionAsync(keys, fileId, written).ConfigureAwait(false);
             }
         }
         catch (Exception e)

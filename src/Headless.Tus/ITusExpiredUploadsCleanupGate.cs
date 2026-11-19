@@ -8,7 +8,7 @@ namespace Headless.Tus;
 /// </summary>
 /// <remarks>
 /// Internal because only <c>Headless.Tus.DistributedLocks</c> supplies one (through
-/// <c>AddDistributedLockTusLockProvider</c>); with no gate registered every node runs every pass.
+/// <c>UseDistributedLocks</c>); with no gate registered every node runs every pass.
 /// </remarks>
 internal interface ITusExpiredUploadsCleanupGate
 {

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using System.Net;
 using Headless.Dashboard;
 using Headless.Messaging;
@@ -154,7 +153,9 @@ public sealed class MessagingSearchOperationTests : TestBase
         var operations = Substitute.For<IPublishedOperationsApi>();
         operations
             .CountOperationScopeAsync(Arg.Any<MessageOperationScope>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(call => new ValueTask<MessageCount>(_HangAsync<MessageCount>(call.Arg<CancellationToken>())));
+            .Returns(call => new ValueTask<MessageCount>(
+                HangingReads.NeverAnswerAsync<MessageCount>(call.Arg<CancellationToken>())
+            ));
         await using var app = await _StartWithOutboxAsync(operations);
         using var client = MessagingCommandHost.Client(app);
         var cookie = await MessagingCommandHost.SignInAsync(client, "ops", AbortToken);
@@ -190,7 +191,7 @@ public sealed class MessagingSearchOperationTests : TestBase
                 Interlocked.Increment(ref reads) == 1
                     ? new ValueTask<MessageOperationChunk>(new MessageOperationChunk { Targets = [] })
                     : new ValueTask<MessageOperationChunk>(
-                        _HangAsync<MessageOperationChunk>(call.Arg<CancellationToken>())
+                        HangingReads.NeverAnswerAsync<MessageOperationChunk>(call.Arg<CancellationToken>())
                     )
             );
         await using var app = await _StartWithOutboxAsync(operations);
@@ -292,14 +293,6 @@ public sealed class MessagingSearchOperationTests : TestBase
             .ThrowsAsync(new InvalidOperationException("billing is down"));
 
         return outbox;
-    }
-
-    // A read that answers only by being cancelled, as a store scanning far more rows than the search's time allows.
-    private static async Task<T> _HangAsync<T>(CancellationToken cancellationToken)
-    {
-        await Task.Delay(Timeout.Infinite, cancellationToken);
-
-        throw new UnreachableException();
     }
 
     private static bool _Mentions(string? text, string searched) =>

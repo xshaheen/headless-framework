@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
+using Headless.Testing;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Fakes;
@@ -26,22 +28,19 @@ internal sealed class TimerCountingTimeProvider : FakeTimeProvider
     public Task WaitForTimersAsync(int count, CancellationToken cancellationToken) =>
         WaitUntilAsync(() => TimersCreated >= count, cancellationToken);
 
-    /// <summary>Waits until <paramref name="condition"/> holds, failing after five seconds instead of hanging.</summary>
-    public static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
-
-        while (!condition())
-        {
-            try
-            {
-                await Task.Delay(5, timeout.Token);
-            }
-            catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException("The awaited condition did not hold within five seconds.", e);
-            }
-        }
-    }
+    /// <summary>
+    /// Waits until <paramref name="condition"/> holds, failing after five seconds instead of hanging. The poll runs on
+    /// the real clock: polling on this fake one would stall until the test advanced it.
+    /// </summary>
+    public static Task WaitUntilAsync(
+        Func<bool> condition,
+        CancellationToken cancellationToken,
+        [CallerArgumentExpression(nameof(condition))] string? conditionExpression = null
+    ) =>
+        Eventually.UntilAsync(
+            condition,
+            TimeSpan.FromSeconds(5),
+            cancellationToken: cancellationToken,
+            conditionExpression: conditionExpression
+        );
 }

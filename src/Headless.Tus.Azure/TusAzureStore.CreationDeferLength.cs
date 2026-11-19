@@ -16,7 +16,10 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
     /// <param name="fileId">the TUS file identifier</param>
     /// <param name="uploadLength">the total upload size in bytes now known by the client; must not be negative</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
-    /// <exception cref="TusStoreException">thrown if the file id is invalid or the file does not exist</exception>
+    /// <exception cref="TusStoreException">
+    /// thrown if the file id is invalid, the file does not exist, or <paramref name="uploadLength"/> is below the bytes
+    /// the upload already holds
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">thrown if <paramref name="uploadLength"/> is negative</exception>
     /// <exception cref="Azure.RequestFailedException">
     /// thrown with status 412 when another request wrote the blob after this one read it; the write
@@ -38,7 +41,18 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
                 await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
                 ?? throw new TusStoreException($"File {fileId} does not exist");
 
-            // Update metadata
+            // tusdotnet checks only the configured maximum, not the stored offset. A length below the bytes already
+            // written could never complete, and the expiry sweep would read the upload as finished and keep it forever.
+            if (uploadLength < blobInfo.CurrentContentLength)
+            {
+                throw new TusStoreException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Upload length {uploadLength} is below the {blobInfo.CurrentContentLength} bytes already uploaded"
+                    )
+                );
+            }
+
             blobInfo.Metadata.UploadLength = uploadLength;
             await _UpdateMetadataAsync(blobClient, blobInfo, cancellationToken).ConfigureAwait(false);
 

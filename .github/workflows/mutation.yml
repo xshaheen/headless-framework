@@ -68,7 +68,6 @@ jobs:
 
       - name: "Restore the unit-test project"
         env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PROJECT: ${{ matrix.project }}
         run: |
           set -euo pipefail

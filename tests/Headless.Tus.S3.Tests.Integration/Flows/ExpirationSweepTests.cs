@@ -6,6 +6,7 @@ using Headless.Testing.Tests;
 using Headless.Tus;
 using Headless.Tus.Internal;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
 using Tests.TestSetup;
@@ -290,18 +291,22 @@ public abstract class ExpirationSweepTestsBase(IS3TestBackend backend) : TestBas
         var builder = new HostBuilder().ConfigureServices(services =>
         {
             services.AddSingleton(_client.S3);
-            // Registered first, so the store's own forwarding (a TryAdd) keeps this one, which reports the pass.
-            services.AddSingleton<ITusExpirationStore>(provider => new PassReportingExpirationStore(
-                provider.GetRequiredService<TusS3Store>(),
-                firstPass
-            ));
-            services.AddTusS3Store(options =>
-            {
-                options.Bucket = _options.Bucket;
-                options.Prefix = _options.Prefix;
-                options.Provider = _options.Provider;
-            });
-            services.AddTusExpiredUploadsCleanup(options => options.Interval = TimeSpan.FromHours(1));
+            services.AddHeadlessTus(tus =>
+                tus.UseS3(options =>
+                    {
+                        options.Bucket = _options.Bucket;
+                        options.Prefix = _options.Prefix;
+                        options.Provider = _options.Provider;
+                    })
+                    .ConfigureExpiredUploadsCleanup(options => options.Interval = TimeSpan.FromHours(1))
+            );
+            // The cleanup job sweeps the host's store, so wrapping that registration reports the pass it runs.
+            services.Replace(
+                ServiceDescriptor.Singleton<ITusStore>(provider => new PassReportingStore(
+                    provider.GetRequiredService<TusS3Store>(),
+                    firstPass
+                ))
+            );
         });
 
         using var host = builder.Build();
@@ -403,9 +408,22 @@ public abstract class ExpirationSweepTestsBase(IS3TestBackend backend) : TestBas
     }
 
     // Forwards to the store and reports the first pass's result, so the test waits on the job instead of a delay.
-    private sealed class PassReportingExpirationStore(ITusExpirationStore inner, TaskCompletionSource<int> firstPass)
-        : ITusExpirationStore
+    private sealed class PassReportingStore(TusS3Store inner, TaskCompletionSource<int> firstPass)
+        : ITusStore,
+            ITusExpirationStore
     {
+        public Task<long> AppendDataAsync(string fileId, Stream stream, CancellationToken cancellationToken) =>
+            inner.AppendDataAsync(fileId, stream, cancellationToken);
+
+        public Task<bool> FileExistAsync(string fileId, CancellationToken cancellationToken) =>
+            inner.FileExistAsync(fileId, cancellationToken);
+
+        public Task<long?> GetUploadLengthAsync(string fileId, CancellationToken cancellationToken) =>
+            inner.GetUploadLengthAsync(fileId, cancellationToken);
+
+        public Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken) =>
+            inner.GetUploadOffsetAsync(fileId, cancellationToken);
+
         public Task SetExpirationAsync(string fileId, DateTimeOffset expires, CancellationToken cancellationToken) =>
             inner.SetExpirationAsync(fileId, expires, cancellationToken);
 

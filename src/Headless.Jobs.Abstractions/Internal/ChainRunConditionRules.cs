@@ -31,6 +31,16 @@ internal static class ChainRunConditionRules
                 or JobStatus.Skipped;
 
     /// <summary>
+    /// Whether a row in <paramref name="status"/> may take its claim's start. A claimed root or timed row is
+    /// <see cref="JobStatus.Queued"/>. A non-timed chain child is claimed with its root and stays
+    /// <see cref="JobStatus.Idle"/> under the root's lease, so its start comes from <see cref="JobStatus.Idle"/>. A row
+    /// already <see cref="JobStatus.InProgress"/> never matches, so a duplicate start of the same claim cannot restart
+    /// it. The claim's generation fence, checked beside this, keeps out a row the claim no longer holds.
+    /// </summary>
+    public static bool CanStart(JobStatus status, Guid? parentId) =>
+        status == JobStatus.Queued || (status == JobStatus.Idle && parentId is not null);
+
+    /// <summary>
     /// <see langword="true"/> for the run conditions whose timed descendant must wait for a specific parent
     /// terminal state before it may be claimed. <see cref="RunCondition.InProgress"/> and a <see langword="null"/>
     /// condition are intentionally NOT gated — they keep their pre-#311 behavior (run concurrently / run at time).

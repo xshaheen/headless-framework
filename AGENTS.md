@@ -34,7 +34,7 @@ Each feature ships as one abstraction package plus one package per provider. `He
 
 Registration follows the same split. The feature's root package (`Headless.<Feature>`) owns `AddHeadless{Feature}(Action<Headless{Feature}SetupBuilder>)` and the provider gates. Each provider package adds `Use{Provider}` members to the builder, in a single static `Setup{Provider}` class in `Setup.cs` at the package root, with the same overload trio (`IConfiguration`, `Action<TOptions>`, `Action<TOptions, IServiceProvider>`). Options validate through FluentValidation via the `Headless.Hosting` `AddOptions<TOptions, TValidator>()` and `Configure<TOptions, TValidator>(...)` extensions, with the validator in the options file. Before you add a registration entry point, a provider package, or an options class, match the closest existing provider package.
 
-Transactions are explicit. `IUnitOfWorkFactory` is a singleton with no `Current` property. The `IUnitOfWork` handle is the unit's only identity, and the receiver always decides whether to enlist. Before you change how Messaging, Jobs, or a storage provider joins a unit, read the design rationale in [docs/llms/unit-of-work.md](docs/llms/unit-of-work.md).
+Transactions are explicit. `IUnitOfWorkFactory` is a singleton with no `Current` property. The `IUnitOfWork` handle is the unit's only identity, and the receiver always decides whether to enlist. Before you change how Messaging, Jobs, or a storage provider joins a unit, read the contract in [docs/llms/unit-of-work.md](docs/llms/unit-of-work.md) and the design rationale in the contributor notes.
 
 Relational storage features create their tables through one `SchemaRunner`, which trusts `headless_schema_history`. A table dropped by hand, or by a test reset that keeps the database, is not recreated until its feature's history rows go too. Never edit a released step: add a new one. Before a release no database runs the step, so change it in place. Put every configurable object name in `SchemaContribution.FeatureId`. Before you add or change a storage feature's DDL, match an existing feature's `SchemaContribution`.
 
@@ -50,7 +50,7 @@ The defect this repository ships most is a change that works on the provider or 
 - **Generators and analyzers.** The Jobs and Messaging source generators, `Headless.Generator.Primitives`, and `Headless.UnitOfWork.Analyzers` target `netstandard2.0` and match the API by name, so a renamed attribute or type breaks discovery with no compile error.
 - **Dashboards.** A new Jobs or Messaging state or operation needs its dashboard view and endpoint, or a stated reason it has none.
 - **Reverse states.** A way in needs a way out and a way to see it: pause and resume, quarantine and release, provision and its startup check.
-- **Docs and locales.** The owning `docs/llms/<domain>.md`, the package README, and the change-routing files in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md#change-routing). A user-facing `Messages.resx` string also goes in its `.ar` file (and `.ar-EG` where one exists).
+- **Docs and locales.** The owning `docs/llms/<domain>.md`, the package README, and the files [Keep `docs/llms` current](#keep-docsllms-current) routes the change to. A user-facing `Messages.resx` string also goes in its `.ar` file (and `.ar-EG` where one exists).
 - **Demo and sandboxes.** The `demo/` hosts and `sandboxes/` compile against the public API; update the one that shows the changed scenario.
 
 ## Build and test
@@ -167,6 +167,9 @@ Duplicated logic across packages drifts apart. Before you write code, search for
 - **Folders.** Folders do not shape namespaces, so they exist only to help a reader find code. Keep a package's front door at its root: `Setup.cs`, the setup builder, options and their validators, and the main public contracts. A package under about 20 source files stays flat. A larger one groups the rest by feature or area (`Scheduling/`, `Outbox/`, `Storage/`), never by kind of type, so no `Models`, `Contracts`, `Extensions`, `Exceptions`, `Helpers`, `Constants`, `Abstractions`, `Entities`, `Enums`, `Interfaces`, `Base`, `Utilities`, `Common`, `Core`, or `Misc` folder. `Internal/` holds internal-only types, and `Resources/` holds `.resx` files, whose generated class takes the folder's namespace. Nest at most two levels below the package root. `make check-layering` rejects a kind-named or deeper folder.
 - **Analyzer suppressions.** Write the reason inline on the pragma: `#pragma warning disable CA2000 // <why>`. Never put it in a comment block above. Extend an existing pragma instead of adding a second one. Suppress only a false positive, or a case where the fix makes the code worse, and say which one in the pragma. Blocking calls in async code report through CA1849, which has no exclusion list, so a non-blocking synchronous call it flags takes a pragma too. A rule's severity in `.editorconfig` is a repository decision, not part of a code change.
 - **JSON extension data.** Declare a `[JsonExtensionData]` property as `{ get; set; }`, never `init`. Every source-generated `JsonSerializerContext` whose models carry one must declare `[JsonSerializable(typeof(object))]` and `[JsonSerializable(typeof(JsonElement))]`. Either mistake throws only at runtime, on deserialization, while the build stays green.
+- **Record equality.** Never cache a computed member of a `record` in a `field` backing store: the cache joins the generated `Equals` and `GetHashCode` and breaks value equality. `ApiResultError.Code` and `Metadata` compute on each read for this reason.
+- **Timestamp names.** Name a public or persisted instant with an `At` suffix (`CreatedAt`, `PublishedAt`) as a `DateTimeOffset`, and use an `On` suffix only for a `DateOnly` (`EffectiveOn`). Never use a `DateCreated`-style prefix.
+- **Persisted enum values.** An enum with explicit backing values, such as `NullValueHandling`, keeps them: reordering or renumbering changes the meaning of stored and serialized values.
 - **Clocks.** The registered `TimeProvider` is for times the app records and for schedules tests drive by advancing it. A retry back-off, reconnect, or I/O timeout waits real time: leave Polly on its default clock (setting `ResiliencePipelineBuilderBase.TimeProvider` fails RS0030), and use `ReconnectBackoff` for a reconnect loop, passing it no app clock. A pipeline that must follow the app clock suppresses RS0030 with the reason. [docs/llms/index.md](docs/llms/index.md) states the rule and its one standing exception.
 - **Error codes.** `ProblemDetails` error codes use the `g:lower_snake_case` shape. To add one, change a `MessageDescriber` class, `Messages.resx`, and `Messages.ar.resx`.
 - **Deliberate non-goals.** `ICache` implementations do not enforce key length. `CacheInvalidationMessage` and similar DTOs do not enforce payload size. Consuming applications own those limits, at their own boundaries and in their broker configuration. Add no enforcement here.
@@ -177,7 +180,7 @@ Duplicated logic across packages drifts apart. Before you write code, search for
 
 - **Grep by capability, not by package name**, then read only the section you hit. The types span several namespaces (`Headless.Primitives`, `Headless.Collections`, `Headless.Threading`, `Headless.IO`). Many are extension methods that appear on BCL types in `System.*`.
 - **Read the type's Design constraints before you use it.** They state the non-obvious behavior. For example, `Currency` `*` and `/` take a `decimal` scalar, the `KeyedAsyncLock` timeout overload returns `null` instead of throwing, and `ParallelForEachAsync` does not preserve order.
-- **If the helper does not exist, add it** to `Headless.Extensions` or the matching foundational package instead of a local copy. Then update `docs/llms/extensions.md` as [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md) describes. Update the package README only when the package's purpose or name changes.
+- **If the helper does not exist, add it** to `Headless.Extensions` or the matching foundational package instead of a local copy. Then update `docs/llms/extensions.md` as [Documentation](#documentation) describes. Update the package README only when the package's purpose or name changes.
 
 ### New projects
 
@@ -196,19 +199,65 @@ Then add the project to [headless-framework.slnx](headless-framework.slnx). Thes
 
 ## Documentation
 
-- **`docs/llms/`** is the canonical consumer contract: how an application chooses, wires, and calls each domain. [docs/llms/index.md](docs/llms/index.md) routes tasks to domain files. Each `docs/llms/<domain>.md` owns that domain's concepts, trade-offs, setup, and provider behavior. Read the relevant guide before you integrate with a domain. The large files (`messaging.md`, `jobs.md`) are ~190 KB each, about 50k tokens. Route through `index.md`, grep the domain file for the heading or symbol you need, and read only that section.
-- **Package READMEs** are small NuGet landing pages. They say why the package exists, how to install it, and link to the root README and the domain guide. Keep setup and API reference out of them. Before you edit the index, a domain guide, or a package README, read [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md).
+| Surface | Reader | Owns |
+| --- | --- | --- |
+| `docs/llms/index.md` | A coding agent in a consumer app | Task routing and framework-wide invariants |
+| `docs/llms/<domain>.md` and `docs/llms/<domain>/<topic>.md` | The same agent, using one domain | Package choice, setup, behavior, constraints, operations: the canonical consumer contract |
+| `src/Headless.<Package>/README.md` | A NuGet visitor | Why the package exists, how to install it, links to the root README and the domain guide |
+| `README.md`, `README.ar.md` | Evaluators | Why Headless, first setup, the package catalog |
 
-### Update `docs/llms` with every package change
+Each fact lives on one surface; the others link to it. Before you add a guide, a topic file, or a package README, or edit `README.ar.md`, copy the template or follow the mirror rules in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md). The rest of this section holds the rules every `docs/llms` edit needs.
 
-Consumers and their agents read `docs/llms/`, so a package change is not done until the owning `docs/llms/<domain>.md` describes it. Update the docs in the same change when a change under `src/Headless.*` does any of these:
+### Write `docs/llms` for an agent in a consumer app
 
-- Changes the public API.
-- Adds, renames, or removes a package.
-- Changes consumer-visible behavior, such as defaults, ordering, retry, cancellation, or threading.
-- Adds or removes a configuration option.
+The reader has the guide, the installed packages, and its own application's code. It has none of this repository's source, tests, scripts, or history, and it never changes the framework. So every sentence answers one of its questions:
 
-The "Change routing" table in [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md#change-routing) lists every file each kind of change touches. For example, an added package also touches `README.md`, `README.ar.md`, and `eng/expected-packages.txt`. Internal refactors and perf-only, test-only, or formatting changes need no docs update.
+- **Choose:** which package, provider, or API fits the task, and what each choice costs.
+- **Wire:** what to install, register, configure, and deploy, in order.
+- **Call:** how application code uses the API, with the tempting wrong call named beside the right one.
+- **Observe:** what the application sees at run time: defaults, ordering, retries, exceptions, status codes, health checks, metrics, and deploy verbs.
+- **Verify:** how the agent proves the wiring works.
+- **Test:** how the application's own tests exercise the feature.
+
+A sentence that answers none of them goes, or moves to this file. That covers rules for code under `src/`, analyzer policy, test-harness internals, internal type names, PR and issue numbers, and the history of a change.
+
+- **Name the behavior, not the mechanism.** Keep one clause of why only when it changes a decision: "use `UseRedis`, because `UseInMemory` counts per process and N replicas admit N times the limit". Cut which internal tier a call takes or why the framework was built that way.
+- **Document the provider contract for the families a consumer may implement:** messaging transports and storage, jobs persistence, cache and distributed-lock storage, blob storage, SQL and schema dialects, the Coordination dead-owner reclaimer, and `IProblemDetailsCreator`. Give the interface, the rules each member keeps, and the public helpers it may call. A contract that still needs an internal type is a framework defect: report it in an issue, and leave the internal type out of the guide.
+- **End every setup recipe with a `**Verify:**` line** naming the observable proof: `check` or `describe` output, a readiness health check, a `resources provision` result, a log line, or a test assertion. A recipe without one says so: "**Verify:** no startup signal; the first call fails with `X` when the store is unreachable."
+- **Write each section in one Diátaxis mode**: recipes are how-to, option tables and behavior lists are reference, a short concept is explanation. Address the agent as "you", condition first, one instruction per sentence, the public symbol name instead of a paraphrase, periods over semicolons and em dashes.
+- **Prune for its context.** Cut what a capable model does by default and what it reads cheaply in the installed package: full member lists, dependency lists, XML doc text.
+- **Keep examples free of secrets and payloads.** Metrics and dashboard examples use bounded dimensions and state the authorization boundary. Name a provider SDK type an option passes through; never invent a lossy wrapper to hide it. Never call direct transport or external side effects exactly once.
+
+### Shape and split a guide
+
+- **Frontmatter.** A guide starts with `domain:` and `packages:`. `packages` lists only the packages with a `## Headless.*` section in that file, and every first-party package has exactly one such section across all guides.
+- **Order by the agent's decision path:** `# <Domain>` and a one-line summary, `## Orientation`, `## Agent Rules` (one exact rule per bullet, naming the right API and the tempting wrong one), concepts and decision tables, then one `## Headless.<Package>` section per package with setup, its Verify step, configuration, and runtime behavior.
+- **Keep anchors stable.** Never rename a `## Headless.<Package>` heading, because package READMEs link to it. When you rename or move another heading, update every link to it in `docs/llms/`, `src/*/README.md`, `README.md`, and `README.ar.md`.
+- **Split a guide past about 140 KB** into an entry file and topic files under `docs/llms/<domain>/`, each named by the task it serves. The entry keeps Orientation, Agent Rules, decision tables, the default setup with its Verify step, and a `## Topics` table whose **Read when** column names the task that triggers each file. A rule every task in the domain needs stays in the entry. Link into a topic from outside the domain by path and anchor; the index links to the entry only.
+- **Keep the index a router.** One row per domain guide, routed by task, framework-wide invariants only. Domain rules stay in their guide, however important.
+
+### Keep `docs/llms` current
+
+Consumers and their agents read `docs/llms/`, so a package change is not done until the owning guide describes it. Update the docs in the same change when a change under `src/Headless.*` changes the public API, adds, renames, or removes a package, changes consumer-visible behavior (defaults, ordering, retry, cancellation, threading), or adds or removes an option. Internal refactors and perf-only, test-only, or formatting changes need no docs update.
+
+| Change | Also update |
+| --- | --- |
+| Package added or removed | Package README, owning guide (frontmatter and `## Headless.*` section), catalog row and package count in `README.md` and `README.ar.md`, `eng/expected-packages.txt`, the index when routing changes |
+| Package purpose or name | Package README, owning guide, catalog in `README.md` and `README.ar.md`, the index when routing changes |
+| Setup entry point or provider member | Owning guide, the setup table in `README.md` and `README.ar.md` when the family is listed there |
+| Registration, API, option, default, failure, ordering, or runtime effect | Owning guide |
+| Framework-wide invariant | The index and each affected guide |
+
+- **The installed source wins.** When a guide disagrees with the code, fix the guide in the owning file only; never patch the copy in a package README.
+- **Carry `main`'s doc changes into a docs branch.** When a docs rewrite conflicts with `main`, keep the branch's structure and port each change `main` made to the old text into the file that now owns that fact. A conflict resolved by taking either side whole drops a fact.
+
+Before you commit a docs change:
+
+1. Search every removed or renamed public name across `docs/llms/`, package READMEs, and both root READMEs.
+2. Check each changed link and anchor.
+3. Confirm each frontmatter package has one matching `## Headless.*` section, and each `src/Headless.*/README.md` links to exactly one guide.
+4. Compile changed C# samples. `tests/Headless.Docs.Examples.Tests.Unit` compiles every ```` ```csharp ```` block of the messaging, jobs, and dashboards guides and their topic files: run `make test-project TEST_PROJECT=tests/Headless.Docs.Examples.Tests.Unit/Headless.Docs.Examples.Tests.Unit.csproj`. Mark a block ```` ```csharp no-compile ```` only for pseudo-code, a deliberately wrong example, or one that needs another assembly; never to silence a wrong block. [AUTHORING.md](docs/authoring/AUTHORING.md#compiled-examples) covers how blocks compile and how to add a guide to the harness. Check samples in other guides against the current public API by hand.
+5. Confirm `README.md` and `README.ar.md` still list the same setup rows, catalog sections, and package links in the same order.
 
 ## Pull requests
 

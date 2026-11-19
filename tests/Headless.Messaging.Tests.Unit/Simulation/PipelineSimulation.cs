@@ -226,6 +226,13 @@ internal static class PipelineHosts
     /// Stops the host gracefully, moving the clock past each wait shutdown arms (its drain and close bounds) until it
     /// finishes; waits armed before the stop began are left alone.
     /// </summary>
+    /// <remarks>
+    /// The clock moves as soon as the stop is still running and a wait armed since it began is pending, without waiting
+    /// for the stop's own work to run first. So a stop that needs no simulated time but is slow in wall time is cut
+    /// short at its bounds, and a host with a delivery still waiting for its rate-limit permit or behind its key keeps
+    /// re-arming that row's keeper tick until the stop's cancellation reaches the delivery. Stop such a host with
+    /// <see cref="SimulationHost.StopAsync"/>, which moves no time and fails fast when the stop does wait on the clock.
+    /// </remarks>
     public static async Task ShutDownAsync(this SimulationHost host, CancellationToken cancellationToken)
     {
         var mark = host.Clock.WaitMark;

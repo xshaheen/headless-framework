@@ -768,7 +768,9 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
         client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
-        await client.ListeningAsync(TimeSpan.FromSeconds(5), AbortToken);
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listen = client.ListeningAsync(TimeSpan.FromSeconds(5), listening.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
         processor.ClearReceivedCalls();
         var restarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         processor.When(p => p.StartProcessingAsync(Arg.Any<CancellationToken>())).Do(_ => restarted.TrySetResult());
@@ -790,6 +792,8 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         finally
         {
             handlerReturned.TrySetResult();
+            await listening.CancelAsync();
+            await listen;
             await client.DisposeAsync();
         }
     }
@@ -801,7 +805,9 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
         client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
-        await client.ListeningAsync(TimeSpan.FromSeconds(5), AbortToken);
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listen = client.ListeningAsync(TimeSpan.FromSeconds(5), listening.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
         processor.ClearReceivedCalls();
         var secondStop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var stops = 0;
@@ -830,6 +836,8 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         finally
         {
             handlerReturned.TrySetResult();
+            await listening.CancelAsync();
+            await listen;
             await client.DisposeAsync();
         }
     }

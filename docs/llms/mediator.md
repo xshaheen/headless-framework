@@ -5,126 +5,103 @@ packages: Mediator
 
 # Mediator
 
-> HTTP-agnostic Mediator pipeline behaviors — validation, logging, and slow-request alerting — without coupling to ASP.NET Core.
+> Validation, request and response logging, and slow-request alerts as pipeline behaviors for the Mediator source-generator library, usable from any host.
 
 ## Orientation
 
-`Headless.Mediator` provides `IPipelineBehavior<,>` registrations and setup extensions for the [Mediator](https://github.com/martinothamar/Mediator) source-generator library. The package is intentionally narrow: it ships behaviors for **validation** (`ValidationRequestPreProcessor<TMessage, TResponse>`) and **request/response logging** (`RequestLoggingBehavior`, `ResponseLoggingBehavior`, `CriticalRequestLoggingBehavior`), and no more. Everything else — authentication, tenancy enforcement, idempotency, HTTP response shaping — belongs at the HTTP boundary, not inside `mediator.Send()`.
+`Headless.Mediator` registers pipeline behaviors for the [Mediator](https://github.com/martinothamar/Mediator) source-generator library. It ships two kinds of behavior and no more:
 
-There is exactly one package in this domain. No provider choice is required.
+- **Validation.** A pre-processor runs every `IValidator<TMessage>` before the handler and throws `FluentValidation.ValidationException` on any failure.
+- **Logging.** Request and response entries at Debug, and a Warning when a handler takes 1 second or longer.
+
+The behavior types are internal. Register them through the `SetupMediator` extensions on `IServiceCollection`. Authentication, tenancy enforcement, idempotency, and HTTP response shaping belong at the HTTP boundary, not inside `mediator.Send()`. See [Put each concern at the right layer](#put-each-concern-at-the-right-layer).
+
+This domain has one package and no provider choice.
 
 ## Agent Rules
 
-- **Register behaviors with the canonical setup extensions, not manually:** use `services.AddMediatorValidationRequestBehavior()` and `services.AddMediatorLoggingBehaviors()`. Both extensions are idempotent (`TryAddEnumerable`).
-- **Register `IValidator<T>` implementations separately.** The validation pre-processor picks up every `IValidator<TMessage>` from DI; it does not self-register validators.
-- **Register `ICurrentUser` before calling any logging behavior extension.** All three logging behaviors inject `ICurrentUser` from `Headless.Context.Abstractions`. For background/worker hosts where no real user exists, register `NullCurrentUser`.
-- **Do NOT put authentication or authorization in a pipeline behavior.** Auth belongs at `app.UseAuthentication()` + `app.UseAuthorization()` + endpoint-level `[Authorize]` / `RequireAuthorization()`. A Mediator-side auth check runs after model binding (abusive payloads already deserialized), fires on every internal `Send()` (handler-to-handler composition produces spurious 401/403), and requires `IHttpContextAccessor` (breaks host-agnosticism).
-- **Do NOT put tenancy enforcement in a pipeline behavior.** Use `[RequireTenant]` / `.RequireTenant()` endpoint conventions and `TenantRequirement` authorization policy from `Headless.Api`. For worker/console/consumer paths, set tenant scope explicitly with `currentTenant.Change(tenantId)` around the `mediator.Send()` call.
-- **Do NOT implement an idempotency pipeline behavior.** The Mediator abstraction only sees the typed response object — it cannot cache the original HTTP status code, response headers, or byte body. It also fires on every internal `Send()` producing false positives on handler composition. Use `Headless.Idempotency.ResponseReplay` (`services.AddHeadlessHttpIdempotency()` + `app.UseHeadlessHttpIdempotency()`) instead. A handler that must fence its own writes against the admission reads `HttpContext.GetHttpIdempotencyContext()` (`IHttpIdempotencyContext`) and calls `unit.Idempotency.FenceAsync(context.Admission)` inside its own unit of work — never as a pipeline behavior.
-- **Do NOT push HTTP response shaping into behaviors.** Filters, exception handlers, problem-details factories, and response compression belong in `Headless.Api` or standard ASP.NET Core middleware.
-- **What does belong in the pipeline:** FluentValidation pre-processors, request/response logging, slow-request alerts, typed response transforms, domain-specific retry policies for transient handler faults, instrumentation hooks — anything that operates purely on `IRequest<TResponse>` without HTTP semantics.
-- **`ServiceLifetime` is `Scoped` by default.** Pass `ServiceLifetime.Transient` or `ServiceLifetime.Singleton` explicitly if a behavior must not share state across the request scope. The same lifetime applies to all behaviors registered by a composite call like `AddMediatorLoggingBehaviors`.
-- **`CriticalRequestLoggingBehavior` logs at `Warning`.** The threshold is hard-coded at 1 second. Do not use it as a general performance monitor — it is an alert for unusually slow handlers. The Warning entry carries only the message/response type names, elapsed time, and user ID.
-- **Payloads reach the logs only in Development.** Outside the Development environment the Debug entries carry the user ID, the message and response type names, and (for validation) each failure as `Property: message`, never the message or response objects. When `IHostEnvironment.IsDevelopment()` is true, they also carry the whole objects (`{@Message}`, `{@Response}`, and the separate `Mediator:SlowMessagePayload` entry). A host with no `IHostEnvironment` registered counts as Production. A validator message that embeds `{PropertyValue}` writes the rejected value into the validation entry in every environment, so keep such messages off sensitive properties.
+- Register the behaviors with `services.AddMediatorValidationRequestBehavior()` and `services.AddMediatorLoggingBehaviors()`. Every extension uses `TryAddEnumerable`, so a second call adds no duplicate behavior.
+- Register your `IValidator<T>` implementations yourself. The validation pre-processor resolves every `IValidator<TMessage>` from DI and registers none.
+- Register `ICurrentUser` before you send any message through the logging behaviors. All of them inject `ICurrentUser` (namespace `Headless.Context`) to log the user ID. In a worker or console host with no real user, register `NullCurrentUser`.
+- Keep authentication and authorization out of pipeline behaviors. Use `app.UseAuthentication()`, `app.UseAuthorization()`, and `[Authorize]` or `RequireAuthorization()` on the endpoint. A behavior runs after model binding, so an abusive payload is already deserialized, and it runs on every internal `Send()`, so handler-to-handler calls fail with spurious 401 or 403 errors.
+- Keep tenancy enforcement out of pipeline behaviors. Use the `RequireTenant()` endpoint convention or `[RequireTenant]` from `Headless.Api`. On a worker, console, or consumer path, set the tenant explicitly with `using (currentTenant.Change(tenantId))` around `mediator.Send()`.
+- Do not write an idempotency pipeline behavior. A behavior sees only the typed response, so it cannot replay the original status code, headers, or body, and it fires on internal `Send()` calls too. Use `Headless.Idempotency.ResponseReplay`: `services.AddHeadlessHttpIdempotency(configuration)` and `app.UseHeadlessHttpIdempotency()`. A handler that must fence its own writes reads `HttpContext.GetHttpIdempotencyContext()` and calls `unit.Idempotency.FenceAsync(context.Admission)` inside its own unit of work.
+- Keep HTTP response shaping out of behaviors. Exception handlers, problem-details factories, and response compression belong in `Headless.Api` or ASP.NET Core middleware.
+- Put a concern in the pipeline only when it works on the typed message and response with no HTTP semantics: validation, logging, slow-request alerts, typed response transforms, retries of transient handler faults, and instrumentation.
+- Expect message and response payloads in logs only in the Development environment. See [Logged fields and payloads](#logged-fields-and-payloads). A validator message that embeds `{PropertyValue}` writes the rejected value into the validation entry in every environment, so keep such messages off sensitive properties.
 
 ## Core Concepts
 
-### Pipeline and Behavior Model
+### Behaviors and their contracts
 
-Mediator dispatches messages through an ordered pipeline of `IPipelineBehavior<TMessage, TResponse>` instances before reaching the handler. Behaviors wrap the handler call; pre-processors (`MessagePreProcessor<,>`) are a convenience that run unconditionally before the next step without needing to call `next.Invoke(...)` explicitly.
+Mediator runs each message through an ordered pipeline of `IPipelineBehavior<TMessage, TResponse>` instances before the handler. Messages implement `IMessage`, or `IRequest<TResponse>` for request-response. Handlers implement `IRequestHandler<TMessage, TResponse>`.
 
-`ValidationRequestPreProcessor<TMessage, TResponse>` is a pre-processor: it runs all `IValidator<TMessage>` implementations one at a time in registration order (validators commonly share a scoped `DbContext`, which is not safe for concurrent use), collects any `ValidationFailure`s, and throws `FluentValidation.ValidationException` before the handler is invoked. The HTTP boundary maps that exception to a 422 response when `Headless.Api`'s exception handler is configured.
+| Behavior | Registered by | Applies to | Runs | Throws or logs |
+| --- | --- | --- | --- | --- |
+| `ValidationRequestPreProcessor` | `AddMediatorValidationRequestBehavior` | `IMessage` | Before the handler | Throws `FluentValidation.ValidationException` with every failure from every validator. Logs a Debug `Mediator:Validation` entry first. |
+| `RequestLoggingBehavior` | `AddMediatorRequestResponseLoggingBehaviors` | `IMessage` | Before the handler | Debug `Mediator:Message` |
+| `ResponseLoggingBehavior` | `AddMediatorRequestResponseLoggingBehaviors` | `IRequest<TResponse>` | After the handler returns | Debug `Mediator:Response` |
+| `CriticalRequestLoggingBehavior` | `AddMediatorSlowRequestsLoggingBehaviors` | `IRequest<TResponse>` | Around the handler | Warning `Mediator:SlowMessage` when the handler takes 1 second or longer |
 
-The three logging behaviors are registered by `AddMediatorLoggingBehaviors()`:
+`AddMediatorLoggingBehaviors` calls both logging extensions. The validation pre-processor runs validators one at a time, in registration order, because validators often share a scoped `DbContext` that is not safe for concurrent use. When `Headless.Api`'s exception handler is configured, it maps `ValidationException` to a 422 problem-details response.
 
-| Behavior | Base class | Log level | Logs |
+### Logged fields and payloads
+
+| Event (ID) | Level | Fields outside Development | Added in Development |
 | --- | --- | --- | --- |
-| `RequestLoggingBehavior<TMessage, TResponse>` | `MessagePreProcessor<,>` | Debug | Message name before handler; the message too in Development |
-| `ResponseLoggingBehavior<TMessage, TResponse>` | `MessagePostProcessor<,>` | Debug | Message and response names after handler; both objects too in Development |
-| `CriticalRequestLoggingBehavior<TMessage, TResponse>` | `IPipelineBehavior<,>` | Warning (names) + Debug (payload, Development only) | Elapsed time + type names at Warning when the handler takes ≥ 1 second; in Development, the full payloads in a separate Debug entry |
+| `Mediator:Message` (1) | Debug | user ID, message type name | `{@Message}` |
+| `Mediator:Response` (2) | Debug | user ID, message and response type names | `{@Message}`, `{@Response}` |
+| `Mediator:SlowMessage` (3) | Warning | user ID, elapsed time, message and response type names | none |
+| `Mediator:Validation` (4) | Debug | message type name, each failure as `Property: message` | `{@Message}` |
+| `Mediator:SlowMessagePayload` (5) | Debug | not written | message and response type names, `{@Message}`, `{@Response}` |
 
-All three inject `ICurrentUser` so they include the current user ID in log entries and work identically in API, worker, and console hosts.
+Payloads appear only when `IHostEnvironment.IsDevelopment()` is true. A host with no `IHostEnvironment` registered counts as Production. The 1-second slow-request threshold is fixed. Treat `Mediator:SlowMessage` as an alert for unusually slow handlers, not as a performance monitor.
 
-### Request and Handler Contract
+### Put each concern at the right layer
 
-This package targets the [Mediator](https://github.com/martinothamar/Mediator) source-generator library. Messages implement `IMessage` (or `IRequest<TResponse>` for request-response). Handlers implement `IRequestHandler<TMessage, TResponse>`. The pipeline behavior contract is `IPipelineBehavior<TMessage, TResponse>`.
-
-`ValidationRequestPreProcessor` constrains `TMessage : IMessage`. `ResponseLoggingBehavior` and `CriticalRequestLoggingBehavior` constrain `TMessage : IRequest<TResponse>` (response-bearing messages only).
-
-### Boundary vs. Cross-Cut Distinction
-
-A **cross-cutting concern** operates purely on the typed `IRequest<TResponse>` and produces a `TResponse`. It has no HTTP semantics and works identically from any host: API, queue consumer, scheduled job, or CLI.
-
-A **boundary concern** is a property of the transport layer — the HTTP request, the wire representation, the response bytes, or the security context established before model binding. Boundary concerns must run before the framework deserializes the request body, or they must observe the raw HTTP response. Neither is possible from inside a Mediator pipeline behavior.
-
-The four concerns commonly proposed as pipeline behaviors that this framework rejects:
-
-**Authentication/authorization** — enforcement is a pre-bind decision requiring `HttpContext`. Moving it into the pipeline means abusive payloads are deserialized before rejection, and every internal `Send()` from one handler to another triggers spurious 401/403 responses in business code.
-
-**Tenancy enforcement** — same boundary argument. The enforcement decision is a property of the HTTP request (resolved at the middleware level before routing), not of the typed message. Issue #279 removed `TenantRequiredBehavior` on these grounds.
-
-**Idempotency** — four structural reasons: (1) fires after model binding, so oversized/malformed bodies are already deserialized; (2) fires on every internal `Send()`, producing false positives on handler-to-handler composition; (3) cannot cache HTTP status codes, headers, or byte body — only the typed response object; (4) requires reading `Idempotency-Key` from `HttpContext`.
-
-**HTTP response shape** — serialization format, content negotiation, response compression, and problem-details shaping are post-serializer byte-level transforms. They must observe the HTTP response stream, not the typed response object.
+A cross-cutting concern works on the typed `IRequest<TResponse>` and behaves the same from an API, a queue consumer, a job, or a CLI. A boundary concern depends on the HTTP request, the wire bytes, or the security context set before model binding. A pipeline behavior cannot run before the body is deserialized and cannot see the raw HTTP response, so a boundary concern cannot live there.
 
 | Concern | Where it lives | Why |
 | --- | --- | --- |
-| Validation | Mediator pre-processor | Operates on typed message; HTTP-agnostic. |
-| Request/response logging | Mediator behavior | Operates on typed message; HTTP-agnostic. |
-| Slow-request alerting | Mediator behavior | Operates on typed message; HTTP-agnostic. |
-| Typed response transforms | Mediator behavior | Operates on typed response; no HTTP semantics. |
-| Authentication/authorization | ASP.NET Core middleware | Pre-bind decision; needs `HttpContext`. |
-| Tenant enforcement | ASP.NET Core authorization (`Headless.Api`) | Pre-bind decision; needs `HttpContext`. |
-| Idempotency replay | ASP.NET Core middleware (`Headless.Idempotency.ResponseReplay`) | Caches HTTP status/headers/byte body; pre-bind cap enforcement. |
-| Response compression | ASP.NET Core middleware | Post-serializer byte transform. |
-| Problem-details shaping | `Headless.Api` factories + exception handler | HTTP-bound response shape. |
+| Validation | Mediator pre-processor | Works on the typed message. |
+| Request and response logging | Mediator behavior | Works on the typed message and response. |
+| Slow-request alerts | Mediator behavior | Works on the typed message. |
+| Typed response transforms | Mediator behavior | Works on the typed response. |
+| Authentication and authorization | ASP.NET Core middleware | Decided before model binding; needs `HttpContext`. |
+| Tenant enforcement | ASP.NET Core authorization (`Headless.Api`) | Decided before model binding; needs `HttpContext`. |
+| Idempotency replay | `Headless.Idempotency.ResponseReplay` middleware | Replays status, headers, and body bytes; caps the body before binding. |
+| Response compression | ASP.NET Core middleware | Transforms bytes after serialization. |
+| Problem-details shaping | `Headless.Api` factories and exception handler | Shapes the HTTP response. |
 
 ---
 
 ## Headless.Mediator
 
-### API and behavior
+Pipeline behaviors and their `IServiceCollection` registration extensions for a Mediator-based application.
 
-- `ValidationRequestPreProcessor<TMessage, TResponse>` — runs all registered `IValidator<TMessage>` one at a time, in registration order, before the handler; throws `ValidationException` on any failure.
-- `RequestLoggingBehavior<TMessage, TResponse>` — logs the message name and payload at Debug level before handler execution.
-- `ResponseLoggingBehavior<TMessage, TResponse>` — logs the message name, payload, and response at Debug level after handler execution.
-- `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs elapsed time and type names at Warning level when a handler takes ≥ 1 second; the full request/response payloads go to a separate Debug-level entry so sensitive data stays out of production logs.
-- Idempotent composite setup extensions: `AddMediatorValidationRequestBehavior()` and `AddMediatorLoggingBehaviors()`.
-- Fine-grained split: `AddMediatorRequestResponseLoggingBehaviors()` (request + response only) and `AddMediatorSlowRequestsLoggingBehaviors()` (slow-request only).
-- Every setup extension accepts an optional `ServiceLifetime` parameter (default `Scoped`).
-
-### Design constraints
-
-**`ICurrentUser` instead of `IHttpContextAccessor`** — all logging behaviors resolve the current user through `ICurrentUser` from `Headless.Context.Abstractions` rather than reading `HttpContext`. This preserves host-agnosticism: the same handler and behavior registrations run identically from a web host and a worker service. Callers that have no real user (background processes) should register `NullCurrentUser`.
-
-**`TryAddEnumerable` for idempotency** — all setup extensions use `TryAddEnumerable` to register the open-generic `IPipelineBehavior<,>` descriptor. Calling the same extension twice does not produce duplicate behaviors in the pipeline.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Mediator
 dotnet add package Mediator.SourceGenerator # generates AddMediator into your project
 ```
 
-### Setup and use
-
 ```csharp
 using Headless.Mediator;
 
-// Register Mediator (source-generator library)
 builder.Services.AddMediator(options =>
 {
     options.ServiceLifetime = ServiceLifetime.Scoped;
 });
 
-// Register behaviors
 builder.Services.AddMediatorValidationRequestBehavior();
 builder.Services.AddMediatorLoggingBehaviors();
 ```
 
-Define a request and handler:
+Define a request, its handler, and a validator. The pre-processor picks up the validator once it is registered in DI.
 
 ```csharp
+using FluentValidation;
 using Mediator;
 
 public sealed record CreateOrder(string ProductId) : IRequest<CreateOrderResponse>;
@@ -138,12 +115,6 @@ public sealed class CreateOrderHandler : IRequestHandler<CreateOrder, CreateOrde
         return ValueTask.FromResult(new CreateOrderResponse(Guid.NewGuid()));
     }
 }
-```
-
-Add a FluentValidation validator (picked up automatically by the validation pre-processor):
-
-```csharp
-using FluentValidation;
 
 public sealed class CreateOrderValidator : AbstractValidator<CreateOrder>
 {
@@ -154,31 +125,28 @@ public sealed class CreateOrderValidator : AbstractValidator<CreateOrder>
 }
 ```
 
+**Verify:** in a test, `mediator.Send(new CreateOrder(""))` throws `FluentValidation.ValidationException` before the handler runs. With Debug logging on, a valid send writes a `Mediator:Message` entry and a `Mediator:Response` entry.
+
 ### Configuration
 
-All setup extensions accept an optional `ServiceLifetime` parameter:
+Every extension takes an optional `ServiceLifetime`, default `Scoped`. A composite call such as `AddMediatorLoggingBehaviors` applies the one lifetime to every behavior it registers. Pass `Transient` or `Singleton` when a behavior must not share state across the request scope.
 
 ```csharp
-// Default: Scoped (one behavior instance per request scope)
-builder.Services.AddMediatorValidationRequestBehavior();
-builder.Services.AddMediatorLoggingBehaviors();
-
-// Override lifetime per registration
 builder.Services.AddMediatorValidationRequestBehavior(ServiceLifetime.Transient);
 builder.Services.AddMediatorLoggingBehaviors(ServiceLifetime.Transient);
 ```
 
-For finer-grained control over logging behaviors:
+To register only part of the logging set:
 
 ```csharp
-// Request + response logging only (no slow-request alerting)
+// Request and response logging, no slow-request alert
 builder.Services.AddMediatorRequestResponseLoggingBehaviors();
 
-// Slow-request alerting only (warns when handler takes >= 1 second)
+// Slow-request alert only
 builder.Services.AddMediatorSlowRequestsLoggingBehaviors();
 ```
 
-For worker/console hosts where no real user exists, register `NullCurrentUser` before the logging behaviors:
+In a worker or console host with no real user, register `NullCurrentUser` first:
 
 ```csharp
 using Headless.Context;
@@ -187,7 +155,7 @@ builder.Services.AddSingleton<ICurrentUser, NullCurrentUser>();
 builder.Services.AddMediatorLoggingBehaviors();
 ```
 
-For non-HTTP paths where tenant scope must be established explicitly:
+On a non-HTTP path, set the tenant around the send:
 
 ```csharp
 using (currentTenant.Change(tenantId))
@@ -196,6 +164,8 @@ using (currentTenant.Change(tenantId))
 }
 ```
 
-### Runtime behavior
+### Design and runtime behavior
 
-Registers open-generic `IPipelineBehavior<,>` descriptors when the setup extensions are called. Descriptor lifetime is `Scoped` by default; pass `ServiceLifetime.Transient` or `ServiceLifetime.Singleton` to override per registration. All registrations are idempotent — calling the same extension multiple times does not duplicate behaviors in the pipeline.
+- The extensions register open-generic `IPipelineBehavior<,>` descriptors. Calling an extension again adds nothing.
+- A behavior that resolves `ICurrentUser` fails at resolution when no `ICurrentUser` is registered.
+- The validation pre-processor aggregates the failures of every validator into one `ValidationException`. With no validator registered for a message, it does nothing.

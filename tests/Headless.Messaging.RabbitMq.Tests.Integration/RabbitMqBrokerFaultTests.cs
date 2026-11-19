@@ -26,7 +26,7 @@ public sealed class RabbitMqBrokerFaultTests(RabbitMqFixture fixture) : BrokerFa
 
         try
         {
-            await broker.StartAsync();
+            await broker.StartAsync(cancellationToken);
             var session = await RabbitMqFixture.CreateConformanceSessionAsync(
                 broker.ForwardedHost,
                 broker.ForwardedPort,
@@ -41,7 +41,7 @@ public sealed class RabbitMqBrokerFaultTests(RabbitMqFixture fixture) : BrokerFa
                     // the test already settled. Wait until the broker has applied every ack before stopping.
                     await _WaitForNoUnacknowledgedAsync(broker, token);
                     await broker.Container.StopAsync(token);
-                    await broker.Container.StartAsync(token);
+                    await broker.RestartAsync(token);
                 },
                 () => ((IAsyncDisposable)broker).DisposeAsync()
             );

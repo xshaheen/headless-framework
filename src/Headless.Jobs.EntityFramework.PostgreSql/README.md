@@ -17,4 +17,4 @@ dotnet add package Headless.Jobs.EntityFramework.PostgreSql
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Jobs (Background Jobs) guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs.md#headlessjobsentityframeworkpostgresql)
+- [Jobs (Background Jobs) guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs/storage.md#headlessjobsentityframeworkpostgresql)

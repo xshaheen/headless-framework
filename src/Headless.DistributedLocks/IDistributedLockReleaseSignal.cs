@@ -25,7 +25,8 @@ public interface IDistributedLockReleaseSignal
     /// <summary>
     /// Announces that <paramref name="leaseId"/> no longer holds <paramref name="resource"/>. Runs on the release
     /// path, so it must return promptly without awaiting I/O and must not throw: start any send in the background
-    /// and log its failure there.
+    /// and log its failure there. If it throws anyway, the provider logs the exception and the release still
+    /// completes, so waiters fall back to their backoff poll.
     /// </summary>
     /// <param name="resource">The resource name as the caller passed it to the provider, without the key prefix.</param>
     /// <param name="leaseId">The lease identifier of the holder that was released.</param>
