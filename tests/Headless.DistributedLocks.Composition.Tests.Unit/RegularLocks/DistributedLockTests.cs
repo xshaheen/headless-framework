@@ -1202,6 +1202,40 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_and_log_when_the_release_signal_throws()
+    {
+        // given — a signal that breaks its no-throw contract, as a custom or broker-backed one might
+        var logger = new LevelCapturingLogger<DistributedLock>();
+        var releaseSignal = Substitute.For<IDistributedLockReleaseSignal>();
+        releaseSignal
+            .When(x => x.Announce(Arg.Any<string>(), Arg.Any<string>()))
+            .Do(_ => throw new InvalidOperationException("broker unavailable"));
+        var provider = new DistributedLock(
+            _storage,
+            releaseSignal,
+            new DistributedLockOptions(),
+            _guidGenerator,
+            _timeProvider,
+            logger
+        );
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        acquiredLock.Should().NotBeNull();
+
+        // when
+        var act = async () => await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
+
+        // then — the confirmed release stands and the failure is logged as a warning
+        await act.Should().NotThrowAsync();
+        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
+        releaseSignal.Received(1).Announce(resource, acquiredLock!.LeaseId);
+        logger
+            .Entries.Should()
+            .Contain((DistributedLockTestSupport.ReleaseSignalAnnounceFailedEventId, LogLevel.Warning));
+    }
+
+    [Fact]
     public async Task should_not_announce_the_release_when_a_try_once_lease_skips_the_wake_up()
     {
         // given
