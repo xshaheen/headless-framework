@@ -87,7 +87,10 @@ public abstract class EntityFrameworkConflictReplayConformanceTests(EntityFramew
 
         conflict.Should().NotBeNull("the last attempt's lost check reaches the caller");
         blockRuns.Should().Be(3);
-        (await fixture.ReadCounterAsync(id, AbortToken)).Should().Be(5, "every attempt was rolled back");
+        (await fixture.ReadCounterAsync(id, AbortToken)).Should().Be(5, "no attempt's save reached the table");
+        (await fixture.ReadVersionAsync(id, AbortToken))
+            .Should()
+            .Be(0, "every attempt's rival version bump was rolled back with its transaction");
     }
 
     /// <summary>

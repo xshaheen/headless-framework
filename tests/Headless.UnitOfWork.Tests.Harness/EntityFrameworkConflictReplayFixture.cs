@@ -52,6 +52,18 @@ public sealed class EntityFrameworkConflictReplayFixture(Action<DbContextOptions
             .SingleAsync(cancellationToken);
     }
 
+    /// <summary>Reads the stored version token outside any unit's transaction.</summary>
+    public async Task<int> ReadVersionAsync(int id, CancellationToken cancellationToken)
+    {
+        await using var db = _CreateContext();
+
+        return await db
+            .Counters.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => x.Version)
+            .SingleAsync(cancellationToken);
+    }
+
     private ConflictCounterDbContext _CreateContext()
     {
         var builder = new DbContextOptionsBuilder<ConflictCounterDbContext>();
