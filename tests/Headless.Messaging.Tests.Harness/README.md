@@ -138,32 +138,32 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 | `QueueRoundTrip` | S | S | S | S | S† | S‡ | S | S | S |
 | `BusRoundTrip` | S | S | S | N/A | S† | S‡ | S | S | S |
 | `HeaderRoundTrip` | S | S | S | S | S† | S‡ | S | S | S |
-| `EmptyBodyDispatch` | S | S | N/A | U | U | U | S | S | S |
+| `EmptyBodyDispatch` | S | S | N/A | S | U | U | S | S | S |
 | `CommitSettlement` | S | S | S | S | S† | S‡ | S | S | S |
 | `RejectRedelivery` | S | S | S | S | S† | S‡ | S | S | S |
-| `ConsumerPauseRecovery` | S | S | S | S | S† | S‡ | U | S | S |
-| `BrokerInterruptionRecovery` | S | S | S | S | U | S‡ | U | S | S |
-| `ConnectionDropRecovery` | S | S | S | S | U | U | U | S | S |
-| `PublishDuringOutage` | S | S | S | S | U | U | U | S | S |
-| `StaleSettlement` | S | S | S | S | U | S‡ | U | S | S |
+| `ConsumerPauseRecovery` | S | S | S | S | S† | S‡ | S | S | S |
+| `BrokerInterruptionRecovery` | S | S | S | S | N/A | S‡ | N/A | S | S |
+| `ConnectionDropRecovery` | S | S | S | S | U | U | N/A | S | S |
+| `PublishDuringOutage` | S | S | S | S | U | U | N/A | S | S |
+| `StaleSettlement` | S | S | S | S | U | S‡ | S | S | S |
 | `HandlerFailureRedelivery` | S | S | S | S | U | S‡ | U | S | S |
 | `BoundedGracefulShutdown` | S | S | S | S | S† | S‡ | S | S | S |
 | `BusConsumerIdentityFanOut` | S | S | S | N/A | S† | N/A | S | S | S |
 | `BusReplicaCompetition` | S | S | S | N/A | S† | N/A | S | S | S |
 | `QueueOwnership` | S | S | S | S | S† | N/A | S | S | S |
 | `SameNameLaneIsolation` | S | S | S | N/A | S† | N/A | S | S | S |
-| `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U | N/A |
+| `StartupRejectionBeforeSideEffects` | S | S | S | S | S† | S‡ | S | S | S |
 | `MalformedEnvelopeTerminalSettlement` | S | S | S | S | U | U | N/A | S | N/A |
 | `RequestReplyRoundTrip` | S | S | N/A | N/A | U | U | S | S | S |
 | `RequestReplyCallerIsolation` | S | S | N/A | N/A | U | U | S | S | S |
 | `RequestReplyForeignAddressRefusal` | S | S | N/A | N/A | U | U | S | S | S |
 | `RequestReplyCallerCleanup` | S | S | N/A | N/A | U | U | S | S | S |
-| `RequestReplyStartupRejection` | N/A | N/A | S | S | S† | U | N/A | N/A | N/A |
+| `RequestReplyStartupRejection` | N/A | N/A | S | S | S† | S‡ | N/A | N/A | N/A |
 | `RawPayloadConsumption` | S | S | S | S | S† | U | N/A | S | N/A |
 | `HeaderBuilderFailureRedelivery` | S | S | S | U | S† | U | N/A | U | N/A |
-| `DeadLetterSingleCopy` | N/A | S | N/A | N/A | U | U | U | N/A | S |
-| `StandardHeaderRoundTrip` | S | S | S | S | U | U | U | S | S |
-| `HandlerConcurrencyCap` | S | S | S | S | U | U | U | S | S |
+| `DeadLetterSingleCopy` | N/A | S | N/A | N/A | U | U | N/A | N/A | S |
+| `StandardHeaderRoundTrip` | S | S | S | S | U | U | S | S | S |
+| `HandlerConcurrencyCap` | S | S | S | S | U | U | S | S | S |
 | `PerKeyOrdering` | N/A | N/A | S | S | U | U | N/A | N/A | N/A |
 | `KeySequencing` | S | S | S | S | U | S‡ | S | S | S |
 | `BodySizeLimit` | S | S | S | S | U | U | N/A | N/A | N/A |
@@ -172,7 +172,7 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 Evidence anchors:
 
 - Queue/body/header, commit, reject, isolation, and shutdown: `TransportConsumerConformanceTestsBase` provider overrides.
-- Empty-body broker dispatch: `should_dispatch_empty_message_body` in the NATS and RabbitMQ consumer leaves.
+- Empty-body broker dispatch: `should_dispatch_empty_message_body` in the NATS, RabbitMQ, Kafka, and InMemory consumer leaves. The Azure Service Bus leaves run it too, and their cells wait on a run (#1760, #1761).
 - Pause/resume: `BrokerFaultTestsBase.should_resume_delivery_once_after_consumer_pause` provider overrides.
 - Broker restart: `BrokerFaultTestsBase.should_resume_delivery_once_after_broker_restart` provider overrides, each on a broker of its own (`CreateInterruptibleSessionAsync`) so the restart disturbs no other test. The broker sits behind a `BrokerPortForwarder`, a loopback port the test holds for its whole run, so the client keeps its address across the restart while Docker publishes the broker on a new port each start. NATS uses a file-backed stream there, and the AWS leaf recreates LocalStack's in-memory queues after the restart.
 - Connection drop and publish during an outage: `NetworkFaultTestsBase` provider overrides, each through a Toxiproxy route the test cuts while the broker keeps running. A client that learns broker addresses from the broker can route around a proxy, so the Kafka and AWS leaves also run `AssertTrafficStopsWhileTheLinkIsCutAsync`: a message published past the route must not reach the cut-off consumer until the route is back, and a publish over the cut route must not succeed. The Kafka leaf runs its own broker (`ProxiedKafkaContainer`) that advertises the route instead of its own port. Clear Toxiproxy faults with `ToxiproxyServer.ResetAsync` (`POST /reset`), because deleting a single toxic can hang the Toxiproxy 2.12 API.
@@ -180,10 +180,11 @@ Evidence anchors:
 - NATS, RabbitMQ, and AWS Bus fan-out: their `TransportConsumerConformanceTestsBase` provider leaves; Azure topic/subscription fan-out: `AzureServiceBusTransportTests`.
 - AWS consumer-identity fan-out, replica competition, queue ownership, same-name lane isolation, and terminal malformed-envelope deletion: `AmazonSqsConsumerClientConformanceTests` and `MalformedMessageTests` against LocalStack.
 - Redis Streams Bus/Queue routing, group fan-out, replica competition, lane isolation, settlement, shutdown, and poison handling: `RedisConsumerConformanceTests` against Testcontainers Redis.
-- InMemory Bus/Queue group fan-out, replica competition, ownership, and lane isolation: `InMemoryProviderConformanceTests` using the shared provider driver.
+- InMemory Bus/Queue group fan-out, replica competition, ownership, and lane isolation: `InMemoryProviderConformanceTests` using the shared provider driver. Its empty-body, settlement, standard-header, concurrency, and shutdown evidence also comes from `InMemoryConsumerConformanceTests`, on the system clock like the provider driver's sessions, and pause from `InMemoryBrokerFaultTests`. The broker is the host process, so its restart cell is `N/A`. Its callback-failure cell is quarantined because the client drops a delivery whose callback throws (#1759).
 - Azure Service Bus group fan-out, replica competition, Queue ownership, and lane isolation: `AzureServiceBusConsumerClientHarnessTests` on the credential-gated managed-service tier.
 - Azure Service Bus emulator round trip, settlement, stale settlement, callback failure, and bounded shutdown: `AzureServiceBusEmulatorConsumerClientHarnessTests`. Its header-builder failure test, on the `Config.json` queue declared with a max delivery count of 3, skips while the cell is quarantined: the emulator intermittently dead-letters two copies (#1672). Topic fan-out to the two `Config.json` subscriptions: `AzureServiceBusEmulatorTransportTests`; pause and broker restart: `AzureServiceBusEmulatorBrokerFaultTests`.
-- Kafka Queue ownership and terminal poison-offset handling: `KafkaConsumerClientConformanceTests`; Bus startup rejection before storage initialization: `SetupTests`.
+- Kafka Queue ownership and terminal poison-offset handling: `KafkaConsumerClientConformanceTests`; Bus startup rejection before storage initialization: `ProviderConformanceEvidenceTests`.
+- Startup rejection before side effects (`StartupRejectionBeforeSideEffects`): a misconfigured host fails its bootstrap before it touches storage or reports ready. Every transport rejects a Queue route that requires routing affinity on a destination with no native key mapping, so the manifest never accepts this cell as `N/A`. Each provider proves it with `TransportStartupRejectionConformance.AssertRoutingAffinityRejectedAsync`: NATS, RabbitMQ, and Redis in their `ProviderConformanceEvidenceTests`, InMemory in `InMemoryProviderConformanceTests`, and the simulator in `SimulatorConsumerConformanceTests`. Kafka proves its Bus-route rejection. AWS and the emulator profile, whose provisioning is off, prove their every-instance rejection with `AssertEveryInstanceRejectedAsync`. The Azure proofs, and the emulator profile's request/reply rejection, are in `AzureServiceBusStartupRejectionTests`. They fail before any connection opens, so they run with no credential, no emulator, and no license, even though the matrix marks them `S†` and `S‡`.
 - NATS lane isolation, consumer-identity/replica semantics, terminal malformed acknowledgement, and legacy drain/roll-forward proof: `NatsConsumerClientTests` against Testcontainers NATS JetStream.
 - RabbitMQ lane isolation, consumer-identity/replica semantics, terminal malformed rejection, and legacy drain/roll-forward proof: `RabbitMqConsumerClientConformanceTests` against Testcontainers RabbitMQ.
 - InMemory request/reply round trip, caller isolation and restart, foreign reply-address refusal, and caller cleanup: `InMemoryProviderConformanceTests` running `TransportRequestReplyConformance`. RabbitMQ runs the same suite against Testcontainers RabbitMQ in `RabbitMqRequestReplyConformanceTests`, probing reply queues by passive declare; `RabbitMqReplyTransportTests` covers the exclusive reply queue's lifetime, sends to a deleted reply queue, refusal of `amq.gen-` and application queues, and re-declaration under a new address. NATS runs the suite in `NatsRequestReplyConformanceTests`, and again with stream provisioning disabled in `NatsRequestReplyWithoutStreamProvisioningTests`, probing reply subscriptions through the server's `connz` monitoring endpoint; `NatsReplyTransportTests` covers replies staying out of every JetStream stream, the reply subject surviving a server restart under the same address, immediate failure of a request no stream captures, and refusal of lane and inbox subjects. Redis runs the suite in `RedisRequestReplyConformanceTests`, probing reply channels with `PUBSUB NUMSUB` and checking by `SCAN` that no key is named after a reply address; `RedisReplyTransportTests` covers a round trip that leaves no key under the reply namespace, the reply channel surviving a dropped subscription connection under the same address, a listener opened while the server is down handing out its address once the server comes up, and refusal of lane stream keys and unrelated channels with no write. Kafka and AWS reject request/reply by design (`N/A`); Azure Service Bus rejects it until its reply channel exists (`U`). All three prove the rejection itself: their `ProviderConformanceEvidenceTests` run `AssertRejectedAtStartupAsync` against the real transport wiring, so `RequestReplyStartupRejection` is `S` for them.

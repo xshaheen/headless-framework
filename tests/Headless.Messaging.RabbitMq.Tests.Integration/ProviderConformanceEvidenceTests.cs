@@ -22,11 +22,23 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
         TransportKeySequencingConformance.AssertAsync(new RabbitMqProviderConformanceDriver(fixture), AbortToken);
 
     [Fact]
+    public Task should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect() =>
+        TransportStartupRejectionConformance.AssertRoutingAffinityRejectedAsync(
+            new RabbitMqProviderConformanceDriver(fixture).ConfigureRequestReplyTransport,
+            AbortToken
+        );
+
+    [Fact]
     public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["RabbitMQ"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect)
+            ),
             new(
                 TransportConformanceScenario.ConnectionDropRecovery,
                 typeof(RabbitMqNetworkFaultTests),

@@ -19,6 +19,13 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
         TransportConformanceTestBinding[] bindings =
         [
             new(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                typeof(InMemoryProviderConformanceTests),
+                nameof(
+                    InMemoryProviderConformanceTests.should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect
+                )
+            ),
+            new(
                 TransportConformanceScenario.RoutingAffinityMappingOrHeader,
                 typeof(InMemoryProviderConformanceTests),
                 nameof(InMemoryProviderConformanceTests.should_prove_routing_affinity_mapping_or_header)
@@ -103,12 +110,54 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
                 TransportConformanceScenario.RequestReplyCallerCleanup,
                 nameof(InMemoryProviderConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
             ),
+            new(
+                TransportConformanceScenario.ConsumerPauseRecovery,
+                typeof(InMemoryBrokerFaultTests),
+                nameof(InMemoryBrokerFaultTests.should_resume_delivery_once_after_consumer_pause)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.EmptyBodyDispatch,
+                nameof(InMemoryConsumerConformanceTests.should_dispatch_empty_message_body)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.CommitSettlement,
+                nameof(InMemoryConsumerConformanceTests.should_commit_real_delivery_and_prevent_redelivery)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.RejectRedelivery,
+                nameof(InMemoryConsumerConformanceTests.should_reject_real_delivery_and_observe_redelivery)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.BoundedGracefulShutdown,
+                nameof(InMemoryConsumerConformanceTests.should_bound_shutdown_while_handler_is_active)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.StaleSettlement,
+                nameof(
+                    InMemoryConsumerConformanceTests.should_not_settle_another_delivery_when_a_settled_value_is_used_again
+                )
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.StandardHeaderRoundTrip,
+                nameof(InMemoryConsumerConformanceTests.should_round_trip_every_standard_header_unchanged)
+            ),
+            _BindConsumer(
+                TransportConformanceScenario.HandlerConcurrencyCap,
+                nameof(
+                    InMemoryConsumerConformanceTests.should_never_hand_over_more_deliveries_at_once_than_the_requested_concurrency
+                )
+            ),
         ];
 
         // Every bound method is itself an xUnit test in this assembly, so it already runs on its own;
         // this test only proves the manifest and the bindings still line up.
         TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
+
+    private static TransportConformanceTestBinding _BindConsumer(
+        TransportConformanceScenario scenario,
+        string method
+    ) => new(scenario, typeof(InMemoryConsumerConformanceTests), method);
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(InMemoryProviderConformanceTests), method);

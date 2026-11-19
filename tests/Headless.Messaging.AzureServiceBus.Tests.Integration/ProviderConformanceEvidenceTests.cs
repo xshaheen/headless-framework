@@ -97,6 +97,13 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 nameof(AzureServiceBusConsumerClientHarnessTests.should_isolate_same_logical_name_between_bus_and_queue)
             ),
             new(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                typeof(AzureServiceBusStartupRejectionTests),
+                nameof(
+                    AzureServiceBusStartupRejectionTests.should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect
+                )
+            ),
+            new(
                 TransportConformanceScenario.RequestReplyStartupRejection,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
@@ -183,6 +190,20 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
             _BindEmulator(
                 TransportConformanceScenario.BoundedGracefulShutdown,
                 nameof(AzureServiceBusEmulatorConsumerClientHarnessTests.should_bound_shutdown_while_handler_is_active)
+            ),
+            new(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                typeof(AzureServiceBusStartupRejectionTests),
+                nameof(
+                    AzureServiceBusStartupRejectionTests.should_reject_an_every_instance_consumer_at_startup_when_provisioning_is_off
+                )
+            ),
+            new(
+                TransportConformanceScenario.RequestReplyStartupRejection,
+                typeof(AzureServiceBusStartupRejectionTests),
+                nameof(
+                    AzureServiceBusStartupRejectionTests.should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply
+                )
             ),
         ];
 
