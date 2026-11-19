@@ -227,8 +227,12 @@ function SortArrow() {
   )
 }
 
-/** Keys that move the focus in the grid; without `Shift` they never change a multi-selection. */
-const moveKeys = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
+/**
+ * Keys that move the focus in the grid; without `Shift` they never change a multi-selection. The horizontal arrows
+ * move between a row and its cells, and React Aria selects the row a cell belongs to, so without them here a step into
+ * a cell would open the row. React Aria mirrors them on a right-to-left page; both count as a move either way.
+ */
+const moveKeys = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'])
 
 /** The header row's height in px; the virtualizer lays the header out by it, and its cells fill that height. */
 const headingHeight = 32
