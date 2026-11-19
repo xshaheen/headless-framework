@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Headless.UnitOfWork.Internal;
 using Microsoft.Data.Sqlite;
 using Npgsql;
 
@@ -171,6 +172,24 @@ public sealed class RelationalDatabaseIdentityTests : TestBase
         {
             root.Delete(recursive: true);
         }
+    }
+
+    [Fact]
+    public void should_ignore_case_in_a_sqlite_path_when_the_file_system_does()
+    {
+        // The Windows branch is selected by flag, so Linux and macOS runs cover it too. Nothing is created on disk.
+        var directory = Path.Combine(Path.GetTempPath(), $"uow-identity-case-{Guid.NewGuid():N}");
+        var configured = Path.Combine(directory, "App.db");
+        var candidate = Path.Combine(directory, "app.db");
+
+        SqliteFileIdentity
+            .NormalizeDataSource(configured, ignoreCase: true)
+            .Should()
+            .Be(SqliteFileIdentity.NormalizeDataSource(candidate, ignoreCase: true));
+        SqliteFileIdentity
+            .NormalizeDataSource(configured, ignoreCase: false)
+            .Should()
+            .NotBe(SqliteFileIdentity.NormalizeDataSource(candidate, ignoreCase: false));
     }
 
     private static SqliteConnection _Sqlite(string path) => new($"Data Source={path};Pooling=False");

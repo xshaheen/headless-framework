@@ -25,9 +25,15 @@ internal static class SqliteFileIdentity
 
     /// <summary>
     /// Returns the real path of a SQLite file data source, or an empty string for an in-memory or URI source, which
-    /// names no file the comparison can trust.
+    /// names no file the comparison can trust. On Windows the path is lower-cased, because its file system ignores case
+    /// and the comparison before real-path resolution already did.
     /// </summary>
     public static string NormalizeDataSource(string? dataSource)
+    {
+        return NormalizeDataSource(dataSource, ignoreCase: OperatingSystem.IsWindows());
+    }
+
+    internal static string NormalizeDataSource(string? dataSource, bool ignoreCase)
     {
         if (
             string.IsNullOrWhiteSpace(dataSource)
@@ -38,7 +44,9 @@ internal static class SqliteFileIdentity
             return string.Empty;
         }
 
-        return ResolveRealPath(dataSource);
+        var path = ResolveRealPath(dataSource);
+
+        return ignoreCase ? path.ToLowerInvariant() : path;
     }
 
     /// <summary>
