@@ -394,6 +394,9 @@ internal sealed class NatsConsumerClient(
 
         if (tasks.Count == 0)
         {
+            // Nothing to pull, but the loop still lives until the caller stops it: a returned listener reads as a dead
+            // one.
+            await WaitUntilCanceledAsync(_timeProvider, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -402,6 +405,19 @@ internal sealed class NatsConsumerClient(
         _ = await Task.WhenAny(tasks).ConfigureAwait(false);
         await listeningCts.CancelAsync().ConfigureAwait(false);
         await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    // Returns once cancellationToken is canceled, for a listener with nothing to read.
+    internal static async Task WaitUntilCanceledAsync(TimeProvider timeProvider, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await timeProvider.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Stopped by the caller.
+        }
     }
 
     // Each durable's name key and filter subject. A derived message filters on its own subject (and its shard wildcard),

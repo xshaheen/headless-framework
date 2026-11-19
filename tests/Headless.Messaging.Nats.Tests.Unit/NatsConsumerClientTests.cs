@@ -35,6 +35,26 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_listening_until_canceled_when_no_durable_is_subscribed()
+    {
+        // given: a client subscribed to no message, so it has no durable to pull from
+        await using var client = _CreateClient("test-group");
+        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+        client.OnLogCallback = _ => { };
+        await client.SubscribeAsync([], AbortToken);
+
+        // when
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
+
+        // then: the loop lives until its token is canceled, then ends cleanly
+        listeningTask.IsCompleted.Should().BeFalse("a listener returns only when its token is canceled");
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+    }
+
+    [Fact]
     public async Task should_redact_credentials_from_broker_address()
     {
         var options = MsOptions.Options.Create(
