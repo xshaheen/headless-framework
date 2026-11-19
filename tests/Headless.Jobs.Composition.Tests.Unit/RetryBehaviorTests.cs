@@ -336,6 +336,11 @@ public sealed class RetryBehaviorTests : TestBase
     [Fact]
     public async Task execute_task_async_keeps_renewal_active_during_delay_and_fences_after_lease_loss()
     {
+        // given: the renewal cadence and the 30s retry delay both run on a fake clock, so the loop renews only when the
+        // test advances it. On the real clock its first renewal raced the first attempt: the pre-execution check takes
+        // the stub's held lease, so that renewal already reports the loss, and a slow start let it land before or
+        // during the attempt instead of during the delay.
+        var timeProvider = new FakeTimeProvider();
         var options = new JobsRetryOptions();
         var scheduler = new SchedulerOptionsBuilder
         {
@@ -346,16 +351,37 @@ public sealed class RetryBehaviorTests : TestBase
             [30],
             retries: 1,
             retryOptions: options,
-            schedulerOptions: scheduler
+            schedulerOptions: scheduler,
+            timeProvider: timeProvider
         );
         manager
             .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(1), Task.FromResult(0));
 
-        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+        // The run writes the retry count right before it waits out the retry delay, so that write marks the delay.
+        var retryWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager
+            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (call.Arg<JobExecutionState>().RetryCount == 1)
+                {
+                    retryWritten.TrySetResult();
+                }
 
+                return Task.FromResult(1);
+            });
+
+        // when: the first attempt fails and the run parks on its retry delay; one renewal cadence then passes
+        var execution = handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+        await retryWritten.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(scheduler.LeaseRenewalInterval.Value);
+        await execution.WaitAsync(AbortToken);
+
+        // then: the renewal saw the loss during the delay, and no second attempt started
         attempts.Should().ContainSingle();
         context.LeaseLost.Should().BeTrue();
+        context.LeaseLossReason.Should().Be(JobsLeaseLossReason.RenewalUnmatched);
         context.Status.Should().Be(JobStatus.InProgress);
         await manager
             .DidNotReceive()
