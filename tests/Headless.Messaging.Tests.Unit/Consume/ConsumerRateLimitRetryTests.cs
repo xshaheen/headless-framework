@@ -74,9 +74,12 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
                 )
         );
 
-        await _EnqueueThrottledAsync(host, _FirstThrottled);
-        await host.WithinBoundAsync(probe.WhenCompletedAsync(_FirstThrottled, 1), AbortToken);
+        await _DeliverFirstThrottledAsync(host, probe);
+
+        // The enqueue returns before the broker delivers, so the waiting delivery's row is awaited before the pickup
+        // that must find it.
         await _EnqueueThrottledAsync(host, _WaitingThrottled);
+        await _WaitForThrottledRowAsync(host, static row => row.StatusName == StatusName.Scheduled);
 
         // and: the other consumer fails once, which schedules its retry
         await host.EnqueueAsync(_Retried, AbortToken);
@@ -128,8 +131,7 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
         var renewal = policy.ResolveLeaseRenewalInterval();
         var keeperTick = quarterGrace < renewal ? quarterGrace : renewal;
 
-        await _EnqueueThrottledAsync(host, _FirstThrottled);
-        await host.WithinBoundAsync(probe.WhenCompletedAsync(_FirstThrottled, 1), AbortToken);
+        await _DeliverFirstThrottledAsync(host, probe);
         var beforeWait = host.Clock.WaitMark;
         await _EnqueueThrottledAsync(host, _WaitingThrottled);
         await _WaitForThrottledRowAsync(host, static row => row.StatusName == StatusName.Scheduled);
@@ -197,8 +199,7 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
         );
         await using (stopped)
         {
-            await _EnqueueThrottledAsync(stopped, _FirstThrottled);
-            await stopped.WithinBoundAsync(probe.WhenCompletedAsync(_FirstThrottled, 1), AbortToken);
+            await _DeliverFirstThrottledAsync(stopped, probe);
             await _EnqueueThrottledAsync(stopped, _WaitingThrottled);
             await _WaitForThrottledRowAsync(stopped, static row => row.StatusName == StatusName.Scheduled);
 
@@ -208,10 +209,9 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
                 row => row.StatusName == StatusName.Failed && row.NextRetryAt > stopped.Clock.GetUtcNow(),
                 AbortToken
             );
-            // Stopped without driving the clock: this shutdown needs no simulated time, and the throttled row still
-            // waits for its permit while the stop runs, so the waiting-rows keeper re-arms its tick until the stop
-            // cancels that wait. A driver that advances past each tick races the stop in wall time and runs out of
-            // steps whenever the stop is slow.
+            // Stopped without moving the clock: the stop needs no simulated time, but the waiting delivery's keeper
+            // re-arms its tick until the stop's cancellation reaches it, so a driver that steps past each pending wait
+            // would cut the stop short at its bounds and then run the keeper on past the permit window.
             await stopped.StopAsync(AbortToken);
         }
 
@@ -307,6 +307,15 @@ public sealed class ConsumerRateLimitRetryTests : TestBase
 
             await host.WithinBoundAsync(host.Clock.WhenWaitArmedAsync(next, AbortToken), AbortToken);
         }
+    }
+
+    // The handler returning does not mean its row is settled: the success write follows it. A row read taken before
+    // that write would still count the first delivery as pending, so the scenario starts once its row is Succeeded.
+    private static async Task _DeliverFirstThrottledAsync(SimulationHost host, PipelineProbe probe)
+    {
+        await _EnqueueThrottledAsync(host, _FirstThrottled);
+        await host.WithinBoundAsync(probe.WhenCompletedAsync(_FirstThrottled, 1), AbortToken);
+        await _WaitForThrottledRowAsync(host, static row => row.StatusName == StatusName.Succeeded);
     }
 
     private static async Task _EnqueueThrottledAsync(SimulationHost host, string id)

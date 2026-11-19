@@ -182,5 +182,18 @@ internal static class FeaturesStorageOptionsRules
         validator.RuleFor(x => x.FeatureDefinitionsProvidersMaxLength).InclusiveBetween(1, _ColumnMaxLength);
         validator.RuleFor(x => x.FeatureGroupDefinitionsNameMaxLength).InclusiveBetween(1, _ColumnMaxLength);
         validator.RuleFor(x => x.FeatureGroupDefinitionsDisplayNameMaxLength).InclusiveBetween(1, _ColumnMaxLength);
+
+        // Each rule covers the widest index on its columns; the narrower indexes over a subset follow from it.
+        validator.AddSqlServerIndexKeyRule(
+            "FeatureValues (Name, ProviderName, ProviderKey)",
+            x => x.FeatureValuesNameMaxLength,
+            x => x.FeatureValuesProviderNameMaxLength,
+            x => x.FeatureValuesProviderKeyMaxLength
+        );
+        validator.AddSqlServerIndexKeyRule("FeatureDefinitions (Name)", x => x.FeatureDefinitionsNameMaxLength);
+        validator.AddSqlServerIndexKeyRule(
+            "FeatureGroupDefinitions (Name) and FeatureDefinitions (GroupName)",
+            x => x.FeatureGroupDefinitionsNameMaxLength
+        );
     }
 }

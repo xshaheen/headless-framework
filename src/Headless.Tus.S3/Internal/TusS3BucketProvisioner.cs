@@ -54,6 +54,7 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
     }
 
     // Purge removes only what the store owns: the bucket and even the prefix can hold objects another writer put there.
+    // It covers every tenant's uploads and the ones kept outside any tenant, and never reads the ambient tenant.
     public async Task PurgeAsync(CancellationToken cancellationToken)
     {
         if (await _BucketExistsAsync(cancellationToken).ConfigureAwait(false))
@@ -128,6 +129,9 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
 
         // A completed record names its finished object, which lives directly under the prefix beside foreign keys.
         // Each finished object goes before its record, so a purge interrupted part-way can simply run again.
+        // A tenant's record sits under the tenants folder inside the records folder and its finished object under
+        // the same folder inside the prefix, so the one mapping serves both; and no listing here has a delimiter,
+        // so each reaches every tenant's objects under its folder.
         await _ForEachPageAsync(
                 completedPrefix,
                 async (keys, token) =>

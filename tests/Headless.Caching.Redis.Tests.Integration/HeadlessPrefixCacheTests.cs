@@ -5,6 +5,7 @@ using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -43,9 +44,12 @@ public sealed class HeadlessPrefixCacheTests(RedisCacheFixture fixture) : TestBa
     [Fact]
     public async Task should_keep_two_prefixed_hosts_on_one_redis_apart()
     {
-        // given - two environments with the same cache configuration and the same key
-        using var first = _BuildHost(_Prefix());
-        using var second = _BuildHost(_Prefix());
+        // given - two environments with the same cache configuration and the same key. A clear removes only entries
+        // written strictly before its marker, so the clock moves between the writes and the clear: on the real clock
+        // both can land on the same millisecond and the first entry rightly survives the clear.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var first = _BuildHost(_Prefix(), clock);
+        using var second = _BuildHost(_Prefix(), clock);
         var firstCache = first.Services.GetRequiredService<ICache>();
         var secondCache = second.Services.GetRequiredService<ICache>();
         const string key = "shared-key";
@@ -53,6 +57,7 @@ public sealed class HeadlessPrefixCacheTests(RedisCacheFixture fixture) : TestBa
         // when
         await firstCache.UpsertAsync(key, "first", TimeSpan.FromMinutes(5), AbortToken);
         await secondCache.UpsertAsync(key, "second", TimeSpan.FromMinutes(5), AbortToken);
+        clock.Advance(TimeSpan.FromSeconds(1));
         await firstCache.ClearAsync(AbortToken);
 
         // then - the first environment's clear reached none of the second's keys
@@ -114,10 +119,10 @@ public sealed class HeadlessPrefixCacheTests(RedisCacheFixture fixture) : TestBa
         backplane.Channel.ToString().Should().Be($"{prefix}:{CacheInvalidationMessage.MessageName}");
     }
 
-    private IHost _BuildHost(string prefix)
+    private IHost _BuildHost(string prefix, TimeProvider? timeProvider = null)
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton(timeProvider ?? TimeProvider.System);
         builder.Services.ConfigureHeadlessPrefix(prefix);
         builder.Services.AddHeadlessCaching(setup =>
         {

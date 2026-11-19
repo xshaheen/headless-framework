@@ -13,6 +13,11 @@ namespace Headless.Tus.Internal;
 /// the entry after every successful write, so the writes of one request chain their versions instead of failing on
 /// their own earlier write, and removes it after a failed write, because the in-memory view was changed for a write
 /// that did not land. Outside an HTTP request, or without an accessor, nothing is kept and every call reads storage.
+/// <para>
+/// The key names one upload of one tenant. A file id alone is not enough: code that changes the ambient tenant
+/// inside one request must never be handed the upload another tenant holds under the same id, so a store that
+/// keeps uploads per tenant puts the tenant into the key.
+/// </para>
 /// </remarks>
 internal sealed class TusRequestMemo<TEntry>(IHttpContextAccessor? httpContextAccessor)
     where TEntry : class
@@ -20,21 +25,21 @@ internal sealed class TusRequestMemo<TEntry>(IHttpContextAccessor? httpContextAc
     // One key per memo instance, so two stores sharing a request never see each other's entries.
     private readonly object _itemsKey = new();
 
-    public bool TryGet(string fileId, [NotNullWhen(true)] out TEntry? entry)
+    public bool TryGet(string key, [NotNullWhen(true)] out TEntry? entry)
     {
         entry = null;
 
-        return _GetEntries(create: false)?.TryGetValue(fileId, out entry) == true;
+        return _GetEntries(create: false)?.TryGetValue(key, out entry) == true;
     }
 
-    public void Set(string fileId, TEntry entry)
+    public void Set(string key, TEntry entry)
     {
-        _GetEntries(create: true)?[fileId] = entry;
+        _GetEntries(create: true)?[key] = entry;
     }
 
-    public void Remove(string fileId)
+    public void Remove(string key)
     {
-        _GetEntries(create: false)?.Remove(fileId);
+        _GetEntries(create: false)?.Remove(key);
     }
 
     private Dictionary<string, TEntry>? _GetEntries(bool create)

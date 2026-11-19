@@ -492,7 +492,7 @@ setup.ConfigureStorage(o => o.PermissionGrantsProviderKeyMaxLength = 128);
 - Each value must be between 1 and 4000. The registration refuses any other value when the options are first read.
 - One option sets the EF Core model, the raw providers' `CREATE TABLE`, and their query parameter sizes. Set it before the tables are created.
 - A definition whose name or display name exceeds its length throws `ArgumentOutOfRangeException` when the seeder saves it.
-- The grants unique indexes cover `TenantId`, `Name`, `ProviderName`, and `ProviderKey`. SQL Server limits a nonclustered index key to 850 `nvarchar` characters, and PostgreSQL limits a B-tree entry to about 2700 bytes. Keep the four lengths together under 850, or a row that fills them fails on insert.
+- The grants unique indexes cover `TenantId`, `Name`, `ProviderName`, and `ProviderKey`; the definitions table indexes `Name` and `GroupName`, and the group definitions table `Name`. SQL Server limits a nonclustered index key to 1,700 bytes (850 `nvarchar` characters), so the four grants lengths together, and each indexed name length, must total at most 850. The registration refuses a wider configuration when the options are first read, on every provider, so one configuration stays valid on each database.
 
 **Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column. Change the option and the column in the same release:
 

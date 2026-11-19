@@ -10,7 +10,6 @@
     <InternalsVisibleTo Include="Headless.Coordination.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Coordination.SqlServer" />
     <InternalsVisibleTo Include="Headless.Coordination.Redis" />
-    <InternalsVisibleTo Include="Headless.Jobs" />
     <InternalsVisibleTo Include="Headless.Coordination.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

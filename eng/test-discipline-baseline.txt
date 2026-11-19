@@ -46,8 +46,7 @@ wall-clock 2 tests/Headless.Dashboard.Tests.Unit/Streaming/FakeClock.cs
 wall-clock 4 tests/Headless.DataProtection.Blobs.Tests.Integration/BlobStorageDataProtectionIntegrationTests.cs
 wall-clock 2 tests/Headless.DataProtection.Blobs.Tests.Unit/BlobStorageDataProtectionXmlRepositoryTests.cs
 wall-clock 2 tests/Headless.DataProtection.Blobs.Tests.Unit/DataProtectionKeyRingValidationTests.cs
-real-wait 2 tests/Headless.DistributedLocks.Composition.Tests.Unit/DistributedLockTestSupport.cs
-wall-clock 1 tests/Headless.DistributedLocks.Composition.Tests.Unit/DistributedLockTestSupport.cs
+real-wait 1 tests/Headless.DistributedLocks.Composition.Tests.Unit/DistributedLockTestSupport.cs
 wall-clock 1 tests/Headless.DistributedLocks.Composition.Tests.Unit/Fakes/CompositeTestScheduler.cs
 wall-clock 2 tests/Headless.DistributedLocks.Composition.Tests.Unit/RegularLocks/DistributedLockTests.cs
 wall-clock 1 tests/Headless.DistributedLocks.Composition.Tests.Unit/RegularLocks/DistributedSemaphoreProviderTests.cs
@@ -99,7 +98,6 @@ real-wait 2 tests/Headless.Idempotency.Tests.Harness/IdempotencyConformanceTests
 wall-clock 1 tests/Headless.Idempotency.Tests.Harness/IdempotencyConformanceTests.cs
 wall-clock 1 tests/Headless.Identity.Storage.EntityFramework.Tests.Harness/Tenancy/IdentityTenantConformanceTests.cs
 wall-clock 1 tests/Headless.Imaging.NetVips.Tests.Unit/NetVipsImageResizerContributorTests.cs
-real-wait 1 tests/Headless.IpGeolocation.MaxMind.Tests.Unit/MaxMindTestBase.cs
 wall-clock 2 tests/Headless.Jobs.Composition.Tests.Unit/ChainDrainReleaseTests.cs
 wall-clock 1 tests/Headless.Jobs.Composition.Tests.Unit/Coordination/JobsCoordinationStopOrderTests.cs
 wall-clock 1 tests/Headless.Jobs.Composition.Tests.Unit/CrashRecoveryExhaustionTests.cs
@@ -158,8 +156,7 @@ wall-clock 15 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsClusterConcu
 real-wait 1 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCoordinationConformanceTests.GracefulRelease.cs
 wall-clock 14 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCoordinationConformanceTests.GracefulRelease.cs
 wall-clock 14 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCoordinationConformanceTests.GuardedUpdate.cs
-real-wait 1 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCoordinationConformanceTests.cs
-wall-clock 65 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCoordinationConformanceTests.cs
+wall-clock 64 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCoordinationConformanceTests.cs
 real-wait 1 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCoordinationFixtureBase.cs
 wall-clock 1 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCoordinationFixtureBase.cs
 wall-clock 4 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsCronFleetAgreementConformanceTests.cs
@@ -229,7 +226,6 @@ real-wait 1 tests/Headless.Messaging.RabbitMq.Tests.Integration/RabbitMqConsumer
 real-wait 1 tests/Headless.Messaging.RabbitMq.Tests.Integration/RabbitMqPublishSafetyTests.cs
 real-wait 1 tests/Headless.Messaging.RabbitMq.Tests.Integration/RabbitMqRawPayloadTests.cs
 real-wait 1 tests/Headless.Messaging.RabbitMq.Tests.Integration/RabbitMqReplyTransportTests.cs
-real-wait 1 tests/Headless.Messaging.Redis.Tests.Integration/RedisRawPayloadTests.cs
 wall-clock 1 tests/Headless.Messaging.Redis.Tests.Integration/RedisRecoveryRetentionTests.cs
 wall-clock 1 tests/Headless.Messaging.Redis.Tests.Integration/RedisStreamWakeTests.cs
 wall-clock 2 tests/Headless.Messaging.Storage.InMemory.Tests.Unit/InMemoryDataStorageCoordinationTests.cs
@@ -342,7 +338,6 @@ real-wait 1 tests/Headless.Sequences.SqlServer.Tests.Integration/SqlServerSequen
 real-wait 1 tests/Headless.Sequences.SqlServer.Tests.Integration/SqlServerSequencesLockingTests.cs
 real-wait 2 tests/Headless.Sequences.Tests.Harness/SequencesConformanceTests.cs
 wall-clock 1 tests/Headless.Settings.Storage.SqlServer.Tests.Integration/SqlServerSettingsStorageTests.cs
-real-wait 1 tests/Headless.Settings.Tests.Unit/Fakes/TimerCountingTimeProvider.cs
 wall-clock 1 tests/Headless.Settings.Tests.Unit/Values/SettingsSnapshotChangeConsumerTests.cs
 real-wait 1 tests/Headless.Sql.PostgreSql.Tests.Integration/UnitOfWork/PostgreSqlUnitOfWorkFixture.cs
 real-wait 1 tests/Headless.Sql.SqlServer.Tests.Integration/UnitOfWork/SqlServerUnitOfWorkFixture.cs

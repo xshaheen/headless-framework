@@ -150,5 +150,14 @@ internal static class SettingsStorageOptionsRules
         validator.RuleFor(x => x.SettingDefinitionsDescriptionMaxLength).InclusiveBetween(1, _ColumnMaxLength);
         validator.RuleFor(x => x.SettingDefinitionsDefaultValueMaxLength).InclusiveBetween(1, _ColumnMaxLength);
         validator.RuleFor(x => x.SettingDefinitionsProvidersMaxLength).InclusiveBetween(1, _ColumnMaxLength);
+
+        // Each rule covers the widest index on its columns; the narrower indexes over a subset follow from it.
+        validator.AddSqlServerIndexKeyRule(
+            "SettingValues (Name, ProviderName, ProviderKey)",
+            x => x.SettingValuesNameMaxLength,
+            x => x.SettingValuesProviderNameMaxLength,
+            x => x.SettingValuesProviderKeyMaxLength
+        );
+        validator.AddSqlServerIndexKeyRule("SettingDefinitions (Name)", x => x.SettingDefinitionsNameMaxLength);
     }
 }

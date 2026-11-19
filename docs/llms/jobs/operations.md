@@ -174,7 +174,7 @@ Tag values:
 | `headless.jobs.reclaim.reason` | `lease_expired` (a lease lapsed), `dead_node` (membership declared the owner dead), or `orphaned_owner` (the owner is absent from membership) |
 | `headless.jobs.reclaim.action` | `released` (back to `Idle`), `marked_failed` (`MarkFailed`), or `skipped` (`Skip`) |
 | `error.type` | Fully qualified type name of the exception behind a `failed` outcome; absent on other outcomes |
-| `headless.jobs.lease_loss.reason` | On `lease_lost` only, the first reason the run lost its row: `renewal_unmatched`, `renewal_timed_out`, `renewal_failed`, `membership_lost`, `row_not_owned`, `retry_write_unmatched`, `completion_rejected`, `release_unmatched`, or `release_failed` |
+| `headless.jobs.lease_loss.reason` | On `lease_lost` only, the first reason the run lost its row: `renewal_unmatched`, `renewal_timed_out`, `renewal_failed`, `membership_lost`, `row_not_owned`, `retry_write_unmatched`, `completion_rejected`, `release_unmatched`, `release_failed`, or `start_rejected` (the write that starts a chain child matched no row) |
 | `headless.jobs.retry.kind` | `in_process` (the failure policy retried inside the run) or `recovery` (a run claimed with attempts already spent) |
 | `headless.jobs.trigger` | `scheduled`, `recovery` (a missed-run recovery, whose lag spans the outage), or `run_now` |
 | `headless.jobs.claim.strategy` | `postgresql`, `sqlserver`, or `cas` |

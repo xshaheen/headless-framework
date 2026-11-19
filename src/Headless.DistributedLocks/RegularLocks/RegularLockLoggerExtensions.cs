@@ -263,4 +263,17 @@ internal static partial class RegularLockLoggerExtensions
         string leaseId,
         TimeSpan duration
     );
+
+    [LoggerMessage(
+        EventId = 25,
+        EventName = "ReleaseSignalAnnounceFailed",
+        Level = LogLevel.Warning,
+        Message = "Release signal failed to announce the release of R={Resource} Id={LeaseId}; the lock is released and waiters wake on their polling backoff."
+    )]
+    internal static partial void LogReleaseSignalAnnounceFailed(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string leaseId
+    );
 }

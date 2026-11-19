@@ -4,6 +4,7 @@ using System.Diagnostics.Metrics;
 using Headless;
 using Headless.Coordination;
 using Headless.Jobs;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Dispatcher;
 using Headless.Jobs.Instrumentation;
@@ -11,6 +12,7 @@ using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -706,7 +708,8 @@ public sealed class JobsMetricsTests : TestBase
                 "retry_write_unmatched",
                 "completion_rejected",
                 "release_unmatched",
-                "release_failed"
+                "release_failed",
+                "start_rejected"
             );
     }
 
@@ -758,6 +761,101 @@ public sealed class JobsMetricsTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_record_the_rows_a_stall_sweep_moved_before_it_failed()
+    {
+        // given: the stall sweep released rows, then one step failed; the count is distinctive against parallel tests
+        using var recorder = new MetricRecorder();
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .ReclaimStalledResources(Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<JobReclaimCounts>(
+                    new JobReclaimException(
+                        new JobReclaimCounts { Released = 8131 },
+                        [new InvalidOperationException("store blip")]
+                    )
+                )
+            );
+        var logger = new TickFailureLogger();
+        await using var harness = _FallbackService(manager, logger, membership: null);
+
+        // when
+        await harness.Service.StartAsync(AbortToken);
+
+        try
+        {
+            // then: the failure still ends the tick, and the moved rows are counted
+            var failure = await logger.TickFailed.Bounded();
+            failure.Should().BeOfType<JobReclaimException>();
+            recorder
+                .Of(_Reclaims)
+                .Should()
+                .Contain(x =>
+                    Equals(x.Value, 8131d)
+                    && Equals(x.Tags[_ReclaimReasonTag], "lease_expired")
+                    && Equals(x.Tags[_ReclaimActionTag], "released")
+                );
+        }
+        finally
+        {
+            await harness.Service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task should_record_the_rows_an_orphaned_owner_batch_moved_before_it_failed()
+    {
+        // given: an owner absent from the liveness snapshot; its release skipped rows, then one owner failed
+        using var recorder = new MetricRecorder();
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .ReclaimStalledResources(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(default(JobReclaimCounts)));
+        manager
+            .GetActiveOwnerIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string[]>([NodeOwnerTag.Format("orders", NodeIdentity.Parse("ghost@1"))]));
+        manager
+            .ReleaseDeadNodeResources(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<JobReclaimCounts>(
+                    new JobReclaimException(
+                        new JobReclaimCounts { Skipped = 8137 },
+                        [new InvalidOperationException("store blip")]
+                    )
+                )
+            );
+        var membership = Substitute.For<INodeMembership>();
+        membership.ClusterName.Returns("orders");
+        membership
+            .GetLivenessSnapshotAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<NodeLivenessSnapshot>>([]));
+        var logger = new TickFailureLogger();
+        await using var harness = _FallbackService(manager, logger, membership);
+
+        // when
+        await harness.Service.StartAsync(AbortToken);
+
+        try
+        {
+            // then: the failure still ends the tick, and the moved rows are counted
+            var failure = await logger.TickFailed.Bounded();
+            failure.Should().BeOfType<JobReclaimException>();
+            recorder
+                .Of(_Reclaims)
+                .Should()
+                .Contain(x =>
+                    Equals(x.Value, 8137d)
+                    && Equals(x.Tags[_ReclaimReasonTag], "orphaned_owner")
+                    && Equals(x.Tags[_ReclaimActionTag], "skipped")
+                );
+        }
+        finally
+        {
+            await harness.Service.StopAsync(CancellationToken.None);
+        }
+    }
+
     private const string _LeaseLossReasonTag = "headless.jobs.lease_loss.reason";
     private const string _CompletionRejected = "headless.jobs.completion.rejected";
     private const string _Reclaims = "headless.jobs.reclaims";
@@ -779,6 +877,103 @@ public sealed class JobsMetricsTests : TestBase
             TimeProvider.System,
             NullLogger<CronFleetAgreement>.Instance
         );
+    }
+
+    // A period far longer than any test, so the loop parks after the failing tick instead of sweeping again.
+    private static FallbackServiceHarness _FallbackService(
+        IInternalJobManager manager,
+        ILogger<JobsFallbackBackgroundService> logger,
+        INodeMembership? membership
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        var serviceProvider = services.BuildServiceProvider();
+        var taskScheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
+        var registry = JobFunctionRegistryBuilder.Build([], [], []);
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            Substitute.For<IJobsInstrumentation>(),
+            manager,
+            registry,
+            new JobsExecutionCancellationRegistry(),
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance,
+            new JobsFunctionTagBound(registry)
+        );
+        var ownerIdentity = Substitute.For<IJobsOwnerIdentity>();
+        ownerIdentity.MembershipLostToken.Returns(CancellationToken.None);
+
+        return new FallbackServiceHarness(
+#pragma warning disable CA2000 // FallbackServiceHarness takes ownership of the service and disposes it with the scheduler and provider.
+            new JobsFallbackBackgroundService(
+                manager,
+                new SchedulerOptionsBuilder { FallbackIntervalChecker = TimeSpan.FromHours(1) },
+                handler,
+                taskScheduler,
+                new JobFunctionConcurrencyGate(),
+                registry,
+                TimeProvider.System,
+                ownerIdentity,
+                TestActivationBarrier.Opened(),
+                logger,
+                membership
+            ),
+#pragma warning restore CA2000
+            taskScheduler,
+            serviceProvider
+        );
+    }
+
+    private sealed class FallbackServiceHarness(
+        JobsFallbackBackgroundService service,
+        JobsTaskScheduler taskScheduler,
+        ServiceProvider serviceProvider
+    ) : IAsyncDisposable
+    {
+        public JobsFallbackBackgroundService Service { get; } = service;
+
+        public async ValueTask DisposeAsync()
+        {
+            Service.Dispose();
+            await taskScheduler.DisposeAsync().ConfigureAwait(false);
+            await serviceProvider.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Completes with the exception of the first failed fallback tick. The loop logs only after the sweep's own catch
+    /// has run, so a test that awaits it sees every metric the failing sweep recorded.
+    /// </summary>
+    private sealed class TickFailureLogger : ILogger<JobsFallbackBackgroundService>
+    {
+        private const int _TickFailedEventId = 3200;
+
+        private readonly TaskCompletionSource<Exception?> _tickFailed = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public Task<Exception?> TickFailed => _tickFailed.Task;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (eventId.Id == _TickFailedEventId)
+            {
+                _tickFailed.TrySetResult(exception);
+            }
+        }
     }
 
     private sealed record Recorded(string Instrument, double Value, IReadOnlyDictionary<string, object?> Tags);

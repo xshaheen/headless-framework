@@ -30,7 +30,9 @@ public sealed class JobsCoordinationSlowStartupTests : TestBase
         builder.Services.AddSingleton<TimeProvider>(timeProvider);
         builder.Services.AddSingleton(store);
         builder.Services.AddHeadlessHostIdentity(identity => identity.HostName = "slow-node");
-        builder.Services.AddCoordinationCore<ClockedMembershipStore>(_ => { });
+        builder.Services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new MembershipStoreProviderExtension<ClockedMembershipStore>())
+        );
         builder.Services.AddHostedService<JobsCoordinationStartupGate>();
         builder.Services.AddHostedService(_ => new SlowStartingService(
             timeProvider,

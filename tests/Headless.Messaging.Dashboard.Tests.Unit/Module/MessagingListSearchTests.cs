@@ -454,14 +454,12 @@ public sealed class MessagingListSearchTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(call => new ValueTask<MessageListPage>(
-                Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>())
-                    .ContinueWith(static _ => new MessageListPage { Items = [] }, TaskScheduler.Default)
+                HangingReads.NeverAnswerAsync<MessageListPage>(call.Arg<CancellationToken>())
             ));
         monitoring
             .CountMessagesAsync(Arg.Any<MessageListQuery>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(call => new ValueTask<MessageCount>(
-                Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>())
-                    .ContinueWith(static _ => new MessageCount(0, false), TaskScheduler.Default)
+                HangingReads.NeverAnswerAsync<MessageCount>(call.Arg<CancellationToken>())
             ));
         outbox.GetMonitoringApi().Returns(monitoring);
 

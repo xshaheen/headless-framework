@@ -9,6 +9,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
   </ItemGroup>
   <ItemGroup>
+    <!-- AddHeadlessTenancy, which the upload endpoint scenarios scope uploads by tenant through, lives in Headless.MultiTenancy. -->
+    <ProjectReference Include="..\..\src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
     <!-- TreatAsUsed: supplies the tusdotnet store contracts and MapTus the scenarios run against. -->
     <ProjectReference Include="..\..\src\Headless.Tus\Headless.Tus.csproj" TreatAsUsed="true" />

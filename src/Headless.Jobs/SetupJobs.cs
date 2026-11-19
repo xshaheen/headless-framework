@@ -508,11 +508,7 @@ public static class SetupJobs
         // A node that claims rows must keep beating and self-fencing: without the heartbeat, peers classify it dead
         // after DeadThreshold and release its in-flight rows while it keeps running them, so two nodes run one job.
         // Only Coordination's own membership is checked; a custom INodeMembership owns its liveness.
-        if (
-            claimsWork
-            && services.Any(static d => d.ServiceType == typeof(MembershipService))
-            && !services.Any(static d => d.ServiceType == typeof(MembershipHeartbeatBackgroundService))
-        )
+        if (claimsWork && services.IsMembershipHeartbeatDisabled())
         {
             throw new InvalidOperationException(
                 "Jobs background services claim rows under this node's coordination identity, so the node must "

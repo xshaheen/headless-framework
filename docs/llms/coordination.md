@@ -145,7 +145,7 @@ None.
 - **Stop order.** The heartbeat keeps beating through every hosted service's `StopAsync`. Then it awaits every `INodeDrainParticipant`, bounded by the host stop token, and only then stops beating and leaves. Registration order and `HostOptions.ServicesStopConcurrently` do not change this. If the stop token cuts the wait short, it logs once and leaves anyway. A participant that throws is logged and does not block the leave or the other participants. The leave has its own 5-second budget, so it still reaches the store after a cut-short wait. A node that left reads as dead to peers, which reclaim its rows.
 - **Self-fence.** On a host that runs the heartbeat, the node fences itself at its last accepted beat (or its registration) plus `DeadThreshold` minus `SelfFenceMargin`, even when no beat runs. It stops before any peer can classify it `Dead` and reclaim its work. From that instant `Identity` reads `null`, so stamp sites stop handing out an owner, and a beat the store accepts after the deadline does not bring the identity back. A store call that keeps failing or hangs fences the node at the deadline. A snapshot-read failure does not fence a node whose heartbeats still succeed. `LeaveAsync` still writes the departure for a node past its deadline, so peers see `NodeLeft` instead of waiting out `DeadThreshold`.
 - **Membership lost.** The default `MembershipLostBehavior.StopApplication` asks the host to stop. `StopMembershipOnly` is for hosts where every worker observes `LocalMembershipLostToken`.
-- `setup.DisableMembershipHeartbeat()` skips the heartbeat service. Use it on test hosts and tools that must not join the cluster on their own. `INodeMembership` stays registered, so a test can call `RegisterAsync` and `HeartbeatAsync` itself. Such a host never self-fences, and peers read it as `Dead` once `DeadThreshold` passes, so production nodes keep the heartbeat. `AddHeadlessJobs` on the durable store refuses the switch unless Jobs background services are off.
+- `setup.DisableMembershipHeartbeat()` skips the heartbeat service. Use it on test hosts and tools that must not join the cluster on their own. `INodeMembership` stays registered, so a test can call `RegisterAsync` and `HeartbeatAsync` itself. Such a host never self-fences, and peers read it as `Dead` once `DeadThreshold` passes, so production nodes keep the heartbeat. `AddHeadlessJobs` on the durable store refuses the switch unless Jobs background services are off. A feature package that needs the same guard calls `services.IsMembershipHeartbeatDisabled()` after `AddHeadlessCoordination`: it returns `true` only when the coordination membership is registered without its heartbeat service, and `false` when coordination is not registered, such as on a host that registers its own `INodeMembership` instead.
 - **Clocks.** The registered `TimeProvider` paces beats, the dead-owner reconcile, and the self-fence, so a test advances a `FakeTimeProvider` to drive liveness. The registration retry back-off, the leave on shutdown, the event re-subscribe back-off, and the reconcile's read timeout (the reconcile interval, at least 5 seconds) wait real time, so a host with a `FakeTimeProvider` it never advances still registers after a transient store failure and still stops.
 - A slow event subscriber never delays heartbeats.
 - The default `INodeIdProvider` returns `IHostIdentityAccessor.HostName`, the same host name that stamps message origins and logs. To pin it, call `services.AddHeadlessHostIdentity(o => o.HostName = "orders-worker-0")` before any feature registration. The discovery order (`POD_NAMESPACE/POD_NAME`, machine name, generated) is in [context.md](context.md).
@@ -166,7 +166,7 @@ dotnet add package Headless.Coordination
 
 ### Setup and use
 
-Install a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`, which returns the `IServiceCollection`. `AddCoordinationCore<TStore>` registers the same services over a custom `IMembershipStore`; see [For store authors](#for-store-authors).
+Install a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`, which returns the `IServiceCollection`. A custom `IMembershipStore` plugs into the same call; see [For store authors](#for-store-authors).
 
 ```csharp
 services.AddHeadlessCoordination(setup =>
@@ -236,11 +236,31 @@ services.AddHeadlessCoordination(setup =>
 
 ### Runtime behavior
 
-`AddCoordinationCore<TStore>` always registers the heartbeat service. `AddHeadlessCoordination` registers it unless `DisableMembershipHeartbeat()` is called.
+`AddHeadlessCoordination` registers the heartbeat service unless `DisableMembershipHeartbeat()` is called, whichever store backs it.
 
 ### For store authors
 
-To back membership with another store, implement `IMembershipStore` and register it with `services.AddCoordinationCore<TStore>(options => ...)` (or the `Action<CoordinationOptions, IServiceProvider>` overload) in place of `AddHeadlessCoordination`. That registration always includes the heartbeat service. Applications never call the store; the membership service does.
+To back membership with another store, implement `IMembershipStore` and register it the way the shipped providers do: an `ICoordinationProviderOptionsExtension` whose `AddServices` calls `services.AddCoordinationCore<TStore>()`, handed to `AddHeadlessCoordination` through `RegisterExtension`. `AddCoordinationCore<TStore>()` registers the core services over your store and no heartbeat, so the setup builder's `Configure(...)`, its one-provider check, and `DisableMembershipHeartbeat()` apply to your store as they do to a shipped one. Applications never call the store; the membership service does.
+
+```csharp
+public sealed class MyCoordinationExtension : ICoordinationProviderOptionsExtension
+{
+    public void AddServices(IServiceCollection services)
+    {
+        services.AddCoordinationCore<MyMembershipStore>();
+        // register what MyMembershipStore itself depends on here
+    }
+}
+
+services.AddHeadlessCoordination(setup =>
+{
+    setup.Configure(configuration.GetSection("Headless:Coordination"));
+    setup.RegisterExtension(new MyCoordinationExtension());
+    // setup.DisableMembershipHeartbeat(); // only on a host that drives liveness itself
+});
+```
+
+A store package wraps the `RegisterExtension` call in its own `Use{Store}` extension on `HeadlessCoordinationSetupBuilder`, as `UseRedis` does.
 
 Every member decides with the store's own clock, never the application clock, and must be safe to call concurrently.
 
@@ -256,7 +276,7 @@ Every member decides with the store's own clock, never the application clock, an
 
 A relational store can build its statements on the SQL store kit; see [Store statement kit](sql.md#store-statement-kit-for-provider-authors).
 
-**Verify:** a host built with `AddCoordinationCore<TStore>` reaches `GetLiveNodesAsync()` with its own identity after start. Two hosts that register the same `NodeId` against your store make the second start fail with `MembershipRegistrationRejectedException`.
+**Verify:** a host built with your extension reaches `GetLiveNodesAsync()` with its own identity after start. Two hosts that register the same `NodeId` against your store make the second start fail with `MembershipRegistrationRejectedException`.
 
 ---
 
