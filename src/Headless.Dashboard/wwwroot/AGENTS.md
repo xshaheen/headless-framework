@@ -1,6 +1,6 @@
 # Dashboard front end
 
-These rules cover every dashboard front end: the shell (`apps/shell`), the SDK (`packages/sdk`, `@headless/dashboard-sdk`), the Vite preset (`packages/vite`, `@headless/dashboard-vite`), and the modules in `src/Headless.Jobs.Dashboard/wwwroot` and `src/Headless.Messaging.Dashboard/wwwroot`. The repository-root `AGENTS.md` still applies. What a module may import, the SDK entries, list views, and the size budgets are the consumer contract in [docs/llms/dashboards.md](../../../docs/llms/dashboards.md#module-front-end); read that section before you add a view or an SDK component.
+These rules cover every dashboard front end: the shell (`apps/shell`), the SDK (`packages/sdk`, `@headless/dashboard-sdk`), the Vite preset (`packages/vite`, `@headless/dashboard-vite`), and the modules in `src/Headless.Jobs.Dashboard/wwwroot` and `src/Headless.Messaging.Dashboard/wwwroot`. The repository-root `AGENTS.md` still applies. What a module may import, the SDK entries, list views, and the size budgets are in [MODULES.md](MODULES.md); read it before you add a view or an SDK component.
 
 ## Stack
 

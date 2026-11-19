@@ -171,5 +171,19 @@ internal static class PermissionsStorageOptionsRules
         validator.RuleFor(x => x.PermissionDefinitionsProvidersMaxLength).InclusiveBetween(1, _ColumnMaxLength);
         validator.RuleFor(x => x.PermissionGroupDefinitionsNameMaxLength).InclusiveBetween(1, _ColumnMaxLength);
         validator.RuleFor(x => x.PermissionGroupDefinitionsDisplayNameMaxLength).InclusiveBetween(1, _ColumnMaxLength);
+
+        // Each rule covers the widest index on its columns; the narrower indexes over a subset follow from it.
+        validator.AddSqlServerIndexKeyRule(
+            "PermissionGrants (TenantId, Name, ProviderName, ProviderKey)",
+            x => x.PermissionGrantsTenantIdMaxLength,
+            x => x.PermissionGrantsNameMaxLength,
+            x => x.PermissionGrantsProviderNameMaxLength,
+            x => x.PermissionGrantsProviderKeyMaxLength
+        );
+        validator.AddSqlServerIndexKeyRule("PermissionDefinitions (Name)", x => x.PermissionDefinitionsNameMaxLength);
+        validator.AddSqlServerIndexKeyRule(
+            "PermissionGroupDefinitions (Name) and PermissionDefinitions (GroupName)",
+            x => x.PermissionGroupDefinitionsNameMaxLength
+        );
     }
 }

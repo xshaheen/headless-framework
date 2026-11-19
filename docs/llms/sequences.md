@@ -23,7 +23,7 @@ builder.Services.AddHeadlessSequences(setup =>
 
 A counter is identified by the current tenant (`ICurrentTenant.Id`), a name, and an optional partition. Each counter name has one mode:
 
-- **Fast** (the default): inject `ISequenceGenerator` and call `NextAsync` or `ReserveAsync`. The number is committed on its own connection before it returns. If the caller's own transaction later rolls back, that number is simply never used, which leaves a gap. A fast name can set `BlockSize` to reserve many numbers per database call; see [Blocks](#blocks).
+- **Fast** (the default): inject `ISequenceGenerator` and call `NextAsync` or `ReserveAsync`. The number is committed on its own connection before it returns. If the caller's own transaction later rolls back, that number is never used, which leaves a gap. A fast name can set `BlockSize` to reserve many numbers per database call; see [Blocks](#blocks).
 - **Gap-free**: register the name with `Mode = SequenceMode.GapFree` and call `unit.Sequences.NextAsync` on the unit of work that writes the number. The increment runs in the unit's transaction and holds the counter's row lock until the unit ends. A rolled-back unit returns its number to the next caller.
 - **Reported**: register the name with `Mode = SequenceMode.Reported` and call `unit.Sequences.AdvanceToAsync(name, value, partition)` with the number a device stamped on its request. The counter keeps the highest value accepted and reports each new one as `Next`, `Skipped` (a gap), or `Stale` (a replay). See [Reported counters](#reported-counters).
 
@@ -59,10 +59,11 @@ setup.Policy("receipt", new SequencePolicy
 SequenceNumber receipt = await unit.Sequences.NextNumberAsync("receipt", ct); // receipt.Text == "REC-2026-000042"
 ```
 
+**Verify:** `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `<Provider>/headless/Sequences` resource, and a host started before that fails naming it. In a test, a gap-free `NextAsync` in a unit that rolls back hands the same number to the next unit.
+
 ## Agent Rules
 
-- Choose the mode per name, and use only that name's entry point. A gap-free name called through `ISequenceGenerator`, or a fast name called through `unit.Sequences`, throws `InvalidOperationException` before any SQL runs. Mixing the two would let a fast caller's rollback leave a gap in a gap-free counter, or make a flow wait on its own row lock.
-- No `Headless.UnitOfWork.Analyzers` rule covers sequences. The name's configured mode, not the call site, decides which entry point is right, and a call through the wrong one already throws on its first run, so a call-site rule could only report correct code.
+- Choose the mode per name, and use only that name's entry point. A gap-free name called through `ISequenceGenerator`, or a fast name called through `unit.Sequences`, throws `InvalidOperationException` before any SQL runs. No analyzer catches this at build time, because the name's configured mode decides; the first run of the wrong call throws.
 - Use the gap-free mode only for numbers that must have no gaps. It serializes every writer of one counter until each writer's unit commits or rolls back, so its throughput is bounded by transaction length. Take the number as late in the unit as possible.
 - When one unit takes several gap-free counters, take them in a fixed order everywhere. Two units taking the same counters in opposite orders deadlock. The gap-free mode never retries inside the caller's transaction, so the unit's owner receives the deadlock.
 - Calls on one unit must be sequential. Do not issue two `unit.Sequences` calls on the same unit concurrently (`Task.WhenAll`): they share one connection, which neither Npgsql nor SqlClient allows.
@@ -72,8 +73,8 @@ SequenceNumber receipt = await unit.Sequences.NextNumberAsync("receipt", ct); //
 - A fast call cancelled or cut off during its commit may still have consumed a number. Treat that as an ordinary fast-mode gap.
 - Set `BlockSize` above 1 only on a fast name whose numbers may come out of call order across hosts and may skip values. Numbers stay unique, but each host hands out its own block, so two hosts interleave, and every unused value of a block is lost on restart, eviction, a policy change, or a period reset. Keep the default 1 for a number readers expect to rise with time. A gap-free or reported policy with a `BlockSize` above 1 fails options validation at startup.
 - The tenant is read from `ICurrentTenant` on every call. There is no tenant argument; host code numbering on behalf of a tenant switches with `ICurrentTenant.Change(...)`. With no tenant (`Id` is `null`), calls use the host counter. An empty or whitespace tenant id is refused, so it can never fall into the host counter.
-- Names and partitions compare ordinally and case-sensitively: `"INV"` and `"inv"` are two counters. A name may be at most 128 characters, a partition at most 64, and a tenant id at most 128 (`SequenceFieldLimits`). Longer values, a blank name, a whitespace-only partition, and any key part that starts or ends with whitespace throw `ArgumentException` before any SQL runs. The whitespace rule exists because SQL Server ignores trailing spaces when comparing keys, so `"acme"` and `"acme "` would otherwise share one counter there. A key part with a NUL character or an unpaired UTF-16 surrogate throws the same way: PostgreSQL cannot store NUL, and SqlClient sends a lone surrogate as U+FFFD, so SQL Server would share one counter between keys that differ only in which lone surrogate they carry (`Argument.IsPortableKey`). A `null` or empty partition means no partition.
-- The deployment creates the table by running `resources provision`, which applies the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) step; a host start only verifies it and fails fast when it is missing (see [Resource provisioning](utilities.md#resource-provisioning)). A call against a missing table fails, and on PostgreSQL that failure aborts the caller's unit.
+- Names and partitions compare ordinally and case-sensitively: `"INV"` and `"inv"` are two counters. A name may be at most 128 characters, a partition at most 64, and a tenant id at most 128 (`SequenceFieldLimits`). Longer values, a blank name, a whitespace-only partition, and any key part that starts or ends with whitespace throw `ArgumentException` before any SQL runs, so `"acme"` and `"acme "` never share a counter on SQL Server. A key part with a NUL character or an unpaired UTF-16 surrogate throws the same way, because not every provider stores them faithfully. A `null` or empty partition means no partition.
+- Create the table at deploy time with `resources provision` (see [Resource provisioning](utilities.md#resource-provisioning)). A host start only verifies it and fails when it is missing. A call against a missing table fails, and on PostgreSQL that failure aborts the caller's unit.
 - There is no reset, set, peek, or delete API. Start a new period with a new partition.
 - On SQL Server, the first call on a new counter takes a key-range lock on the gap in the primary key that holds the new key. In gap-free mode that lock is held until the unit commits, so first use of any other new counter whose key sorts into the same gap waits, for any tenant and from either mode. Two units that each first-use several new counters can deadlock on those ranges. Keep a unit that takes a counter's first number short. PostgreSQL locks only the conflicting key.
 
@@ -164,7 +165,9 @@ Consumer contracts: `ISequenceGenerator`, `SequenceRange`, `SequenceNumber`, `Se
 dotnet add package Headless.Sequences.Abstractions
 ```
 
-Reference it from code that takes numbers. Registration lives in the Core and provider packages.
+Reference it from code that takes numbers. Registration lives in `Headless.Sequences` and the provider packages.
+
+**Verify:** nothing to verify alone. Reading `unit.Sequences` throws `InvalidOperationException` naming `AddHeadlessSequences` when no provider is registered.
 
 ### Design and runtime behavior
 
@@ -186,6 +189,8 @@ dotnet add package Headless.Sequences
 
 Applications reach it through a provider package; call `AddHeadlessSequences` as shown in [Orientation](#orientation).
 
+**Verify:** `AddHeadlessSequences` throws `InvalidOperationException` when no provider or more than one is chosen, and an invalid policy fails options validation at host start. In a test, two `NextAsync` calls on one name return values one `Step` apart.
+
 ### Configuration
 
 | Builder member | Effect |
@@ -202,8 +207,8 @@ A policy with `Step` of 0 or less, a `BlockSize` below 1 or, on a gap-free or re
 
 - `AddHeadlessSequences` requires exactly one `Use…` provider call and throws when there are none or several, or when it is called twice.
 - It registers `ISequenceGenerator` and the gap-free unit-of-work feature as singletons, and `TimeProvider.System` unless the host registered a `TimeProvider`. It also registers the async-local `CurrentTenant` as the `ICurrentTenant` fallback, so `ICurrentTenant.Change(...)` works with no other tenancy registration. A real tenancy registration wins.
-- The gap-free call checks, in order: the arguments, the name's mode, the unit's state and relational resource, then the provider's transaction type and database. Only after every check passes does it mark an observed unit non-retryable and run the increment. A refused call leaves the unit retryable and runs no statement.
-- `ISequenceStore` is the provider seam. Applications do not call it. A reported advance creates the counter row if it is absent, then locks it and moves it forward with a fenced update, both in the caller's transaction, so the value read as `Previous` is the one the lock protects.
+- A gap-free call checks the arguments, the name's mode, the unit's state, and the unit's database and transaction before it writes. A refused call runs no statement and leaves the unit retryable.
+- `ISequenceStore` is the provider seam. Applications do not call it.
 
 ---
 
@@ -219,10 +224,12 @@ dotnet add package Headless.Sequences.Sql
 
 Each relational provider package references it, so applications install the provider instead.
 
+**Verify:** see the provider's Verify step.
+
 ### Design and runtime behavior
 
-- The one relational counter store, written against the SQL dialect kit (`ISqlDialect`, see [sql.md § Store statement kit](sql.md#store-statement-kit-for-provider-authors)); the PostgreSQL, SQL Server, and SQLite packages supply only their dialect, options, and DDL. Each call is one upsert that creates the counter row on first use and adds the step on every later use, returning the value it wrote.
-- `RelationalSequencesOptions`, the options base every relational provider's options derive from (`PostgreSqlSequencesOptions`, `SqlServerSequencesOptions`, `SqliteSequencesOptions`): `ConnectionString`, `CommandTimeout` (positive, at most 1 hour; default 30 seconds), `Schema`, and `TableName`.
+- Each call is one upsert that creates the counter row on first use and adds the step on every later use, returning the value it wrote.
+- `RelationalSequencesOptions` is the options base every relational provider's options derive from (`PostgreSqlSequencesOptions`, `SqlServerSequencesOptions`, `SqliteSequencesOptions`): `ConnectionString`, `CommandTimeout` (positive, at most 1 hour; default 30 seconds), `Schema`, and `TableName`.
 
 ---
 
@@ -247,6 +254,8 @@ The parameterless overloads and the shared `headless` schema are described in [s
 
 Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddUnitOfWork()` or the EF unit-of-work package).
 
+**Verify:** `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `PostgreSql/headless/Sequences` resource (the schema and a configured table name change the name). A host started before that fails, naming the resource and `resources provision`.
+
 ### Configuration
 
 | Option | Default | Notes |
@@ -258,9 +267,9 @@ Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddUnit
 ### Design and runtime behavior
 
 - Each call is one `INSERT … ON CONFLICT (tenant_id, name, partition) DO UPDATE … RETURNING`, so concurrent first calls on a new key never collide. Key columns use `COLLATE "C"`.
-- The fast path opens its own connection and runs the one statement with no explicit transaction, so it commits on its own: no `BEGIN` or `COMMIT` round trip, and concurrent callers of one counter wait only for the statement, not for a separate commit. That took 32 concurrent callers on one counter from about 5,200 to 23,500 numbers per second. It retries a transient fault (a deadlock, `40P01`, a serialization conflict, `40001`, or anything Npgsql reports as transient) on a fresh connection up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them. A retried fault may come after the server applied the statement; that value was never returned, so the retry leaves a gap, never a duplicate. The statement runs at the server's default isolation level; a stricter default than READ COMMITTED can turn racing first calls on a new key into `40001`, which the retry absorbs within its 3 attempts.
+- The fast path opens its own connection and runs the one statement with no explicit transaction, so concurrent callers of one counter wait only for the statement. It retries a transient fault (a deadlock, `40P01`, a serialization conflict, `40001`, or anything Npgsql reports as transient) on a fresh connection up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them. A retried fault may come after the server applied the statement; that value was never returned, so the retry leaves a gap, never a duplicate. The statement runs at the server's default isolation level; a stricter default than READ COMMITTED can turn racing first calls on a new key into `40001`, which the retry absorbs within its 3 attempts.
 - The gap-free path runs on the unit's own connection and transaction, with no retry. A failed or cancelled statement aborts the caller's PostgreSQL transaction, so the unit can then only roll back.
-- The table is a step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one advisory lock per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
+- The table is a step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). It is recorded in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name). Do not drop the table by hand without deleting those rows, or provisioning will not recreate it.
 
 ---
 
@@ -283,6 +292,8 @@ The parameterless overloads and the shared `headless` schema are described in [s
 
 Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddUnitOfWork()` or the EF unit-of-work package).
 
+**Verify:** `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `SqlServer/headless/Sequences` resource (the schema and a configured table name change the name). A host started before that fails, naming the resource and `resources provision`.
+
 ### Configuration
 
 | Option | Default | Notes |
@@ -293,11 +304,11 @@ Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddUnit
 
 ### Design and runtime behavior
 
-- Each call is one batch: `UPDATE … WITH (UPDLOCK, HOLDLOCK)`, then an `INSERT` in the same transaction when the key is new, with both results collected into a table variable and read back once. The batch has no `TRY/CATCH`, so a caller transaction running `SET XACT_ABORT ON` is never doomed by a caught duplicate key.
+- Each call is one batch: `UPDATE … WITH (UPDLOCK, HOLDLOCK)`, then an `INSERT` in the same transaction when the key is new. A caller transaction running `SET XACT_ABORT ON` is safe: the batch never relies on catching a duplicate key.
 - Key columns use a binary (`_BIN2`) collation, so names compare ordinally, as on PostgreSQL. The clustered primary key is exactly `(TenantId, Name, Partition)`, and it is what makes the range lock above serialize first use.
 - The fast path opens its own connection, runs in an explicit READ COMMITTED transaction, and retries a transient fault raised before the commit (a deadlock, 1205, a snapshot update conflict, 3960, a lock timeout, 1222, or a connection fault EF Core's SQL Server retry set covers; never a fault from the commit) in a fresh transaction up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 - The gap-free path runs on the unit's own connection and transaction with no retry. With `XACT_ABORT ON`, a timeout or cancellation rolls back the caller's transaction.
-- The table and its clustered key are a step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), under one `sp_getapplock` per database shared with every other Headless feature, and records in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
+- The table and its clustered key are a step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). It is recorded in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).
 
 ---
 
@@ -319,6 +330,8 @@ builder.Services.AddHeadlessSequences(setup => setup.UseSqlite("Data Source=app.
 Give it a database file: every call and the schema runner open their own connections, so a private `:memory:` database would vanish between them.
 
 Gap-free units begin over a SQLite connection (`AddUnitOfWork()`).
+
+**Verify:** `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `Sqlite/headless/Sequences` resource. A host started before that fails, naming the resource and `resources provision`.
 
 ### Configuration
 

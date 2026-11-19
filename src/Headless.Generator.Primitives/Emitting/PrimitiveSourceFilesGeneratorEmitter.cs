@@ -74,7 +74,8 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         var needsMathOperators = data.HasMathOperators();
 
-        var isByteOrShort = data.ParentPrimitives.Count == 0 && data.UnderlyingType.IsByteOrShort();
+        // byte and short arithmetic yields int, so the math operators need a range-checked int constructor, nested or not.
+        var isByteOrShort = data.UnderlyingType.IsByteOrShort();
 
         builder.AppendSourceHeader("Primitives Generator");
         builder.AppendUsings(usings);
@@ -129,9 +130,15 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             .AppendLine(");")
             .NewLine();
 
+        // A nested primitive stores the innermost value but implements IPrimitive<TParent>, so it converts the stored
+        // value up to the parent through the parent's own implicit conversion, which validates it as the parent.
         builder
             .AppendInheritDoc()
-            .AppendLine($"public {data.PrimitiveTypeFriendlyName} GetUnderlyingPrimitiveValue() => this;")
+            .AppendLine(
+                data.ParentPrimitives.Count == 0
+                    ? $"public {data.PrimitiveTypeFriendlyName} GetUnderlyingPrimitiveValue() => this;"
+                    : $"public {data.WrappedTypeName} GetUnderlyingPrimitiveValue() => {data.FieldName};"
+            )
             .NewLine();
 
         builder.AppendLines(ctorCode);

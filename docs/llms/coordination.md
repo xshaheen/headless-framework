@@ -9,62 +9,64 @@ packages: Coordination.Abstractions, Coordination, Coordination.Sql, Coordinatio
 
 ## Orientation
 
-Use Coordination when a distributed consumer needs to know which process incarnation is alive. It supplies `INodeMembership` for register, heartbeat, leave, live-node reads, full liveness snapshots, and lifecycle events. Consumers stamp the cluster-qualified owner tag (`NodeOwnerTag`, `cluster/node@incarnation`) on their own rows; Coordination does not store ownership.
+Use Coordination when a distributed consumer needs to know which process incarnation is alive. It supplies `INodeMembership` for register, heartbeat, leave, live-node reads, full liveness snapshots, and lifecycle events. Consumers stamp the cluster-qualified owner tag (`NodeOwnerTag`, `cluster/node@incarnation`) on their own rows. Coordination does not store ownership.
 
-Concrete consumer: the `Headless.Jobs` durable (operational-store) path resolves `INodeMembership` to stamp `cluster/node@incarnation` owner tags on job rows, drives dead-node recovery from `NodeLeft` events plus a periodic reconcile, and requires a registered provider (see `docs/llms/jobs.md`). Each feature's dead-owner reconcile reuses the liveness snapshot the heartbeat last read when that read started within one `HeartbeatInterval` (and within the reconcile interval) and after the read its previous reconcile used, so a healthy host adds no liveness read per reconcile tick; it reads the store only when the heartbeat has not read one that recently.
+`Headless.Jobs` on its durable store is the main consumer: it stamps owner tags on job rows, recovers a dead node's jobs from `NodeLeft` events plus a periodic reconcile, and requires a registered provider (see [jobs.md](jobs.md)).
 
-The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Server uses `SYSUTCDATETIME()`, and Redis uses `TIME` inside Lua. Application clocks do not classify another node as Alive, Suspected, or Dead.
+The store is the clock. PostgreSQL uses `clock_timestamp()`, SQL Server uses `SYSUTCDATETIME()`, SQLite uses the clock of the host that holds the file, and Redis uses `TIME` inside Lua. Application clocks never classify another node as Alive, Suspected, or Dead.
 
 ## Agent Rules
 
-- Depend on `Headless.Coordination.Abstractions` from application code and add exactly one provider package through `AddHeadlessCoordination(setup => setup.Use...)`.
-- Treat `NodeLeft` as an optimization trigger. Consumers must also periodically reconcile rows whose owner identity is not in `GetLiveNodesAsync()`.
-- Recovery updates must be idempotent and guarded by owner identity plus non-terminal state.
+- Depend on `Headless.Coordination.Abstractions` from application code. Register exactly one provider through `AddHeadlessCoordination(setup => setup.Use...)`.
+- Treat `NodeLeft` as an optimization trigger. Also reconcile periodically: recover rows whose owner identity is not in `GetLiveNodesAsync()`.
+- Make recovery updates idempotent, and guard them by owner identity plus a non-terminal state.
 - Do not use Coordination as Raft, Paxos, RedLock, leader election, or a generic ownership ledger.
-- Choose stable node ids deliberately. Kubernetes StatefulSet ordinal names are the strongest default; Deployment pod name plus namespace is stable for the pod lifetime; generated ids are local/dev only.
+- Choose stable node ids. Kubernetes StatefulSet ordinal names are the strongest default. A Deployment pod name plus namespace is stable for the pod lifetime. Generated ids are for local development only: every process start leaves one permanent generation entry, so generated ids grow the store without bound.
 - Keep `MembershipLostBehavior.StopApplication` unless every ownership-sensitive worker observes `LocalMembershipLostToken`.
+- Give each Jobs store its own `ClusterName`. Jobs publishes node metadata that gates cron rebases across every node in a cluster; see [Node Metadata](#node-metadata).
+- When environments share one Redis, give each host a `Headless:Prefix`. The Redis provider puts it in front of `CoordinationOptions.KeyPrefix` (`wt1:coordination:{cluster}:known`). Relational providers ignore the key prefix and separate clusters by `ClusterName`. Hosts that share a Jobs database must share the prefix, and changing it on such a fleet needs a full stop, not a rolling deploy. See [Isolation prefix](utilities.md#isolation-prefix).
 
 ## How this differs from locks and leases
 
-Membership answers "which node incarnations are alive?". It reports liveness only and never grants ownership. To decide who may run or who owns work, use a [distributed lock](distributed-locks.md) (a live process), a [fenced lease](fencing.md) (a durable row any executor carries), or a lease on your own work row stamped with the node's owner tag, as Jobs does. Comparison of all four primitives: [Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive).
+Membership answers "which node incarnations are alive?". It reports liveness only and never grants ownership. To decide who may run or who owns work, use a [distributed lock](distributed-locks.md), a [fenced lease](fencing.md), or a lease on your own work row stamped with the node's owner tag, as Jobs does. See [Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive).
 
 ## Core Concepts
 
 ### Node Identity
 
-`NodeIdentity` is `NodeId + NodeIncarnation` and formats as `node@incarnation`. The store allocates incarnations strictly increasing per node id, not as a dense sequence: Redis seeds them from its server clock (see [Headless.Coordination.Redis](#headlesscoordinationredis)). A restarted process with the same node id becomes a different identity, so consumers can reclaim `node@1` work without touching `node@2`. A `NodeId` must be text every membership store keeps unchanged (`Argument.IsPortableKey`): surrounding white space, a NUL character, or an unpaired UTF-16 surrogate throws `ArgumentException`. It is at most `NodeId.MaxLength` (256) characters and `ClusterName` at most `CoordinationOptions.ClusterNameMaxLength` (128): every membership row is keyed by both, and SQL Server caps a clustered key at 900 bytes.
+`NodeIdentity` is `NodeId + NodeIncarnation` and formats as `node@incarnation`. The store allocates incarnations strictly increasing per node id, but not as a dense sequence (Redis seeds them from its server clock). A restarted process with the same node id gets a different identity, so a consumer can reclaim `node@1` work without touching `node@2`.
 
-An identity is unique only inside its cluster: membership, liveness snapshots, and `NodeLeft` events are all per `ClusterName`, so two services on one host under different clusters can hold the same `node@incarnation` at once. Rows go in stores that several clusters can share (one Jobs store, one messaging schema), so consumers stamp the owner tag `NodeOwnerTag.Format(clusterName, identity)` (`cluster/node@incarnation`; `membership.GetOwnerTag()` for the local node) and limit any decision taken from a snapshot to tags of the snapshot's cluster (`NodeOwnerTag.IsInCluster`). A column that stores owner tags holds at least `NodeOwnerTag.MaxLength` (405) characters. The dead-owner recovery bridge hands `IDeadOwnerReclaimer.ReclaimAsync` owner tags of its own cluster.
+A `NodeId` must be text every store keeps unchanged: surrounding white space, a NUL character, or an unpaired UTF-16 surrogate throws `ArgumentException`. A `NodeId` is at most `NodeId.MaxLength` (256) characters, and `ClusterName` at most `CoordinationOptions.ClusterNameMaxLength` (128).
 
-The per-node generation counter is never purged by any provider — purging it would let a returning node reuse an incarnation and defeat stale-owner detection — so every distinct node id ever registered leaves one permanent generation row (relational) or `:gen:<node-id>` key (Redis). Keep node-id cardinality bounded: prefer stable ids (StatefulSet ordinals, configured ids, or pod name plus namespace) and avoid the generated-`{guid}` fallback in long-lived deployments, where every process start mints a new immortal entry and the generation keyspace grows without bound.
+An identity is unique only inside its cluster. Membership, liveness snapshots, and `NodeLeft` events are all per `ClusterName`, so two services under different clusters can hold the same `node@incarnation` at once. Stamp the owner tag `NodeOwnerTag.Format(clusterName, identity)` (`cluster/node@incarnation`; `membership.GetOwnerTag()` for the local node) on rows in stores that several clusters can share. Limit any decision taken from a snapshot to tags of the snapshot's cluster with `NodeOwnerTag.IsInCluster`. Size a column that stores owner tags to at least `NodeOwnerTag.MaxLength` (405) characters.
+
+No provider purges the per-node generation counter, because a purged counter would let a returning node reuse an incarnation. Every distinct node id ever registered leaves one permanent generation row (relational) or `:gen:<node-id>` key (Redis). Keep node-id cardinality bounded.
 
 ### Liveness States
 
-`Alive` means the store-clock heartbeat age is below `SuspicionThreshold`. `Suspected` is a soft signal between `SuspicionThreshold` and `DeadThreshold`. `Dead` means the hard threshold passed or the node left gracefully. `GetLiveNodesAsync()` returns Alive identities only; `GetLivenessSnapshotAsync()` returns full state. Each `NodeLivenessSnapshot` carries `LastHeartbeatAt` (`DateTimeOffset`, UTC), the store-clock instant of the incarnation's latest accepted heartbeat or registration that its state is computed from. After a graceful leave the relational providers keep the last real beat, while Redis marks the leave by backdating it one `DeadThreshold`, so on Redis a left node does not report its true last beat. Compare it with another store-clock instant, not with the application clock, which may be skewed from the store's. `IsAliveAsync(identity)` checks a single node — it is a targeted O(1) read (one guarded single-row query / small Lua), not a full cluster snapshot, so per-request liveness checks do not scale with cluster size. It returns the same answer the snapshot would for that identity: current-generation-only, store-clock classified, and retention-bounded (a node at or past the retention window reads as absent, i.e. not alive).
+- `Alive`: the store-clock heartbeat age is below `SuspicionThreshold`.
+- `Suspected`: a soft signal between `SuspicionThreshold` and `DeadThreshold`.
+- `Dead`: the hard threshold passed, or the node left gracefully.
 
-Provider SPI note: a custom `IMembershipStore` must implement `ReadNodeLivenessAsync(identity)` returning `NodeLivenessState?` — the targeted, read-only (no prune, no backfill) counterpart to `ReadLivenessAsync`, where `null` means the identity is absent from the current-generation view.
+`GetLiveNodesAsync()` returns `Alive` identities only. `GetLivenessSnapshotAsync()` returns the full state. `IsAliveAsync(identity)` checks one node with a single-row read, so a per-request check does not scale with cluster size, and it answers as the snapshot would for that identity.
 
-### Operational Read Model
+Each `NodeLivenessSnapshot` carries `LastHeartbeatAt` (`DateTimeOffset`, UTC), the store-clock instant of the incarnation's latest accepted heartbeat or registration. Compare it with another store-clock instant, never with the application clock. After a graceful leave, the relational providers keep the last real beat, while Redis backdates it by one `DeadThreshold`.
 
-Providers may retain historical incarnations long enough for Dead visibility, event derivation, and diagnostics. Operational reads are current-generation only: `GetLiveNodesAsync()` and the normal recovery snapshot must not treat retained `node@old-incarnation` rows as ownership candidates.
+Reads see only the current incarnation of each node. `GetLiveNodesAsync()` never offers a retained `node@old-incarnation` as an ownership candidate.
 
 ### Node Metadata
 
-`CoordinationOptions.Metadata` is copied into the node descriptor once, at `RegisterAsync`, and every peer reads it back
-through `NodeLivenessSnapshot.Metadata`. It is write-once per incarnation: a value changed after registration reaches
-peers only when the process restarts and registers a new incarnation. A node with no descriptor row reports empty
-metadata. Name keys with a dotted prefix that owns them (`headless.<feature>.<name>`; application keys use their own
-prefix), and never put secrets in metadata: every node in the cluster can read it. Keys are stored exactly as written, case
-included. Metadata is serialized by the keyed `IJsonSerializer` under `CoordinationOptions.JsonSerializerServiceKey`, not
-the host's shared serializer, so registering other JSON options never changes the stored format.
+`CoordinationOptions.Metadata` is copied into the node descriptor once, at `RegisterAsync`, and every peer reads it back through `NodeLivenessSnapshot.Metadata`. It is write-once per incarnation: a value changed after registration reaches peers only when the process restarts and registers a new incarnation. A node with no descriptor row reports empty metadata.
 
-Jobs publishes `headless.jobs.cron-rules-digest` and `headless.jobs.fingerprint-sweep` from every node on its durable
-store; see [Jobs fleet agreement](jobs.md#fleet-agreement). Because those keys gate cron rebases across every node in a
-cluster, give each Jobs store its own `ClusterName`.
+- Name keys with a dotted prefix that owns them (`headless.<feature>.<name>`; application keys use their own prefix). Keys are stored exactly as written, case included.
+- Never put secrets in metadata: every node in the cluster can read it.
+- Metadata is serialized by the keyed `IJsonSerializer` under `CoordinationOptions.JsonSerializerServiceKey`, so registering other JSON options for the host never changes the stored format.
+
+Jobs publishes `headless.jobs.cron-rules-digest` and `headless.jobs.fingerprint-sweep` from every node on its durable store. Those keys gate cron rebases across every node in a cluster, so give each Jobs store its own `ClusterName`.
 
 ### Events And Reconcile
 
-Events are best-effort local observations from snapshots: `NodeJoined`, `NodeSuspected`, `NodeRecovered`, and `NodeLeft`. A missed event must not block recovery. Consumers reconcile periodically against live identities and recover stale owner rows themselves.
+Events are best-effort local observations derived from snapshots: `NodeJoined`, `NodeSuspected`, `NodeRecovered`, and `NodeLeft`, read through `IMembershipEventSource.WatchAsync(...)`. A missed event must not block recovery. Reconcile periodically against live identities and recover stale owner rows yourself, or implement `IDeadOwnerReclaimer` and let [Headless.Coordination](#headlesscoordination) drive it.
 
 ### Safety Ceiling
 
@@ -74,10 +76,12 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
-| `Headless.Coordination.PostgreSql` | Membership should follow a PostgreSQL primary and server clock. | The deployment cannot use primary/write-path reads for failover. | The shared relational store, `clock_timestamp()`. |
-| `Headless.Coordination.SqlServer` | Membership should follow SQL Server and `SYSUTCDATETIME()`. | The app cannot grant DDL/init permissions or use primary reads. | The shared relational store, guarded update/insert, no `MERGE`. |
-| `Headless.Coordination.Sqlite` | Every node runs on one host and shares a SQLite file, such as an embedded or edge deployment. | Nodes on several hosts: SQLite locking does not work over a network file system. | The shared relational store; every write serializes on the database write lock, and the clock is the host's. |
-| `Headless.Coordination.Redis` | Redis is the authoritative coordination store. | Redis eviction can delete generation counters or failover reads may hit stale replicas. | Lua scripts use `TIME`; generation counters are not purged by default. |
+| `Headless.Coordination.PostgreSql` | Membership should follow a PostgreSQL primary and server clock. | Reads after a failover can reach a lagging replica. | Relational store; `clock_timestamp()`. |
+| `Headless.Coordination.SqlServer` | Membership should follow SQL Server and `SYSUTCDATETIME()`. | The deploy identity cannot get DDL permission, or reads can reach a lagging replica. | Relational store; guarded update and insert, no `MERGE`. |
+| `Headless.Coordination.Sqlite` | Every node runs on one host and shares a SQLite file, such as an embedded or edge deployment. | Nodes run on several hosts: SQLite locking does not work over a network file system. | Every write serializes on the database write lock, and the clock is the host's. |
+| `Headless.Coordination.Redis` | Redis is the authoritative coordination store. | Redis evicts keys, runs without persistence, or fails over to replicas that miss writes. | Lua scripts use `TIME`; generation counters are never purged. |
+
+---
 
 ## Headless.Coordination.Abstractions
 
@@ -85,21 +89,21 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 
 - `NodeIdentity`, `NodeId`, and `NodeIncarnation`.
 - `NodeOwnerTag`: `Format(clusterName, identity)` builds the `cluster/node@incarnation` owner tag, `IsInCluster(tag, clusterName)` tests a stored tag against a cluster, `GetOwnerTag(this INodeMembership)` returns the local node's tag or `null` when it has no identity, and `MaxLength` sizes an owner column.
-- `INodeMembership` for register, heartbeat, leave, live reads, snapshot reads, and event watch. `ClusterName` names the cluster every identity it reports belongs to.
-- Heartbeats are incarnation-fenced: an incarnation that is dead, gracefully left, or pruned is terminal and cannot be revived; the process must register a higher incarnation.
-- `NodeJoined`, `NodeSuspected`, `NodeRecovered`, `NodeLeft`, and `LocalMembershipLost` event contracts.
-- `IMembershipEventSource.WatchAsync(...)` for lifecycle events.
-- `INodeDrainParticipant` — a consumer-registered singleton (`Task WaitUntilDrainedAsync(CancellationToken)`) that holds the node in membership during host stop until the work it owns has drained and written its outcome. The heartbeat resolves every registered participant and awaits them before leaving; the token is the host stop token, so an implementation returns or throws `OperationCanceledException` promptly when it fires. Jobs registers one on hosts that claim work. Coordination knows nothing about its participants.
-- `IDeadOwnerReclaimer` — the per-domain reclaim sink driven by the shared dead-owner recovery bridge. It carries `TimeSpan? ReconcileInterval` (the feature's configured cadence, or `null` for half of `CoordinationOptions.DeadRetentionWindow`; the bridge reads it once at start and clamps it) and `ReclaimAsync(owners, ct)`, where `owners` is a single owner from the event path or the whole dead set from a reconcile tick, so a consumer can collapse the reclaim into one batched write, and `ct` is always `CancellationToken.None`. Jobs and Messaging implement it; any package or app can, and registers it with `AddDeadOwnerReclaimer<TReclaimer>()` from `Headless.Coordination`.
-- `CoordinationOptions` for thresholds, cluster name, role, metadata, and membership-loss behavior. The node id is not an option here; it is `IHostIdentityAccessor.HostName` from `Headless.Context`.
+- `INodeMembership`: `RegisterAsync`, `HeartbeatAsync`, `LeaveAsync`, `IsAliveAsync`, `GetLiveNodesAsync`, `GetLivenessSnapshotAsync`, and event watch. `Identity` is the local identity or `null`. `ClusterName` names the cluster of every identity it reports. `LocalMembershipLostToken` fires when the local membership is lost.
+- Heartbeats are incarnation-fenced. An incarnation that is dead, gracefully left, or pruned is terminal and cannot be revived; the process must register a higher incarnation.
+- `NodeJoined`, `NodeSuspected`, `NodeRecovered`, `NodeLeft`, and `LocalMembershipLost` event contracts, and `IMembershipEventSource.WatchAsync(...)` to read them.
+- `INodeDrainParticipant` (`Task WaitUntilDrainedAsync(CancellationToken)`): register it as a singleton to keep the node in membership during host stop until the work it owns has drained and written its outcome. The token is the host stop token, so return or throw `OperationCanceledException` promptly when it fires. Jobs registers one on hosts that claim work.
+- `IDeadOwnerReclaimer`: the reclaim sink the dead-owner recovery bridge in `Headless.Coordination` drives. `TimeSpan? ReconcileInterval` is the reconcile cadence (`null` means half of `CoordinationOptions.DeadRetentionWindow`). `ReclaimAsync(owners, ct)` receives a single owner from the event path or the whole dead set from a reconcile tick, so you can reclaim in one batched write. `ct` is always `CancellationToken.None`. Jobs and Messaging implement it; register your own with `AddDeadOwnerReclaimer<TReclaimer>()`.
+- `CoordinationOptions` for thresholds, cluster name, role, metadata, and membership-loss behavior. The node id is not an option here: it is `IHostIdentityAccessor.HostName` from `Headless.Context`.
+- `NullNodeMembership`: a membership that reports no node leaving and no dead node.
 
 ### Design constraints
 
 The abstraction is a liveness substrate, not an ownership store. Consumers own their domain rows and stamp the cluster-qualified owner tag.
 
-`HeartbeatAsync()` returns `false` when the local incarnation has been superseded or is terminal, or when the node is past its self-fence deadline. Callers must stop ownership-sensitive work; a process whose membership was lost must restart, because `RegisterAsync` throws `InvalidOperationException` once local membership is lost.
+`HeartbeatAsync()` returns `false` when the local incarnation has been superseded or is terminal, or when the node is past its self-fence deadline. Stop ownership-sensitive work when it does. A process whose membership was lost must restart: `RegisterAsync` throws `InvalidOperationException` once local membership is lost.
 
-`RegisterAsync` throws `MembershipRegistrationRejectedException` (a `CoordinationException`) when the store refuses the registration because a newer incarnation of the same node id was allocated first: another process is registering with the same `NodeId`. `Identity` stays unset and startup fails; registration is not retried. Concurrent `RegisterAsync` calls in one process share a single registration and get the same identity.
+`RegisterAsync` throws `MembershipRegistrationRejectedException` (a `CoordinationException`) when the store refuses the registration because a newer incarnation of the same node id was allocated first: another process is registering with the same `NodeId`. `Identity` stays unset, and startup fails without a retry. Concurrent `RegisterAsync` calls in one process share one registration and get the same identity.
 
 ### Install
 
@@ -112,17 +116,19 @@ dotnet add package Headless.Coordination.Abstractions
 ```csharp
 public sealed class Worker(INodeMembership membership)
 {
-    public async Task StartAsync(CancellationToken ct)
+    public void Stamp(WorkItem item)
     {
-        var identity = await membership.RegisterAsync(ct);
-        // Stamp identity on work rows owned by this process.
+        // The node registers at startup; the tag is null only before that, or after membership is lost.
+        item.Owner = membership.GetOwnerTag() ?? throw new InvalidOperationException("Node is not a live member.");
     }
 }
 ```
 
+**Verify:** after the host starts, `membership.Identity` is not `null`, and `GetLiveNodesAsync()` contains it.
+
 ### Configuration
 
-Configure through provider setup plus `CoordinationOptions`.
+Configure through provider setup and `CoordinationOptions`.
 
 ### Runtime behavior
 
@@ -134,25 +140,23 @@ None.
 
 ### API and behavior
 
-- An internal membership service implements `INodeMembership` (consumers resolve `INodeMembership`).
-- Background heartbeat service starts its beat loop in `IHostedLifecycleService.StartingAsync`, before any hosted service's `StartAsync`. The loop waits for whichever caller registers first (the Jobs startup gate, or the service's own register-if-null in `StartAsync` on hosts without Jobs) and never registers itself, so a node registered early in startup keeps beating through a slow `StartingAsync` in a later service. It derives lifecycle events from authoritative snapshots, leaves gracefully on host shutdown under a bounded timeout, and stops beating once local membership is lost. A registration the store refuses fails startup without a retry.
-- **Stop order**: the heartbeat keeps beating through every hosted service's `StopAsync`, then, in `IHostedLifecycleService.StoppedAsync`, awaits every `INodeDrainParticipant`, bounded by the host stop token, and only then stops beating and leaves. Neither registration order nor `HostOptions.ServicesStopConcurrently` changes this, so a participant can complete inside its own service's stop. If the token cuts the wait short it logs once and leaves anyway; a participant that throws is logged and does not block the leave or the other participants. The leave runs under its own 5-second real-time budget, not the host stop token, so it still reaches the store after a cut-short wait. A node that left, or stopped beating until it self-fenced, reads as dead to peers, which reclaim its rows; waiting for the drain keeps it a live owner until its in-flight work has written its outcome.
-- `setup.DisableMembershipHeartbeat()` skips that hosted service. Use it on test hosts and tools that must not join the cluster on their own; `INodeMembership` stays registered, so a test can call `RegisterAsync` and `HeartbeatAsync` itself. Such a host never self-fences (it has no beat source, so it would only ever reach the deadline); a node that keeps running without heartbeats reads as `Dead` to its peers once `DeadThreshold` passes, so production nodes keep the heartbeat. `AddHeadlessJobs` on the durable store refuses the switch unless Jobs background services are off, since a node that claims work without beating would have that work released to peers while it still runs it.
-- Clocks: the registered `TimeProvider` paces beats, the dead-owner reconcile, and the local self-fence, so a test advances it to drive liveness. The registration retry back-off, the bounded leave on shutdown, the dead-owner watch re-subscribe back-off, and the reconcile's snapshot-read timeout (the reconcile interval, at least 5 seconds) wait real time, so a host that registers a `FakeTimeProvider` and never advances it still registers after a transient store failure and still stops.
-- Bounded per-subscriber event channels isolate slow consumers from heartbeats.
-- Default node-id provider resolves configured id, Kubernetes pod identity, hostname, then generated id.
+- Registers `INodeMembership`, `IMembershipEventSource`, `INodeIdProvider`, `IHostIdentityAccessor` (from `Headless.Context`), `TimeProvider.System`, and a heartbeat hosted service.
+- **Start.** The heartbeat starts before any hosted service's `StartAsync`. The node registers once: Jobs registers it at its startup gate, and on hosts without Jobs the heartbeat service registers it. `RegisterAsync` writes the descriptor and an initial liveness entry together, so the node reads `Alive`, with its role and metadata visible, before the first heartbeat. A transient store failure during registration is retried, up to 5 attempts with a back-off from 200 ms doubling to at most 5 seconds; the last failure then fails startup, or under `StopMembershipOnly` is logged and the node stays unregistered. A registration the store refuses (`MembershipRegistrationRejectedException`) fails startup without a retry.
+- **Stop order.** The heartbeat keeps beating through every hosted service's `StopAsync`. Then it awaits every `INodeDrainParticipant`, bounded by the host stop token, and only then stops beating and leaves. Registration order and `HostOptions.ServicesStopConcurrently` do not change this. If the stop token cuts the wait short, it logs once and leaves anyway. A participant that throws is logged and does not block the leave or the other participants. The leave has its own 5-second budget, so it still reaches the store after a cut-short wait. A node that left reads as dead to peers, which reclaim its rows.
+- **Self-fence.** On a host that runs the heartbeat, the node fences itself at its last accepted beat (or its registration) plus `DeadThreshold` minus `SelfFenceMargin`, even when no beat runs. It stops before any peer can classify it `Dead` and reclaim its work. From that instant `Identity` reads `null`, so stamp sites stop handing out an owner, and a beat the store accepts after the deadline does not bring the identity back. A store call that keeps failing or hangs fences the node at the deadline. A snapshot-read failure does not fence a node whose heartbeats still succeed. `LeaveAsync` still writes the departure for a node past its deadline, so peers see `NodeLeft` instead of waiting out `DeadThreshold`.
+- **Membership lost.** The default `MembershipLostBehavior.StopApplication` asks the host to stop. `StopMembershipOnly` is for hosts where every worker observes `LocalMembershipLostToken`.
+- `setup.DisableMembershipHeartbeat()` skips the heartbeat service. Use it on test hosts and tools that must not join the cluster on their own. `INodeMembership` stays registered, so a test can call `RegisterAsync` and `HeartbeatAsync` itself. Such a host never self-fences, and peers read it as `Dead` once `DeadThreshold` passes, so production nodes keep the heartbeat. `AddHeadlessJobs` on the durable store refuses the switch unless Jobs background services are off.
+- **Clocks.** The registered `TimeProvider` paces beats, the dead-owner reconcile, and the self-fence, so a test advances a `FakeTimeProvider` to drive liveness. The registration retry back-off, the leave on shutdown, the event re-subscribe back-off, and the reconcile's read timeout (the reconcile interval, at least 5 seconds) wait real time, so a host with a `FakeTimeProvider` it never advances still registers after a transient store failure and still stops.
+- A slow event subscriber never delays heartbeats.
+- The default `INodeIdProvider` returns `IHostIdentityAccessor.HostName`, the same host name that stamps message origins and logs. To pin it, call `services.AddHeadlessHostIdentity(o => o.HostName = "orders-worker-0")` before any feature registration. The discovery order (`POD_NAMESPACE/POD_NAME`, machine name, generated) is in [context.md](context.md).
 
 ### Design constraints
 
-`RegisterAsync` durably establishes both the cold descriptor and an initial store-clock liveness entry in one guarded write, so a node is `Alive` (and its role/metadata are visible) immediately after register — without waiting for the first heartbeat. The background loop owns every subsequent beat. Registration is incarnation-guarded: a stale or superseded incarnation establishes no liveness.
+An incarnation is terminal once it leaves, reaches `DeadThreshold`, or its retained liveness entry is pruned. Every provider rejects later heartbeats for that incarnation. Recovery requires registering a higher incarnation, so a delayed process cannot resurrect its old ownership identity.
 
-Self-heartbeat rejection is a local fencing failure. On a host that runs the heartbeat service, the node also fences itself on a deadline: the anchor is the instant just before its registration write, and each accepted heartbeat moves it to the instant that beat started. At anchor + `DeadThreshold` - `SelfFenceMargin` a `TimeProvider` timer fail-stops the node even when no beat or loop tick runs, so it stops before any peer can classify it `Dead` and reclaim its work. From that instant `Identity` reads `null` even if the timer callback is late, so stamp sites (such as the Jobs owner identity) stop handing out an owner; a beat the store accepts after the deadline does not bring the identity back. `INodeMembership.LeaveAsync` still writes the departure for a node past its deadline whose timer has not fired yet, so peers see `NodeLeft` instead of waiting out `DeadThreshold`. Each beat is bounded by the fence budget left, and the loop waits the smaller of `HeartbeatInterval` and that budget, so a continuously failing or hung store call fences the node at the deadline. Snapshot-read failures do not fence a node whose heartbeats still succeed. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
+**Dead-owner recovery.** `services.AddDeadOwnerReclaimer<TReclaimer>()` registers the reclaimer as a singleton and hosts a background service that calls it on `NodeLeft` events and on a periodic reconcile of `Dead` owners. A repeat call for the same `TReclaimer` adds nothing. Each reclaimer type gets its own hosted service and logger category, `Headless.Coordination.DeadOwnerRecoveryBridge<TReclaimer>`, and implements the public `IDeadOwnerRecoveryBridge` marker. Coordination registers no reclaimer itself. Under `NullNodeMembership` the service sees no node leave and no dead node and never calls the reclaimer.
 
-An incarnation is terminal once it leaves, reaches `DeadThreshold`, or its retained liveness entry is pruned. PostgreSQL, SQL Server, and Redis reject later heartbeats for that same incarnation; recovery requires allocating and registering a higher incarnation, so a delayed process cannot resurrect its old ownership identity.
-
-Core also hosts the shared dead-owner recovery bridge, a `BackgroundService` that drives one `IDeadOwnerReclaimer` on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). The bridge type is internal; `services.AddDeadOwnerReclaimer<TReclaimer>()` registers the reclaimer as a singleton and hosts its bridge. A repeat call for the same `TReclaimer` adds nothing, and each distinct reclaimer type gets its own hosted service and logger category, `Headless.Coordination.DeadOwnerRecoveryBridge<TReclaimer>`, matched in a service list through the public `IDeadOwnerRecoveryBridge` marker. Coordination registers no reclaimer itself: the owning feature does. The host needs an `INodeMembership`, from `AddHeadlessCoordination` or a `NullNodeMembership` fallback; under the fallback the bridge sees no node leave and no dead node and never calls the reclaimer.
-
-The bridge resolves the reconcile cadence once at start through `DeadOwnerReconcileInterval.Resolve(configured, coordination)`: `null` becomes half of `DeadRetentionWindow` (15 seconds with default options), because relational providers keep a dead identity observable for only that window, and an explicit value above that ceiling is clamped to it with one warning (EventId 14, `DeadNodeReconcileIntervalClamped`) under the bridge's category. Under `NullNodeMembership` the coordination options are ignored and an explicit value is used as set. A feature that runs its own sweep on the bridge's cadence calls the public `Resolve` overload, which logs nothing, to get the same value.
+The reconcile cadence is resolved once at start: `null` becomes half of `DeadRetentionWindow` (15 seconds with default options), because relational providers keep a dead identity observable for only that window. An explicit value above that ceiling is clamped to it, with one warning (EventId 14, `DeadNodeReconcileIntervalClamped`). Under `NullNodeMembership` an explicit value is used as set. To run your own sweep on the same cadence, call `DeadOwnerReconcileInterval.Resolve(configured, coordination)`, which logs nothing.
 
 ### Install
 
@@ -162,13 +166,16 @@ dotnet add package Headless.Coordination
 
 ### Setup and use
 
+Install a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`, which returns the `IServiceCollection`. A custom `IMembershipStore` plugs into the same call; see [For store authors](#for-store-authors).
+
 ```csharp
-services.AddCoordinationCore<MyMembershipStore>(options =>
+services.AddHeadlessCoordination(setup =>
 {
-    options.ClusterName = "orders";
+    setup.Configure(options => options.ClusterName = "orders");
+    setup.UsePostgreSql(); // the connection from services.AddPostgreSqlSql(connectionString)
 });
 
-// Release the leases a dead node held; the bridge calls it on NodeLeft and on each reconcile tick.
+// Release the leases a dead node held; called on NodeLeft and on each reconcile tick.
 services.AddDeadOwnerReclaimer<LeaseReclaimer>();
 
 public sealed class LeaseReclaimer(ILeaseStore leases) : IDeadOwnerReclaimer
@@ -180,13 +187,26 @@ public sealed class LeaseReclaimer(ILeaseStore leases) : IDeadOwnerReclaimer
 }
 ```
 
-Applications normally use a provider package and call `AddHeadlessCoordination(setup => setup.Use...)` (which returns the `IServiceCollection`); `AddCoordinationCore<TStore>` is the lower-level hook for provider authors and custom stores.
+**Verify:** invalid thresholds fail options validation at host start. After start, `GetLivenessSnapshotAsync()` reports the local identity as `Alive` with its `Metadata`.
 
 ### Configuration
 
-Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadThreshold` must be at least three heartbeat intervals (a single missed or slow beat must not kill the node), and `DeadRetentionWindow` must be at least two heartbeat intervals.
+| Option | Default | Notes |
+| --- | --- | --- |
+| `ClusterName` | `default` | At most 128 characters. Membership is per cluster. |
+| `Role` | `null` | Published in the node descriptor. |
+| `Metadata` | empty | Write-once per incarnation; see [Node Metadata](#node-metadata). |
+| `HeartbeatInterval` | 5 seconds | |
+| `SuspicionThreshold` | 15 seconds | |
+| `DeadThreshold` | 30 seconds | At least three heartbeat intervals. |
+| `DeadRetentionWindow` | 30 seconds | At least two heartbeat intervals. How long relational providers keep a dead identity observable. |
+| `SelfFenceMargin` | `null` | `null` uses the smaller of 5 seconds and one sixth of `DeadThreshold`. |
+| `MembershipLostBehavior` | `StopApplication` | |
+| `KeyPrefix` | `coordination:` | Redis key prefix. |
 
-`SelfFenceMargin` is how long before `DeadThreshold` the node fences itself. Leave it `null` (the default) and the node uses the smaller of 5 seconds and one sixth of `DeadThreshold`: 5 seconds with the default 30-second threshold, 200 milliseconds with a 1.2-second one. That derived value always passes validation, so a short-threshold profile needs no margin of its own. An explicit margin must be zero or greater, and `DeadThreshold - SelfFenceMargin` must be at least twice `HeartbeatInterval`; startup validation fails otherwise. Set it only to widen the margin for a store with slow or skewed writes, or to `TimeSpan.Zero` to fence exactly at `DeadThreshold`:
+Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`. Startup validation fails otherwise.
+
+`SelfFenceMargin` is how long before `DeadThreshold` the node fences itself. The derived default is 5 seconds with the default 30-second threshold, and 200 milliseconds with a 1.2-second one, and it always passes validation. An explicit margin must be zero or greater, and `DeadThreshold - SelfFenceMargin` must be at least twice `HeartbeatInterval`. Set it only to widen the margin for a store with slow or skewed writes, or to `TimeSpan.Zero` to fence exactly at `DeadThreshold`:
 
 ```csharp
 services.AddHeadlessCoordination(setup =>
@@ -202,7 +222,7 @@ services.AddHeadlessCoordination(setup =>
 });
 ```
 
-Storage naming is a separate, feature-owned options type. `CoordinationStorageOptions.Schema` (default `"headless"`, the schema every Headless feature shares) names the database schema that holds the membership tables, and it is configured through the setup builder rather than through any one provider:
+`CoordinationStorageOptions.Schema` (default `"headless"`, the schema every Headless feature shares) names the database schema that holds the membership tables. Set it on the setup builder, not on a provider:
 
 ```csharp
 services.AddHeadlessCoordination(setup =>
@@ -212,13 +232,51 @@ services.AddHeadlessCoordination(setup =>
 });
 ```
 
-`setup.ConfigureStorage(configuration)` binds the same options from configuration — pass the `Headless:Coordination:Storage` section to bind `Headless:Coordination:Storage:Schema`.
-
-Coordination owns the setting so the membership tables land in the same schema whichever relational provider backs them; the provider package contributes only the dialect rules the schema is validated against on startup (PostgreSQL's 63-character unquoted-identifier rules, SQL Server's 128-character regular-identifier rules). Redis ignores the option entirely. The trade-off: a schema name valid on one provider can be rejected on the other, and that failure surfaces at startup rather than at first write.
+`setup.ConfigureStorage(configuration)` binds the same options; pass the `Headless:Coordination:Storage` section to bind `Headless:Coordination:Storage:Schema`. The provider validates the schema at startup against its own identifier rules (PostgreSQL: 63-character unquoted identifiers; SQL Server: 128-character regular identifiers), so a name valid on one engine can fail on the other. Redis ignores the option.
 
 ### Runtime behavior
 
-Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdentityAccessor` (from `Headless.Context`), `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service (unless `DisableMembershipHeartbeat()` is called; `AddCoordinationCore<TStore>` always registers it). The default `INodeIdProvider` returns `IHostIdentityAccessor.HostName`, so the node a membership store sees is the same host name that stamps message origins and logs. To pin it, set `HostIdentityOptions.HostName` through `services.AddHeadlessHostIdentity(o => o.HostName = "orders-worker-0")` before any feature registration; the discovery order (`POD_NAMESPACE/POD_NAME`, machine name, generated) is documented in [context.md](context.md).
+`AddHeadlessCoordination` registers the heartbeat service unless `DisableMembershipHeartbeat()` is called, whichever store backs it.
+
+### For store authors
+
+To back membership with another store, implement `IMembershipStore` and register it the way the shipped providers do: an `ICoordinationProviderOptionsExtension` whose `AddServices` calls `services.AddCoordinationCore<TStore>()`, handed to `AddHeadlessCoordination` through `RegisterExtension`. `AddCoordinationCore<TStore>()` registers the core services over your store and no heartbeat, so the setup builder's `Configure(...)`, its one-provider check, and `DisableMembershipHeartbeat()` apply to your store as they do to a shipped one. Applications never call the store; the membership service does.
+
+```csharp
+public sealed class MyCoordinationExtension : ICoordinationProviderOptionsExtension
+{
+    public void AddServices(IServiceCollection services)
+    {
+        services.AddCoordinationCore<MyMembershipStore>();
+        // register what MyMembershipStore itself depends on here
+    }
+}
+
+services.AddHeadlessCoordination(setup =>
+{
+    setup.Configure(configuration.GetSection("Headless:Coordination"));
+    setup.RegisterExtension(new MyCoordinationExtension());
+    // setup.DisableMembershipHeartbeat(); // only on a host that drives liveness itself
+});
+```
+
+A store package wraps the `RegisterExtension` call in its own `Use{Store}` extension on `HeadlessCoordinationSetupBuilder`, as `UseRedis` does.
+
+Every member decides with the store's own clock, never the application clock, and must be safe to call concurrently.
+
+| Member | What it must do |
+| --- | --- |
+| `AllocateIncarnationAsync(nodeId, ct)` | Return an incarnation strictly greater than every incarnation ever issued for `nodeId`. Keep the per-node generation forever: purging it would let a returning node reuse an incarnation. |
+| `UpsertDescriptorAsync(descriptor, ct)` | In one guarded write, store the write-once `NodeDescriptor` (`Identity`, `HostName`, `Endpoints`, `Role`, `Metadata`) and an initial `Alive` liveness entry for the descriptor's incarnation, so the node is live before its first heartbeat. Return `false`, writing neither, when the incarnation is no longer current (another process allocated a newer one for the same node id) or the generation is missing. A `false` makes `RegisterAsync` throw `MembershipRegistrationRejectedException`. |
+| `HeartbeatAsync(identity, ct)` | Refresh a live current incarnation. Return `false` when it is superseded, dead, gracefully left, missing, or pruned. Never recreate terminal liveness. |
+| `LeaveAsync(identity, ct)` | Move the incarnation to the terminal left state. Do nothing for an identity that is already terminal, superseded, or absent, and never recreate liveness for it. |
+| `ReadLivenessAsync(ct)` | Return every known node's `NodeLivenessSnapshot`, ordered by `Identity` ascending; the service does not re-sort. Report only the current incarnation of each node, classify with the store clock against `SuspicionThreshold` and `DeadThreshold`, and omit rows at or past the retention window (`DeadThreshold + DeadRetentionWindow`). |
+| `ReadNodeLivenessAsync(identity, ct)` | Return the `NodeLivenessState?` that `ReadLivenessAsync` would give for that one identity at the same instant, or `null` when it is absent from the current-generation view (never registered, stale, superseded, or past retention). Read one row only: no pruning, no backfill. |
+| `ReadLiveNodesAsync(ct)` | Return exactly the `Alive` identities `ReadLivenessAsync` would give, current generation only, ordered ascending by `node@incarnation`. Read-only. |
+
+A relational store can build its statements on the SQL store kit; see [Store statement kit](sql.md#store-statement-kit-for-provider-authors).
+
+**Verify:** a host built with your extension reaches `GetLiveNodesAsync()` with its own identity after start. Two hosts that register the same `NodeId` against your store make the second start fail with `MembershipRegistrationRejectedException`.
 
 ---
 
@@ -226,21 +284,19 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 
 ### API and behavior
 
-- The one relational membership store, written against the SQL dialect kit (`ISqlDialect`, see [sql.md § Store statement kit](sql.md#store-statement-kit-for-provider-authors)); the PostgreSQL and SQL Server packages supply only their dialect, options, and DDL.
-- `RelationalCoordinationOptions`, the options base both providers share: `ConnectionString` and `CommandTimeout` (positive, at most 10 minutes; default 30 seconds).
-- Allocation is one upsert of the node's generation row. Registration and heartbeats take that row's update-intent lock first, so neither interleaves with an allocation that supersedes the incarnation they write for.
-- A heartbeat is one fenced liveness update: current incarnation, not left, and beat younger than `DeadThreshold`, decided in its `WHERE`. It writes the later of the stored beat and the database clock, so a database clock that steps back never moves a beat backwards. Registering the current incarnation again revives its liveness the same way.
-- `UpsertDescriptorAsync` returns `false` when the incarnation is no longer current, and writes neither the descriptor nor liveness.
-- Incarnations come from an `INCR`-style counter in the generation row. A database restored from a backup rolls those counters back, so incarnations issued after the backup are issued again while rows in other stores may still carry them as owners. Restore coordination together with the stores that hold its owner tags, or not at all.
-- `LeaveAsync` stamps the leave once; leaving an incarnation that already left is a no-op.
-- Every comparison runs on the database clock with exact durations; the application clock never classifies a node.
-- Every write runs on its own READ COMMITTED transaction and retries a transient fault raised before its commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection), at most 3 attempts. A fault from the commit is never retried. See the kit's [retry rule](sql.md#store-statement-kit-for-provider-authors).
-- `ReadLivenessAsync`, `ReadNodeLivenessAsync`, and `ReadLiveNodesAsync` are each one statement on their own connection with no transaction (`SqlAutonomousRead`), and retry any transient fault, at most 3 attempts. One statement already reads one consistent view of the rows it joins, so the reads skip the `BEGIN` and `COMMIT` round trips every node would otherwise pay on each heartbeat tick.
-- `ReadLivenessAsync` never returns a row at or past the retention cutoff (`DeadThreshold + DeadRetentionWindow`), whether or not that row has been deleted yet. Deleting them is a separate prune of retention-expired liveness rows, then orphaned descriptors, which the read runs in a transaction of its own at most once a minute per store. A prune that still fails after its retries is logged as a warning and retried by a later read; the read itself still returns.
+- The relational membership store that the PostgreSQL, SQL Server, and SQLite providers share.
+- `RelationalCoordinationOptions`, the options base the providers share: `ConnectionString` and `CommandTimeout` (positive, at most 10 minutes; default 30 seconds).
+- A heartbeat is one fenced update: current incarnation, not left, and beat younger than `DeadThreshold`. It writes the later of the stored beat and the database clock, so a database clock that steps back never moves a beat backwards.
+- `LeaveAsync` stamps the leave once. Leaving an incarnation that already left is a no-op.
+- Every write runs in its own READ COMMITTED transaction and retries a transient fault raised before its commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection), at most 3 attempts. A fault from the commit is never retried.
+- Liveness reads are one statement each on their own connection, and retry any transient fault, at most 3 attempts.
+- A liveness read never returns a row at or past the retention cutoff (`DeadThreshold + DeadRetentionWindow`), whether or not that row has been deleted yet. Expired rows are pruned at most once a minute per store. A prune that fails after its retries is logged as a warning and retried later; the read still returns.
+- Cluster names and node ids compare ordinally on every engine: `node-a` and `Node-A` are two nodes.
+- **Backups.** Incarnations come from a counter in each node's generation row. A database restored from a backup rolls those counters back, so incarnations issued after the backup are issued again while rows in other stores may still carry them as owners. Restore coordination together with the stores that hold its owner tags, or not at all.
 
 ### Design constraints
 
-Table and column names come from the dialect, so PostgreSQL keeps snake_case and SQL Server PascalCase while the statements are written once. Cluster names and node ids are compared ordinally on both engines (`COLLATE "C"` on PostgreSQL, `Latin1_General_100_BIN2` on SQL Server): `node-a` and `Node-A` are two nodes on either.
+None beyond the provider sections.
 
 ### Install
 
@@ -250,7 +306,9 @@ dotnet add package Headless.Coordination.Sql
 
 ### Setup and use
 
-This package is used by provider packages; applications normally install PostgreSQL or SQL Server providers directly.
+The provider packages reference it. Install the PostgreSQL, SQL Server, or SQLite provider instead.
+
+**Verify:** see the provider's Verify step.
 
 ### Configuration
 
@@ -266,14 +324,12 @@ None.
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Sql` over the PostgreSQL dialect.
-- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
-- Liveness classification uses `clock_timestamp()`.
-- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+- The relational store over PostgreSQL. Liveness classification uses `clock_timestamp()`.
+- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). Tables and columns are snake_case, and every statement names its tables as `"schema"."table"`, so `search_path` does not matter.
 
 ### Design constraints
 
-Use `clock_timestamp()`, not transaction-start time, for liveness. Operational reads join the generation table so superseded incarnations are not live candidates.
+Point the connection at the primary. A read from a lagging replica can classify a live node as dead.
 
 ### Install
 
@@ -304,15 +360,17 @@ services.AddHeadlessCoordination(setup =>
 
 The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
+**Verify:** `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `PostgreSql/headless/Coordination` resource. A host started before that fails, naming the resource and `resources provision`. After start, the node appears in `GetLiveNodesAsync()`.
+
 ### Configuration
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, and `CommandTimeout` with `setup.UsePostgreSql(...)`.
 
-The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). The schema runner creates that schema when absent and every statement names its tables as `"schema"."table"`, so the provider no longer depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+Set the schema with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). The schema runner creates the schema when absent.
 
 ### Runtime behavior
 
-Registers the core membership services, the PostgreSQL membership store, and the membership schema contribution; `resources provision` applies it, and a host start only verifies it (see [Resource provisioning](utilities.md#resource-provisioning)). Creates snake_case tables and columns. Requires PostgreSQL DDL permission for the identity that runs `resources provision`.
+`resources provision` creates the tables, and a host start only verifies them (see [Resource provisioning](utilities.md#resource-provisioning)). The identity that runs `resources provision` needs PostgreSQL DDL permission.
 
 ---
 
@@ -320,25 +378,21 @@ Registers the core membership services, the PostgreSQL membership store, and the
 
 ### API and behavior
 
-- Incarnation allocation sets the generation to the larger of the current value plus one and the Redis server time in milliseconds times 1000 (`redis.call('TIME')`), so an incarnation allocated after a reset or a lossy failover still exceeds every earlier one. Values stay below 2^53, so Lua numbers hold them exactly.
-- `UpsertDescriptorAsync` returns `false` when the registration is refused, and fills the store's local descriptor cache only for an accepted registration.
-- A heartbeat whose generation key is missing (the store was flushed or failed over without it) is refused like a superseded one, and the store logs a distinct `RedisCoordinationStoreReset` error.
-- Heartbeat/read/leave/cleanup scripts use Redis `TIME`.
-- Heartbeats reject dead, gracefully left, and missing/pruned member payloads for the same incarnation.
-- Leave is a guarded no-op for an absent, pruned, or superseded-and-swept identity — it never materializes a member payload.
-- `:known` retains recently dead members so Dead is observable before cleanup.
-- `:known` also mirrors current node generations so snapshot reads do not issue one `GET` per member.
-- Generation counters are not purged by default.
+- Incarnation allocation takes the larger of the current value plus one and the Redis server time in microseconds, so an incarnation allocated after a reset or a lossy failover still exceeds every earlier one, provided the server clock did not step back.
+- Heartbeat, read, leave, and cleanup scripts use Redis `TIME`.
+- A heartbeat whose generation key is missing (the store was flushed or failed over without it) is refused like a superseded one, and the store logs a `RedisCoordinationStoreReset` error.
+- Leave never recreates a member that is absent, pruned, or superseded.
+- Generation counters are never purged.
 
 ### Design constraints
 
-Redis keys use a cluster hash tag around `ClusterName`. The durable `:gen:<node-id>` counters carry no TTL, so an `allkeys-*` `maxmemory-policy` can evict a live node's counter under memory pressure. The next heartbeat then fails the generation guard, the node treats its own membership as lost, and under the default `MembershipLostBehavior.StopApplication` the host is asked to stop — a silent eviction surfaces as a spurious shutdown. Run coordination against a Redis instance or logical database configured with `noeviction` or a `volatile-*` policy; coordination keys carry no TTL, so `volatile-*` never evicts them.
+**Run on a Redis that never evicts coordination keys.** The `:gen:<node-id>` counters carry no TTL, so an `allkeys-*` `maxmemory-policy` can evict a live node's counter under memory pressure. The next heartbeat then fails, the node treats its membership as lost, and under the default `MembershipLostBehavior.StopApplication` the host stops. Use an instance or logical database with `noeviction` or a `volatile-*` policy; coordination keys carry no TTL, so `volatile-*` never evicts them.
 
-**Membership needs Redis persistence.** The `:gen:<node-id>` counters are the only record of which incarnations were issued, so run coordination on a Redis with persistence enabled (AOF, `appendfsync everysec` or stricter). A reset (`FLUSHALL`, a restart without persistence) or a failover to a replica that missed recent writes loses or rolls back those counters. Every live node's next heartbeat then fails the generation guard and logs `RedisCoordinationStoreReset`, so under the default `MembershipLostBehavior.StopApplication` every host stops; a reset is still fail-stop. When the nodes restart, allocation seeds new incarnations from the Redis server clock, so an identity issued before the loss is not issued again, provided the server clock has not stepped back across the reset.
+**Run on a Redis with persistence** (AOF, `appendfsync everysec` or stricter). The counters are the only record of which incarnations were issued. A reset (`FLUSHALL`, a restart without persistence) or a failover to a replica that missed recent writes loses or rolls them back. Every live node's next heartbeat then fails and logs `RedisCoordinationStoreReset`, and under `StopApplication` every host stops.
 
-**Generation mirrors in `:known` are read-path projections, not authority.** The durable per-node generation key remains the heartbeat guard. Allocation and heartbeat scripts mirror the current value into a reserved `:known` hash field named `__gen:<node-id>`, so read Lua can classify retained member payloads from one `HGETALL` result instead of calling `GET` for every member. Cleanup sweeps a mirror field once its node has no surviving member payload (orphan prune); the durable generation key is never touched, so a restarting node re-mirrors on its next allocate or heartbeat.
+**Dead and left nodes stay visible longer than on relational stores.** Redis keeps Dead and Left descriptors for `RedisKnownNodeRetention` (default 7 days), so `GetLivenessSnapshotAsync` keeps returning them with `State = Dead` until then. Filter by `NodeLivenessState`. The relational providers prune them shortly after `DeadThreshold + DeadRetentionWindow`. Lower `RedisKnownNodeRetention` to match.
 
-**Dead/Left retention divergence (intentional).** Redis retains Dead and Left descriptors in the `:known` hash for `RedisKnownNodeRetention` (default 7 days), so `GetLivenessSnapshotAsync` keeps surfacing them with `State = Dead` until that window elapses — consumers must filter by `NodeLivenessState`. The relational providers instead prune shortly after `DeadThreshold + DeadRetentionWindow` (tens of seconds). This is a documented behavioral difference, not a defaulting bug: lower `RedisKnownNodeRetention` to align Redis with relational pruning.
+Keys use a cluster hash tag around `ClusterName`, so one cluster's keys share a Redis Cluster slot.
 
 ### Install
 
@@ -365,13 +419,15 @@ services.AddHeadlessCoordination(setup =>
 });
 ```
 
+**Verify:** no provisioning step and no health check. When Redis stays unreachable, registration fails the host start after its retries. After start, the node appears in `GetLiveNodesAsync()`.
+
 ### Configuration
 
-Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `RedisCleanupInterval` and `RedisKnownNodeRetention` with `setup.UseRedis(...)`. `RedisKnownNodeRetention` is treated as at least `DeadThreshold + DeadRetentionWindow`.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `RedisCleanupInterval` (default 5 minutes) and `RedisKnownNodeRetention` (default 7 days) with `setup.UseRedis(...)`. `RedisKnownNodeRetention` is treated as at least `DeadThreshold + DeadRetentionWindow`.
 
 ### Runtime behavior
 
-Registers the core membership services, Redis membership store, keyed Lua script loader, and cleanup hosted service. Requires an `IConnectionMultiplexer` registration. The host start loads no Lua script: each script loads on the first membership operation that runs it, which costs that operation one extra round trip.
+Registers the Redis membership store and a cleanup hosted service, and requires an `IConnectionMultiplexer` registration. Each Lua script loads on the first operation that runs it, which costs that operation one extra round trip.
 
 ---
 
@@ -379,14 +435,12 @@ Registers the core membership services, Redis membership store, keyed Lua script
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Sql` over the SQL Server dialect.
-- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
-- Liveness classification uses `SYSUTCDATETIME()`. Every instant is stored as `datetimeoffset(7)`.
-- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+- The relational store over SQL Server. Liveness classification uses `SYSUTCDATETIME()`. Every instant is stored as `datetimeoffset(7)`.
+- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). Tables and columns are PascalCase.
 
 ### Design constraints
 
-The provider avoids `MERGE`. Writes run at READ COMMITTED with explicit `UPDLOCK, HOLDLOCK, ROWLOCK` reads on the clustered primary keys, which serialize two first writers of one key. Under a large concurrent startup SQL Server can still choose a writer as deadlock victim (`1205`); the store retries the whole rolled-back transaction, as it does on PostgreSQL.
+The provider avoids `MERGE`. Under a large concurrent startup SQL Server can still choose a writer as deadlock victim (`1205`); the store retries the whole transaction.
 
 ### Install
 
@@ -414,15 +468,17 @@ services.AddHeadlessCoordination(setup =>
 
 The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
+**Verify:** `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `SqlServer/headless/Coordination` resource. A host started before that fails, naming the resource and `resources provision`. After start, the node appears in `GetLiveNodesAsync()`.
+
 ### Configuration
 
 Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString` and `CommandTimeout` with `setup.UseSqlServer(...)`.
 
-The schema is not a provider option: set it with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is `"headless"`, not `dbo` — the schema runner creates the schema when absent. The provider validates the schema against SQL Server's regular-identifier rules at startup.
+Set the schema with `setup.ConfigureStorage(storage => storage.Schema = "…")`. The default is `"headless"`, not `dbo`. The schema runner creates the schema when absent.
 
 ### Runtime behavior
 
-Registers the core membership services, the SQL Server membership store, and the membership schema contribution; `resources provision` applies it, and a host start only verifies it. Creates PascalCase tables and columns. Requires SQL Server DDL permission for the identity that runs `resources provision`.
+`resources provision` creates the tables, and a host start only verifies them. The identity that runs `resources provision` needs SQL Server DDL permission.
 
 ---
 
@@ -430,14 +486,12 @@ Registers the core membership services, the SQL Server membership store, and the
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Sql` over the SQLite dialect.
-- Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations, as on the other relational providers.
-- Liveness classification uses SQLite's `'now'`: the clock of the host that runs the statement, at millisecond resolution. Every instant is stored as fixed-width UTC text.
-- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
+- The relational store over SQLite. Liveness classification uses SQLite's `'now'`: the clock of the host that runs the statement, at millisecond resolution.
+- The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). Tables and columns are snake_case.
 
 ### Design constraints
 
-SQLite has no row locks: every store transaction begins `IMMEDIATE` and holds the database write lock, so heartbeats and registrations of every node serialize on the file. The liveness reads run with no transaction and take only a shared lock, so they read while a heartbeat holds the write lock instead of queueing for it. Every node must run on the host that holds the file, which also makes the host clock the one clock all nodes judge liveness by. A writer that waits longer than the connection's `Default Timeout` (30 seconds) fails with `SQLITE_BUSY`, which the store retries in a fresh transaction. See [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
+SQLite has no row locks. Every store transaction holds the database write lock, so heartbeats and registrations of every node serialize on the file. Liveness reads take only a shared lock and do not wait for a heartbeat. Every node must run on the host that holds the file, which also makes that host's clock the one clock all nodes judge liveness by. A writer that waits longer than the connection's `Default Timeout` (30 seconds) fails with `SQLITE_BUSY`, which the store retries in a fresh transaction. See [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
 
 ### Install
 
@@ -456,13 +510,14 @@ services.AddHeadlessCoordination(setup =>
 });
 ```
 
+**Verify:** `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `Sqlite/headless/Coordination` resource. A host started before that fails, naming the resource and `resources provision`.
+
 ### Configuration
 
-Configure `ConnectionString` and `CommandTimeout` with `setup.UseSqlite(...)`. Use a database file; a private `:memory:` database vanishes between the store's connections.
+Configure `ConnectionString` and `CommandTimeout` with `setup.UseSqlite(...)`. Use a database file: a private `:memory:` database vanishes between the store's connections.
 
-The schema is set with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). SQLite has no schemas, so it becomes the tables' name prefix: `headless_coordination_liveness`. It is validated against PostgreSQL's identifier rules, the convention of the SQLite dialect's snake_case names.
+Set the schema with `setup.ConfigureStorage(storage => storage.Schema = "…")` (default `"headless"`). SQLite has no schemas, so the schema becomes the tables' name prefix: `headless_coordination_liveness`. It is validated against PostgreSQL's identifier rules.
 
 ### Runtime behavior
 
-Registers the core membership services, the SQLite membership store, and the membership schema contribution; `resources provision` applies it, and a host start only verifies it. Creates snake_case tables and columns.
-
+`resources provision` creates the tables, and a host start only verifies them.

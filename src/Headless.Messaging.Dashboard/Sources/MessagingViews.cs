@@ -385,6 +385,9 @@ internal sealed record MessagingRowView
 
     public string? FailureFingerprint { get; init; }
 
+    /// <summary>The named transport that sends a published row; <see langword="null"/> for the default one.</summary>
+    public string? Transport { get; init; }
+
     public string? TenantId { get; init; }
 
     /// <summary>
@@ -422,6 +425,7 @@ internal sealed record MessagingRowView
             NextRetryAt = view.NextRetryAt,
             ChangedAt = view.ChangedAt,
             FailureFingerprint = view.FailureFingerprint,
+            Transport = view.TransportName,
             TenantId = view.TenantId,
             IsHeld = view.IsHeld,
         };
@@ -452,6 +456,7 @@ internal sealed record MessagingRowView
             NextRetryAt = message.NextRetryAt,
             ChangedAt = changedAt,
             FailureFingerprint = message.FailureFingerprint,
+            Transport = message.TransportName,
             TenantId = message.InboxKey?.TenantId,
             Reason = MessagingViews.ReasonOf(message.StatusName ?? status, message.ExceptionInfo),
         };
@@ -467,7 +472,8 @@ internal sealed record MessagingMessageDetail(
 
 /// <summary>
 /// One page of a list over one table of one or more stores: the rows, the stores' summed capped count, and the stores
-/// that did not answer.
+/// that did not answer. Only the first page, the one read without a cursor, carries the count; a later page leaves it
+/// out, so the list keeps the first page's.
 /// </summary>
 /// <remarks>
 /// <see cref="Incomplete"/> is set when a search ran out of time in a store: that store's rows and count are missing,
@@ -476,8 +482,8 @@ internal sealed record MessagingMessageDetail(
 /// </remarks>
 internal sealed record MessagingRowList(
     IReadOnlyList<MessagingRowView> Items,
-    int Count,
-    bool CountCapped,
+    int? Count,
+    bool? CountCapped,
     string? NextCursor,
     IReadOnlyList<string> Unavailable,
     bool Incomplete = false

@@ -162,7 +162,7 @@ internal sealed partial class ConsumerRegister
                 );
             }
 
-            traceHandle = _TracingBefore(transportMessage, lane, _serverAddress);
+            traceHandle = _TracingBefore(transportMessage, lane, client.BrokerAddress);
 
             // Past its delivery deadline the message is dropped before any middleware or consumer runs: the publisher
             // said nobody can use it after that instant, and an every-instance delivery has no storage row to carry
@@ -189,7 +189,7 @@ internal sealed partial class ConsumerRegister
                     MessagingMetrics.ReceiveOutcomeExpired
                 );
 
-                _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                 consumeOutcomeRecorded = true;
 
                 // Settlement is must-complete: never abandon a commit on host shutdown.
@@ -317,7 +317,7 @@ internal sealed partial class ConsumerRegister
                     MessagingMetrics.TagReceiveOutcome,
                     MessagingMetrics.ReceiveOutcomeSkipped
                 );
-                _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                 return true;
             case ReceiveRingResult.Cancelled:
                 MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeCancelled);
@@ -377,7 +377,7 @@ internal sealed partial class ConsumerRegister
                         "dropped",
                         typeof(MessageDeliverByExceededException).FullName
                     );
-                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                     return true;
                 }
             }
@@ -409,7 +409,7 @@ internal sealed partial class ConsumerRegister
 #pragma warning restore ERP022
 
         MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "succeeded");
-        _TracingAfter(traceHandle, transportMessage, _serverAddress);
+        _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
         return true;
     }
 

@@ -50,6 +50,11 @@ public sealed class AzureServiceBusEmulatorConsumerClientHarnessTests(AzureServi
         return fixture.TakeDeadLetteredMessageIdsAsync(session, cancellationToken);
     }
 
+    protected override string DescribeDeadLetterEvidence(TransportConsumerConformanceSession session)
+    {
+        return AzureServiceBusDeliveryJournal.Describe(session.Destination);
+    }
+
     [Fact]
     public override Task should_match_production_runtime_capabilities()
     {

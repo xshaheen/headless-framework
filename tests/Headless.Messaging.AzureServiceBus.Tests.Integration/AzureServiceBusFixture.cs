@@ -350,6 +350,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
             {
                 if (await _TryCompleteAsync(receiver, message, cancellationToken))
                 {
+                    AzureServiceBusDeliveryJournal.RecordDeadLetterTaken(queueName, message);
                     taken.Add(message.MessageId);
                 }
             }
@@ -420,6 +421,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                 {
                     options.CustomHeadersBuilder = (message, _) =>
                     {
+                        AzureServiceBusDeliveryJournal.RecordDelivery(destination, message);
                         headerBuilder(message.MessageId);
                         return [];
                     };

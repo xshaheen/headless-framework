@@ -26,8 +26,19 @@ internal sealed class GeneratorData
     /// <summary>The namespace of the underlying primitive type.</summary>
     public required string PrimitiveTypeNamespace { get; init; }
 
-    /// <summary>Parent primitive info for nested primitives.</summary>
+    /// <summary>
+    /// Parent primitive info for nested primitives, the directly wrapped primitive first. A nested primitive stores the
+    /// innermost value (<see cref="PrimitiveTypeFriendlyName"/>) but implements <c>IPrimitive&lt;T&gt;</c> over its
+    /// direct parent.
+    /// </summary>
     public required EquatableArray<ParentPrimitiveInfo> ParentPrimitives { get; init; }
+
+    /// <summary>
+    /// The <c>T</c> of the type's <c>IPrimitive&lt;T&gt;</c>: the directly wrapped primitive for a nested primitive,
+    /// else the underlying type. <c>Validate</c>, <c>TryCreate</c>, and <c>GetUnderlyingPrimitiveValue</c> use it.
+    /// </summary>
+    public string WrappedTypeName =>
+        ParentPrimitives.Count == 0 ? PrimitiveTypeFriendlyName : ParentPrimitives[0].FriendlyName;
 
     /// <summary>The namespace containing the type; empty for the global namespace.</summary>
     public required string Namespace { get; init; }

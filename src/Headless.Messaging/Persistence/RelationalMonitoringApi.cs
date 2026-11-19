@@ -461,9 +461,10 @@ internal sealed class RelationalMonitoringApi(
             where += " AND " + RelationalMessageFilter.After(keyColumn, _t.Id, "AfterKey", "AfterId", query.Descending);
         }
 
+        // A published row names its transport instead; both kinds read from ordinal 13.
         var receivedColumns = received
             ? $",{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId},{_t.IsHeld},{_t.GenerationIncarnationId}"
-            : "";
+            : $",{_t.Transport}";
         var sql = $"""
             SELECT {_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_lockedUntil},{_t.ChangedAt},{_t.FailureFingerprint}{receivedColumns}
             FROM {table}
@@ -520,6 +521,11 @@ internal sealed class RelationalMonitoringApi(
                             ).ToUniversalTime(),
                             FailureFingerprint = await _StringAsync(reader, 12, token).ConfigureAwait(false),
                         };
+
+                        if (!received)
+                        {
+                            view.TransportName = await _StringAsync(reader, 13, token).ConfigureAwait(false);
+                        }
 
                         if (received)
                         {
@@ -869,9 +875,13 @@ internal sealed class RelationalMonitoringApi(
             return [];
         }
 
+        // Only a published row names its transport; the received table has no such column.
+        var published = string.Equals(tableName, _publishedTable, StringComparison.Ordinal);
+        var transportColumn = published ? $",{_t.Transport}" : string.Empty;
+
         // One list parameter keeps the statement text, and its cached plan, the same whatever the number of ids.
         var sql =
-            $"SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Added},{_t.ExpiresAt},{_t.Retries},{_t.ExceptionInfo},{_t.NextRetryAt},{string.Join(',', _t.LeaseColumns)},{_t.StatusName},{_t.FailureFingerprint} FROM {_dialect.ReadWithoutWaiting(tableName)} WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);";
+            $"SELECT {_t.Id},{_t.Content},{_t.IntentType},{_t.Added},{_t.ExpiresAt},{_t.Retries},{_t.ExceptionInfo},{_t.NextRetryAt},{string.Join(',', _t.LeaseColumns)},{_t.StatusName},{_t.FailureFingerprint}{transportColumn} FROM {_dialect.ReadWithoutWaiting(tableName)} WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);";
 
         await using var connection = _storage.CreateConnection();
         return await RelationalCommand
@@ -904,6 +914,10 @@ internal sealed class RelationalMonitoringApi(
                                 StatusName = Enum.Parse<StatusName>(reader.GetString(8 + RowLeaseReader.ColumnCount)),
                                 FailureFingerprint = await _StringAsync(reader, 9 + RowLeaseReader.ColumnCount, token)
                                     .ConfigureAwait(false),
+                                TransportName = published
+                                    ? await _StringAsync(reader, 10 + RowLeaseReader.ColumnCount, token)
+                                        .ConfigureAwait(false)
+                                    : null,
                             }
                         );
                     }

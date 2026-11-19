@@ -147,6 +147,22 @@ public sealed class SchemaProvisionerTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task should_read_the_history_again_when_a_connection_reports_the_existing_table_missing()
+    {
+        // given — the steps are applied, then the next history read reports the table missing
+        var runner = new SchemaRunner([_Declared()], timeProvider: _db.Clock);
+        await runner.ApplyAsync(AbortToken);
+        _db.StaleHistoryReads = 1;
+
+        // when
+        var mismatches = await runner.VerifyAsync(AbortToken);
+
+        // then — the catalog shows the table, so the runner reads it again and finds every step applied
+        mismatches.Should().BeEmpty();
+        _db.StaleHistoryReads.Should().BeNegative("the stale read was followed by a second read");
+    }
+
+    [Fact]
     public async Task should_drop_the_objects_and_forget_the_history_so_provision_recreates_them()
     {
         // given

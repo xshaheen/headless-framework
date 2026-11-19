@@ -95,9 +95,19 @@ internal sealed record MessagingExtensionRegistration(
     /// The transport name the extension registered, or <see langword="null"/> when it is not a transport. A transport is
     /// the extension that adds a <see cref="MessageQueueMarkerService"/>; storage and coordination extensions add none.
     /// </summary>
-    public string? TransportName =>
+    public string? TransportName => _FindMarker()?.Name;
+
+    /// <summary>
+    /// The name of the named transport the extension registered, as passed to <c>setup.AddTransport(name)</c>, or
+    /// <see langword="null"/> when it registered the default transport or is not a transport.
+    /// </summary>
+    public string? NamedTransport => _FindMarker()?.TransportName;
+
+    private MessageQueueMarkerService? _FindMarker() =>
         AddedDescriptors
-            .Where(static descriptor => descriptor.ServiceType == typeof(MessageQueueMarkerService))
-            .Select(static descriptor => (descriptor.ImplementationInstance as MessageQueueMarkerService)?.Name)
-            .FirstOrDefault(static name => name is not null);
+            .Where(static descriptor =>
+                descriptor.ServiceType == typeof(MessageQueueMarkerService) && !descriptor.IsKeyedService
+            )
+            .Select(static descriptor => descriptor.ImplementationInstance as MessageQueueMarkerService)
+            .FirstOrDefault(static marker => marker is not null);
 }

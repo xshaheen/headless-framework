@@ -15,4 +15,4 @@ dotnet add package Headless.Caching.OutputCache
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Caching guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching.md#headlesscachingoutputcache)
+- [Caching guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching/adapters.md#headlesscachingoutputcache)

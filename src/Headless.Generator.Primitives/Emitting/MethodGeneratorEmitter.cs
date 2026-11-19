@@ -30,8 +30,7 @@ internal static class MethodGeneratorEmitter
             )
             .AppendReturnsDescription("true if the conversion succeeded; otherwise, false.");
 
-        var primitiveType =
-            data.ParentPrimitives.Count != 0 ? data.ParentPrimitives[0].FriendlyName : data.PrimitiveTypeFriendlyName;
+        var primitiveType = data.WrappedTypeName;
 
         builder
             .Append("public static bool TryCreate(")
@@ -183,7 +182,8 @@ internal static class MethodGeneratorEmitter
 
         if (data.ParentPrimitives.Count != 0)
         {
-            var parentClassName = data.ParentPrimitives[0].Name;
+            var parent = data.ParentPrimitives[0];
+            var parentClassName = parent.Name;
 
             if (primitiveTypeIsValueType)
             {
@@ -197,6 +197,8 @@ internal static class MethodGeneratorEmitter
                     .NewLine();
             }
 
+            // Unwrap the parent to the stored type explicitly: casting the parent to this type would bind to this
+            // operator itself and recurse until the stack overflows.
             builder
                 .AppendSummary(
                     $"Implicit conversion from <see cref = \"{parentClassName}\"/> (nullable) to <see cref = \"{primitiveName}\"/> (nullable)"
@@ -205,7 +207,7 @@ internal static class MethodGeneratorEmitter
                 .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
                 .Append($"public static implicit operator {primitiveName}?({parentClassName}? value)")
                 .AppendLine(
-                    $" => value is null ? null : ({primitiveName}?)value{(underlyingTypeIsValueType ? ".Value" : "")};"
+                    $" => value is null ? null : new(({underlyingFriendlyName})value{(parent.IsValueType ? ".Value" : "")});"
                 )
                 .NewLine();
         }
@@ -433,8 +435,7 @@ internal static class MethodGeneratorEmitter
     /// <remarks>This method generates parsing methods based on the provided data type and serialization format.</remarks>
     public static void GenerateParsable(this SourceCodeBuilder builder, GeneratorData data)
     {
-        var underlyingType =
-            data.ParentPrimitives.Count == 0 ? data.PrimitiveTypeFriendlyName : data.ParentPrimitives[0].Name;
+        var underlyingType = data.WrappedTypeName;
 
         var dataClassName = data.ClassName;
         var format = data.SerializationFormat;
