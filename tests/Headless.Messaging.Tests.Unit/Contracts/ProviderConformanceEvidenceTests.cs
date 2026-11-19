@@ -14,6 +14,12 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
         TransportConformanceTestBinding[] bindings =
         [
             _Consumer(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                nameof(
+                    SimulatorConsumerConformanceTests.should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect
+                )
+            ),
+            _Consumer(
                 TransportConformanceScenario.RoutingAffinityMappingOrHeader,
                 nameof(SimulatorConsumerConformanceTests.should_prove_routing_affinity_mapping_or_header)
             ),

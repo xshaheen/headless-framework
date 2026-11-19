@@ -30,11 +30,23 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
         );
 
     [Fact]
+    public Task should_reject_an_every_instance_consumer_at_startup_before_any_side_effect() =>
+        TransportStartupRejectionConformance.AssertEveryInstanceRejectedAsync(
+            new AwsProviderConformanceDriver(fixture).ConfigureRequestReplyTransport,
+            AbortToken
+        );
+
+    [Fact]
     public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["AWS/LocalStack"];
         TransportConformanceTestBinding[] bindings =
         [
+            new(
+                TransportConformanceScenario.StartupRejectionBeforeSideEffects,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_reject_an_every_instance_consumer_at_startup_before_any_side_effect)
+            ),
             new(
                 TransportConformanceScenario.ConnectionDropRecovery,
                 typeof(AmazonSqsNetworkFaultTests),
