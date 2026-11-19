@@ -1186,4 +1186,33 @@ describe('page frame keys on the table', () => {
     await act(() => router.navigate(-1))
     expect(search()).toBe('')
   })
+
+  it('opens no row when the horizontal arrows move the focus between a row and its cells', async () => {
+    const user = userEvent.setup()
+    const { router } = renderBulk(runs(3), {})
+    const search = () => router.state.location.search
+
+    act(() => row(/^r1\b/).focus())
+    await user.keyboard('{ArrowRight}')
+    expect(search()).toBe('')
+    await user.keyboard('{ArrowRight}{ArrowLeft}{ArrowLeft}')
+    expect(search()).toBe('')
+  })
+
+  it('keeps the open row and its history entry when the horizontal arrows move into its cells', async () => {
+    const user = userEvent.setup()
+    const { router } = renderBulk(runs(3), {})
+    const search = () => router.state.location.search
+
+    act(() => row(/^r1\b/).focus())
+    await user.keyboard('{Enter}')
+    expect(search()).toBe('?open=r1')
+
+    await user.keyboard('{ArrowRight}{ArrowLeft}')
+    expect(search()).toBe('?open=r1')
+
+    // Enter pushed the only entry: one step back reaches the bare list.
+    await act(() => router.navigate(-1))
+    expect(search()).toBe('')
+  })
 })

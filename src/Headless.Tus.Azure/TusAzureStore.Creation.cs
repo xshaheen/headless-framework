@@ -59,7 +59,7 @@ public sealed partial class TusAzureStore : ITusCreationStore
             // tusdotnet sets the expiration, and creation-with-upload appends, in the same request: both start from
             // the blob just written instead of reading it back.
             _memo.Set(
-                fileId,
+                blockBlobClient.Name,
                 TusAzureFile.Created(fileId, blockBlobClient.Name, created.Value.ETag, blobMetadata, httpHeaders)
             );
 

@@ -19,7 +19,7 @@ using tusdotnet.Models.Expiration;
 namespace Tests.TestSetup;
 
 /// <summary>
-/// The real tusdotnet middleware over an Azure store that, as <c>AddTusAzureStore</c> wires it, reads the request's
+/// The real tusdotnet middleware over an Azure store that, as <c>UseAzure</c> wires it, reads the request's
 /// <see cref="HttpContext" /> through an accessor, with every blob request counted, so a test sees the requests one
 /// tus operation costs in production.
 /// </summary>

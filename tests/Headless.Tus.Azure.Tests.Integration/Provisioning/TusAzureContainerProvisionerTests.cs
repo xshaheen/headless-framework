@@ -181,11 +181,13 @@ public sealed class TusAzureContainerProvisionerTests(TusAzureFixture fixture) :
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(_blobServiceClient);
-        services.AddTusAzureStore(options =>
-        {
-            options.ContainerName = _options.ContainerName;
-            options.BlobPrefix = _BlobPrefix;
-        });
+        services.AddHeadlessTus(tus =>
+            tus.UseAzure(options =>
+            {
+                options.ContainerName = _options.ContainerName;
+                options.BlobPrefix = _BlobPrefix;
+            })
+        );
         await using var provider = services.BuildServiceProvider();
 
         // when

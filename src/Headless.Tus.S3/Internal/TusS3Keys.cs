@@ -6,14 +6,23 @@ namespace Headless.Tus.Internal;
 
 /// <summary>
 /// Single source of truth for the object keys an upload owns, so every code path that turns a file id into a key
-/// agrees on the result.
+/// agrees on the result. One instance builds the keys of one tenant's uploads, or of the uploads kept outside any
+/// tenant.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A finished upload is <c>{prefix}{fileId}</c>. An incomplete upload's working set lives under
 /// <c>{prefix}.tus/{fileId}/</c> and a completed upload's record at <c>{prefix}.tus-completed/{fileId}</c>, so the
 /// expiry sweep lists only in-progress uploads and never pages through finished ones.
+/// </para>
+/// <para>
+/// A tenant's uploads have the same three keys with <c>.tenants/{tenant}/</c> in front of the file id:
+/// <c>{prefix}.tenants/{tenant}/{fileId}</c>, <c>{prefix}.tus/.tenants/{tenant}/{fileId}/</c>, and so on. A file
+/// id cannot start with a dot, so no upload kept outside a tenant can own a key inside that folder, and whatever
+/// lists one of the three roots without a delimiter still reaches every tenant's objects under it.
+/// </para>
 /// </remarks>
-internal sealed class TusS3Keys(string normalizedPrefix)
+internal sealed class TusS3Keys
 {
     /// <summary>The folder under the prefix that holds every incomplete upload's working set.</summary>
     public const string WorkingSetFolder = ".tus/";
@@ -21,17 +30,64 @@ internal sealed class TusS3Keys(string normalizedPrefix)
     /// <summary>The folder under the prefix that holds every completed upload's record.</summary>
     public const string CompletedFolder = ".tus-completed/";
 
+    /// <summary>
+    /// The folder, under the prefix and under each of the folders above, that holds one folder per tenant.
+    /// </summary>
+    public const string TenantsFolder = ".tenants/";
+
     private const string _InfoName = "info";
     private const string _SegmentFolder = "seg/";
+
+    private readonly string _normalizedPrefix;
+    private readonly string _completedRoot;
+
+    /// <summary>Builds the keys of one tenant's uploads, or of the uploads kept outside any tenant.</summary>
+    /// <param name="normalizedPrefix">The store's key prefix, ending in a slash.</param>
+    /// <param name="tenant">
+    /// The tenant whose uploads the keys belong to, already checked as a path segment, or <see langword="null"/>
+    /// for the uploads kept outside any tenant.
+    /// </param>
+    public TusS3Keys(string normalizedPrefix, string? tenant = null)
+    {
+        var scope = tenant is null ? "" : TenantsFolder + tenant + "/";
+
+        _normalizedPrefix = normalizedPrefix;
+        Tenant = tenant;
+        FinishedObjectRoot = normalizedPrefix + scope;
+        WorkingSetRoot = normalizedPrefix + WorkingSetFolder + scope;
+        _completedRoot = normalizedPrefix + CompletedFolder + scope;
+    }
+
+    /// <summary>
+    /// The tenant whose uploads the keys belong to, or <see langword="null"/> for the uploads kept outside any
+    /// tenant.
+    /// </summary>
+    public string? Tenant { get; }
+
+    /// <summary>The keys of <paramref name="tenant"/>'s uploads under the same prefix.</summary>
+    /// <param name="tenant">The tenant id, already checked as a path segment.</param>
+    public TusS3Keys ForTenant(string tenant)
+    {
+        return new TusS3Keys(_normalizedPrefix, tenant);
+    }
+
+    /// <summary>The prefix every finished object of these uploads starts with.</summary>
+    public string FinishedObjectRoot { get; }
 
     /// <summary>The key of the uploaded file once the upload completes.</summary>
     public string FinishedObject(string fileId)
     {
-        return normalizedPrefix + EnsureValid(fileId);
+        return FinishedObjectRoot + EnsureValid(fileId);
     }
 
     /// <summary>The prefix every incomplete upload's working set lives under, one folder per upload.</summary>
-    public string WorkingSetRoot => normalizedPrefix + WorkingSetFolder;
+    public string WorkingSetRoot { get; }
+
+    /// <summary>
+    /// The prefix under which every tenant with an incomplete upload has a folder, beside the working sets of the
+    /// uploads kept outside any tenant.
+    /// </summary>
+    public string TenantWorkingSetsRoot => _normalizedPrefix + WorkingSetFolder + TenantsFolder;
 
     /// <summary>The prefix every object of an incomplete upload's working set starts with.</summary>
     public string WorkingSet(string fileId)
@@ -63,7 +119,7 @@ internal sealed class TusS3Keys(string normalizedPrefix)
     /// <summary>The key of the record a completed upload keeps beside its finished object.</summary>
     public string CompletedRecord(string fileId)
     {
-        return normalizedPrefix + CompletedFolder + EnsureValid(fileId);
+        return _completedRoot + EnsureValid(fileId);
     }
 
     /// <summary>
@@ -91,8 +147,8 @@ internal sealed class TusS3Keys(string normalizedPrefix)
 
     private static bool _IsUnsafe(string fileId)
     {
-        // A leading dot would let an id name the reserved .tus/ or .tus-completed/ folders; it also covers "." and
-        // "..", which some S3-compatible servers normalize out of a path.
+        // A leading dot would let an id name one of the store's reserved folders, which all start with one; it
+        // also covers "." and "..", which some S3-compatible servers normalize out of a path.
         if (fileId[0] == '.')
         {
             return true;
