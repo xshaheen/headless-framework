@@ -61,9 +61,6 @@ public interface IPermissionsStorageFixture
     /// <summary>Reads the count the trigger from <see cref="CreateInsertCommandCounterAsync" /> kept.</summary>
     Task<int> ReadInsertCommandCountAsync(string schema, CancellationToken cancellationToken);
 
-    /// <summary>Reports whether <paramref name="exception" /> is the driver's unique-constraint violation.</summary>
-    bool IsUniqueViolation(Exception exception);
-
     /// <summary>
     /// The exception type the provider's driver raises when the database rejects a write, such as a value longer
     /// than its column (<c>PostgresException</c> or <c>SqlException</c>).

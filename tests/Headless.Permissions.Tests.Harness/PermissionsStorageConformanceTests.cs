@@ -181,7 +181,7 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
         // then
         (await act.Should().ThrowAsync<Exception>())
             .Which.Should()
-            .Match<Exception>(x => fixture.IsUniqueViolation(x));
+            .Match<Exception>(x => RelationalFaults.IsUniqueViolation(x));
         (await grantRepository.GetListAsync("Role", "atomic-admin", AbortToken)).Should().BeEmpty();
     }
 
@@ -243,7 +243,7 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
         // then — the delete rolled back with the insert, so the explicit grant is still there
         (await act.Should().ThrowAsync<Exception>())
             .Which.Should()
-            .Match<Exception>(x => fixture.IsUniqueViolation(x));
+            .Match<Exception>(x => RelationalFaults.IsUniqueViolation(x));
         var stored = await grantRepository.FindAsync("Flip.Permission", "Role", "flip-admin", AbortToken);
         stored.Should().NotBeNull();
         stored!.Id.Should().Be(granted.Id);

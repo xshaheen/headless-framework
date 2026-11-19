@@ -41,11 +41,6 @@ public sealed class PostgreSqlPermissionsFixture
         builder.UseNpgsql(connectionString);
     }
 
-    public bool IsUniqueViolation(Exception exception)
-    {
-        return exception is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
-    }
-
     public async Task DropSchemaAsync(string schema, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(ConnectionString);

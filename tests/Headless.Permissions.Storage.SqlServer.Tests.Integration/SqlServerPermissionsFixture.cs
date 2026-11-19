@@ -34,12 +34,6 @@ public sealed class SqlServerPermissionsFixture
         builder.UseSqlServer(connectionString);
     }
 
-    public bool IsUniqueViolation(Exception exception)
-    {
-        // 2601: duplicate key in a unique index; 2627: violation of a primary key or unique constraint.
-        return exception is SqlException { Number: 2601 or 2627 };
-    }
-
     public async Task DropSchemaAsync(string schema, CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(ConnectionString);
