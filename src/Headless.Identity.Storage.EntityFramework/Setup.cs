@@ -358,6 +358,7 @@ public static class SetupIdentityEntityFramework
                 contextLifetime,
                 optionsLifetime
             );
+            HeadlessDbContextHealthCheck.Add<TDbContext>(services);
 
             return builder;
         }
@@ -672,6 +673,7 @@ public static class SetupIdentityEntityFramework
 
             var builder = services.AddHeadlessDbContextServices(configureHeadlessOptions);
             HeadlessDbContextRegistration.AddPooled<TDbContext>(services, optionsAction, poolSize);
+            HeadlessDbContextHealthCheck.Add<TDbContext>(services);
 
             return builder;
         }

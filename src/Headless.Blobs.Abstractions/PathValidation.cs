@@ -2,7 +2,7 @@
 
 using System.Runtime.CompilerServices;
 
-namespace Headless.Blobs.Internal;
+namespace Headless.Blobs;
 
 /// <summary>
 /// Shared path validation for blob storage providers.

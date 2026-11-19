@@ -166,7 +166,7 @@ Every release on the in-memory and Redis providers is announced through the regi
 - Delivery is at most once and reaches only connected subscribers. A waiter that misses a release wakes on its next backoff poll (capped at 3 seconds plus up to 25% jitter).
 - A mutex release wakes one waiter and nudges that resource's lease monitors to validate early. A semaphore release wakes one slot waiter. A reader-writer release wakes one blocked acquirer.
 
-To use another transport, implement `IDistributedLockReleaseSignal` and register it before `AddHeadlessDistributedLocks(...)`, or from `setup.RegisterCrossCuttingExtension(...)` with `services.Replace(...)`. Its `Announce(resource, leaseId)` runs on the release path, so it must not throw or wait for I/O. On the receiving side, resolve `IEnumerable<IDistributedLockReleaseListener>` and call `OnReleased(resource, leaseId)` on each; it only pulses in-process events, so the transport may call it on its delivery thread.
+To use another transport, implement `IDistributedLockReleaseSignal` and register it before `AddHeadlessDistributedLocks(...)`, or from `setup.RegisterCrossCuttingExtension(...)` with `services.Replace(...)`. Its `Announce(resource, leaseId)` runs on the release path, so it must not throw or wait for I/O. If it throws anyway, the release still completes: the provider logs `ReleaseSignalAnnounceFailed` (`EventId = 25`, Warning) with the exception, and waiters wake on their polling backoff. On the receiving side, resolve `IEnumerable<IDistributedLockReleaseListener>` and call `OnReleased(resource, leaseId)` on each; it only pulses in-process events, so the transport may call it on its delivery thread.
 
 ### Observability
 

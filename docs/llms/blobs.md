@@ -199,7 +199,7 @@ Pick one provider per store, default or named. The same provider can back severa
 
 ## Write a blob storage provider
 
-Implement `IBlobStorage` yourself when no shipped provider fits your backend. Callers, tenant scoping, `UseSignedUrlEndpoint`, and `DecorateHeadlessBlobs` then work with your store unchanged, as long as it keeps the contract below. Reference `Headless.Blobs` (registration) and `Headless.Blobs.Abstractions` (contracts and helpers). The helpers are public types in the `Headless.Blobs.Internal` namespace, provided for provider authors.
+Implement `IBlobStorage` yourself when no shipped provider fits your backend. Callers, tenant scoping, `UseSignedUrlEndpoint`, and `DecorateHeadlessBlobs` then work with your store unchanged, as long as it keeps the contract below. Reference `Headless.Blobs` (registration) and `Headless.Blobs.Abstractions` (contracts and helpers). The provider-author helpers (`BlobLocationResolver`, `BlobStorageHelpers`, and `PathValidation`) are public types in the `Headless.Blobs` namespace, so the `using Headless.Blobs;` your store already has covers them.
 
 ### Resolve every address through BlobLocationResolver
 

@@ -6,7 +6,6 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Headless.Blobs;
 using Headless.Blobs.Aws;
-using Headless.Blobs.Internal;
 using Headless.IO;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;

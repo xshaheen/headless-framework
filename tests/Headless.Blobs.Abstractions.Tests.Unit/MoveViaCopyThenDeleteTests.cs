@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Blobs.Internal;
+using Headless.Blobs;
 using Headless.Testing.Tests;
 
 namespace Tests;
