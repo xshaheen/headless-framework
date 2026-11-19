@@ -6,20 +6,6 @@ using Tests.Guarantees;
 
 namespace Tests;
 
-/// <summary>
-/// The network path between a client and its broker, which a test can cut while the broker keeps running. A Toxiproxy
-/// route implements it against a real broker, and the simulator by dropping its connection on cue.
-/// </summary>
-[PublicAPI]
-public interface INetworkLink
-{
-    /// <summary>Cuts every open connection and refuses new ones until <see cref="RestoreAsync"/>.</summary>
-    Task CutAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>Accepts connections again.</summary>
-    Task RestoreAsync(CancellationToken cancellationToken = default);
-}
-
 /// <summary>A conformance session whose client reaches the broker over a link the test can cut.</summary>
 [PublicAPI]
 public sealed class NetworkFaultSession(

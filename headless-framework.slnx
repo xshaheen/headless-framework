@@ -202,6 +202,7 @@
         <Project Path="tests\Headless.DistributedLocks.Redis.Tests.Integration\Headless.DistributedLocks.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.SqlServer.Tests.Integration\Headless.DistributedLocks.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Tests.Harness\Headless.DistributedLocks.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.DistributedLocks.Tests.Chaos\Headless.DistributedLocks.Tests.Chaos.csproj" />
     </Folder>
     <Folder Name="/Emails/">
         <Project Path="src\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
@@ -360,6 +361,7 @@
         <Project Path="tests/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Jobs.EntityFramework.Tests.Harness/Headless.Jobs.EntityFramework.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.Jobs.Tests.Chaos/Headless.Jobs.Tests.Chaos.csproj" />
         <Project Path="tests/Headless.Jobs.SourceGenerator.Tests.Unit/Headless.Jobs.SourceGenerator.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Jobs.Tests.Harness/Headless.Jobs.Tests.Harness.csproj" />
     </Folder>
@@ -400,6 +402,7 @@
         <Project Path="tests\Headless.Urls.Tests.Unit\Headless.Urls.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Hashing.Tests.Unit\Headless.Hashing.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Hashing.Argon2.Tests.Unit\Headless.Hashing.Argon2.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Chaos.Tests.Harness\Headless.Chaos.Tests.Harness.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.Unit\Headless.Testing.AspNetCore.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.Tests.Unit\Headless.Testing.Tests.Unit.csproj" />

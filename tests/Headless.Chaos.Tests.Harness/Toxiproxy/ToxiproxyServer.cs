@@ -398,6 +398,22 @@ public sealed class ToxiproxyProxy(HttpClient http, string name, string host, in
     /// <summary>Accepts connections again.</summary>
     public Task EnableAsync(CancellationToken cancellationToken = default) => _SetEnabledAsync(true, cancellationToken);
 
+    /// <summary>
+    /// Points the route at another server published on <paramref name="upstreamHostPort"/> of the Docker host, as a
+    /// failover moves a client's endpoint to a promoted replica. Disable the route first to drop the connections that
+    /// still lead to the old server.
+    /// </summary>
+    public async Task RepointAsync(int upstreamHostPort, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+                $"/proxies/{name}",
+                new { upstream = $"host.docker.internal:{upstreamHostPort}" },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        await ToxiproxyServer._EnsureSuccessAsync(response, "repoint proxy", cancellationToken).ConfigureAwait(false);
+    }
+
     Task INetworkLink.CutAsync(CancellationToken cancellationToken) => DisableAsync(cancellationToken);
 
     Task INetworkLink.RestoreAsync(CancellationToken cancellationToken) => EnableAsync(cancellationToken);

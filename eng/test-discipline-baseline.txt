@@ -36,6 +36,7 @@ wall-clock 1 tests/Headless.Caching.Redis.Tests.Integration/RemoveTests.cs
 wall-clock 2 tests/Headless.Caching.Redis.Tests.Integration/SetOperationsTests.cs
 wall-clock 1 tests/Headless.Caching.Redis.Tests.Integration/TryReplaceTests.cs
 wall-clock 1 tests/Headless.Caching.Tests.Unit/FactoryCacheCoordinatorTests.cs
+real-wait 1 tests/Headless.Chaos.Tests.Harness/Toxiproxy/ToxiproxyServer.cs
 wall-clock 1 tests/Headless.Checks.Tests.Unit/ComparableTypesTests.cs
 wall-clock 1 tests/Headless.Checks.Tests.Unit/IsNotNullOrDefaultTests.cs
 wall-clock 2 tests/Headless.Coordination.Tests.Harness/MembershipConformanceTests.cs
@@ -272,7 +273,6 @@ wall-clock 4 tests/Headless.Messaging.Tests.Harness/MessagingIntegrationTestsBas
 real-wait 3 tests/Headless.Messaging.Tests.Harness/ReceiveMiddlewareOutcomeConformance.cs
 wall-clock 1 tests/Headless.Messaging.Tests.Harness/ReceiveMiddlewareOutcomeConformance.cs
 real-wait 1 tests/Headless.Messaging.Tests.Harness/RequestReply/RequestReplyConformanceHost.cs
-real-wait 1 tests/Headless.Messaging.Tests.Harness/Toxiproxy/ToxiproxyServer.cs
 real-wait 1 tests/Headless.Messaging.Tests.Harness/TransportConnectivityTestsBase.cs
 wall-clock 2 tests/Headless.Messaging.Tests.Harness/TransportConsumerConformanceTestsBase.cs
 skip 1 tests/Headless.Messaging.Tests.Harness/TransportConsumerConformanceTestsBase.cs

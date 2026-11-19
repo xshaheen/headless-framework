@@ -1,0 +1,113 @@
+name: "Jobs chaos"
+
+# Runs the Jobs, Coordination, and DistributedLocks chaos suite (make test-jobs-chaos): several Jobs nodes on real
+# stores under kills, freezes, partitions, clock skew, DST, claim races, lock-backend connection death and failover,
+# each scenario judged by an oracle over a side-effect log. The suite takes tens of minutes at full sizes, so it runs
+# weekly and on demand, never on a pull request, and stays outside the required "CI status": a red run is a finding
+# to triage, not a merge gate. Retries are off, so a guarantee that breaks once shows as a failure.
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      chaos_profile:
+        description: "Sizes: full (the scheduled sizes) or smoke"
+        required: false
+        type: choice
+        default: full
+        options:
+          - full
+          - smoke
+      duration:
+        description: "Soak length in minutes (empty: the profile's default)"
+        required: false
+        type: string
+      seed:
+        description: "Replay a run with the seed its summary printed (empty: a fresh seed)"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+
+jobs:
+  chaos:
+    name: "Jobs chaos · multi-node and lock suites"
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore the chaos projects"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          make restore-project PROJECT=tests/Headless.Jobs.Tests.Chaos/Headless.Jobs.Tests.Chaos.csproj
+          make restore-project PROJECT=tests/Headless.DistributedLocks.Tests.Chaos/Headless.DistributedLocks.Tests.Chaos.csproj
+
+      - name: "Run the chaos suite"
+        env:
+          # A scheduled run has no inputs, so it falls back to the full profile.
+          HEADLESS_CHAOS_PROFILE: ${{ inputs.chaos_profile || 'full' }}
+          HEADLESS_CHAOS_DURATION: ${{ inputs.duration }}
+          HEADLESS_CHAOS_SEED: ${{ inputs.seed }}
+        run: make test-jobs-chaos
+
+      - name: "Publish the chaos summary"
+        if: always()
+        run: |
+          set -euo pipefail
+          dir=artifacts/test-results/jobs-chaos
+          if [[ -f "$dir/summary.md" ]]; then cat "$dir/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          if [[ -f "$dir/failures.md" ]]; then
+            printf '\n## Failures\n\n' >> "$GITHUB_STEP_SUMMARY"
+            cat "$dir/failures.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: "Upload chaos results"
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jobs-chaos
+          path: |
+            artifacts/test-results/jobs-chaos/**/*.trx
+            artifacts/test-results/jobs-chaos/**/*.md
+            artifacts/test-results/jobs-chaos/**/*.dmp
+          if-no-files-found: warn
+          retention-days: 30

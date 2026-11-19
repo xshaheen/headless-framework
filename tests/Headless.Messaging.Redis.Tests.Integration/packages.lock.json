@@ -707,6 +707,17 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
+      "headless.chaos.tests.harness": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "AwesomeAssertions.Json": "[9.0.0, )",
+          "Bogus": "[35.6.5, )",
+          "NSubstitute": "[6.2.0, )",
+          "Testcontainers": "[4.17.0, )",
+          "xunit.v3.assert": "[4.0.3, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -952,6 +963,7 @@
           "AwesomeAssertions": "[9.6.0, )",
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
+          "Headless.Chaos.Tests.Harness": "[1.0.0, )",
           "Headless.EntityFramework": "[1.0.0, )",
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",

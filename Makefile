@@ -86,6 +86,8 @@ NO_CHAOS_SOLUTION ?= $(ARTIFACTS_DIR)/solution-filters/headless-framework.no-cha
 WRITE_NO_CHAOS_SOLUTION = $(GRAPH) solution-filter --exclude-suffix "$(CHAOS_TEST_SUFFIX)" --out "$(NO_CHAOS_SOLUTION)" --solution "$(SOLUTION)"
 MESSAGING_CHAOS_PROJECT ?= tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
 MESSAGING_CHAOS_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/messaging-chaos
+JOBS_CHAOS_PROJECTS ?= tests/Headless.Jobs.Tests.Chaos/Headless.Jobs.Tests.Chaos.csproj tests/Headless.DistributedLocks.Tests.Chaos/Headless.DistributedLocks.Tests.Chaos.csproj
+JOBS_CHAOS_RESULTS_DIR ?= $(TEST_RESULTS_DIR)/jobs-chaos
 # The messaging integration tier (messaging-integration.yml): every broker, broker-plus-database, and relational
 # storage integration suite, listed once in scripts/messaging-integration-scope.py. The Azure Service Bus project runs
 # for its emulator profile, which skips unless HEADLESS_ACCEPT_SERVICEBUS_EMULATOR_EULA=Y accepts the emulator's
@@ -1306,6 +1308,20 @@ test-messaging-chaos: ## Run the messaging chaos and soak suite on PostgreSQL an
 	@rm -f "$(MESSAGING_CHAOS_RESULTS_DIR)/summary.md"
 	@$(ASSERT_RESTORED); assert_restored "$(MESSAGING_CHAOS_PROJECT)"
 	HEADLESS_CHAOS_SUMMARY_DIR="$(abspath $(MESSAGING_CHAOS_RESULTS_DIR))" $(DOTNET) test --project "$(MESSAGING_CHAOS_PROJECT)" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_CHAOS_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS)
+
+# The Jobs, Coordination, and DistributedLocks chaos tier: multi-node runs under kills, freezes, partitions, skew, and
+# backend failover, each judged by an oracle over a side-effect log. Like the messaging chaos tier, only this target
+# and the scheduled workflow run it. Every project runs to completion, so one failing suite does not hide the other.
+.PHONY: test-jobs-chaos
+test-jobs-chaos: ## Run the Jobs and lock chaos suite (needs Docker; minutes). HEADLESS_CHAOS_PROFILE=full runs the full sizes; HEADLESS_CHAOS_DURATION=<minutes|hh:mm:ss> sets the soak length; HEADLESS_CHAOS_SEED=<n> replays a run; writes summary.md (and failures.md) to JOBS_CHAOS_RESULTS_DIR.
+	@$(ASSERT_RESTORED); for project in $(JOBS_CHAOS_PROJECTS); do assert_restored "$$project"; done
+	@test -n "$(JOBS_CHAOS_RESULTS_DIR)" || { echo "JOBS_CHAOS_RESULTS_DIR is empty." >&2; exit 2; }; rm -rf "$(JOBS_CHAOS_RESULTS_DIR)"; mkdir -p "$(JOBS_CHAOS_RESULTS_DIR)"
+	@status=0; for project in $(JOBS_CHAOS_PROJECTS); do \
+		printf '\033[36m[chaos]\033[0m %s\n' "$$project"; \
+		HEADLESS_CHAOS_SUMMARY_DIR="$(abspath $(JOBS_CHAOS_RESULTS_DIR))" \
+			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(JOBS_CHAOS_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS) || status=1; \
+	done; \
+	exit $$status
 
 # The integration tier runs each suite once, with no --retry-failed-tests, so a flaky guarantee shows as a failure
 # rather than a pass on the second try. Every suite runs to completion, and the evidence tests export the manifest and
