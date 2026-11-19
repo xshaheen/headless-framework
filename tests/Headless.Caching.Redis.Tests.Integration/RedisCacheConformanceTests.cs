@@ -167,16 +167,70 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
         return base.should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock();
     }
 
+    // Overridden with whole-second timings: the base's 400ms entry with its eager point at 200ms gives the read after
+    // the 250ms wait only 50ms to pass the eager point and 150ms before expiry, all on real time, which parallel-suite
+    // load can cross. A 4s entry read 2.5s in sits 0.5s past the eager point (2s) and 1.5s before expiry.
     [Fact]
-    public override Task should_eager_refresh_before_expiration()
+    public override async Task should_eager_refresh_before_expiration()
     {
-        return base.should_eager_refresh_before_expiration();
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateWholeSecondEagerOptions();
+        var eagerRefreshed = _SubscribeEagerRefresh(cache, out var registration);
+        using var subscription = registration;
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v1"), options, AbortToken);
+        // real-wait: the eager point and the expiry are measured on real time, and the expiry is the key's Redis TTL, which no app clock can advance
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(2500), AbortToken);
+
+        var hit = await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v2"), options, AbortToken);
+
+        hit.Value.Should().Be("v1");
+        hit.IsStale.Should().BeFalse();
+
+        (await eagerRefreshed.WaitAsync(TimeSpan.FromSeconds(30), AbortToken))
+            .Outcome.Should()
+            .Be(CacheFactoryOutcome.Success);
+        (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
     }
 
+    // Overridden with whole-second timings for the same reason as the case above.
     [Fact]
-    public override Task should_not_stampede_eager_refresh_across_concurrent_readers()
+    public override async Task should_not_stampede_eager_refresh_across_concurrent_readers()
     {
-        return base.should_not_stampede_eager_refresh_across_concurrent_readers();
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateWholeSecondEagerOptions();
+        var factoryCalls = 0;
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var eagerRefreshed = _SubscribeEagerRefresh(cache, out var registration);
+        using var subscription = registration;
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v1"), options, AbortToken);
+        // real-wait: the eager point and the expiry are measured on real time, and the expiry is the key's Redis TTL, which no app clock can advance
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(2500), AbortToken);
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask())
+        );
+
+        results.Should().AllSatisfy(result => result.Value.Should().Be("v1"));
+
+        factoryGate.SetResult("v2");
+
+        (await eagerRefreshed.WaitAsync(TimeSpan.FromSeconds(30), AbortToken))
+            .Outcome.Should()
+            .Be(CacheFactoryOutcome.Success);
+        (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
+        factoryCalls.Should().Be(1);
     }
 
     // Overridden with a large (whole-second) window instead of the base's sub-second one: Redis sliding rides
@@ -514,5 +568,22 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     public override Task should_expose_events_hub_through_wrappers()
     {
         return base.should_expose_events_hub_through_wrappers();
+    }
+
+    private static CacheEntryOptions _CreateWholeSecondEagerOptions()
+    {
+        return new() { Duration = TimeSpan.FromSeconds(4), EagerRefreshThreshold = 0.5f };
+    }
+
+    private static Task<CacheRefreshEventArgs> _SubscribeEagerRefresh(ICache cache, out IDisposable registration)
+    {
+        // Subscribe before the read that triggers the refresh: the refresh is detached, so its signal can land at any
+        // point afterwards, and the cache buffers a signal only for an event that already has a handler.
+        var completion = new TaskCompletionSource<CacheRefreshEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        registration = cache.Events.EagerRefresh.AddHandler(args => completion.TrySetResult(args));
+
+        return completion.Task;
     }
 }
