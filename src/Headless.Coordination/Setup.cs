@@ -69,6 +69,29 @@ public static class SetupCoordinationCore
         }
 
         /// <summary>
+        /// Returns whether these registrations hold the coordination membership without its heartbeat service, as
+        /// <see cref="HeadlessCoordinationSetupBuilder.DisableMembershipHeartbeat"/> leaves them. A feature whose
+        /// work is fenced by this node's membership calls it during registration to refuse a node that would never
+        /// beat: peers read such a node as dead after <see cref="CoordinationOptions.DeadThreshold"/> and reclaim
+        /// its work while it keeps running.
+        /// </summary>
+        /// <remarks>
+        /// Reads the service descriptors only, so call it after <see cref="AddHeadlessCoordination"/>. Returns
+        /// <see langword="false"/> when coordination is not registered, such as on a host that registers its own
+        /// <see cref="INodeMembership"/> instead: that membership owns its own liveness.
+        /// </remarks>
+        /// <returns>
+        /// <see langword="true"/> when the coordination membership is registered without its heartbeat service;
+        /// otherwise <see langword="false"/>.
+        /// </returns>
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public bool IsMembershipHeartbeatDisabled()
+        {
+            return services.Any(static d => d.ServiceType == typeof(MembershipService))
+                && !services.Any(static d => d.ServiceType == typeof(MembershipHeartbeatBackgroundService));
+        }
+
+        /// <summary>
         /// Registers the coordination core services over <typeparamref name="TStore"/> as the membership store. A
         /// provider package calls it from its <see cref="ICoordinationProviderOptionsExtension.AddServices"/>, which
         /// <see cref="HeadlessCoordinationSetupBuilder.RegisterExtension"/> hands to <see cref="AddHeadlessCoordination"/>,
