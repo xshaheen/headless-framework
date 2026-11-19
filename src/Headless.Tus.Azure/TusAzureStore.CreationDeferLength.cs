@@ -17,8 +17,8 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
     /// <param name="uploadLength">the total upload size in bytes now known by the client; must not be negative</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <exception cref="TusStoreException">
-    /// thrown if the file id is invalid, the file does not exist, or <paramref name="uploadLength"/> is below the bytes
-    /// the upload already holds
+    /// thrown if the file id is invalid, the file does not exist, the upload already has a different length, or
+    /// <paramref name="uploadLength"/> is below the bytes the upload already holds
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">thrown if <paramref name="uploadLength"/> is negative</exception>
     /// <exception cref="Azure.RequestFailedException">
@@ -41,14 +41,29 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
                 await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
                 ?? throw new TusStoreException($"File {fileId} does not exist");
 
+            // tusdotnet refuses a second length over HTTP, but a direct store caller is not held to that. A changed length
+            // would move the point at which the upload reads as finished under data the client already sent, so only a
+            // repeat of the declared length is accepted, and it writes nothing.
+            if (blobInfo.Metadata.UploadLength is { } declared)
+            {
+                if (declared == uploadLength)
+                {
+                    return;
+                }
+
+                throw new TusStoreException(
+                    string.Create(CultureInfo.InvariantCulture, $"File {fileId} already has upload length {declared}")
+                );
+            }
+
             // tusdotnet checks only the configured maximum, not the stored offset. A length below the bytes already
             // written could never complete, and the expiry sweep would read the upload as finished and keep it forever.
-            if (uploadLength < blobInfo.CurrentContentLength)
+            if (uploadLength < blobInfo.VerifiedLength)
             {
                 throw new TusStoreException(
                     string.Create(
                         CultureInfo.InvariantCulture,
-                        $"Upload length {uploadLength} is below the {blobInfo.CurrentContentLength} bytes already uploaded"
+                        $"Upload length {uploadLength} is below the {blobInfo.VerifiedLength} bytes already uploaded"
                     )
                 );
             }

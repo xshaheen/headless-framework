@@ -28,6 +28,10 @@ public sealed class R2TusS3StoreConformanceTests(TusS3R2Fixture fixture)
         base.should_upload_data_before_upload_length_is_known();
 
     [Fact]
+    public override Task should_refuse_a_different_upload_length_once_one_is_set() =>
+        base.should_refuse_a_different_upload_length_once_one_is_set();
+
+    [Fact]
     public override Task should_reject_upload_length_below_uploaded_bytes() =>
         base.should_reject_upload_length_below_uploaded_bytes();
 

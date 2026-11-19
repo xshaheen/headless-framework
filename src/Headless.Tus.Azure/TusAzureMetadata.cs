@@ -15,6 +15,7 @@ internal sealed class TusAzureMetadata
     public const string LastChunkBlocksKey = "tus_last_chunk_blocks";
     public const string LastChunkChecksumKey = "tus_last_chunk_checksum";
     public const string LastChunkOffsetKey = "tus_last_chunk_offset";
+    public const string VerifiedOffsetKey = "tus_verified_offset";
 
     /// <summary>
     /// Blob-metadata key holding the client's Upload-Metadata header value <em>verbatim</em>.
@@ -171,6 +172,42 @@ internal sealed class TusAzureMetadata
                 _decodedMetadata.Remove(LastChunkOffsetKey);
             }
         }
+    }
+
+    /// <summary>
+    /// The offset up to which the upload's bytes are verified, set only while a checksum-trailer chunk is committed
+    /// but not yet verified; <see langword="null"/> means every committed byte counts. Offset reads report this value
+    /// instead of the committed length, so a verification that fails or never runs leaves the upload resumable from
+    /// before the chunk instead of reporting unverified bytes as uploaded.
+    /// </summary>
+    public long? VerifiedOffset
+    {
+        get =>
+            _decodedMetadata.TryGetValue(VerifiedOffsetKey, out var value)
+            && long.TryParse(value, CultureInfo.InvariantCulture, out var offset)
+            && offset >= 0
+                ? offset
+                : null;
+        set
+        {
+            if (value.HasValue)
+            {
+                _decodedMetadata[VerifiedOffsetKey] = value.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                _decodedMetadata.Remove(VerifiedOffsetKey);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The offset a client may resume from: the committed length, capped by <see cref="VerifiedOffset"/> while a
+    /// checksum-trailer chunk waits for verification.
+    /// </summary>
+    public long GetVerifiedLength(long committedLength)
+    {
+        return VerifiedOffset is { } verified && verified < committedLength ? verified : committedLength;
     }
 
     public string? ConcatType

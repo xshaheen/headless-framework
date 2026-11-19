@@ -361,10 +361,10 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                 throw new TusStoreException($"Partial file {partialFileId} has no upload length");
             }
 
-            if (blobInfo.CurrentContentLength < uploadLength.Value)
+            if (blobInfo.VerifiedLength < uploadLength.Value)
             {
                 FormattableString message =
-                    $"Partial file {partialFileId} is incomplete ({blobInfo.CurrentContentLength}/{uploadLength.Value} bytes)";
+                    $"Partial file {partialFileId} is incomplete ({blobInfo.VerifiedLength}/{uploadLength.Value} bytes)";
 
                 throw new TusStoreException(message.ToString(CultureInfo.InvariantCulture));
             }

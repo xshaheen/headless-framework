@@ -27,6 +27,10 @@ public sealed class MinioTusS3StoreConformanceTests(TusS3MinioFixture fixture)
         base.should_upload_data_before_upload_length_is_known();
 
     [Fact]
+    public override Task should_refuse_a_different_upload_length_once_one_is_set() =>
+        base.should_refuse_a_different_upload_length_once_one_is_set();
+
+    [Fact]
     public override Task should_reject_upload_length_below_uploaded_bytes() =>
         base.should_reject_upload_length_below_uploaded_bytes();
 
@@ -83,6 +87,10 @@ public sealed class LocalStackTusS3StoreConformanceTests(TusS3LocalStackFixture 
     [Fact]
     public override Task should_upload_data_before_upload_length_is_known() =>
         base.should_upload_data_before_upload_length_is_known();
+
+    [Fact]
+    public override Task should_refuse_a_different_upload_length_once_one_is_set() =>
+        base.should_refuse_a_different_upload_length_once_one_is_set();
 
     [Fact]
     public override Task should_reject_upload_length_below_uploaded_bytes() =>

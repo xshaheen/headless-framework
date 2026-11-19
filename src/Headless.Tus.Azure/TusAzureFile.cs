@@ -20,6 +20,12 @@ internal sealed class TusAzureFile
     public long CurrentContentLength { get; set; }
 
     /// <summary>
+    /// The offset a client may resume from and the length of the upload's readable content: the committed length,
+    /// minus a checksum-trailer chunk that is committed but not yet verified.
+    /// </summary>
+    public long VerifiedLength => Metadata.GetVerifiedLength(CurrentContentLength);
+
+    /// <summary>
     /// The committed block list, read after the properties this file holds and kept until this request commits a new
     /// list. Reading it after the properties is what keeps the fence sound: a list read later can only be newer than
     /// <see cref="ETag"/>, so a commit built from a list another writer changed fails on the stale ETag instead of

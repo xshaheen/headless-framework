@@ -94,6 +94,22 @@ public abstract class TusStoreConformanceTestsBase<TStore>(ITusConformanceBacken
         (await Store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
     }
 
+    public virtual async Task should_refuse_a_different_upload_length_once_one_is_set()
+    {
+        // given - a deferred-length upload whose length was declared
+        var fileId = await Store.CreateFileAsync(-1L, metadata: null, AbortToken);
+        await Store.SetUploadLengthAsync(fileId, 1_000, AbortToken);
+
+        // when - a direct store caller, which tusdotnet's HTTP checks do not cover, declares another length
+        var act = () => Store.SetUploadLengthAsync(fileId, 2_000, AbortToken);
+
+        // then - the store refuses it and keeps the first, and a repeat of the same length is accepted
+        await act.Should().ThrowAsync<tusdotnet.Models.TusStoreException>();
+        (await Store.GetUploadLengthAsync(fileId, AbortToken)).Should().Be(1_000);
+        await Store.SetUploadLengthAsync(fileId, 1_000, AbortToken);
+        (await Store.GetUploadLengthAsync(fileId, AbortToken)).Should().Be(1_000);
+    }
+
     public virtual async Task should_reject_upload_length_below_uploaded_bytes()
     {
         // given - a deferred-length upload that already holds 100 bytes
