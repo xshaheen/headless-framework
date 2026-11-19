@@ -7,6 +7,7 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Headless.Tus.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Helpers;
 using tusdotnet.Interfaces;
@@ -51,7 +52,70 @@ public sealed partial class TusAzureStore : ITusChecksumStore
      *    committed [LastChunkOffset, end) range on demand and, on mismatch (or tusdotnet's
      *    faulty-trailer fallback sentinel), rolls the blob back by re-committing the previous
      *    block list — the Azure analog of TusDiskStore's SetLength(chunkStartPosition).
+     *    Until the verification accepts the chunk, tus_verified_offset holds the chunk's start and
+     *    every offset read reports it, so a verification that throws or never finishes cannot leave
+     *    unverified bytes counted as uploaded. The next append discards the unverified chunk first.
      */
+
+    // The trailer name tusdotnet looks for, compared the way it compares it (ordinal).
+    private const string _UploadChecksumTrailer = "Upload-Checksum";
+
+    /// <summary>
+    /// Whether tusdotnet will call <c>VerifyChecksumAsync</c> for the chunk the current request has just read,
+    /// against an <c>Upload-Checksum</c> trailer. Called after the body is read, when the trailers have arrived.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors tusdotnet's own decision: a declared trailer that arrived with a value is verified; a declared trailer
+    /// with no value is verified (as a discard) only when the client disconnected. A request that declares the
+    /// trailer and then sends none is never verified, so marking its chunk would leave a finished upload reported
+    /// short forever. Without an <c>IHttpContextAccessor</c> the store cannot see the request and reports
+    /// <see langword="false"/>.
+    /// </remarks>
+    private bool _AwaitsTrailerVerification(CancellationToken requestToken)
+    {
+        var request = _httpContextAccessor?.HttpContext?.Request;
+
+        if (
+            request
+                ?.GetDeclaredTrailers()
+                .Any(static name => string.Equals(name, _UploadChecksumTrailer, StringComparison.Ordinal))
+            is not true
+        )
+        {
+            return false;
+        }
+
+        if (
+            request.SupportsTrailers()
+            && request.CheckTrailersAvailable()
+            && !string.IsNullOrEmpty(request.GetTrailer(_UploadChecksumTrailer).FirstOrDefault())
+        )
+        {
+            return true;
+        }
+
+        return requestToken.IsCancellationRequested;
+    }
+
+    /// <summary>
+    /// Rolls back a checksum-trailer chunk whose verification never accepted it (it threw, or the process stopped
+    /// first), so the append that follows writes at the offset the client was told.
+    /// </summary>
+    /// <remarks>
+    /// tusdotnet has already matched the request's <c>Upload-Offset</c> against the verified offset, so after this
+    /// rollback the committed length equals the offset the client sent. Must-complete: it changes the blob.
+    /// </remarks>
+    private async Task _DiscardUnverifiedChunkAsync(BlockBlobClient blockBlobClient, TusAzureFile file)
+    {
+        if (file.Metadata.VerifiedOffset is not { } verified || verified >= file.CurrentContentLength)
+        {
+            // Nothing unverified. A leftover key no longer caps the offset, and the next commit clears it.
+            return;
+        }
+
+        _logger.UnverifiedChunkDiscarded(file.FileId, verified, file.CurrentContentLength);
+        await _RollbackLastChunkAsync(blockBlobClient, file, verified).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Verifies the checksum of the most recent PATCH against the digest supplied by the client.
@@ -222,6 +286,14 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
         if (_VerifyChecksum(calculatedChecksum, checksum))
         {
+            if (file.Metadata.VerifiedOffset is not null)
+            {
+                // The chunk counts only once this write lands; if it fails, the exception propagates and the upload
+                // stays resumable from the chunk's start.
+                file.Metadata.VerifiedOffset = null;
+                await _UpdateMetadataAsync(blobClient, file, CancellationToken.None).ConfigureAwait(false);
+            }
+
             _logger.ChecksumVerificationPassed(file.FileId, algorithm);
 
             return true;
@@ -274,7 +346,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         var committedBlocks = await _LoadCommittedBlocksAsync(client, file, CancellationToken.None)
             .ConfigureAwait(false);
 
-        var prefix = new List<string>(committedBlocks.Count);
+        var kept = new List<BlobBlock>(committedBlocks.Count);
         var cumulative = 0L;
 
         foreach (var block in committedBlocks)
@@ -284,7 +356,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
                 break;
             }
 
-            prefix.Add(block.Name);
+            kept.Add(block);
             cumulative += block.SizeLong;
         }
 
@@ -305,12 +377,22 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         file.Metadata.LastChunkBlocks = null;
         file.Metadata.LastChunkChecksum = null;
         file.Metadata.LastChunkOffset = null;
+        file.Metadata.VerifiedOffset = null;
 
         // Fenced on the ETag read with the file: the prefix and the recorded chunk start describe the
         // blob this request saw, so a rollback over a block list another request has since committed
         // must fail rather than truncate that request's data.
-        await _CommitBlockListAsync(client, file, prefix, committedLength: cumulative, CancellationToken.None)
+        await _CommitBlockListAsync(
+                client,
+                file,
+                kept.Select(block => block.Name),
+                committedLength: cumulative,
+                CancellationToken.None
+            )
             .ConfigureAwait(false);
+
+        // The kept prefix is the list just committed, so an append in this request builds on it without reading it again.
+        file.CommittedBlocks = kept;
 
         _logger.LastChunkRolledBack(file.FileId, chunkStartOffset);
     }
@@ -481,6 +563,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
             // NOW clear chunk tracking metadata (after we've used it)
             file.Metadata.LastChunkBlocks = null;
             file.Metadata.LastChunkChecksum = null;
+            file.Metadata.VerifiedOffset = null;
 
             // ATOMIC: Commit blocks + update metadata in single operation, fenced on the ETag read with
             // the file so a staged range another request has since replaced or committed is never
@@ -627,6 +710,18 @@ internal static partial class TusAzureStoreChecksumLog
         this ILogger logger,
         string fileId,
         long chunkStartOffset,
+        long committedLength
+    );
+
+    [LoggerMessage(
+        EventId = 3306,
+        Level = LogLevel.Warning,
+        Message = "Discarding the unverified last chunk of file {FileId}: its checksum-trailer verification never accepted it, so the upload resumes from offset {VerifiedOffset} instead of {CommittedLength}"
+    )]
+    internal static partial void UnverifiedChunkDiscarded(
+        this ILogger logger,
+        string fileId,
+        long verifiedOffset,
         long committedLength
     );
 

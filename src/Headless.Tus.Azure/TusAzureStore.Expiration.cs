@@ -110,7 +110,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
         // Completed uploads report no expiration (see remarks); reuse the shared incompleteness predicate
         // so the HEAD-expiration report and the reaper cannot disagree on whether an upload is reapable.
-        if (!_IsIncompleteUpload(azureFile.Metadata.UploadLength, azureFile.CurrentContentLength))
+        if (!_IsIncompleteUpload(azureFile.Metadata.UploadLength, azureFile.VerifiedLength))
         {
             return null;
         }
@@ -182,10 +182,11 @@ public sealed partial class TusAzureStore : ITusExpirationStore
                     continue;
                 }
 
-                // ContentLength is the committed length (staged-but-unverified checksum blocks are
-                // excluded), i.e. the same offset GetUploadOffsetAsync reports to resuming clients.
-                var committedLength = blobItem.Properties.ContentLength ?? 0;
-                var isIncomplete = _IsIncompleteUpload(metadata.UploadLength, committedLength);
+                // The same offset GetUploadOffsetAsync reports to resuming clients: the committed length
+                // (staged checksum-header blocks are excluded), capped while a checksum-trailer chunk waits
+                // for verification.
+                var verifiedLength = metadata.GetVerifiedLength(blobItem.Properties.ContentLength ?? 0);
+                var isIncomplete = _IsIncompleteUpload(metadata.UploadLength, verifiedLength);
 
                 if (!isIncomplete)
                 {
@@ -284,9 +285,9 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     // (which reap only incomplete uploads). A null upload length (Creation-Defer-Length in progress)
     // counts as incomplete. Keeping one predicate stops the two paths from drifting via a hand-rolled
     // De Morgan inverse and disagreeing on whether an upload is reapable.
-    private static bool _IsIncompleteUpload(long? uploadLength, long currentContentLength)
+    private static bool _IsIncompleteUpload(long? uploadLength, long verifiedLength)
     {
-        return uploadLength is null || currentContentLength < uploadLength.Value;
+        return uploadLength is null || verifiedLength < uploadLength.Value;
     }
 
     private const int _MaxExpirationWriteAttempts = 3;

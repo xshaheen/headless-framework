@@ -40,19 +40,21 @@ public sealed partial class TusAzureStore
     }
 
     /// <summary>
-    /// Returns the number of bytes that have been durably committed for the given TUS file.
+    /// Returns the number of bytes the given TUS file holds that a client may resume from.
     /// </summary>
     /// <param name="fileId">the TUS file identifier</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <returns>
-    /// the committed length of the blob in bytes; 0 if the blob does not exist or has no committed
+    /// the verified committed length of the blob in bytes; 0 if the blob does not exist or has no committed
     /// blocks
     /// </returns>
     /// <remarks>
     /// The offset is the blob's <c>ContentLength</c>, which for a block blob counts committed
     /// blocks only, so staged-but-uncommitted blocks (for example, blocks held pending checksum
-    /// verification) never advance it. Reading it from the properties lets a HEAD answer every
-    /// store call from one request.
+    /// verification) never advance it. A chunk committed under a declared <c>Upload-Checksum</c>
+    /// trailer counts only once its verification succeeds: until then the offset stays at the
+    /// chunk's start, so a failed or interrupted verification leaves the upload resumable from there.
+    /// Reading it from the properties lets a HEAD answer every store call from one request.
     /// </remarks>
     public async Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken)
     {
@@ -60,6 +62,6 @@ public sealed partial class TusAzureStore
 
         var file = await _LoadFileAsync(fileId, cancellationToken).ConfigureAwait(false);
 
-        return file?.CurrentContentLength ?? 0;
+        return file?.VerifiedLength ?? 0;
     }
 }

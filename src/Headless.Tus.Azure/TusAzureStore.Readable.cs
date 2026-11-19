@@ -16,6 +16,11 @@ public sealed partial class TusAzureStore : ITusReadableStore
     /// <returns>
     /// an <c>ITusFile</c> wrapping the blob, or <see langword="null"/> if the blob is not found
     /// </returns>
+    /// <remarks>
+    /// The content ends at the upload offset: a chunk committed under a declared <c>Upload-Checksum</c> trailer
+    /// is left out until its verification succeeds. The read writes nothing, because it runs outside the upload's
+    /// file lock and must not undo a verification another request is still running.
+    /// </remarks>
     public async Task<ITusFile?> GetFileAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);

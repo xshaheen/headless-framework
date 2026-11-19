@@ -56,6 +56,8 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
             ?? throw new TusStoreException($"File {fileId} does not exist");
 
+        await _DiscardUnverifiedChunkAsync(blockBlobClient, azureFile).ConfigureAwait(false);
+
         var committedBlocks = await _LoadCommittedBlocksAsync(blockBlobClient, azureFile, cancellationToken)
             .ConfigureAwait(false);
         var currentOffset = committedBlocks.Sum(b => b.SizeLong);
@@ -199,7 +201,8 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                     chunkStartOffset: appendStartOffset,
                     chunkLength: bytesWrittenThisRequest,
                     hasher,
-                    checksumAlgorithm: checksumInfo?.Algorithm
+                    checksumAlgorithm: checksumInfo?.Algorithm,
+                    awaitsTrailerVerification: _AwaitsTrailerVerification(cancellationToken)
                 )
                 .ConfigureAwait(false);
 
