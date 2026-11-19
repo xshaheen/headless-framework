@@ -15,10 +15,13 @@ internal static class TimedChildGateSql
 {
     /// <summary>
     /// Returns a leading <c>AND (...)</c> clause for a fallback candidate <c>WHERE</c>. The candidate row's columns
-    /// are unqualified, so the clause embeds in a claim whose table alias the dialect chooses; each gated run
-    /// condition reads the parent through its own <c>IN</c> subquery, so no column inside a subquery has to name the
-    /// candidate row. The clause is self-contained SQL structure built only from provider-delimited identifiers and
-    /// enum-name literals.
+    /// are unqualified, so the clause embeds in a claim whose table alias the dialect chooses. Each gated run
+    /// condition reads the candidate's own parent through a correlated <c>EXISTS</c> keyed on the parent id, so a
+    /// candidate costs one primary-key lookup however long the finished history grows. An uncorrelated
+    /// <c>parent_id IN (SELECT id ... WHERE status IN (...))</c> lets PostgreSQL build a hashed subplan from a sequential
+    /// scan of every terminal row on each claim. The subquery reads the parent through a derived table whose columns
+    /// are renamed, so the unqualified parent-id column can only bind to the candidate row. The clause is
+    /// self-contained SQL structure built only from provider-delimited identifiers and enum-name literals.
     /// </summary>
     public static string Build(TimeJobRelationalMapping mapping)
     {
@@ -33,11 +36,11 @@ internal static class TimedChildGateSql
         const string cancelled = nameof(JobStatus.Cancelled);
 
         var runCondition = mapping.RunCondition;
-        var onSuccessParent = parentIn($"'{succeeded}', '{dueDone}'");
-        var onFailureParent = parentIn($"'{failed}'");
-        var onCancelledParent = parentIn($"'{cancelled}'");
-        var onFailureOrCancelledParent = parentIn($"'{failed}', '{cancelled}'");
-        var onAnyParent = parentIn($"'{succeeded}', '{dueDone}', '{failed}', '{cancelled}'");
+        var onSuccessParent = parentExists($"'{succeeded}', '{dueDone}'");
+        var onFailureParent = parentExists($"'{failed}'");
+        var onCancelledParent = parentExists($"'{cancelled}'");
+        var onFailureOrCancelledParent = parentExists($"'{failed}', '{cancelled}'");
+        var onAnyParent = parentExists($"'{succeeded}', '{dueDone}', '{failed}', '{cancelled}'");
 
         // A NULL RunCondition is ungated (matches the in-memory and EF C#-null-semantics behavior). It needs its own
         // arm because SQL three-valued logic makes `NULL NOT IN (...)` evaluate to UNKNOWN — without this the row
@@ -53,9 +56,11 @@ internal static class TimedChildGateSql
                  OR ({runCondition} = '{onAny}' AND {onAnyParent}))
             """;
 
-        string parentIn(string statuses)
+        // gate_id and gate_status exist only inside the derived table, and the derived table has no parent-id column,
+        // so the unqualified parent id resolves to the candidate row in every dialect without naming its alias.
+        string parentExists(string statuses)
         {
-            return $"{mapping.ParentId} IN (SELECT gate_parent.{mapping.Id} FROM {mapping.Table} AS gate_parent WHERE gate_parent.{mapping.Status} IN ({statuses}))";
+            return $"EXISTS (SELECT 1 FROM (SELECT {mapping.Id} AS gate_id, {mapping.Status} AS gate_status FROM {mapping.Table}) AS gate_parent WHERE gate_parent.gate_id = {mapping.ParentId} AND gate_parent.gate_status IN ({statuses}))";
         }
     }
 }
