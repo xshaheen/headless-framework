@@ -613,6 +613,10 @@ internal sealed class AmazonSqsConsumerClient(
     // as the message that stopped the group: its reject delay, or a full visibility timeout for one whose handler threw
     // or never settled. Releasing it at once relies on SQS holding a group while one of its messages is in flight, which
     // emulators do not all do; hidden as long, it can never come back ahead of that message.
+    //
+    // The rest carries that hold on each message, so shutdown's own release, which can run first, gives it back the
+    // same way. While a message is handed over and not yet settled, the rest holds for a full visibility timeout: that
+    // message may still be in flight for as long.
     private async Task _RunFifoGroupAsync(
         List<Amazon.SQS.Model.Message> messages,
         InflightSqsMessage[] received,
@@ -622,6 +626,7 @@ internal sealed class AmazonSqsConsumerClient(
         CancellationToken cancellationToken
     )
     {
+        var visibilitySeconds = (int)_amazonSqsOptions.VisibilityTimeout.TotalSeconds;
         var handedOver = 0;
         try
         {
@@ -633,6 +638,8 @@ internal sealed class AmazonSqsConsumerClient(
                 {
                     slotted?.TrySetResult();
                 }
+
+                _HoldRest(received, group, handedOver, visibilitySeconds);
 
                 try
                 {
@@ -647,6 +654,8 @@ internal sealed class AmazonSqsConsumerClient(
                 {
                     break;
                 }
+
+                _HoldRest(received, group, handedOver, 0);
             }
         }
         finally
@@ -656,13 +665,19 @@ internal sealed class AmazonSqsConsumerClient(
             var holdSeconds = 0;
             if (handedOver > 0 && received[group[handedOver - 1]] is { IsCommitted: false } blocker)
             {
-                holdSeconds =
-                    blocker.RejectedForSeconds > 0
-                        ? blocker.RejectedForSeconds
-                        : (int)_amazonSqsOptions.VisibilityTimeout.TotalSeconds;
+                holdSeconds = blocker.RejectedForSeconds > 0 ? blocker.RejectedForSeconds : visibilitySeconds;
             }
 
-            await _ReleaseAsync([.. group[handedOver..].Select(i => received[i])], holdSeconds).ConfigureAwait(false);
+            _HoldRest(received, group, handedOver, holdSeconds);
+            await _ReleaseAsync([.. group[handedOver..].Select(i => received[i])]).ConfigureAwait(false);
+        }
+    }
+
+    private static void _HoldRest(InflightSqsMessage[] received, int[] group, int handedOver, int holdSeconds)
+    {
+        for (var i = handedOver; i < group.Length; i++)
+        {
+            received[group[i]].HoldSeconds = holdSeconds;
         }
     }
 
@@ -954,8 +969,9 @@ internal sealed class AmazonSqsConsumerClient(
         }
 
         // Whatever is still unsettled was never handed over or outlived the drain; release it for another consumer now
-        // instead of after its visibility timeout.
-        await _ReleaseAsync([.. _unsettled.Values]).ConfigureAwait(false);
+        // instead of after its visibility timeout, each with its group's hold. A release a FIFO group still runs may
+        // have given some of them back meanwhile, so only the ones still unsettled under the gate go.
+        await _ReleaseAsync([.. _unsettled.Values], unsettledOnly: true).ConfigureAwait(false);
 
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
@@ -1013,10 +1029,25 @@ internal sealed class AmazonSqsConsumerClient(
             // Read under the gate: a message settled since the snapshot is left alone, and one settled from here on
             // waits for this call before its own visibility change is sent.
             var unsettled = Array.FindAll(chunk, message => _unsettled.ContainsKey(message.ReceiptHandle));
-            if (unsettled.Length > 0)
+            if (unsettled.Length == 0)
             {
-                await _ChangeVisibilityAsync(queueUrl, unsettled, visibilitySeconds, cancellationToken)
-                    .ConfigureAwait(false);
+                return;
+            }
+
+            var failures = await _ChangeVisibilityAsync(queueUrl, unsettled, visibilitySeconds, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var failed in failures)
+            {
+                var message = unsettled[int.Parse(failed.Id, CultureInfo.InvariantCulture)];
+
+                // Stops extending a message SQS refused for a reason of the request, such as a receipt handle that is
+                // no longer current, which a retry would only refuse again; it may be redelivered. A service-side fault
+                // is retried by the next beat. A message settled meanwhile is no longer tracked, so it logs nothing.
+                if (failed.SenderFault is true && _unsettled.TryRemove(message.ReceiptHandle, out _))
+                {
+                    _logger.SqsVisibilityExtensionRefused(subscriptionName, failed.Code, failed.Message);
+                }
             }
         }
         finally
@@ -1025,7 +1056,8 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    private async Task _ChangeVisibilityAsync(
+    // Returns the entries SQS refused; each failure's Id is the message's index in messages.
+    private async Task<List<Amazon.SQS.Model.BatchResultErrorEntry>> _ChangeVisibilityAsync(
         string queueUrl,
         InflightSqsMessage[] messages,
         int visibilitySeconds,
@@ -1051,45 +1083,52 @@ internal sealed class AmazonSqsConsumerClient(
             .ConfigureAwait(false);
 
         // The SDK leaves an empty result list null.
-        foreach (var failed in response.Failed ?? [])
-        {
-            var message = messages[int.Parse(failed.Id, CultureInfo.InvariantCulture)];
-
-            // Stops extending a message SQS refused for a reason of the request, such as a receipt handle that is no
-            // longer current, which a retry would only refuse again; it may be redelivered. A service-side fault is
-            // retried by the next beat. A message settled meanwhile is no longer tracked, so it logs nothing.
-            if (failed.SenderFault is true && _unsettled.TryRemove(message.ReceiptHandle, out _))
-            {
-                _logger.SqsVisibilityExtensionRefused(subscriptionName, failed.Code, failed.Message);
-            }
-        }
+        return response.Failed ?? [];
     }
 
-    private async Task _ReleaseAsync(InflightSqsMessage[] messages, int visibilitySeconds = 0)
+    // Each message goes back hidden for its HoldSeconds. Its receipt stays tracked until SQS took the change, and is
+    // dropped under the gate right after, so the heartbeat neither loses a message whose release has not happened yet
+    // nor hides one again once it is back on the queue. With unsettledOnly, a message something else settled or
+    // released meanwhile is left alone.
+    private async Task _ReleaseAsync(InflightSqsMessage[] messages, bool unsettledOnly = false)
     {
         if (messages.Length == 0 || _sqsClient is null)
         {
             return;
         }
 
-        foreach (var message in messages)
-        {
-            _unsettled.TryRemove(message.ReceiptHandle, out _);
-        }
-
         using var timeout = new CancellationTokenSource(_ReleaseTimeout, _timeProvider);
 
         try
         {
-            foreach (var queue in messages.GroupBy(static m => m.QueueUrl, StringComparer.Ordinal))
+            foreach (var batch in messages.GroupBy(static m => (m.QueueUrl, m.HoldSeconds)))
             {
-                foreach (var chunk in queue.Chunk(SqsDeleteBatcher.MaxBatchSize))
+                foreach (var chunk in batch.Chunk(SqsDeleteBatcher.MaxBatchSize))
                 {
                     await _visibilityGate.WaitAsync(timeout.Token).ConfigureAwait(false);
                     try
                     {
-                        await _ChangeVisibilityAsync(queue.Key, chunk, visibilitySeconds, timeout.Token)
-                            .ConfigureAwait(false);
+                        var release = unsettledOnly
+                            ? Array.FindAll(chunk, message => _unsettled.ContainsKey(message.ReceiptHandle))
+                            : chunk;
+
+                        if (release.Length > 0)
+                        {
+                            // A refused entry is not retried: its receipt is no longer current, or SQS failed on its
+                            // side, and either way it reappears once its visibility runs out.
+                            _ = await _ChangeVisibilityAsync(
+                                    batch.Key.QueueUrl,
+                                    release,
+                                    batch.Key.HoldSeconds,
+                                    timeout.Token
+                                )
+                                .ConfigureAwait(false);
+                        }
+
+                        foreach (var message in release)
+                        {
+                            _unsettled.TryRemove(message.ReceiptHandle, out _);
+                        }
                     }
                     finally
                     {
@@ -1100,8 +1139,18 @@ internal sealed class AmazonSqsConsumerClient(
         }
         catch (Exception ex)
         {
-            // Unreleased messages reappear once their visibility runs out.
             _logger.SqsReleaseFailed(ex, subscriptionName, messages.Length);
+
+            // While the client runs, nothing else would release them, and the heartbeat would keep them hidden for good:
+            // stop tracking them so they reappear once their visibility runs out. Once receiving stopped, they stay
+            // tracked for shutdown's final release, which either has not read them yet or already gave them back.
+            if (!_stopReceiving.IsCancellationRequested)
+            {
+                foreach (var message in messages)
+                {
+                    _unsettled.TryRemove(message.ReceiptHandle, out _);
+                }
+            }
         }
     }
 
@@ -1423,6 +1472,7 @@ internal sealed record InflightSqsMessage(string QueueUrl, string ReceiptHandle)
 {
     private volatile bool _isCommitted;
     private volatile int _rejectedForSeconds;
+    private volatile int _holdSeconds;
 
     /// <summary>The FIFO group the message belongs to; <see langword="null"/> on a standard queue.</summary>
     public string? GroupId { get; init; }
@@ -1442,6 +1492,16 @@ internal sealed record InflightSqsMessage(string QueueUrl, string ReceiptHandle)
     {
         get => _rejectedForSeconds;
         set => _rejectedForSeconds = value;
+    }
+
+    /// <summary>
+    /// How long, in seconds, the message stays hidden when the client gives it back unhandled: as long as the message
+    /// of its FIFO group ahead of it may still be in flight. 0 on a standard queue, or when nothing of its group is.
+    /// </summary>
+    public int HoldSeconds
+    {
+        get => _holdSeconds;
+        set => _holdSeconds = value;
     }
 }
 
