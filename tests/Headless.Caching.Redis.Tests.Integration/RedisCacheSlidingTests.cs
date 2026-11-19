@@ -63,6 +63,10 @@ public sealed class RedisCacheSlidingTests(RedisCacheFixture fixture) : RedisCac
         ttlAfter!.Value.Should().BeLessThan(ttlBefore!.Value + TimeSpan.FromMilliseconds(50));
     }
 
+    // Whole-second timings: each keep-alive read must reach Redis inside the sliding window to re-arm it, and under
+    // parallel-suite load a sub-second window leaves too little slack, so the key lapses on its sliding window before
+    // the absolute cap this test is about. Every keep-alive read sits 1s inside its window, and the final read lands
+    // past the 4s cap while the re-armed sliding window is still open, so only the cap can expire the entry.
     [Fact]
     public async Task should_expire_at_absolute_duration_cap_even_with_repeated_reads()
     {
@@ -71,8 +75,8 @@ public sealed class RedisCacheSlidingTests(RedisCacheFixture fixture) : RedisCac
         var key = Faker.Random.AlphaNumeric(10);
         var options = new CacheEntryOptions
         {
-            Duration = TimeSpan.FromMilliseconds(550),
-            SlidingExpiration = TimeSpan.FromMilliseconds(250),
+            Duration = TimeSpan.FromSeconds(4),
+            SlidingExpiration = TimeSpan.FromSeconds(2),
         };
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
@@ -80,12 +84,13 @@ public sealed class RedisCacheSlidingTests(RedisCacheFixture fixture) : RedisCac
         for (var i = 0; i < 3; i++)
         {
             // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
-            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(150), AbortToken);
+            await TimeProvider.System.Delay(TimeSpan.FromSeconds(1), AbortToken);
             (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue();
         }
 
+        // 1.5s after the last keep-alive read: inside the re-armed sliding window (2s), past the 4s cap.
         // real-wait: the sliding window is the key's Redis TTL, re-armed and expired by the Redis server clock, which no app clock can advance
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(175), AbortToken);
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1500), AbortToken);
         var capped = await cache.GetAsync<string>(key, AbortToken);
 
         capped.HasValue.Should().BeFalse();
