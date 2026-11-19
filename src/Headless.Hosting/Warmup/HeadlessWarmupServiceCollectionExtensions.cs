@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Headless.Hosting;
 
@@ -61,6 +62,7 @@ public static class HeadlessWarmupServiceCollectionExtensions
             }
 
             services.AddInitializerHostedService<WarmupRunner>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, HostStartTelemetry>());
 
             // Reads the running host's state, so the pre-start 'check' verb skips it: a host that never started is
             // never warm.

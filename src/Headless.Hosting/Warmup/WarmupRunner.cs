@@ -26,6 +26,7 @@ internal sealed partial class WarmupRunner(IServiceScopeFactory scopes, ILogger<
     private volatile TaskCompletionSource _gated = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private CancellationTokenSource? _stopping;
     private Task? _run;
+    private int _readyRecorded;
 
     public bool IsInitialized => _gated.Task.IsCompletedSuccessfully;
 
@@ -64,6 +65,7 @@ internal sealed partial class WarmupRunner(IServiceScopeFactory scopes, ILogger<
         }
 
         _pending.Clear();
+        Volatile.Write(ref _readyRecorded, 0);
 
         return Task.CompletedTask;
     }
@@ -93,7 +95,7 @@ internal sealed partial class WarmupRunner(IServiceScopeFactory scopes, ILogger<
 
         if (gating.Count == 0)
         {
-            _gated.TrySetResult();
+            _SetReady();
         }
 
         var token = _stopping.Token;
@@ -173,9 +175,17 @@ internal sealed partial class WarmupRunner(IServiceScopeFactory scopes, ILogger<
 
         for (var attempt = 1; ; attempt++)
         {
+            var attemptStarted = Stopwatch.GetTimestamp();
+
             try
             {
                 await warmup.WarmUpAsync(cancellationToken).ConfigureAwait(false);
+                HostingTelemetry.WarmupAttemptCompleted(
+                    warmup.Name,
+                    attempt,
+                    Stopwatch.GetElapsedTime(attemptStarted),
+                    fault: null
+                );
                 var elapsed = Stopwatch.GetElapsedTime(started);
                 LogWarmupCompleted(logger, warmup.Name, attempt, elapsed.TotalMilliseconds);
                 _Complete(warmup);
@@ -189,6 +199,13 @@ internal sealed partial class WarmupRunner(IServiceScopeFactory scopes, ILogger<
 #pragma warning disable CA1031 // False positive: a failed warm-up is retried and reported by the readiness check; the host must not crash.
             catch (Exception exception)
             {
+                HostingTelemetry.WarmupAttemptCompleted(
+                    warmup.Name,
+                    attempt,
+                    Stopwatch.GetElapsedTime(attemptStarted),
+                    exception
+                );
+
                 if (warmup.GatesReadiness)
                 {
                     _pending[warmup.Name] = exception.Message;
@@ -216,8 +233,20 @@ internal sealed partial class WarmupRunner(IServiceScopeFactory scopes, ILogger<
 
         if (_pending.IsEmpty)
         {
-            _gated.TrySetResult();
+            _SetReady();
         }
+    }
+
+    private void _SetReady()
+    {
+        // Recorded before the gate opens, so whoever waits for readiness sees the measurement; the flag keeps two
+        // warm-ups that finish together from recording it twice.
+        if (Interlocked.Exchange(ref _readyRecorded, 1) == 0)
+        {
+            HostingTelemetry.HostReady();
+        }
+
+        _gated.TrySetResult();
     }
 
     [LoggerMessage(

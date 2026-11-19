@@ -295,6 +295,7 @@ The host's deploy verbs, health checks, startup validation, seeders, resource pr
 | Data the code declares | the `seed` verb, `ISeeder` | [Database seeders](#database-seeders) |
 | Work that prepares the first requests | `IWarmup` | [Warm-up](#warm-up) |
 | Refuse to start on a misconfiguration | `IHeadlessStartupValidator` | [Startup validators](#startup-validators) |
+| How long the host takes to start and become ready | `AddHostingInstrumentation()`, `HostingDiagnostics.MeterName` | [Startup metrics](#startup-metrics) |
 | Fail at start when a provider package is missing | `RequireRegisteredService<T>` | [Required services](#required-services) |
 | Validated options | `Configure<TOptions, TValidator>` | [Options with validation](#options-with-validation) |
 | Conditional, replacing, and decorating registrations | `AddIf`, `AddOrReplace*`, `TryDecorateWith` | [Service registration helpers](#service-registration-helpers) |
@@ -724,6 +725,21 @@ services.AddStartupValidator<OrdersModelValidator>();
 - **Registration.** `AddStartupValidator<T>()` and `AddStartupValidator(Type)` add a validator type once. `AddStartupValidator(Func<IServiceProvider, IHeadlessStartupValidator>)` adds one on every call, for one validator per named instance.
 - **Cheap checks only.** Validators run on every instance on every start and cannot be turned off. Keep them to in-memory checks: options, EF model metadata, DI registrations, and wiring flags. Put network I/O in a [warm-up](#warm-up) or a [resource provisioner](#resource-provisioning).
 - **Warnings.** A validator that only warns logs through an injected logger and returns normally.
+
+### Startup metrics
+
+The host records how long it takes to start and to become ready under the `Headless.Hosting` meter (`HostingDiagnostics.MeterName`). Subscribe with `metrics.AddHostingInstrumentation()` (namespace `OpenTelemetry.Metrics`), or with `AddMeter` and the constant. `builder.AddHeadless()` with `OpenTelemetry.Enabled` already subscribes to every `Headless.*` meter. Nothing is recorded until something subscribes.
+
+| Instrument | Kind | Unit | Attributes | Meaning |
+| --- | --- | --- | --- | --- |
+| `headless.hosting.startup_validator.duration` | Histogram | `ms` | `headless.hosting.startup_validator.name`, `headless.hosting.startup_validator.outcome` (`success`, `failure`), `error.type` on failure | One run of one [startup validator](#startup-validators), at every start and in every [host verb](#host-verbs). The name is the validator's full type name; a generic validator records its generic definition (``MyApp.TenantValidator`1``). A cancelled start records nothing. |
+| `headless.hosting.warmup.duration` | Histogram | `ms` | `headless.hosting.warmup.name`, `headless.hosting.warmup.attempt`, `headless.hosting.warmup.outcome` (`success`, `failure`), `error.type` on failure | One attempt of one [warm-up](#warm-up), excluding the back-off before it. The name is `IWarmup.Name`. `attempt` is an integer from 1 to 10, and `10` covers the tenth and every later attempt, so a warm-up that keeps failing adds no new series. An attempt cut short by the host stopping records nothing. |
+| `headless.hosting.start.duration` | Histogram | `ms` | none | Time from the operating-system process start, runtime startup included, until the host raised `ApplicationStarted`. Recorded once per host start, in a host that registers a startup validator or a warm-up. `AddHeadless()` registers a validator, so every host it sets up records it. |
+| `headless.hosting.ready.duration` | Histogram | `ms` | none | Time from the operating-system process start until the `warmup` readiness check first passes: every warm-up whose `GatesReadiness` is `true` has finished. Recorded once per host start, in a host that registers a warm-up. With no gating warm-up, the check passes as the host starts, so this can come out shorter than `headless.hosting.start.duration`. |
+
+The two process-start measurements are skipped on a platform that does not report the process start time, such as browser WebAssembly. No measurement carries an exception message or a configuration value.
+
+**Verify:** run the host with `metrics.AddHostingInstrumentation()` and the console or OTLP exporter, start it, and read one `headless.hosting.start.duration` point, one `headless.hosting.ready.duration` point once `/health` reports the `warmup` check `Healthy`, and one `headless.hosting.warmup.duration` point per warm-up attempt. In a test, record the meter with `TelemetryRecorder(HostingDiagnostics.MeterName)` from `Headless.Testing` and assert on `recorder.Of("headless.hosting.ready.duration")` after `WaitForWarmupAsync` returns.
 
 ### Required services
 

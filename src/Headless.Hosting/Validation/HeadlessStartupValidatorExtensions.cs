@@ -75,6 +75,7 @@ public static class HeadlessStartupValidatorExtensions
         {
             // Idempotent by implementation type, so one runner serves every validator in the host.
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, StartupValidationRunner>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, HostStartTelemetry>());
 
             return services;
         }
