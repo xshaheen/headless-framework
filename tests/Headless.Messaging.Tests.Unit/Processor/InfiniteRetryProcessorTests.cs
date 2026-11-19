@@ -38,7 +38,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         var secondDelay = timeProvider.DelayAt(1);
 
         await timeProvider.FireNextTimerAsync();
-        await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await run.Bounded();
 
         // then: each wait is the doubled base delay plus 0-25% jitter
         firstDelay.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
@@ -77,7 +77,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         var secondFailureDelay = timeProvider.DelayAt(1);
 
         await timeProvider.FireNextTimerAsync();
-        await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await run.Bounded();
 
         // then: the post-recovery wait restarts from the initial 1s (plus 0-25% jitter)
         secondFailureDelay.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
@@ -101,7 +101,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         var sut = new InfiniteRetryProcessor(inner, LoggerFactory);
 
         // when
-        await sut.ProcessAsync(context).WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await sut.ProcessAsync(context).Bounded();
 
         // then
         inner.Calls.Should().Be(1);
@@ -135,7 +135,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         inner.Calls.Should().Be(1);
 
         await timeProvider.FireNextTimerAsync();
-        await run.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await run.Bounded();
         inner.Calls.Should().Be(2);
     }
 
