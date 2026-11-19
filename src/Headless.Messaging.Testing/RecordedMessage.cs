@@ -49,10 +49,10 @@ public sealed record RecordedMessage
 
     /// <summary>
     /// Whether the framework wrote this message inside the caller's unit-of-work transaction, as stamped in the
-    /// <c>headless-delivery-coordinated</c> header. <see langword="null"/> when the headers record no answer,
-    /// which means unknown rather than "not coordinated".
+    /// <c>headless-delivery-enlisted</c> header. <see langword="null"/> when the headers record no answer,
+    /// which means unknown rather than "not enlisted".
     /// </summary>
-    public bool? IsCoordinated { get; init; }
+    public bool? IsEnlisted { get; init; }
 
     /// <summary>
     /// UTC wall-clock time when the observation was recorded — publish acknowledgment
@@ -94,7 +94,7 @@ public sealed record RecordedMessage
             Lane = lane,
             RequestedDeliveryMode = delivery.RequestedDeliveryMode,
             ResolvedDeliveryMode = delivery.ResolvedDeliveryMode,
-            IsCoordinated = delivery.IsCoordinated,
+            IsEnlisted = delivery.IsEnlisted,
             Timestamp = timestamp,
             Exception = exception,
         };

@@ -93,7 +93,7 @@ public sealed class CoordinatedHarnessTests : TestBase
         published.Message.Should().BeOfType<CoordinatedOrderPlaced>().Which.Id.Should().Be("C1");
         published.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
         published.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
-        published.IsCoordinated.Should().BeTrue();
+        published.IsEnlisted.Should().BeTrue();
         harness.Published.Should().ContainSingle();
     }
 
@@ -176,7 +176,7 @@ public sealed class CoordinatedHarnessTests : TestBase
             AbortToken
         );
 
-        published.IsCoordinated.Should().BeFalse();
+        published.IsEnlisted.Should().BeFalse();
     }
 
     [Fact]

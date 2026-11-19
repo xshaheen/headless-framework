@@ -153,9 +153,9 @@ public static class Headers
     /// discarded when that transaction rolls back. Values are the lowercase literals <c>"true"</c> and
     /// <c>"false"</c>. An absent header means the question was never recorded, not <c>"false"</c>.
     /// This header is framework-owned and cannot be overridden.
-    /// Value: "headless-delivery-coordinated"
+    /// Value: "headless-delivery-enlisted"
     /// </summary>
-    public const string DeliveryCoordinated = "headless-delivery-coordinated";
+    public const string DeliveryEnlisted = "headless-delivery-enlisted";
 
     /// <summary>
     /// Exception information if the message processing failed.

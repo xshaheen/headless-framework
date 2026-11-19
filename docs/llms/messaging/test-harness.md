@@ -45,7 +45,7 @@ await harness.RunInUnitOfWorkAsync(async (sp, unit) =>
 
 var recorded = await harness.WaitForPublishedAsync<OrderPlaced>(TimeSpan.FromSeconds(5));
 recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
-recorded.IsCoordinated.Should().BeTrue();
+recorded.IsEnlisted.Should().BeTrue();
 ```
 
 To test an application whose `Program` registers a broker, replace its transport in the test host. With `WebApplicationFactory<Program>`, register both calls inside `ConfigureTestServices`, which runs after the application's registrations:
@@ -66,7 +66,7 @@ await harness.WaitForConsumedAsync<OrderPlaced>(TimeSpan.FromSeconds(5), cancell
 ### API
 
 - **Waits.** `WaitForPublishedAsync<T>(...)`, `WaitForConsumedAsync<T>(...)`, `WaitForFaultedAsync<T>(...)`, and `WaitForTerminalAsync<T>(...)` return once a match arrives, or throw `MessageObservationTimeoutException` when the timeout passes. Overloads take a payload predicate. `WaitForPublishedAsync<T>(MessageLane.Bus)` or `MessageLane.Queue` tells apart identical payloads sent on the two lanes. The `timeout` parameter defaults to `MessagingTestHarness.DefaultTimeout` (5 seconds).
-- **`RecordedMessage`.** `RequestedDeliveryMode` and `ResolvedDeliveryMode` report what was asked for and what ran. `IsCoordinated` (`bool?`) reports whether the row was written inside a unit of work.
+- **`RecordedMessage`.** `RequestedDeliveryMode` and `ResolvedDeliveryMode` report what was asked for and what ran. `IsEnlisted` (`bool?`) reports whether the row was written inside a unit of work.
 - **`RunInUnitOfWorkAsync(...)`** creates a service scope, begins a resource-less unit of work on it, and passes the delegate both that scope's `IServiceProvider` and the `IUnitOfWork` (`Func<IServiceProvider, IUnitOfWork, Task>`, plus a `Task<TResult>` overload). Publish through the unit's `Outbox` inside the delegate to test an enlisted publish against a real commit or rollback.
 - **`ResetAsync()`** drains in-flight publish and consume work, then clears a shared harness.
 - **`IServiceProvider.ResetMessagingHarnessAsync()`** resolves the registered harness and calls `ResetAsync()`, and does nothing when no harness is registered. A shared test host resets through it, for example `await server.Services.ResetMessagingHarnessAsync(cancellationToken)`.

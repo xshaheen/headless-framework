@@ -14,14 +14,14 @@ public sealed class DeliveryMetadataTests
         {
             [Headers.RequestedDeliveryMode] = nameof(DeliveryMode.Durable),
             [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Direct),
-            [Headers.DeliveryCoordinated] = "true",
+            [Headers.DeliveryEnlisted] = "true",
         };
 
         var delivery = DeliveryMetadata.Read(headers);
 
         delivery.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
         delivery.ResolvedDeliveryMode.Should().Be(DeliveryMode.Direct);
-        delivery.IsCoordinated.Should().BeTrue();
+        delivery.IsEnlisted.Should().BeTrue();
     }
 
     [Fact]
@@ -31,14 +31,14 @@ public sealed class DeliveryMetadataTests
         {
             [Headers.RequestedDeliveryMode] = "auto",
             [Headers.ResolvedDeliveryMode] = "customer-controlled-value",
-            [Headers.DeliveryCoordinated] = "always",
+            [Headers.DeliveryEnlisted] = "always",
         };
 
         var delivery = DeliveryMetadata.Read(headers);
 
         delivery.RequestedDeliveryMode.Should().BeNull();
         delivery.ResolvedDeliveryMode.Should().BeNull();
-        delivery.IsCoordinated.Should().BeNull();
+        delivery.IsEnlisted.Should().BeNull();
     }
 
     [Fact]
@@ -52,11 +52,11 @@ public sealed class DeliveryMetadataTests
             [Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable),
         };
 
-        DeliveryMetadata.Read(headers).IsCoordinated.Should().BeNull();
+        DeliveryMetadata.Read(headers).IsEnlisted.Should().BeNull();
 
         var stored = DeliveryMetadata.ReadStoredHeaders(headers);
         stored.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
-        stored.IsCoordinated.Should().BeNull();
+        stored.IsEnlisted.Should().BeNull();
     }
 
     [Theory]
@@ -66,10 +66,10 @@ public sealed class DeliveryMetadataTests
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [Headers.DeliveryCoordinated] = headerValue,
+            [Headers.DeliveryEnlisted] = headerValue,
         };
 
-        DeliveryMetadata.Read(headers).IsCoordinated.Should().Be(expected);
+        DeliveryMetadata.Read(headers).IsEnlisted.Should().Be(expected);
     }
 
     [Fact]
@@ -79,8 +79,8 @@ public sealed class DeliveryMetadataTests
 
         DeliveryMetadata.Stamp(headers, _Decision(requireCoordination: true, coordinated: true));
 
-        headers[Headers.DeliveryCoordinated].Should().Be("true");
-        DeliveryMetadata.Read(headers).IsCoordinated.Should().BeTrue();
+        headers[Headers.DeliveryEnlisted].Should().Be("true");
+        DeliveryMetadata.Read(headers).IsEnlisted.Should().BeTrue();
     }
 
     [Fact]
@@ -90,8 +90,8 @@ public sealed class DeliveryMetadataTests
 
         DeliveryMetadata.Stamp(headers, _Decision(requireCoordination: false, coordinated: false));
 
-        headers[Headers.DeliveryCoordinated].Should().Be("false");
-        DeliveryMetadata.Read(headers).IsCoordinated.Should().BeFalse();
+        headers[Headers.DeliveryEnlisted].Should().Be("false");
+        DeliveryMetadata.Read(headers).IsEnlisted.Should().BeFalse();
     }
 
     [Fact]

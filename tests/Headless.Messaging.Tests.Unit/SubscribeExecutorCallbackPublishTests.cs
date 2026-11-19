@@ -303,7 +303,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         result.Succeeded.Should().BeTrue();
         var rows = await _PublishedRowsAsync(host);
         rows.Select(row => row.Name).Should().Equal(_CallbackName);
-        rows[0].IsCoordinated.Should().BeTrue();
+        rows[0].IsEnlisted.Should().BeTrue();
     }
 
     [Fact]
@@ -325,7 +325,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         result.Succeeded.Should().BeTrue();
         var rows = await _PublishedRowsAsync(host);
         rows.Select(row => row.Name).Should().Equal(_CallbackName);
-        rows[0].IsCoordinated.Should().BeFalse();
+        rows[0].IsEnlisted.Should().BeFalse();
         countingProvider.ScopesCreated.Should().Be(0);
     }
 }

@@ -8,7 +8,7 @@ namespace Headless.Messaging.Internal;
 internal readonly record struct DeliveryMetadataValues(
     DeliveryMode? RequestedDeliveryMode,
     DeliveryMode? ResolvedDeliveryMode,
-    bool? IsCoordinated = null
+    bool? IsEnlisted = null
 );
 
 internal static class DeliveryMetadata
@@ -20,21 +20,21 @@ internal static class DeliveryMetadata
     {
         headers[Headers.RequestedDeliveryMode] = decision.RequestedMode.ToString("G");
         headers[Headers.ResolvedDeliveryMode] = decision.ResolvedMode.ToString("G");
-        headers[Headers.DeliveryCoordinated] = decision.IsTransactional ? _True : _False;
+        headers[Headers.DeliveryEnlisted] = decision.IsTransactional ? _True : _False;
     }
 
     internal static DeliveryMetadataValues Read(IDictionary<string, string?> headers)
     {
         var hasRequested = headers.TryGetValue(Headers.RequestedDeliveryMode, out var requestedValue);
         var hasResolved = headers.TryGetValue(Headers.ResolvedDeliveryMode, out var resolvedValue);
-        var hasCoordinated = headers.TryGetValue(Headers.DeliveryCoordinated, out var coordinatedValue);
+        var hasEnlisted = headers.TryGetValue(Headers.DeliveryEnlisted, out var enlistedValue);
 
-        if (!hasRequested && !hasResolved && !hasCoordinated)
+        if (!hasRequested && !hasResolved && !hasEnlisted)
         {
             return default;
         }
 
-        return new(_Parse(requestedValue), _Parse(resolvedValue), _ParseCoordinated(coordinatedValue));
+        return new(_Parse(requestedValue), _Parse(resolvedValue), _ParseEnlisted(enlistedValue));
     }
 
     internal static DeliveryMetadataValues ReadStoredHeaders(IDictionary<string, string?> headers)
@@ -42,7 +42,7 @@ internal static class DeliveryMetadata
         var hasMetadata =
             headers.ContainsKey(Headers.RequestedDeliveryMode)
             || headers.ContainsKey(Headers.ResolvedDeliveryMode)
-            || headers.ContainsKey(Headers.DeliveryCoordinated);
+            || headers.ContainsKey(Headers.DeliveryEnlisted);
 
         return hasMetadata
             ? Read(headers)
@@ -86,8 +86,8 @@ internal static class DeliveryMetadata
 
     // Same exact-value rule as the delivery modes: an absent, unknown, or customer-controlled value projects as
     // "not recorded". A row that predates this header must read as unknown, never as false — reporting it as
-    // "not coordinated" asserts an answer the row never carried.
-    private static bool? _ParseCoordinated(string? value)
+    // "not enlisted" asserts an answer the row never carried.
+    private static bool? _ParseEnlisted(string? value)
     {
         if (string.Equals(value, _True, StringComparison.Ordinal))
         {

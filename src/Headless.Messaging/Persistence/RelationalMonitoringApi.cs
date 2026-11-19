@@ -349,7 +349,7 @@ internal sealed class RelationalMonitoringApi(
                         var delivery = DeliveryMetadata.ReadStoredEnvelope(serializer, message.Content);
                         message.RequestedDeliveryMode = delivery.RequestedDeliveryMode;
                         message.ResolvedDeliveryMode = delivery.ResolvedDeliveryMode;
-                        message.IsCoordinated = delivery.IsCoordinated;
+                        message.IsEnlisted = delivery.IsEnlisted;
                         messages.Add(message);
                     }
 

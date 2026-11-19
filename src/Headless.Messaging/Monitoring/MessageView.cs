@@ -38,9 +38,9 @@ public class MessageView
     /// <summary>
     /// Gets or sets whether the row was written inside the caller's unit-of-work transaction, or
     /// <see langword="null"/> when the row records no answer (legacy or unreadable metadata). A null here means
-    /// unknown, never "not coordinated".
+    /// unknown, never "not enlisted".
     /// </summary>
-    public bool? IsCoordinated { get; set; }
+    public bool? IsEnlisted { get; set; }
 
     /// <summary>Gets or sets the serialized message body, or <see langword="null"/> when the content was not projected.</summary>
     public string? Content { get; set; }
