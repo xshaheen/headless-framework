@@ -147,8 +147,8 @@ wall-clock 10 tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/Sq
 real-wait 1 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsApplicationConfigurationConformanceTests.cs
 wall-clock 3 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsApplicationConfigurationConformanceTests.cs
 wall-clock 6 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsAttemptHistoryConformanceTests.cs
-real-wait 2 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChainConformanceTests.cs
-wall-clock 46 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChainConformanceTests.cs
+real-wait 1 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChainConformanceTests.cs
+wall-clock 44 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChainConformanceTests.cs
 real-wait 1 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChangeMarkerConformanceTests.cs
 wall-clock 22 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsChangeMarkerConformanceTests.cs
 wall-clock 32 tests/Headless.Jobs.EntityFramework.Tests.Harness/JobsClaimConformanceTests.cs

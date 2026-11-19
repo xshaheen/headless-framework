@@ -105,6 +105,40 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_and_log_when_the_release_signal_throws()
+    {
+        // given — a signal that breaks its no-throw contract, as a custom or broker-backed one might
+        var logger = new LevelCapturingLogger<DistributedSemaphoreProvider>();
+        var releaseSignal = Substitute.For<IDistributedLockReleaseSignal>();
+        releaseSignal
+            .When(x => x.Announce(Arg.Any<string>(), Arg.Any<string>()))
+            .Do(_ => throw new InvalidOperationException("broker unavailable"));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        var provider = new DistributedSemaphoreProvider(
+            _storage,
+            releaseSignal,
+            new DistributedLockOptions(),
+            _guidGenerator,
+            _timeProvider,
+            logger
+        );
+        var resource = Faker.Random.AlphaNumeric(10);
+        var semaphore = provider.CreateSemaphore(resource, maxCount: 1);
+        var slot = await semaphore.AcquireAsync(cancellationToken: AbortToken);
+
+        // when
+        var act = async () => await slot.ReleaseAsync();
+
+        // then — the confirmed release stands and the failure is logged as a warning
+        await act.Should().NotThrowAsync();
+        (await provider.GetHolderCountAsync(resource, AbortToken)).Should().Be(0);
+        releaseSignal.Received(1).Announce(resource, slot.LeaseId);
+        logger
+            .Entries.Should()
+            .Contain((DistributedLockTestSupport.ReleaseSignalAnnounceFailedEventId, LogLevel.Warning));
+    }
+
+    [Fact]
     public async Task should_report_holder_count()
     {
         // given

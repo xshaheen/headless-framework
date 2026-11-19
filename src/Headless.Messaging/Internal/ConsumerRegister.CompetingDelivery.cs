@@ -117,7 +117,7 @@ internal sealed partial class ConsumerRegister
                 _logger.MessageReceived(safeMessageId, safeMessageName);
             }
 
-            traceHandle = _TracingBefore(transportMessage, lane, _serverAddress);
+            traceHandle = _TracingBefore(transportMessage, lane, client.BrokerAddress);
 
             Message message;
 
@@ -144,7 +144,7 @@ internal sealed partial class ConsumerRegister
                     MessagingMetrics.RecordReceiveOutcome(receiveOutcomeTag);
                     traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, receiveOutcomeTag);
 
-                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                     consumeOutcomeRecorded = true;
 
                     // Settlement is must-complete: never abandon a commit on host shutdown.
@@ -190,7 +190,7 @@ internal sealed partial class ConsumerRegister
                         MessagingMetrics.ReceiveOutcomeExpired
                     );
 
-                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                     consumeOutcomeRecorded = true;
 
                     // Settlement is must-complete: never abandon a commit on host shutdown.
@@ -255,7 +255,7 @@ internal sealed partial class ConsumerRegister
                         MessagingMetrics.ReceiveOutcomeSkipped
                     );
 
-                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                     consumeOutcomeRecorded = true;
 
                     // Settlement is must-complete: never abandon a commit on host shutdown.
@@ -379,7 +379,7 @@ internal sealed partial class ConsumerRegister
 
                     if (!consumeOutcomeRecorded)
                     {
-                        _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                        _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                         consumeOutcomeRecorded = true;
                     }
 
@@ -542,7 +542,7 @@ internal sealed partial class ConsumerRegister
                 }
                 else
                 {
-                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                     consumeOutcomeRecorded = true;
                 }
             }
@@ -575,7 +575,7 @@ internal sealed partial class ConsumerRegister
 
                     runtimeMessage.Origin = message;
                     clientHandle.RecordDeliveryTakenIn();
-                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                     consumeOutcomeRecorded = true;
 
                     // The executor releases the HalfOpen probe with this epoch; without it the
@@ -645,7 +645,7 @@ internal sealed partial class ConsumerRegister
                     );
                 }
 
-                _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                _TracingAfter(traceHandle, transportMessage, client.BrokerAddress);
                 consumeOutcomeRecorded = true;
 
                 // Settlement is must-complete: never abandon a commit on host shutdown.

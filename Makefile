@@ -1463,8 +1463,9 @@ test-package-verifier: ## Run isolated positive and negative package-verifier fi
 # bench-compare reads; the default `short` job trades precision for a run an agent can wait on.
 # Every run happens in a temporary worktree: BenchmarkDotNet locates its project by searching the
 # repository for <name>.csproj, and the copies under .worktrees/ make that search ambiguous. The
-# working tree is captured with `git stash create`, which includes uncommitted changes to tracked
-# files (not untracked ones) without touching the index or the stash list.
+# working tree is captured as a throwaway commit built through a temporary index (`git add -A`), so
+# uncommitted changes and untracked, non-ignored files (a new benchmark project) are both included
+# without touching the real index or the stash list.
 BENCH_AREA ?=
 BENCH_FILTER ?= *
 BENCH_JOB ?= short
@@ -1476,7 +1477,13 @@ BENCH_RUN = bench_run() { \
 	printf '\033[36m[bench]\033[0m %s in %s\n' "$$ref" "$$tree"; \
 	(cd "$$tree" && $(DOTNET) run --configuration Release --project "benchmarks/Headless.$(BENCH_AREA).Benchmarks" -- $(BENCH_ARGS) --artifacts "$$out") && rc=0 || rc=$$?; \
 	git worktree remove --force "$$tree" >/dev/null 2>&1 || rm -rf "$$tree"; return $$rc; }; \
-	working_tree_ref() { local ref; ref="$$(git stash create 2>/dev/null || true)"; if [ -n "$$ref" ]; then echo "$$ref"; else git rev-parse HEAD; fi; }
+	working_tree_ref() { \
+	local head dir tree rc; head="$$(git rev-parse HEAD)" || return 1; \
+	dir="$$(mktemp -d "$${TMPDIR:-/tmp}/headless-bench-index.XXXXXX")" || return 1; \
+	cp "$$(git rev-parse --git-path index)" "$$dir/index" 2>/dev/null || GIT_INDEX_FILE="$$dir/index" git read-tree HEAD; \
+	tree="$$(GIT_INDEX_FILE="$$dir/index" git add -A >/dev/null && GIT_INDEX_FILE="$$dir/index" git write-tree)" && rc=0 || rc=$$?; \
+	rm -rf "$$dir"; [ "$$rc" -eq 0 ] || return "$$rc"; \
+	if [ "$$tree" = "$$(git rev-parse "$$head^{tree}")" ]; then echo "$$head"; else git commit-tree "$$tree" -p "$$head" -m "bench: working tree"; fi; }
 
 .PHONY: bench
 bench: ## Run BENCH_AREA benchmarks for the working tree (BENCH_FILTER, BENCH_JOB=short); JSON under artifacts/benchmark-runs/.

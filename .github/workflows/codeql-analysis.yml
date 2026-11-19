@@ -67,8 +67,6 @@ jobs:
       # Build-mode none reads the project.assets.json files a restore leaves when it resolves dependencies, so
       # restoring with the token first lets it find the private Headless SDK packages instead of guessing.
       - name: "Restore"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore
 
       # A traced build of the whole solution took 25-41 minutes, so most runs were cancelled by the next push

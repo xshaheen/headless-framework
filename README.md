@@ -172,7 +172,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Audit log | `AddHeadlessAuditLog` | `UsePostgreSqlEntityFramework<TContext>`, `UseSqlServerEntityFramework<TContext>`, `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | CAPTCHA | `AddHeadlessCaptcha` | `UseReCaptchaV2`, `UseReCaptchaV3`, `UseTurnstile` |
-| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`, `UseKafka`, `UseAws`, `UseAzureServiceBus`, `UseNats`, `UseRedis`, `UseInMemory`. Storage: `UsePostgreSql`, `UseSqlServer`, `UseInMemoryStorage` |
+| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`, `UseKafka`, `UseAws`, `UseAzureServiceBus`, `UseNats`, `UseRedis`, `UseInMemory`. Named transport: `AddTransport(name)` with `UseRabbitMq` or `UseInMemory`. Storage: `UsePostgreSql`, `UseSqlServer`, `UseInMemoryStorage` |
 | Background jobs | `AddHeadlessJobs` | EF Core persistence with PostgreSQL or SQL Server atomic claims |
 
 Two rules follow from that shape:

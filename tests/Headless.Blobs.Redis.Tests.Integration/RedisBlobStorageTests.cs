@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Blobs;
-using Headless.Blobs.Internal;
 using Headless.Blobs.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Options;

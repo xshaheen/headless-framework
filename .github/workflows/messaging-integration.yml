@@ -135,7 +135,6 @@ jobs:
       # A leg runs a transport's suite and its storage combinations, built once on one runner.
       - name: "Restore the leg's integration projects"
         env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PROJECTS: ${{ join(matrix.leg.projects, ' ') }}
         run: |
           set -euo pipefail
@@ -200,8 +199,6 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Restore the chaos project"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Messaging.Tests.Chaos/Headless.Messaging.Tests.Chaos.csproj
 
       - name: "Run the chaos and soak suite"
@@ -261,8 +258,6 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Restore the messaging unit-test project"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
 
       - name: "Check that every quarantine links an open issue"

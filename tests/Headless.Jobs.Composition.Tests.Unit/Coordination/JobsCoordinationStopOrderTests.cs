@@ -47,11 +47,15 @@ public sealed class JobsCoordinationStopOrderTests : TestBase
         if (coordinationRegisteredLast)
         {
             builder.Services.AddHostedService(_ => draining);
-            builder.Services.AddCoordinationCore<RecordingMembershipStore>(_ => { });
+            builder.Services.AddHeadlessCoordination(setup =>
+                setup.RegisterExtension(new MembershipStoreProviderExtension<RecordingMembershipStore>())
+            );
         }
         else
         {
-            builder.Services.AddCoordinationCore<RecordingMembershipStore>(_ => { });
+            builder.Services.AddHeadlessCoordination(setup =>
+                setup.RegisterExtension(new MembershipStoreProviderExtension<RecordingMembershipStore>())
+            );
             builder.Services.AddHostedService(_ => draining);
         }
 

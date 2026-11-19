@@ -5,140 +5,91 @@ packages: Imaging.Abstractions, Imaging, Imaging.NetVips
 
 # Imaging
 
-> Image resizing, compression, format conversion, and inspection pipeline with contributor-based extensibility, powered by libvips through NetVips.
+> Resizes, compresses, converts, and inspects images through libvips (NetVips), behind a contributor pipeline you can extend.
 
 ## Orientation
 
-Install all three packages for a complete imaging pipeline:
+Install three packages and one libvips source:
 
-- `Headless.Imaging.Abstractions` — interfaces (`IImageResizer`, `IImageCompressor`, `IImageInspector`) and argument/result types
-- `Headless.Imaging` — orchestration layer, `ImagingOptions`, DI registration via `AddHeadlessImaging(imaging => …)`
-- `Headless.Imaging.NetVips` — libvips-backed contributors chosen with `imaging.UseNetVips()`; the application also adds `NetVips.Native` or installs libvips
+- `Headless.Imaging.Abstractions`: `IImageResizer`, `IImageCompressor`, `IImageInspector`, and their argument and result types.
+- `Headless.Imaging`: the pipeline that routes calls to contributors, `ImagingOptions`, and `AddHeadlessImaging(...)`.
+- `Headless.Imaging.NetVips`: the libvips contributors, chosen with `imaging.UseNetVips(...)`, and `NetVipsOptions`.
+- libvips itself: the `NetVips.Native` package, or libvips 8.15 or later on the host. See [Choose a libvips source](#choose-a-libvips-source).
 
-Typical registration:
+All three packages use the `Headless.Imaging` namespace.
 
-```csharp
-builder.Services.AddHeadlessImaging(imaging =>
-    imaging
-        .Configure(options => options.DefaultResizeMode = ImageResizeMode.Max)
-        .UseNetVips(options =>
-        {
-            options.JpegQuality = 80;
-            options.WebpQuality = 80;
-        })
-);
-```
-
-Reads, resizes, and converts between JPEG, PNG, WebP, GIF (animated included), TIFF, and AVIF; compresses into JPEG, PNG, WebP, and AVIF; inspects all six from their headers. BMP is not supported.
+| Format | Inspect | Resize and convert | Compress into |
+| --- | --- | --- | --- |
+| JPEG, PNG, WebP, AVIF | Yes | Yes | Yes |
+| GIF (animated included), TIFF | Yes | Yes | No. Compress them only into JPEG, PNG, WebP, or AVIF. |
+| BMP, SVG, PDF, HEIC, JPEG XL | `Unsupported` | `Unsupported` | `Unsupported` |
 
 ## Agent Rules
 
-- Always install all three packages (Abstractions + Core + NetVips) for a working pipeline, plus a libvips: `NetVips.Native` for the bundled binaries, or libvips 8.15 or later on the host. Abstractions alone provides no implementation; Core alone has no image-processing backend; `Headless.Imaging.NetVips` alone has no native library, and its contributors throw `InvalidOperationException` when first resolved.
-- Inject `IImageResizer` for resizing, `IImageCompressor` for compression, and `IImageInspector` to read an image's format, displayed size, frame count, and transparency without decoding it. All three are registered as singletons.
-- `ImageResizeArgs` is constructed via its constructors — it has no settable `Width`/`Height`/`Mode` object-initializer properties. Pick the right overload: `(ImageResizeMode, int width, int? height, string? mimeType)`, `(ImageResizeMode, int? width, int height, string? mimeType)`, or `(ImageResizeMode, int width, int height, string? mimeType)`. Negative values throw `ArgumentException` at construction time.
-- Check `result.IsDone` before accessing `result.Result`. When `IsDone` is `false`, `result.Error` is non-null and `result.Result` is null. This is enforced by `[MemberNotNullWhen]` attributes.
-- For `ImageStreamResizeResult`: access the processed image via `result.Result.Content` (a `Stream`), not `.Stream`. The result also carries `result.Result.MimeType`, `result.Result.Width`, and `result.Result.Height`.
-- `ImageCompressArgs` takes an optional input `mimeType` hint and an optional `OutputMimeType`. It carries no quality setting — quality is governed by `NetVipsOptions` (`JpegQuality`, `WebpQuality`, `AvifQuality`, `PngCompressionLevel`).
-- The `mimeType` on `ImageResizeArgs` and `ImageCompressArgs` is a hint about the input: a contributor skips a hinted type it does not handle, and otherwise detects the format from the bytes. To change the format, set `OutputMimeType` (`new ImageResizeArgs(ImageResizeMode.Max, 800, 600) { OutputMimeType = ContentTypes.Images.Webp }`); without it the output keeps the source format. `result.Result.MimeType` on a resize is always the format actually written.
-- `ImageResizeMode.Default` is the zero/unset value (`default(ImageResizeMode)`) and acts as the sentinel meaning "use the pipeline default". It is resolved at runtime to `ImagingOptions.DefaultResizeMode`. If `DefaultResizeMode` is also `None` (the default), the image is returned unchanged.
-- `ImageResizeMode.None` is an explicit, distinct value that skips resizing. Without an `OutputMimeType` it returns the original stream; with one it converts at the source size. Use `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, or `Stretch` for actual resizing.
-- The compressor returns `ImageProcessState.Failed` when the compressed output is larger than the original — it never bloats a file. Check `result.IsDone` to detect this case.
-- Contributors are iterated in **reverse registration order**. The last-registered contributor is tried first. A custom contributor registered after `AddHeadlessImaging(...)` takes priority over the NetVips contributors.
-- Non-seekable input streams are automatically buffered into a `MemoryStream` by the resize, compress, and inspect pipelines (the internal `IImageResizer`/`IImageCompressor`/`IImageInspector` implementations). Callers do not need to buffer for a single call; to inspect and then resize or compress the same upload, pass a seekable stream, because each pipeline's buffer lives only for its own call.
-- Returned `Stream` objects in results are owned by the caller. Dispose them when done.
-- GIF and TIFF are compressed only into another format: `IImageCompressor` returns `ImageProcessState.Unsupported` for a GIF or TIFF without an `OutputMimeType`, and for an `OutputMimeType` of GIF or TIFF. BMP, SVG, PDF, HEIC, and JPEG XL are not supported by any contributor, the inspector included, and return `Unsupported`.
-- An image above `NetVipsOptions.MaxPixels`, or a resize request whose output would exceed it, returns `ImageProcessState.Failed`, not `Unsupported`, so no other contributor is offered the image.
-- `IImageInspector` reads only headers: `Done` means the pipeline accepts the format, not that every pixel decodes, and it reports sizes above `MaxPixels` instead of refusing them. Use it to validate uploads by their bytes rather than their claimed content type.
-- Cancelling the token stops a running libvips decode or encode within a few milliseconds and throws `OperationCanceledException`.
-- Register imaging once, with `services.AddHeadlessImaging(imaging => imaging.UseNetVips())`. `AddHeadlessImaging` throws `InvalidOperationException` when no provider is chosen or when it is called a second time on the same service collection. The NetVips contributor implementations are internal — register them only through `UseNetVips()`, never by type.
-
----
+- Register imaging once: `services.AddHeadlessImaging(imaging => imaging.UseNetVips())`. `AddHeadlessImaging` throws `InvalidOperationException` when no provider is chosen, and when it is called a second time on the same service collection. Put every `Configure` and `Use…` call in that one call.
+- Add a libvips source. Without `NetVips.Native` or a system libvips 8.15 or later, the first resolution of `IImageResizer`, `IImageCompressor`, or `IImageInspector` throws `InvalidOperationException` naming both fixes.
+- Inject `IImageResizer`, `IImageCompressor`, and `IImageInspector`, all singletons. The NetVips contributors are internal. Register them only through `UseNetVips()`.
+- Check `result.IsDone` before you read `result.Result`. When `IsDone` is `false`, `Error` is non-null and `Result` is `null`.
+- Read the resized image from `result.Result.Content`. A resize result also carries `MimeType` (the format actually written), `Width`, and `Height`. A compress result's `Result` is the `Stream` itself.
+- Dispose every returned `Stream`. The caller owns it.
+- Build `ImageResizeArgs` through a constructor: `(ImageResizeMode, int width, int? height = null, string? mimeType = null)`, `(ImageResizeMode, int? width, int height, string? mimeType = null)`, or `(ImageResizeMode, int width, int height, string? mimeType = null)`. `Width` and `Height` have no public setter. A zero or negative size throws `ArgumentException` at construction. `Mode` is settable.
+- Set `OutputMimeType` to change the format: `new ImageResizeArgs(ImageResizeMode.Max, 800, 600) { OutputMimeType = ContentTypes.Images.Webp }`. Without it, the output keeps the source format. The `mimeType` argument is only a hint about the input. A contributor skips a hinted type it does not handle and otherwise detects the format from the bytes.
+- Set quality in `NetVipsOptions` (`JpegQuality`, `WebpQuality`, `AvifQuality`, `PngCompressionLevel`). `ImageCompressArgs` has no quality setting.
+- Expect `ImageProcessState.Failed` from `CompressAsync` when the compressed output is not smaller than the input. The compressor never returns a larger file.
+- Validate an upload with `IImageInspector`, not its claimed content type. The inspector reads the format from the bytes.
+- Pass a seekable stream when one upload goes through two calls, such as inspect then resize. Each call buffers a non-seekable stream only for itself. `IFormFile.OpenReadStream()` is seekable.
+- Cancel through the token. A running libvips decode or encode stops within a few milliseconds and throws `OperationCanceledException`.
 
 ## Core Concepts
 
-### Abstraction layer
-
-`IImageResizer`, `IImageCompressor`, and `IImageInspector` are the only types application code should reference. Each accepts a `Stream` (the resizer and compressor also take typed args) and returns a result carrying either a processed `Stream` or an error.
-
 ### Contributor pipeline
 
-`Headless.Imaging` does not process images itself. It iterates a registered list of `IImageResizerContributor` / `IImageCompressorContributor` / `IImageInspectorContributor` instances in reverse order and returns the first non-`Unsupported` result. A contributor returns `ImageProcessState.Unsupported` to signal that it does not handle the given format; the orchestrator then tries the next contributor. This design allows multiple processing backends to coexist.
+`IImageResizer`, `IImageCompressor`, and `IImageInspector` each try their registered contributors (`IImageResizerContributor`, `IImageCompressorContributor`, `IImageInspectorContributor`) in reverse registration order and return the first result that is not `Unsupported`. The stream is rewound before each attempt. A contributor you register after `AddHeadlessImaging(...)` is tried before the NetVips contributors, with no need to remove them.
 
 ### Result model
 
-All results derive from `ImageProcessResult<T>` with three states:
+Every result derives from `ImageProcessResult<T>`:
 
 | `ImageProcessState` | Meaning |
-|---|---|
-| `Done` | Processing succeeded. `Result` is non-null; `Error` is null. |
-| `Unsupported` | No contributor could handle the format. `Error` describes why. |
-| `Failed` | A contributor attempted processing but it failed (e.g., compressed output was larger). |
+| --- | --- |
+| `Done` | Processing succeeded. `Result` is non-null and `Error` is `null`. |
+| `Unsupported` | No contributor handles the input. `Error` says why. The next contributor is tried. |
+| `Failed` | A contributor took the input and could not finish, for example because the compressed output was larger or the image is over `MaxPixels`. No other contributor is tried. |
 
-`IsDone` is a `[MemberNotNullWhen]`-annotated shorthand: `true` iff `State == Done`.
+`IsDone` is `true` only when `State` is `Done`. It carries `[MemberNotNullWhen]`, so the compiler knows `Result` is non-null after the check.
 
 ### Resize modes
 
-`ImageResizeMode` values. When only one side is given, the other follows the source aspect ratio before the mode applies:
+When you give only one side, the other side follows the source aspect ratio before the mode applies.
 
-| Mode | Behavior |
-|---|---|
-| `Default` | Zero/unset sentinel. Resolved at runtime to `ImagingOptions.DefaultResizeMode`. |
-| `None` | No resize — original stream returned as-is. |
-| `Max` | Scale down to fit within width × height, preserving aspect ratio. Never upscales. |
-| `Crop` | Fill and crop to exact width × height. `NetVipsOptions.CropFocus` picks the kept region. |
-| `Pad` | Resize to fit, then pad to exact width × height. The padding is transparent when the format has alpha, black for JPEG. |
-| `BoxPad` | Pad to width × height without resizing a source that fits; a larger source behaves like `Pad`. |
-| `Min` | Put the side whose target is nearest its source length exactly on the target, and scale the other side with the aspect ratio; no crop. Never upscales: a source smaller than the box on either side keeps its size. |
-| `Stretch` | Stretch to exact width × height, ignoring aspect ratio. |
+| `ImageResizeMode` | Behavior |
+| --- | --- |
+| `Default` | The unset value. Replaced at run time by `ImagingOptions.DefaultResizeMode`. If that is `None` (its default), the image is not resized. |
+| `None` | No resize. Without an `OutputMimeType`, returns the source bytes. With one, converts at the source size. |
+| `Max` | Scales down to fit inside width × height and keeps the aspect ratio. Never upscales. |
+| `Crop` | Fills width × height exactly and crops the rest. `NetVipsOptions.CropFocus` picks the kept region. |
+| `Pad` | Fits inside width × height, then pads to the exact size. Padding is transparent when the format has alpha, and white for JPEG. |
+| `BoxPad` | Pads to width × height without resizing a source that fits. A larger source behaves like `Pad`. |
+| `Min` | Puts the side whose target is nearest its source length exactly on the target and scales the other side with the aspect ratio. No crop. Never upscales: a source smaller than the box on either side keeps its size. |
+| `Stretch` | Stretches to width × height exactly and ignores the aspect ratio. |
 
 ---
 
 ## Headless.Imaging.Abstractions
 
-Defines the provider-agnostic contracts for image processing operations.
+The contracts application code depends on: `IImageResizer.ResizeAsync(Stream, ImageResizeArgs, CancellationToken)`, `IImageCompressor.CompressAsync(Stream, ImageCompressArgs, CancellationToken)`, and `IImageInspector.InspectAsync(Stream, CancellationToken)`. It has no registration and no options.
 
-### API and behavior
-
-- `IImageResizer` — resize interface: `ResizeAsync(Stream, ImageResizeArgs, CancellationToken)`
-- `IImageCompressor` — compression interface: `CompressAsync(Stream, ImageCompressArgs, CancellationToken)`
-- `IImageInspector` — inspection interface: `InspectAsync(Stream, CancellationToken)` returns `ImageInspectResult` carrying an `ImageInfo`
-- `ImageResizeArgs` — resize parameters: mode, width, height, input MIME type hint, and `OutputMimeType`
-- `ImageCompressArgs` — compression parameters: input MIME type hint and `OutputMimeType`
-- `ImageInfo` — record with `MimeType`, `Width` and `Height` as displayed (EXIF orientation applied; one frame of an animation), `FrameCount`, `HasAlpha`, and `IsAnimated`
-- `ImageInspectResult` — result wrapper for inspection
-- `ImageResizeMode` — enum of resize strategies (`Default` (zero/unset sentinel), `None`, `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, `Stretch`)
-- `ImageStreamResizeResult` / `ImageStreamCompressResult` — typed result wrappers
-- `ImageProcessResult<T>` — base result with `IsDone`, `State`, `Result`, `Error`
-- `ImageProcessState` — `Done`, `Unsupported`, `Failed`
-- `ImageResizeContent<TContent>` — carries `Content`, `MimeType`, `Width`, `Height` for resize results
-
-### Install
-
-```bash
-dotnet add package Headless.Imaging.Abstractions
-```
-
-### Setup and use
+`IImageInspector` returns an `ImageInfo`: `MimeType`, `Width` and `Height` as displayed (EXIF orientation applied, one frame of an animation), `FrameCount`, `HasAlpha`, and `IsAnimated`.
 
 ```csharp
 public sealed class ImageService(IImageResizer resizer, IImageCompressor compressor)
 {
     public async Task<Stream?> ResizeAsync(Stream input, CancellationToken ct)
     {
-        var result = await resizer.ResizeAsync(
-            input,
-            new ImageResizeArgs(ImageResizeMode.Max, width: 800, height: 600),
-            ct
-        );
+        var result = await resizer.ResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, width: 800, height: 600), ct);
 
-        if (!result.IsDone)
-        {
-            // result.Error is non-null here (Unsupported or Failed)
-            return null;
-        }
-
-        // result.Result.Content is the resized stream (caller must dispose)
-        return result.Result.Content;
+        // Unsupported or Failed: result.Error says why.
+        return result.IsDone ? result.Result.Content : null;
     }
 
     public async Task<Stream?> CompressAsync(Stream input, CancellationToken ct)
@@ -150,17 +101,16 @@ public sealed class ImageService(IImageResizer resizer, IImageCompressor compres
 }
 ```
 
-Validate an upload by its bytes, then store a WebP thumbnail. Inspecting and then resizing reads the same stream twice, so it must be seekable: `IFormFile.OpenReadStream()` is, and a non-seekable request body needs one copy into a `MemoryStream` first. Each pipeline buffers a non-seekable stream for its own call only.
+Validate an upload by its bytes, then store a WebP thumbnail. The inspector and the resizer each read the stream from the start, so pass a seekable stream:
 
 ```csharp
 public sealed class AvatarService(IImageInspector inspector, IImageResizer resizer)
 {
-    // upload must be seekable; the inspector and the resizer each read it from the start
     public async Task<Stream?> AcceptAsync(Stream upload, CancellationToken ct)
     {
         var inspection = await inspector.InspectAsync(upload, ct);
 
-        // Unsupported for SVG, BMP, HEIC, or anything that is not an image, whatever its file name says
+        // Unsupported for SVG, BMP, HEIC, or anything that is not an image, whatever its file name says.
         if (!inspection.IsDone || inspection.Result.Width < 64 || inspection.Result.IsAnimated)
         {
             return null;
@@ -177,46 +127,17 @@ public sealed class AvatarService(IImageInspector inspector, IImageResizer resiz
 }
 ```
 
-### Configuration
-
-None. This package defines only interfaces and data types — no DI registration, no options.
-
-### Runtime behavior
-
-None.
-
 ---
 
 ## Headless.Imaging
 
-Orchestration layer that routes image processing calls to registered contributors.
+The pipeline behind `IImageResizer`, `IImageCompressor`, and `IImageInspector`, and the registration entry point.
 
-### API and behavior
-
-- `IImageResizer` — resize entry point resolved from DI; the internal default implementation iterates `IImageResizerContributor` registrations (in reverse order) until one succeeds
-- `IImageCompressor` — compress entry point resolved from DI; the internal default implementation iterates `IImageCompressorContributor` registrations (in reverse order) until one succeeds
-- `IImageResizerContributor` — contributor interface: `TryResizeAsync(Stream, ImageResizeArgs, CancellationToken)`
-- `IImageCompressorContributor` — contributor interface: `TryCompressAsync(Stream, ImageCompressArgs, CancellationToken)`
-- `IImageInspector` — inspection entry point resolved from DI; the internal default implementation iterates `IImageInspectorContributor` registrations (in reverse order) until one does not return `Unsupported`
-- `IImageInspectorContributor` — contributor interface: `TryInspectAsync(Stream, CancellationToken)`; return `Unsupported` for any format the same provider's resizer and compressor refuse, so inspection and processing agree
-- `ImagingOptions` — `DefaultResizeMode` applied when args carry `ImageResizeMode.Default`
-- `AddHeadlessImaging(Action<HeadlessImagingSetupBuilder>)` — registers the pipeline and the providers chosen on the builder
-- `HeadlessImagingSetupBuilder` — `Configure(...)` binds `ImagingOptions` (`IConfiguration`, `Action<ImagingOptions>`, or `Action<ImagingOptions, IServiceProvider>`); provider packages add `Use…` members
-- `IImagingProviderOptionsExtension` — the hook a provider's `Use…` member registers through `RegisterExtension`; `AddHeadlessImaging` calls its `AddServices` after the core services
-- Automatic buffering of non-seekable input streams into an exact-size `MemoryStream`, read in 80 KB chunks so the growing copies of a plain `CopyToAsync` never reach the large-object heap
-- Options validation via FluentValidation at startup
-
-### Design constraints
-
-Contributors are enumerated in reverse order of DI registration. This mirrors the last-in-wins overriding model: a contributor registered after `AddHeadlessImaging(...)` takes precedence over the NetVips contributors without requiring any removal. A contributor signals non-support by returning `ImageProcessState.Unsupported`; the orchestrator seeks the stream back to the start and tries the next contributor.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Imaging
 ```
-
-### Setup and use
 
 ```csharp
 builder.Services.AddHeadlessImaging(imaging =>
@@ -226,100 +147,38 @@ builder.Services.AddHeadlessImaging(imaging =>
 );
 ```
 
-`Configure` has three overloads, and repeated calls apply in order:
+`Configure` takes an `IConfiguration` section, an `Action<ImagingOptions>`, or an `Action<ImagingOptions, IServiceProvider>`. Repeated calls apply in order.
 
-```csharp
-// Bind from IConfiguration section
-imaging.Configure(config.GetSection("Headless:Imaging"));
-
-// Configure with action
-imaging.Configure(options => options.DefaultResizeMode = ImageResizeMode.Crop);
-
-// Configure with action + IServiceProvider
-imaging.Configure((options, sp) => options.DefaultResizeMode = ImageResizeMode.Max);
-```
+**Verify:** the host fails to start with `OptionsValidationException` when `ImagingOptions` is invalid. Libvips loads only when a contributor is first resolved, so resolve `IImageResizer` once after `builder.Build()` to fail at startup instead of on the first upload. In a test, resize a small PNG and assert `result.IsDone`.
 
 ### Configuration
 
-`ImagingOptions` (one property):
+| `ImagingOptions` property | Default | Description |
+| --- | --- | --- |
+| `DefaultResizeMode` | `None` | Replaces `ImageResizeMode.Default` in a request. Must be a defined `ImageResizeMode` value. |
 
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `DefaultResizeMode` | `ImageResizeMode` | `None` | Applied when `ImageResizeArgs.Mode` is `Default`. `None` means no resize fallback. |
+### Design and runtime behavior
 
-### Runtime behavior
+- `IImageResizer`, `IImageCompressor`, and `IImageInspector` are singletons.
+- Each chosen provider registers after the core services, in the order of the `Use…` calls.
+- A non-seekable input is buffered into a `MemoryStream` for the length of one call, then the contributors read it.
 
-- Registers `IImageResizer` as singleton (internal default implementation)
-- Registers `IImageCompressor` as singleton (internal default implementation)
-- Registers `IImageInspector` as singleton (internal default implementation)
-- Validates `ImagingOptions` with FluentValidation when the options are first resolved
-- Runs each chosen provider's registration after the core services, in the order of the `Use…` calls
+### Write a contributor
+
+Implement `IImageResizerContributor.TryResizeAsync`, `IImageCompressorContributor.TryCompressAsync`, or `IImageInspectorContributor.TryInspectAsync`, and register it as a singleton after `AddHeadlessImaging(...)` so it runs first. Return `Unsupported` (for example `ImageStreamResizeResult.NotSupported()`) for any input you do not handle, so the next contributor gets it. Return `Failed` only when no other contributor should try. An inspector contributor returns `Unsupported` for every format its resizer and compressor refuse, so inspection and processing agree.
 
 ---
 
-
 ## Headless.Imaging.NetVips
 
-libvips-backed contributors for image resizing and compression, through the NetVips binding.
+The libvips contributors for resize, compress, and inspect.
 
-### API and behavior
-
-- Internal libvips `IImageResizerContributor` (registered by `UseNetVips`): resizes and converts between JPEG, PNG, WebP, GIF, TIFF, and AVIF, writing `OutputMimeType` or else the source format. It runs libvips `thumbnail`, which shrinks JPEG and WebP while decoding, so a large photo never decodes at full size.
-- Internal libvips `IImageCompressorContributor` (registered by `UseNetVips`): re-encodes at the configured quality into JPEG, PNG, WebP, or AVIF, the source format or `OutputMimeType`; any allowed input converts, so an animated GIF compresses into an animated WebP. Returns `Failed` unless the output is strictly smaller than the input.
-- Internal libvips `IImageInspectorContributor` (registered by `UseNetVips`): reads the header of the same six formats behind the same allowlist; see "Inspection reads only what it needs" below.
-- `NetVipsOptions`: per-format quality, progressive JPEG, chroma subsampling, PNG compression level, metadata stripping, the pixel limit, and the crop focus.
-- `NetVipsCropFocus`: `Center`, `Attention` (skin tones, saturated colour, and edges), or `Entropy` (most detail).
-- `NetVipsChromaSubsampling`: `Auto` (full colour at quality 90 and above), `On`, or `Off`, for JPEG and AVIF.
-- Animated GIF and WebP keep every frame when the output format can hold them (GIF or WebP): each frame is cropped or padded on its own, and the frame delays and loop count carry over. Converting an animation to JPEG, PNG, TIFF, or AVIF keeps the first frame.
-- Transparency written to JPEG, padding included, is flattened onto white.
-- Resize output is 8-bit sRGB: libvips `thumbnail` converts 16-bit and other colour spaces. Compression keeps the source depth.
-- The EXIF orientation is applied, so resize output is stored upright and the reported width and height are the displayed ones, for `ImageResizeMode.None` pass-through too.
-
-### Design constraints
-
-**The package references only the MIT-licensed `NetVips` wrapper, not the native binaries.** `NetVips.Native` bundles libvips and its codecs under LGPL-3.0-or-later. A web app that runs on its own servers carries no LGPL obligation, but an app that distributes its binaries, for example in a public container image, an on-premises installer, or a device, must offer the LGPL source and allow relinking, and some company policies ban the GPL-3 family outright. Bundling the natives would make that decision for every consumer, so the application makes it:
-
-- **`NetVips.Native`** (`dotnet add package NetVips.Native`): zero setup, about 8 MB per platform; linux x64/arm64/arm, linux-musl x64/arm64, win x64/arm64, osx x64/arm64. This is the tested configuration.
-- **A system libvips 8.15 or later** (`apt-get install libvips42t64` on Ubuntu 24.04 or Debian 13, `apk add vips`, `brew install vips`): the operating system's security updates patch it, and its licence is the distribution's build (libvips itself is LGPL-2.1-or-later). Its codec set is whatever the distribution compiled in. Debian 12 ships libvips 8.14, which is too old.
-
-Without either, the contributors throw `InvalidOperationException` naming both options when the container first resolves them, which is the first `IImageResizer`, `IImageCompressor`, or `IImageInspector` resolution.
-
-**Untrusted input is fenced by an allowlist, not by libvips' global switch.** libvips sniffs the format from the magic bytes, and only the JPEG, PNG, WebP, GIF, TIFF, and HEIF loaders may run; HEIF passes only when its header names AV1 (AVIF). Everything else is refused before its parser sees the bytes: SVG (librsvg), PDF, ImageMagick formats, CSV, matrix, and the native `.v` format. This per-call check replaces `NetVips.BlockUntrusted`, which is process-wide and blocks only some of those loaders.
-
-**Formats depend on the libvips build.** The `NetVips.Native` 8.18 bundle has no BMP loader (libvips reads BMP only through ImageMagick, which the bundle omits and the allowlist refuses), no HEVC encoder (so HEIC is refused), and no JPEG XL. A system libvips with more codecs does not widen the allowlist.
-
-**Decoding is strict.** Loaders run with `fail_on=error`, so a truncated or corrupt file returns `Unsupported` with "The encoded image contains invalid content." instead of a half-grey image.
-
-**Process-wide libvips settings stay with the application.** libvips keeps an operation cache (100 operations, 100 MB, 100 open files by default) and a worker pool per operation (one thread per core). Both are process globals, so the package does not own them. The contributors read through a stream view that they cut off from the input when each call ends, so a cached operation never keeps the caller's stream or buffer alive. Without that, a cached operation would keep the input reachable until eviction: in testing, 7 of 40 callers' 7 MB streams stayed alive after garbage collection. The cache can still hold the operations' own results, so a host that resizes many distinct images can turn it off at startup; the `global::` prefix avoids a clash with the `Headless.Imaging` namespace:
-
-```csharp
-global::NetVips.Cache.Max = 0;               // no operation cache
-global::NetVips.NetVips.Concurrency = 2;     // threads per libvips operation
-```
-
-**Libvips work is synchronous, and cancellable.** The contributors read the header asynchronously; libvips then reads the pixels and encodes on the calling thread and its own workers. Cancelling the token sets libvips' kill flag on the image being written, which stops the worker threads within a tile or two (about 10 ms for a 12000 × 12000 JPEG encode in testing) and throws `OperationCanceledException`.
-
-**Every operation reads the header first.** On a seekable stream the contributors read the first 64 KB asynchronously and grow the window fourfold until libvips parses the header: a JPEG with large EXIF or ICC segments, a TIFF whose directory follows its pixel data (libtiff writes it there), or an AVIF whose metadata follows its pixel data needs more. A GIF or WebP is read whole, because counting frames walks the file. The format allowlist, the input pixel limit, and an `ImageResizeMode.None` pass-through are all decided from the header, so a refused upload or a pass-through costs kilobytes: in testing, a 7 MB camera JPEG over the limit, passed through, or inspected was read for at most 256 KB. A file no allowed loader claims is refused from the first window; a HEIC, or a corrupt or truncated file of an allowed format, is refused only after the window has grown to the whole file. Every operation reads from the start of the stream wherever its position was left.
-
-**libvips reads the pixels straight from a `MemoryStream` or `FileStream`; other streams are copied once.** libvips reads its input synchronously, from its own worker threads. A `MemoryStream` or `FileStream` is safe to read that way, so the contributors hand it to libvips and the upload is never copied. Any other stream type gets one asynchronous copy into an exact-size buffer first, because a synchronous read can fail on it: ASP.NET Core, for one, throws on a synchronous read from a request body that is not fully buffered. `IFormFile.OpenReadStream()` takes that copy; to avoid it, copy the upload to a temporary `FileStream` or pass a `MemoryStream`. A non-seekable stream is buffered by the pipeline in 80 KB chunks and copied once into an exact-size `MemoryStream`, which libvips then reads directly.
-
-Measured with four concurrent workers resizing a 7 MB camera JPEG to 300 × 300, 40 times:
-
-| Input | Managed allocation | Peak resident memory |
-|---|---|---|
-| `FileStream` or `MemoryStream` | 3 MB | 176–199 MB |
-| Non-seekable stream | 545 MB (about two copies of each upload) | 297–319 MB |
-
-Reading the whole upload into a byte array first, as an earlier design did, allocated 272 MB for a seekable stream and 907 MB for a non-seekable one, at the same speed.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Imaging.NetVips
-dotnet add package NetVips.Native   # or install libvips 8.15+ on the host
+dotnet add package NetVips.Native   # or install libvips 8.15 or later on the host
 ```
-
-### Setup and use
 
 ```csharp
 builder.Services.AddHeadlessImaging(imaging =>
@@ -333,45 +192,62 @@ builder.Services.AddHeadlessImaging(imaging =>
 );
 ```
 
-`UseNetVips` has four overloads:
+`UseNetVips` takes no argument, an `IConfiguration` section, an `Action<NetVipsOptions>`, or an `Action<NetVipsOptions, IServiceProvider>`. Calling it more than once registers each contributor once.
 
-```csharp
-// Default options
-imaging.UseNetVips();
+**Verify:** the host fails to start with `OptionsValidationException` when `NetVipsOptions` is invalid. Resolving `IImageResizer` throws `InvalidOperationException` when libvips did not load or is older than 8.15. In a test, resize a small JPEG to `ImageResizeMode.Max, 100, 100` and assert `result.IsDone` and `result.Result.Width <= 100`.
 
-// Bind from IConfiguration section
-imaging.UseNetVips(config.GetSection("Headless:Imaging:NetVips"));
+### Choose a libvips source
 
-// Configure with action
-imaging.UseNetVips(options => options.WebpQuality = 85);
+The package references only the MIT-licensed `NetVips` wrapper, so the application picks the native library and its licence:
 
-// Configure with action + IServiceProvider
-imaging.UseNetVips((options, sp) => options.WebpQuality = 85);
-```
+| Source | Use when | Cost |
+| --- | --- | --- |
+| `NetVips.Native` package | You want no host setup. This is the tested configuration. Ships for linux x64, arm64, and arm; linux-musl x64 and arm64; win x64 and arm64; osx x64 and arm64. | About 8 MB per platform. LGPL-3.0-or-later: an app you distribute (a public container image, an on-premises installer, a device) must offer the LGPL source and allow relinking. A service you run on your own servers carries no LGPL obligation. |
+| System libvips 8.15 or later (`apt-get install libvips42t64` on Ubuntu 24.04 or Debian 13, `apk add vips`, `brew install vips`) | Your policy bans the GPL-3 family, or you want the operating system to patch libvips. | The codec set is whatever the distribution compiled in. Debian 12 ships libvips 8.14, which is too old. |
 
 ### Configuration
 
-`NetVipsOptions`:
-
-| Property | Type | Default | Description |
-|---|---|---|---|
+| `NetVipsOptions` property | Type | Default | Description |
+| --- | --- | --- | --- |
 | `JpegQuality` | `int` (1–100) | `75` | JPEG quality for resize output and compression. Huffman tables are always optimized. |
 | `WebpQuality` | `int` (1–100) | `75` | Lossy WebP quality. |
-| `AvifQuality` | `int` (1–100) | `50` | AVIF (AV1) quality; 50 is libvips' own default. |
-| `PngCompressionLevel` | `int` (0–9) | `9` | zlib effort for PNG output; PNG stays lossless at every level. |
-| `JpegProgressive` | `bool` | `false` | Writes progressive JPEG, which a browser draws coarse-to-fine; baseline otherwise. |
-| `ChromaSubsampling` | `NetVipsChromaSubsampling` | `Auto` | Colour resolution for JPEG and AVIF: `Auto` subsamples below quality 90, `On` always (smallest), `Off` never (crisp coloured edges for text and logos). |
-| `StripMetadata` | `bool` | `true` | Drops EXIF, XMP, IPTC, and other metadata, keeping only the ICC profile. When on, the compressor first turns the pixels upright, because the orientation tag goes with the EXIF block. |
-| `MaxPixels` | `long` (> 0) | `268402689` (16383²) | Largest width × height × frames of an input, checked from the header before decoding, and of a resize output. Exceeding it returns `Failed`. |
-| `CropFocus` | `NetVipsCropFocus` | `Center` | The region `ImageResizeMode.Crop` keeps. Animations always crop at the center, because a content-aware window would move from frame to frame. |
+| `AvifQuality` | `int` (1–100) | `50` | AVIF quality. |
+| `PngCompressionLevel` | `int` (0–9) | `9` | zlib effort for PNG. PNG stays lossless at every level. |
+| `JpegProgressive` | `bool` | `false` | Writes progressive JPEG, which a browser draws coarse to fine. Baseline otherwise. |
+| `ChromaSubsampling` | `NetVipsChromaSubsampling` | `Auto` | Colour resolution for JPEG and AVIF. `Auto` subsamples below quality 90. `On` always subsamples (smallest files). `Off` never does (crisp coloured edges for text and logos). |
+| `StripMetadata` | `bool` | `true` | Drops EXIF, XMP, IPTC, and other metadata and keeps the ICC profile. When on, the compressor first turns the pixels upright, because the orientation tag goes with the EXIF block. |
+| `MaxPixels` | `long` (> 0) | `268402689` (16383²) | Largest width × height × frames of an input, checked from the header before decoding, and of a resize output. Over the limit, the call returns `Failed`. |
+| `CropFocus` | `NetVipsCropFocus` | `Center` | The region `ImageResizeMode.Crop` keeps: `Center`, `Attention` (skin tones, saturated colour, and edges), or `Entropy` (most detail). Animations always crop at the center. |
 
-Validation (applied at startup): qualities between 1 and 100, `PngCompressionLevel` between 0 and 9, `MaxPixels` positive, `CropFocus` and `ChromaSubsampling` defined values.
+### Design and runtime behavior
 
-### Runtime behavior
+**Format allowlist.** Only the JPEG, PNG, WebP, GIF, TIFF, and AVIF loaders run. libvips detects the format from the magic bytes, and a HEIF file passes only when its header names AV1 (AVIF). Everything else is refused as `Unsupported` before a parser reads the bytes: SVG, PDF, ImageMagick formats, CSV, matrix, and the libvips `.v` format. A system libvips with more codecs does not widen the list. `NetVips.Native` has no BMP loader, no HEVC decoder for HEIC, and no JPEG XL.
 
-- Registers `IImageResizerContributor` as singleton (internal NetVips resize contributor)
-- Registers `IImageCompressorContributor` as singleton (internal NetVips compress contributor)
-- Registers `IImageInspectorContributor` as singleton (internal NetVips inspect contributor)
-- Registers each contributor once, however many times `UseNetVips` is called
-- Checks on first resolution that libvips 8.15 or later loaded
-- Logs refused formats, oversized images, and invalid content at `Information`
+**Strict decoding.** A truncated or corrupt file returns `Unsupported` with "The encoded image contains invalid content." instead of a partly grey image.
+
+**Resize output.**
+
+- The output is written as `OutputMimeType`, or else the source format. JPEG and WebP shrink while decoding, so a large photo is never decoded at full size.
+- An animated GIF or WebP keeps every frame when the output is GIF or WebP. Each frame is cropped or padded on its own, and frame delays and the loop count carry over. Converting an animation to JPEG, PNG, TIFF, or AVIF keeps the first frame.
+- Transparency written to JPEG, padding included, is flattened onto white.
+- Resize output is 8-bit sRGB. Compression keeps the source bit depth.
+- EXIF orientation is applied, so output is stored upright and the reported width and height are the displayed ones, for an `ImageResizeMode.None` pass-through too.
+
+**Compression.** Re-encodes into the source format or `OutputMimeType` (JPEG, PNG, WebP, or AVIF) at the configured quality. Any allowed input converts, so an animated GIF compresses into an animated WebP. A GIF or TIFF without an `OutputMimeType`, or with an `OutputMimeType` of GIF or TIFF, returns `Unsupported`.
+
+**Inspection reads only headers.** `Done` means the pipeline accepts the format, not that every pixel decodes. The inspector reports sizes above `MaxPixels` instead of refusing them.
+
+**Header-first reads.** Every call reads from the start of the stream, wherever its position was left. The format check, the `MaxPixels` check, and an `ImageResizeMode.None` pass-through are decided from the header, so refusing an oversized camera JPEG reads at most a few hundred kilobytes. A GIF or WebP is read whole to count frames. A HEIC, or a corrupt or truncated file of an allowed format, is read whole before it is refused.
+
+**Stream types.** libvips reads a `MemoryStream` or a `FileStream` directly, with no copy. Any other stream, including `IFormFile.OpenReadStream()`, is copied once into an exact-size buffer first, because ASP.NET Core throws on a synchronous read from a request body that is not fully buffered. To avoid the copy for large uploads, copy the upload to a temporary `FileStream` or pass a `MemoryStream`.
+
+**Threads and cancellation.** libvips decodes and encodes on the calling thread and its own worker threads, one per core by default. Cancelling the token stops the workers within a tile or two and throws `OperationCanceledException`.
+
+**Process-wide libvips settings.** libvips keeps a process-wide operation cache (100 operations, 100 MB, 100 open files by default) and a per-operation thread pool. The package leaves both to the application. The cache never keeps your input stream alive, but it can hold operation results. A host that resizes many distinct images can turn it off at startup. Write the `global::` prefix to avoid a clash with the `Headless.Imaging` namespace:
+
+```csharp
+global::NetVips.Cache.Max = 0;               // no operation cache
+global::NetVips.NetVips.Concurrency = 2;     // threads per libvips operation
+```
+
+**Logs.** Refused formats, oversized images, and invalid content log at `Information`.

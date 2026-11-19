@@ -2,7 +2,6 @@
 
 using Headless.Blobs;
 using Headless.Blobs.FileSystem;
-using Headless.Blobs.Internal;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

@@ -9,211 +9,191 @@ packages: DistributedLocks.Abstractions, DistributedLocks, DistributedLocks.Data
 
 ## Orientation
 
-Use `IDistributedLock` when only one worker should own a named resource at a time. `TryAcquireAsync(...)` returns `null` on timeout; `AcquireAsync(...)` throws `LockAcquisitionTimeoutException` on timeout. Rate limiting is out of scope for this domain: for attempt quotas shared across replicas, use `IAttemptLimiter` from [Rate Limiting](rate-limiting.md); for per-replica HTTP load shedding, use `Microsoft.AspNetCore.RateLimiting`.
+Use `IDistributedLock` when only one worker should own a named resource at a time. `TryAcquireAsync(...)` returns `null` on timeout; `AcquireAsync(...)` throws `LockAcquisitionTimeoutException` on timeout. Rate limiting is out of scope: for attempt quotas shared across replicas, use `IAttemptLimiter` from [Rate Limiting](rate-limiting.md); for per-replica HTTP load shedding, use `Microsoft.AspNetCore.RateLimiting`.
 
-Use `IDistributedReadWriteLock` when concurrent readers are safe and writers need exclusivity. Use `IDistributedSemaphoreProvider.CreateSemaphore(resource, maxCount)` when up to N holders may work concurrently. Redis ships mutex, reader-writer, and semaphore support. Postgres ships mutex and reader-writer support over advisory locks; it does not provide semaphores. In-process scenarios can use `Headless.DistributedLocks.InMemory`, which ships all three primitives but is process-local and not distributed.
+Use `IDistributedReadWriteLock` when concurrent readers are safe and writers need exclusivity. Use `IDistributedSemaphoreProvider.CreateSemaphore(resource, maxCount)` when up to N holders may work concurrently.
+
+| Provider | Mutex | Reader-writer | Semaphore | Transaction-scoped locks |
+| --- | --- | --- | --- | --- |
+| Redis | Yes | Yes | Yes | No |
+| InMemory (one process only) | Yes | Yes | Yes | No |
+| PostgreSQL | Yes | Yes | No | Yes |
+| SQL Server | Yes | Yes | No | Yes |
 
 ## Agent Rules
 
-- Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`; do not inject Redis storage types into application services.
+- Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`. Do not inject Redis storage types into application services.
 - Use `Headless.DistributedLocks.InMemory` only for tests, local development, or deliberately single-instance apps. It is not a cross-process lock.
-- The PostgreSQL and SQL Server fence sequences are created at host startup by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), never on first acquire. Code that builds a service provider without starting a host (a console tool, a test) must call `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()` before its first fenced acquire.
-- Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
-- Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. All three primitives have them: `IDistributedLock` takes `IEnumerable<string>`, `IDistributedReadWriteLock` takes `IEnumerable<DistributedReadWriteLockRequest>`, `IDistributedSemaphoreProvider` takes `IEnumerable<DistributedSemaphoreRequest>`. Pass the complete set in one call so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and compensate partial acquisition in reverse order.
-- Inside a unit of work on PostgreSQL or SQL Server, take every row lock the operation needs in one `unit.TransactionLocks.AcquireAllAsync(...)` or `TryAcquireAllAsync(...)` call. It sorts and deduplicates the set ordinally, waits under one budget, and holds nothing new when it fails. Never sort keys by hand or hand-write `FOR UPDATE` with a timeout for this. Build each name with `LockKey.For<T>(id)` (for example `LockKey.For<Wallet>(walletId)`) rather than inventing a string family per call site. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
-- When a caller needs both read and write locks, pass one mixed `DistributedReadWriteLockRequest` set through a single `AcquireAllAsync(...)`. Never nest `AcquireAllReadAsync(...)` inside `AcquireAllWriteAsync(...)` (or vice versa): neither call sees the complete set, so neither can order it, and two such callers can deadlock. Use the read-only / write-only sugar overloads only when the whole set is genuinely one mode. The same rule bans nesting a composite inside another composite, or acquiring one while already holding an unrelated lock.
-- Never pass a composite lease's `Resource` or `LeaseId` to a by-resource API (`IsLockedAsync`, `GetLeaseIdAsync`, `GetLockInfoAsync`, `GetHolderCountAsync`, `RenewAsync(resource, leaseId, ...)`). The joined name and synthetic id exist in no backend, so those calls report a genuinely held set as unlocked instead of failing. Inspect the individual resource names, and renew or release the composite through its handle.
-- A `DistributedSemaphoreRequest`'s `MaxCount` is the semaphore's capacity, not a permit count: a composite takes exactly one slot of each named semaphore, and naming one resource twice with different `MaxCount` values throws before any provider call. There is no all-or-nothing way to take N permits of a *single* semaphore today — repeated `AcquireAsync(...)` calls can split permits between two contending callers, and a composite cannot fix it (see [Composite Acquisition](#composite-acquisition)).
-- Sizing a connection pool for PostgreSQL or SQL Server: a reader-writer composite over N resources pins N connections for the entire hold, because those backends are connection-scoped. Size for your largest composite.
-- When implementing a custom `IDistributedLock`, `IDistributedReadWriteLock`, or `IDistributedSemaphoreProvider`, satisfy `IDistributedLockEnvironment` — the base interface all three extend — by exposing `TimeProvider`, `Logger`, `DefaultTimeUntilExpires`, and `DefaultAcquireTimeout` (the composite coordinator reads all four off the provider), and preserve ordinal resource identity. If the backend aliases ordinal-distinct names, reject non-canonical names or require callers to canonicalize them before composite acquisition; normalizing only inside the provider is too late.
-- Per-call configuration is bundled into `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`, `NotifyWaitersOnRelease`). Omit the argument to use defaults; use `with` expressions to derive variants.
-- Each release of an `IDistributedLock` lease sends a wake-up so waiting acquirers retry at once: on the storage-backed providers (in-memory, Redis), a Redis pub/sub message once `UseRedisReleaseSignal()` from `Headless.DistributedLocks.Redis` is configured, or a messaging broadcast to every instance once `UseMessagingReleaseSignal()` from `Headless.DistributedLocks.Messaging` is configured, otherwise nothing; a `pg_notify` on PostgreSQL. For a resource no caller ever waits on, where every acquirer tries once with `AcquireTimeout = TimeSpan.Zero` (one instance runs a periodic task per tick), set `NotifyWaitersOnRelease = false` to skip it. The provider rejects `false` with any other `AcquireTimeout` (`ArgumentException`), and a waiter that does exist still acquires the lock on its next poll.
-- Always `await using` the returned lock when `ReleaseOnDispose` is `true` (the default); set `ReleaseOnDispose = false` only when ownership is deliberately transferred and the caller will release explicitly.
-- Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLease.LostToken`; set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
-- The Tus file-lock adapter (`Headless.Tus.DistributedLocks`) auto-extends its lease but cannot observe `LostToken`: tusdotnet's `ITusFileLock` has no hook for lease loss, so a request whose lease is lost keeps writing until it ends. See [Tus](tus.md#concurrent-patch-safety).
-- Use `GetLeaseIdAsync(resource)` for operational inspection only; it reads the current observable lease id and does not renew the lease. Some backends can prove the resource is locked without exposing the current holder identity, so `GetLeaseIdAsync` may return `null` even while `IsLockedAsync(resource)` or `GetLockInfoAsync(resource)` reports an active lock. If you already hold a monitored lease, observe `LostToken` or call `ThrowIfLost()` instead of polling `GetLeaseIdAsync`.
-- Synchronous `TryUsingAsync(..., Action ...)` overloads force `LockMonitoringMode.None` because synchronous delegates cannot observe a lease-lost cancellation token.
-- Do not use distributed locks (or the semaphore) as rate limiters. A semaphore caps *concurrent holders* (concurrency control); a rate limiter caps *throughput per time window* (rate control). For rate control, use `IAttemptLimiter` ([Rate Limiting](rate-limiting.md)) for exact per-subject quotas across replicas, or `Microsoft.AspNetCore.RateLimiting` for per-replica HTTP load shedding.
-- Use `IDistributedLease.FencingToken` (a `LockFencingToken`) for stale-write rejection when the backend supplies it: the protected resource stores the highest token it has accepted (persist `token.Value`) and rejects any write whose token is less than or equal to it. Never compare it with a Fencing lease generation. Never compare tokens for equality; they increase per resource with gaps (see [Locks and Fencing Tokens](#locks-and-fencing-tokens)). Do not repurpose `LeaseId` as the fence; `LeaseId` remains the opaque ownership token used for renew/release equality. Call `ThrowIfLost()` in hot paths that must fail-stop after observed lease loss.
-- Before choosing a backend, classify the use case as efficiency or correctness. Redis locks are efficiency locks, not transaction-coupled correctness locks.
-- Use `Headless.DistributedLocks.PostgreSql` when the protected resource is already in PostgreSQL or when transaction-coupled advisory locks are required. Standard session-scoped Postgres locks require direct connections or PgBouncer session pooling.
-- For connection-scoped (database) locks there is no TTL and no finalizer reclaim: always dispose the handle (`await using`) or call `ReleaseAsync()`. An abandoned handle leaks its connection and advisory lock until the provider is disposed. Connection death is surfaced through `LostToken` only when monitoring is enabled, so observe that token for monitored handles rather than assuming a lease will expire.
-- Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per call via `DistributedLockAcquireOptions`; `DistributedLockOptions` configures key prefix and waiter/resource limits.
-- For push-based release wake-ups on the in-memory or Redis provider, call `setup.UseRedisReleaseSignal()` from `Headless.DistributedLocks.Redis` (Redis pub/sub, no broker), or reference `Headless.DistributedLocks.Messaging` and call `setup.UseMessagingReleaseSignal()` on the lock builder (publishes through `IBus` with `DeliveryMode.Direct`). `Headless.DistributedLocks` does not reference messaging: without that call (or another `IDistributedLockReleaseSignal`), a release still wakes the waiters in its own process at once, but waiters on other hosts fall back to polling backoff, even when the host registers `Headless.Messaging`.
-- `Headless.Messaging` uses a keyed `IDistributedLock` registration under `"headless.messaging"`; an un-keyed app lock provider is not automatically used by message retry processors.
-- Use `AddHeadlessDistributedLocks(setup => setup.UseRedis())` for Redis-backed mutex, reader-writer, and semaphore primitives. PostgreSQL and SQL Server providers intentionally register mutex + reader-writer only.
+- When environments share one Redis, give each host a `Headless:Prefix`. It goes in front of `DistributedLockOptions.KeyPrefix`: a lock on `orders` uses `wt1:distributed-lock:orders`, and the Redis release channel becomes `wt1:distributed-lock:released`. The PostgreSQL and SQL Server providers and the static `SqlServerDistributedLock` helpers ignore it, because their database already separates environments. See [Isolation prefix](utilities.md#isolation-prefix).
+- On PostgreSQL and SQL Server, create the fence sequence at deploy time with `resources provision`. A host start only verifies it and fails when it is missing. Code that builds a service provider without starting a host (a console tool, a test) calls `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()` before its first fenced acquire.
+- Use `TryAcquireAsync(...)` when timeout is an expected branch. Use `AcquireAsync(...)` when timeout should fail the workflow.
+- Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. Pass the complete set in one call, so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and undo a partial acquisition. `IDistributedLock` takes `IEnumerable<string>`, `IDistributedReadWriteLock` takes `IEnumerable<DistributedReadWriteLockRequest>`, and `IDistributedSemaphoreProvider` takes `IEnumerable<DistributedSemaphoreRequest>`.
+- Inside a unit of work on PostgreSQL or SQL Server, take every row lock the operation needs in one `unit.TransactionLocks.AcquireAllAsync(...)` or `TryAcquireAllAsync(...)` call. Never sort keys by hand or hand-write `FOR UPDATE` with a timeout. Build each name with `LockKey.For<T>(id)` (for example `LockKey.For<Wallet>(walletId)`). See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
+- When a caller needs both read and write locks, pass one mixed `DistributedReadWriteLockRequest` set through a single `AcquireAllAsync(...)`. Never nest `AcquireAllReadAsync(...)` inside `AcquireAllWriteAsync(...)` or the reverse: two such callers can deadlock. Never nest one composite inside another, or acquire one while you already hold an unrelated lock.
+- Never pass a composite lease's `Resource` or `LeaseId` to a by-resource API (`IsLockedAsync`, `GetLeaseIdAsync`, `GetLockInfoAsync`, `GetHolderCountAsync`, `RenewAsync(resource, leaseId, ...)`). Those calls report a held set as unlocked instead of failing. Renew or release the composite through its handle.
+- A `DistributedSemaphoreRequest`'s `MaxCount` is the semaphore's capacity, not a permit count. There is no all-or-nothing way to take N permits of one semaphore; see [Composite Acquisition](#composite-acquisition).
+- On PostgreSQL and SQL Server, a composite over N resources pins N connections for the whole hold. Size the connection pool for your largest composite.
+- Bundle per-call settings in `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`, `NotifyWaitersOnRelease`). Omit the argument to use defaults: 20-minute expiry and 30-second acquire timeout. Derive variants with `with` expressions.
+- Always `await using` the returned lock while `ReleaseOnDispose` is `true` (the default). Set `ReleaseOnDispose = false` only when ownership is deliberately transferred and the caller releases explicitly.
+- Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLease.LostToken`. Set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its lease in the background; it implies `Monitor`.
+- For a resource no caller ever waits on (every acquirer tries once with `AcquireTimeout = TimeSpan.Zero`), set `NotifyWaitersOnRelease = false` to skip the release wake-up. Any other `AcquireTimeout` with `false` throws `ArgumentException`.
+- To wake waiters on other hosts at once on the in-memory or Redis provider, call `setup.UseRedisReleaseSignal()` (`Headless.DistributedLocks.Redis`, no broker) or `setup.UseMessagingReleaseSignal()` (`Headless.DistributedLocks.Messaging`). Without one, waiters on other hosts wake on their polling backoff, even when the host registers `Headless.Messaging`. See [Release Wake-ups](#release-wake-ups).
+- Use `GetLeaseIdAsync(resource)` for operational inspection only. It does not renew the lease, and it may return `null` while `IsLockedAsync(resource)` reports a lock. A monitored holder observes `LostToken` or calls `ThrowIfLost()` instead of polling it.
+- Synchronous `TryUsingAsync(..., Action ...)` overloads force `LockMonitoringMode.None`, because a synchronous delegate cannot observe a cancellation token.
+- Do not use locks or semaphores as rate limiters. A semaphore caps concurrent holders; a rate limiter caps throughput per time window. Use `IAttemptLimiter` ([Rate Limiting](rate-limiting.md)) for exact per-subject quotas across replicas, or `Microsoft.AspNetCore.RateLimiting` for per-replica HTTP load shedding.
+- For stale-write rejection, use `IDistributedLease.FencingToken` (a `LockFencingToken`) when the backend supplies it. The protected resource persists `token.Value` as its high-water mark and rejects any write whose token is less than or equal to it. Never compare tokens for equality, never compare one with a Fencing lease generation, and never use `LeaseId` as the fence. See [Locks and Fencing Tokens](#locks-and-fencing-tokens).
+- Classify the use case as efficiency or correctness before you choose a backend. Redis locks are efficiency locks, not transaction-coupled correctness locks.
+- Use `Headless.DistributedLocks.PostgreSql` when the protected resource is already in PostgreSQL or when transaction-coupled advisory locks are required. Session-scoped PostgreSQL locks need direct connections or PgBouncer session pooling.
+- Dispose every PostgreSQL and SQL Server lock handle (`await using`) or call `ReleaseAsync()`. These locks have no TTL and no finalizer: an abandoned handle holds its connection and lock until the provider is disposed.
+- `Headless.Messaging` resolves a keyed `IDistributedLock` registered under `"headless.messaging"`. An un-keyed app lock provider is not used by message retry processors.
+- The Tus file-lock adapter (`Headless.Tus.DistributedLocks`) auto-extends its lease but cannot observe `LostToken`, so a request whose lease is lost keeps writing until it ends. See [Tus](tus.md#concurrent-patch-safety).
 
 ## How this differs from fenced leases and idempotency
 
-A distributed lock answers "may this process run now?" for a live in-process handle. The handle cannot move to another process, and a lock does not stop a stale holder's write unless the protected resource checks `FencingToken` or the lock is transaction-coupled. Use [Fencing](fencing.md) when an external executor must carry ownership or the lease must outlive a process or connection. Use [Idempotency](idempotency.md) when a retry must replay a stored result instead of running again. Use [Coordination](coordination.md) to learn which nodes are alive. Comparison: [Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive).
+A distributed lock answers "may this process run now?" for a live in-process handle. Use [Fencing](fencing.md) when an external executor must carry ownership or the lease must outlive a process. Use [Idempotency](idempotency.md) when a retry must replay a stored result. Use [Coordination](coordination.md) to learn which nodes are alive. See [Choosing a coordination primitive](fencing.md#choosing-a-coordination-primitive).
 
 ## Core Concepts
 
-Distributed locks coordinate ownership of a string resource such as `order:123`. The lock store owns acquisition and release; the protected resource still owns data integrity. Treat lock handles as leases that can expire.
+A lock coordinates ownership of a string resource such as `order:123`. The lock store owns acquisition and release; the protected resource still owns data integrity. Treat a lock handle as a lease that can expire.
 
 ### Efficiency Locks
 
-Efficiency locks avoid duplicate work, such as two nodes generating the same report. Occasional violations cost compute or duplicate side effects, not corrupted state. Redis-backed locks fit this category.
+Efficiency locks avoid duplicate work, such as two nodes generating the same report. An occasional violation costs compute or a duplicate side effect, not corrupted state. Redis-backed locks fit this category.
 
 ### Correctness Locks
 
-Correctness locks protect invariants where a stale owner could corrupt data. TTL-based Redis locks cannot prove correctness through process pauses, partitions, or clock skew. For correctness, use a transaction-coupled backend when one exists, or make the protected resource reject stale writes.
+Correctness locks protect invariants where a stale owner could corrupt data. TTL-based Redis locks cannot prove correctness through process pauses, partitions, or clock skew. For correctness, use a transaction-coupled backend, or make the protected resource reject stale writes.
 
 ### Locks and Fencing Tokens
 
-A lock and a fencing token answer different questions, and different parties check them.
-
-- **The lock** is the lock store's claim that one holder may run now. The lock store grants it and decides when it has expired. The holder can lose it without knowing: a GC pause, a network partition, or clock skew can outlast the lease, and the lock store hands the resource to someone else while the first holder still believes it owns it. A lock alone therefore never protects data. `LostToken` and `RenewAsync` narrow that window, but a paused process cannot observe either before its next write.
-- **The fencing token** is a `LockFencingToken` issued with each grant that increases for the resource. The **protected resource** (the database row, file, or downstream service being written) checks it on every write and records the highest token it has accepted. It rejects any write whose token is less than or equal to that high-water mark. The token is what stops a stale holder's late write, because the check happens where the write lands, after the pause.
-
-A timeline shows why the check belongs to the protected resource:
+- **The lock** is the lock store's claim that one holder may run now. The holder can lose it without knowing: a GC pause, a network partition, or clock skew can outlast the lease while the lock store hands the resource to someone else. A lock alone therefore never protects data. `LostToken` and `RenewAsync` narrow that window, but a paused process cannot observe either before its next write.
+- **The fencing token** is a `LockFencingToken` issued with each grant that increases for the resource. The protected resource (the row, file, or downstream service being written) checks it on every write, records the highest token it accepted, and rejects any write whose token is less than or equal to that mark.
 
 1. Client 1 acquires the lock and receives token 33.
 2. Client 1 pauses (for example a long GC), and its lease expires.
-3. Client 2 acquires the lock, receives token 34, and writes. The protected resource records 34 as its high-water mark.
+3. Client 2 acquires the lock, receives token 34, and writes. The protected resource records 34.
 4. Client 1 wakes, still believing it holds the lock, and writes with token 33.
-5. The protected resource sees 33 ≤ 34 and rejects the write. Without the token, client 1's stale write would overwrite client 2's.
+5. The protected resource sees 33 ≤ 34 and rejects the write.
 
-Compare against the highest token accepted so far, never for equality with a "current" token. Tokens increase per resource but are not consecutive: PostgreSQL and SQL Server draw them from one shared sequence, so a resource can see 12, then 57.
-
-Choose the protection by what a stale holder would do:
+Tokens increase per resource but are not consecutive: PostgreSQL and SQL Server draw them from one shared sequence, so a resource can see 12, then 57.
 
 | Situation | Use |
 | --- | --- |
-| A duplicate run only costs compute (a cache rebuild, a report, a startup scan that converges) | A lock alone: an efficiency lock. The work must be safe to run twice. |
-| The protected state lives in the same database as the lock, and the write happens in one transaction | A transaction-coupled lock (`IUnitOfWorkTransactionLocks`, or the PostgreSQL/SQL Server transaction-scoped APIs). The lock ends with the transaction that writes, so no stale holder can outlive it. |
-| The protected state is elsewhere, or the work spans transactions, and a stale write would corrupt it | A lock plus a fencing check at the protected resource: store the high-water mark and reject tokens at or below it. |
+| A duplicate run only costs compute (a cache rebuild, a report, a startup scan that converges) | A lock alone. The work must be safe to run twice. |
+| The protected state lives in the same database as the lock, and the write happens in one transaction | A transaction-coupled lock (`unit.TransactionLocks`, or the PostgreSQL and SQL Server transaction-scoped APIs). The lock ends with the transaction that writes. |
+| The protected state is elsewhere, or the work spans transactions, and a stale write would corrupt it | A lock plus a fencing check at the protected resource. |
 
-`LeaseId` is separate from the fencing token: it remains the opaque ownership token used for renew and release equality. Never use it as a fence.
+`LeaseId` is the opaque ownership token for renew and release. Never use it as a fence.
 
-Lock tokens and [Fencing](fencing.md) lease generations (`FencedLease.Generation`) come from separate, unrelated sequences, so a lock token of 40 says nothing about a generation of 7. `LockFencingToken` keeps them apart in the type system: it compares and orders only against another `LockFencingToken` and has no conversion to or from `long`, so `lease.FencingToken > fencedLease.Generation` does not compile. Read `.Value` to persist a token and `new LockFencingToken(value)` to read it back. A resource guarded by both a lock and a fenced lease must record the highest accepted token and the highest accepted generation in separate fields and check each against its own.
+Lock tokens and [Fencing](fencing.md) lease generations (`FencedLease.Generation`) come from unrelated sequences. `LockFencingToken` compares only with another `LockFencingToken` and has no conversion to or from `long`, so `lease.FencingToken > fencedLease.Generation` does not compile. Read `.Value` to persist a token and `new LockFencingToken(value)` to read it back. A resource guarded by both must record the highest token and the highest generation in separate fields.
 
-Per-provider token properties:
-
-| Provider | Token source | Guarantee |
+| Provider | Tokens issued for | Guarantee |
 | --- | --- | --- |
-| Redis | Per-resource `INCR` inside the acquire script | Increasing while Redis keeps the fence key; eviction, data loss, or failover to a replica that missed recent writes can reset it or issue a value again, so fencing is best-effort. |
-| PostgreSQL, SQL Server | One database sequence shared by all resources, drawn on the holding session in the same statement that grants the lock | Durable and increasing per resource, with gaps. A session that dies before the grant statement returns never holds a token, so a dead holder cannot carry a token above the next real holder's. Issued for exclusive acquisitions only: mutex handles and reader-writer write handles. |
-| InMemory | One counter per storage instance, in process memory | Increasing per resource within the process, with gaps, including after an idle resource's entry is removed and recreated; resets on restart. |
+| Redis | Mutex handles and semaphore slots | Increasing while Redis keeps the fence key. Eviction, data loss, or failover to a replica that missed recent writes can reset it or issue a value again, so fencing is best-effort. |
+| PostgreSQL, SQL Server | Mutex handles and reader-writer write handles | Durable and increasing per resource, with gaps. The token is drawn in the statement that grants the lock, so a session that dies before the grant returns never holds a token. |
+| InMemory | Mutex handles and semaphore slots | Increasing per resource within the process, with gaps; resets on restart. |
 
-Shared (read) handles never carry a token. Redis and InMemory reader-writer handles carry none in either mode. A multi-resource composite lease reports `null` (see [Composite Acquisition](#composite-acquisition)).
+Shared (read) handles never carry a token, and Redis and InMemory reader-writer handles carry none in either mode. A multi-resource composite lease reports `null`.
 
-Redis mutex locks and Redis semaphores issue fencing tokens with an atomic Lua acquire path: the lock/slot grant and `INCR` of the per-resource fence key happen in the same script, and failed acquires do not advance the counter. Redis mutex storage maps logical lock names to internal hash-tagged keys so the lock key and fence counter share a Redis Cluster slot. Redis fencing is best-effort: the fence key intentionally has no TTL and monotonicity holds only while Redis retains the key. Avoid `allkeys-*` eviction policies for Redis deployments that rely on fencing. Redis replicates asynchronously and the acquire script does not wait for replicas, so a failover to a replica that had not yet received a recent acquire loses that held key and its `INCR`: a second caller can then acquire the same lock while the first still holds it, and receive a fence value already issued to the first. Postgres and SQL Server mutex locks issue durable sequence-backed fencing tokens. PostgreSQL draws the token with `CASE WHEN pg_try_advisory_lock(...) THEN nextval(...) END`, and SQL Server draws `NEXT VALUE FOR` in the same batch, right after a successful `sp_getapplock`, so the grant and the token come from one statement on the session that holds the lock.
+A failed Redis acquire does not advance the counter. The fence key has no TTL; avoid `allkeys-*` eviction policies when you rely on Redis fencing. Redis replicates asynchronously, so a failover to a replica that missed a recent acquire can let a second caller acquire the same lock while the first still holds it, and receive a fence value already issued.
 
 ### Composite Acquisition
 
-All three primitives expose all-or-nothing multi-resource acquisition through one shared coordinator. The entry points differ only in what a request carries:
+All three primitives support all-or-nothing multi-resource acquisition:
 
 | Primitive | Entry points | Request element | Composite `Resource` |
 | --- | --- | --- | --- |
 | Mutex (`IDistributedLock`) | `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` | `string` | `a+b` |
-| Reader-writer (`IDistributedReadWriteLock`) | `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)`, plus the uniform-mode sugar `TryAcquireAllReadAsync(...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)` | `DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)`; the sugar overloads take `string` | `r:a+w:b` (mode-encoded) |
+| Reader-writer (`IDistributedReadWriteLock`) | `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)`, plus the uniform-mode `TryAcquireAllReadAsync(...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)` | `DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)`; the uniform-mode overloads take `string` | `r:a+w:b` |
 | Semaphore (`IDistributedSemaphoreProvider`) | `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` | `DistributedSemaphoreRequest(string Resource, int MaxCount)` | `a+b` |
 
-Each call validates and canonicalizes the complete input before the first provider call, then acquires the canonical set in ordinal order. Canonical ordering prevents two callers that request the same set in different orders from deadlocking each other. The acquire timeout is one budget for the whole set, not a fresh timeout per child; `TimeSpan.Zero` still gives every canonical child one non-blocking attempt.
+**Ordering.** Each call validates and canonicalizes the complete input before the first provider call, then acquires in `StringComparer.Ordinal` order of the resource name alone. Mode and capacity never take part in the sort, so mutex, reader-writer, and semaphore composites over overlapping names order consistently against each other. The ordering holds only when the whole set goes through one call. Sequential `AcquireAsync` calls, nested composites, or a composite taken while you hold another lock can still deadlock.
 
-**Canonical ordering is by resource, not by a composed key.** A reader-writer request carries a mode and a semaphore request carries a capacity, but neither participates in the sort — the set is ordered by `StringComparer.Ordinal` on the resource name alone. That is what lets a mutex composite, a reader-writer composite, and a semaphore composite over overlapping names order consistently *against each other*. Sorting a composed key such as `"a:write"` would place it after `"a:x:read"` for the resources `a` and `a:x`, silently breaking the single global resource order that prevents circular wait.
+**Canonicalization.**
 
-The per-primitive canonicalization rules are what make resource-only ordering total:
+- **Mutex:** duplicates are removed.
+- **Reader-writer:** a resource requested as both `Read` and `Write` collapses to one `Write` child. `DistributedLockMode.None` (the `default`) is rejected.
+- **Semaphore:** naming one resource twice with different `MaxCount` values throws `ArgumentException` naming the resource, before any `CreateSemaphore` call. Identical duplicates are removed, and a composite takes exactly one slot of each named semaphore.
 
-- **Mutex** — duplicates are deduplicated.
-- **Reader-writer** — a resource requested as both `Read` and `Write` collapses to a single `Write` child, because a write lock subsumes a read lock. Every resource therefore appears exactly once. `DistributedLockMode.None` (the `default`) is rejected.
-- **Semaphore** — `MaxCount` binds to the *semaphore*, not to the acquisition. Naming one resource twice with different `MaxCount` values describes two semaphores that cannot both exist, so it is rejected as a caller error (an `ArgumentException` naming the resource) before any `CreateSemaphore` call. Identical duplicates dedupe silently, and a composite takes exactly one slot of each named semaphore.
+**Timeout.** The acquire timeout is one budget for the whole set. `TimeSpan.Zero` still gives every child one non-blocking attempt. A composite timeout's `LockAcquisitionTimeoutException.Resource` is the joined set, not the resource that blocked; do not split it back into names.
 
-**The ordering guarantee holds only when the caller passes the whole set through one call.** A call site that takes several locks by calling `AcquireAsync`/`TryAcquireAsync` in sequence picks its own order and stays outside the canonical discipline, so it can still deadlock against a composite caller. Acquiring a composite while already holding an unrelated lock — including nesting one composite inside another — reintroduces the same circular-wait risk, because neither call ever sees the complete set and so neither can order it. Route every multi-resource acquisition through the composite helpers and pass the complete set in one call.
+**Failure.** This is compensating coordination, not a transaction. If a later child cannot be acquired, is lost, or faults, every child already held is released in reverse order. While a later child is pending, finite-TTL children are renewed at half their TTL, capped at one minute, unless `AutoExtend` owns renewal. A reader-writer read child cannot hold an infinite lease (its TTL is clamped to `DefaultTimeUntilExpires`), so a set with any read child renews during formation even when `TimeUntilExpires` is infinite.
 
-This is compensating coordination, not a transactional multi-lock primitive. If a later child cannot be acquired, is lost, or faults, every child already held is released and disposed in reverse order. Cleanup is exhaustive and cleanup failures are surfaced rather than hidden. While a later child is pending, finite-TTL children are renewed at half their TTL, capped at one minute; `LockMonitoringMode.AutoExtend` already owns renewal, and genuinely infinite-TTL leases need none. The cadence is derived from the TTL the *backend* applies, not the one the caller asked for, and those differ in one case: a reader-writer **read** child cannot hold an infinite lease — its reader entry must carry a finite expiry or a crashed reader strands the resource forever — so the provider clamps `Timeout.InfiniteTimeSpan` to `DefaultTimeUntilExpires`. A composite whose canonical set contains any `Read` entry therefore schedules formation renewal even when `TimeUntilExpires` is infinite; scheduling off the requested value would let the read child silently expire underneath a long formation. Mutex, semaphore, and reader-writer **write** children honour an infinite TTL and are not renewed during formation (a semaphore slot always has a finite TTL, so formation renewal always applies there). Renewal itself forwards the *requested* TTL, so each child re-applies its own backend's clamp and a mixed set's write child keeps the infinite lease that was asked for. The coordinator uses the provider's `TimeProvider` for deadlines and scheduled waits, so custom providers must expose the same clock used by their own acquisition logic. That clock schedules the check-in; it never arbitrates expiry — only the backend's own answer decides whether a lease still holds.
+**Cleanup errors.** A cleanup failure throws `LockCleanupFailedException`, which derives from `DistributedLockException` and carries every failure on `Failures`. Treat a resource whose release failed as possibly still held until its TTL ends. `DisposeAsync` never throws; it logs through the provider's `Logger`. Call `ReleaseAsync()` when you must observe the cleanup outcome.
 
-Cleanup failures raise `LockCleanupFailedException`, which derives from `DistributedLockException` (so `catch (DistributedLockException)` sees them) and carries every underlying failure on `Failures`. A resource whose release failed may remain held until its TTL expires, so treat it as "ownership may still be held" rather than "released". The one exception is `DisposeAsync`, which never throws — it logs through the provider's `Logger` instead, because `await using` lowers to try/finally and an exception thrown from disposal would replace the one the caller's body was already throwing. Call `ReleaseAsync()` explicitly when the cleanup outcome must be observed.
+**Renewal.** Renewing a composite throws `LockHandleLostException` naming the lost child instead of returning `false`, because its siblings are still held and must be released. A composite returns `false` only when it was already released.
 
-Renewing a composite throws `LockHandleLostException` naming the lost child rather than returning `false`. Renewals fan out concurrently, so a sibling of the lost child has already been extended and is still held; reporting `false` would mean "already lost — nothing to release" under the `IDistributedLease` contract, and a caller acting on that would orphan the survivors until their TTL expired. A composite still returns `false` when it was already released.
+**Result.** When canonicalization leaves one resource, you get the provider's own lease, with its real `LeaseId` and `FencingToken`. A multi-resource lease has a synthetic `LeaseId`, a joined diagnostic `Resource`, and a `null` `FencingToken`. Its `LostToken` fires when any child is lost, and renewal and release cover every child. `ReleaseOnDispose = false` suppresses dispose-time release for the whole set but still permits `ReleaseAsync()`. The joined `Resource` and synthetic `LeaseId` exist in no backend.
 
-When canonicalization leaves one resource, the method returns the provider's child lease unchanged, preserving its real `LeaseId` and `FencingToken`. A true multi-resource result has a synthetic composite `LeaseId`, a joined diagnostic `Resource`, and a `null` scalar `FencingToken` because independent per-resource fences cannot be represented safely as one number. Its loss token links the child loss tokens, renewal covers every child, and release/disposal run in reverse order. `ReleaseOnDispose = false` suppresses dispose-time release for the complete set but still permits explicit `ReleaseAsync()`.
+**Not supported.**
 
-**A composite's identity is diagnostic only — it was never written to any backend.** This holds for all three primitives. The joined `Resource` (`a+b` for a mutex or semaphore composite, `r:a+w:b` for a reader-writer composite) and the synthetic `LeaseId` are generated locally and exist in no lock store. Never pass either to a by-resource provider API — `IsLockedAsync`, `GetLockInfoAsync`, `GetExpirationAsync`, `GetLeaseIdAsync`, `GetHolderCountAsync`, `RenewAsync(resource, leaseId, ...)`. They will not fail; they will report a genuinely held set as *not locked*. Inspect the individual resource names instead, and release or renew the composite through the handle itself. The same applies to `LockAcquisitionTimeoutException.Resource` on a composite timeout: it carries the joined set, not the single resource that blocked, and must not be split back into names.
-
-**What composite acquisition deliberately does not do.** Each of these is a real problem; each is out of scope for a reason, not by oversight.
-
-- **No cross-primitive composites** — a set mixing a mutex, a reader-writer lock, and a semaphore in one call. The three primitives are unrelated interfaces with no unified provider surface, and PostgreSQL and SQL Server ship no semaphore at all. A caller who instead nests a mutex composite inside a reader-writer composite reintroduces circular-wait risk, exactly as described above; there is no safe way to compose across primitives today.
-- **No upgradeable-read composites.** A composite must be able to roll back every child it already holds, and a one-way read-to-write upgrade cannot be rolled back. If upgradeable reader-writer locks are ever added to the framework, they stay outside composites.
-- **No scalar fencing token for a multi-resource result.** Independent per-resource fences cannot be represented safely as one number, so a composite's `FencingToken` is always `null` — even for semaphores, whose individual slots each carry one. Fence per resource, or take the single-resource passthrough, which keeps the child's real token.
-- **No N-permit acquisition of a single semaphore.** See below — this one is a genuine gap, not just a scope line.
-
-**The N-permit gap.** Taking N permits of *one* semaphore all-or-nothing is a real all-or-nothing problem, and composites do **not** solve it. Be precise about why, because the obvious justification is wrong: "just call `AcquireAsync` N times" is *not* a safe workaround. With a capacity-2 semaphore, two callers that each want 2 permits can each take 1 and stall, holding partial ownership with neither able to proceed. But a composite structurally cannot fix it either. Composites prevent deadlock by imposing a global order across *distinct* resources, and contention for N permits of a single semaphore has no ordering to impose — both callers hash to the same key and interleave on it, and no permutation of acquire calls avoids the split. `DistributedSemaphoreRequest` therefore carries no permit count: a permit-count field would advertise atomicity it could not deliver. The only correct fix is atomic multi-permit acquisition inside each storage backend (a Redis Lua script that checks `count + N <= maxCount` and adds N members or none, and an in-memory equivalent), which is a change to `IDistributedSemaphoreStorage` and every implementation of it. **Callers who need it have no safe primitive today.** Design around it: model each permit as its own named resource and compose over those distinct names, or use a mutex.
+- Sets that mix a mutex, a reader-writer lock, and a semaphore in one call.
+- Upgradeable reads.
+- A scalar fencing token for a multi-resource lease. Fence per resource, or use a single-resource set, which keeps the child's token.
+- **N permits of one semaphore, all or nothing.** Repeated `AcquireAsync(...)` calls are not a safe workaround: two callers that each want 2 permits of a capacity-2 semaphore can each take 1 and stall. A composite cannot fix it either, because ordering cannot separate callers contending for one resource. No safe primitive exists today. Model each permit as its own named resource and compose over those names, or use a mutex.
 
 ### Lease Lifecycle Monitoring
 
-Lock monitoring is opt-in per acquire call via `DistributedLockAcquireOptions.Monitoring` (a `LockMonitoringMode` enum). `Monitoring = LockMonitoringMode.Monitor` starts a background lease monitor and makes `IDistributedLease.LostToken` cancel when validation detects the stored lease id changed or disappeared, or when the lease's loss deadline passes. With `LockMonitoringMode.None` (default), `LostToken` is `CancellationToken.None` and `IDistributedLease.CanObserveLoss` is `false`.
+Monitoring is opt-in per acquire through `DistributedLockAcquireOptions.Monitoring` (`LockMonitoringMode`). With `None` (the default), `LostToken` is `CancellationToken.None` and `IDistributedLease.CanObserveLoss` is `false`. With `Monitor`, a background monitor cancels `LostToken` when validation finds the stored lease id changed or gone, or when the lease's loss deadline passes. With `AutoExtend`, it also renews at `DistributedLockOptions.AutoExtensionCadenceFraction` of the TTL. `Monitor` alone validates at `PollingCadenceFraction` and never renews.
 
-Every provider extends a lease the same way. A shorter extend never moves a live lease's expiry earlier, an infinite reader stays infinite, and extending a lease whose expiry has already passed returns `false` even when no other acquire has pruned it yet. A positive TTL under 1 ms is rounded up to 1 ms.
+- **Loss deadline.** `LostToken` cancels at `send + ttl - margin`, where `send` is when the winning acquire (or the last successful renew) was sent, and `margin` is the smaller of a tenth of the TTL and the per-probe storage deadline (at most 5 seconds). A validation that finds the lease held does not move the deadline, so in `Monitor` mode a lease that is never renewed is reported lost one margin before its TTL ends. A store that stays unreachable surfaces as loss before the lease can have expired. A renew that makes the lease non-expiring turns the deadline off. A mutex renew with `Timeout.InfiniteTimeSpan` keeps the current expiry, so it leaves the deadline where it was.
+- **Extend rules.** On every provider, a shorter extend never moves a live lease's expiry earlier, an infinite reader stays infinite, and extending a lease whose expiry has passed returns `false`. A positive TTL under 1 ms is rounded up to 1 ms. Manual and automatic renews on one handle run one at a time.
+- If the monitor loop faults, `LostToken` is cancelled.
+- `LostToken` reports loss only. An explicit `ReleaseAsync()` or dispose stops monitoring without cancelling it, so callbacks registered on it do not fire on the success path of `await using`.
+- Monitoring or `AutoExtend` with `TimeUntilExpires = Timeout.InfiniteTimeSpan` throws `ArgumentException` (`ParamName = "timeUntilExpires"`).
+- Monitor state transitions (`Held`, `Renewed`, `Lost`, `Unknown`) appear only as the `LeaseMonitorStateChanged` log event (`EventId = 30`, fields `Resource`, `LeaseId`, `PreviousState`, `NextState`).
 
-The loss deadline fires before the store can expire the lease. The store starts a lease's TTL no earlier than the moment the request that set it was sent, so the monitor anchors on that send time: `LostToken` cancels at `send + ttl - margin`, where `margin` is the smaller of a tenth of the TTL and the per-probe storage deadline (at most 5 seconds). The anchor is the send time of the acquire attempt that won, and it moves only when a renew succeeds: an automatic renew under `AutoExtend`, or a manual `RenewAsync(...)` in either mode, which re-anchors on its own send time and the TTL it applied. A renew that makes the lease non-expiring, such as `Timeout.InfiniteTimeSpan` on a reader-writer write lease, turns the deadline off. A mutex renew with `Timeout.InfiniteTimeSpan` keeps the lock's current expiry in the store, so it leaves the deadline where it was. A validation that reports the lease still held does not move it, because validation extends nothing; so in `Monitor` mode a lease that is never renewed is reported lost one margin before its TTL ends. Transient validation failures do not move it either, so storage that stays unreachable surfaces as loss before the lease can have expired. Manual and automatic renews on one handle run one at a time.
-
-If the monitor loop faults, `LostToken` is also cancelled as a fail-safe so a silently dead monitor cannot keep appearing healthy.
-
-Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not exposed as a public API; they are visible through the `LeaseMonitorStateChanged` log event (`EventId = 30`, name `LeaseMonitorStateChanged`) for programmatic log filtering. The structured fields are `Resource`, `LeaseId`, `PreviousState`, and `NextState`. `GetActiveMonitorCount` on the provider is `internal` and intended for test/diagnostic use only.
-
-Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `Timeout.InfiniteTimeSpan` for `TimeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
-
-`LockMonitoringMode.AutoExtend` implies monitoring and renews at `DistributedLockOptions.AutoExtensionCadenceFraction` of the TTL. `LockMonitoringMode.Monitor` (validate only) validates at `PollingCadenceFraction` and never renews the lease. These signals narrow stale-work windows; they do not upgrade Redis or cache locks into correctness locks. Fence protected writes with `FencingToken` when stale owners can corrupt state.
+These signals narrow stale-work windows. They do not turn Redis locks into correctness locks; fence protected writes with `FencingToken`.
 
 ### Connection-Scoped Locks (Database Engine)
 
-Database-backed providers (`Headless.DistributedLocks.PostgreSql` over PostgreSQL advisory locks, and any provider built on `Headless.DistributedLocks.Database`) do not store a lease record with a TTL. The lock exists for exactly as long as the holding database session does: the engine acquires the native primitive (for example `pg_try_advisory_lock`) on a live connection and releases it by unlocking — or by closing the connection, which drops every advisory lock the session held. Four engine behaviors follow from this and are visible to consumers as semantics, not as new API. The public surface (`AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(...))`, `IDistributedLock.TryAcquireAsync(...)`, the returned `IDistributedLease`) is unchanged.
+The PostgreSQL and SQL Server providers store no lease record with a TTL. The lock exists exactly as long as the holding database session.
 
-**Disposal contract — there is no TTL and no finalizer reclaim.** A connection-scoped lock is released only when its handle is disposed (or `ReleaseAsync()` is called). There is no lease timeout that eventually frees it and no GC finalizer that reclaims it: the provider holds a strong reference to the backing engine handle for its lifetime, so a handle abandoned without disposal leaks its connection and its advisory lock until the provider itself is disposed. This is the deliberate contract — it mirrors `lock`/`using` discipline, and the reference engine's finalizer queue was intentionally dropped in favor of requiring explicit disposal. Always dispose the handle; `await using` is the intended usage. (`GetExpirationAsync(...)` returns `null` because nothing expires. `RenewAsync(...)` extends nothing: it returns `true` while the lock is still held and `false` after release, after an out-of-band `ReleaseAsync(resource, leaseId)`, for a lease id this provider instance does not hold, or once connection loss has been observed. Renewal answers from local state and never probes the database, so without `LockMonitoringMode.Monitor` a connection that died silently can still renew as `true`; acquire with monitoring when renewal must reflect connection death.)
-
-**Active connection-death detection.** Because the lock lives only while the session does, a consumer needs to know promptly when that session dies — otherwise it keeps running a critical section the database has already released. When the lock is monitored (`CanObserveLoss == true`, exposing `IDistributedLease.LostToken`), an active `ConnectionMonitor` backs the token. It runs a server-side probe (a bounded-timeout sleep query on a roughly one-minute cadence) in addition to the connection's `StateChange` event. The probe carries a bounded command timeout (default 10s), which is what catches a silent half-open connection — a network drop with no RST, where `StateChange` alone never fires until the next real query. When the session dies, `LostToken` is cancelled. The trade-off is a small, periodic query cost on the holding connection in exchange for bounded death-detection latency; it is the database analog of [lease monitoring](#lease-lifecycle-monitoring) for TTL-based providers.
-
-TCP keepalive remains complementary, not redundant. Keepalive (`PostgreSqlDistributedLockOptions.KeepAlive`, default 30s, applied only to a provider-built data source) surfaces a dead socket faster at the transport layer; the monitor is the active query-level check that does not depend on keepalive timing. Keep both for the tightest detection window.
-
-**Optimistic connection multiplexing.** Opening one physical connection per uncontended lock is wasteful, so the engine multiplexes: several uncontended advisory locks on *distinct* keys share a single physical connection. Two situations force a transparent fall back to a *dedicated* connection: (1) the acquire would block (contention — a dedicated connection lets PostgreSQL serialize the waiter correctly without holding up the shared connection's other locks or their release); and (2) two resource strings resolve to the *same* advisory key (a key collision — advisory locks are re-entrant per session, so sharing one connection would let two callers each believe they hold an exclusive lock; routing the colliding acquirer to its own connection makes the database serialize them). The trade-off is shared-connection efficiency in the common uncontended case versus a dedicated connection exactly when correctness or progress demands it. This is internal: callers see only cheaper connection usage, never different lock semantics.
-
-**A failed release ends the session.** When an unlock throws, or an acquire fails and its cleanup throws `LockCleanupFailedException`, the lock may still be held on that session, and a connection returned to the driver pool keeps its session (and the lock) alive until the pool reuses or evicts it. The engine therefore never pools such a connection: it clears the driver pool and disposes the connection, which closes the session and frees the lock. A connection that is already closed or broken when this happens is only disposed: its session is gone, so it holds no lock, and the driver does not pool it. The failure still surfaces to the caller of `ReleaseAsync()`. Clearing the pool also drops its idle connections: on PostgreSQL that is the whole data source, including a consumer-supplied `PostgreSqlDistributedLockOptions.DataSource` shared with the application, or the shared connection-string pool under the parameterless `UsePostgreSql()`; on SQL Server it is the connection-string pool. This cost applies only on the failure path, and on SQL Server also when the provider is disposed while it still holds locks (below). On a multiplexed PostgreSQL connection, the connection accepts no new locks after the failure, and the failed lock stays held until the last other lock on that connection releases; the engine never force-closes a connection that still holds other locks, because that would drop their locks without signalling their `LostToken`.
+- **Disposal.** The lock is released only when its handle is disposed or `ReleaseAsync()` is called. No timeout or finalizer frees it, so an abandoned handle holds its connection and lock until the provider is disposed. `GetExpirationAsync(...)` returns `null`. `RenewAsync(...)` extends nothing: it returns `true` while the lock is held and `false` after release, after an out-of-band `ReleaseAsync(resource, leaseId)`, for a lease id this provider instance does not hold, or once connection loss has been observed. It answers from local state, so without `Monitor` a connection that died silently can still renew as `true`.
+- **Connection-death detection.** On a monitored handle, a periodic bounded-timeout server-side probe (PostgreSQL: about once a minute with a 10-second command timeout; SQL Server: `ConnectionProbeInterval`) plus the connection's `StateChange` event cancel `LostToken` when the session dies, including a silent half-open connection. TCP keepalive (`PostgreSqlDistributedLockOptions.KeepAlive`) is complementary. `Monitoring = None` runs no probe.
+- **Connection sharing.** PostgreSQL shares one physical connection among uncontended locks on distinct keys and uses a dedicated connection on contention or an advisory-key collision. Lock semantics do not change, and a composite still pins one connection per contended child.
+- **A failed release ends the session.** When an unlock fails, or an acquire fails and its cleanup throws `LockCleanupFailedException`, the lock may still be held on that session. The provider then clears the driver pool and disposes the connection so the session closes and frees the lock. The failure still surfaces from `ReleaseAsync()`. Clearing the pool drops its idle connections too: on PostgreSQL the whole data source, including a `DataSource` you shared with the application or the shared connection-string pool under the parameterless `UsePostgreSql()`; on SQL Server the connection-string pool. On a shared PostgreSQL connection, the failed lock stays held until the last other lock on that connection releases, and the connection takes no new locks.
 
 ### Release Wake-ups
 
-Every release on the storage-backed providers (in-memory, Redis) is announced through the registered `IDistributedLockReleaseSignal`, so waiters can retry at once instead of on their next backoff poll. The signal is a best-effort hint; polling and lease expiry remain the correctness floor. `Headless.DistributedLocks` registers an in-process default (`TryAdd`) that hands each release straight to this process's `IDistributedLockReleaseListener`s, so a waiter in the releasing process wakes at once with no transport, and the lock family stays free of any messaging dependency. Waiters on other hosts still wake on their backoff poll; on the Redis provider the default logs `CrossHostReleaseSignalAbsent` (`EventId = 16`, Information) once when it is first resolved. The in-memory provider runs in one process, so it logs nothing. A release with `NotifyWaitersOnRelease = false` announces nothing whatever signal is registered.
+Every release on the in-memory and Redis providers is announced through the registered `IDistributedLockReleaseSignal`, so waiters retry at once instead of on their next backoff poll. The signal is a best-effort hint; polling and lease expiry remain the correctness floor. A release with `NotifyWaitersOnRelease = false` announces nothing.
 
-The transport is a separate concern. `Headless.DistributedLocks.Messaging` supplies the bus transport: `setup.UseMessagingReleaseSignal()` replaces the in-process default with a signal that publishes `DistributedLockReleased` through `IBus` with `DeliveryMode.Direct`, and registers the consumer that hands each delivered release to every `IDistributedLockReleaseListener` in the host. Each of the three providers registers its own singleton as a listener: a mutex release wakes one waiter and nudges active lease monitors for that resource so loss validation happens before the next polling cadence; a semaphore release wakes one slot waiter; a reader-writer release wakes one blocked reader-writer acquirer and does not nudge reader-writer lease monitors. A release starts the publish but does not wait for the broker, so `ReleaseAsync` returns once storage confirms the removal; a publish failure is logged as `LockReleasePublishFailed` (`EventId = 17`) and never fails the release. The publishing signal is a framework-internal singleton over the registered `IBus`, an autonomous singleton that never reads a caller's unit of work, so the notification is always autonomous regardless of any caller's transaction.
+- **Default.** `Headless.DistributedLocks` registers an in-process signal (with `TryAdd`) that wakes waiters in the releasing process only. On the Redis provider it logs `CrossHostReleaseSignalAbsent` (`EventId = 16`, Information) once.
+- **Bus.** `setup.UseMessagingReleaseSignal()` from `Headless.DistributedLocks.Messaging` publishes `DistributedLockReleased` through `IBus` with `DeliveryMode.Direct`. See [Headless.DistributedLocks.Messaging](#headlessdistributedlocksmessaging).
+- **Redis pub/sub.** `setup.UseRedisReleaseSignal()` from `Headless.DistributedLocks.Redis` publishes each release on the channel `{KeyPrefix}released` (`DistributedLockOptions.KeyPrefix`) and subscribes every host. It needs a registered `IConnectionMultiplexer` and no messaging, so it works on transports without every-instance delivery, such as AWS SNS/SQS. A publish failure logs `RedisLockReleasePublishFailed` (`EventId = 40`). The subscription starts in the background, retries with a jittered back-off while Redis is unreachable (`RedisLockReleaseSubscribeRetrying`, `EventId = 41`), and is re-established after a reconnect; the host never waits for it. Hosts with different key prefixes on one Redis server do not wake each other.
+- Whichever `Use*ReleaseSignal()` call runs last wins. A signal registered before `AddHeadlessDistributedLocks(...)` wins over the default. A replacement signal also owns local wake-ups: the Redis and bus transports deliver a release back to the host that sent it.
+- A release never waits for the transport, and a publish failure never fails the release.
+- Delivery is at most once and reaches only connected subscribers. A waiter that misses a release wakes on its next backoff poll (capped at 3 seconds plus up to 25% jitter).
+- A mutex release wakes one waiter and nudges that resource's lease monitors to validate early. A semaphore release wakes one slot waiter. A reader-writer release wakes one blocked acquirer.
 
-To use another transport, implement `IDistributedLockReleaseSignal` (its `Announce(resource, leaseId)` runs on the release path, so it must not throw or wait for I/O) and register it before `AddHeadlessDistributedLocks(...)`, or from `setup.RegisterCrossCuttingExtension(...)` with `services.Replace(...)`. On the receiving side, resolve `IEnumerable<IDistributedLockReleaseListener>` and call `OnReleased(resource, leaseId)` on each; it only pulses in-process events, so the transport may call it on its delivery thread.
-
-The bus signal is published as `headless.locks.released` (contract version `1`, `DistributedLockReleased.MessageName`), whatever naming conventions the host configures, and consumed by an [every-instance Bus consumer](messaging.md#every-instance-bus-delivery) with the identity `headless.distributed-locks.release`. A waiter lives in one process, so every process must receive every release: a competing subscription would hand the signal to one replica and leave the waiters in the others on their backoff. Delivery is at most once, and a release published while a process is not subscribed never arrives there; that waiter wakes on its next backoff poll (capped at 3 seconds plus up to 25% jitter), so the consumer needs no reconnect hook. The transport must support every-instance delivery: AWS SNS/SQS does not, and a host that combines `UseMessagingReleaseSignal()` with it fails at startup naming the consumer and the provider. `ConsumeOnly` never filters every-instance consumers, so a host that limits its consumers still receives release signals.
-
-`Headless.DistributedLocks.Redis` supplies a broker-free transport: `setup.UseRedisReleaseSignal()` replaces the silent default with a signal that publishes each release on the Redis pub/sub channel `{KeyPrefix}released` (`DistributedLockOptions.KeyPrefix`) and subscribes every host to it, handing each delivered release to every `IDistributedLockReleaseListener`. It needs a registered `IConnectionMultiplexer` and no messaging, so it works on transports without every-instance delivery, such as AWS SNS/SQS. The publish is fire-and-forget, so `ReleaseAsync` never waits for Redis; a publish failure is logged as `RedisLockReleasePublishFailed` (`EventId = 40`). The subscription starts in the background when the lock providers are first built, retries with a jittered back-off while Redis is unreachable (`RedisLockReleaseSubscribeRetrying`, `EventId = 41`), and is then re-established by the multiplexer after a reconnect; the host never waits for it. Pub/sub delivery is at most once and reaches only connected subscribers, so a waiter that misses a release wakes on its next backoff poll. Hosts with different key prefixes on one Redis server do not wake each other. Whichever `Use*ReleaseSignal()` call runs last wins.
+To use another transport, implement `IDistributedLockReleaseSignal` and register it before `AddHeadlessDistributedLocks(...)`, or from `setup.RegisterCrossCuttingExtension(...)` with `services.Replace(...)`. Its `Announce(resource, leaseId)` runs on the release path, so it must not throw or wait for I/O. If it throws anyway, the release still completes: the provider logs `ReleaseSignalAnnounceFailed` (`EventId = 25`, Warning) with the exception, and waiters wake on their polling backoff. On the receiving side, resolve `IEnumerable<IDistributedLockReleaseListener>` and call `OnReleased(resource, leaseId)` on each; it only pulses in-process events, so the transport may call it on its delivery thread.
 
 ### Observability
 
-The package emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.DistributedLocks` (used for both the `Meter` and the `ActivitySource`), exposed at compile time as `DistributedLocksDiagnostics.SourceName`. Register with the typed helpers — `tracing.AddDistributedLocksInstrumentation()` and `metrics.AddDistributedLocksInstrumentation()` (they surface in the `OpenTelemetry.Trace` / `OpenTelemetry.Metrics` namespaces and require only `OpenTelemetry.Api`) — or subscribe by name with `AddMeter(DistributedLocksDiagnostics.SourceName)` / `AddSource(DistributedLocksDiagnostics.SourceName)`; both paths are first-class. Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
+Metrics and traces use one instrumentation name, `Headless.DistributedLocks` (`DistributedLocksDiagnostics.SourceName`). Register with `tracing.AddDistributedLocksInstrumentation()` and `metrics.AddDistributedLocksInstrumentation()` (they need only `OpenTelemetry.Api`), or with `AddMeter(DistributedLocksDiagnostics.SourceName)` and `AddSource(DistributedLocksDiagnostics.SourceName)`. Acquire paths start activities on that source.
 
 | Instrument | Kind | Unit | Meaning |
 | --- | --- | --- | --- |
-| `headless.lock.failed` | Counter (`int`) | count | Incremented when a mutex / reader-writer acquire fails or times out. Carries a `headless.lock.reason` dimension (see below). |
-| `headless.lock.wait.time` | Histogram (`double`) | milliseconds | Time spent waiting to acquire a lock, recorded once per acquire attempt (success or failure). |
-| `headless.semaphore.failed` | Counter (`int`) | count | Incremented when a semaphore slot acquire fails or times out. Carries a `headless.semaphore.reason` dimension (see below). |
-| `headless.semaphore.wait.time` | Histogram (`double`) | milliseconds | Time spent waiting to acquire a semaphore slot, recorded once per acquire attempt (success or failure). |
+| `headless.lock.failed` | Counter (`int`) | count | A mutex or reader-writer acquire failed or timed out. Tagged `headless.lock.reason`. |
+| `headless.lock.wait.time` | Histogram (`double`) | milliseconds | Time spent waiting to acquire a lock, once per attempt, success or failure. |
+| `headless.semaphore.failed` | Counter (`int`) | count | A semaphore slot acquire failed or timed out. Tagged `headless.semaphore.reason`. |
+| `headless.semaphore.wait.time` | Histogram (`double`) | milliseconds | Time spent waiting for a semaphore slot, once per attempt, success or failure. |
 
-The `*.failed` counters carry a namespaced reason dimension (`headless.lock.reason` on the lock counter, `headless.semaphore.reason` on the semaphore counter — framework-owned attributes are always `headless.*`-namespaced) so a lock-store stall is distinguishable from routine contention:
+The reason tag has two values, exposed as `DistributedLockFailureReasons.Contended` and `DistributedLockFailureReasons.Stalled`:
 
-- `…reason=contended` — every expected not-acquired outcome (lock held by another holder, acquire timeout elapsed, swallowed transient storage error). A transient storage error during a mutex acquire can arrive after the write committed, so the lock first compare-and-deletes its own lease id, then retries; when the acquire ends without the lock after such an error, it compare-and-deletes once more before returning. If every one of those cleanups also fails, the key stays held until its TTL; with `TimeUntilExpires = Timeout.InfiniteTimeSpan` it stays until removed by hand.
-- `…reason=stalled` — a non-blocking try-once acquire (`AcquireTimeout = TimeSpan.Zero`) whose single storage attempt hit the internal safety deadline (lock-store stall), surfaced even when the caller's token never fires. Alert on `rate(headless.lock.failed{headless.lock.reason="stalled"})` to detect lock-store degradation; the same trip also emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning, fields `Resource`/`LeaseId`/`Duration`) as a per-event breadcrumb. The metric counts toward the same total as before — the tag splits the existing counter, it does not add a new instrument.
-
-The two values are exposed as `public const` on `DistributedLockFailureReasons` (`Contended` / `Stalled`) so alert-rule and dashboard code can reference them at compile time instead of hard-coding the strings.
-
-Acquire paths start activities on the `ActivitySource` for distributed tracing. Lease-monitor state transitions (`Held`, `Renewed`, `Lost`, `Unknown`) are not metrics; they surface through the `LeaseMonitorStateChanged` log event (see [Lease Lifecycle Monitoring](#lease-lifecycle-monitoring)).
+- `contended`: every expected not-acquired outcome (held by another holder, acquire timeout elapsed, a swallowed transient storage error). After a transient error during a mutex acquire, the lock deletes its own lease id if the write landed. If every cleanup also fails, the key stays held until its TTL, or until removed by hand with `TimeUntilExpires = Timeout.InfiniteTimeSpan`.
+- `stalled`: a try-once acquire (`AcquireTimeout = TimeSpan.Zero`) whose single storage attempt hit the internal safety deadline, even when the caller's token never fires. The acquire returns `null` and logs `TryOnceSafetyDeadlineFired` (`EventId = 24`, Warning, fields `Resource`, `LeaseId`, `Duration`). Alert on `rate(headless.lock.failed{headless.lock.reason="stalled"})` to detect lock-store degradation.
+- A try-once acquire that finds the resource held logs no Warning: the mutex logs `FailedToAcquireLock` (`EventId = 7`) at Debug, and the reader-writer and semaphore log nothing. A mutex try-once whose storage call throws logs `FailedToAcquireLockAfter` (`EventId = 13`) at Warning, as a blocking acquire does when its `AcquireTimeout` elapses.
 
 ## Reader-Writer Locks
 
-Use `IDistributedReadWriteLock` for read-heavy resources where multiple readers can proceed concurrently and writers must run exclusively. Read and write acquires return the same `IDistributedLease` handle shape as mutex locks, so `ReleaseAsync()`, `RenewAsync(...)`, `LostToken`, and `LockMonitoringMode.AutoExtend` work the same way.
+Use `IDistributedReadWriteLock` for read-heavy resources where readers may proceed concurrently and writers run exclusively. Read and write acquires return the same `IDistributedLease` handle as mutex locks.
 
-Redis reader-writer locks use two keys per resource: `{resource}:writer` for the active writer or writer-waiting marker, and `{resource}:readers` for active reader lease ids. The braces are Redis cluster hash-tags so both keys live on the same slot. Resource names containing `{` or `}` are rejected because storage owns that hash-tag shape.
-
-The reader set is a Redis HASH whose fields are reader lockIds and whose values are per-reader expiry epochs in milliseconds (computed inside Lua via `redis.call('TIME')` so the server clock is authoritative). The hash key itself carries a generous safety-net TTL (2× the lease duration); the per-entry expiry is the source of truth for liveness. Each writer-acquire script run prunes expired reader entries before checking "no live readers" so a crashed reader never strands a queued writer past its own lease.
-
-Writer-preference is intentional. When a writer queues behind active readers, Redis stores a writer-waiting marker. New readers are blocked while that marker exists, preventing steady read traffic from starving the writer. The marker is keyed by the writer's leaseId but the plant/refresh branch fires for any caller observing a `:_WRITERWAITING`-suffixed value, so multiple contending writers collectively keep the marker continuously present even if individual writers cancel. The marker TTL is governed by `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30s) rather than the lease TTL, so an abandoned writer cannot block readers for the full lease window. If the writer times out or is cancelled before acquiring, the provider clears its waiting marker via the release path. An acquire attempt that is cancelled or fails after the store may already have committed it is released the same way, as the mutex does: a reader releases its reader entry, so a lost reply never holds writers off for the reader TTL, and a writer releases its writer key before retrying, so a retry does not collide with its own grant.
-
-Readers running `Monitoring = LockMonitoringMode.AutoExtend` may see `LostToken` fire when a writer queues — the extend-read script refuses to refresh while a writer-waiting marker is present, which the provider classifies as `Lost`. This is the contract that enforces the writer-preference guarantee at the per-reader level: a reader that wants to keep its lease through a writer queue must reacquire from scratch after the writer drains.
+- **Writer preference (Redis and InMemory).** When a writer queues behind active readers, new readers are blocked until it acquires, so steady read traffic cannot starve the writer. The writer-waiting marker expires after `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30 seconds, valid `0 < ttl <= 5 min`), so an abandoned writer cannot block readers for the whole lease window. Set it above your worst-case writer acquire wait. A writer that times out or is cancelled clears its marker.
+- **AutoExtend readers lose their lease when a writer queues.** The reader's extend is refused while a writer waits, and its `LostToken` fires. A reader that must continue reacquires after the writer drains.
+- On Redis, resource names containing `{` or `}` are rejected. On InMemory, reader-writer lease ids containing `:` are rejected.
+- A reader entry carries its own expiry, so a crashed reader never strands a queued writer past its lease.
+- An acquire that was cancelled or failed after the store may have committed it is released, so a lost reply never holds the resource.
 
 ```csharp
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
@@ -245,18 +225,16 @@ await using var write = await readerWriterLocks.AcquireWriteLockAsync(
 );
 ```
 
-### Reader-Writer Composite Acquisition
+**Verify:** see [Headless.DistributedLocks.Redis](#headlessdistributedlocksredis).
 
-`IDistributedReadWriteLock` composes over a **mixed** set of read and write requests:
+### Reader-Writer Composite Acquisition
 
 ```csharp
 Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedReadWriteLockRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
 Task<IDistributedLease>  AcquireAllAsync(IEnumerable<DistributedReadWriteLockRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
 ```
 
-with `record DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)` and `enum DistributedLockMode { None = 0, Read = 1, Write = 2 }`. `None` is the `default`, and it is rejected — the sentinel exists so `default(DistributedLockMode)` is an *invalid* request rather than a silently-shared read lock.
-
-Four sugar overloads cover the uniform-mode cases and take plain names: `TryAcquireAllReadAsync(IEnumerable<string>, ...)`, `AcquireAllReadAsync(...)`, `TryAcquireAllWriteAsync(...)`, `AcquireAllWriteAsync(...)`.
+`DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)` takes `DistributedLockMode.Read` or `Write`. `None` (the `default`) is rejected, so an uninitialized request never becomes a silent read lock. The uniform-mode overloads `TryAcquireAllReadAsync(IEnumerable<string>, ...)`, `AcquireAllReadAsync(...)`, `TryAcquireAllWriteAsync(...)`, and `AcquireAllWriteAsync(...)` take plain names.
 
 ```csharp
 await using var lease = await readerWriterLocks.AcquireAllAsync(
@@ -273,24 +251,20 @@ await using var lease = await readerWriterLocks.AcquireAllAsync(
 );
 ```
 
-**Why the set is mixed rather than a read set and a write set.** This is the load-bearing design decision, and separate read-set and write-set entry points would silently reintroduce the circular wait that composite acquisition exists to prevent. A caller needing a read lock on `a` and a write lock on `b` would have to nest two composites, and two such callers deadlock:
+**Pass reads and writes in one mixed set.** Two nested composites deadlock:
 
-- Caller X: `AcquireAllReadAsync(["a"])`, then `AcquireAllWriteAsync(["b"])` — holds read-`a`, waits on write-`b`.
-- Caller Y: `AcquireAllReadAsync(["b"])`, then `AcquireAllWriteAsync(["a"])` — holds read-`b`, waits on write-`a`.
+- Caller X: `AcquireAllReadAsync(["a"])`, then `AcquireAllWriteAsync(["b"])`. It holds read-`a` and waits on write-`b`.
+- Caller Y: `AcquireAllReadAsync(["b"])`, then `AcquireAllWriteAsync(["a"])`. It holds read-`b` and waits on write-`a`.
 
-Ordinal sorting cannot fix that, because neither call ever sees the full set. A mixed set can: both callers canonicalize to `a` then `b`, so X takes read-`a` while Y blocks on write-`a`, and there is no cycle. Use the sugar overloads only when the whole set is genuinely one mode; the moment a caller needs both, pass one mixed set through one call.
+With one mixed set each, both callers order `a` before `b`, and there is no cycle. Use the uniform-mode overloads only when the whole set is one mode.
 
-**Mode collapse.** A resource requested as both `Read` and `Write` in the same set collapses to a single `Write` child, because a write lock subsumes a read lock. Each resource therefore appears exactly once in the canonical set, which is what makes ordering by resource name alone total and well-defined.
-
-**Composite identity encodes the mode** (`r:a+w:b`) so a read set and a write set over the same names are distinguishable in diagnostics. Like every composite identity it exists in no backend — never pass a composite's `Resource` or `LeaseId` to `IsReadLockedAsync(resource)`, `IsWriteLockedAsync(resource)`, `GetReaderCountAsync(resource)`, or any other by-resource API; they will report a held set as unlocked rather than fail. Inspect the individual resource names, and renew or release the composite through its handle.
-
-**Connection-scoped cost.** On PostgreSQL and SQL Server a reader-writer composite over N resources **pins N database connections for the whole duration of the hold**, because those backends are connection-scoped (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)) — there is no TTL-backed lease to hold in the caller's absence. Size the connection pool for your largest composite. This is a real operational cost, not a defect. Redis and InMemory composites hold no connection per child.
+The composite `Resource` encodes the mode (`r:a+w:b`). Never pass it or the composite `LeaseId` to `IsReadLockedAsync(resource)`, `IsWriteLockedAsync(resource)`, `GetReaderCountAsync(resource)`, or another by-resource API.
 
 ## Semaphores
 
-Use `IDistributedSemaphoreProvider` when a resource may have N concurrent holders. `CreateSemaphore(resource, maxCount)` binds capacity to the returned semaphore instance, so its acquire calls cannot disagree about `maxCount`; all callers must use the same `maxCount` for a given distributed resource because mixed counts are undefined. Acquired slots return the same `IDistributedLease` handle used by mutex locks: `ReleaseAsync()`, `RenewAsync(...)`, `LostToken`, `LockMonitoringMode.Monitor`, `LockMonitoringMode.AutoExtend`, and `FencingToken` all flow through the same surface.
+Use `IDistributedSemaphoreProvider` when a resource may have N concurrent holders. `CreateSemaphore(resource, maxCount)` binds the capacity to the returned semaphore. Every caller must use the same `maxCount` for one distributed resource; mixed counts are undefined. A slot returns the same `IDistributedLease` handle as a mutex: `ReleaseAsync()`, `RenewAsync(...)`, `LostToken`, `LockMonitoringMode.Monitor`, `LockMonitoringMode.AutoExtend`, and `FencingToken` all work.
 
-Redis semaphores store live holders in a ZSET keyed by lease id with expiration timestamps as scores. Lua uses Redis server `TIME`; acquire prunes expired holders before checking capacity, while count and validate stay read-only and exclude expired scores without mutating the ZSET. The holders key gets a safety TTL of at least `ttl * 2` without shrinking an existing longer key TTL. Each successful slot grant increments the same per-resource fence counter model used by Redis mutex locks. Semaphore release is announced through the same `IDistributedLockReleaseSignal` as a mutex release, so waiters wake through the optional Redis or bus transport (`UseRedisReleaseSignal()` or `UseMessagingReleaseSignal()`); without one they fall back to polling backoff.
+On Redis, holders expire by the Redis server clock, and each slot grant issues a fencing token as a mutex grant does. A semaphore release wakes waiters through the same release signal as a mutex release.
 
 ```csharp
 var semaphore = semaphoreProvider.CreateSemaphore("downstream:billing-api", maxCount: 5);
@@ -307,14 +281,14 @@ await using var slot = await semaphore.AcquireAsync(
 
 ### Semaphore Composite Acquisition
 
-Composite acquisition hangs off `IDistributedSemaphoreProvider`, not off `IDistributedSemaphore`:
+Composite acquisition is on `IDistributedSemaphoreProvider`, not on `IDistributedSemaphore`, because a semaphore instance binds one resource at creation:
 
 ```csharp
 Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedSemaphoreRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
 Task<IDistributedLease>  AcquireAllAsync(IEnumerable<DistributedSemaphoreRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)
 ```
 
-with `record DistributedSemaphoreRequest(string Resource, int MaxCount)`. It has to hang off the provider because a semaphore binds its resource and capacity at construction and `IDistributedSemaphore.TryAcquireAsync(...)` takes no resource argument — a single semaphore instance cannot compose. `CreateSemaphore(resource, maxCount)` is the only way to materialize the children, which is why every request carries its own capacity. Each request naming its own `MaxCount` also means one composite can span differently-sized semaphores.
+Each `DistributedSemaphoreRequest(string Resource, int MaxCount)` carries its own capacity, so one composite can span differently sized semaphores.
 
 ```csharp
 await using var lease = await semaphoreProvider.AcquireAllAsync(
@@ -327,56 +301,47 @@ await using var lease = await semaphoreProvider.AcquireAllAsync(
 );
 ```
 
-**`MaxCount` binds to the semaphore, not to the acquisition.** Every caller naming a given distributed resource must agree on its capacity — mixed counts for one resource are undefined, exactly as they are for `CreateSemaphore`. So naming one resource twice in a set with *different* `MaxCount` values describes two semaphores that cannot both exist. That is a caller bug, and it is rejected with an `ArgumentException` naming the resource before any `CreateSemaphore` or acquire call runs. Identical duplicates dedupe silently.
-
-**A composite takes exactly one slot of each named semaphore.** Duplicate requests for one resource collapse to a single child; they do not take two permits. `DistributedSemaphoreRequest` deliberately has no permit-count field — see [the N-permit gap](#composite-acquisition) for why a composite structurally cannot deliver all-or-nothing acquisition of N permits of a *single* semaphore, and why repeated `AcquireAsync` calls are not a safe workaround.
-
-Two further consequences of the semaphore's lease shape:
-
-- **Formation renewal always applies.** A slot is stored with a finite expiry score, so `TimeUntilExpires = Timeout.InfiniteTimeSpan` is rejected regardless of `Monitoring`. Held slots are therefore always renewed at half their TTL (capped at one minute) while later slots are still pending, unless `LockMonitoringMode.AutoExtend` already owns renewal.
-- **The composite's `FencingToken` is `null`** even though each individual slot carries one — there is no single fence for a set. The joined `Resource` (`a+b`) and synthetic `LeaseId` exist in no backend; never pass them to `GetHolderCountAsync` or any other by-resource API. A set canonicalizing to one resource returns the semaphore's own slot lease unchanged, real `FencingToken` included.
-
-**Provider coverage.** Semaphore composites are available wherever semaphores are: Redis and InMemory. PostgreSQL and SQL Server ship no semaphore primitive at all, so semaphore composites do not apply to them — this is the same coverage as `CreateSemaphore`, not a composite-specific gap.
+- A composite takes exactly one slot of each named semaphore. Duplicate requests collapse to one; they do not take two permits. See the N-permit limit in [Composite Acquisition](#composite-acquisition).
+- A slot always has a finite expiry, so `TimeUntilExpires = Timeout.InfiniteTimeSpan` is rejected whatever the `Monitoring` mode, and held slots are renewed during formation unless `AutoExtend` owns renewal.
+- The composite's `FencingToken` is `null` even though each slot carries one. A set that canonicalizes to one resource returns the slot lease with its real token.
+- Semaphore composites exist wherever semaphores do: Redis and InMemory.
 
 ## Choosing a Provider
 
-Use InMemory when all contenders are inside one process. Use Redis when you operate Redis and need efficiency locks (mutex, reader-writer, or semaphore) with atomic Lua scripts. Use Postgres when the protected state already lives in PostgreSQL or when session/transaction-coupled advisory locks are the right primitive. Use SQL Server when the protected state already lives in SQL Server or when transaction-coupled `sp_getapplock` is the right primitive. Do not use distributed locks for correctness locks on protected state mutations without stale-write rejection through `FencingToken` or transaction-coupled locking.
+Use InMemory when all contenders are inside one process. Use Redis for efficiency locks (mutex, reader-writer, or semaphore). Use PostgreSQL or SQL Server when the protected state already lives there, or when transaction-coupled locks are the right primitive. Never use a lock for a correctness invariant without stale-write rejection through `FencingToken` or transaction-coupled locking.
 
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
-| `Headless.DistributedLocks.InMemory` | Tests, local development, or single-instance apps need the real lock abstractions without Redis. | More than one process, node, container, or app instance can contend for the same resource. | No infrastructure; coordination and fencing state disappear with the process. |
-| `Headless.DistributedLocks.PostgreSql` | You want PostgreSQL advisory mutexes or reader-writer locks, durable sequence fencing, or transaction-coupled locks. | You need semaphores (or semaphore composites), PgBouncer transaction/statement pooling for session-scoped locks, or no PostgreSQL dependency. | No TTL; the lock lives as long as the holding connection, so the handle must be disposed to release it (no finalizer reclaim), and a composite over N resources pins N connections for the hold. Connection death is detected actively (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)). |
-| `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks, reader-writer locks, or N-holder semaphores. | You need durable transaction-coupled fencing. | Requires `IConnectionMultiplexer`; Redis fencing is best-effort unless the fence key is retained. |
-| `Headless.DistributedLocks.SqlServer` | You want SQL Server application locks, durable sequence fencing, or transaction-coupled locks (which do block server-side). | You need semaphores (or semaphore composites), upgradeable reader-writer locks, or no SQL Server dependency. | No TTL; session-scoped locks live as long as the holding connection, a composite over N resources pins N connections for the hold, and a contended session-scoped acquire polls at ~100ms rather than blocking inside SQL Server. |
+| `Headless.DistributedLocks.InMemory` | Tests, local development, or single-instance apps need the real lock abstractions without Redis. | More than one process, node, container, or app instance can contend for the same resource. | No infrastructure; lock and fencing state disappear with the process. |
+| `Headless.DistributedLocks.PostgreSql` | You want PostgreSQL advisory mutexes or reader-writer locks, durable sequence fencing, or transaction-coupled locks. | You need semaphores, PgBouncer transaction or statement pooling for session-scoped locks, or no PostgreSQL dependency. | No TTL: the handle must be disposed, and a composite over N resources pins N connections. Connection death is detected actively when monitored. |
+| `Headless.DistributedLocks.Redis` | You want Redis-backed efficiency locks, reader-writer locks, or N-holder semaphores. | You need durable transaction-coupled fencing. | Requires `IConnectionMultiplexer`; fencing is best-effort. |
+| `Headless.DistributedLocks.SqlServer` | You want SQL Server application locks, durable sequence fencing, or transaction-coupled locks. | You need semaphores, upgradeable reader-writer locks, or no SQL Server dependency. | No TTL; a composite over N resources pins N connections; a contended session-scoped acquire polls at about 100 ms instead of blocking inside SQL Server. |
 
 ---
 
 ## Headless.DistributedLocks.Abstractions
 
-Defines public distributed-lock contracts.
+Defines the public distributed-lock contracts.
 
 ### API and behavior
 
-- `IDistributedLock` with single-resource `TryAcquireAsync(...)` / `AcquireAsync(...)`. The multi-resource composites (`TryAcquireAllAsync(...)` / `AcquireAllAsync(...)`) and `TryUsingAsync(...)` ship in `Headless.DistributedLocks`.
+- `IDistributedLock` with `TryAcquireAsync(...)` and `AcquireAsync(...)`. The composites (`TryAcquireAllAsync(...)`, `AcquireAllAsync(...)`) and `TryUsingAsync(...)` ship in `Headless.DistributedLocks`.
 - `IDistributedReadWriteLock` with `AcquireReadLockAsync(...)`, `TryAcquireReadLockAsync(...)`, `AcquireWriteLockAsync(...)`, and `TryAcquireWriteLockAsync(...)`.
-- `DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)` and `DistributedLockMode` (`None = 0`, `Read = 1`, `Write = 2`) describe one entry of a reader-writer composite.
-- `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control.
-- `DistributedSemaphoreRequest(string Resource, int MaxCount)` names one semaphore in a composite and the capacity it is created with; it carries no permit count.
-- `IDistributedLease` handle with `LeaseId`, nullable `FencingToken` (`LockFencingToken?`), `LostToken`, `CanObserveLoss`, `IsLost`, `ThrowIfLost()`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
-- `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
-- `LockKey.For<T>(id)` builds a resource name `"{typeof(T).Name}:{id}"` from an entity type and a `string`, `Guid` (`"D"` format), or `long` id (an `int` widens; invariant culture). It returns a plain `string`, so it works with `IDistributedLock`, the composites, and `unit.TransactionLocks` alike. The short type name means two same-named types in different namespaces share names, which only adds contention. Renaming the type changes the name, so during a rolling deployment old and new nodes do not exclude each other on that entity.
+- `DistributedReadWriteLockRequest(string Resource, DistributedLockMode Mode)` and `DistributedLockMode` (`None = 0`, `Read = 1`, `Write = 2`).
+- `IDistributedSemaphoreProvider` and `IDistributedSemaphore`, and `DistributedSemaphoreRequest(string Resource, int MaxCount)`, which carries no permit count.
+- `IDistributedLease` with `LeaseId`, nullable `FencingToken` (`LockFencingToken?`), `LostToken`, `CanObserveLoss`, `IsLost`, `ThrowIfLost()`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
+- `DistributedLockException` and its subtypes `LockAcquisitionTimeoutException`, `LockHandleLostException`, `LockCleanupFailedException`, and `DistributedLockDeadlockException`. None derives from `TimeoutException`.
+- `LockKey.For<T>(id)` builds `"{typeof(T).Name}:{id}"` from an entity type and a `string`, `Guid` (`"D"` format), or `long` id (an `int` widens; invariant culture). It returns a plain `string` for `IDistributedLock`, the composites, and `unit.TransactionLocks`. Two same-named types in different namespaces share names, which only adds contention. Renaming the type changes the name, so during a rolling deployment old and new nodes do not exclude each other on that entity.
 - `unit.TransactionLocks` (`UnitOfWorkTransactionLocks`) and its feature contract `IUnitOfWorkTransactionLocks`, implemented by the PostgreSQL and SQL Server providers. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
-- `GetLeaseIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, `GetExpirationAsync(resource)` for operational inspection and monitoring. `GetLeaseIdAsync` does not renew a lease; monitored holders should use `LostToken` or `ThrowIfLost()` for lease-loss observation. Inspection `LeaseId` values may be null when the backend can observe the locked resource but not the current holder identity, and provider-wide list/count results are limited to what the backend can enumerate.
+- Inspection: `GetLeaseIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, and `GetExpirationAsync(resource)`. A `LeaseId` may be `null` when the backend sees the lock but not the holder, and list and count results are limited to what the backend can enumerate.
 
 ### Design constraints
 
-- `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
-- `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` all extend `IDistributedLockEnvironment`, which names the four values a provider-agnostic coordinator needs and nothing else: `TimeProvider`, `Logger`, `DefaultTimeUntilExpires`, and `DefaultAcquireTimeout`. The composite coordinator needs a clock for the whole-set deadline and a logger for swallow-and-log disposal. **This is a breaking change for external implementors of the reader-writer and semaphore interfaces**: those two did not previously require `TimeProvider` and `Logger`, and a custom provider must now expose both. Implementing the four members is all that adoption requires; the base interface adds no work beyond them.
-- Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
-- `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`, including for composite leases.
-- `LostToken` is an observability signal. Consumer code decides whether to stop, compensate, or throw `LockHandleLostException`; `ThrowIfLost()` implements the common fail-stop check.
-- `LostToken` reports **loss only**, never ordinary teardown. An explicit `ReleaseAsync()` or dispose stops the monitor (or, for connection-scoped providers, drops the connection watch) without cancelling the token, so callbacks registered on it do not fire on the success path of an `await using`. Every provider owes this; it is pinned by the cross-provider conformance suite.
-- `TimeUntilExpires = null` uses the provider default. Built-in providers use a finite 20-minute default, so `null` is valid with `LockMonitoringMode.AutoExtend`; `Timeout.InfiniteTimeSpan` is not.
+- `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`, with no stronger guarantee.
+- A custom `IDistributedLock`, `IDistributedReadWriteLock`, or `IDistributedSemaphoreProvider` implements `IDistributedLockEnvironment`: `TimeProvider`, `Logger`, `DefaultTimeUntilExpires`, and `DefaultAcquireTimeout`. The composites read all four, and use that `TimeProvider` for deadlines, so expose the clock your own acquisition uses. Preserve ordinal resource identity: if the backend aliases ordinal-distinct names (for example by case folding), reject non-canonical names or require callers to canonicalize them before a composite call.
+- `ReleaseOnDispose = false` prevents dispose-time release but not explicit `ReleaseAsync(...)`, composites included.
+- `LostToken` is a signal. Your code decides whether to stop, compensate, or throw `LockHandleLostException`; `ThrowIfLost()` is the common fail-stop check.
+- `TimeUntilExpires = null` uses the provider default, 20 minutes on the built-in providers, so `null` is valid with `AutoExtend`. `Timeout.InfiniteTimeSpan` is not.
 
 ### Install
 
@@ -385,8 +350,6 @@ dotnet add package Headless.DistributedLocks.Abstractions
 ```
 
 ### Setup and use
-
-The multi-resource extension signatures are `Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<string> resources, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)` and `Task<IDistributedLease> AcquireAllAsync(IEnumerable<string> resources, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)`.
 
 ```csharp
 public sealed class OrderWorker(IDistributedLock lockProvider)
@@ -414,8 +377,6 @@ public sealed class OrderWorker(IDistributedLock lockProvider)
 }
 ```
 
-`IDistributedReadWriteLock` composes over a mixed `(resource, mode)` set — `Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedReadWriteLockRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)` and the throwing `AcquireAllAsync(...)`, plus the uniform-mode sugar `TryAcquireAllReadAsync(IEnumerable<string> resources, ...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)`. Pass reads and writes together in one call; taking them as two nested composites can deadlock.
-
 ```csharp
 await using var lease = await readerWriterLocks.AcquireAllAsync(
     [
@@ -427,8 +388,6 @@ await using var lease = await readerWriterLocks.AcquireAllAsync(
 );
 ```
 
-`IDistributedSemaphoreProvider` composes over `(resource, maxCount)` descriptors — `Task<IDistributedLease?> TryAcquireAllAsync(IEnumerable<DistributedSemaphoreRequest> requests, DistributedLockAcquireOptions? options = null, CancellationToken cancellationToken = default)` and the throwing `AcquireAllAsync(...)`. One composite can span differently-sized semaphores, and takes exactly one slot of each.
-
 ```csharp
 await using var slots = await semaphoreProvider.AcquireAllAsync(
     [
@@ -439,6 +398,8 @@ await using var slots = await semaphoreProvider.AcquireAllAsync(
     ct
 );
 ```
+
+**Verify:** in a test, a second `TryAcquireAsync` on a held resource with `AcquireTimeout = TimeSpan.Zero` returns `null`, and succeeds after the first lease is disposed.
 
 ### Configuration
 
@@ -452,36 +413,23 @@ None.
 
 ## Headless.DistributedLocks
 
-Provides the `DistributedLock` implementation and setup extensions.
+The lock implementations, the composites, and the registration entry point.
 
 ### API and behavior
 
-- `DistributedLock` implements `IDistributedLock`.
-- `DistributedReadWriteLock` implements `IDistributedReadWriteLock`.
-- `DistributedSemaphoreProvider` implements `IDistributedSemaphoreProvider`.
-- `DisposableDistributedLock` releases on dispose by default.
-- `IDistributedReadWriteLockStorage` defines atomic read/write acquire, extend, release, and validation operations for storage providers.
-- `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations for storage providers.
-- `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
-- `AddHeadlessDistributedLocks(...)` is the single root registration entry point (it returns the `IServiceCollection` for chaining); provider packages contribute `Use...` methods on the `HeadlessDistributedLocksSetupBuilder`.
-- `IDistributedLockReleaseSignal` announces each release to waiters on other hosts; the default announces nothing. `IDistributedLockReleaseListener` is the receiving side: the mutex, semaphore, and reader-writer providers each register their singleton under it. See [Release Wake-ups](#release-wake-ups).
-- `HeadlessDistributedLocksSetupBuilder.RegisterCrossCuttingExtension(Action<IServiceCollection>)` runs a registration after the selected provider's, without counting as a provider. Bridge packages such as `Headless.DistributedLocks.Messaging` use it to replace a default the provider registered.
-- `IDistributedLocksOptionsExtension` is the setup-time hook used by provider packages to wire supported primitives.
-- Composite acquisition over any provider, as extension methods on the Abstractions contracts: `TryAcquireAllAsync(...)` / `AcquireAllAsync(...)` on `IDistributedLock` over `IEnumerable<string>`; on `IDistributedReadWriteLock` over a mixed `IEnumerable<DistributedReadWriteLockRequest>` set, plus the uniform-mode sugar `TryAcquireAllReadAsync(...)` / `AcquireAllReadAsync(...)` / `TryAcquireAllWriteAsync(...)` / `AcquireAllWriteAsync(...)`; and on `IDistributedSemaphoreProvider` over `IEnumerable<DistributedSemaphoreRequest>`. They live here, not in Abstractions, because the shared coordinator behind them is implementation; reference this package to use them.
-- `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
+- `AddHeadlessDistributedLocks(...)` is the single registration entry point and returns the `IServiceCollection`. Provider packages add `Use...` methods on `HeadlessDistributedLocksSetupBuilder`.
+- Composite acquisition over any provider, as extension methods on the Abstractions contracts; reference this package to use them. See [Composite Acquisition](#composite-acquisition).
+- `TryUsingAsync(resource, work, ...)` acquires, runs the work, and releases. Prefer it to a manual try/finally for simple guarded execution.
+- `DistributedLockOptions` configures the key prefix, resource name length, waiter limits, and lease-monitor cadence.
+- `IDistributedLockReleaseSignal` and `IDistributedLockReleaseListener`. See [Release Wake-ups](#release-wake-ups).
+- `HeadlessDistributedLocksSetupBuilder.RegisterCrossCuttingExtension(Action<IServiceCollection>)` runs a registration after the provider's, without counting as a provider.
+- For a custom storage provider: `IDistributedLockStorage`, `IDistributedReadWriteLockStorage`, `IDistributedSemaphoreStorage`, and the `IDistributedLocksOptionsExtension` setup hook. See [For store authors](#for-store-authors).
 
 ### Design constraints
 
-- The package references no messaging assembly. Without a release transport, a release wakes the waiters in its own process at once and waiters on other hosts fall back to polling backoff; `UseRedisReleaseSignal()` (`Headless.DistributedLocks.Redis`) or `UseMessagingReleaseSignal()` (`Headless.DistributedLocks.Messaging`) carries releases to every host.
-- An `IDistributedLockReleaseSignal` registered before `AddHeadlessDistributedLocks(...)` wins over the in-process default, which is added with `TryAdd`. A replacement signal owns local wake-ups too: the Redis and messaging transports deliver a release back to the host that sent it.
-- `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline. If that deadline fires (lock-store stall, caller token never cancels), the acquire still returns `null` but emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning) and tags the failure metric `reason=stalled`, distinguishing a stall from routine contention (`reason=contended`). Applies to mutex, reader-writer, and semaphore non-blocking acquires. A non-blocking acquire that finds the resource held logs no Warning: the mutex logs `FailedToAcquireLock` (`EventId = 7`) at Debug, and the reader-writer and semaphore log nothing. A mutex try-once whose storage call throws logs `FailedToAcquireLockAfter` (`EventId = 13`) at Warning, which is also what a blocking acquire logs when its `AcquireTimeout` elapses.
-- Lease monitors drain before dispose-time release, so monitoring does not add release retry latency during shutdown.
-- Multi-resource acquisition validates, deduplicates, and ordinal-sorts the complete input before the first provider call, then applies one acquire timeout across the canonical set. A zero timeout gives every canonical resource one non-blocking attempt. Partial acquisition is compensated by exhaustive reverse-order release and disposal; it is not transactional. The same coordinator backs all three primitives.
-- Composite resource identity is ordinal: two names are the same only when `StringComparer.Ordinal` considers them equal. The canonical set is ordered by *resource*, never by a composed key such as `"a:write"` — a composed sort would place that after `"a:x:read"` for the resources `a` and `a:x`, breaking the single global resource order that keeps a mutex composite and a reader-writer composite over overlapping names from deadlocking against each other. Custom providers whose backend aliases ordinal-distinct names, for example through case folding, must reject non-canonical names or require callers to canonicalize them before invoking the composite helpers. Normalizing only inside the provider is too late and can make one composite contend with itself.
-- A reader-writer set may mix `Read` and `Write` freely, and should: separate read-set and write-set calls cannot see the whole set, so two callers nesting them can still deadlock. A resource requested in both modes collapses to a single `Write` child (a write lock subsumes a read lock), which leaves every resource in the canonical set exactly once and makes resource-only ordering total.
-- A semaphore request's `MaxCount` is the semaphore's capacity, not a permit count. One resource named twice with conflicting capacities throws `ArgumentException` (naming the resource) before any `CreateSemaphore` call; identical duplicates dedupe. A composite takes exactly one slot per named semaphore, and there is deliberately no permit-count field — a composite cannot make N permits of a *single* semaphore atomic, because ordering cannot resolve same-resource contention.
-- A canonical set of one returns the provider's original child lease, preserving its `LeaseId` and `FencingToken`. A true multi-resource lease has a synthetic `LeaseId`, a joined diagnostic `Resource` (mode-encoded as `r:a+w:b` for reader-writer, a plain `a+b` join otherwise), and a `null` scalar `FencingToken`; its loss signal links the child signals, and renew/release operate on every child.
-- During composite formation, finite-TTL children are renewed at half the TTL, capped at one minute, unless `LockMonitoringMode.AutoExtend` already owns renewal. Composite deadlines and waits use the provider's `TimeProvider`; custom providers must expose the clock used by their own acquisition logic.
+- The package references no messaging assembly. Without a release transport, a release wakes waiters in its own process only.
+- A try-once acquire (`AcquireTimeout = TimeSpan.Zero`) makes one storage attempt under an internal safety deadline; see [Observability](#observability) for the `stalled` signal. This applies to mutex, reader-writer, and semaphore acquires.
+- Dispose waits up to `DisposeTimeout` for the release to finish when storage is unreachable, then returns while the release keeps trying in the background; the lease's TTL is the backstop.
 
 ### Install
 
@@ -512,7 +460,20 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
+**Verify:** see the provider's Verify step. An invalid `DistributedLockOptions` value fails options validation at host start.
+
 ### Configuration
+
+| `DistributedLockOptions` | Default | Notes |
+| --- | --- | --- |
+| `KeyPrefix` | `distributed-lock:` | Prefix of every lock key and of the Redis release channel. |
+| `MaxResourceNameLength` | 1024 | |
+| `MaxConcurrentWaitingResources` | 10,000 | Distinct resources with waiters. |
+| `MaxWaitersPerResource` | 1,000 | |
+| `PollingCadenceFraction` | 0.5 | Validation cadence under `Monitor`, as a fraction of the TTL. Tune down to 0.1 for faster loss detection at the cost of more storage polls. |
+| `AutoExtensionCadenceFraction` | 1/3 | Renewal cadence under `AutoExtend`. At most 0.5, so at least two renewals fit in a lease. |
+| `WriterWaitingMarkerTtl` | 30 seconds | Reader-writer only. Valid `0 < ttl <= 5 min`. |
+| `DisposeTimeout` | 10 seconds | How long dispose waits for a release when storage is unreachable. Valid up to 5 minutes. |
 
 ```csharp
 options.KeyPrefix = "distributed-lock:";
@@ -523,7 +484,7 @@ options.PollingCadenceFraction = 0.5;
 options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
-Storage naming is a separate, feature-owned options type. `DistributedLocksStorageOptions.Schema` (default `"headless"`, the schema every Headless feature shares) names the database schema that holds the fencing sequence, and it is configured on the setup builder rather than on any one provider:
+`DistributedLocksStorageOptions.Schema` (default `"headless"`, the schema every Headless feature shares) names the database schema that holds the fence sequence. Set it on the setup builder, not on a provider:
 
 ```csharp
 services.AddHeadlessDistributedLocks(setup =>
@@ -533,11 +494,9 @@ services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
-`setup.ConfigureStorage(configuration)` binds the same options from configuration — pass the `Headless:DistributedLocks:Storage` section to bind `Headless:DistributedLocks:Storage:Schema`.
+`setup.ConfigureStorage(configuration)` binds the same options; pass the `Headless:DistributedLocks:Storage` section to bind `Headless:DistributedLocks:Storage:Schema`. The provider validates the schema at startup against its own identifier rules, so a name valid on one engine can fail on the other. Redis and InMemory ignore it.
 
-The feature owns the setting so the fencing sequence lands in the same schema whichever relational provider backs it; the provider package contributes only the dialect rules the schema is validated against on startup. Redis and in-memory providers create no schema-bound object and ignore it. The trade-off: a schema name valid on one provider can be rejected on the other, and that failure surfaces at startup rather than at first acquire.
-
-Use `DistributedLockAcquireOptions` to override per-call expiration, acquire timeout, monitoring, and dispose behavior:
+Override expiration, acquire timeout, monitoring, and dispose behavior per call with `DistributedLockAcquireOptions`:
 
 ```csharp
 await lockProvider.AcquireAsync(
@@ -552,7 +511,7 @@ await lockProvider.AcquireAsync(
 );
 ```
 
-Use `AutoExtend` when the protected work can exceed the initial TTL and should keep the lease alive while the process is healthy:
+Use `AutoExtend` when the protected work can outlast the initial TTL:
 
 ```csharp
 await using var lease = await lockProvider.AcquireAsync(
@@ -566,39 +525,64 @@ await using var lease = await lockProvider.AcquireAsync(
 );
 ```
 
-`Headless.Messaging`'s retry processor is the canonical in-repo consumer of this mode. Each retry-pickup tick acquires its coarse pickup lock with `AcquireTimeout = TimeSpan.Zero` (non-blocking try-once), a finite lease window equal to the current polling interval, and `LockMonitoringMode.AutoExtend` so a pickup that outruns the initial TTL keeps the lease without manual per-tick renewal. It treats `LostToken` as a pickup boundary, not a dispatch-cancellation token: a lost lease blocks new pickup but never aborts in-flight dispatch, which stays governed by the per-row `LockedUntil` lease (the correctness primitive). See [Distributed Lock Integration](messaging.md#distributed-lock-integration) for the retry-lock EventIds and the full correctness-vs-coordination split.
+The Messaging retry processor uses this shape: a try-once acquire with a lease equal to its polling interval and `AutoExtend`, treating `LostToken` as "stop picking up new work", not "abort work in flight". See [Distributed Lock Integration](messaging/retries.md#distributed-lock-integration).
 
 ### Runtime behavior
 
-- Registers exactly one provider selected by the `AddHeadlessDistributedLocks(...)` builder.
-- Redis and InMemory providers register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`.
-- PostgreSQL and SQL Server providers register `IDistributedLock` and `IDistributedReadWriteLock`.
+- Registers exactly one provider, chosen on the builder.
+- Redis and InMemory register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`. PostgreSQL and SQL Server register `IDistributedLock` and `IDistributedReadWriteLock`.
 - Registers `TimeProvider.System` and `IGuidGenerator` when absent.
-- Registers the silent `IDistributedLockReleaseSignal` when none is registered, and each provider singleton as an `IDistributedLockReleaseListener`.
+- Registers the in-process `IDistributedLockReleaseSignal` when none is registered, and each provider as an `IDistributedLockReleaseListener`.
 - Applies cross-cutting extensions after the provider's registration.
+
+### For store authors
+
+Every storage method must be safe to call concurrently. Keys and resources arrive already scoped by `KeyPrefix`. Cancellation does not prove a write did not land, so the provider cleans up after a cancelled acquire; your store only has to make each operation atomic. A provider-agnostic lock also implements `IDistributedLockEnvironment`; see [Design constraints](#design-constraints).
+
+**Mutex storage: `IDistributedLockStorage`.**
+
+| Member | What it must do |
+| --- | --- |
+| `InsertAsync(key, leaseId, ttl, ct)` | Atomically create `key` with `leaseId` only when it does not exist (set-if-absent). A `null` or `Timeout.InfiniteTimeSpan` `ttl` stores no expiry. Return `DistributedLockAcquireResult(Acquired, FencingToken)`; issue a token only when it increases per key, and never advance it on a failed insert. |
+| `ReplaceIfEqualAsync(key, expectedId, newId, newTtl, ct)` | Atomically replace the value only when it equals `expectedId` (renewal). A `null` `newTtl` keeps the current expiry. Return `false` when the value differs. |
+| `RemoveIfEqualAsync(key, expectedId, ct)` | Atomically delete `key` only when its value equals `expectedId` (release). Return `false` when it differs. |
+| `GetExpirationAsync(key, ct)` | Remaining TTL, or `null` when the key is absent or has no expiry. |
+| `ExistsAsync(key, ct)`, `GetAsync(key, ct)` | Whether the key exists; its lease id or `null`. |
+| `GetAllByPrefixAsync(prefix, ct)`, `GetAllWithExpirationByPrefixAsync(prefix, ct)`, `GetCountAsync(prefix, ct)` | Inspection by key prefix; an empty prefix means every key in scope. |
+
+To wire it, build the public `DistributedLock` over your storage. Its constructor takes `IDistributedLockStorage`, `IDistributedLockReleaseSignal`, `DistributedLockOptions`, `IGuidGenerator`, `TimeProvider`, and `ILogger<DistributedLock>`. Register it as a singleton for both `IDistributedLock` and `IDistributedLockReleaseListener` from your own `IDistributedLocksOptionsExtension`, and call `setup.RegisterExtension(...)` on `HeadlessDistributedLocksSetupBuilder` from a `Use…` extension. `AddHeadlessDistributedLocks` registers the release signal, `TimeProvider`, and `IGuidGenerator`.
+
+**Reader-writer storage: `IDistributedReadWriteLockStorage`.**
+
+- `TryAcquireReadAsync` grants a shared lease only when no writer holds the resource and no writer-waiting marker exists, atomically, so a reader never bypasses a queued writer. The provider always passes a finite `ttl` for readers.
+- `TryAcquireWriteAsync(resource, leaseId, waitingId, ttl, markerTtl, ct)` grants an exclusive lease when no reader and no other writer holds the resource. While readers hold it, plant or refresh the writer-waiting marker derived from `waitingId`, with `markerTtl`, not the lease TTL. Return `false` when queued or held.
+- `TryExtendReadAsync` and `TryExtendWriteAsync` never shorten an existing TTL and return `false` once the lease is lost. A `null` read `ttl` keeps the existing finite expiry. A `null` write `ttl` makes the write lease non-expiring.
+- `ReleaseReadAsync` and `ReleaseWriteAsync` are idempotent and never throw for a missing or mismatched lease. A write release also clears the waiting marker derived from the same lease id.
+- `ValidateReadAsync` and `ValidateWriteAsync` report whether the lease id still holds; a waiting marker never satisfies `ValidateWriteAsync`. `IsReadLockedAsync`, `IsWriteLockedAsync`, and `GetReaderCountAsync` are point-in-time diagnostics.
+
+**Semaphore storage: `IDistributedSemaphoreStorage`.**
+
+- `TryAcquireAsync(resource, leaseId, maxCount, ttl, ct)` prunes expired slots, then grants one slot only while live slots are below `maxCount`, atomically. `ttl` is always finite and positive. Return `DistributedLockAcquireResult`.
+- `TryExtendAsync`, `ValidateAsync`, and `ReleaseAsync` act on the slot `leaseId` holds. `ReleaseAsync` is idempotent. `GetCountAsync` prunes expired slots before it counts.
+
+The reader-writer and semaphore providers that consume these two storages are not public, so a third-party package cannot yet wire them; only the mutex storage is wirable today.
+
+**Verify:** in a test against your store, a second `TryAcquireAsync` on a held resource with `AcquireTimeout = TimeSpan.Zero` returns `null`, a lease renewed with `RenewAsync` stays held past its first TTL, and a disposed lease frees the resource.
 
 ---
 
 ## Headless.DistributedLocks.Database
 
-Shared connection-scoped engine contracts for database-backed distributed locks.
+The shared connection-scoped engine behind the PostgreSQL and SQL Server providers.
 
 ### API and behavior
 
-- Internal `IConnectionScopedLockStorage` seam for non-blocking session-held lock acquisition and release.
-- Internal `ConnectionScopedDistributedLock` engine implements `IDistributedLock` over connection-scoped storage.
-- Internal `ConnectionScopedReadWriteLock` engine implements `IDistributedReadWriteLock` over shared/exclusive storage.
-- Database providers draw the fencing token in the statement that grants an exclusive lock and return it on the storage handle; the engine carries it onto mutex and write handles.
-- Internal `IReleaseSignal` seam provides the wake-up hook for provider push notifications plus polling fallback.
-- The engine and seams are internal implementation shared with the first-party PostgreSQL and SQL Server providers via `InternalsVisibleTo` (mirroring `Headless.Coordination.Sql`); a custom backend implements the public `IDistributedLock` / `IDistributedReadWriteLock` abstractions directly.
+- No public surface for applications. A custom backend implements `IDistributedLock` and `IDistributedReadWriteLock` directly.
+- The engine carries the fencing token the provider draws in its grant statement onto mutex and write handles.
 
 ### Design constraints
 
-- Connection-scoped locks have no TTL and no GC finalizer reclaim. `RenewAsync(...)` extends nothing and returns `true` only while the lock is still held by this provider instance (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)), `GetExpirationAsync(...)` returns `null`, and the lock is released only when the handle is disposed (or `ReleaseAsync()` is called). The provider holds a strong reference to the engine handle for its lifetime, so an abandoned handle leaks its connection and lock until the provider is disposed. Always `await using` the handle. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
-- Handle loss is backed by an active `ConnectionMonitor`, not just the connection's `StateChange` event: monitored handles (`CanObserveLoss == true`) run a periodic bounded-timeout server-side probe so a silent half-open connection cancels `LostToken` instead of going unnoticed until the next query. `Monitoring = None` skips that active probe and leaves `LostToken` at `CancellationToken.None`.
-- The engine optimistically multiplexes uncontended locks on distinct keys onto a shared physical connection and transparently falls back to a dedicated connection on contention or advisory-key collision. This is a performance characteristic; lock semantics are unchanged.
-- Read handles never carry a fencing token. Write handles are exclusive acquisitions, so they carry the sequence-backed token the grant statement drew whenever the provider fences, the same as mutex handles.
-- A composite acquisition (`AcquireAllAsync(...)` / `TryAcquireAllAsync(...)`, mutex or reader-writer) over N resources **pins N database connections for the whole duration of the hold**. Connection-scoped locks live only while their session does, so there is no TTL-backed lease that could hold a resource without a live connection — every child of the composite keeps one. Multiplexing does not remove this: contended children fall back to dedicated connections by design. Size the connection pool for the largest composite the application forms, and prefer small sets. This is an operational cost of the connection-scoped model, not a defect.
+The behavior every connection-scoped provider shares is in [Connection-Scoped Locks](#connection-scoped-locks-database-engine): no TTL or finalizer, active connection-death detection on monitored handles, connection sharing among uncontended locks, and one pinned connection per composite child. Read handles never carry a fencing token.
 
 ### Install
 
@@ -608,34 +592,32 @@ dotnet add package Headless.DistributedLocks.Database
 
 ### Setup and use
 
-Use a concrete provider such as `Headless.DistributedLocks.PostgreSql`; application code normally does not register `Core.Database` directly.
+Install `Headless.DistributedLocks.PostgreSql` or `Headless.DistributedLocks.SqlServer` instead; they reference this package.
+
+**Verify:** see the provider's Verify step.
 
 ### Configuration
 
-None directly. Concrete providers own options and storage configuration.
+None. The providers own options.
 
 ### Runtime behavior
 
-None by itself. Concrete providers register the public lock providers.
+None by itself.
 
 ---
 
 ## Headless.DistributedLocks.InMemory
 
-In-process storage and setup helpers for distributed-lock abstractions.
+In-process storage for the three primitives.
 
 ### API and behavior
 
-- Internal `InMemoryDistributedLockStorage`, `InMemoryDistributedReadWriteLockStorage`, and `InMemoryDistributedSemaphoreStorage` back the three primitives; `UseInMemory()` is the only registration surface.
-- `UseInMemory()` registers in-process mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
-- Uses injected `TimeProvider` for deterministic TTL behavior. Expiry is measured on its monotonic timestamp (`GetTimestamp`/`GetElapsedTime`), not its wall clock, so an NTP or manual clock step neither expires a lease early nor keeps it alive.
-- Mutex compare-and-swap preserves the existing absolute expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
+- `UseInMemory()` registers in-process mutex, reader-writer, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
+- Expiry uses the registered `TimeProvider`'s monotonic timestamp, not its wall clock, so a clock step neither expires a lease early nor keeps it alive.
 
 ### Design constraints
 
-This package is process-local. It does not coordinate across app instances, machines, containers, or processes. Use it when one process owns all contenders, or when tests need a real provider without Redis. Fencing tokens are monotonic inside the process lifetime only. A resource's entry is removed once it has no holder and no waiting writer, on release or on the next access to an expired key, so released high-cardinality resource names (one per request or entity id) do not accumulate. A lease left to expire without release keeps its entry until its key is touched again. Tokens come from one counter per storage, so they keep increasing after an entry is removed and recreated, with gaps per resource.
-
-Reader-writer lease ids must not contain `:` because that character is reserved for the writer-waiting marker suffix; ids containing it are rejected.
+This package is process-local. It does not coordinate across app instances, machines, containers, or processes. Fencing tokens increase only within the process lifetime. A resource's entry is removed once it has no holder and no waiting writer, so high-cardinality resource names (one per request or entity id) do not accumulate. A lease left to expire without release keeps its entry until its key is touched again.
 
 ### Install
 
@@ -657,16 +639,17 @@ builder.Services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
+**Verify:** no startup signal. In a test, register a `FakeTimeProvider`, acquire a lock with a 1-minute `TimeUntilExpires`, advance the clock past it, and assert a second `TryAcquireAsync` succeeds.
+
 ### Configuration
 
 No InMemory-specific options. Configure `DistributedLockOptions`.
 
-Mutex, reader-writer, and semaphore TTL checks use the registered `TimeProvider`, so tests can register a fake clock and advance leases deterministically. The back-off between retries of a transient storage failure, on release and on a query, runs on the system clock instead, so a fake clock the test never advances does not stall a release behind one failed attempt. `LostToken` is `CancellationToken.None` unless monitoring is enabled through `DistributedLockAcquireOptions`.
+TTL checks use the registered `TimeProvider`, so a test can advance a fake clock. The back-off between retries of a transient storage failure runs on the system clock, so a fake clock the test never advances does not stall a release.
 
 ### Runtime behavior
 
-- Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` through `Headless.DistributedLocks`.
-- Registers process-local singleton storage instances for all three primitives.
+- Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` over process-local singleton storage.
 
 ---
 
@@ -676,15 +659,16 @@ Pushes lock-release wake-ups to every host over the messaging bus.
 
 ### API and behavior
 
-- `setup.UseMessagingReleaseSignal()` on `HeadlessDistributedLocksSetupBuilder` replaces the silent `IDistributedLockReleaseSignal` with one that publishes `DistributedLockReleased` through `IBus`, and contributes the package's generated messaging module through `ConfigureMessaging(...)`.
-- `DistributedLockReleased` (`Resource`, `LeaseId`) is the wire message: `headless.locks.released`, contract version `1`, `DistributedLockReleased.MessageName`.
-- The internal consumer (`headless.distributed-locks.release`, every-instance, concurrency 1) hands each release to every `IDistributedLockReleaseListener`, so one consumer serves the mutex, semaphore, and reader-writer providers.
+- `setup.UseMessagingReleaseSignal()` on `HeadlessDistributedLocksSetupBuilder` replaces the in-process release signal with one that publishes `DistributedLockReleased` through `IBus`, and contributes the package's messaging module.
+- `DistributedLockReleased` (`Resource`, `LeaseId`) is the message: `headless.locks.released`, contract version `1` (`DistributedLockReleased.MessageName`), whatever naming conventions the host configures.
+- An [every-instance Bus consumer](messaging/consumers.md#every-instance-bus-delivery) with the identity `headless.distributed-locks.release` (concurrency 1) hands each release to every `IDistributedLockReleaseListener` in the host.
 
 ### Design constraints
 
-- Requires `AddHeadlessMessaging(...)` in the host, before or after `AddHeadlessDistributedLocks(...)`; the contribution applies when messaging starts. Without messaging, the contribution stays inert, and resolving the lock fails because no `IBus` is registered.
-- The publish is `DeliveryMode.Direct` with `IsSystemMessage = true` and `CancellationToken.None`: a release from host scope carries no tenant, and the caller's token must not cancel a wake-up for other hosts. The release does not wait for the broker; a failure is logged as `LockReleasePublishFailed` (`EventId = 17`, Warning). Each delivered release logs `ProcessingLockReleased` (`EventId = 14`, Debug).
-- The transport must support every-instance delivery. See [Release Wake-ups](#release-wake-ups).
+- Requires `AddHeadlessMessaging(...)` in the host, in either order. Without messaging, resolving the lock fails because no `IBus` is registered.
+- The transport must support every-instance delivery. AWS SNS/SQS does not: a host that combines it with `UseMessagingReleaseSignal()` fails at startup naming the consumer and the provider. Use `UseRedisReleaseSignal()` there. `ConsumeOnly` never filters every-instance consumers.
+- The publish is `DeliveryMode.Direct`, a system message with no tenant, sent with `CancellationToken.None`. The release does not wait for the broker. A publish failure logs `LockReleasePublishFailed` (`EventId = 17`, Warning). Each delivered release logs `ProcessingLockReleased` (`EventId = 14`, Debug).
+- A release published while a process is not subscribed never arrives there; its waiters wake on their backoff poll.
 
 ### Install
 
@@ -703,45 +687,41 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
+**Verify:** the `describe` verb lists the `headless.distributed-locks.release` consumer. A host on a transport without every-instance delivery fails at startup.
+
 ### Configuration
 
 No options. The lock provider's `DistributedLockOptions` and the host's messaging options apply.
 
 ### Runtime behavior
 
-- Registers the messaging `IDistributedLockReleaseSignal` (replacing the silent default), the `DistributedLockReleased` message contract, and the every-instance release consumer.
-- The PostgreSQL and SQL Server providers do not announce through `IDistributedLockReleaseSignal`: their connection-scoped engine wakes its own waiters (`pg_notify` on PostgreSQL), so this package changes nothing for them.
+- Registers the messaging `IDistributedLockReleaseSignal`, the `DistributedLockReleased` contract, and the every-instance release consumer.
+- Changes nothing for the PostgreSQL and SQL Server providers: they wake their own waiters (`pg_notify` on PostgreSQL) and do not announce through `IDistributedLockReleaseSignal`.
 
 ---
 
 ## Headless.DistributedLocks.PostgreSql
 
-PostgreSQL advisory-lock provider for mutex and reader-writer distributed locks.
+PostgreSQL advisory-lock provider for mutex and reader-writer locks.
 
 ### API and behavior
 
-- `UsePostgreSql(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
-- `PostgreSqlAdvisoryLockKey` maps strings, `long`, and `(int, int)` keys onto PostgreSQL advisory key spaces.
-- Session-scoped mutex locks use `pg_try_advisory_lock` and release with `pg_advisory_unlock`.
-- Reader-writer locks use PostgreSQL shared and exclusive advisory locks.
-- Mutex handles receive durable sequence-backed `FencingToken` values, drawn in the `pg_try_advisory_lock` statement on the holding session.
-- `PostgreSqlDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-scoped `pg_advisory_xact_lock`. Each has a `DbTransaction` overload and a synchronous form (`AcquireWithTransaction`, `TryAcquireWithTransaction`) for EF Core callers; see [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks).
-- `UsePostgreSql(...)` also registers the `unit.TransactionLocks` unit-of-work feature, which takes the same transaction-scoped lock on the unit's own Npgsql transaction. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
+- `UsePostgreSql(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`, and the `unit.TransactionLocks` feature. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
+- Session-scoped mutex locks use `pg_try_advisory_lock` and release with `pg_advisory_unlock`. Reader-writer locks use shared and exclusive advisory locks.
+- `PostgreSqlAdvisoryLockKey` maps strings, `long`, and `(int, int)` keys onto advisory key spaces.
+- Mutex and write handles carry durable sequence-backed `FencingToken` values.
+- `PostgreSqlDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` take transaction-scoped `pg_advisory_xact_lock`. Each has a `DbTransaction` overload and a synchronous form (`AcquireWithTransaction`, `TryAcquireWithTransaction`); see [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks).
+- A release wakes waiters through `pg_notify`, with polling as the fallback.
 
 ### Design constraints
 
-- Standard provider locks are session-scoped: they require a stable backend session from acquire through release. Use direct PostgreSQL connections or PgBouncer session pooling.
-- Under PgBouncer transaction or statement pooling, use the transaction-coupled static API with a caller-owned `NpgsqlTransaction`; do not use session-scoped handles.
-- Session-scoped locks have no TTL and no finalizer reclaim. `RenewAsync(...)` returns `true` only while the lock is still held and not observed lost, `GetExpirationAsync(...)` returns `null`, and the lock is released only when the handle is disposed or `ReleaseAsync()` is called. Always `await using` the handle; an abandoned handle leaks its connection and advisory lock until the provider is disposed. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
-- A failed session-scoped acquire holds nothing afterwards, even when the server granted the lock just before the client gave up on the statement (a cancellation, surfaced as `OperationCanceledException`, or a client command timeout). While the connection is still usable, the provider checks `pg_locks` for the key and unlocks it, so a pooled connection never carries an orphaned advisory lock. If that check or unlock fails too, the acquire throws `LockCleanupFailedException` carrying both failures; treat the lock as possibly held until its connection ends.
-- `Monitoring = LockMonitoringMode.None` leaves `LostToken` as `CancellationToken.None` and avoids the active connection probe. `Monitor` and `AutoExtend` both opt into connection-death observation; there is no TTL to extend.
-- Resource-targeted inspection (`IsLockedAsync(resource)`, `GetLockInfoAsync(resource)`) can see remote holders because the caller supplies the advisory key. Provider-wide enumeration (`ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`) remains local-handle only because `pg_locks` does not expose reversible resource names for the provider namespace once advisory keys are hashed.
-- Postgres does not provide an N-holder advisory semaphore; use Redis semaphores or a separate slot-table design when N-holder concurrency is required. Because there is no semaphore here, **semaphore composites do not apply to this provider**. Mutex and reader-writer composites do.
-- A composite acquisition over N resources **pins N connections for the whole duration of the hold**, because these locks are connection-scoped and there is no TTL-backed lease to hold a resource without a live session. Size the connection pool for the largest composite the application forms. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
-- The provider multiplexes uncontended advisory locks on distinct keys onto a shared physical connection and falls back to a dedicated connection on contention or advisory-key collision. This lowers connection usage in the common case without changing lock semantics — but it does not reduce a composite's hold-time connection count, since contended children take dedicated connections by design.
-- Connection-death detection for an idle lock holder is active: monitored handles (`LostToken`) run a periodic bounded-timeout server-side probe whose command timeout catches silently-dropped half-open connections that Npgsql's `StateChange` event alone would miss until the next operation. TCP keepalive is complementary, not redundant: when the provider builds its own data source from `ConnectionString` it defaults `KeepAlive` (30s, see `PostgreSqlDistributedLockOptions.KeepAlive`) unless the connection string already sets one, surfacing dead sockets faster at the transport layer. If you inject your own `DataSource`, or use the parameterless `UsePostgreSql()`, set `Keepalive` on the application's data source or connection string yourself for the tightest detection window; the active monitor still operates regardless.
-- **Which pool the locks use.** The parameterless `UsePostgreSql()` takes the container's `NpgsqlDataSource` when the application registered one (for example with `AddNpgsqlDataSource`), and otherwise the `AddPostgreSqlSql` connection string, opening plain connections on Npgsql's pool for that string, the pool every other Headless feature on the same string already uses. Neither path opens a second pool against the server, and neither rewrites `KeepAlive`. An explicit `UsePostgreSql(connectionString)` (or `options.ConnectionString`) builds a provider-owned `NpgsqlDataSource`, its own pool with its own `Max Pool Size`, with the `KeepAlive` default applied; choose it when you want lock-pinned connections isolated from application queries. The provider never registers its data source as the container's `NpgsqlDataSource`, so an application or EF `UseNpgsql()` that resolves that service gets its own. On a shared pool, a failed release clears that pool (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)), and lock holders count against its `Max Pool Size`.
-- **No Npgsql multiplexing.** A session advisory lock lives on one physical connection, and a `Multiplexing=true` connection binds none (Npgsql also refuses the prepared lock commands and the `LISTEN` wait on it). The parameterless `UsePostgreSql()` therefore skips a multiplexing application `NpgsqlDataSource` and uses the `AddPostgreSqlSql` connection string instead. When the source the lock ends up with multiplexes (an explicit `ConnectionString` or `DataSource`, or a multiplexing data source with no `AddPostgreSqlSql` registration), options validation fails at startup naming the setting. Give the lock a connection string without `Multiplexing`.
+- Session-scoped locks need a stable backend session from acquire through release. Use direct PostgreSQL connections or PgBouncer session pooling. Under PgBouncer transaction or statement pooling, use the transaction-scoped API with a caller-owned transaction.
+- Session-scoped locks follow [Connection-Scoped Locks](#connection-scoped-locks-database-engine): no TTL, dispose every handle, and a composite over N resources pins N connections.
+- A failed session-scoped acquire holds nothing afterwards, even when the server granted the lock just before the client gave up (a cancellation, surfaced as `OperationCanceledException`, or a command timeout). If that cleanup fails too, the acquire throws `LockCleanupFailedException` carrying both failures; treat the lock as possibly held until its connection ends.
+- `IsLockedAsync(resource)` and `GetLockInfoAsync(resource)` see holders in other processes. `ListActiveLocksAsync()` and `GetActiveLocksCountAsync()` see only this provider's handles. Reader counts are exact across processes.
+- PostgreSQL has no semaphore here. Use Redis semaphores, or a slot table, for N-holder concurrency.
+- **Which pool the locks use.** The parameterless `UsePostgreSql()` takes the container's `NpgsqlDataSource` when the application registered one (for example with `AddNpgsqlDataSource`), otherwise the `AddPostgreSqlSql` connection string on Npgsql's shared pool for that string. Neither opens a second pool, and neither changes `KeepAlive`, so set `Keepalive` on that data source or connection string yourself. An explicit `UsePostgreSql(connectionString)` (or `options.ConnectionString`) builds a provider-owned data source with its own `Max Pool Size` and the `KeepAlive` default; choose it to isolate lock-pinned connections from application queries. On a shared pool, lock holders count against its `Max Pool Size`, and a failed release clears it.
+- **No Npgsql multiplexing.** A session advisory lock needs one physical connection. The parameterless `UsePostgreSql()` skips a multiplexing application `NpgsqlDataSource` and uses the `AddPostgreSqlSql` connection string. When the source the lock ends up with multiplexes, options validation fails at startup naming the setting.
 
 ### Install
 
@@ -774,6 +754,8 @@ await using var lease = await lockProvider.AcquireAsync(
 
 The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
+**Verify:** `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `PostgreSql/headless/DistributedLocks` resource. A host started before that fails, naming the resource and `resources provision`. A lease from `AcquireAsync` has a non-null `FencingToken`.
+
 Transaction-coupled locking:
 
 ```csharp
@@ -792,7 +774,7 @@ await transaction.CommitAsync(ct);
 
 #### EF Core transaction-scoped locks
 
-An EF Core caller holds the transaction as a `DbTransaction` through `db.Database.CurrentTransaction.GetDbTransaction()`. Both helpers accept it directly and refuse a transaction from another provider with an `ArgumentException`, so the calling project needs no Npgsql or SqlClient reference of its own. A `SavingChanges` interceptor runs synchronously; the synchronous forms exist for exactly that path and block the calling thread until the server answers.
+An EF Core caller gets the transaction as a `DbTransaction` from `db.Database.CurrentTransaction.GetDbTransaction()`. Both providers' helpers accept it and refuse a transaction from another provider with `ArgumentException`, so the calling project needs no Npgsql or SqlClient reference. A `SavingChanges` interceptor runs synchronously; the synchronous forms exist for that path and block the thread until the server answers.
 
 ```csharp
 // Inside RunAsync(db, …) or after db.Database.BeginTransactionAsync(ct):
@@ -812,15 +794,15 @@ PostgreSqlDistributedLock.AcquireWithTransaction(
 
 The SQL Server helper has the same four shapes with a string resource name.
 
-When the save runs inside a unit of work, use the unit instead of the static helpers: an interceptor reads it with `db.UnitOfWork()`, and the unit applies the provider's `KeyPrefix`, so the caller builds no advisory key and casts no transaction. The unit is there when the save runs inside `RunAsync(db, …)`, `BeginAsync(db)`, or `Enlist(db, tx)`, and when a `HeadlessDbContext` save opens its own transaction because it carries audit entries or domain or integration events. A plain save outside all of these runs `SavingChanges` before any transaction exists, so `db.UnitOfWork()` returns `null` and a transaction lock has nothing to live in: run that save inside `RunAsync(db, …)`. `db.UnitOfWork()` also returns `null` for a transaction no unit owns, such as one begun with `db.Database.BeginTransactionAsync(ct)` alone; the static helpers remain for that case. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
+When the save runs inside a unit of work, use the unit instead of the static helpers. An interceptor reads it with `db.UnitOfWork()`, and the unit applies the provider's `KeyPrefix`, so you build no advisory key and cast no transaction. The context carries a unit inside `RunAsync(db, …)`, `BeginAsync(db)`, or `Enlist(db, tx)`, and when a `HeadlessDbContext` save opens its own transaction because it carries audit entries or domain or integration events. A plain save outside all of these runs `SavingChanges` before any transaction exists, so `db.UnitOfWork()` returns `null`: run that save inside `RunAsync(db, …)`. `db.UnitOfWork()` also returns `null` for a transaction no unit owns, such as one begun with `db.Database.BeginTransactionAsync(ct)` alone; use the static helpers there.
 
-Every helper on both engines treats the transaction as the lock's owner: asking again for a lock the transaction already holds succeeds, so an interceptor that runs on each `SaveChanges` of one transaction can take its lock every time. A failed or cancelled acquire leaves the caller's transaction usable and holding nothing new, as described for [the unit-of-work surface](#locks-inside-a-unit-of-work); the PostgreSQL helpers wrap each acquire in a savepoint for that.
+On both engines the transaction owns the lock: asking again for a lock the transaction holds succeeds, so an interceptor that runs on each `SaveChanges` of one transaction can take its lock every time. A failed or cancelled acquire leaves the transaction usable and holding nothing new.
 
 #### Locks inside a unit of work
 
-Inside a unit of work the transaction is the unit's, so the lock is taken through the unit rather than through a transaction object the caller has to dig out. `unit.TransactionLocks` is an accessor `Headless.DistributedLocks.Abstractions` adds to `IUnitOfWork`; `UsePostgreSql` and `UseSqlServer` register the feature behind it, and it needs no reference to the driver from the calling code.
+`unit.TransactionLocks` takes a lock owned by the unit's transaction. `Headless.DistributedLocks.Abstractions` adds the accessor to `IUnitOfWork`, and `UsePostgreSql` and `UseSqlServer` register the feature behind it, so the calling code needs no driver reference.
 
-With `Headless.UnitOfWork.Analyzers` referenced, [HF2003](unit-of-work.md#hf2003) reports an `IDistributedLock.AcquireAsync`, `TryAcquireAsync`, `AcquireAllAsync`, or `TryAcquireAllAsync` call made while a unit of work is in scope and names `unit.TransactionLocks`. It is a suggestion with no code fix: keep the autonomous lock when it must outlive the transaction.
+With `Headless.UnitOfWork.Analyzers` referenced, [HF2003](unit-of-work.md#hf2003) reports an `IDistributedLock.AcquireAsync`, `TryAcquireAsync`, `AcquireAllAsync`, or `TryAcquireAllAsync` call made while a unit of work is in scope and names `unit.TransactionLocks`. It has no code fix: keep the autonomous lock when it must outlive the transaction.
 
 ```csharp
 await factory.RunAsync(
@@ -846,7 +828,7 @@ await factory.RunAsync(
 );
 ```
 
-The wait shape picks the outcome the API reports. A `TryAcquire` form returns `null` on contention, which suits a short wait that refuses the request. An `Acquire` form throws `LockAcquisitionTimeoutException`, which suits a longer wait whose expiry fails the operation. When the exception escapes to the Headless API exception handler, it answers 503 with `error.code: g:resource_busy` and no `Retry-After`, because the wait says nothing about when the holder will finish ([API surfaces](api.md#api-surfaces), exception mapping). Map at the call site when the endpoint needs another status or knows a retry delay.
+Choose the wait shape by the outcome you want. A `TryAcquire` form returns `null` on contention, for a short wait that refuses the request. An `Acquire` form throws `LockAcquisitionTimeoutException`, for a longer wait whose expiry fails the operation. When that exception reaches the Headless API exception handler, it answers 503 with `error.code: g:resource_busy` and no `Retry-After` ([API surfaces](api.md#api-surfaces), exception mapping). Map at the call site when the endpoint needs another status or knows a retry delay.
 
 ```csharp
 // 500 ms, then 409 Conflict through the Headless API exception handler.
@@ -872,7 +854,7 @@ catch (LockAcquisitionTimeoutException)
 }
 ```
 
-A `SavingChanges` interceptor cannot await, so it uses the synchronous forms (`Acquire`, `TryAcquire`, `AcquireAll`, `TryAcquireAll`) on the unit it reads from the context. They block the calling thread for up to the wait and take no cancellation token. The context carries a unit only in the cases listed under [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks); this interceptor refuses a save that runs outside one rather than lock nothing.
+A `SavingChanges` interceptor cannot await, so it uses the synchronous forms (`Acquire`, `TryAcquire`, `AcquireAll`, `TryAcquireAll`) on the unit it reads from the context. They block the thread for up to the wait and take no cancellation token. This interceptor refuses a save that runs outside a unit rather than lock nothing:
 
 ```csharp
 public sealed class AuditChainInterceptor : SaveChangesInterceptor
@@ -889,19 +871,19 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 }
 ```
 
-- The resource encodes as `KeyPrefix + resource`, exactly as the provider's session locks do, so a session lock from `IDistributedLock` and a transaction lock on one logical name contend.
-- It refuses before any command runs, in the same shape as `unit.Outbox`: a unit that is no longer active, a unit with no relational resource (`IUnitOfWorkFactory.BeginAsync()` with no connection), a resource whose transaction already completed, or a transaction from another provider (a SQL Server unit under the PostgreSQL lock provider) each throw `InvalidOperationException` naming the condition. A host whose only lock provider is Redis or InMemory throws on the accessor itself. A null, blank, or empty set, or a negative wait other than `Timeout.InfiniteTimeSpan`, throws an `ArgumentException` before the provider runs.
-- `acquireTimeout` means the same on both engines and on the synchronous forms. `Acquire*` defaults to 30 seconds and throws `LockAcquisitionTimeoutException` when the wait elapses; `TryAcquire*` defaults to one attempt and returns `null` instead. `Timeout.InfiniteTimeSpan` waits without bound on either call. PostgreSQL bounds the wait with a server-side `lock_timeout` and puts the unit's previous value back once the lock is held, so the setting never leaks to the rest of the unit; SQL Server passes it as `sp_getapplock`'s `@LockTimeout`.
-- `AcquireAll` and `TryAcquireAll` take the set in ordinal order after removing ordinal duplicates, the same canonical order `IDistributedLock.AcquireAllAsync` uses, so two units locking overlapping sets wait on each other instead of deadlocking, whatever order each listed them. Pass the whole set in one call: two calls are two sets, and the order between them is the caller's. The returned handles follow that order.
-- One budget covers the whole set: each resource waits only for what the earlier ones left. When a set's wait elapses, `LockAcquisitionTimeoutException.Resource` names the joined canonical set (`"a+b"`) rather than the resource that blocked; it is diagnostic only and is not a lock name. A set of one names its own resource.
-- A set is all-or-nothing. When one resource times out, is cancelled, or fails, the set's new locks are gone afterwards and the locks the unit held before the call stay held. PostgreSQL wraps the set in an outer savepoint and rolls back to it. SQL Server releases, in reverse order, only the locks the call newly granted, because rolling back to a SQL Server savepoint does not release the locks taken after it.
-- The unit's transaction owns the lock, so acquiring a resource the unit already holds succeeds at once on both engines, on every wait shape. Nothing stacks that needs a matching release: the unit's commit or rollback releases it once.
-- Besides `LockAcquisitionTimeoutException` and `OperationCanceledException`, an acquire can throw `LockCleanupFailedException` when it failed and undoing its partial work failed too: the transaction may still hold part of the set, so roll the unit back. SQL Server also throws `DistributedLockDeadlockException` when it picks the acquire as a deadlock victim. `LockAcquisitionTimeoutException`, `LockCleanupFailedException`, and `DistributedLockDeadlockException` all derive from `DistributedLockException`, not from `TimeoutException`, so a generic `catch (TimeoutException)` around awaited work never mistakes lock contention for its own timeout.
-- A failed acquire leaves the unit usable. A timeout, a cancellation (surfaced as `OperationCanceledException` on both engines), or any other failed acquire holds nothing afterwards, even when the server granted the lock just before the client gave up. PostgreSQL runs every acquire inside a savepoint and rolls back to it, which also lifts the abort a failed statement would otherwise put on the transaction. SQL Server releases what it granted; a timed-out `sp_getapplock` never dooms the transaction, but a cancel under `SET XACT_ABORT ON` makes SQL Server roll the whole transaction back.
-- The returned `TransactionLockHandle` is identity only. There is nothing to release, so it is not disposable; it carries the resource name for logging and assertions, and two handles for one resource compare equal.
-- A replayed `RunAsync` block begins a fresh transaction, so the lock is taken again inside it; the feature never calls `PreventRetry()`.
-- TTL leases from `IDistributedLock` are a different contract and never enlist: a lease taken inside the block is released by its own TTL or `DisposeAsync`, not by the unit's outcome.
-- A custom provider implements `IUnitOfWorkTransactionLocks`: `TryAcquireAsync(unit, canonicalResources, acquireTimeout, cancellationToken)` and `TryAcquire(unit, canonicalResources, acquireTimeout)`. It receives the set already sorted and deduplicated and the wait already resolved, acquires in the given order under that one budget, returns `false` on contention, and must leave nothing of the set held when it returns `false` or throws.
+- The resource encodes as `KeyPrefix + resource`, as the provider's session locks do, so a session lock from `IDistributedLock` and a transaction lock on one name exclude each other.
+- It refuses before any command runs. A unit that is no longer active, a unit with no relational resource (`IUnitOfWorkFactory.BeginAsync()` with no connection), a completed transaction, or a transaction from another provider each throw `InvalidOperationException` naming the condition. A host whose only lock provider is Redis or InMemory throws on the accessor. A null, blank, or empty set, or a negative wait other than `Timeout.InfiniteTimeSpan`, throws `ArgumentException`.
+- `Acquire*` defaults to a 30-second wait and throws `LockAcquisitionTimeoutException` when it elapses. `TryAcquire*` defaults to one attempt and returns `null`. `Timeout.InfiniteTimeSpan` waits without bound. On PostgreSQL the wait never leaks a `lock_timeout` setting to the rest of the unit.
+- `AcquireAll` and `TryAcquireAll` take the set in ordinal order after removing duplicates, the same order `IDistributedLock.AcquireAllAsync` uses, so two units locking overlapping sets wait instead of deadlocking. Two calls are two sets, and the order between them is yours. The returned handles follow the canonical order.
+- One budget covers the whole set. When it elapses, `LockAcquisitionTimeoutException.Resource` is the joined set (`"a+b"`), which is diagnostic only. A set of one names its own resource.
+- A set is all-or-nothing. When one resource times out, is cancelled, or fails, the set's new locks are gone and the locks the unit held before the call stay held.
+- Acquiring a resource the unit already holds succeeds at once. Nothing stacks: the commit or rollback releases it once.
+- Besides `LockAcquisitionTimeoutException` and `OperationCanceledException`, an acquire can throw `LockCleanupFailedException` when undoing its partial work failed: the transaction may still hold part of the set, so roll the unit back. SQL Server also throws `DistributedLockDeadlockException` when it picks the acquire as a deadlock victim.
+- A failed acquire leaves the unit usable and holding nothing new, even when the server granted the lock just before the client gave up. On PostgreSQL it also lifts the abort a failed statement would put on the transaction. On SQL Server a timed-out acquire never dooms the transaction, but a cancel under `SET XACT_ABORT ON` makes SQL Server roll the whole transaction back.
+- `TransactionLockHandle` is identity only and not disposable. Two handles for one resource compare equal.
+- A replayed `RunAsync` block takes the lock again in its fresh transaction; the feature never prevents a retry.
+- TTL leases from `IDistributedLock` never enlist. A lease taken inside the block is released by its own TTL or `DisposeAsync`, not by the unit.
+- A custom provider implements `IUnitOfWorkTransactionLocks`: `TryAcquireAsync(unit, canonicalResources, acquireTimeout, cancellationToken)` and `TryAcquire(unit, canonicalResources, acquireTimeout)`. It receives the set already sorted and deduplicated and the wait already resolved, acquires in that order under one budget, returns `false` on contention, and leaves nothing of the set held when it returns `false` or throws.
 
 ### Configuration
 
@@ -914,43 +896,27 @@ options.EnablePushWakeup = true;
 options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-built DataSource (explicit ConnectionString)
 ```
 
-The provider keeps its data source to itself: it neither registers nor resolves an unkeyed `NpgsqlDataSource`. A host that registers its own data source for application data (`AddNpgsqlDataSource`, Aspire, or EF Core) keeps it in either registration order, and locks always run on the database `ConnectionString` or `DataSource` names. To share the application's pool, pass it as `DataSource` explicitly.
+`CommandTimeout` defaults to 30 seconds. The provider never registers its data source as the container's `NpgsqlDataSource`, so an application or EF `UseNpgsql()` that resolves that service gets its own. To share the application's pool explicitly, pass it as `DataSource`.
 
-The fencing sequence's schema is not a provider option. Set it on the feature:
-
-```csharp
-services.AddHeadlessDistributedLocks(setup =>
-{
-    setup.ConfigureStorage(storage => storage.Schema = "app_locks");
-    setup.UsePostgreSql(connectionString);
-});
-```
-
-The default is `"headless"`. The provider contributes the `headless_distributed_locks_fence` sequence (step `DistributedLocks/1`) to the schema runner, which creates it inside the configured schema at startup, creating the schema when absent. The provider reads it as `"schema"."headless_distributed_locks_fence"`, so it never depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+Set the fence sequence's schema on the feature with `setup.ConfigureStorage(storage => storage.Schema = "app_locks")` (default `"headless"`). The sequence is `headless_distributed_locks_fence`, a schema step (`DistributedLocks/1`) that `resources provision` creates in that schema, creating the schema when absent. The provider names it schema-qualified, so `search_path` does not matter, and validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
 ### Runtime behavior
 
-- Registers `IDistributedLock` as singleton.
-- Registers `IDistributedReadWriteLock` as singleton.
-- Registers Postgres storage, release signal, `TimeProvider.System`, and `IGuidGenerator` when absent.
-- The release signal's LISTEN connection reconnects after a lost backend with a jittered back-off from 1 second up to 30 seconds. That back-off runs on the system clock, so a host whose registered `TimeProvider` is faked still reconnects; the polling fallback stays on the registered clock with the acquire timeout it serves.
+- Registers `IDistributedLock` and `IDistributedReadWriteLock` as singletons, plus `TimeProvider.System` and `IGuidGenerator` when absent.
+- The release signal's `LISTEN` connection reconnects after a lost backend with a jittered back-off from 1 second up to 30 seconds, on the system clock, so a host with a fake `TimeProvider` still reconnects.
 
 ---
 
 ## Headless.DistributedLocks.Redis
 
-Redis-backed storage and setup helpers for distributed locks, reader-writer locks, and semaphores.
+Redis-backed storage for locks, reader-writer locks, and semaphores.
 
 ### API and behavior
 
-- `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
-- `RedisDistributedReadWriteLockStorage` implements `IDistributedReadWriteLockStorage`.
-- `RedisDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
-- `UseRedis()` registers Redis-backed mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
-- `UseRedisReleaseSignal()` replaces the default `IDistributedLockReleaseSignal` with a Redis pub/sub transport, so waiters on every host wake when a lease is released. Opt-in. See [Release Wake-ups](#release-wake-ups).
-- Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
-- Mutex compare-and-swap uses Redis `KEEPTTL`, preserving the existing expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
-- Contributes the `distributed-locks-redis` readiness health check (tags `ready`, `headless`, `redis`), which sends `PING` through the registered `IConnectionMultiplexer`. See [Health checks](utilities.md#health-checks).
+- `UseRedis()` registers Redis-backed mutex, reader-writer, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
+- `UseRedisReleaseSignal()` replaces the default release signal with Redis pub/sub, so waiters on every host wake on release. Opt-in. See [Release Wake-ups](#release-wake-ups).
+- Every acquire, extend, and release is one atomic Lua script on the Redis server clock.
+- Contributes the `distributed-locks-redis` readiness health check (tags `ready`, `headless`, `redis`), which pings every configured endpoint through the registered `IConnectionMultiplexer`. See [Health checks](utilities.md#health-checks).
 
 ### Install
 
@@ -976,48 +942,44 @@ builder.Services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
+**Verify:** the `check` verb (`dotnet MyApp.dll check`) and the readiness endpoint report `distributed-locks-redis` as `Healthy`. A Redis outage at start does not stop the host; that check reports it.
+
 ### Configuration
 
 No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`.
 
-Redis mutex storage maps each logical lock name to an internal hash-tagged lock key and one no-TTL fence counter key in the same Redis Cluster slot. Redis semaphore storage creates `{resource}:holders` (ZSET of `leaseId → expiry-epoch-ms`) and `fence:{resource}`. Resource names containing `{` or `}` are rejected where storage-owned hash-tags are required.
-
-Reader-writer storage creates `{resource}:writer` (string holding the active writer id or the `:_WRITERWAITING`-suffixed marker) and `{resource}:readers` (HASH of `leaseId → expiry-epoch-ms`) Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic. The marker TTL is governed by `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30s, validated `0 < ttl <= 5 min`).
+Mutex and semaphore resource names containing `{` or `}` are rejected, because the provider wraps each name in a Redis Cluster hash tag so its lock key and fence key share a slot. Every fence key has no TTL.
 
 ### Runtime behavior
 
-- Registers a keyed `HeadlessRedisScriptsLoader` bound to the app's `IConnectionMultiplexer`.
-- Loads no Lua script at host start: each mutex, reader-writer, and semaphore script loads on the first lock operation that runs it, which costs that operation one extra round trip. A Redis outage at start does not stop the host; the `distributed-locks-redis` readiness check reports it.
+- Registers a keyed `HeadlessRedisScriptsLoader` bound to the app's `IConnectionMultiplexer`. Each script loads on the first operation that runs it, which costs that operation one extra round trip.
 - Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` through `Headless.DistributedLocks`.
 
 ---
 
 ## Headless.DistributedLocks.SqlServer
 
-SQL Server `sp_getapplock` provider for mutex and reader-writer distributed locks.
+SQL Server `sp_getapplock` provider for mutex and reader-writer locks.
 
 ### API and behavior
 
-- `UseSqlServer(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
-- Session-scoped mutex locks use `sp_getapplock` with `@LockMode = 'Exclusive'` and release with `sp_releaseapplock`.
-- Reader-writer locks use SQL Server `Shared` and `Exclusive` application-lock modes.
-- Mutex handles receive durable SQL `SEQUENCE`-backed `FencingToken` values when fencing is enabled, drawn in the `sp_getapplock` batch on the holding session.
-- `SqlServerDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` use transaction-owned application locks. Each has a `DbTransaction` overload and a synchronous form (`AcquireWithTransaction`, `TryAcquireWithTransaction`) for EF Core callers; see [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks).
-- `UseSqlServer(...)` also registers the `unit.TransactionLocks` unit-of-work feature, which takes the same transaction-owned lock on the unit's own `SqlTransaction`. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
-- Resource names longer than SQL Server's 255-character `@Resource` limit are encoded as `sha256:<lowercase-hex>`.
+- `UseSqlServer(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`, and the `unit.TransactionLocks` feature. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
+- Session-scoped mutex locks use `sp_getapplock` with `@LockMode = 'Exclusive'` and release with `sp_releaseapplock`. Reader-writer locks use the `Shared` and `Exclusive` modes.
+- Mutex and write handles carry durable `SEQUENCE`-backed `FencingToken` values when `EnableFencing` is on.
+- `SqlServerDistributedLock.AcquireWithTransactionAsync(...)` and `TryAcquireWithTransactionAsync(...)` take transaction-owned application locks. Each has a `DbTransaction` overload and a synchronous form (`AcquireWithTransaction`, `TryAcquireWithTransaction`); see [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks). They take a `string` resource and encode `KeyPrefix + resource` like the session provider, so the two exclude each other on one name.
+- Resource names longer than SQL Server's 255-character limit are encoded as `sha256:<lowercase-hex>`.
 
 ### Design constraints
 
-- Standard provider locks are session-scoped: the holding `SqlConnection` must stay open until release. Do not return that connection to arbitrary pooling code while the lock is held.
-- The session-scoped provider does **not** block inside SQL Server: every acquire attempt issues `sp_getapplock` with a zero `@LockTimeout` (one non-blocking try), so a contended acquire is paced by the provider's own retry loop at the jittered ~100ms polling cadence until the acquire timeout elapses. The loop is driven by the in-process polling release signal, which wakes a same-process waiter immediately when the holder releases; SQL Server offers no cheap cross-process release channel, so waiters in other processes are served by the polling fallback. (Server-side blocking applies only to the transaction-coupled API below, which passes a real acquire timeout to `@LockTimeout`.)
-- Session-scoped locks have no TTL. `RenewAsync(...)` returns `true` only while the lock is still held and not observed lost, and `GetExpirationAsync(...)` returns `null`. Consistent with the connection-scoped disposal contract (no GC finalizer reclaim), a leaked, undisposed handle strands its connection, applock, and liveness-probe timer until the provider is disposed — always `await using` the handle.
-- Connection-death detection backs the handle's lost token with two signals: the connection's `StateChange` event (clean disconnects) and an active bounded-timeout liveness probe (a `SELECT 1` every `ConnectionProbeInterval`, default 30s) that catches a silent half-open connection or a session killed on the server, where `StateChange` alone never fires. Lower the interval to notice such a loss sooner, at the cost of one extra query per held lock per interval. This mirrors the intent of the multiplexing-engine providers' `ConnectionMonitor`, which this raw-`SqlConnection` storage cannot reuse directly. An explicit release detaches both signals *without* cancelling the lost token; only genuine connection death — or provider teardown while the lock is still held — cancels it.
-- Disposing the provider while it still holds session-scoped locks cancels each handle's `LostToken`, then clears the connection-string pool and disposes each lock's connection, so the session closes and the server frees the application lock at once. The provider issues no `sp_releaseapplock` on this path, because the connection may be one a failed liveness probe just found unresponsive. Without the pool clear, the session would go back to the pool still holding the lock, and other holders would wait until the pool reused or dropped it.
-- `IsLockedAsync(...)`, `IsReadLockedAsync(...)`, `IsWriteLockedAsync(...)`, and reader counts inspect SQL Server lock state for a specific resource. `GetLockIdAsync(...)`, `GetLockInfoAsync(...)`, `ListActiveLocksAsync(...)`, and `GetActiveLocksCountAsync(...)` report only handles owned by the current provider instance because SQL Server application locks do not expose Headless lock ids for remote sessions.
-- Reader counts are presence-only for remote holders: `APPLOCK_TEST` reports the current lock mode but no holder count, so `GetReaderCountAsync(...)`/`GetLocksCountAsync(...)` count local holders exactly but collapse any number of remote shared readers to `1`. Treat the remote value as held / not-held. (The Postgres provider counts `pg_locks` rows and reports exact cross-process counts — a deliberate per-backend difference.)
-- Transaction-coupled locking is the safest primitive for SQL Server data mutations: commit or rollback releases the lock, and no explicit release is issued. The transaction API takes a `string` resource, whereas the Postgres advisory-lock API takes a typed `PostgreSqlAdvisoryLockKey`; the asymmetry is primitive-driven (`sp_getapplock` is string-keyed, `pg_advisory_xact_lock` keys on a `bigint`). Both encode `KeyPrefix + resource` identically to the session provider, so the two APIs mutually exclude on the same logical resource.
-- SQL Server does not provide an N-holder semaphore here; use Redis semaphores or a future persistent slot-table design when N-holder concurrency is required. Because there is no semaphore here, **semaphore composites do not apply to this provider**. Mutex and reader-writer composites do.
-- A composite acquisition over N resources **pins N connections for the whole duration of the hold**, because session-scoped locks live only while their `SqlConnection` does and no TTL-backed lease can hold a resource without one. Size the connection pool for the largest composite the application forms. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
+- Session-scoped locks need the holding `SqlConnection` open until release. Do not return that connection to pooling code while the lock is held.
+- A contended session-scoped acquire does not block inside SQL Server. It retries at a jittered cadence of about 100 ms until the acquire timeout elapses. A release wakes waiters in the same process at once; waiters in other processes wait for their next poll. The transaction-scoped API does block server-side, for its acquire timeout.
+- Session-scoped locks follow [Connection-Scoped Locks](#connection-scoped-locks-database-engine): no TTL, dispose every handle, and a composite over N resources pins N connections. A leaked handle also keeps its liveness probe running until the provider is disposed.
+- A monitored handle's `LostToken` fires on a clean disconnect or when a `SELECT 1` probe every `ConnectionProbeInterval` (default 30 seconds) finds the session dead or unresponsive. Lower the interval to notice sooner, at one extra query per held lock per interval. An explicit release never cancels the token.
+- Disposing the provider while it still holds locks cancels each handle's `LostToken`, clears the connection-string pool, and disposes each lock's connection, so the server frees the locks at once.
+- `IsLockedAsync(...)`, `IsReadLockedAsync(...)`, `IsWriteLockedAsync(...)`, and reader counts inspect server lock state for a resource. `GetLeaseIdAsync(...)`, `GetLockInfoAsync(...)`, `ListActiveLocksAsync(...)`, and `GetActiveLocksCountAsync(...)` report only this provider instance's handles.
+- Reader counts are exact for local holders, but any number of remote shared readers counts as `1`. Treat the remote value as held or not held.
+- Transaction-coupled locking is the safest choice for SQL Server data changes: commit or rollback releases the lock.
+- SQL Server has no semaphore here. Use Redis semaphores for N-holder concurrency.
 
 ### Install
 
@@ -1050,6 +1012,8 @@ await using var lease = await lockProvider.AcquireAsync(
 
 The parameterless overload and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
+**Verify:** with `EnableFencing` on, `dotnet MyApp.dll resources provision -k Schema` reports `Ok` for the `SqlServer/headless/DistributedLocks` resource (a non-default `KeyPrefix` adds the sequence name), and a host started before that fails naming it. A lease from `AcquireAsync` has a non-null `FencingToken`.
+
 Transaction-coupled locking:
 
 ```csharp
@@ -1073,21 +1037,9 @@ options.ConnectionProbeInterval = TimeSpan.FromSeconds(30); // how soon a monito
 options.EnableFencing = true;
 ```
 
-The fencing sequence's schema is not a provider option. Set it on the feature:
-
-```csharp
-services.AddHeadlessDistributedLocks(setup =>
-{
-    setup.ConfigureStorage(storage => storage.Schema = "app_locks");
-    setup.UseSqlServer(connectionString);
-});
-```
-
-The default is `"headless"`, not `dbo`; the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup. The sequence inside it is named `DistributedLocksFence_{KeyPrefix}`, with every run of characters outside `A-Za-z0-9_` in the prefix collapsed to `_` and the name truncated to 128 characters, so the default prefix `distributed-lock:` gives `DistributedLocksFence_distributed_lock`. Each key prefix gets its own sequence, so replicas that share a prefix share a fence.
+Set the fence sequence's schema on the feature with `setup.ConfigureStorage(storage => storage.Schema = "app_locks")`. The default is `"headless"`, not `dbo`, and `resources provision` creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup. The sequence is `DistributedLocksFence_{KeyPrefix}`, with every run of characters outside `A-Za-z0-9_` in the prefix collapsed to `_` and the name truncated to 128 characters, so the default prefix `distributed-lock:` gives `DistributedLocksFence_distributed_lock`. Replicas that share a key prefix share a fence.
 
 ### Runtime behavior
 
-- Registers `IDistributedLock` as singleton.
-- Registers `IDistributedReadWriteLock` as singleton.
-- Registers SQL Server storage, the fence-sequence schema contribution (step `DistributedLocks:DistributedLocksFence_<prefix>/1` for a non-default key prefix, applied only when `EnableFencing` is on), `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with the in-process polling release signal, which paces its contended-acquire retry loop and wakes same-process waiters on release.
-- Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.
+- Registers `IDistributedLock` and `IDistributedReadWriteLock` as singletons, plus `TimeProvider.System` and `IGuidGenerator` when absent.
+- Registers the fence-sequence schema step only when `EnableFencing` is `true`; it is recorded as `DistributedLocks/1`, or `DistributedLocks:DistributedLocksFence_<prefix>/1` for a non-default key prefix.

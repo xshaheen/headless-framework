@@ -497,10 +497,7 @@
         }
       },
       "headless.ipgeolocation.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
+        "type": "Project"
       },
       "headless.ipgeolocation.maxmind": {
         "type": "Project",

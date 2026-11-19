@@ -5,64 +5,56 @@ packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstracti
 
 # Utilities
 
-> Standalone utility packages for validation, strongly-typed IDs, hosting helpers, geospatial ops, Redis scripts, sitemaps, and slug generation.
+> Independent utility packages: validation rules, strongly-typed primitives, host verbs and deploy steps, outbound HTTP resilience, geometry, phone numbers, Redis Lua scripts, sitemaps, and slugs.
 
 ## Orientation
 
-Install individually as needed -- these packages are independent of each other:
+Install each package only when the task needs it. They do not depend on each other, except that `Headless.Generator.Primitives` needs `Headless.Generator.Primitives.Abstractions`.
 
-- **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
-- **FluentValidation** -- Enterprise validators on top of FluentValidation: national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
-- **Http.Resilience** -- declare an outbound provider client's side-effect class (`OutboundEffect.Safe | Idempotent | Unsafe`) and derive its HttpClient resilience pipeline from it with `AddEffectResilienceHandler`. Used by the SMS, Paymob, reCAPTCHA, Turnstile, and APNs packages.
-- **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
-- **PhoneNumbers** -- libphonenumber-backed phone number formatting, normalization, and parsing for the `PhoneNumber` value object, mobile-number validation, and the phone FluentValidation rules (`InternationalPhoneNumber()`, `MobilePhoneNumber()`, …).
-- **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
-- **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
-- **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
-- **Slugs** -- URL-friendly slug generation (`Slug.Create()`) with Unicode normalization and configurable options.
+| Task | Package | Entry point |
+| --- | --- | --- |
+| Validate request models with ready-made rules and stable error codes | `Headless.FluentValidation` | Rules on `IRuleBuilder` (`UniqueElements()`, `Latitude()`, `HttpsOrLoopbackHttpUrl()`, ...), `WithErrorDescriptor`, `ToErrorDescriptors` |
+| Declare a strongly-typed ID or value type | `Headless.Generator.Primitives` + `Headless.Generator.Primitives.Abstractions` | A `partial` type that implements `IPrimitive<T>` |
+| Run a host with deploy verbs, health checks, seeders, and warm-ups | `Headless.Hosting` | `RunHeadlessAsync(args)`, `AddSeeder<T>()`, `AddWarmup<T>()`, `AddHeadlessHealthCheck`, `IResourceProvisioner` |
+| Give an outbound `HttpClient` a retry policy that matches its side effects | `Headless.Http.Resilience` | `AddEffectResilienceHandler(OutboundEffect)` |
+| Work with geometry for SQL Server geography | `Headless.NetTopologySuite` | `SanitizeForSqlGeography()`, `AddHeadlessNetTopologySuite()` |
+| Format, normalize, and validate phone numbers | `Headless.PhoneNumbers` | `GetInternationalFormat()`, `Normalize()`, `InternationalPhoneNumber()` |
+| Run Lua scripts on Redis | `Headless.Redis` | `HeadlessRedisScriptsLoader.EvaluateAsync` |
+| Write XML sitemaps | `Headless.Sitemaps` | `WriteToAsync`, `WriteAsync(onShard)` |
+| Make URL slugs | `Headless.Slugs` | `Slug.Create(text, options)` |
 
-CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) is its own domain: see [captcha.md](captcha.md).
+CAPTCHA verification is its own domain: see [captcha.md](captcha.md).
 
 ## Agent Rules
 
-- Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
-- Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
-- Use `Headless.PhoneNumbers` for phone validation and formatting: the `InternationalPhoneNumber()`, `MobilePhoneNumber()`, and `PhoneNumber(countryCode)` rules, and `GetInternationalFormat()` / `Normalize()` on `PhoneNumber`. `PhoneNumber` itself lives in `Headless.Primitives` and carries no libphonenumber dependency.
-- Use `ErrorDescriptor` with `.WithErrorDescriptor(factory)` for structured API error responses; pass a describer method group so the description follows the request culture. Convert results via `result.Errors.ToErrorDescriptors()`.
-- Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `Configure<TOptions, TValidator>(configuration, name)`.
-- Use `ISeeder` from Hosting for data the code declares; register with `services.AddSeeder<T>()`, order with `DependsOn`, and let the deployment run `seed` (or `deploy`). Tools and tests call `await app.Services.SeedAsync()`. EF Core migrations are structure, not data: register them with `services.AddDbContextMigrations<TContext>()`, which `resources provision` applies.
-- Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID. Call `services.AddHeadlessNetTopologySuite()` once at startup: it installs `GeoServices.NtsGeometryServices` as the process-wide `NtsGeometryServices.Instance`, which NetTopologySuite reads instead of DI, and registers it and `GeoServices.GeometryFactory` as singletons.
-- Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` directly: a script not loaded yet loads on that call. To have a package's scripts ready before first use, call `LoadAsync` with the scripts the package uses from an `IWarmup` whose `GatesReadiness` is `false`; never from a startup initializer, which blocks the host start on a Redis round trip.
-- Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)` for one file. For more than 50,000 URLs, call `urls.WriteAsync(onShard)` on an `IEnumerable<SitemapUrl>` or `IAsyncEnumerable<SitemapUrl>`: it calls `onShard` with each 50,000-URL `SitemapShard` and returns the shard count for the sitemap index. Write the shard inside the callback; it is invalid after the callback returns. Use `SitemapAlternateUrl` for hreflang/localized URLs.
-- Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively. A lone surrogate in the input is dropped rather than thrown on, so malformed user text still yields a slug.
+- To declare a strongly-typed primitive, install both `Headless.Generator.Primitives` and `Headless.Generator.Primitives.Abstractions`, and declare a `partial` type directly in a namespace that implements `IPrimitive<T>` with a static `Validate` method. Do not hand-write equality, conversions, or converters.
+- Set the `Primitive*` MSBuild properties to `true` for every converter kind you need. Each one defaults to `false`, so a primitive without them serializes to JSON as an empty object and has no EF Core converter.
+- Use the `Headless.FluentValidation` rules (`UniqueElements()`, `Latitude()`, `PageSize()`, `Id()`, ...) instead of writing custom predicates for the same checks. Branch on the error code (`FluentValidatorErrorCodes`), never on the localized message.
+- Pass `WithErrorDescriptor` a factory, such as a describer method group, not a descriptor captured in the validator's constructor. A captured description answers every request in the language of the first one.
+- Use `Headless.PhoneNumbers` for phone validation and formatting. `PhoneNumber.ToString()` returns the raw `+{CountryCode} {Number}`. Call `GetInternationalFormat()` for display.
+- End `Program.cs` with `return await app.RunHeadlessAsync(args);` instead of `app.Run()`. It adds the `describe`, `check`, `resources`, `seed`, and `deploy` verbs that deployments and verification steps run.
+- Run `dotnet <App>.dll deploy` (or `resources provision`, then `seed`) on every release. A starting host never creates tables, queues, or containers, and never runs seeders.
+- Use `AddDeployStepsOnStartup()` only in development and test hosts. Do not use it in production.
+- Put a misconfiguration that must stop the host in an `IHeadlessStartupValidator`, not in a hosted service. Keep it to in-memory checks.
+- Put first-request preparation (cache loads, script loads) in an `IWarmup`, not in a startup validator or a hosted service's `StartAsync`. Make `WarmUpAsync` safe to repeat: a failed warm-up retries.
+- Register options with `Configure<TOptions, TValidator>(...)` or `AddOptions<TOptions, TValidator>()` from `Headless.Hosting`. Both validate with FluentValidation when the host starts.
+- Use `HeadlessRedisScriptsLoader` only for Lua scripts, not for general Redis calls. Reuse each script definition's single `Instance`.
+- Use `GeoConstants.GoogleMapsSrid` (4326) as the SRID for geography data. Call `SanitizeForSqlGeography()` before you save a polygon to a SQL Server `geography` column.
+- For a sitemap of more than 50,000 URLs, call `WriteAsync(onShard)` and write each shard inside the callback. A shard is invalid after the callback returns.
 
 ---
+
 ## Headless.FluentValidation
 
-Extension library for FluentValidation providing additional validators and utilities.
+Extra FluentValidation rules with stable `g:` error codes, `ErrorDescriptor` integration, and English, formal Arabic, and Egyptian Arabic messages.
 
-### API and behavior
-
-- Egyptian National ID validation with checksum verification
-- Collection validators (unique elements, min/max counts)
-- Geo validators (latitude/longitude)
-- Pagination validators (page index, page size, search query)
-- URL validators (absolute URLs, HTTP/HTTPS, and HTTPS-or-loopback credential endpoints) and IP address validators (IPv4/IPv6)
-- String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
-- Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) that read "now" from an injectable `TimeProvider`
-- Enum-name and markup-rejection (`NoScripts`) validators
-- File error codes and messages (`FluentValidatorErrorCodes.File*`, descriptors in `FluentValidatorErrorDescriber.Files`) and the `IFileSizeValidator` / `IFileContentTypeValidator` contracts. The file rules themselves (`FileNotEmpty`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ContentTypes`, `HaveSignatures`) validate an `IFormFile` and ship in `Headless.Api.FluentValidation`. A content-type failure reports `g:file_unexpected_content_type` with the accepted types in `{ContentTypes}`; a signature failure reports `g:file_unexpected_signature`. The size and content-type rules implement those contracts, which Headless.OpenApi reads (see [api.md](api.md#headlessapifluentvalidation)). A null file passes every rule
-- `ErrorDescriptor` integration for structured API responses
-- Automatic camelCase property path normalization
-- Messages in English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`), including Arabic wording for FluentValidation's own built-in messages
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.FluentValidation
 ```
 
-### Setup and use
+The rules and extension methods are in the `FluentValidation` namespace, so `using FluentValidation;` is enough.
 
 ```csharp
 using FluentValidation;
@@ -78,9 +70,30 @@ public sealed class UserValidator : AbstractValidator<User>
 }
 ```
 
-### Setup and use
+**Verify:** no startup signal. In a unit test, validate a model with duplicate roles and assert that `result.Errors` contains an error whose `ErrorCode` is `FluentValidatorErrorCodes.UniqueElements` (`g:unique_elements`, namespace `Headless.FluentValidation.Resources`).
 
-#### Error Descriptor Integration
+### Validators
+
+| Category | Rules |
+| --- | --- |
+| National ID | `EgyptianNationalId` (with checksum) |
+| Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
+| Geo | `Latitude`, `Longitude` |
+| Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
+| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `HttpsOrLoopbackHttpUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
+| Network | `Ipv4`, `Ipv6`, `IpAddress` |
+| String | `OnlyIntegers`, `OnlyDecimals`, `Slug`, `Username`, `ZipCode`, `HexColor`, `Base64`, `Trimmed`, `Culture` |
+| Date and time | `InThePast`, `InTheFuture`, `NotInThePast`, `NotInTheFuture`, `MinimumAge`, for `DateTime`, `DateTimeOffset`, `DateOnly`, and their nullable forms. "Now" comes from an injectable `TimeProvider`. |
+| Enum | `EnumName(typeof(TEnum))` |
+| Safe text | `NoScripts` (rejects markup) |
+| Storage identifier | `IsValidIdentifierFor(StorageProvider)` for a known dialect, `IsValidCrossProviderIdentifier` when the dialect is known only at run time |
+| ID | `Id` (non-empty `Guid`, positive `int` or `long`) |
+
+- The phone rules ship in [`Headless.PhoneNumbers`](#headlessphonenumbers). Their error codes (`g:invalid_phone_number`, `g:invalid_country_code`, `g:local_phone_number`, `g:invalid_mobile_number`) are in `FluentValidatorErrorCodes` and `FluentValidatorErrorDescriber.PhoneNumbers`.
+- The `IFormFile` rules (`FileNotEmpty`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ContentTypes`, `HaveSignatures`) ship in `Headless.Api.FluentValidation`. Their codes and messages live here (`FluentValidatorErrorCodes.File*`, `FluentValidatorErrorDescriber.Files`). A content-type failure reports `g:file_unexpected_content_type` with the accepted types in `{ContentTypes}`. A signature failure reports `g:file_unexpected_signature`. A null file passes every file rule. The size and content-type rules implement `IFileSizeValidator` and `IFileContentTypeValidator`, which Headless.OpenApi reads to document the limits (see [api.md](api.md#headlessapifluentvalidation)).
+- Property paths in the results are camelCase.
+
+### Error descriptors
 
 ```csharp
 RuleFor(x => x.Total)
@@ -88,34 +101,27 @@ RuleFor(x => x.Total)
     .WithErrorDescriptor(OrderErrorDescriber.TotalInvalid); // static ErrorDescriptor TotalInvalid() => new("order:total_invalid", OrderMessages.total_invalid);
 ```
 
-`WithErrorDescriptor` takes a factory, not a descriptor. It reads the code and severity once, when the rule is
-built, and calls the factory again for every failure, so a description read from a localized resource follows the
-culture of the request being validated. Validators are usually registered as singletons, so a description captured
-at construction would answer every later request in the language of the first one. Pass a describer method group, or
-a lambda such as `() => new ErrorDescriptor("order:total_invalid", "Total must be positive.")` for a fixed text.
+- `WithErrorDescriptor` reads the code and severity once, when the rule is built. It calls the factory again for every failure, so a description read from a localized resource follows the culture of the request. For a fixed text, pass a lambda such as `() => new ErrorDescriptor("order:total_invalid", "Total must be positive.")`.
+- `ErrorDescriptor` defaults to error severity. Pass `ValidationSeverity.Warning` or `ValidationSeverity.Information` for a non-error rule. `WithErrorDescriptor` and `ToErrorDescriptors` both keep the severity.
 
-`ErrorDescriptor` defaults to error severity. Pass `ValidationSeverity.Warning` or
-`ValidationSeverity.Information` explicitly for non-error rules; severity is preserved by both
-`WithErrorDescriptor(...)` and `ToErrorDescriptors()`.
-
-#### Processing Validation Results
+To turn a result into structured API errors, call `ToErrorDescriptors()`:
 
 ```csharp
 var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>
 ```
 
-#### Regional Arabic
+### Regional Arabic
 
-Every package that ships Arabic messages ships them twice: formal Arabic under `ar` and Egyptian Arabic under `ar-EG`. .NET resource fallback runs from the region to `ar`, then to English, so an `ar-EG` request reads Egyptian Arabic and `ar` or any other `ar-*` region (`ar-SA`, `ar-AE`, and so on) reads formal Arabic.
+Every package that ships Arabic messages ships them twice: formal Arabic under `ar` and Egyptian Arabic under `ar-EG`. .NET resource fallback runs from the region to `ar`, then to English. So an `ar-EG` request reads Egyptian Arabic, and `ar` or any other `ar-*` region (`ar-SA`, `ar-AE`) reads formal Arabic.
 
 | Culture | Register | Example (`g:rate_limit_exceeded`) |
 | --- | --- | --- |
-| `ar` | Formal Arabic, in the plain register Gulf and other regional products use | `عدد الطلبات كبير جداً. حاول مرة أخرى بعد قليل.` |
+| `ar` | Formal Arabic, in the plain register regional products use | `عدد الطلبات كبير جداً. حاول مرة أخرى بعد قليل.` |
 | `ar-EG` | Professional Egyptian Arabic | `عدد الطلبات كتير. جرّب تاني بعد شوية.` |
 
 Formal Arabic uses vocabulary every region reads (رقم الهاتف، رقم الهوية الوطنية، البريد الإلكتروني، كلمة المرور). Egypt-only services, such as the Paymob wallet messages, keep Egyptian terms (الرقم القومي) under `ar` too.
 
-FluentValidation's built-in messages (`NotEmpty`, `EmailAddress`, `Length`, and the rest) come from its `LanguageManager`. `languageManager.AddHeadlessArabicTranslations()` replaces the library's own `ar` wording for every built-in key with the Headless formal Arabic, and `languageManager.AddHeadlessEgyptianArabicTranslations()` adds `ar-EG` wording. `AddHeadless()` applies both to `ValidatorOptions.Global.LanguageManager` through `SetupApi.ConfigureGlobalSettings()`; an application without `Headless.Api.ServiceDefaults` calls them once at startup:
+FluentValidation's built-in messages (`NotEmpty`, `EmailAddress`, `Length`, and the rest) come from its `LanguageManager`. `AddHeadless()` from `Headless.Api.ServiceDefaults` replaces the library's `ar` wording with the Headless formal Arabic and adds `ar-EG` wording. An application without `Headless.Api.ServiceDefaults` calls the two methods once at startup:
 
 ```csharp
 using FluentValidation;
@@ -128,92 +134,39 @@ if (ValidatorOptions.Global.LanguageManager is LanguageManager languageManager)
 }
 ```
 
-- The Arabic built-in messages leave out `{PropertyName}`: it resolves to the property's English name, which reads badly inside an Arabic sentence, so a client shows the message next to its field. English keeps the library's text, property name included.
-- Each call overwrites the text the manager holds for its culture and key. Add the application's own `ar` or `ar-EG` translations after `AddHeadless()` (or after the calls above): a translation added before is replaced. An application that assigns its own `ILanguageManager` that does not derive from `LanguageManager` gets no Headless built-ins.
-- `ar-EG` must be one of the request localization's `SupportedUICultures`. With only `ar` listed, an `ar-EG` request resolves to `ar` and reads formal Arabic. An application that sets `SatelliteResourceLanguages` must list `ar-EG` too, or the build drops those satellite assemblies.
+- The Arabic built-in messages leave out `{PropertyName}`, because it resolves to the property's English name. Show the message next to its field. English keeps the library's text, property name included.
+- Each call overwrites the text for its culture and key. Add your own `ar` or `ar-EG` translations after `AddHeadless()` or after the calls above. A translation added before is replaced.
+- An application that assigns its own `ILanguageManager` that does not derive from `LanguageManager` gets no Headless built-in translations.
+- List `ar-EG` in the request localization's `SupportedUICultures`. With only `ar` listed, an `ar-EG` request resolves to `ar` and reads formal Arabic.
+- If the application sets `SatelliteResourceLanguages`, list `ar-EG` there too. Otherwise the build drops the `ar-EG` satellite assemblies.
 
-### Available Validators
-
-| Category | Validators |
-|----------|-----------|
-| National ID | `EgyptianNationalId` |
-| Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
-| Geo | `Latitude`, `Longitude` |
-| Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
-| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `HttpsOrLoopbackHttpUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
-| Network | `Ipv4`, `Ipv6`, `IpAddress` |
-| String | `OnlyIntegers`, `OnlyDecimals`, `Slug`, `Username`, `ZipCode`, `HexColor`, `Base64`, `Trimmed`, `Culture` |
-| Date/Time | `InThePast`, `InTheFuture`, `NotInThePast`, `NotInTheFuture`, `MinimumAge` (`DateTime`/`DateTimeOffset`/`DateOnly` + nullable, `TimeProvider`-based) |
-| Enum | `EnumName(typeof(TEnum))` |
-| Safe Text | `NoScripts` |
-| Storage Identifier | `IsValidIdentifierFor(StorageProvider)` for a known dialect, `IsValidCrossProviderIdentifier` when the dialect is only known at runtime |
-| ID | `Id` (validates non-empty Guid, positive int/long) |
-
-The phone rules ship in [`Headless.PhoneNumbers`](#headlessphonenumbers), so this package carries no libphonenumber dependency. Their error codes (`g:invalid_phone_number`, `g:invalid_country_code`, `g:local_phone_number`, `g:invalid_mobile_number`) stay in `FluentValidatorErrorCodes` and `FluentValidatorErrorDescriber.PhoneNumbers`.
-
-### Configuration
-
-No configuration required.
-
-### Runtime behavior
-
-None.
 ---
+
 ## Headless.Generator.Primitives
 
-Roslyn source generator for creating strongly-typed domain primitives.
+A Roslyn source generator that turns a `partial` type implementing `IPrimitive<T>` into a validated value type with equality, conversions, and opt-in converters.
 
-### API and behavior
-
-- Roslyn incremental source generator
-- Emits unique `HF1000`-series diagnostics for invalid primitive declarations; legacy `AL` diagnostic IDs are no longer emitted.
-- Generates for types implementing `IPrimitive<T>` that are declared directly in a namespace, including the global namespace, and are not generic (`HF1004`, `HF1005`)
-- Converters go in the `<Namespace>.Converters` namespace beside the primitive (`Converters` for a primitive in the global namespace). The EF Core and Dapper registration helpers (`AddPrimitivePropertyConversions`, `AddPrimitivesDapperTypeHandlers`) go in `<AssemblyName>.Converters.Extensions`, with the assembly name mapped to a valid namespace the way the Messaging and Jobs generators map it (`My-App` gives `My_App.Converters.Extensions`). Two primitives may share a simple name in different namespaces.
-- The Dapper handler's `SetValue` binds the underlying value. Its `Parse` accepts the wider integer and floating-point types a provider may return (for example `short` for a `byte` primitive on PostgreSQL) when the value fits the underlying type, bounds included, and throws `InvalidCastException` otherwise
-- A primitive implements `IConvertible` only when its underlying type does, so `Guid`, `DateTimeOffset`, and `TimeSpan` primitives do not
-- With `PrimitiveMessagePackFormatters` on, each primitive gets a `<Name>MessagePackFormatter` in its `Converters` namespace and a `[MessagePackFormatter]` attribute pointing at it. The formatter writes the underlying value with the resolver's formatter for that type and reads it back through the validating constructor, so an invalid payload fails the read; a `class` primitive writes and reads nil as `null`. MessagePack's standard and contractless resolvers consult `[MessagePackFormatter]` before mapping members, so `MessagePackBinarySerializer` and any options built on them pick the formatter up with no resolver to compose. With the switch off, a primitive serializes as an empty map, because its value lives in private fields, and reads back uninitialized. The project must reference `MessagePack`
-- Auto-generated code:
-  - Constructors and factory methods
-  - `IEquatable<T>`, `IComparable<T>` implementations
-  - JSON converters (System.Text.Json)
-  - Entity Framework Core value converters
-  - TypeConverter for model binding
-  - Dapper type handlers
-  - MessagePack formatters (opt-in)
-- No OpenAPI schema mapping is generated: `Headless.OpenApi` documents every `IPrimitive<T>` as its underlying JSON type automatically, with the `[StringLength]` bounds of a string primitive as `minLength`/`maxLength`
-
-### Design constraints
-
-Primitive generator diagnostics use the framework-wide `HF` prefix. Existing suppressions for legacy `AL` IDs must move to the corresponding `HF` ID. The former duplicate `AL1012` is split: date-format validation uses `HF1012`, while numeric-operation validation uses `HF1013`.
-
-| ID | Severity | Meaning | Fix |
-| --- | --- | --- | --- |
-| <a id="hf1000"></a>`HF1000` | Error | The generator threw an exception; the message carries it. | Report it as a generator bug with the message. |
-| <a id="hf1001"></a>`HF1001` | Error | The primitive wraps a type the generator does not support, such as a custom class or a nullable value type. Nothing is generated for it. | Wrap a string, `Guid`, `bool`, `char`, numeric, or date and time type, or another primitive. |
-| <a id="hf1002"></a>`HF1002` | Error | The primitive is not declared `partial`. | Add `partial` to the declaration. |
-| <a id="hf1004"></a>`HF1004` | Error | The primitive is declared inside another type. Nothing is generated for it. | Move the declaration directly into a namespace. |
-| <a id="hf1005"></a>`HF1005` | Error | The primitive declares type parameters. Nothing is generated for it. | Remove the type parameters, or declare one primitive per closed type. |
-| <a id="hf1012"></a>`HF1012` | Error | `[SerializationFormat]` is on a primitive that does not wrap `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, or `TimeSpan`. The format is ignored. | Remove the attribute, or wrap a date or time type. |
-| <a id="hf1013"></a>`HF1013` | Error | `[SupportedOperations]` is on a primitive that does not wrap a numeric type. The attribute is ignored. | Remove the attribute. |
-| <a id="hf1015"></a>`HF1015` | Warning | A class primitive wraps a value type. | Declare the primitive as a `struct`. |
-| <a id="hf1016"></a>`HF1016` | Warning | A struct primitive wraps a reference type. | Declare the primitive as a `class`. |
-
-Every rule is reported on the primitive's type name, or on the offending attribute for `HF1012` and `HF1013`, so `#pragma warning disable` and `.editorconfig` severity settings apply to them like any compiler diagnostic.
-
-`HF1003`, `HF1011`, and `HF1021` are no longer reported. A declared parameterless or value constructor already conflicts with the one the generator emits, and the compiler reports it as `CS0111`. Checking which exception `Validate` throws needs an analyzer over method bodies, which the generator is not.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Generator.Primitives
+dotnet add package Headless.Generator.Primitives.Abstractions
 ```
 
-### Setup and use
+Turn on each converter kind you need in the project that declares the primitives:
+
+```xml
+<PropertyGroup>
+  <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
+  <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
+  <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
+</PropertyGroup>
+```
 
 ```csharp
 using System.Text.Json;
+using Headless.Generator.Primitives;
 
-// Define your primitive
 [StringLength(1, 50)]
 public sealed partial class Email : IPrimitive<string>
 {
@@ -226,81 +179,89 @@ public sealed partial class Email : IPrimitive<string>
     }
 }
 
-// Generated code provides:
-var email = new Email("user@example.com"); // Validating constructor; Email.TryCreate(...) does not throw
-string value = email; // Implicit conversion to the underlying value
-var json = JsonSerializer.Serialize(email); // JSON: "user@example.com"
+var email = new Email("user@example.com"); // throws InvalidPrimitiveValueException when Validate fails
+string value = email; // implicit conversion to the underlying value
+var json = JsonSerializer.Serialize(email); // "user@example.com"
 ```
 
-#### Entity Framework Integration
+To map every primitive of the assembly in EF Core, call the generated helper from `ConfigureConventions`. It lives in `<AssemblyName>.Converters.Extensions`:
 
-```csharp
-// Auto-generated value converter is registered via:
-modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConverter>();
+```csharp no-compile
+using MyApp.Converters.Extensions; // the declaring assembly's name
+
+protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+{
+    configurationBuilder.AddPrimitivePropertyConversions();
+}
 ```
+
+To map one property, use the generated converter instead: `modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConverter>();`.
+
+**Verify:** the build reports no `HF1xxx` diagnostic. In a unit test, assert that `new Email("bad")` throws `InvalidPrimitiveValueException`, and that `JsonSerializer.Serialize(email)` returns the underlying value as a JSON string, not `{}`.
 
 ### Configuration
 
-#### MSBuild Properties
+Set these MSBuild properties in the project that declares the primitives. Each defaults to `false`.
 
-```xml
-<PropertyGroup>
-  <PrimitiveDapperConverters>true</PrimitiveDapperConverters>
-  <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
-  <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
-  <PrimitiveMessagePackFormatters>false</PrimitiveMessagePackFormatters>
-  <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
-  <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
-</PropertyGroup>
-```
+| Property | Generates |
+| --- | --- |
+| `PrimitiveJsonConverters` | A System.Text.Json converter that reads and writes the underlying value |
+| `PrimitiveTypeConverters` | A `TypeConverter`, for model binding from route and query values |
+| `PrimitiveEntityFrameworkValueConverters` | `{Name}ValueConverter` and the assembly's `AddPrimitivePropertyConversions()` helper |
+| `PrimitiveDapperConverters` | A Dapper type handler per primitive and the assembly's `AddPrimitivesDapperTypeHandlers()` helper |
+| `PrimitiveXmlConverters` | XML serialization support |
+| `PrimitiveMessagePackFormatters` | `{Name}MessagePackFormatter` and a `[MessagePackFormatter]` attribute on the primitive. The project must reference `MessagePack`. |
 
-### Runtime behavior
+### Design and runtime behavior
 
-- Generates source files at compile time
-- No runtime dependencies added
+- The generator handles only a non-generic type declared directly in a namespace (the global namespace included). A nested or generic primitive gets nothing generated (`HF1004`, `HF1005`).
+- Converters go in `<Namespace>.Converters` beside the primitive, or `Converters` for a primitive in the global namespace. The EF Core and Dapper registration helpers go in `<AssemblyName>.Converters.Extensions`, with the assembly name turned into a valid namespace (`My-App` gives `My_App.Converters.Extensions`). Two primitives may share a simple name in different namespaces.
+- Generated members include the validating constructor, `TryCreate(...)` (which does not throw), `IEquatable<T>`, `IComparable<T>`, and the implicit conversion to the underlying type.
+- A primitive may wrap another primitive (`Price : IPrimitive<Amount>` where `Amount : IPrimitive<decimal>`), to any depth. It stores and serializes the innermost value: JSON, TypeConverter, XML, EF Core (`ValueConverter<Price, decimal>`), Dapper, and MessagePack read and write a `decimal`, and `GetUnderlyingPrimitiveType()` returns `typeof(decimal)`. `Validate`, `TryCreate`, `Parse`, and `GetUnderlyingPrimitiveValue()` take or return the wrapped `Amount`. Every value is validated as `Amount`, then as `Price`, so a value either one rejects fails the read. Implicit conversions go both ways to the innermost type, and from `Amount` to `Price`.
+- Reading the value of a `default` struct primitive throws `InvalidPrimitiveValueException` ("The domain value has not been initialized").
+- Declaring your own parameterless or value constructor conflicts with the generated one and fails with `CS0111`.
+- A primitive implements `IConvertible` only when its underlying type does, so `Guid`, `DateTimeOffset`, and `TimeSpan` primitives do not.
+- The Dapper handler binds the underlying value. Its `Parse` accepts a wider integer or floating-point type that a provider returns (for example `short` for a `byte` primitive on PostgreSQL) when the value fits, and throws `InvalidCastException` otherwise.
+- The MessagePack formatter writes the underlying value and reads it back through the validating constructor, so an invalid payload fails the read. A `class` primitive writes and reads nil as `null`. MessagePack's standard and contractless resolvers honor `[MessagePackFormatter]`, so `MessagePackBinarySerializer` picks the formatter up with no resolver to compose. With the property off, a primitive serializes as an empty map and reads back uninitialized.
+- No OpenAPI mapping is generated. `Headless.OpenApi` documents every `IPrimitive<T>` as its underlying JSON type (the innermost type for a primitive that wraps another), with a string primitive's `[StringLength]` bounds as `minLength` and `maxLength`.
+- The generator adds no runtime dependency.
+
+### Diagnostics
+
+Each rule is reported on the primitive's type name, or on the offending attribute for `HF1012` and `HF1013`. `#pragma warning disable` and `.editorconfig` severity settings apply to them.
+
+| ID | Severity | Meaning | Fix |
+| --- | --- | --- | --- |
+| <a id="hf1000"></a>`HF1000` | Error | The generator threw an exception. The message carries it. | Report it as a generator bug with the message. |
+| <a id="hf1001"></a>`HF1001` | Error | The primitive wraps a type the generator does not support, such as a custom class or a nullable value type. Nothing is generated for it. | Wrap a string, `Guid`, `bool`, `char`, numeric, or date and time type, or another primitive. |
+| <a id="hf1002"></a>`HF1002` | Error | The primitive is not declared `partial`. | Add `partial` to the declaration. |
+| <a id="hf1004"></a>`HF1004` | Error | The primitive is declared inside another type. Nothing is generated for it. | Move the declaration directly into a namespace. |
+| <a id="hf1005"></a>`HF1005` | Error | The primitive declares type parameters. Nothing is generated for it. | Remove the type parameters, or declare one primitive per closed type. |
+| <a id="hf1012"></a>`HF1012` | Error | `[SerializationFormat]` is on a primitive that does not wrap `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, or `TimeSpan`. The format is ignored. | Remove the attribute, or wrap a date or time type. |
+| <a id="hf1013"></a>`HF1013` | Error | `[SupportedOperations]` is on a primitive that does not wrap a numeric type. The attribute is ignored. | Remove the attribute. |
+| <a id="hf1015"></a>`HF1015` | Warning | A class primitive wraps a value type. | Declare the primitive as a `struct`. |
+| <a id="hf1016"></a>`HF1016` | Warning | A struct primitive wraps a reference type. | Declare the primitive as a `class`. |
+
 ---
+
 ## Headless.Generator.Primitives.Abstractions
 
-Abstractions and attributes for the domain primitives source generator.
+The contracts and attributes the primitives generator reads: `IPrimitive<T>`, `PrimitiveValidationResult`, `InvalidPrimitiveValueException`, and the configuration attributes.
 
-### API and behavior
+### Setup
 
-- `IPrimitive<T>` - Core interface for domain primitives
-- `PrimitiveValidationResult` - Validation result model
-- Attributes for generator configuration:
-  - `StringLengthAttribute` - Min/max length constraints
-  - `SupportedOperationsAttribute` - Enable comparison, math operations
-  - `SerializationFormatAttribute` - Custom serialization formats
-  - `UnderlyingPrimitiveTypeAttribute` - Specify underlying type
-- Helper extensions for DateOnly, XML serialization
+Install it with `Headless.Generator.Primitives` (see [its setup](#headlessgeneratorprimitives)). The types are in the `Headless.Generator.Primitives` namespace.
 
-### Install
-
-```bash
-dotnet add package Headless.Generator.Primitives.Abstractions
-```
-
-### Setup and use
+| Attribute | Effect |
+| --- | --- |
+| `StringLengthAttribute` | Minimum and maximum length of a string primitive. A value out of range throws `InvalidPrimitiveValueException`. |
+| `SupportedOperationsAttribute` | Turns on arithmetic operators for a numeric primitive (`Addition`, `Subtraction`, ...) |
+| `SerializationFormatAttribute` | The format string a date or time primitive serializes with |
+| `UnderlyingPrimitiveTypeAttribute` | Names the underlying type explicitly |
 
 ```csharp
 using Headless.Generator.Primitives;
 
-[StringLength(1, 100)]
-public sealed partial class ProductName : IPrimitive<string>
-{
-    public static PrimitiveValidationResult Validate(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return PrimitiveValidationResult.Error("Name cannot be empty");
-
-        return PrimitiveValidationResult.Ok;
-    }
-}
-```
-
-#### With Supported Operations
-
-```csharp
 [SupportedOperations(Addition = true, Subtraction = true)]
 public readonly partial struct Quantity : IPrimitive<int>
 {
@@ -313,259 +274,50 @@ public readonly partial struct Quantity : IPrimitive<int>
 }
 ```
 
-### Configuration
+**Verify:** the build reports no `HF1xxx` diagnostic, and a unit test asserts that `new Quantity(2) + new Quantity(3)` equals `new Quantity(5)` and that `new Quantity(-1)` throws `InvalidPrimitiveValueException`.
 
-No configuration required. This is an abstractions-only package.
+The package also ships `DateOnly` and XML helper extensions. It has no configuration and no runtime registration.
 
-### Runtime behavior
-
-None.
 ---
+
 ## Headless.Hosting
 
-Core hosting utilities and extensions for ASP.NET Core applications.
+The host's deploy verbs, health checks, startup validation, seeders, resource provisioning, warm-ups, and service-registration helpers.
 
-### API and behavior
+| Capability | Entry point | Section |
+| --- | --- | --- |
+| Host verbs for deploy and verification | `RunHeadlessAsync(args)` | [Host verbs](#host-verbs) |
+| Environments that share one Redis | `Headless:Prefix`, `ConfigureHeadlessPrefix` | [Isolation prefix](#isolation-prefix) |
+| Readiness checks for dependencies | `AddHeadlessHealthCheck`, `ConfigureHeadlessHealthCheck`, `RemoveHealthChecks` | [Health checks](#health-checks) |
+| Pre-rollout dependency check | the `check` verb | [Health check command](#health-check-command) |
+| What the host registered, without starting it | the `describe` verb | [Host manifest](#host-manifest) |
+| Tables, queues, and containers a feature needs | the `resources` verb, `IResourceProvisioner` | [Resource provisioning](#resource-provisioning) |
+| Data the code declares | the `seed` verb, `ISeeder` | [Database seeders](#database-seeders) |
+| Work that prepares the first requests | `IWarmup` | [Warm-up](#warm-up) |
+| Refuse to start on a misconfiguration | `IHeadlessStartupValidator` | [Startup validators](#startup-validators) |
+| Fail at start when a provider package is missing | `RequireRegisteredService<T>` | [Required services](#required-services) |
+| Validated options | `Configure<TOptions, TValidator>` | [Options with validation](#options-with-validation) |
+| Conditional, replacing, and decorating registrations | `AddIf`, `AddOrReplace*`, `TryDecorateWith` | [Service registration helpers](#service-registration-helpers) |
+| Sequential GUIDs | `AddHeadlessGuidGenerator()` | Registers keyed `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`, plus an unkeyed default. The contracts are in [extensions.md](extensions.md). |
+| Structured logging scopes | `LogState`, `HeadlessLoggerExtensions` | A scope builder with fluent property and tag methods, and level-gated `Log*` overloads that build the scope inline |
+| Relational schema steps | `AddHeadlessSchemaContribution` | [SQL](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), including [its observability](sql.md#schema-runner-observability) |
 
-- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`, and decorators (`DecorateWith`/`TryDecorateWith` for unkeyed registrations, `TryDecorateKeyedWith` for one service key) that preserve each registration's lifetime
-- `AddHeadlessGuidGenerator()` — registers keyed `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`, plus an unkeyed backend-agnostic default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md))
-- `LogState` / `HeadlessLoggerExtensions` — structured-logging scope builder with fluent property/tag methods and level-gated `Log*` overloads that build the scope inline
-- Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
-- Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
-- Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
-- Host manifest: `RunHeadlessAsync(args)` prints, for the `describe` verb, the JSON each `IHostManifestSection` writes about what its feature registered, without starting the host. See [Host manifest](#host-manifest)
-- Resource provisioning: `IResourceProvisioner` (provision, verify, purge, delete, status) for external state a feature needs, the `resources` verb of `RunHeadlessAsync(args)` that a deployment runs, `AddDeployStepsOnStartup` for development and test hosts, and `ProvisionResourcesAsync` / `PurgeResourcesAsync` / `DeleteResourcesAsync` on `IServiceProvider`. See [Resource provisioning](#resource-provisioning)
-- Warm-up: `IWarmup` work runs in the background after start, behind the `warmup` readiness check. See [Warm-up](#warm-up)
-- Pre-start health check: `RunHeadlessAsync(args)` runs the host's health checks once for the `check` verb, skipping `host-state` checks, and exits 1 when one is `Unhealthy`. See [Health check command](#health-check-command)
-- Options validation with FluentValidation
-- Configuration binding extensions
-- Environment detection extensions
-- Seeders (`ISeeder`, ordered by `DependsOn`): run by the `seed` or `deploy` verb by default, or at host start with `AddDeployStepsOnStartup`; `seed verify` reports stores that are out of date. See [Database Seeders](#database-seeders)
-- Keyed services helpers
-- Hosted service management
-- Background startup processes can expose readiness signals so dependent flows can wait for initialization completion.
-- The schema runner (`Headless.Hosting.Schema`): features register idempotent, versioned DDL steps with `AddHeadlessSchemaContribution`; one hosted `SchemaRunner` verifies them at startup, `resources provision` applies them, and `ExportScript` writes a deploy script. Its traces and metrics are under `Headless.SchemaRunner` (`SchemaRunnerDiagnostics`, `AddSchemaRunnerInstrumentation()`). The consumer contract is in [SQL](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), including [its observability](sql.md#schema-runner-observability).
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Hosting
 ```
 
-### Setup and use
-
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Conditional registration
-builder.Services.AddIf(
-    builder.Environment.IsDevelopment(),
-    s => s.AddHeadlessEmails(setup => setup.UseDevelopment("emails.txt"))
-);
-
-// Options with FluentValidation
 builder.Services.Configure<MyOptions, MyOptionsValidator>(builder.Configuration.GetSection("MySection"));
-
-// Replace existing service
-builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
-```
-
-### Setup and use
-
-#### Conditional Service Registration
-
-```csharp
-services.AddIf(condition, s => s.AddSingleton<IService, Impl>());
-services.AddIfElse(condition, ifAction, elseAction);
-```
-
-#### Options with Validation
-
-```csharp
-services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("App"));
-```
-
-#### Database Seeders
-
-A seeder writes data the code declares (definitions, cron jobs, reference rows) into the stores. It is not a [provisioned resource](#resource-provisioning): a resource is structure that `resources provision` creates once; a seeder writes rows and must run again whenever the declarations change. Framework packages register their own: `FeatureDefinitions`, `PermissionDefinitions`, `SettingDefinitions`, and `Jobs`.
-
-Implement `ISeeder` (`Task SeedAsync(CancellationToken)`) and register with `AddSeeder<T>()` (or `AddSeeder(sp => …)`). Seeders run one at a time, each after the seeders its `DependsOn` names and otherwise in registration order; two that depend on each other fail the run with the cycle in the message. Each is named by `ISeeder.Name` (default: the type name). Database migrations are not seeders: they are structure, registered with `AddDbContextMigrations<TContext>()` and applied by `resources provision`.
-
-The host start does not seed. Seeders run in one of two ways:
-
-- **The deployment runs the `seed` verb** of `RunHeadlessAsync(args)`: `dotnet MyApp.dll seed` runs every seeder, `seed -n Jobs` one of them, `seed list` lists them, `seed verify` asks each seeder whether its store already holds what it would write; `--timeout <seconds>` bounds the run (default 300). One line per seeder: name, `Ok`, `Failed`, or `Skipped`, duration, message. A failed seeder stops the run and the rest are `Skipped`, because a later seeder may need what an earlier one writes. Exit code `0` on success, `1` on a failure or failed startup validation, `2` for invalid arguments or an unknown seeder name. `seed verify` prints `Current`, `Stale`, `Unknown`, or `Failed` per seeder and exits `1` on `Stale` or `Failed`; `Unknown` (a seeder that cannot tell, the `ISeeder.VerifyAsync` default) does not fail it. The Features, Permissions, and Settings definition seeders compare their store with the code-declared definitions without writing. This is the default and needs no registration.
-- **A development or test host seeds as it starts**: `services.AddDeployStepsOnStartup()` runs every seeder after the [resources](#resource-provisioning) are provisioned and before any hosted service starts; a failed seeder fails the start. `o.Seed = false` keeps the resource step only. `HeadlessTestServer` does this by default (`seed: false` turns it off).
-
-A deployment that forgets the `seed` step leaves the seeded data silently out of date: definitions that other applications sharing the database read go stale, configured `Deleted*` definitions are not removed, `DynamicPermissionDefinitionsChanged` is not published, and cron expression changes, removed crons, and new crons are not applied (see the [Jobs seeder](jobs.md#headlessjobs)). Run `seed` on every release, next to `resources provision`, or run `deploy`, which does both; add `seed verify` to a release check to catch a deployment that skipped it.
-
-```csharp
-public sealed class UserSeeder : ISeeder
-{
-    public Task SeedAsync(CancellationToken cancellationToken) { /* seed users */ return Task.CompletedTask; }
-}
-
-// Registration
 builder.Services.AddSeeder<UserSeeder>();
-builder.Services.AddDbContextMigrations<AppDbContext>(); // Headless.EntityFramework; structure: applied by `resources provision`, before `seed`
 
-// Development: seed as the host starts. Production: the deployment runs `dotnet MyApp.dll seed`.
-if (builder.Environment.IsDevelopment()) builder.Services.AddDeployStepsOnStartup();
-
-// A tool or test can run them directly, in dependency order, as the `seed` verb does
-await app.Services.SeedAsync();
-```
-
-#### Service Replacement
-
-```csharp
-services.AddOrReplaceScoped<IService, NewImpl>();
-services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequiredService<IDep>()));
-
-// Replaces a known TFallback registration only; preserves consumer-provided non-fallback
-// registrations. Use when multiple packages each register a safe default and a higher-level
-// package wants to swap only those defaults.
-services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
-```
-
-#### Decorators
-
-```csharp
-// Wraps every unkeyed IService registration; the factory receives the original instance.
-services.TryDecorateWith<IService>((inner, sp) => new LoggingService(inner));
-
-// Wraps only the registrations under one key; other keys and the unkeyed registration are untouched.
-services.TryDecorateKeyedWith<IService>("reports", (inner, sp) => new LoggingService(inner));
-```
-
-A decorator that returns a different instance owns disposing the inner one, because the container only tracks what the factory returns. Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed. `TryDecorateKeyedWith` does not decorate a `KeyedService.AnyKey` registration, which serves every key.
-
-#### Startup Validators
-
-A package that must refuse to start on a misconfiguration implements `IHeadlessStartupValidator` (`Headless.Hosting`) and registers it; it does not write its own hosted service.
-
-```csharp
-internal sealed class OrdersModelValidator(IDbContextFactory<AppDbContext> factory) : IHeadlessStartupValidator
+if (builder.Environment.IsDevelopment())
 {
-    public async Task ValidateAsync(CancellationToken cancellationToken)
-    {
-        await using var db = await factory.CreateDbContextAsync(cancellationToken);
-
-        if (db.Model.FindEntityType(typeof(Order)) is null)
-        {
-            throw new InvalidOperationException("Call modelBuilder.AddOrders() in OnModelCreating.");
-        }
-    }
+    builder.Services.AddDeployStepsOnStartup(); // provision resources and seed as the host starts
 }
-
-services.AddStartupValidator<OrdersModelValidator>();
-```
-
-- **One runner, before every `StartAsync`.** The first `AddStartupValidator` call registers a single `IHostedLifecycleService` that runs every validator in `StartingAsync`, so a misconfigured host fails before background workers or consumers start.
-- **Every failure in one start.** Each validator runs even after another fails. A single failure surfaces as its own exception, unwrapped, so a typed exception such as `MissingRequiredServiceException` keeps its type; two or more surface as a `StartupValidationException` (an `AggregateException`) whose inner exceptions are the originals. Cancelling startup stops the run and is never reported as a failure.
-- **Registration.** `AddStartupValidator<T>()` and `AddStartupValidator(Type)` are idempotent per validator type; `AddStartupValidator(Func<IServiceProvider, IHeadlessStartupValidator>)` adds a validator on every call, for one validator per named instance.
-- **Cheap checks only.** Validators run on every instance on every start and have no switch to turn them off. Keep them to in-memory checks (options, EF model metadata, DI registrations, wiring flags). A diagnostic that does network I/O or measures cost belongs in its own hosted service with a mode.
-- **Advisory findings.** A validator that should only warn logs through an injected logger and returns normally.
-
-#### Health Checks
-
-A provider package that talks to an external dependency contributes a readiness health check when it is registered, so `/health` reports the database, Redis, broker, or blob store the host depends on instead of only the process. Nothing is resolved and no connection opens at registration: each check probes its dependency only when a health check runs. Messaging and Jobs also contribute checks that read their own host state (started, shutting down, paused, broker reachability) without any I/O. A `Degraded` status named in the Probe column is that check's default failure status; `ConfigureHeadlessHealthCheck` overrides it.
-
-| Registered by | Check name | Dependency tag | Probe |
-| --- | --- | --- | --- |
-| `AddPostgreSqlSql` | `sql-postgresql` | `database` | `SELECT 1`, or the configured `TestCommand`, on a new connection (`ISqlConnectionFactory.PingAsync`) |
-| `AddSqlServerSql` | `sql-sqlserver` | `database` | `SELECT 1`, or the configured `TestCommand`, on a new connection |
-| `AddHeadlessDbContext<T>`, `AddHeadlessDbContextPool<T>` | `dbcontext-{T full name}` | `database` | Microsoft's `AddDbContextCheck<T>`: `Database.CanConnectAsync`, or the configured `TestCommand` through `ExecuteSqlRawAsync`, on the context of the check's scope |
-| Caching `UseRedis` / `AddRedisTier` | `cache-redis` (named: `cache-redis-{name}`) | `redis` | `PING` to every configured endpoint of the options' multiplexer, `CLUSTER INFO` = `cluster_state:ok` on cluster nodes (`ProbeEndpointsAsync`) |
-| Distributed locks `UseRedis` | `distributed-locks-redis` | `redis` | The same endpoint probe through the registered `IConnectionMultiplexer` |
-| Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection, with a 5 second default timeout |
-| Blobs `UseAzure` | `blobs-azure` (named: `blobs-azure-{name}`) | `blobs` | Reads one page of the account's container list, or the properties of `AzureStorageOptions.HealthCheckContainerName` when set |
-| `AddHeadlessMessaging` | `messaging` | `messaging`, `host-state` | Reads host state: `Unhealthy` before the Messaging host starts and once shutdown begins |
-| `AddHeadlessMessaging` | `messaging-broker` | `messaging`, `host-state` | Reads broker reachability: `Unhealthy` while the broker is unreachable, judged from receive and send outcomes ([Messaging](messaging.md#broker-reachability)) |
-| `AddHeadlessMessaging` | `messaging-consumers` | `messaging`, `host-state` | Reads circuit state: `Degraded` by default while any consumer circuit is `Open`, including an operator pause |
-| `AddHeadlessMessaging` with `AddOutbox(name)` | `messaging-outboxes` | `messaging`, `host-state` | Reads outbox state: `Degraded` by default while an additional outbox is not initialized |
-| Messaging PostgreSQL / SQL Server storage | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default`; per additional outbox `messaging-storage-postgresql-outbox-{name}`, `messaging-storage-sqlserver-outbox-{name}`, keyed on the name passed to `AddOutbox(name)` | `messaging`, `database` | `SELECT 1` on a new connection from that store's options |
-| `AddHeadlessJobs` with background services | `jobs` | `jobs`, `host-state` | Reads host state: `Unhealthy` until Jobs activation completes and once shutdown begins |
-| `AddHeadlessJobs` with background services | `jobs-scheduler` | `jobs`, `host-state` | Reads `IJobsHostScheduler.IsRunning`: `Degraded` by default while the scheduler is stopped by an operator or by manual start mode |
-| Jobs `UseEntityFramework` | `jobs-storage-{DbContext full name}` | `jobs`, `database` | `Database.CanConnectAsync` on a context from the store's pooled factory |
-
-- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag: `database`, `redis`, `messaging`, `blobs`, or `jobs` (`HeadlessHealthCheckTags.Jobs`, for the checks that report whether a Jobs host can run jobs). A storage check of Messaging or Jobs carries both its feature tag and `database`. A check that reads the running host's own state rather than probing a dependency (the six `host-state` rows above) also carries `host-state` (`HeadlessHealthCheckTags.HostState`); the [`check` command](#health-check-command) skips those, because a host that was never started always fails them. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
-
-  ```csharp
-  app.MapHealthChecks("/ready", new HealthCheckOptions
-  {
-      Predicate = registration => registration.Tags.Contains(HeadlessHealthCheckTags.Ready),
-  });
-  ```
-
-- **Turning one off.** Set `Headless:HealthChecks:{name}:Enabled` to `false` in configuration, or `options.Enabled = false` in `ConfigureHeadlessHealthCheck(name, ...)`, and the check is not registered on any endpoint. Configuration lets one deployment drop a check without a code change:
-
-  ```json
-  { "Headless": { "HealthChecks": { "cache-redis": { "Enabled": false } } } }
-  ```
-
-- **Opting out in code.** `RemoveHealthChecks(predicate)` removes matching registrations after every other configuration runs, so its position in `Program.cs` does not matter. Use it for a check Headless did not contribute, or to remove a group by tag:
-
-  ```csharp
-  // Drop one contributed check.
-  builder.Services.RemoveHealthChecks(registration => registration.Name == "messaging-nats");
-
-  // Drop every check Headless contributed, for example to use your own checks instead.
-  builder.Services.RemoveHealthChecks(registration => registration.Tags.Contains(HeadlessHealthCheckTags.Headless));
-  ```
-
-- **Configuring one.** `services.ConfigureHeadlessHealthCheck(name, options => ...)` changes a contributed check through `HeadlessHealthCheckOptions`, named options validated at startup; the call's position relative to the provider registration does not matter. The same settings bind from `Headless:HealthChecks:{name}` (`Enabled`, `FailureStatus`, `Timeout` as `hh:mm:ss`, `Tags`, `TestCommand`); code wins over configuration whichever is registered first, and a value that does not parse fails with the key named:
-
-  ```csharp
-  builder.Services.ConfigureHeadlessHealthCheck("cache-redis", options =>
-  {
-      options.FailureStatus = HealthStatus.Degraded; // a cache outage degrades, it does not fail readiness
-      options.Timeout = TimeSpan.FromSeconds(2);
-      options.Tags.Add("cache");
-  });
-  builder.Services.ConfigureHeadlessHealthCheck("sql-postgresql", options =>
-      options.TestCommand = "SELECT 1 FROM orders LIMIT 1"); // prove the schema, not just the server
-  ```
-
-  `FailureStatus` (default `Unhealthy`; `Healthy` is rejected) is what a failed or timed-out probe reports. `Timeout` (default none) bounds the probe; the health check service cancels it and reports `FailureStatus` with `A timeout occurred while running check.`. Without one, a probe runs until its driver gives up or the health request is cancelled. `Tags` adds tags. `TestCommand` replaces the query of the SQL and DbContext checks and is ignored by the others; the Azure blob check takes a container through `AzureStorageOptions.HealthCheckContainerName` instead. For anything else, mutate the registration in `services.PostConfigure<HealthCheckServiceOptions>(...)`.
-- **Failure reporting.** A probe that throws reports the registration's failure status (`Unhealthy` by default) with the fixed description `The '{name}' dependency probe failed.` and the exception attached for the health-check log. The driver's message stays out of the description because health endpoints are usually anonymous. A cancelled health request cancels the probe and reports nothing, rather than reporting the dependency as down. The report entry's `Duration` carries the probe latency; checks add no result data, because server versions and endpoint names do not belong on an anonymous endpoint.
-- **One check per name.** A second contribution with the same name adds no second check; its tags join the first one's, so a provider registered twice keeps one check and two packages that probe one dependency under one name report it once with both packages' tags. A named cache or blob store gets its own check, unless it reaches the same deployment as another check (see *One check per dependency*).
-- **One check per dependency.** Packages that probe one database or one Redis deployment report it once. Each resource check declares the dependency it reaches as a `HeadlessHealthCheckResource`: a key computed when the health check service first builds its options (provider, host, port, and database for SQL and EF, from `HeadlessHealthCheckResource.DatabaseKey`; the sorted endpoints for Redis, from `GetEndpointsKey()`), and whether the package owns the connection. Checks with equal keys collapse into the owner's check (`sql-*`, `dbcontext-*`), or the first registered when no owner is present, which takes the others' tags and keeps its own name, failure status, and timeout. So `jobs-storage-{T}` folds into `dbcontext-{T}`, a Messaging store on the app's database folds into `sql-postgresql`, and `distributed-locks-redis` folds into `cache-redis` when both use one deployment. A store on its own database keeps its own check. Two connection pools to one database with different users share the probe; a credential that breaks for one of them surfaces in its queries, not in readiness. The off-switch applies first, so turning the owner off leaves the next check probing the dependency. To dedupe a check of your own, pass a resource: `services.AddHeadlessHealthCheck(name, HeadlessHealthCheckResource.Shared(sp => key), probe, tags)`.
-- **Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` / `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check; add one with `AddHeadlessHealthCheck`. Messaging PostgreSQL and SQL Server storage is the exception: it probes each store's own connection whether that connection is shared or its own, and on a database another check already probes, it folds into that check (see *One check per dependency*). SQLite and in-memory providers contribute none. The data-protection key-ring check stays opt-in through `AddDataProtectionKeyRing()`, because its default probe writes to the store (see [api.md](api.md)).
-- **Wrapping a third-party check.** `services.AddHeadlessHealthCheck(name, (builder, name, tags) => builder.AddXxxCheck(name, failureStatus: null, tags), dependencyTag)` contributes a check that another package's `IHealthChecksBuilder` method registers, under the same conventions: the `ready` and `headless` tags, one registration per name, and failures (thrown or returned) reported with the registration's failure status and the fixed description. The DbContext check uses it to run Microsoft's `AddDbContextCheck<T>`, whose own failures put the driver message in the description.
-- **Writing one.** A provider package contributes its own check with `services.AddHeadlessHealthCheck(name, probe, tags)`. A package that wants a different default, such as `Degraded` for a check whose failure leaves the host working, sets it with `services.ConfigureHeadlessHealthCheckDefault(name, options => ...)`: configuration and the application's `ConfigureHeadlessHealthCheck` override it whichever is registered first. The probe receives the services of the check's scope and a cancellation token; completing means healthy and throwing means unhealthy:
-
-  ```csharp
-  services.AddHeadlessHealthCheck(
-      "search-elastic",
-      static async (provider, cancellationToken) =>
-          await provider.GetRequiredService<ISearchClient>().PingAsync(cancellationToken),
-      "search"
-  );
-  ```
-
-- **Compared with the community checks.** The [Xabaril `AspNetCore.HealthChecks.*`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks) packages and Microsoft's [`AddDbContextCheck`](https://github.com/dotnet/aspnetcore/blob/55d77e1e0349aa2a079a516f6ecb7c79b56bf85c/src/Middleware/HealthChecks.EntityFrameworkCore/src/DbContextHealthCheck.cs), read at the commits linked here:
-
-  | Dependency | Community check | Headless check |
-  | --- | --- | --- |
-  | PostgreSQL | [`NpgSqlHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.NpgSql/NpgSqlHealthCheck.cs): `SELECT 1` or a custom command on a connection from its own connection string or an `NpgsqlDataSource`; a result builder can turn the scalar into a status; the exception message becomes the description | The connection factory the app already registered; `SELECT 1` or `TestCommand`; fixed description |
-  | SQL Server | [`SqlServerHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.SqlServer/SqlServerHealthCheck.cs): the same shape over a connection string; no description | The registered factory; `SELECT 1` or `TestCommand` |
-  | DbContext | Microsoft's check: `CanConnectAsync` or a custom test query; any exception is `Unhealthy` with its message, whatever the failure status | Microsoft's check, wrapped: the configured failure status and fixed text; `TestCommand` as the query |
-  | Redis | [`RedisHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.Redis/RedisHealthCheck.cs): pings each configured endpoint and checks `cluster_state:ok`; can create and cache its own multiplexer from a connection string; endpoint names in the description | The provider's multiplexer; the same endpoint and cluster probe; fixed text |
-  | NATS | [`NatsHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.Nats/NatsHealthCheck.cs): `ConnectAsync` on the registered connection, always `Unhealthy`, no cancellation | A `PING` round trip on the transport's pooled connection, honoring cancellation and the failure status |
-  | Azure blobs | [`AzureBlobStorageHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.Azure.Storage.Blobs/AzureBlobStorageHealthCheck.cs): one page of containers, or a named container's properties | The provider's client; the same two probes |
-
-  Every community check above takes `failureStatus`, `tags`, and `timeout` at registration; `HeadlessHealthCheckOptions` covers the same three. Prefer a community package when the app needs what these checks deliberately leave out: deciding health from a query's result (`HealthCheckResultBuilder`, for example replication lag), a check for a dependency no Headless provider owns, or a check against a connection string the app does not otherwise use. Register it next to the contributed checks under another name, or drop the contributed one with `RemoveHealthChecks`.
-
-#### Host manifest
-
-A host manifest is a JSON document that lists what each feature registered in the host: Messaging consumer identities with their effective tuning, Jobs functions with theirs. It is read from the same frozen registries the host runs, so it shows the values configuration applied, and it answers "what does this deployed host consume and run?" without starting it.
-
-Print it from the host's own entry point by replacing `RunAsync` with `RunHeadlessAsync(args)`:
-
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddHeadlessMessaging(setup => { /* ... */ });
-builder.Services.AddHeadlessJobs(options => { /* ... */ });
 
 var app = builder.Build();
 // ... middleware and endpoints ...
@@ -573,17 +325,177 @@ var app = builder.Build();
 return await app.RunHeadlessAsync(args);
 ```
 
+**Verify:** `dotnet MyApp.dll describe` exits 0 and prints a JSON manifest, which proves the host builds and passes startup validation without reaching any dependency. `dotnet MyApp.dll check` exits 0 when every dependency the host registered answers.
+
+### Host verbs
+
+`RunHeadlessAsync(args)` (namespace `Microsoft.Extensions.Hosting`) reads the first argument:
+
+| First argument | What it does | Starts the host |
+| --- | --- | --- |
+| `describe` | Prints the [host manifest](#host-manifest) as JSON | No |
+| `check` | Runs the health checks once ([Health check command](#health-check-command)) | No |
+| `resources <subcommand>` | Provisions, verifies, purges, deletes, lists, or reports resources ([Resource provisioning](#resource-provisioning)) | No |
+| `seed [verify\|list]` | Runs or verifies the seeders ([Database seeders](#database-seeders)) | No |
+| `deploy` | Runs `resources provision`, then `seed`, and stops at the first that fails. Takes no arguments; run the two verbs separately for filters or a timeout. | No |
+| Anything else | Runs the host as `RunAsync` does | Yes |
+
+- **Every verb validates like a start.** It runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the order a real start does. A verb never starts a hosted service, so it opens no broker connection and claims no job. The resource [startup checks](#what-a-starting-host-checks) are skipped, so `resources provision` can create what a start would reject.
+- **Run verbs from the host's own entry point.** Only the entry point sees the host's real configuration sources.
+- **Console logging goes to standard error** during a verb, for hosts built with `HostApplicationBuilder` or `WebApplicationBuilder`. A host built with the legacy `Host.CreateDefaultBuilder` can still write Microsoft console logger lines to standard output. `describe` then writes a warning to standard error first. Filter the log lines out, or turn console logging off for the command.
+- **A normal run exits 1 after a background fault.** When the host runs normally, `RunHeadlessAsync` returns 0, or 1 when a `BackgroundService` had faulted by the time the host began stopping. It then writes `Host stopped: {service} failed: {message}` to standard error. A fault the stop causes, such as a disposed client during shutdown, does not count. Orchestrators see the exit code.
+- The host is disposed in every mode.
+
+### Isolation prefix
+
+Give each host its own prefix when several environments share one Redis, such as worktrees, preview stacks, or sandboxes. Set it once, with no code:
+
+```json
+{ "Headless": { "Prefix": "wt1" } }
+```
+
+You can also set the environment variable `Headless__Prefix=wt1`, or call `services.ConfigureHeadlessPrefix("wt1")`. The code call wins over configuration, whether you call it before or after the features are registered.
+
+- **Shape.** Empty (the default), or 1 to 20 lowercase letters, digits, and `-`, not starting or ending with `-`. Any other value fails the start with `OptionsValidationException` naming `Headless:Prefix`. The allowed characters include no store separator (`:`, `.`, `_`, `/`) and no pattern character, so a prefix cannot reach another environment's names or widen a pattern delete.
+- **Position.** The prefix goes in front of each feature's own key prefix, joined with `:`. A lock on `orders` uses `wt1:distributed-lock:orders`, and a cache with `KeyPrefix = "app:"` writes `wt1:app:{key}`. An empty prefix leaves every name unchanged.
+- **What it isolates.** Redis and in-memory cache keys and the Redis hybrid invalidation channel ([Caching](caching.md)); mutex, semaphore, and reader-writer lock resources and the Redis lock release channel ([Distributed Locks](distributed-locks.md)); Redis coordination keys ([Coordination](coordination.md)). Features that write through `ICache` or `IDistributedLock` inherit it: idempotency, rate limiting, the cache-factory lock, TUS file locks, tenant-scoped caching, Features, Settings, Permissions, and Jobs.
+- **What it does not isolate.** Database-backed locks (PostgreSQL advisory locks and SQL Server app locks, including the static `SqlServerDistributedLock` helpers), relational coordination (separated by cluster name), relational storage tables, and blob containers, `Headless.Blobs.Redis` included. Environments that share one Redis must give that blob provider distinct container names. Use a separate database, schema, or bucket for the rest.
+- **One prefix per shared relational store.** Hosts that share one Jobs or other relational store are one environment. Give them the same prefix, or distinct `CoordinationOptions.ClusterName` values. Otherwise a host treats the other prefix's live nodes as dead and reclaims their in-flight rows. For the same reason, adding or changing the prefix on a running fleet that shares such a store needs a full stop and restart, not a rolling deploy.
+- **Redis lock keys.** Lock storage hex-encodes the resource inside a hash tag, so a lock key does not start with the prefix and `SCAN wt1:*` does not find it. Cache and coordination keys do start with it.
+- **Not a security boundary.** The prefix separates names. Credentials still decide who can reach a store.
+
+A provider package applies the prefix to its own options with `services.ApplyHeadlessPrefix<TOptions>((options, prefix) => ...)`. The options factory applies it after every `Configure`, `PostConfigure`, and validation step, once per named instance, so a later consumer `PostConfigure` cannot remove it.
+
+**Verify:** at start the host logs `Headless names in shared stores start with the prefix '{Prefix}'`, and `dotnet MyApp.dll describe` shows the prefix as `host.prefix`.
+
+### Health checks
+
+A provider package that talks to an external dependency contributes a readiness health check when you register it. Nothing connects at registration: each check probes its dependency only when a health check runs. Messaging and Jobs also contribute checks that read their own host state without I/O. A `Degraded` status in the Probe column is that check's default failure status.
+
+| Registered by | Check name | Dependency tag | Probe |
+| --- | --- | --- | --- |
+| `AddPostgreSqlSql` | `sql-postgresql` | `database` | `SELECT 1`, or the configured `TestCommand`, on a new connection |
+| `AddSqlServerSql` | `sql-sqlserver` | `database` | `SELECT 1`, or the configured `TestCommand`, on a new connection |
+| `AddHeadlessDbContext<T>`, `AddHeadlessDbContextPool<T>` | `dbcontext-{T full name}` | `database` | Microsoft's `AddDbContextCheck<T>`: `Database.CanConnectAsync`, or the configured `TestCommand` |
+| Caching `UseRedis` / `AddRedisTier` | `cache-redis` (named cache: `cache-redis-{name}`) | `redis` | `PING` to every configured endpoint, and `CLUSTER INFO` reporting `cluster_state:ok` on cluster nodes |
+| Distributed locks `UseRedis` | `distributed-locks-redis` | `redis` | The same endpoint probe through the registered `IConnectionMultiplexer` |
+| Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection, with a 5-second default timeout |
+| Blobs `UseAzure` | `blobs-azure` (named store: `blobs-azure-{name}`) | `blobs` | Reads one page of the account's container list, or the properties of `AzureStorageOptions.HealthCheckContainerName` when set |
+| `AddHeadlessMessaging` | `messaging` | `messaging`, `host-state` | `Unhealthy` before the Messaging host starts and once shutdown begins |
+| `AddHeadlessMessaging` | `messaging-broker` | `messaging`, `host-state` | `Unhealthy` while the broker is unreachable, judged from receive and send outcomes ([Messaging](messaging/operations.md#broker-reachability)) |
+| `AddHeadlessMessaging` | `messaging-consumers` | `messaging`, `host-state` | `Degraded` while any consumer circuit is `Open`, including an operator pause |
+| `AddHeadlessMessaging` with `AddOutbox(name)` | `messaging-outboxes` | `messaging`, `host-state` | `Degraded` while an additional outbox is not initialized |
+| Messaging PostgreSQL or SQL Server storage | `messaging-storage-postgresql-default`, `messaging-storage-sqlserver-default`; per additional outbox `messaging-storage-postgresql-outbox-{name}`, `messaging-storage-sqlserver-outbox-{name}` | `messaging`, `database` | `SELECT 1` on a new connection from that store's options |
+| `AddHeadlessJobs` with background services | `jobs` | `jobs`, `host-state` | `Unhealthy` until Jobs activation completes and once shutdown begins |
+| `AddHeadlessJobs` with background services | `jobs-scheduler` | `jobs`, `host-state` | `Degraded` while the scheduler is stopped by an operator or by manual start mode |
+| Jobs `UseEntityFramework` | `jobs-storage-{DbContext full name}` | `jobs`, `database` | `Database.CanConnectAsync` on a context from the store's factory |
+| The first `AddWarmup` call | `warmup` | `host-state` | `Unhealthy` until every gating warm-up finishes ([Warm-up](#warm-up)) |
+
+**Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag. A check that reads a running host's own state also carries `host-state` (`HeadlessHealthCheckTags.HostState`), and the [`check` verb](#health-check-command) skips it. No contributed check carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. To serve readiness on its own path, map it by tag:
+
+```csharp
+app.MapHealthChecks("/ready", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains(HeadlessHealthCheckTags.Ready),
+});
+```
+
+**Turn one off.** Set `Headless:HealthChecks:{name}:Enabled` to `false` in configuration, or `options.Enabled = false` in `ConfigureHeadlessHealthCheck(name, ...)`. The check is then registered on no endpoint. Configuration drops a check for one deployment without a code change:
+
+```json
+{ "Headless": { "HealthChecks": { "cache-redis": { "Enabled": false } } } }
+```
+
+**Remove checks in code.** `RemoveHealthChecks(predicate)` removes matching registrations after every other configuration runs, so its position in `Program.cs` does not matter. Use it for a check Headless did not contribute, or to remove a group by tag:
+
+```csharp
+// Drop one contributed check.
+builder.Services.RemoveHealthChecks(registration => registration.Name == "messaging-nats");
+
+// Drop every check Headless contributed, for example to use your own checks instead.
+builder.Services.RemoveHealthChecks(registration => registration.Tags.Contains(HeadlessHealthCheckTags.Headless));
+```
+
+**Configure one.** `ConfigureHeadlessHealthCheck(name, options => ...)` changes a contributed check through `HeadlessHealthCheckOptions`. Its position relative to the provider registration does not matter. The same settings bind from `Headless:HealthChecks:{name}`. Code wins over configuration. A value that does not parse fails at startup with the key named.
+
+```csharp
+builder.Services.ConfigureHeadlessHealthCheck("cache-redis", options =>
+{
+    options.FailureStatus = HealthStatus.Degraded; // a cache outage degrades, it does not fail readiness
+    options.Timeout = TimeSpan.FromSeconds(2);
+    options.Tags.Add("cache");
+});
+builder.Services.ConfigureHeadlessHealthCheck("sql-postgresql", options =>
+    options.TestCommand = "SELECT 1 FROM orders LIMIT 1"); // prove the schema, not just the server
+```
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `Enabled` | `true` | `false` registers the check on no endpoint |
+| `FailureStatus` | `Unhealthy` | The status of a failed or timed-out probe. `Healthy` is rejected. |
+| `Timeout` | none | Bounds the probe. On timeout the check reports `FailureStatus` with `A timeout occurred while running check.`. Without one, a probe runs until its driver gives up or the request is cancelled. Configuration format: `hh:mm:ss`. |
+| `Tags` | none | Adds tags |
+| `TestCommand` | none | Replaces the query of the SQL and DbContext checks. Other checks ignore it. The Azure blob check takes a container through `AzureStorageOptions.HealthCheckContainerName` instead. |
+
+For anything else, change the registration in `services.PostConfigure<HealthCheckServiceOptions>(...)`.
+
+**Observed behavior.**
+
+- A probe that throws reports the failure status with the fixed description `The '{name}' dependency probe failed.` and the exception attached for the health-check log. The driver's message stays out of the description, because health endpoints are usually anonymous. The entry's `Duration` is the probe latency. Checks add no result data.
+- A cancelled health request cancels the probe and reports nothing, instead of reporting the dependency as down.
+- One name gives one check. A second contribution with the same name adds its tags to the first one.
+- One dependency gives one check. Checks that reach the same database (same provider, host, port, and database) or the same Redis deployment (same endpoints) collapse into one. The owner's check (`sql-*`, `dbcontext-*`) keeps its name, failure status, and timeout and takes the others' tags. So `jobs-storage-{T}` folds into `dbcontext-{T}`, a Messaging store on the application's database folds into `sql-postgresql`, and `distributed-locks-redis` folds into `cache-redis` when both use one deployment. A store on its own database keeps its own check. Turning the owner off leaves the next check probing the dependency.
+- Two connection pools to one database with different users share one probe. A credential that breaks for one of them shows up in its queries, not in readiness.
+
+**Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` or `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check. Add one with `AddHeadlessHealthCheck`. Messaging PostgreSQL and SQL Server storage is the exception: it probes each store's own connection. SQLite and in-memory providers contribute no check. The data-protection key-ring check is opt-in through `AddDataProtectionKeyRing()`, because its probe writes to the store (see [api.md](api.md)).
+
+**Add your own check.** `AddHeadlessHealthCheck(name, probe, tags)` contributes a check with the same tags, naming, and failure reporting. The probe receives the check scope's services and a cancellation token. Completing means healthy. Throwing means unhealthy.
+
+```csharp
+builder.Services.AddHeadlessHealthCheck(
+    "search-elastic",
+    static async (provider, cancellationToken) =>
+        await provider.GetRequiredService<ISearchClient>().PingAsync(cancellationToken),
+    "search"
+);
+```
+
+- To collapse your check with others on the same dependency, pass a resource: `AddHeadlessHealthCheck(name, HeadlessHealthCheckResource.Shared(sp => key), probe, tags)`.
+- To wrap a check another package registers on `IHealthChecksBuilder`, call `AddHeadlessHealthCheck(name, (builder, name, tags) => builder.AddXxxCheck(name, failureStatus: null, tags), dependencyTag)`.
+- To give a check a different default, such as `Degraded`, call `ConfigureHeadlessHealthCheckDefault(name, options => ...)`. Configuration and `ConfigureHeadlessHealthCheck` still override it.
+- Tag a check with `host-state` when it reads state only a started host has.
+
+**Choose a community check instead** (the Xabaril `AspNetCore.HealthChecks.*` packages) when you need health decided from a query's result (for example replication lag), a dependency no Headless provider owns, or a connection string the application does not otherwise use. Register it under another name next to the contributed checks, or drop the contributed one with `RemoveHealthChecks`.
+
+### Health check command
+
+`dotnet MyApp.dll check` runs the host's health checks once, prints one line per check, and exits non-zero when any check is `Unhealthy`. It does not start the host. Run it as a deploy step or an init container to stop a rollout whose database, Redis, or broker the new configuration cannot reach.
+
+```bash
+dotnet MyApp.dll check
+```
+
+```text
+messaging-nats       Healthy     3ms
+sql-postgresql       Unhealthy  41ms  The 'sql-postgresql' dependency probe failed. Connection refused
+messaging            Skipped       -  Reports the state of a running host; not run before start.
+messaging-broker     Skipped       -  Reports the state of a running host; not run before start.
+messaging-consumers  Skipped       -  Reports the state of a running host; not run before start.
+```
+
+- **Which checks run.** Every registered check, with each registration's timeout and failure status, except those tagged `host-state`. Those print as `Skipped`. A check removed with `RemoveHealthChecks` or turned off in configuration is absent.
+- **Output.** One line per check on standard output, ordered by name with skipped checks last: name, status (`Healthy`, `Degraded`, `Unhealthy`, or `Skipped`), duration in milliseconds, and description. A failed probe's line adds the exception message, which the health endpoints withhold. Treat the output as operator-only.
+- **Exit code.** `1` when any check is `Unhealthy` or startup validation fails. Otherwise `0`. `Degraded` does not fail the command, which matches readiness.
+- **Validation failure.** Standard error gets `Host check failed: {message}`, standard output stays empty, no check runs, and the exit code is `1`.
+- **No checks.** Standard error gets `No health checks are registered.` and the exit code is `0`.
+
+### Host manifest
+
+The host manifest is a JSON document of what each feature registered in the host, such as Messaging consumers and Jobs functions with their effective settings. It answers "what does this deployed host consume and run?" without starting it.
+
 ```bash
 dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
 ```
-
-- **`describe` verb.** When the first argument is `describe`, `RunHeadlessAsync` (namespace `Microsoft.Extensions.Hosting`) builds the manifest instead of running the host and returns the exit code. When it is `check`, it runs the health checks instead ([Health check command](#health-check-command)). `resources` runs the [Resource provisioning](#resource-provisioning) command instead, and `seed` and `deploy` run the deploy steps. Any other first argument runs the host as `RunAsync` does and returns 0, or 1 when a `BackgroundService` had faulted by the time the host began stopping (a fault the stop causes does not count: one raised while the host shuts down, such as a disposed client, or one a stop requested while the host is still starting raises by cancelling the service), after writing `Host stopped: {service} failed: {message}` to standard error: a fault stops the host (or, under `BackgroundServiceExceptionBehavior.Ignore`, leaves a dead component), and the exit code is what an orchestrator sees. It disposes the host in every mode.
-- **Validates like a start, starts nothing.** It first runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the same order a real start does. It never starts a hosted service, so it opens no broker connection and claims no job. Only the entry point sees the host's real configuration sources, which is why the command runs there rather than in a separate tool.
-- **Needs no infrastructure.** Neither validation nor any section opens a connection, so `describe` succeeds when the broker and databases are unreachable or absent, for example in CI or on a laptop. Configuration still has to be valid: a missing RabbitMQ password, or two outboxes on one database, fails the command as it would fail a start.
-- **Output.** On success, standard output carries only the JSON document and the exit code is 0. On any failure (a validator, an options validation, or a section), standard output stays empty, `Host manifest failed: {message}` goes to standard error, and the exit code is 1.
-- **Console logging.** For hosts built with `HostApplicationBuilder` or `WebApplicationBuilder`, console log lines written during `describe` go to standard error. A host built with the legacy `Host.CreateDefaultBuilder` can still write Microsoft console logger lines to standard output during `describe`, because its configuration cannot be redirected after the build. `describe` then writes a warning to standard error before the manifest; filter the log lines out, or turn console logging off for the command.
-
-The document:
 
 ```json
 {
@@ -605,15 +517,17 @@ The document:
 }
 ```
 
-- `schemaVersion` is `HostManifest.SchemaVersion`; it changes only when a change would break a reader of the old shape.
-- **`host`** is always written: the host environment's application and environment names, the entry assembly's and Headless's informational versions (which carry the source revision when the build stamps one), and the .NET runtime. It names no machine and no address.
-- **`healthChecks`** is always written: every registered health check, ordered by name, with its sorted tags, its `failureStatus` (`unhealthy` or `degraded`), and `timeoutSeconds` when it has a timeout. It is read from the configured health check options without running a probe, so a check removed with `RemoveHealthChecks` is absent here as it is from the health endpoints.
-- `sections` has the two built-in sections and one property per registered section, sorted ordinally by name. A feature that is not registered has no section, and a registered section named `host` or `healthChecks` fails the manifest. The [Messaging](messaging.md#host-manifest) and [Jobs](jobs.md#host-manifest) guides document their sections.
-- The manifest never carries connection strings, broker addresses, credentials, provider-specific transport configuration, or runtime state.
+- **Needs no infrastructure.** No section opens a connection, so `describe` succeeds when the broker and databases are unreachable, for example in CI. Configuration must still be valid: a missing RabbitMQ password, or two outboxes on one database, fails the command as it would fail a start.
+- **Output.** On success, standard output carries only the JSON document and the exit code is `0`. On any failure, standard output stays empty, standard error gets `Host manifest failed: {message}`, and the exit code is `1`.
+- `schemaVersion` is `HostManifest.SchemaVersion`. It changes only when a change would break a reader of the old shape.
+- **`host`** is always written: the application and environment names, the entry assembly's and Headless's informational versions, and the .NET runtime, plus `prefix` when the host has an [isolation prefix](#isolation-prefix). It names no machine and no address.
+- **`healthChecks`** is always written: every registered check ordered by name, with its sorted tags, its `failureStatus` (`unhealthy` or `degraded`), and `timeoutSeconds` when it has a timeout. No probe runs.
+- The other sections are sorted by name, one per registered feature. The [Messaging](messaging/operations.md#host-manifest) and [Jobs](jobs/operations.md#host-manifest) guides document theirs.
+- The manifest never carries connection strings, broker addresses, credentials, or runtime state.
 
-`MapHeadlessHostManifest(pattern, authorizationPolicy)` in `Headless.Api.ServiceDefaults` serves the same document over HTTP, behind authorization by default; see [API & Web](api.md#host-manifest-endpoint). `HostManifest.WriteAsync(services, stream, cancellationToken)` writes it to any stream; both forms use it, so they serve identical documents.
+`MapHeadlessHostManifest(pattern, authorizationPolicy)` in `Headless.Api.ServiceDefaults` serves the same document over HTTP, behind authorization by default (see [API & Web](api.md#host-manifest-endpoint)). `HostManifest.WriteAsync(services, stream, cancellationToken)` writes it to any stream.
 
-**Adding a section.** A feature implements `IHostManifestSection` (`Headless.Hosting`) and registers it as a singleton with `TryAddEnumerable`:
+**Add a section.** Implement `IHostManifestSection` and register it as a singleton with `TryAddEnumerable`:
 
 ```csharp
 internal sealed class SearchHostManifestSection(SearchIndexRegistry registry) : IHostManifestSection
@@ -636,12 +550,12 @@ internal sealed class SearchHostManifestSection(SearchIndexRegistry registry) : 
 services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostManifestSection, SearchHostManifestSection>());
 ```
 
-- `Write` writes exactly one complete JSON value, normally an object, after the section's property name.
+- `Write` writes exactly one complete JSON value, normally an object.
 - Read only state that exists once the host is built. Never start a hosted service, open a connection, or call a broker.
-- Write entries in a stable order, and omit a setting that does not apply to an entry instead of writing `null`, so two manifests of the same configuration diff cleanly.
-- Two sections with the same `Name` fail the manifest. A section that throws fails it too, with a message that names the section and carries the section's error text, so never show that message to an untrusted caller. The whole document is built in memory first, so a failure writes nothing to the destination stream.
+- Write entries in a stable order, and omit a setting that does not apply instead of writing `null`, so two manifests of one configuration diff cleanly.
+- Two sections with the same `Name`, or a section named `host` or `healthChecks`, fail the manifest. A section that throws fails it with a message that carries the section's error text, so never show that message to an untrusted caller.
 
-#### Resource provisioning
+### Resource provisioning
 
 A provisioned resource is external state a feature needs before it runs: database tables, broker queues, a storage container. A deployment creates them with the `resources` verb, from the same entry point and configuration as the host:
 
@@ -652,44 +566,56 @@ dotnet MyApp.dll resources list
 dotnet MyApp.dll resources status -n PostgreSql/headless/Sequences
 ```
 
-- **Subcommands.** `provision` creates whatever is missing; `verify` checks without writing; `purge` removes data and keeps the structure, and `delete` deletes what `provision` created, both in reverse dependency order so a referencing resource goes first; `status` prints each resource's status values; `list` prints the resources, noting any that cannot purge or delete, and runs nothing. A subcommand is required: a bare `resources` exits `2` with the usage, so a deploy script never changes state by omission.
-- **Filters.** `-k|--kind <kind>` and `-n|--name <name>` match exactly, ignoring case. Repeat a flag to match any of its values; both flags must match. `--timeout <seconds>` bounds the whole run: the resource running when it elapses and every resource not yet reached report `TimedOut`. Without it the run has no budget of its own, so each resource's own timeouts govern, such as the schema runner's 2-minute lock wait and 10-minute DDL command timeout.
-- **Validates like a start.** The verb first runs options marked `ValidateOnStart` and every `IHeadlessStartupValidator`, then runs the resources. It starts no hosted service.
-- **Output.** One aligned line per resource on standard output: kind, name, status (`Ok`, `Failed`, `Unsupported`, `TimedOut`), duration, and the failure message. `status` indents each status value under its resource. Console logging goes to standard error, as for `describe`.
-- **Environment guard.** `purge` and `delete` remove data, so they run without a flag only in the environments listed in `ResourceProvisioningOptions.DestructiveEnvironments` (default `Development` and `Test`, compared ignoring case). Every other environment, whatever it is named (`Production`, `Prod`, `Staging`), refuses them and exits `2` unless `--force` is passed: `dotnet MyApp.dll resources delete --force`. Add an environment with `services.ConfigureResourceProvisioning(o => o.DestructiveEnvironments.Add("QA"))`. The other subcommands need no flag.
-- **Exit codes.** `0` when every resource is `Ok` or `Unsupported`, or none is registered; `1` when any resource fails or times out, or startup validation fails; `2` for a missing or unknown subcommand or option, a missing or invalid value, filters that match no resource, or `purge` or `delete` outside the allowed environments without `--force`.
+**Verify:** `resources provision` prints `Ok` on every line and exits `0`. Then `resources verify` exits `0`.
+
+| Subcommand | Effect |
+| --- | --- |
+| `provision` | Creates whatever is missing. Idempotent: run it on every release. |
+| `verify` | Checks each resource without writing |
+| `purge` | Removes data and keeps the structure, in reverse dependency order. [Guarded](#destructive-subcommands). |
+| `delete` | Deletes what `provision` created, in reverse dependency order. [Guarded](#destructive-subcommands). |
+| `status` | Prints each resource's status values, indented under it |
+| `list` | Lists the resources, noting any that cannot purge or delete. Runs nothing. |
+
+- **A subcommand is required.** A bare `resources` exits `2` with the usage, so a deploy script never changes state by omission.
+- **Filters.** `-k|--kind <kind>` and `-n|--name <name>` match exactly, ignoring case. Repeat a flag to match any of its values. When you pass both flags, a resource must match both.
+- **Timeout.** `--timeout <seconds>` bounds the whole run. The resource running when it elapses, and every resource not yet reached, report `TimedOut`. Without it, each resource's own timeouts apply, such as the schema runner's 2-minute lock wait and 10-minute DDL command timeout.
+- **Output.** One aligned line per resource on standard output: kind, name, status (`Ok`, `Failed`, `Unsupported`, or `TimedOut`), duration, and the failure message.
 - **Every resource runs.** A failure does not stop the run, so the report names every resource. Resources run one at a time, in dependency order.
 
-**One deploy step.** `dotnet MyApp.dll deploy` runs `resources provision`, then `seed`, and stops at the first that fails (exit codes as for those verbs). It takes no arguments; run the two verbs separately for filters or a timeout.
+| Exit code | When |
+| --- | --- |
+| `0` | Every resource is `Ok` or `Unsupported`, or no resource is registered |
+| `1` | Any resource fails or times out, or startup validation fails |
+| `2` | A missing or unknown subcommand or option, a missing or invalid value, filters that match no resource, or `purge` or `delete` outside the allowed environments without `--force` |
 
-**What a starting host checks.** The host never creates a resource, but it verifies each one, as the provisioner's `StartupCheck` says (`ResourceStartupCheck`):
+#### Destructive subcommands
+
+`purge` and `delete` run without a flag only in the environments listed in `ResourceProvisioningOptions.DestructiveEnvironments` (default `Development` and `Test`, compared ignoring case). Every other environment, whatever its name, refuses them and exits `2` unless you pass `--force`: `dotnet MyApp.dll resources delete --force`. To allow another environment, call `services.ConfigureResourceProvisioning(o => o.DestructiveEnvironments.Add("QA"))`.
+
+#### What a starting host checks
+
+The host never creates a resource. It verifies each one, as the provisioner's `StartupCheck` (`ResourceStartupCheck`) says:
 
 | `StartupCheck` | When the resource is missing or changed | Default for |
 | --- | --- | --- |
 | `FailStart` | The host start fails before any hosted service starts, naming every such resource and `resources provision`. | `Schema` (every contribution that is not export-only), `EntityFramework` |
-| `GateReadiness` | The host starts; the `warmup` readiness check stays `Unhealthy` naming the resource until it appears, retried with the warm-up back-off. | `RabbitMQ` and any transport topology, `AzureBlob`, `S3Bucket`; a custom provisioner that does not override it |
-| `None` | Nothing at startup; only `resources verify` checks it. | `MaxMind` (its own warm-up already waits for the files), export-only schema contributions |
+| `GateReadiness` | The host starts. The `warmup` readiness check stays `Unhealthy`, naming the resource, until it appears. | `RabbitMQ` and any transport topology, `AzureBlob`, `S3Bucket`, and a custom provisioner that does not override it |
+| `None` | Nothing at startup. Only `resources verify` checks it. | `MaxMind`, export-only schema contributions |
 
-Override a kind with `services.ConfigureResourceProvisioning(o => o.StartupChecks["RabbitMQ"] = ResourceStartupCheck.None)`. The schema checks share one read of each schema's history per host, not one per feature, and a history row this host does not register logs `SchemaRunnerUnknownStep`. The `resources`, `seed`, `deploy`, `check`, and `describe` commands skip these checks, so `resources provision` can create what a start would reject.
+To change a kind's check, call `services.ConfigureResourceProvisioning(o => o.StartupChecks["RabbitMQ"] = ResourceStartupCheck.None)`. The schema checks read each schema's history once per host. A history row this host does not register logs `SchemaRunnerUnknownStep`.
 
-Which resources a host has follows from what it registers:
+#### Resource kinds
 
 | Kind | Registered by | Name | Provision | Verify | Purge | Delete |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Schema` | every relational storage feature, one per `SchemaContribution` | `{dialect}/{schema}/{feature}`; when one feature and schema live in two databases (an additional outbox on its own database), each name ends in `@` and a short hash of its database, so `-n` can pick one | applies the missing steps, export-only contributions included | fails on a missing step or a changed checksum | deletes the rows of its tables, keeping host-state tables, sequences, and history | drops its tables and sequences and deletes its history rows, so the next `provision` recreates them; a contribution that declares no `SchemaContribution.Objects` supports neither purge nor delete |
-| `EntityFramework` | `AddDbContextMigrations<TContext>()` | the context type name | applies the pending migrations, after every `Schema` resource | fails naming each pending migration | unsupported | unsupported |
-| `RabbitMQ` (any transport with an `ITransportTopologyProvisioner`) | `UseRabbitMq` | `topology` | declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message with its `.dlq`, and the bindings | passively declares each exchange and queue | purges each queue this host consumes and its `.dlq`, never a queue it only publishes to | deletes the queues this host consumes and their `.dlq`; leaves the lane exchanges and their `.dlx` in place, because every service on the broker shares them and a publisher binds nothing, so no check can prove them unused (see [RabbitMQ](messaging.md#headlessmessagingrabbitmq)) |
-| `AzureBlob` | `AddTusAzureStore` | the container name | creates the container with `ContainerPublicAccessType` | fails when the container does not exist | deletes the blobs under `BlobPrefix`, keeping the container | deletes the blobs under `BlobPrefix`, then the container only when nothing else is left in it, because a container can hold another feature's blobs (see [Tus](tus.md#headlesstusazure)) |
-| `S3Bucket` | `AddTusS3Store` | the bucket name | creates the bucket; a bucket the account already owns counts as created | fails when the bucket does not exist (one `ListObjectsV2` call) | deletes the store's objects under `Prefix` (working sets, completed records, and the finished objects those records name), keeping the bucket and every other object | deletes the same objects, then the bucket only when nothing else is left in it, because a bucket can hold another feature's objects (see [Tus](tus.md#headlesstuss3)) |
+| `Schema` | Every relational storage feature, one per schema contribution | `{dialect}/{schema}/{feature}`. When one feature and schema live in two databases (an additional outbox on its own database), each name ends in `@` and a short hash of its database, so `-n` can pick one. | Applies the missing steps, export-only contributions included | Fails on a missing step or a changed checksum | Deletes the rows of its tables, keeping host-state tables, sequences, and history | Drops its tables and sequences and deletes its history rows, so the next `provision` recreates them. A contribution that declares no objects supports neither. |
+| `EntityFramework` | `AddDbContextMigrations<TContext>()` | The context type name | Applies the pending migrations, after every `Schema` resource | Fails naming each pending migration | Unsupported | Unsupported |
+| `RabbitMQ` (any transport with topology) | `UseRabbitMq` | `topology` | Declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message with its `.dlq`, and the bindings | Passively declares each exchange and queue | Purges each queue this host consumes and its `.dlq`, never a queue it only publishes to | Deletes the queues this host consumes and their `.dlq`. Leaves the shared lane exchanges and their `.dlx` (see [RabbitMQ](messaging/rabbitmq.md#headlessmessagingrabbitmq)). |
+| `AzureBlob` | `AddTusAzureStore` | The container name | Creates the container with `ContainerPublicAccessType` | Fails when the container does not exist | Deletes the blobs under `BlobPrefix`, keeping the container | Deletes the blobs under `BlobPrefix`, then the container only when nothing else is left in it (see [Tus](tus.md#headlesstusazure)) |
+| `S3Bucket` | `AddTusS3Store` | The bucket name | Creates the bucket. A bucket the account already owns counts as created. | Fails when the bucket does not exist | Deletes the store's objects under `Prefix`, keeping the bucket and every other object | Deletes the same objects, then the bucket only when nothing else is left in it (see [Tus](tus.md#headlesstuss3)) |
 
-Implement `IResourceProvisioner` for a feature's own external state, and register it with `services.AddResourceProvisioner(sp => ...)`. When the set depends on other registrations, such as one queue per consumer, implement `IResourceProvisionerSource` and register it with `services.AddResourceProvisionerSource<TSource>()`, which adds a source type once however often a feature's setup runs. A provisioner overrides `DependsOn` to name the provisioners it must follow; two resources that depend on each other fail every operation with the cycle in the message.
-
-- Make every operation idempotent: a deployment runs `provision` on every release.
-- Throw `ResourceProvisioningException` from `VerifyAsync` with a message that tells the operator what to run.
-- Return `false` from `CanPurge` or `CanDelete` when that operation does not apply. Callers then skip it without calling it and report `Unsupported`, which is not a failure. Any exception an operation throws, a driver's `NotSupportedException` included, is `Failed`.
-- Keep `Name` free of host names, connection strings, and credentials: it is printed to deploy logs.
-
-A development or test host can run the deploy steps when it starts instead, provisioning every resource and then running every seeder:
+#### Provision as a development or test host starts
 
 ```csharp
 if (builder.Environment.IsDevelopment())
@@ -698,43 +624,110 @@ if (builder.Environment.IsDevelopment())
 }
 ```
 
-`AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.ProvisionAndPurge)` also purges each resource's data after provisioning; outside `ResourceProvisioningOptions.DestructiveEnvironments` it fails the host start instead of purging anything. `o.Resources = ResourceStartupAction.None` keeps the seed step only, and `o.Seed = false` the resource step only. The resource step runs before every other hosted service, wherever the call sits; the seed step runs at the call's position, after the resources are provisioned. A failure fails the host start, naming each failed resource or the failed seeder. A second call configures the same options again. `TryAddDeployStepsOnStartup(...)` registers the steps only when nothing registered them yet; `HeadlessTestServer` uses it, so an application that registers `ProvisionAndPurge` keeps it under the test server.
+- `AddDeployStepsOnStartup()` provisions every resource, then runs every seeder, before any other hosted service starts. A failure fails the host start, naming each failed resource or the failed seeder.
+- `o.Resources = ResourceStartupAction.ProvisionAndPurge` also purges each resource's data after provisioning. Outside `DestructiveEnvironments` it fails the host start instead of purging.
+- `o.Resources = ResourceStartupAction.None` keeps the seed step only. `o.Seed = false` keeps the resource step only.
+- The resource step runs before every other hosted service, wherever the call sits. The seed step runs at the call's position.
+- A second call configures the same options again. `TryAddDeployStepsOnStartup(...)` registers the steps only when nothing registered them yet. `HeadlessTestServer` uses it, so an application that registers `ProvisionAndPurge` keeps it under the test server.
 
-Tests and tools reach the same runner on a built host's services: `await host.Services.ProvisionResourcesAsync()`, `PurgeResourcesAsync()`, and `DeleteResourcesAsync()`. Each one runs every resource, skips unsupported operations, and then throws one `ResourceProvisioningException` whose `Failures` holds each failed resource's error. `PurgeResourcesAsync` and `DeleteResourcesAsync` throw `InvalidOperationException` and touch nothing when the host's environment is outside `ResourceProvisioningOptions.DestructiveEnvironments`; services built without an `IHostEnvironment` are allowed.
+Tests and tools call the same runner on a built host: `await host.Services.ProvisionResourcesAsync()`, `PurgeResourcesAsync()`, and `DeleteResourcesAsync()`. Each runs every resource, skips unsupported operations, and then throws one `ResourceProvisioningException` whose `Failures` holds each failed resource's error. `PurgeResourcesAsync` and `DeleteResourcesAsync` throw `InvalidOperationException` and touch nothing when the host's environment is outside `DestructiveEnvironments`. Services built without an `IHostEnvironment` are allowed.
 
-#### Warm-up
+#### Add a resource
 
-A warm-up is work a feature does once after the host starts so its first requests do not pay for it: loading a cache, reading a key ring, downloading data, or checking that broker objects exist. Implement `IWarmup` (`Name`, `GatesReadiness`, `WarmUpAsync`) and register it with `services.AddWarmup<T>()` or `services.AddWarmup(sp => ...)`; registering a type again adds nothing.
+Implement `IResourceProvisioner` (`Kind`, `Name`, `ProvisionAsync`, `VerifyAsync`, `PurgeAsync`, `DeleteAsync`, `GetStatusAsync`) and register it with `services.AddResourceProvisioner(sp => ...)`. When the set depends on other registrations, such as one queue per consumer, implement `IResourceProvisionerSource` and register it with `services.AddResourceProvisionerSource<TSource>()`.
 
-- **Never delays the start.** The host runs every warm-up concurrently in the background after `IHostedLifecycleService.StartedAsync`, each resolved from its own scope that lives for the whole run.
-- **Readiness waits.** The first `AddWarmup` call contributes the `warmup` health check (`HeadlessHealthCheckNames.Warmup`), tagged `ready`, `headless`, and `host-state`. It reports `Unhealthy`, naming each pending warm-up and its last error, until every warm-up whose `GatesReadiness` is `true` (the default) has finished. Liveness is not affected, and the [`check` command](#health-check-command) skips it.
-- **Failures retry, never crash.** A failed warm-up is logged (`WarmupFailed`) and retried with a jittered back-off from one second to 30 seconds, in real time, until it succeeds or the host stops. Make `WarmUpAsync` safe to repeat. A misconfiguration that must stop the start belongs in an `IHeadlessStartupValidator` instead.
-- **Tests wait for it.** `await host.Services.WaitForWarmupAsync(cancellationToken)` returns once every gating warm-up has finished, and its cancellation message names each pending one; `HeadlessTestServer` calls it before it returns.
+- Make every operation idempotent: a deployment runs `provision` on every release.
+- Throw `ResourceProvisioningException` from `VerifyAsync` with a message that tells the operator what to run.
+- Return `false` from `CanPurge` or `CanDelete` when that operation does not apply. Callers then skip it and report `Unsupported`, which is not a failure. Any exception an operation throws, `NotSupportedException` included, is `Failed`.
+- Override `StartupCheck` to choose `FailStart` or `None` instead of the `GateReadiness` default.
+- Override `DependsOn` to name the provisioners this one must follow. Two resources that depend on each other fail every operation with the cycle in the message.
+- Keep `Name` free of host names, connection strings, and credentials: deploy logs print it.
 
-#### Health check command
+### Database seeders
 
-`RunHeadlessAsync(args)` also answers `check`: it runs the host's health checks once, prints one line per check, and exits non-zero when any check is `Unhealthy`, without starting the host. Run it as a deploy step or an init container to stop a rollout whose database, Redis, or broker the new configuration cannot reach.
+A seeder writes data the code declares (definitions, cron jobs, reference rows) into the stores. It is not a [provisioned resource](#resource-provisioning): a resource is structure that `provision` creates once, and a seeder must run again whenever the declarations change. Framework packages register their own seeders: `FeatureDefinitions`, `PermissionDefinitions`, `SettingDefinitions`, and `Jobs`.
 
-```bash
-dotnet MyApp.dll check
+```csharp
+public sealed class UserSeeder : ISeeder
+{
+    public Task SeedAsync(CancellationToken cancellationToken) { /* seed users */ return Task.CompletedTask; }
+}
+
+builder.Services.AddSeeder<UserSeeder>();
+builder.Services.AddDbContextMigrations<AppDbContext>(); // Headless.EntityFramework; structure, applied by `resources provision`
+
+// Development: seed as the host starts. Production: the deployment runs `dotnet MyApp.dll seed`.
+if (builder.Environment.IsDevelopment()) builder.Services.AddDeployStepsOnStartup();
+
+// A tool or test runs them directly, in dependency order, as the `seed` verb does.
+await app.Services.SeedAsync();
 ```
 
-```text
-messaging-nats       Healthy     3ms
-sql-postgresql       Unhealthy  41ms  The 'sql-postgresql' dependency probe failed. Connection refused
-messaging            Skipped       -  Reports the state of a running host; not run before start.
-messaging-broker     Skipped       -  Reports the state of a running host; not run before start.
-messaging-consumers  Skipped       -  Reports the state of a running host; not run before start.
+**Verify:** `dotnet MyApp.dll seed` prints `Ok` for each seeder and exits `0`. Then `dotnet MyApp.dll seed verify` exits `0`.
+
+- **Registration.** `AddSeeder<T>()` or `AddSeeder(sp => ...)`. `ISeeder.Name` defaults to the type name.
+- **Order.** Seeders run one at a time, each after the seeders its `DependsOn` names, otherwise in registration order. Two that depend on each other fail the run with the cycle in the message.
+- **The host start does not seed.** Run the `seed` verb on every release, next to `resources provision`, or run `deploy`, which does both. In development and test hosts, `AddDeployStepsOnStartup()` seeds as the host starts. `HeadlessTestServer` does this by default (`seed: false` turns it off).
+- **A skipped `seed` step fails silently.** Definitions that other applications on the same database read go stale, configured `Deleted*` definitions are not removed, `DynamicPermissionDefinitionsChanged` is not published, and cron changes are not applied (see the [Jobs seeder](jobs.md#headlessjobs)). Add `seed verify` to a release check to catch it.
+- **Migrations are not seeders.** Register EF Core migrations with `AddDbContextMigrations<TContext>()`. `resources provision` applies them.
+
+The `seed` verb:
+
+| Form | Effect |
+| --- | --- |
+| `seed` | Runs every seeder |
+| `seed -n Jobs` | Runs the named seeder. Repeat `-n` for more. |
+| `seed list` | Lists the seeders |
+| `seed verify` | Asks each seeder whether its store already holds what it would write. Writes nothing. |
+| `--timeout <seconds>` | Bounds the run. Default 300. |
+
+- **Output.** One line per seeder: name, status, duration, and message. `seed` prints `Ok`, `Failed`, or `Skipped`. A failed seeder stops the run and the rest are `Skipped`, because a later seeder may need what an earlier one writes.
+- **`seed verify` output.** `Current`, `Stale`, `Unknown`, or `Failed` per seeder. `Unknown` comes from a seeder that cannot tell (the `ISeeder.VerifyAsync` default) and does not fail the command. The Features, Permissions, and Settings seeders compare their store with the code-declared definitions.
+- **Exit codes.** `0` on success. `1` on a failed seeder, a `Stale` or `Failed` verify result, or failed startup validation. `2` for invalid arguments or an unknown seeder name.
+
+### Warm-up
+
+A warm-up is work a feature does once after the host starts so its first requests do not pay for it: loading a cache, reading a key ring, downloading data, or checking that broker objects exist. Implement `IWarmup` (`Name`, `GatesReadiness`, `WarmUpAsync`) and register it with `services.AddWarmup<T>()` or `services.AddWarmup(sp => ...)`. Registering a type again adds nothing.
+
+**Verify:** `/health` reports the `warmup` check `Healthy` once the warm-up finishes. In a test, `await host.Services.WaitForWarmupAsync(cancellationToken)` returns.
+
+- **Never delays the start.** Every warm-up runs concurrently in the background after the host starts, each in its own scope.
+- **Readiness waits.** The first `AddWarmup` call adds the `warmup` health check (`HeadlessHealthCheckNames.Warmup`), tagged `ready`, `headless`, and `host-state`. It reports `Unhealthy`, naming each pending warm-up and its last error, until every warm-up whose `GatesReadiness` is `true` (the default) has finished. Liveness is not affected, and the [`check` verb](#health-check-command) skips it.
+- **Failures retry and never crash.** A failed warm-up logs `WarmupFailed` and retries with a jittered back-off from 1 to 30 seconds, in real time, until it succeeds or the host stops. A misconfiguration that must stop the start belongs in an [`IHeadlessStartupValidator`](#startup-validators) instead.
+- **Tests wait for it.** `WaitForWarmupAsync(cancellationToken)` returns once every gating warm-up has finished. Its cancellation message names each pending one. `HeadlessTestServer` calls it before it returns.
+
+### Startup validators
+
+To refuse to start on a misconfiguration, implement `IHeadlessStartupValidator` and register it. Do not write a hosted service for it.
+
+```csharp
+internal sealed class OrdersModelValidator(IDbContextFactory<AppDbContext> factory) : IHeadlessStartupValidator
+{
+    public async Task ValidateAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+
+        if (db.Model.FindEntityType(typeof(Order)) is null)
+        {
+            throw new InvalidOperationException("Call modelBuilder.AddOrders() in OnModelCreating.");
+        }
+    }
+}
+
+services.AddStartupValidator<OrdersModelValidator>();
 ```
 
-- **Validates like a start, starts nothing.** Like `describe`, it first runs the options marked `ValidateOnStart` and every `IHeadlessStartupValidator`, and never starts a hosted service. A validation failure prints `Host check failed: {message}` to standard error, leaves standard output empty, runs no check, and exits 1.
-- **Which checks run.** Every registered check, through the host's `HealthCheckService` with each registration's timeout and failure status, except those tagged `host-state` (`HeadlessHealthCheckTags.HostState`). Those report a started host's state (the Messaging and Jobs lifecycle checks), so they are printed as `Skipped` and not run. Tag a check of your own with `host-state` when it reads state that only a started host has. A check removed with `RemoveHealthChecks` or turned off in configuration is absent, as it is from the health endpoints.
-- **Output.** One line per check on standard output, ordered by name, skipped checks last: name, status (`Healthy`, `Degraded`, `Unhealthy`, or `Skipped`), duration in milliseconds, and description. A failed probe's line adds the exception message after the description, which the health endpoints withhold because they are often anonymous; treat the command's output as operator-only. Console logging goes to standard error, with the same `Host.CreateDefaultBuilder` caveat as `describe`.
-- **Exit code.** 1 when any check is `Unhealthy` or validation fails; otherwise 0. `Degraded` does not fail the command, matching readiness. A host with no health checks prints `No health checks are registered.` to standard error and exits 0.
+**Verify:** with the misconfiguration in place, `dotnet MyApp.dll describe` exits `1` and prints `Host manifest failed:` followed by the validator's message.
 
-#### Required Services
+- **Runs before every hosted service.** Validators run before any `StartAsync`, so a misconfigured host fails before background workers or consumers start. The host verbs run them too.
+- **Reports every failure at once.** Each validator runs even after another fails. One failure surfaces as its own exception, unwrapped, so a typed exception such as `MissingRequiredServiceException` keeps its type. Two or more surface as a `StartupValidationException` (an `AggregateException`) whose inner exceptions are the originals. Cancelling startup stops the run and is not reported as a failure.
+- **Registration.** `AddStartupValidator<T>()` and `AddStartupValidator(Type)` add a validator type once. `AddStartupValidator(Func<IServiceProvider, IHeadlessStartupValidator>)` adds one on every call, for one validator per named instance.
+- **Cheap checks only.** Validators run on every instance on every start and cannot be turned off. Keep them to in-memory checks: options, EF model metadata, DI registrations, and wiring flags. Put network I/O in a [warm-up](#warm-up) or a [resource provisioner](#resource-provisioning).
+- **Warnings.** A validator that only warns logs through an injected logger and returns normally.
 
-The abstraction-plus-provider split lets a package register cleanly against a contract whose only implementation ships in a *provider* package the host must choose — `Headless.Settings` consumes `ICache<SettingValueCacheItem>` while referencing only `Headless.Caching.Abstractions`, for example. Without a declared prerequisite such a host starts green and throws on the first request that touches the feature.
+### Required services
+
+A Headless package can depend on a contract whose implementation ships in a provider package you choose. For example, `Headless.Settings` needs an `ICache<T>` from a caching provider. Without the provider, the host would start and fail on the first request that touches the feature. `RequireRegisteredService<T>` turns that into a start failure:
 
 ```csharp
 services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
@@ -743,87 +736,127 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 );
 ```
 
-- **Checked at startup, not at declaration.** The requirement is usually satisfied by a sibling `Add…` call that has not run yet, so inspecting the collection at declaration time would reject valid registration orders. The check is an `IHeadlessStartupValidator`, so it runs ahead of every hosted service's `StartAsync`, so a broken host never lets background workers or consumers start under an assumption the container cannot honour.
-- **Probed, never resolved.** It asks `IServiceProviderIsService` rather than resolving the contract, so validation never constructs the service under test (a Redis-backed cache would reach into its connection options and turn a provider misconfiguration into an opaque failure from the guard). MS.DI's probe answers a *constructed* generic from an *open*-generic registration, so `ICache<Foo>` reports present when only `typeof(ICache<>)` was registered — which is exactly how the caching providers register. A container that does not expose the probe falls back to a null-returning resolve.
-- **Aggregated.** Requirements from every feature in the host are collected and reported in one `MissingRequiredServiceException` (`Headless.Hosting`), each line naming its `requiredBy` and `remedy`. A host missing one shared provider sees every affected feature at once instead of one failure per restart. Identical declarations collapse to a single line, and the startup check itself is registered once no matter how many features declare requirements.
+- **Checked at startup.** The check runs as a startup validator, so registration order does not matter.
+- **Never resolved.** The check asks the container whether the service is registered and never constructs it. A closed generic such as `ICache<Foo>` counts as registered when only the open generic `ICache<>` is, which is how the caching providers register.
+- **One report.** Every missing service in the host is reported in one `MissingRequiredServiceException`, each line naming its `requiredBy` and `remedy`. Identical declarations collapse to one line.
+- `Headless.MultiTenancy`, `Headless.Settings`, `Headless.Permissions`, and `Headless.Features` require a caching provider this way. `Headless.Idempotency.ResponseReplay` requires the durable `IIdempotentOperations` store.
 
-`Headless.MultiTenancy`, `Headless.Settings`, `Headless.Permissions`, and `Headless.Features` all use this to require a caching provider; `Headless.Idempotency.ResponseReplay` uses it to require the durable `IIdempotentOperations` store.
-
-`RequireSingletonService<T>(requiredBy, remedy)` (and the `Type` overload) goes one step further for a service that a feature's *singleton* injects but the application registers:
+`RequireSingletonService<T>(requiredBy, remedy)` (and its `Type` overload) also checks the lifetime of a service that a feature's singleton injects but the application registers:
 
 ```csharp
 services.RequireSingletonService(
     typeof(IDbContextFactory<>).MakeGenericType(dbContextType),
     requiredBy: "Headless settings EF storage",
-    remedy: "Register it at the default singleton lifetime: AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() for a plain DbContext, or AddHeadlessDbContext<TContext>() or AddHeadlessDbContextPool<TContext>() for a HeadlessDbContext. The store is a singleton and would keep one scoped or transient factory for the life of the host."
+    remedy: "Register it at the default singleton lifetime: AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() for a plain DbContext, or AddHeadlessDbContext<TContext>() or AddHeadlessDbContextPool<TContext>() for a HeadlessDbContext."
 );
 ```
 
-- **Refuses a captive dependency in every environment.** A scoped or transient registration would be captured by the singleton for the life of the host. Scope validation catches the scoped case only while it is on (the development default) and never catches the transient one, so the check reads the lifetime from the service collection instead and throws `InvalidServiceLifetimeException` (`Headless.Hosting`) listing every violation.
-- **Judges the registration the container resolves.** The last unkeyed registration of the closed type wins; with none, the last unkeyed open-generic registration of its definition decides. Keyed registrations are ignored. Registrations added after the declaration are seen, and the service is never resolved.
-- **Also requires the registration.** It declares `RequireRegisteredService` for the same type, so a missing registration still fails with `MissingRequiredServiceException`.
+- **Refuses a captive dependency in every environment.** A scoped or transient registration would be captured by the singleton for the life of the host. The check reads the lifetime from the service collection and throws `InvalidServiceLifetimeException` listing every violation, including in production, where scope validation is off.
+- **Judges the registration the container resolves.** The last unkeyed registration of the closed type wins. With none, the last unkeyed open-generic registration decides. Keyed registrations are ignored.
+- **Also requires the registration.** A missing registration still fails with `MissingRequiredServiceException`.
+- The EF storage providers of `Headless.MultiTenancy`, `Headless.Settings`, `Headless.Features`, `Headless.Permissions`, `Headless.AuditLog`, and `Headless.Jobs` require a singleton `IDbContextFactory<TContext>` this way. If one of those features fails to start with `InvalidServiceLifetimeException`, register the factory at singleton lifetime.
 
-The EF storage providers of `Headless.MultiTenancy`, `Headless.Settings`, `Headless.Features`, `Headless.Permissions`, `Headless.AuditLog`, and `Headless.Jobs` use it to require a singleton `IDbContextFactory<TContext>`.
+### Options with validation
 
-### Configuration
+`Configure<TOptions, TValidator>(...)` and `AddOptions<TOptions, TValidator>()` (namespace `Microsoft.Extensions.DependencyInjection`) register the FluentValidation validator, validate the options, and mark them `ValidateOnStart`. Overloads take an `IConfiguration` section, an `Action<TOptions>`, or an `Action<TOptions, IServiceProvider>`, plus an optional options name.
 
-No configuration required.
+```csharp
+services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("App"));
+```
 
-### Runtime behavior
+**Verify:** with an invalid value, the host start and `dotnet MyApp.dll describe` both fail with an `OptionsValidationException` that names the failed rule.
 
-None directly. Utilities for managing service registration.
+In a trimmed or native AOT application, use the `Action<TOptions>` overloads. The overloads that bind an `IConfiguration` (`Configure*`, `GetOptions`, `GetRequired`) or validate with data annotations carry `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so the compiler warns at the call site.
 
-`Headless.Hosting` declares `IsAotCompatible`. The helpers that construct a type argument (`AddOrReplace*`, `DecorateWith`, `AddOptions<TOptions, TValidator>`, `Configure<TOption, TOptionValidator>`, `AddSeeder`, `AddStartupValidator`) annotate it with `DynamicallyAccessedMembers`, so trimming keeps the constructor the container calls. The helpers that bind an `IConfiguration` (`GetOptions`, `GetRequired`, and the `Configure*` overloads that take one) or validate with data annotations are marked `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so a trimmed or native AOT app gets a warning at the call site instead of a failure at startup. In such an app, configure options through the `Action<TOptions>` overloads with FluentValidation.
+### Service registration helpers
+
+```csharp
+// Conditional registration
+services.AddIf(builder.Environment.IsDevelopment(), s => s.AddHeadlessEmails(setup => setup.UseDevelopment("emails.txt")));
+services.AddIfElse(condition, ifAction, elseAction);
+
+// Replacement
+services.AddOrReplaceScoped<IService, NewImpl>();
+services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequiredService<IDep>()));
+
+// Replaces only a known TFallback registration and keeps one the application registered.
+services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
+
+// Removal
+services.Unregister<IService>();
+
+// Decorators: wrap every unkeyed registration, or only the registrations under one key.
+services.TryDecorateWith<IService>((inner, sp) => new LoggingService(inner));
+services.TryDecorateKeyedWith<IService>("reports", (inner, sp) => new LoggingService(inner));
+```
+
+**Verify:** no startup signal. In a test, build the provider and assert that `GetRequiredService<IService>()` returns the expected type.
+
+- Decorators keep each registration's lifetime.
+- A decorator that returns a different instance owns disposing the inner one, because the container tracks only what the factory returns.
+- Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed.
+- `TryDecorateKeyedWith` does not decorate a `KeyedService.AnyKey` registration.
+
 ---
+
 ## Headless.Http.Resilience
 
-Declared side-effect classes for outbound HTTP calls, from which the HttpClient resilience pipeline is derived.
+Derives an outbound `HttpClient`'s retry policy from the side effects its calls have.
 
-### API and behavior
+### Setup
 
-- `OutboundEffect` -- `Safe` (reads; the pipeline retries every method), `Idempotent` (retries, with one stable key per logical call in the provider's deduplication header, reused across that call's retries, and a caller-set header is kept), `Unsafe` (no automatic retry for POST, PUT, PATCH, DELETE, or CONNECT; reads stay retryable).
-- `EffectResilience.AddEffectResilienceHandler(this IHttpClientBuilder, OutboundEffect, string? idempotencyHeader, Action<HttpStandardResilienceOptions>? configureResilience)` -- derives the pipeline. It first removes resilience handlers already on the builder (`RemoveAllResilienceHandlers`), so a host-wide handler added through `ConfigureHttpClientDefaults` (for example by `AddHeadless()` service defaults) cannot stack as an outer pipeline and retry a declared-unsafe call. `configureResilience` runs after the derived defaults; setting `Retry.ShouldHandle` there is the explicit opt-in to retrying unsafe methods.
+```bash
+dotnet add package Headless.Http.Resilience
+```
+
+Declare the client's effect once, where the named client is built:
+
+```csharp
+services
+    .AddHttpClient<IPaymentsClient, PaymentsClient>()
+    .AddEffectResilienceHandler(OutboundEffect.Unsafe);
+```
+
+**Verify:** no startup signal. In an integration test against a stub server that returns `503`, assert that an `Unsafe` POST reaches the server once and a GET is retried.
 
 ### Configuration
 
-None. The provider's setup states its effect at the one place the named client is built: `httpClientBuilder.AddEffectResilienceHandler(OutboundEffect.Unsafe, configureResilience: configureResilience)`.
+`AddEffectResilienceHandler(this IHttpClientBuilder, OutboundEffect effect, string? idempotencyHeader = null, Action<HttpStandardResilienceOptions>? configureResilience = null)`:
 
-### Runtime behavior
+| `OutboundEffect` | Retries |
+| --- | --- |
+| `Safe` | Every method. Use it for read-only clients. |
+| `Idempotent` | Every method, with one stable key per logical call in `idempotencyHeader`, reused across that call's retries. A header the caller set is kept. A null or empty `idempotencyHeader` throws `ArgumentException`. |
+| `Unsafe` | No automatic retry for POST, PUT, PATCH, DELETE, or CONNECT. Reads stay retryable. |
 
-- The effect is declared per client, not per operation. A client whose reads are also unsafe must not rely on `Unsafe`, because `Unsafe` keeps reads retryable.
-- `RemoveAllResilienceHandlers` is marked experimental (`EXTEXP0001`) in `Microsoft.Extensions.Http.Resilience` 10.10.0; the package suppresses it at the one call site.
+`configureResilience` runs after the derived defaults. Setting `Retry.ShouldHandle` there is the explicit opt-in to retrying unsafe methods.
+
+### Design and runtime behavior
+
+- The call first removes every resilience handler already on the builder, so a host-wide handler added through `ConfigureHttpClientDefaults` (for example by `AddHeadless()`) cannot wrap the client and retry a declared-unsafe call.
+- The effect applies per client, not per operation. A client whose reads also have side effects must not use `Unsafe`, because `Unsafe` keeps reads retryable.
+- The SMS, Paymob, reCAPTCHA, Turnstile, and APNs packages declare their effects this way.
 
 ---
+
 ## Headless.NetTopologySuite
 
-NetTopologySuite extensions for geospatial operations and SQL Server geography compatibility.
+NetTopologySuite extensions for precision, permissive geometry operations, SQL Server geography compatibility, and simplification.
 
-### API and behavior
-
-- Geometry precision reduction and management
-- Permissive geometry operations (intersection, union, difference)
-- SQL Server geography sanitization (ring orientation, validation)
-- Polygon simplification with topology preservation
-- Geometry creation helpers (points, polygons, multi-polygons)
-- Coordinate range validation
-- Feature collection conversion
-- Collision-resistant `HeadlessGeometryExtensions` holder in the `NetTopologySuite.Geometries` namespace; ordinary extension-call syntax remains unchanged
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.NetTopologySuite
 ```
 
-### Setup and use
-
 ```csharp
 using Headless.NetTopologySuite;
 using NetTopologySuite.Geometries;
 
+builder.Services.AddHeadlessNetTopologySuite();
+
 var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);
 
-// Create a polygon from coordinates
 var polygon = factory.CreatePolygon(
     new[]
     {
@@ -835,69 +868,33 @@ var polygon = factory.CreatePolygon(
     }
 );
 
-// Sanitize for SQL Server geography
-var sanitized = polygon.SanitizeForSqlGeography();
-
-// Simplify polygon
+var sanitized = polygon.SanitizeForSqlGeography(); // orientation and validity for SQL Server geography
 var simplified = polygon.Simplify(GeoConstants.Around1MDegrees);
 ```
 
-Extension-call syntax is unchanged after the holder rename. Code that referenced the former `GeoExtensions` class directly must use `HeadlessGeometryExtensions`:
-
-```csharp
-var sanitized = HeadlessGeometryExtensions.SanitizeForSqlGeography(polygon);
-```
-
-### Setup and use
-
-#### Permissive Operations
-
-```csharp
-var intersection = geom1.PermissiveIntersection(geom2);
-var union = geom1.PermissiveUnion(geom2);
-var overlap = geom1.ComputeOverlap(geom2);
-```
-
-#### Ring Orientation
-
-```csharp
-var oriented = polygon.EnsureIsOrientedCounterClockwise();
-```
+**Verify:** no startup signal. After `AddHeadlessNetTopologySuite()` runs, `NtsGeometryServices.Instance` is the registered `GeoServices.NtsGeometryServices`. In a test, assert that `sanitized.IsValid` is `true`.
 
 ### Configuration
 
-No configuration required.
+`AddHeadlessNetTopologySuite()` sets `GeoServices.NtsGeometryServices` as the process-wide `NtsGeometryServices.Instance` and registers it and `GeoServices.GeometryFactory` as singletons. Call it once at startup: NetTopologySuite reads the static instance, not DI.
 
-### Runtime behavior
+### Design and runtime behavior
 
-None.
+- **Operations:** `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()` (topology-preserving), `SanitizeForSqlGeography()`, plus point and polygon creation helpers, coordinate range validation, and feature collection conversion.
+- **Constants:** `GeoConstants.GoogleMapsSrid` (4326), the latitude and longitude bounds, precision models (`UltraPrecision`, `HighPrecision`, `SqlServerGeographyPrecision`, `StreetLevelPrecision`), and simplification tolerances (`Around11CmDegrees`, `Around1MDegrees`, `Around111MDegrees`).
+- The extensions live in `HeadlessGeometryExtensions` in the `NetTopologySuite.Geometries` namespace. For a static call, write `HeadlessGeometryExtensions.SanitizeForSqlGeography(polygon)`.
+
 ---
+
 ## Headless.PhoneNumbers
 
-libphonenumber-backed operations for phone numbers: formatting, normalization, region lookup, parsing, mobile-number validation, and FluentValidation rules.
+libphonenumber-backed formatting, normalization, region lookup, parsing, mobile-number validation, and FluentValidation rules for the `PhoneNumber` value object.
 
-### API and behavior
-
-- Extension members on `Headless.Primitives.PhoneNumber` (namespace `Headless.PhoneNumbers`): `GetNationalFormat()`, `GetInternationalFormat()`, `GetRegionCodes()`, `Normalize()`, and `ToUtilsPhoneNumber()`.
-- Static extension members on `PhoneNumber`: `PhoneNumber.FromInternationalFormat(string?)`, `PhoneNumber.FromPhoneNumber(PhoneNumbers.PhoneNumber?)`, `PhoneNumber.Normalize(int code, string number)`, `PhoneNumber.NormalizeInternationalNumber(string)`, `PhoneNumber.GetNationalFormat(string?)`, and `PhoneNumber.GetInternationalFormat(string?)`.
-- `MobilePhoneNumberValidator.IsValid(...)` checks a possible mobile number by country calling code, by region code, or in international form (returning its normalized E.164 form). The country and region overloads also require the parsed number to carry that calling code: a `+`-prefixed number from another country (`"+16502530000"` checked against `20`) is refused, because libphonenumber ignores the region for such input. Regions that share a calling code, such as `US` and `CA` under `+1`, are not told apart. The `MobilePhoneNumber(...)` rules inherit this.
-- FluentValidation rules in the `FluentValidation` namespace (`HeadlessPhoneNumberValidators`): `BasicPhoneNumber()`, `PhoneNumber(countryCodeFunc)`, `InternationalPhoneNumber()`, `MobilePhoneNumber(countryCodeFunc | regionCodeFunc)`, `InternationalMobileNumber()`, and `PhoneCountryCode()`.
-
-### Design constraints
-
-- `PhoneNumber` lives in `Headless.Primitives` and holds only `CountryCode` and a digits-only `Number`, so EF mappings, API views, and other foundation code use it without libphonenumber. Its `ToString()` returns the raw `+{CountryCode} {Number}`, not a formatted number; call `GetInternationalFormat()` for that.
-- Every formatting, normalization, and region member parses the number on each call. Cache the result when a hot path formats the same number repeatedly.
-- Inside a `Headless.*` namespace, a fully qualified `PhoneNumbers.X` now resolves to this package's `Headless.PhoneNumbers` namespace. Import libphonenumber with `using PhoneNumbers;` at file scope, or qualify it as `global::PhoneNumbers.X`.
-- Conversions to and from libphonenumber's `PhoneNumber` are explicit methods (`ToUtilsPhoneNumber()`, `PhoneNumber.FromPhoneNumber(...)`) because C# extension members cannot declare conversion operators.
-- `Number` is libphonenumber's national significant number, so it keeps a leading zero that a region dials as part of the subscriber number: `FromInternationalFormat("+39 06 1234 5678").Number` is `0612345678`, and `MobilePhoneNumberValidator.IsValid(..., out normalizedNumber)` returns the E.164 form (`+2250701234567` for Côte d'Ivoire). A national trunk prefix such as Egypt's `0` is not part of it.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.PhoneNumbers
 ```
-
-### Setup and use
 
 ```csharp
 using FluentValidation;
@@ -909,7 +906,7 @@ public sealed class ContactValidator : AbstractValidator<Contact>
     public ContactValidator()
     {
         RuleFor(x => x.Phone).InternationalPhoneNumber(); // international format
-        RuleFor(x => x.Mobile).MobilePhoneNumber(x => x.CountryCode); // mobile-only, by calling code
+        RuleFor(x => x.Mobile).MobilePhoneNumber(x => x.CountryCode); // mobile only, by calling code
     }
 }
 
@@ -918,51 +915,41 @@ var display = phone.GetInternationalFormat(); // "+20 10 18541323"
 var key = phone.Normalize(); // lookup-normalized form
 ```
 
-### Configuration
+**Verify:** no startup signal and no DI registration. In a unit test, assert that `PhoneNumber.FromInternationalFormat("+201018541323").GetInternationalFormat()` returns `"+20 10 18541323"`, and that the validator reports `g:invalid_phone_number` for a malformed number.
 
-No configuration required.
+### API
 
-### Runtime behavior
+- Extension members on `PhoneNumber` (namespace `Headless.PhoneNumbers`): `GetNationalFormat()`, `GetInternationalFormat()`, `GetRegionCodes()`, `Normalize()`, and `ToUtilsPhoneNumber()`.
+- Static members on `PhoneNumber`: `FromInternationalFormat(string?)`, `FromPhoneNumber(PhoneNumbers.PhoneNumber?)`, `Normalize(int code, string number)`, `NormalizeInternationalNumber(string)`, `GetNationalFormat(string?)`, and `GetInternationalFormat(string?)`.
+- `MobilePhoneNumberValidator.IsValid(...)` checks a possible mobile number by country calling code, by region code, or in international form, which returns its normalized E.164 form.
+- FluentValidation rules (namespace `FluentValidation`): `BasicPhoneNumber()`, `PhoneNumber(countryCodeFunc)`, `InternationalPhoneNumber()`, `MobilePhoneNumber(countryCodeFunc | regionCodeFunc)`, `InternationalMobileNumber()`, and `PhoneCountryCode()`.
 
-None. No DI registrations.
+### Design and runtime behavior
+
+- `PhoneNumber` lives in `Headless.Primitives` and holds only `CountryCode` and a digits-only `Number`, so EF mappings and API models use it without libphonenumber. Its `ToString()` returns the raw `+{CountryCode} {Number}`, not a formatted number.
+- `Number` is libphonenumber's national significant number. It keeps a leading zero that a region dials as part of the subscriber number: `FromInternationalFormat("+39 06 1234 5678").Number` is `0612345678`, and `MobilePhoneNumberValidator.IsValid(..., out normalizedNumber)` returns `+2250701234567` for Côte d'Ivoire. A national trunk prefix such as Egypt's `0` is not part of it.
+- The country and region overloads of `IsValid` require the parsed number to carry that calling code. A `+`-prefixed number from another country (`"+16502530000"` checked against `20`) is refused. Regions that share a calling code, such as `US` and `CA` under `+1`, are not told apart. The `MobilePhoneNumber(...)` rules behave the same way.
+- Every formatting, normalization, and region member parses the number on each call. Cache the result when a hot path formats the same number repeatedly.
+- Convert to and from libphonenumber's `PhoneNumber` with `ToUtilsPhoneNumber()` and `PhoneNumber.FromPhoneNumber(...)`. There is no conversion operator.
 
 ---
 
 ## Headless.Redis
 
-Redis utilities and Lua script management for StackExchange.Redis.
+Definition-first Lua script loading and execution, plus connection helpers, for StackExchange.Redis.
 
-### API and behavior
-
-- `HeadlessConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `PingAsync` sends `PING` through the default database and returns the round-trip time (its token abandons the wait; the command itself ends through the multiplexer timeout), `ProbeEndpointsAsync` sends `PING` to every configured endpoint and checks `CLUSTER INFO` reports `cluster_state:ok` on cluster nodes (the Redis readiness checks use it), `GetEndpointsKey` names the deployment by its sorted configured endpoints, with no credential and without contacting the server (the Redis readiness checks collapse on it), and `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
-- `RedisScriptDefinition` - Base type for named Lua script definitions
-- `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator. `EvaluateAsync` loads a script onto every writable node (`SCRIPT LOAD`) on its first use, then runs it by SHA (`EVALSHA`). On `NOSCRIPT` (failover, restart, or a flushed script cache) it runs that call through `EVAL` and reloads on the next call. `LoadAsync` loads a set of scripts ahead of first use, for a warm-up
-- Repository integration tests retain an internal destructive `FlushAllAsync` helper; it is not part of the package's supported public API
-
-#### Design constraints
-
-`Headless.Redis` owns script definitions and generic loading only. Provider packages own typed parameters and result decoding. No first-party provider loads its scripts during the host start. Each Redis provider registers a [warm-up](#warm-up) that does not gate readiness and loads the scripts that package runs, after the start: `RedisCacheScripts` (onto the default cache's Redis and each named cache's), `RedisDistributedLockScripts` (lock, reader-writer lock, and semaphore), and `RedisCoordinationScripts` (membership). A host with Redis down still starts; the warm-up retries with back-off, the Redis readiness check reports the outage, and a script the warm-up has not loaded yet loads on its first use. The loader serializes concurrent loads.
-
-Each concrete `RedisScriptDefinition` type is a singleton contract. Reuse the exposed `Instance` member; the loader rejects multiple instances of the same concrete type because it caches loaded scripts by definition type.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Redis
 ```
 
-### Setup and use
+Declare each script as a `RedisScriptDefinition` with one shared `Instance`:
 
 ```csharp
 using Headless.Redis;
 using StackExchange.Redis;
 
-var builder = WebApplication.CreateBuilder(args);
-
-var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
-var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
-
-// The loader caches loaded scripts by definition type, so each definition exposes one shared instance.
 public sealed class IncrementWithExpireScript : RedisScriptDefinition
 {
     public static IncrementWithExpireScript Instance { get; } = new();
@@ -978,18 +965,18 @@ public sealed class IncrementWithExpireScript : RedisScriptDefinition
 }
 ```
 
-### Setup and use
-
-#### Script Execution
+Run it through the loader:
 
 ```csharp
+using Headless.Redis;
 using StackExchange.Redis;
 
-var db = redis.GetDatabase();
-var result = await scriptsLoader.EvaluateAsync(
-    db,
-    IncrementWithExpireScript.Instance,
+var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
+var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 
+var result = await scriptsLoader.EvaluateAsync(
+    redis.GetDatabase(),
+    IncrementWithExpireScript.Instance,
     new
     {
         key = (RedisKey)"counter",
@@ -999,40 +986,35 @@ var result = await scriptsLoader.EvaluateAsync(
 );
 ```
 
-### Configuration
+**Verify:** no startup signal. The first `EvaluateAsync` call returns the script's result (the counter value above). A Redis error surfaces as an exception from that call.
 
-No configuration required.
+### Design and runtime behavior
 
-### Runtime behavior
+- **Loading.** `EvaluateAsync` loads a script onto every writable node (`SCRIPT LOAD`) on its first use, then runs it by SHA (`EVALSHA`). On `NOSCRIPT` (after a failover, a restart, or a flushed script cache) it runs that call with `EVAL` and reloads on the next call. Concurrent loads are serialized.
+- **Load ahead of first use** by calling `LoadAsync` with the package's scripts from an `IWarmup` whose `GatesReadiness` is `false` (see [Warm-up](#warm-up)). Never load from a startup validator or a hosted service's start, which blocks the host start on a Redis round trip.
+- **One instance per definition type.** The loader caches loaded scripts by definition type and rejects a second instance of the same type. Reuse `Instance`.
+- The Headless Redis providers (caching, distributed locks, coordination) load their scripts this way, in a non-gating warm-up. A host with Redis down still starts, the warm-up retries, and the Redis readiness check reports the outage.
+- **Connection helpers** (`HeadlessConnectionMultiplexerExtensions`):
+  - `PingAsync` sends `PING` through the default database and returns the round-trip time. Its token abandons the wait. The command itself ends through the multiplexer timeout.
+  - `ProbeEndpointsAsync` sends `PING` to every configured endpoint and checks that `CLUSTER INFO` reports `cluster_state:ok` on cluster nodes.
+  - `GetEndpointsKey` names the deployment by its sorted configured endpoints, without credentials and without contacting the server.
+  - `CountAllKeysAsync` checks its optional `CancellationToken` before endpoint discovery and between endpoints. It cannot interrupt an in-flight `DBSIZE`.
 
-None.
 ---
+
 ## Headless.Sitemaps
 
-XML sitemap generation utilities for SEO.
+XML sitemap and sitemap index writing, with localized alternates, images, and sharding past 50,000 URLs.
 
-### API and behavior
-
-- `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority). Every location (`SitemapUrl`, `SitemapAlternateUrl`, `SitemapImage`, `SitemapReference`) must be an absolute URI; a relative one throws `ArgumentException` when the object is created, not partway through writing a file
-- `SitemapUrlOptions` - Optional metadata passed to either `SitemapUrl` constructor instead of separate optional constructor parameters
-- `SitemapUrls` - Extension methods to write sitemap URLs: `WriteToAsync` writes one file to a stream, and `WriteAsync` splits any number of URLs into shards
-- `SitemapShard` - One shard of at most 50,000 `<url>` elements (`Index`, `Count` of `SitemapUrl` entries, `WriteToAsync(stream)`), valid only during its `onShard` call
-- `SitemapIndexBuilder` - Sitemap index generation for large sites
-- `SitemapAlternateUrl` - Localized/alternate URL support (hreflang)
-- `SitemapImage` - Image sitemap support
-- `ChangeFrequency` - Standard frequency values (always, hourly, daily, weekly, etc.)
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Sitemaps
 ```
 
-### Setup and use
-
-#### Basic Sitemap
-
 ```csharp
+using Headless.Sitemaps;
+
 var urls = new List<SitemapUrl>
 {
     new(
@@ -1050,14 +1032,15 @@ var urls = new List<SitemapUrl>
     ),
 };
 
-// Write to stream
 await using var stream = new MemoryStream();
 await urls.WriteToAsync(stream);
 ```
 
-#### Large Sitemaps
+**Verify:** no startup signal. In a unit test, parse the written stream as XML and assert that it holds one `<url>` element per `SitemapUrl`.
 
-A sitemap file holds at most `SitemapConstants.MaxSitemapUrls` (50,000) `<url>` elements. `WriteAsync` splits the input into shards of that size and calls `onShard` for each one, in order, as soon as it fills. A `SitemapUrl` with alternates writes one `<url>` per alternate it emits (those selected by `WriteAlternateLanguageCodes`, else all), and counts that many toward the limit; its entries never split across shards, so a shard closes early when the next entry would overflow it. Memory holds one shard's URL references at a time, and no shard XML unless the callback buffers it. It returns the shard count; build the sitemap index from it.
+### Large sitemaps
+
+A sitemap file holds at most `SitemapConstants.MaxSitemapUrls` (50,000) `<url>` elements. `WriteAsync` splits the input into shards of that size and calls `onShard` for each one, in order, as soon as it fills. It returns the shard count. Build the sitemap index from it.
 
 ```csharp
 // sitemapUrls is an IEnumerable<SitemapUrl> or an IAsyncEnumerable<SitemapUrl>,
@@ -1079,12 +1062,16 @@ await using var index = File.Create("wwwroot/sitemap.xml");
 await references.WriteToAsync(index, cancellationToken);
 ```
 
-- **A shard is valid only during its callback.** The writer reuses the shard's URL buffer for the next shard, so await `shard.WriteToAsync` inside `onShard`. Calling it after the callback returns throws `InvalidOperationException`.
-- **A blob upload needs its own buffer.** A blob API reads the content from a stream, so write the shard into a `MemoryStream` inside the callback, rewind it, and upload it before the callback returns. Only that one shard's XML is held at a time.
-- **Each shard declares only the namespaces it uses.** `xmlns:xhtml` and `xmlns:image` appear in a shard only when one of its URLs has alternates or images; the bytes equal `WriteToAsync` on the same URLs.
+- **A shard is valid only during its callback.** Await `shard.WriteToAsync` inside `onShard`. A call after the callback returns throws `InvalidOperationException`.
+- **A blob upload needs its own buffer.** Write the shard into a `MemoryStream` inside the callback, rewind it, and upload it before the callback returns.
+- **Alternates count toward the limit.** A `SitemapUrl` with alternates writes one `<url>` per alternate it emits (those selected by `WriteAlternateLanguageCodes`, else all). Its entries never split across shards, so a shard closes early when the next entry would overflow it.
+- **Memory** holds one shard's URL references at a time, and no shard XML unless the callback buffers it.
+- **Each shard declares only the namespaces it uses.** `xmlns:xhtml` and `xmlns:image` appear only when one of its URLs has alternates or images. The bytes equal `WriteToAsync` on the same URLs.
 - **Failure and cancellation stop enumeration.** An exception from `onShard` propagates and no more URLs are read. Cancellation is checked before each URL. An empty input calls `onShard` zero times and returns `0`.
 
-#### Localized URLs
+### Localized URLs
+
+Use `SitemapAlternateUrl` for hreflang alternates:
 
 ```csharp
 var urls = new List<SitemapUrl>
@@ -1103,7 +1090,7 @@ await using var stream = new MemoryStream();
 await urls.WriteToAsync(stream);
 ```
 
-#### Sitemap Index
+### Sitemap index
 
 ```csharp
 var references = new List<SitemapReference>
@@ -1116,73 +1103,30 @@ await using var stream = new MemoryStream();
 await references.WriteToAsync(stream);
 ```
 
-### Configuration
+### Design and runtime behavior
 
-No configuration required.
+- Every location (`SitemapUrl`, `SitemapAlternateUrl`, `SitemapImage`, `SitemapReference`) must be an absolute URI. A relative one throws `ArgumentException` when the object is created, not partway through writing a file.
+- Pass optional metadata (`LastModified`, `ChangeFrequency`, `Priority`) through `SitemapUrlOptions` to either `SitemapUrl` constructor.
+- `SitemapImage` adds image entries. `SitemapIndexBuilder` builds an index for large sites.
 
-### Runtime behavior
-
-None.
 ---
+
 ## Headless.Slugs
 
-URL-friendly slug generation from text.
+URL-friendly slug generation with Unicode normalization, Arabic support, and configurable options.
 
-### API and behavior
-
-- `Slug.Create()` - Static slug generation method
-- Unicode normalization (NFC/NFD)
-- Configurable separator character
-- Character replacement rules
-- Maximum length enforcement
-- Case transformation options
-- Handles non-ASCII characters properly
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Slugs
 ```
 
-### Setup and use
-
-#### Basic Usage
-
 ```csharp
-var slug = Slug.Create("Hello World!");
+using Headless.Slugs;
 
-// Result: "hello-world"
+var slug = Slug.Create("Hello World!"); // "hello-world"
+var arabic = Slug.Create("مرحبا بالعالم"); // "مرحبا-بالعالم"
 
-var slug2 = Slug.Create("مرحبا بالعالم");
-// Result: "مرحبا-بالعالم"
-```
-
-#### Custom Options
-
-```csharp
-var options = new SlugOptions
-{
-    Separator = "_",
-    MaximumLength = 50,
-    CasingTransformation = CasingTransformation.ToLowerCase,
-    CanEndWithSeparator = false,
-};
-
-var slug = Slug.Create("Long Title That Needs Truncation", options);
-```
-
-#### Character Replacements
-
-`Replacements` accepts any `IReadOnlyDictionary<string, string>` and replaces the default set entirely;
-the assigned dictionary is frozen internally (ordinal comparison) for lookup performance. Replacements run
-after the input is normalized to NFD, and each key is stored in NFD, so a key such as `ä` matches the
-composed and decomposed spellings alike (`["ä"] = "ae"` turns `Bär` into `baer`). Two keys that are the same
-text once normalized throw `ArgumentException` on assignment.
-
-`MaximumLength` counts UTF-16 code units. When the cut would split a surrogate pair (possible only when
-`AllowedRanges` is empty, which admits every character), the slug is one unit shorter instead.
-
-```csharp
 var options = new SlugOptions
 {
     Replacements = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -1193,22 +1137,25 @@ var options = new SlugOptions
     },
 };
 
-var slug = Slug.Create("Tom & Jerry @ Home", options);
-// Result: "tom-and-jerry-at-home"
+var custom = Slug.Create("Tom & Jerry @ Home", options); // "tom-and-jerry-at-home"
 ```
+
+**Verify:** no startup signal. In a unit test, assert that `Slug.Create("Hello World!")` returns `"hello-world"`.
 
 ### Configuration
 
-```csharp
-var options = new SlugOptions
-{
-    Separator = "-", // Default: "-"
-    MaximumLength = 100, // Default: 80
-    CanEndWithSeparator = false, // Default: false
-    CasingTransformation = CasingTransformation.ToLowerCase,
-};
-```
+| `SlugOptions` property | Default | Effect |
+| --- | --- | --- |
+| `Separator` | `"-"` | Separator between words. A null or empty value throws `ArgumentException`. |
+| `MaximumLength` | `80` | Maximum length in UTF-16 code units |
+| `CasingTransformation` | `ToLowerCase` | Casing applied to the result |
+| `CanEndWithSeparator` | `false` | When `false`, trailing separators are stripped |
+| `Culture` | `null` | Culture for the casing transformation. `null` applies invariant casing. |
+| `AllowedRanges` | A built-in set of Unicode ranges | Characters kept in the slug. An empty list admits every character. |
+| `Replacements` | A built-in set | Text replacements applied before slugging |
 
-### Runtime behavior
+### Design and runtime behavior
 
-None.
+- `Replacements` replaces the default set entirely. Replacements run after the input is normalized to NFD, and each key is stored in NFD, so a key such as `ä` matches the composed and decomposed spellings alike (`["ä"] = "ae"` turns `Bär` into `baer`). Two keys that are the same text once normalized throw `ArgumentException` on assignment.
+- When the `MaximumLength` cut would split a surrogate pair (possible only when `AllowedRanges` is empty), the slug is one unit shorter instead.
+- A lone surrogate in the input is dropped, not thrown on, so malformed user text still yields a slug.

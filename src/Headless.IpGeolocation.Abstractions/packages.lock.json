@@ -108,9 +108,6 @@
         "type": "Transitive",
         "resolved": "10.0.15",
         "contentHash": "8dyz8adVemyDILwoEFTCq2NsB6XgqOgVHbnv0XgnttQac76XUR3S5L2qcIkJJqOw97mjQttCTWccyk4DKtfm3Q=="
-      },
-      "headless.checks": {
-        "type": "Project"
       }
     }
   }

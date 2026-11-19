@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -59,6 +61,39 @@ public sealed class CoordinationSetupBuilderTests
 
         // then
         action.Should().Throw<InvalidOperationException>().WithMessage("*Multiple providers*");
+    }
+
+    [Fact]
+    public void should_put_the_host_prefix_in_front_of_the_coordination_key_prefix()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.ConfigureHeadlessPrefix("wt1");
+
+        // when
+        services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IOptions<CoordinationOptions>>().Value.KeyPrefix.Should().Be("wt1:coordination:");
+    }
+
+    [Fact]
+    public void should_leave_the_coordination_key_prefix_unchanged_when_the_host_has_no_prefix()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IOptions<CoordinationOptions>>().Value.KeyPrefix.Should().Be("coordination:");
     }
 
     [Fact]

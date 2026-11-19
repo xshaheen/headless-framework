@@ -60,6 +60,15 @@ public interface ISchemaDialect
     string ReadHistorySql(string schema);
 
     /// <summary>
+    /// Returns the query whose single integer result is non-zero when the history table of <paramref name="schema"/>
+    /// exists. It must read the database's catalog when it runs, never a connection's cached copy of it. The runner
+    /// runs it only after <see cref="ReadHistorySql"/> reports the table missing, because a pooled connection can hold a
+    /// catalog read before another runner created the table: on SQLite, while a writer holds the database, such a
+    /// connection reports a table that exists as missing.
+    /// </summary>
+    string HistoryTableExistsSql(string schema);
+
+    /// <summary>
     /// Returns the idempotent statement that records one step in the history table of <paramref name="schema"/> from
     /// the <c>@Feature</c>, <c>@StepVersion</c>, <c>@Description</c>, and <c>@Checksum</c> parameters. It does nothing
     /// when the row exists, so a re-run deploy script stays safe.

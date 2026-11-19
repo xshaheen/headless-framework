@@ -15,4 +15,4 @@ dotnet add package Headless.Messaging.Dashboard.Consul
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingdashboardconsul)
+- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging/dashboard.md#headlessmessagingdashboardconsul)
