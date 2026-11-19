@@ -172,19 +172,22 @@ internal sealed class RedisConsumerClient(
                         readCts.Token
                     )
                     : _ListeningForMessagesAsync(timeout, readCts.Token);
-            _ObserveBackgroundHandler(reads);
 
+            // Listening lasts as long as the reads. The stream manager retries a failed Redis call on its own, so a
+            // read that ends while nobody stopped it can no longer receive: its fault is rethrown (and a read that
+            // just ended returns), and the consumer register marks the subscription failed and rebuilds it.
             try
             {
-                await _timeProvider.Delay(Timeout.InfiniteTimeSpan, readCts.Token).ConfigureAwait(false);
+                await reads.ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
+            catch (Exception ex) when (readCts.IsCancellationRequested)
             {
-                // Shutdown requested — exit cleanly.
+                // Shutdown requested: exit cleanly. A fault a read raised while it stopped is logged, not reported.
+                if (ex is not OperationCanceledException)
+                {
+                    logger.RedisReadFailed(ex, _groupName);
+                }
             }
-
-            // A read fault is already logged by _ObserveBackgroundHandler.
-            await reads.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
         finally
         {
@@ -361,6 +364,10 @@ internal sealed class RedisConsumerClient(
 
         await _ConsumeMessages(pendingMsgs, StreamPosition.Beginning, cancellationToken).ConfigureAwait(false);
 
+        // Either read ending stops the other, so a subscription never keeps claiming stale entries while it no longer
+        // reads new ones, or the reverse.
+        using var readsCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
         var stalePendingMsgs = redis.PollStreamsStalePendingMessagesAsync(
             _messageNames,
             _groupName,
@@ -368,10 +375,9 @@ internal sealed class RedisConsumerClient(
             options.Value.PendingClaimMinIdleTime,
             timeout,
             _ReportRead,
-            cancellationToken
+            readsCts.Token
         );
-        var stalePendingReads = _ConsumeMessages(stalePendingMsgs, StreamPosition.Beginning, cancellationToken);
-        _ObserveBackgroundHandler(stalePendingReads);
+        var stalePendingReads = _ConsumeMessages(stalePendingMsgs, StreamPosition.Beginning, readsCts.Token);
 
         //Once we consumed our history, we can start getting new messages.
         var newMsgs = redis.PollStreamsLatestMessagesAsync(
@@ -380,14 +386,25 @@ internal sealed class RedisConsumerClient(
             _consumerName.Name,
             timeout,
             _ReportRead,
-            cancellationToken
+            readsCts.Token
         );
 
-        var newReads = _ConsumeMessages(newMsgs, StreamPosition.NewMessages, cancellationToken);
-        _ObserveBackgroundHandler(newReads);
+        var newReads = _ConsumeMessages(newMsgs, StreamPosition.NewMessages, readsCts.Token);
+
+        var firstEnded = await Task.WhenAny(stalePendingReads, newReads).ConfigureAwait(false);
+        await readsCts.CancelAsync().ConfigureAwait(false);
 
         // Awaited so listening, which the shutdown drain waits for, ends only once neither read can start a handler.
         await Task.WhenAll(stalePendingReads, newReads).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+        var otherRead = firstEnded == stalePendingReads ? newReads : stalePendingReads;
+        if (otherRead.Exception?.GetBaseException() is { } otherFault and not OperationCanceledException)
+        {
+            logger.RedisReadFailed(otherFault, _groupName);
+        }
+
+        // The read that ended first is why listening ends: its fault, or the caller's cancellation, propagates.
+        await firstEnded.ConfigureAwait(false);
     }
 
     private async Task _ConsumeMessages(
@@ -745,4 +762,11 @@ internal static partial class RedisConsumerClientLog
         RedisKey streamKey,
         string groupId
     );
+
+    [LoggerMessage(
+        EventId = 3019,
+        Level = LogLevel.Error,
+        Message = "A Redis stream read of group {GroupId} failed after listening had already begun to stop"
+    )]
+    internal static partial void RedisReadFailed(this ILogger logger, Exception exception, string groupId);
 }
