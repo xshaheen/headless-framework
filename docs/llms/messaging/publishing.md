@@ -42,7 +42,7 @@ An `IBus.PublishAsync` inside the same block still writes a standalone row that 
 
 `unit.Outbox` is an extension property on `IUnitOfWork` in the `Headless.UnitOfWork` namespace. It throws `InvalidOperationException` naming `AddHeadlessMessaging` when the host registered no messaging, and a completed or rolled-back unit refuses it.
 
-**Verify:** in a test, `MessagingTestHarness.RunInUnitOfWorkAsync` publishes through `unit.Outbox`, and the recorded message has `RecordedMessage.IsCoordinated == true`; see [test-harness.md](test-harness.md#headlessmessagingtesting).
+**Verify:** in a test, `MessagingTestHarness.RunInUnitOfWorkAsync` publishes through `unit.Outbox`, and the recorded message has `RecordedMessage.IsEnlisted == true`; see [test-harness.md](test-harness.md#headlessmessagingtesting).
 
 ### Which units a storage can join
 
@@ -82,7 +82,7 @@ Once a durable row is stored (the standalone write, or the unit's commit for `un
 
 ### Delivery telemetry
 
-`headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` carry `durable` or `direct` only. The `headless-delivery-requested` and `headless-delivery-resolved` message headers carry the same values. Whether a row was written inside a transaction travels in the reserved `headless-delivery-coordinated` header as `"true"` or `"false"`. An absent header means unrecorded, never "not coordinated". The dashboard shows it as "Transaction coordinated" (`Yes` / `No` / `Not recorded`), `MessageView.IsCoordinated` is the monitoring projection, and `RecordedMessage.IsCoordinated` exposes it to tests; all three are `bool?`.
+`headless.messaging.delivery.requested` and `headless.messaging.delivery.resolved` carry `durable` or `direct` only. The `headless-delivery-requested` and `headless-delivery-resolved` message headers carry the same values. Whether a row was written inside a transaction travels in the reserved `headless-delivery-enlisted` header as `"true"` or `"false"`. An absent header means unrecorded, never "not enlisted". `MessageView.IsEnlisted` is the monitoring projection and `RecordedMessage.IsEnlisted` exposes it to tests. Both are `bool?`: `true`, `false`, or `null` when the row records no answer. The dashboard does not show this field.
 
 Jobs follows the same rule: `unit.Jobs` enlists and the injected `IJobScheduler` never does. See [Enlisted Enqueue](../jobs/atomic-enqueue.md#enlisted-enqueue-atomic-enqueue).
 

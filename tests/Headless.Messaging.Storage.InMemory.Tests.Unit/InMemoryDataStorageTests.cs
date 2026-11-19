@@ -247,6 +247,39 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         receivedView.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
     }
 
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    [InlineData(null, null)]
+    public async Task should_project_enlisted_header_as_three_state_is_enlisted(string? headerValue, bool? expected)
+    {
+        _EnsureInitialized();
+        var storage = _storage!;
+        var message = CreateMessage();
+        message.Headers[Headers.ResolvedDeliveryMode] = nameof(DeliveryMode.Durable);
+
+        if (headerValue is not null)
+        {
+            message.Headers[Headers.DeliveryEnlisted] = headerValue;
+        }
+
+        var stored = await storage.StoreMessageAsync("delivery-enlisted", message, cancellationToken: AbortToken);
+
+        var page = await storage
+            .GetMonitoringApi()
+            .GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Publish,
+                    CurrentPage = 0,
+                    PageSize = 10,
+                },
+                AbortToken
+            );
+
+        page.Items.Single(x => x.StorageId == stored.StorageId).IsEnlisted.Should().Be(expected);
+    }
+
     [Fact]
     public async Task should_page_messages_from_a_zero_based_index()
     {

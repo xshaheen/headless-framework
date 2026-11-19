@@ -203,7 +203,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         stored.Value.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
         stored.Value.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
         stored
-            .Value.Origin.Headers[Headers.DeliveryCoordinated]
+            .Value.Origin.Headers[Headers.DeliveryEnlisted]
             .Should()
             .Be("false", "an autonomous publish records that the row is not inside a caller's transaction");
         harness.Dispatcher.CommittedMessages.Should().ContainSingle().Which.Should().BeSameAs(stored.Value);
@@ -236,7 +236,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         stored.Value.Should().NotBeNull();
         stored.Value!.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
         stored.Value.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
-        stored.Value.Origin.Headers[Headers.DeliveryCoordinated].Should().Be("true");
+        stored.Value.Origin.Headers[Headers.DeliveryEnlisted].Should().Be("true");
         await harness
             .Storage.Received(1)
             .StoreMessageAsync(Arg.Any<string>(), Arg.Any<MediumMessage>(), transaction, Arg.Any<CancellationToken>());
@@ -275,7 +275,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         stored.Value.Should().NotBeNull();
         stored.Value!.Origin.Headers[Headers.RequestedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
         stored.Value.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
-        stored.Value.Origin.Headers[Headers.DeliveryCoordinated].Should().Be("true");
+        stored.Value.Origin.Headers[Headers.DeliveryEnlisted].Should().Be("true");
         await harness
             .Storage.Received(1)
             .StoreMessageAsync(Arg.Any<string>(), Arg.Any<MediumMessage>(), transaction, Arg.Any<CancellationToken>());
@@ -311,7 +311,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         harness.TransportMessages.Should().BeEmpty();
         stored.Value.Should().NotBeNull();
         stored.Value!.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
-        stored.Value.Origin.Headers[Headers.DeliveryCoordinated].Should().Be("true");
+        stored.Value.Origin.Headers[Headers.DeliveryEnlisted].Should().Be("true");
     }
 
     [Theory]
@@ -343,7 +343,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         harness.TransportMessages.Should().BeEmpty();
         stored.Value.Should().NotBeNull();
         stored.Value!.Origin.Headers[Headers.ResolvedDeliveryMode].Should().Be(nameof(DeliveryMode.Durable));
-        stored.Value.Origin.Headers[Headers.DeliveryCoordinated].Should().Be("true");
+        stored.Value.Origin.Headers[Headers.DeliveryEnlisted].Should().Be("true");
     }
 
     [Theory]
@@ -421,7 +421,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         );
 
         capture.Value.Should().NotBeNull();
-        capture.Value!.Origin.Headers[Headers.DeliveryCoordinated].Should().Be("true");
+        capture.Value!.Origin.Headers[Headers.DeliveryEnlisted].Should().Be("true");
         harness.Dispatcher.CommittedMessages.Should().BeEmpty();
     }
 

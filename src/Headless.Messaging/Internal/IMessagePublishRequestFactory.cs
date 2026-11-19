@@ -107,7 +107,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Intent,
         Headers.RequestedDeliveryMode,
         Headers.ResolvedDeliveryMode,
-        Headers.DeliveryCoordinated,
+        Headers.DeliveryEnlisted,
         Headers.RequestId,
         Headers.ReplyTo,
         Headers.RequestDeadline,
