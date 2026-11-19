@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Headless.Messaging;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
@@ -668,6 +669,191 @@ public sealed class RedisConsumerClientTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_end_listening_with_the_fault_when_the_new_message_read_faults_while_the_stale_read_polls()
+    {
+        // given: a group subscription whose stale-pending read keeps polling while its new-message read faults
+        var staleStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _SetupGroupReads();
+        _mockStreamManager
+            .PollStreamsStalePendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ReadsUntilCancelled(staleStopped, AbortToken));
+        _mockStreamManager
+            .PollStreamsLatestMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_FaultingReads(new InvalidOperationException("new-message read failed")));
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            _options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        client.AttachCallbacks((_, _) => Task.CompletedTask, onLog: null);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // when
+        var act = () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), AbortToken).Bounded();
+
+        // then: listening ends with the read's fault, so the consumer register marks the subscription failed, and the
+        // stale-pending read stops instead of claiming entries for a subscription about to be rebuilt
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("new-message read failed");
+        await staleStopped.Task.Bounded();
+    }
+
+    [Fact]
+    public async Task should_end_listening_with_the_fault_when_the_stale_pending_read_faults()
+    {
+        // given
+        var newStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _SetupGroupReads();
+        _mockStreamManager
+            .PollStreamsStalePendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_FaultingReads(new InvalidOperationException("stale-pending read failed")));
+        _mockStreamManager
+            .PollStreamsLatestMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ReadsUntilCancelled(newStopped, AbortToken));
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            _options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        client.AttachCallbacks((_, _) => Task.CompletedTask, onLog: null);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // when
+        var act = () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), AbortToken).Bounded();
+
+        // then
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("stale-pending read failed");
+        await newStopped.Task.Bounded();
+    }
+
+    [Fact]
+    public async Task should_end_listening_with_the_fault_when_the_every_instance_read_faults()
+    {
+        // given
+        _mockStreamManager
+            .GetStreamTailPositionsAsync(Arg.Any<string[]>(), Arg.Any<CancellationToken>())
+            .Returns([new StreamPosition("headless:messaging:bus:orders.created", StreamPosition.Beginning)]);
+        _mockStreamManager
+            .PollStreamsFromAsync(
+                Arg.Any<StreamPosition[]>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_FaultingReads(new InvalidOperationException("every-instance read failed")));
+        await using var client = _CreateEveryInstanceClient(LoggerFactory.CreateLogger<RedisConsumerClient>());
+        client.AttachCallbacks((_, _) => Task.CompletedTask, onLog: null);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // when
+        var act = () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), AbortToken).Bounded();
+
+        // then
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("every-instance read failed");
+    }
+
+    [Fact]
+    public async Task should_stop_listening_when_the_reads_end_without_being_cancelled()
+    {
+        // given: reads that end on their own, as a read that meets an entry it cannot handle does
+        _SetupGroupReads();
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            _options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        client.AttachCallbacks((_, _) => Task.CompletedTask, onLog: null);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // when
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), AbortToken).AsTask();
+
+        // then: listening returns while its token is not cancelled, which the consumer register reads as a failure
+        await listening.Bounded();
+        AbortToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_stop_both_reads_and_report_no_fault_when_listening_is_cancelled()
+    {
+        // given
+        var staleStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var newStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _SetupGroupReads();
+        _mockStreamManager
+            .PollStreamsStalePendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ReadsUntilCancelled(staleStopped, AbortToken));
+        _mockStreamManager
+            .PollStreamsLatestMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ReadsUntilCancelled(newStopped, AbortToken));
+        var logger = new CapturingLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("orders", 1, _mockStreamManager, _options, logger);
+        client.AttachCallbacks((_, _) => Task.CompletedTask, onLog: null);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // when
+        await cts.CancelAsync();
+        await listening.Bounded();
+
+        // then
+        await staleStopped.Task.Bounded();
+        await newStopped.Task.Bounded();
+        logger.Entries.Should().NotContain(log => log.Exception != null);
+    }
+
     private void _SetupGroupReads(RedisStreamMessages? pending = null)
     {
         _mockStreamManager
@@ -846,6 +1032,34 @@ public sealed class RedisConsumerClientTests : TestBase
         }
 
         await Task.CompletedTask;
+    }
+
+    // A read that keeps polling, with nothing to hand out, until listening stops it.
+    private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _ReadsUntilCancelled(
+        TaskCompletionSource stopped,
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        yield return [];
+
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (cancellationToken.Register(() => cancelled.TrySetResult()))
+        {
+            await cancelled.Task;
+        }
+
+        stopped.TrySetResult();
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    // A read that ends with a fault the stream manager did not retry, after one empty batch.
+    private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _FaultingReads(Exception fault)
+    {
+        yield return [];
+
+        await Task.CompletedTask;
+
+        throw fault;
     }
 
     // A read that returns its entries as shutdown cancels it: Redis had already answered the XREADGROUP.
