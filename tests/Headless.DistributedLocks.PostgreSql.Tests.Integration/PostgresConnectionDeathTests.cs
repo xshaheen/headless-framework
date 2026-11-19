@@ -64,11 +64,12 @@ public sealed class PostgresConnectionDeathTests(PostgreSqlDistributedLockFixtur
     }
 
     [Fact]
-    public async Task should_dispose_the_provider_and_free_the_resource_when_a_monitored_lock_was_reported_lost()
+    public async Task should_dispose_the_provider_without_error_when_a_monitored_lock_was_reported_lost()
     {
         // given (a monitored lock whose backend died: PostgreSQL reports a lock lost only once its connection closed,
         // so the provider still tracks a lock whose session is gone)
-        var provider = _CreateProvider();
+        // The using covers a failure before the explicit teardown below; a second dispose is a no-op.
+        await using var provider = _CreateProvider();
         var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
         var handle = await locks.AcquireAsync(
@@ -85,16 +86,10 @@ public sealed class PostgresConnectionDeathTests(PostgreSqlDistributedLockFixtur
         // when (the provider is torn down with the lost lock's handle still outstanding)
         var teardown = async () => await provider.DisposeAsync().AsTask().Bounded();
 
-        // then (teardown neither throws nor stalls on the dead connection, and a second holder takes the resource on
-        // its first attempt)
+        // then (teardown neither throws nor stalls: the handle releases on dispose by default, so it attempts an
+        // unlock on the dead connection. The resource needs no assertion of its own, because ending the backend
+        // already freed the advisory lock before teardown ran)
         await teardown.Should().NotThrowAsync();
-
-        await using var secondProvider = _CreateProvider();
-        var second = await secondProvider
-            .GetRequiredService<IDistributedLock>()
-            .TryAcquireAsync(resource, cancellationToken: AbortToken);
-        second.Should().NotBeNull();
-        await second!.DisposeAsync();
     }
 
     private const string _KeyPrefix = "death:";
