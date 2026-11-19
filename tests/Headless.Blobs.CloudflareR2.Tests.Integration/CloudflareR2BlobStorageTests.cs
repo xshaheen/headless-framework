@@ -579,7 +579,10 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
                 }
             ),
             new R2BlobNamingNormalizer()
-        );
+        )
+        {
+            SupportsSourcePreconditions = false,
+        };
     }
 
     // R2 exposes no IBlobContainerManager; conformance buckets are provisioned out of band by the leaf. The bucket
