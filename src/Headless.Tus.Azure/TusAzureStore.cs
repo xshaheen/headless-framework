@@ -88,6 +88,7 @@ public sealed partial class TusAzureStore : ITusRequestSnapshotStore
     private readonly ArrayPool<byte> _chunkPool;
 
     private readonly TusRequestMemo<TusAzureFile> _memo;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     /// <summary>
     /// Initializes a new <c>TusAzureStore</c> over an existing Blob Storage container. Construction
@@ -106,8 +107,9 @@ public sealed partial class TusAzureStore : ITusRequestSnapshotStore
     /// <param name="loggerFactory">optional logger factory; defaults to the null logger</param>
     /// <param name="timeProvider">optional time abstraction; defaults to <c>TimeProvider.System</c></param>
     /// <param name="httpContextAccessor">
-    /// optional accessor that lets the store read a blob's properties and block list once per tus request; without
-    /// it the store reads them on every call and stays correct
+    /// optional accessor that lets the store read a blob's properties and block list once per tus request, and see
+    /// whether a PATCH declares an <c>Upload-Checksum</c> trailer. Without it the store reads the blob on every call,
+    /// and a chunk whose trailer verification fails to run to completion counts as uploaded.
     /// </param>
     /// <remarks>
     /// A store constructed here keeps every upload outside any tenant, whatever the application's tenancy setup
@@ -163,6 +165,7 @@ public sealed partial class TusAzureStore : ITusRequestSnapshotStore
         _logger = _loggerFactory.CreateLogger<TusAzureStore>();
         _chunkPool = ArrayPool<byte>.Create(_options.BlobMaxChunkSize, maxArraysPerBucket: 8);
         _memo = new TusRequestMemo<TusAzureFile>(httpContextAccessor);
+        _httpContextAccessor = httpContextAccessor;
 
         _containerClient = blobServiceClient.GetBlobContainerClient(_options.ContainerName);
     }

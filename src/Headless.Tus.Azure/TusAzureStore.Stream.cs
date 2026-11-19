@@ -58,6 +58,8 @@ public sealed partial class TusAzureStore
             await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
             ?? throw new TusStoreException($"File {fileId} does not exist");
 
+        await _DiscardUnverifiedChunkAsync(blockBlobClient, azureFile).ConfigureAwait(false);
+
         var committedBlocks = await _LoadCommittedBlocksAsync(blockBlobClient, azureFile, cancellationToken)
             .ConfigureAwait(false);
         var currentOffset = committedBlocks.Sum(b => b.SizeLong);
@@ -97,7 +99,8 @@ public sealed partial class TusAzureStore
                 chunkStartOffset: currentOffset,
                 chunkLength: bytesWritten,
                 hasher,
-                checksumAlgorithm: hasher is null ? null : stream.GetUploadChecksumInfo()!.Algorithm
+                checksumAlgorithm: hasher is null ? null : stream.GetUploadChecksumInfo()!.Algorithm,
+                awaitsTrailerVerification: _AwaitsTrailerVerification(cancellationToken)
             )
             .ConfigureAwait(false);
 
@@ -130,7 +133,8 @@ public sealed partial class TusAzureStore
         long chunkStartOffset,
         long chunkLength,
         IncrementalHash? hasher,
-        string? checksumAlgorithm
+        string? checksumAlgorithm,
+        bool awaitsTrailerVerification
     )
     {
         // Must-complete (CancellationToken.None): on client disconnect the request token is already
@@ -143,12 +147,18 @@ public sealed partial class TusAzureStore
             // append (no ChecksumAware wrapper), so the data commits now and VerifyChecksumAsync verifies
             // — and possibly rolls back — the [LastChunkOffset, end) range afterwards. Also clear any
             // stale checksum-tracking state from a previous failed verification.
+            //
+            // A chunk tusdotnet will verify against a trailer keeps the verified offset at its start in the
+            // same write, so the chunk never counts as uploaded before VerifyChecksumAsync accepts it: a
+            // verification that throws, or a process that dies first, leaves the upload resumable from
+            // the chunk's start. Any other chunk counts at once, which clears the key.
             List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
             _EnsureWithinBlockLimit(allBlockIds.Count);
 
             azureFile.Metadata.LastChunkBlocks = null;
             azureFile.Metadata.LastChunkChecksum = null;
             azureFile.Metadata.LastChunkOffset = chunkStartOffset;
+            azureFile.Metadata.VerifiedOffset = awaitsTrailerVerification ? chunkStartOffset : null;
 
             // allBlockIds was built from the committed list this request read, so the commit is fenced
             // on the ETag read alongside it: if another request committed in between, this commit
@@ -177,6 +187,7 @@ public sealed partial class TusAzureStore
         );
         azureFile.Metadata.LastChunkChecksum = $"{checksumAlgorithm}:{hasher.GetHashAndReset().ToBase64()}";
         azureFile.Metadata.LastChunkOffset = chunkStartOffset;
+        azureFile.Metadata.VerifiedOffset = null;
         await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
         // Set after the write: a failed write drops the file, and a verify in this request needs the length.
         azureFile.PendingChunkLength = chunkLength;
