@@ -1,21 +1,24 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Caching;
+using System.Data.Common;
 using Headless.DistributedLocks;
-using Headless.Hosting;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-[Collection<SqlServerPermissionsFixture>]
-public sealed class SqlServerPermissionsUnitOfWorkTests(SqlServerPermissionsFixture fixture) : TestBase
+/// <summary>
+/// <c>unit.Permissions</c> on every raw-ADO permissions provider: a grant, denial, or subject delete commits or rolls
+/// back with the caller's unit, the grant cache keeps its pre-commit value until the unit commits, an observed unit
+/// is not replayable, and a unit on another database is refused before any write.
+/// </summary>
+public abstract class PermissionsUnitOfWorkConformanceTests<TFixture>(TFixture fixture) : TestBase
+    where TFixture : IPermissionsStorageFixture
 {
-    private const string _Schema = "permissions_sql_uow";
+    private const string _Schema = "permissions_uow";
 
     [Fact]
     public async Task should_commit_a_grant_with_the_unit_and_clear_the_warm_cache_only_after_commit()
@@ -26,12 +29,10 @@ public sealed class SqlServerPermissionsUnitOfWorkTests(SqlServerPermissionsFixt
         (await store.IsGrantedAsync("Users.Create", "Role", "admin", AbortToken))
             .Should()
             .Be(PermissionGrantStatus.Undefined);
-        var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
+        await using var connection = await _OpenAsync(fixture.ConnectionString);
 
         // when
-        await using (var unit = await factory.BeginAsync(connection, AbortToken))
+        await using (var unit = await _BeginAsync(host, connection))
         {
             await unit.Permissions.GrantToRoleAsync("Users.Create", "admin", AbortToken);
 
@@ -59,12 +60,10 @@ public sealed class SqlServerPermissionsUnitOfWorkTests(SqlServerPermissionsFixt
         // given
         using var host = await _StartHostAsync();
         var store = host.Services.GetRequiredService<IPermissionGrantStore>();
-        var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
+        await using var connection = await _OpenAsync(fixture.ConnectionString);
 
         // when
-        await using (var unit = await factory.BeginAsync(connection, AbortToken))
+        await using (var unit = await _BeginAsync(host, connection))
         {
             await unit.Permissions.SetAsync(["Users.Create", "Users.Delete"], "Role", "admin", true, AbortToken);
             await unit.RollbackAsync();
@@ -87,12 +86,10 @@ public sealed class SqlServerPermissionsUnitOfWorkTests(SqlServerPermissionsFixt
         var manager = host.Services.GetRequiredService<IPermissionManager>();
         await manager.RevokeFromRoleAsync("Users.Create", "admin", AbortToken);
         var store = host.Services.GetRequiredService<IPermissionGrantStore>();
-        var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
+        await using var connection = await _OpenAsync(fixture.ConnectionString);
 
         // when the unit flips it to a grant, then commits
-        await using (var unit = await factory.BeginAsync(connection, AbortToken))
+        await using (var unit = await _BeginAsync(host, connection))
         {
             await unit.Permissions.GrantToRoleAsync("Users.Create", "admin", AbortToken);
             await unit.CompleteAsync(AbortToken);
@@ -101,7 +98,7 @@ public sealed class SqlServerPermissionsUnitOfWorkTests(SqlServerPermissionsFixt
         var afterGrant = await store.IsGrantedAsync("Users.Create", "Role", "admin", AbortToken);
 
         // and a second unit deletes the subject
-        await using (var unit = await factory.BeginAsync(connection, AbortToken))
+        await using (var unit = await _BeginAsync(host, connection))
         {
             await unit.Permissions.DeleteAsync("Role", "admin", AbortToken);
             await unit.CompleteAsync(AbortToken);
@@ -121,10 +118,9 @@ public sealed class SqlServerPermissionsUnitOfWorkTests(SqlServerPermissionsFixt
         // given a transaction the caller commits itself
         using var host = await _StartHostAsync();
         var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(AbortToken);
-        await using var unit = factory.Enlist(connection, transaction);
+        await using var connection = await _OpenAsync(fixture.ConnectionString);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await using var unit = fixture.EnlistUnitOfWork(factory, connection, transaction);
 
         // when
         await unit.Permissions.GrantToRoleAsync("Users.Create", "admin", AbortToken);
@@ -141,68 +137,55 @@ public sealed class SqlServerPermissionsUnitOfWorkTests(SqlServerPermissionsFixt
     {
         // given
         using var host = await _StartHostAsync();
-        var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
-        var otherDatabase = new SqlConnectionStringBuilder(fixture.ConnectionString) { InitialCatalog = "tempdb" };
-        await using var connection = new SqlConnection(otherDatabase.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var unit = await factory.BeginAsync(connection, AbortToken);
+        await using var connection = await _OpenAsync(fixture.OtherDatabaseConnectionString);
+        await using var unit = await _BeginAsync(host, connection);
 
         // when
         var act = () => unit.Permissions.GrantToRoleAsync("Users.Create", "admin", AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*database 'tempdb'*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*database '{connection.Database}'*");
         unit.State.Should().Be(UnitOfWorkState.Active);
         (await _CountGrantsAsync()).Should().Be(0);
     }
 
     private async Task<IHost> _StartHostAsync()
     {
-        await using (var connection = new SqlConnection(fixture.ConnectionString))
-        {
-            await connection.OpenAsync(AbortToken);
-            await using var command = new SqlCommand(
-                $"""
-                IF OBJECT_ID(N'{_Schema}.PermissionGrants', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionGrants];
-                IF OBJECT_ID(N'{_Schema}.PermissionDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionDefinitions];
-                IF OBJECT_ID(N'{_Schema}.PermissionGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionGroupDefinitions];
-                IF OBJECT_ID(N'{_Schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{_Schema}].[headless_schema_history];
-                IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'DROP SCHEMA [{_Schema}]');
-                """,
-                connection
-            );
-            await command.ExecuteNonQueryAsync(AbortToken);
-        }
-
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSingleton(TimeProvider.System);
-        // The definition manager takes a lock only for the dynamic store, which these hosts leave off.
-        builder.Services.AddSingleton(Substitute.For<IDistributedLock>());
-        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
-        builder.Services.AddPermissionDefinitionProvider<UsersPermissionDefinitionProvider>();
-        builder.Services.AddHeadlessPermissions(setup =>
-        {
-            setup.ConfigureStorage(options => options.Schema = _Schema);
-            setup.UseSqlServer(fixture.ConnectionString);
-        });
-        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
-
-        var host = builder.Build();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        var host = fixture.CreateHost(
+            _Schema,
+            configureServices: services =>
+            {
+                // The definition manager takes a lock only for the dynamic store, which these hosts leave off.
+                services.AddSingleton(Substitute.For<IDistributedLock>());
+                services.AddPermissionDefinitionProvider<UsersPermissionDefinitionProvider>();
+            }
+        );
         await host.StartAsync(AbortToken);
 
         return host;
     }
 
-    private async Task<long> _CountGrantsAsync()
+    private async Task<DbConnection> _OpenAsync(string connectionString)
     {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
+        var connection = fixture.CreateConnection(connectionString);
         await connection.OpenAsync(AbortToken);
-        await using var command = new SqlCommand(
-            $"SELECT COUNT_BIG(*) FROM [{_Schema}].[PermissionGrants];",
-            connection
-        );
 
-        return (long)(await command.ExecuteScalarAsync(AbortToken))!;
+        return connection;
+    }
+
+    private ValueTask<IUnitOfWork> _BeginAsync(IHost host, DbConnection connection)
+    {
+        return fixture.BeginUnitOfWorkAsync(
+            host.Services.GetRequiredService<IUnitOfWorkFactory>(),
+            connection,
+            AbortToken
+        );
+    }
+
+    private Task<long> _CountGrantsAsync()
+    {
+        return fixture.CountRowsAsync(_Schema, fixture.GrantsTable(), AbortToken);
     }
 
     [UsedImplicitly]
