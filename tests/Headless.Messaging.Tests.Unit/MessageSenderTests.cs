@@ -1037,9 +1037,9 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task should_rethrow_a_transport_cancellation_caused_by_shutdown()
+    public async Task should_not_hand_the_send_to_the_transport_when_the_host_is_already_stopping()
     {
-        // given — the host is stopping, which cancels the in-flight publish.
+        // given — the host is stopping before the send reaches the transport.
         var storage = Substitute.For<IDataStorage>();
         var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<IMessageSerializer>();
@@ -1077,8 +1077,10 @@ public sealed class MessageSenderTests : TestBase
         // when
         var act = () => sender.SendAsync(_CreateMediumMessage());
 
-        // then — shutdown is not a failed attempt: nothing is written, and the retry pickup resumes after restart.
+        // then — shutdown cancels the steps before the hand-off: nothing reaches the broker, nothing is written, and the
+        // retry pickup resumes after restart.
         await act.Should().ThrowAsync<OperationCanceledException>();
+        await transport.DidNotReceive().SendAsync(Arg.Any<TransportMessage>(), Arg.Any<CancellationToken>());
         await storage
             .DidNotReceive()
             .ChangePublishRetryStateAsync(
@@ -1091,6 +1093,153 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_record_the_row_sent_when_the_confirm_arrives_after_shutdown_starts()
+    {
+        // given — the broker holds the publish, and its confirm arrives only after the host starts stopping.
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var sendStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var confirm = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                sendStarted.TrySetResult();
+                await confirm.Task.WaitAsync(call.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+
+        using var stopping = new CancellationTokenSource();
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions { RetryPolicy = { MaxPersistedRetries = 1 } },
+            new FakeHostApplicationLifetime(stopping.Token),
+            backoffClock: new FakeTimeProvider()
+        );
+
+        // when — the host stops while the send waits for the confirm, then the confirm arrives
+        var send = sender.SendAsync(_CreateMediumMessage());
+        await sendStarted.Task.Bounded();
+        await stopping.CancelAsync();
+        confirm.TrySetResult();
+        var result = await send.Bounded();
+
+        // then — the publish the broker took is recorded as sent, so no resend duplicates it.
+        result.Succeeded.Should().BeTrue();
+        await storage
+            .Received(1)
+            .ChangePublishRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<bool>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_keep_renewing_until_the_publish_timeout_when_the_confirm_never_arrives_after_shutdown_starts()
+    {
+        // given — the broker never confirms, and the host starts stopping while the send waits.
+        var storage = Substitute.For<IDataStorage>();
+        var renewals = 0;
+        var renewedAfterStop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var stopping = new CancellationTokenSource();
+        storage
+            .RenewPublishLeaseAsync(Arg.Any<MediumMessage>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref renewals);
+                if (stopping.IsCancellationRequested)
+                {
+                    renewedAfterStop.TrySetResult();
+                }
+
+                return ValueTask.FromResult(true);
+            });
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+
+        var sendStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                sendStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return OperateResult.Success;
+            });
+
+        var renewalInterval = TimeSpan.FromMilliseconds(20);
+        var options = new MessagingOptions
+        {
+            RetryPolicy = { MaxPersistedRetries = 1, LeaseRenewalInterval = renewalInterval },
+        };
+        var clock = new TimerArmedSignalClock(DateTimeOffset.UnixEpoch);
+        var backoffClock = new FakeTimeProvider();
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            options,
+            new FakeHostApplicationLifetime(stopping.Token),
+            timeProvider: clock,
+            backoffClock: backoffClock
+        );
+
+        // when — the host stops mid-confirm, a renewal interval passes, then the publish timeout passes
+        var send = sender.SendAsync(_CreateMediumMessage());
+        await sendStarted.Task.Bounded();
+        await stopping.CancelAsync();
+        while (!renewedAfterStop.Task.IsCompleted)
+        {
+            _ = await Task.WhenAny(renewedAfterStop.Task, send, clock.WaitForArmedTimerAsync());
+            send.IsCompleted.Should().BeFalse("shutdown alone must not end a send the transport already holds");
+            clock.Advance(renewalInterval);
+        }
+
+        backoffClock.Advance(options.TransportPublishTimeout);
+        Exception? thrown = null;
+        try
+        {
+            await send.Bounded();
+        }
+        catch (OperationCanceledException ex)
+        {
+            thrown = ex;
+        }
+
+        // then — the timeout ends the wait as a shutdown would end any attempt: nothing is written, the row stays due
+        // for its next pickup, and the lease renewal stopped with the send.
+        thrown.Should().NotBeNull();
+        var renewalsAtTimeout = Volatile.Read(ref renewals);
+        clock.Advance(renewalInterval * 3);
+        Volatile.Read(ref renewals).Should().Be(renewalsAtTimeout);
+        storage
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain(name => name.StartsWith("Change", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1120,13 +1269,17 @@ public sealed class MessageSenderTests : TestBase
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(transportMessage));
 
+        // The host starts stopping while the transport holds the send, so the send was handed over before shutdown.
         using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
-        var shutdownOce = new OperationCanceledException("App stopping", cts.Token);
-
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
-        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Failed(shutdownOce));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await cts.CancelAsync();
+                return OperateResult.Failed(new OperationCanceledException("App stopping", cts.Token));
+            });
 
         var callbackInvoked = false;
         var sender = _CreateSender(
