@@ -63,6 +63,35 @@ public sealed class PostgresConnectionDeathTests(PostgreSqlDistributedLockFixtur
         (await locks.RenewAsync(resource, handle.LeaseId, cancellationToken: AbortToken)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_dispose_the_provider_without_error_when_a_monitored_lock_was_reported_lost()
+    {
+        // given (a monitored lock whose backend died: PostgreSQL reports a lock lost only once its connection closed,
+        // so the provider still tracks a lock whose session is gone)
+        // The using covers a failure before the explicit teardown below; a second dispose is a no-op.
+        await using var provider = _CreateProvider();
+        var locks = provider.GetRequiredService<IDistributedLock>();
+        var resource = Faker.Random.AlphaNumeric(12);
+        var handle = await locks.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor },
+            AbortToken
+        );
+        var lost = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var lostRegistration = handle.LostToken.Register(() => lost.TrySetResult());
+
+        await _TerminateLockHoldingBackendAsync(resource);
+        await lost.Task.Bounded();
+
+        // when (the provider is torn down with the lost lock's handle still outstanding)
+        var teardown = async () => await provider.DisposeAsync().AsTask().Bounded();
+
+        // then (teardown neither throws nor stalls: the handle releases on dispose by default, so it attempts an
+        // unlock on the dead connection. The resource needs no assertion of its own, because ending the backend
+        // already freed the advisory lock before teardown ran)
+        await teardown.Should().NotThrowAsync();
+    }
+
     private const string _KeyPrefix = "death:";
 
     private async Task _TerminateLockHoldingBackendAsync(string resource)
