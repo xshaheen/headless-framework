@@ -3,7 +3,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Headless.Blobs;
-using Headless.Blobs.Internal;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;

@@ -33,6 +33,9 @@ internal static class DistributedLockTestSupport
     /// <summary>Mirrors <c>_NonBlockingAcquireDeadline</c> in the providers (seconds).</summary>
     public const int NonBlockingAcquireDeadlineSeconds = 10;
 
+    /// <summary>Mirrors the EventId of <c>LogReleaseSignalAnnounceFailed</c>.</summary>
+    public const int ReleaseSignalAnnounceFailedEventId = 25;
+
     /// <summary>
     /// Waits on the wall clock until <paramref name="condition"/> holds, so a test can assert that background work
     /// happened. Throws <see cref="TimeoutException"/> when it still does not hold after the wait bound.

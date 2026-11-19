@@ -727,7 +727,7 @@ public sealed class DistributedLock(
         // The announcement wakes waiters immediately; if skipped, waiters retry via backoff.
         if (removed && notifyWaiters)
         {
-            releaseSignal.Announce(resource, leaseId);
+            DistributedLockCoreHelpers.AnnounceRelease(releaseSignal, logger, resource, leaseId);
         }
 
         logger.LogReleaseReleased(resource, leaseId);
