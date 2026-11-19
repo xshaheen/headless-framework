@@ -21,6 +21,22 @@ public sealed class PostgreSqlClaimIndexTests(PostgreSqlJobsCoordinationFixture 
     public override Task native_fallback_claim_reads_the_claimable_index() =>
         base.native_fallback_claim_reads_the_claimable_index();
 
+    [Fact]
+    public override Task cron_job_last_run_read_takes_the_finished_history_in_order_from_the_last_run_index() =>
+        base.cron_job_last_run_read_takes_the_finished_history_in_order_from_the_last_run_index();
+
+    protected override bool Sorts(string plan) => plan.Contains("Sort", StringComparison.Ordinal);
+
+    // The last-run read takes every finished occurrence. At the few thousand rows a test seeds, PostgreSQL sorts them in
+    // memory more cheaply than it reads the index; the index wins once the sort spills to disk, which a test-sized table
+    // never reaches. Ruling out the sequential scan checks the index serves the read's order without a sort.
+    protected override async Task PreferIndexAsync(DbConnection connection, CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SET enable_seqscan = off;";
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     protected override async Task AnalyzeAsync(DbConnection connection, string qualifiedTable, CancellationToken ct)
     {
         await using var command = connection.CreateCommand();
