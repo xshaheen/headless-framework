@@ -622,7 +622,13 @@ public static class MessagingGuarantees
             GuaranteeArea.Coordination,
             realSystem: true,
             "Delayed rows are sent exactly once while hosts restart one after another."
-        ),
+        ) with
+        {
+            Status = GuaranteeStatus.Unsupported,
+            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1763",
+            Rationale =
+                "A host stop cancels a delayed send's publisher-confirm wait after the broker accepted it, so the row is recorded unsent.",
+        },
         // Dashboard operator actions
         _Bound(
             "MSG-DASH-01",

@@ -15,4 +15,4 @@ dotnet add package Headless.MultiTenancy.Storage.EntityFramework
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Multi-Tenancy guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/multi-tenancy.md#headlessmultitenancystorageentityframework)
+- [Multi-Tenancy guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/multi-tenancy/catalog.md#headlessmultitenancystorageentityframework)

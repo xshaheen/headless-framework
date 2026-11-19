@@ -15,4 +15,4 @@ dotnet add package Headless.Messaging.RabbitMq
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingrabbitmq)
+- [Messaging guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging/rabbitmq.md#headlessmessagingrabbitmq)

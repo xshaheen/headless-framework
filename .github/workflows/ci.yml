@@ -194,7 +194,7 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: make ci-scope >> "$GITHUB_OUTPUT"
 
-      # Same token isolation as the build job: npm lifecycle scripts run before the NuGet token exists.
+      # Built in its own step, as in the build job, so the .NET build below only embeds wwwroot/dist.
       - name: "Build dashboard SPAs"
         if: steps.scope.outputs.spa == 'true'
         run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
@@ -206,7 +206,6 @@ jobs:
         if: steps.scope.outputs.scope != 'empty'
         env:
           BuildDashboardSpa: "false"
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCOPE_SOLUTION: ${{ steps.scope.outputs.solution }}
         run: make rebuild SOLUTION="$SCOPE_SOLUTION" MSBUILD_ARGS="-p:CustomAfterMicrosoftCommonTargets=$GITHUB_WORKSPACE/eng/ProofErrorLog.targets"
 
@@ -217,7 +216,6 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BuildDashboardSpa: "false"
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make quality-analyzers-affected AFFECTED_BASE=${{ github.event.pull_request.base.sha }}
 
   dashboards:
@@ -358,9 +356,8 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: make ci-scope >> "$GITHUB_OUTPUT"
 
-      # Build the dashboard SPAs BEFORE the NuGet token is present, so a malicious dependency lifecycle script
-      # run by `npm ci` cannot read it. The token-bearing build below runs with BuildDashboardSpa=false and
-      # only embeds the already-built wwwroot/dist.
+      # Build the dashboard SPAs in their own step. The build below runs with BuildDashboardSpa=false and only
+      # embeds the already-built wwwroot/dist.
       - name: "Build dashboard SPAs"
         if: steps.scope.outputs.spa == 'true'
         run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
@@ -368,11 +365,8 @@ jobs:
       - name: "Build solution"
         if: steps.scope.outputs.scope != 'empty'
         # Analyzers run in the parallel "Lint · .NET analyzers" job, so they are skipped on the path to the tests.
-        # GITHUB_PACKAGES_TOKEN is scoped to this restore/build step only and is expanded from nuget.config's
-        # %GITHUB_PACKAGES_TOKEN% credential entry.
         env:
           BuildDashboardSpa: "false"
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCOPE_SOLUTION: ${{ steps.scope.outputs.solution }}
         run: make rebuild SOLUTION="$SCOPE_SOLUTION" MSBUILD_ARGS=-p:RunAnalyzers=false
 
@@ -443,14 +437,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # Build the dashboard SPAs before the NuGet token exists, then embed the dist output during build.
+      # Build the dashboard SPAs first, then embed the dist output during build.
       - name: "Build dashboard SPAs"
         run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
 
       - name: "Build solution"
         env:
           BuildDashboardSpa: "false"
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make rebuild MSBUILD_ARGS=-p:RunAnalyzers=false
 
       - name: "Pack NuGet packages with SBOMs"
@@ -499,8 +492,6 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Build broker conformance suites"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Analyzer coverage comes from the "Lint · .NET analyzers" job.
         run: make build-messaging-conformance-evidence MSBUILD_ARGS=-p:RunAnalyzers=false
 

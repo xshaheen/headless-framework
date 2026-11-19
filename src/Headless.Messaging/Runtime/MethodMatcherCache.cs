@@ -246,7 +246,8 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
                 var item in executorCollection.GroupBy(x => new ConsumerSubscriptionKey(
                     x.SubscriptionName,
                     x.Lane,
-                    x.SubscriptionKind
+                    x.SubscriptionKind,
+                    x.TransportName
                 ))
             )
             {
@@ -302,7 +303,10 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 internal readonly record struct ConsumerSubscriptionKey(
     string SubscriptionName,
     MessageLane Lane,
-    Transport.ConsumerSubscriptionKind Kind = Transport.ConsumerSubscriptionKind.Competing
+    Transport.ConsumerSubscriptionKind Kind = Transport.ConsumerSubscriptionKind.Competing,
+    // The named transport the subscription opens on, null for the default one. Part of the key so a subscription never
+    // mixes consumers bound to different brokers.
+    string? TransportName = null
 );
 
 internal readonly record struct ConsumerIdentityKey(string ConsumerIdentity, MessageLane Lane);

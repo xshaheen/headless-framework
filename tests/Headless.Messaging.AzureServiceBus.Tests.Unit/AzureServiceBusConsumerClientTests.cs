@@ -966,6 +966,37 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_log_processor_error_through_logger_when_no_log_callback_is_attached()
+    {
+        // given
+        var logger = Substitute.For<ILogger>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        await using var client = new AzureServiceBusConsumerClient(
+            logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
+        var failure = new ServiceBusException("Settlement failed", ServiceBusFailureReason.GeneralError);
+
+        // when
+        await _RaiseProcessorErrorAsync(client, failure, ServiceBusErrorSource.Complete);
+
+        // then
+        logger
+            .Received(1)
+            .Log(
+                LogLevel.Warning,
+                Arg.Any<EventId>(),
+                Arg.Any<Arg.AnyType>(),
+                failure,
+                Arg.Any<Func<Arg.AnyType, Exception?, string>>()
+            );
+    }
+
+    [Fact]
     public async Task should_report_the_first_delivery_after_a_failed_receive_as_broker_reachable_once()
     {
         // given a client whose receives failed twice

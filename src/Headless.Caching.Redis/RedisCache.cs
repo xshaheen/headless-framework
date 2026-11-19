@@ -2842,9 +2842,12 @@ public sealed class RedisCache(
         var stamps = CacheEntryStamps.Compute(options, now);
         var redisKey = _GetKey(key);
 
-        var expiresIn = (
-            options.SlidingExpiration is null ? stamps.PhysicalExpiresAt : stamps.LogicalExpiresAt
-        ).Subtract(now);
+        var (storedLogicalExpiresAt, storedPhysicalExpiresAt, expiresIn) = _ToStoredExpiration(
+            stamps.LogicalExpiresAt,
+            stamps.PhysicalExpiresAt,
+            options.SlidingExpiration,
+            now
+        );
 
         if (expiresIn <= TimeSpan.Zero)
         {
@@ -2857,8 +2860,8 @@ public sealed class RedisCache(
         var redisValue = RedisCacheEntryFrame.Encode(
             value,
             isNull: false,
-            stamps.LogicalExpiresAt,
-            stamps.PhysicalExpiresAt,
+            storedLogicalExpiresAt,
+            storedPhysicalExpiresAt,
             options.SlidingExpiration,
             stamps.EagerRefreshAt,
             etag: null,
@@ -2867,7 +2870,7 @@ public sealed class RedisCache(
             createdAt: stamps.CreatedAt
         );
 
-        await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
+        await _database.StringSetAsync(redisKey, redisValue, expiresIn, When.Always).ConfigureAwait(false);
     }
 
     private CacheValue<ICollection<T>> _RedisValuesToCacheValue<T>(RedisValue[] redisValues)
@@ -3142,7 +3145,10 @@ public sealed class RedisCache(
     )
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var expiresIn = (entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt).Subtract(
+        var (storedLogicalExpiresAt, storedPhysicalExpiresAt, expiresIn) = _ToStoredExpiration(
+            entry.LogicalExpiresAt,
+            entry.PhysicalExpiresAt,
+            entry.SlidingExpiration,
             now
         );
         var redisKey = _GetKey(key);
@@ -3187,8 +3193,8 @@ public sealed class RedisCache(
         using var framed = _EncodeFramedWrite(
             entry.Value,
             entry.IsNull,
-            entry.LogicalExpiresAt,
-            entry.PhysicalExpiresAt,
+            storedLogicalExpiresAt,
+            storedPhysicalExpiresAt,
             entry.SlidingExpiration,
             entry.EagerRefreshAt,
             entry.ETag,
@@ -3210,13 +3216,14 @@ public sealed class RedisCache(
         // markers, not a reverse index — so there is no per-tag index to reconcile and no cluster restriction).
         if (!hasExpectedStamp)
         {
-            await _database.StringSetAsync(redisKey, framed.Value, expiresIn).ConfigureAwait(false);
+            await _database.StringSetAsync(redisKey, framed.Value, expiresIn, When.Always).ConfigureAwait(false);
             return true;
         }
 
         // CAS write: one atomic script verifies ExpectedConcurrencyStamp matches the live value before the SET,
         // so a late factory cannot clobber a concurrent writer or resurrect a removed entry.
-        var keyTtlMs = _ToPositiveMilliseconds(expiresIn);
+        // RedisValue.EmptyString is the script's no-expiry sentinel: the key is written without a TTL.
+        var keyTtlMs = expiresIn is { } ttl ? _ToPositiveMilliseconds(ttl) : RedisValue.EmptyString;
 
         var result = await scriptsLoader
             .EvaluateAsync(
@@ -3750,6 +3757,31 @@ public sealed class RedisCache(
         }
 
         return foundConnectedPrimary;
+    }
+
+    /// <summary>
+    /// The frame stamps and key TTL for a write that carries absolute expiration stamps. A
+    /// <see cref="DateTime.MaxValue"/> stamp means the entry never expires (the <see cref="CacheStoreEntryWrite{T}"/>
+    /// contract, and what <see cref="CacheEntryStamps.Compute"/> produces for a <see cref="TimeSpan.MaxValue"/>
+    /// duration), so it is stored the way <c>UpsertAsync(key, value, expiration: null)</c> stores one: no stamp in the
+    /// frame and no key TTL. Without this the key would get a TTL thousands of years long and
+    /// <see cref="GetExpirationAsync"/> would report that span instead of <see langword="null"/>. A sliding entry keeps
+    /// its physical stamp, because the sliding re-arm caps each new window at it.
+    /// </summary>
+    private static (DateTime? LogicalExpiresAt, DateTime? PhysicalExpiresAt, TimeSpan? ExpiresIn) _ToStoredExpiration(
+        DateTime logicalExpiresAt,
+        DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
+        DateTime now
+    )
+    {
+        var keyExpiresAt = slidingExpiration is null ? physicalExpiresAt : logicalExpiresAt;
+
+        return (
+            logicalExpiresAt == DateTime.MaxValue ? null : logicalExpiresAt,
+            slidingExpiration is null && physicalExpiresAt == DateTime.MaxValue ? null : physicalExpiresAt,
+            keyExpiresAt == DateTime.MaxValue ? null : keyExpiresAt - now
+        );
     }
 
     private TimeSpan? _NormalizeExpiration(TimeSpan? expiresIn)

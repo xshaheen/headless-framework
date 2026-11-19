@@ -13,10 +13,16 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// <summary>Gets a value indicating whether the stored value represents a cached null sentinel.</summary>
     public required bool IsNull { get; init; }
 
-    /// <summary>Gets the logical expiration timestamp (UTC).</summary>
+    /// <summary>
+    /// Gets the logical expiration timestamp (UTC). <see cref="DateTime.MaxValue"/> means the entry never goes stale:
+    /// stores keep no deadline for it and <c>GetExpirationAsync</c> reports <see langword="null"/>.
+    /// </summary>
     public required DateTime LogicalExpiresAt { get; init; }
 
-    /// <summary>Gets the physical retention expiration timestamp (UTC).</summary>
+    /// <summary>
+    /// Gets the physical retention expiration timestamp (UTC). <see cref="DateTime.MaxValue"/> means the entry is
+    /// retained until it is removed or evicted: stores set no retention deadline (no key TTL) for it.
+    /// </summary>
     public required DateTime PhysicalExpiresAt { get; init; }
 
     /// <summary>Gets the optional idle window used to extend logical expiration.</summary>

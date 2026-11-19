@@ -54,6 +54,15 @@
         "resolved": "3.0.337",
         "contentHash": "oR6owEzzKUsRGZ13oxi4ggpxwAuRG+1zw5RiQylG8b557lIiwqswXwrYqMvKV+lu4UMBP7vOEg2UJ7WXO5nXXQ=="
       },
+      "Microsoft.AspNetCore.Authentication.JwtBearer": {
+        "type": "Direct",
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "Y8VbPrQuABpTkMrqO/K2URdfqBBheri/YDcB+sO530arpqsy7vsd/go/YfEP8XaRkACWPQV2gPxedl7dnxp0zg==",
+        "dependencies": {
+          "Microsoft.IdentityModel.Protocols.OpenIdConnect": "8.19.2"
+        }
+      },
       "Microsoft.AspNetCore.OpenApi": {
         "type": "Direct",
         "requested": "[10.0.15, )",

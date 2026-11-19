@@ -100,7 +100,8 @@ public sealed class HeadlessRedactionSetupBuilder
     /// The name is matched ignoring case, in every log entry and scope. The value goes through the classification's
     /// redactor, so it is erased, or becomes an HMAC pseudonym under <see cref="UseHmac(IConfigurationSection)"/>, exactly
     /// as a <c>[PrivateData]</c> member would; a collection is redacted element by element. The rendered message carries
-    /// the redacted value in place of the raw one.
+    /// the redacted value in place of the raw one. Events written through Serilog's own injected <c>ILogger</c> under
+    /// <c>AddHeadlessSerilog</c> are redacted by the same name, through the same redactor.
     /// </para>
     /// <para>
     /// A value printed with a format that changes its text, such as <c>{Amount:N2}</c>, is redacted in the property but

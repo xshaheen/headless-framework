@@ -8,7 +8,10 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework;
 
-/// <summary>Contributes the readiness health check of a registered <see cref="HeadlessDbContext" />.</summary>
+/// <summary>
+/// Contributes the readiness health check of a registered Headless context: a <see cref="HeadlessDbContext" />, or an
+/// Identity context, which derives from the Identity base class instead.
+/// </summary>
 /// <remarks>
 /// The check is Microsoft's first-party <c>AddDbContextCheck&lt;TContext&gt;</c>, which runs
 /// <c>Database.CanConnectAsync</c> (or a <c>DbContextHealthCheckOptions&lt;TContext&gt;.CustomTestQuery</c> the app
@@ -19,13 +22,13 @@ internal static class HeadlessDbContextHealthCheck
 {
     /// <summary>The registration name of the check for <typeparamref name="TDbContext" />.</summary>
     public static string NameOf<TDbContext>()
-        where TDbContext : HeadlessDbContext
+        where TDbContext : DbContext, IHeadlessDbContext
     {
         return "dbcontext-" + (typeof(TDbContext).FullName ?? typeof(TDbContext).Name);
     }
 
     public static void Add<TDbContext>(IServiceCollection services)
-        where TDbContext : HeadlessDbContext
+        where TDbContext : DbContext, IHeadlessDbContext
     {
         services.AddHeadlessHealthCheck(
             NameOf<TDbContext>(),
@@ -64,7 +67,7 @@ internal static class HeadlessDbContextHealthCheck
         string name,
         CancellationToken cancellationToken
     )
-        where TDbContext : HeadlessDbContext
+        where TDbContext : DbContext, IHeadlessDbContext
     {
         var testCommand = context
             .GetService<IDbContextOptions>()

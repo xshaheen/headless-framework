@@ -6,7 +6,7 @@ import { ChartIcon, PublishedIcon, ReceivedIcon } from '@headless/dashboard-sdk/
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQuery } from '@headless/dashboard-sdk/query'
 import { useState } from 'react'
-import { fetchMessages, nodeQuery, readFilter, type MessageKind } from './messages.ts'
+import { countMessages, nodeQuery, readFilter, type MessageKind } from './messages.ts'
 import { useMessagingCounts, useNode, useRealtime } from './parts.tsx'
 
 /** One store's hourly counts: one entry per hour, `null` for an hour the store did not count. */
@@ -238,17 +238,9 @@ function useStatusCounts() {
       const read = await Promise.all(
         keys.map(async (key) => {
           const [kind, list] = key.split('.') as [MessageKind, string]
-          const page = await fetchMessages(
-            api,
-            kind,
-            node,
-            readFilter(new URLSearchParams(keyFilters[list]), kind),
-            undefined,
-            {},
-            1,
-          )
+          const count = await countMessages(api, kind, node, readFilter(new URLSearchParams(keyFilters[list]), kind))
 
-          return [key, page.count] as const
+          return [key, count] as const
         }),
       )
 

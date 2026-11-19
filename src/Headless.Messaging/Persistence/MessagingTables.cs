@@ -87,6 +87,7 @@ internal sealed class MessagingTables
         MessageId = column("MessageId");
         ExceptionInfo = column("ExceptionInfo");
         FailureFingerprint = column("FailureFingerprint");
+        Transport = column("Transport");
         IsInboxRecord = column("IsInboxRecord");
         TenantPresent = column("TenantPresent");
         TenantId = column("TenantId");
@@ -224,6 +225,9 @@ internal sealed class MessagingTables
     public string ExceptionInfo { get; }
 
     public string FailureFingerprint { get; }
+
+    /// <summary>The published table's named transport, null for the default transport.</summary>
+    public string Transport { get; }
 
     /// <summary>
     /// The received table's sequential-consumer key: a hash of the routing affinity key, set at admission and cleared

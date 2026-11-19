@@ -8,6 +8,7 @@ using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -93,6 +94,41 @@ public sealed class KafkaConsumerClientTests : TestBase
         result.Should().HaveCount(2);
         result.Should().Contain("topic1");
         result.Should().Contain("topic2");
+    }
+
+    [Fact]
+    public async Task should_log_topic_creation_failure_when_no_log_callback_is_attached()
+    {
+        // given
+        var adminClient = Substitute.For<IAdminClient>();
+        adminClient
+            .CreateTopicsAsync(Arg.Any<IEnumerable<TopicSpecification>>(), Arg.Any<CreateTopicsOptions>())
+            .Returns(Task.FromException(new KafkaException(ErrorCode.BrokerNotAvailable)));
+        var logger = new CapturingLogger<KafkaConsumerClient>();
+        var serviceProvider = new ServiceCollection()
+            .AddSingleton<ILogger<KafkaConsumerClient>>(logger)
+            .BuildServiceProvider();
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            serviceProvider,
+            adminClientFactory: _ => adminClient
+        );
+
+        // when
+        var result = await client.FetchMessageNamesAsync(["orders.created"], AbortToken);
+
+        // then
+        result.Should().ContainSingle().Which.Should().Be("orders.created");
+        logger
+            .Entries.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<(LogLevel Level, string Message)>(e =>
+                e.Level == LogLevel.Warning && e.Message.Contains(nameof(KafkaException), StringComparison.Ordinal)
+            );
     }
 
     [Fact]
@@ -1399,5 +1435,26 @@ public sealed class KafkaConsumerClientTests : TestBase
             offset,
             static _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
         );
+    }
+}
+
+file sealed class CapturingLogger<T> : ILogger<T>
+{
+    public ConcurrentQueue<(LogLevel Level, string Message)> Entries { get; } = new();
+
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    )
+    {
+        Entries.Enqueue((logLevel, formatter(state, exception)));
     }
 }

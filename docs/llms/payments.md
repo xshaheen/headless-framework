@@ -5,100 +5,95 @@ packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob
 
 # Payments
 
-> Paymob Accept payment gateway integration for Egypt/MENA: payment collection (CashIn), disbursements (CashOut), and higher-level service workflows.
+> Paymob integration for Egypt and MENA: collecting payments (cash-in), paying out funds (cash-out), and a typed service layer over both.
 
 ## Orientation
 
-Three packages cover different functions — they are not alternatives:
+The three packages do different jobs. They are not alternative providers, and there is no generic payment abstraction.
 
-| Package | Job |
-|---|---|
-| `Headless.Payments.Paymob.CashIn` | Collect payments from customers (cards, wallets, kiosk, cash). |
-| `Headless.Payments.Paymob.CashOut` | Disburse funds to bank accounts, wallets, and Aman kiosk. |
-| `Headless.Payments.Paymob` | Higher-level service layer on top of CashIn and CashOut with typed per-channel request/response models, fees calculation, and error mapping. |
+| Package | Job | Registration |
+| --- | --- | --- |
+| `Headless.Payments.Paymob.CashIn` | Collect payments: cards, wallets, kiosk, cash collection, saved tokens. | `services.AddPaymobCashIn(...)` |
+| `Headless.Payments.Paymob.CashOut` | Pay out to mobile wallets, bank wallets, bank cards and accounts, and Aman kiosks. | `services.AddPaymobCashOut(...)` |
+| `Headless.Payments.Paymob` | Typed per-channel services over both brokers, fee calculation, and error mapping. | `services.AddPaymobServices()`, after the two calls above |
 
-Install only the packages that match your job. `Headless.Payments.Paymob` depends on both `CashIn` and `CashOut` and can replace direct broker usage for most application code.
+Install only the packages your job needs. `Headless.Payments.Paymob` references both broker packages, and most application code can use its services instead of the brokers.
 
-Register via:
-- `services.AddPaymobCashIn(options => ...)` — for payment collection.
-- `services.AddPaymobCashOut(configuration.GetSection("Paymob:CashOut"))` — for disbursements.
-- `services.AddPaymobServices()` — registers `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` from `Headless.Payments.Paymob` (call it after the two broker registrations above).
+```csharp
+builder.Services.AddPaymobCashIn(builder.Configuration.GetSection("Paymob:CashIn"));
+builder.Services.AddPaymobCashOut(builder.Configuration.GetSection("Paymob:CashOut"));
+builder.Services.AddPaymobServices();
+```
+
+**Verify:** start the host. A missing credential, a non-HTTPS URL, or an out-of-range value fails the start with `OptionsValidationException`. Under `RunHeadlessAsync`, `dotnet MyApp.dll check` prints `Host check failed: ...` and exits 1 for the same mistake. Validation does not prove the credentials work: the first call to Paymob with a bad credential throws `PaymobCashInException` or `PaymobCashOutException`.
 
 ## Agent Rules
 
-- Use `IPaymobCashInService` (from `Headless.Payments.Paymob`) for most card/wallet/kiosk cash-in flows. Only drop to `IPaymobCashInBroker` directly when you need raw Paymob API access (order management, legacy payment-key flow).
-- Use `ICashOutService` (from `Headless.Payments.Paymob`) for typed disbursement flows. It translates each channel's request into the correct `CashOutDisburseRequest` factory call and maps status/error codes.
-- CashIn and CashOut have **separate** API credentials. `PaymobCashInOptions` requires `ApiKey`, `Hmac`, and `SecretKey`. `PaymobCashOutOptions` requires `ApiBaseUrl`, `UserName`, `Password`, `ClientId`, and `ClientSecret`.
-- Never store credentials in appsettings directly — always bind from secrets or environment variables.
-- Always validate HMAC on CashIn callbacks. The broker exposes four `Validate(...)` overloads: for `CashInCallbackTransaction`, `CashInCallbackToken`, `CashInCallbackQueryParameters`, or a raw concatenated string. Choose by what Paymob sends to your endpoint.
-- A valid HMAC proves only the fields Paymob signs: the amount, currency, creation time, the transaction `Id`, the Paymob `Order.Id`, `IntegrationId`, `Owner`, the status flags (`Success`, `Pending`, `IsRefunded`, `IsVoided`, and the others in `ToConcatenatedString()`), and the card source data. `MerchantOrderId`, `Data.TxnResponseCode`, and `Data.Message` are not signed, and nothing in the callback stops a replay of an earlier valid one. Find your order by the signed Paymob `Order.Id` (store it when you create the order), never by `MerchantOrderId`; check the signed `AmountCents` and `Currency` against the order; and process callbacks idempotently, keyed on the transaction `Id`, so a replayed or repeated callback changes nothing. The failure-reason helpers (`IsDeclinedError()`, `IsRiskChecksError()`, and similar) read unsigned fields: use them for display and logging, not for state changes.
-- Money amounts denominated in cents are typed as `long` throughout CashIn (`CashInCreateIntentionRequest.Amount`, `CreateOrderRequest.AmountCents`, `PaymentKeyRequest.AmountCents`, and the response DTOs). For the legacy payment-key flow (`CreateOrderAsync` / `RequestPaymentKeyAsync`), multiply your decimal EGP amount by 100 yourself; the `Headless.Payments.Paymob` service layer does this conversion internally and rounds a fraction of a cent up on a charge and down on a refund, so partial refunds of one charge never add up to more than it (three refunds of `100m / 3` ask for 9999 cents of a 10000-cent charge). The cost is that a full refund of a charge with a fraction of a cent, such as `10.005m`, returns one cent less than was charged (1000 of 1001 cents); charge whole cents to avoid it. A zero or negative charge or refund amount, or a refund under one cent, throws `ArgumentOutOfRangeException` before any call to Paymob. `CashOutDisburseRequest.Amount` and `CashOutTransaction.Amount` are `decimal` EGP (whole-currency, not cents).
-- Paymob-assigned resource identifiers are typed as `long` (`long?` when nullable) across every request/response DTO — transaction, order, integration, profile, owner, merchant, and gateway-integration IDs, plus kiosk/Aman bill references (`payment_methods` is `IReadOnlyList<long>`). They grow unboundedly and can exceed `int` range, so treat them as 64-bit everywhere. Genuinely bounded domain numbers stay `int` (quantities, package counts, shipping dimensions, status codes, `exp`/`expiration` seconds).
-- CashOut `DisburseAsync(...)` (with the standard async suffix) is the broker method. Use `CashOutDisburseRequest` static factory methods — `BankCard`, `Vodafone`, `Etisalat`, `Orange`, `BankWallet`, `Accept` — rather than constructing the record directly.
-- Both brokers (`IPaymobCashInBroker`, `IPaymobCashOutBroker`) are registered as **scoped** with an injected `HttpClient`. Do not treat them as singletons.
-- `IPaymobCashInAuthenticator` and `IPaymobCashOutAuthenticator` are singletons that cache tokens in memory. They handle token refresh automatically (CashIn refreshes 5 minutes before the 60-minute Paymob token expiry; CashOut caches tokens for `TokenRefreshBuffer`, default 10 minutes).
-- `CashOutTransaction.IsSuccess()`, `.IsFailed()`, `.IsPending()` are helper methods that interpret the `DisbursementStatus` / `StatusCode` pair — use them instead of raw string comparisons.
-- This is a Paymob-specific integration (Egypt/MENA). There is no generic payment abstraction.
+- Use `IPaymobCashInService` for card, wallet, and kiosk cash-in flows. Use `IPaymobCashInBroker` only for raw Paymob calls the service does not cover, such as order management or the legacy order and payment-key flow.
+- Use `ICashOutService` for payouts. It builds the right request per channel and maps Paymob's status and error codes into `CashOutResult<T>`.
+- Configure cash-in and cash-out with separate credentials. `PaymobCashInOptions` needs `ApiKey`, `Hmac`, and `SecretKey`. `PaymobCashOutOptions` needs `ApiBaseUrl`, `UserName`, `Password`, `ClientId`, and `ClientSecret`.
+- Bind the cash-out options from configuration. Its credential properties are `init`-only, so an `Action<PaymobCashOutOptions>` cannot set them.
+- Load every Paymob secret from a secret store or environment variables, never from committed `appsettings.json`.
+- Validate the HMAC of every cash-in callback with `IPaymobCashInBroker.Validate(...)` before you act on it. Pick the overload that matches what Paymob sends: `CashInCallbackTransaction` with the `hmac` query value, `CashInCallbackToken` with the `hmac` value, `CashInCallbackQueryParameters`, or a raw concatenated string with the `hmac` value.
+- Trust only the signed callback fields. A valid HMAC covers the amount, currency, creation time, the transaction `Id`, the Paymob `Order.Id`, `IntegrationId`, `Owner`, the status flags (`Success`, `Pending`, `IsRefunded`, `IsVoided`, and the others), and the card source data. It does not cover `MerchantOrderId`, `Data.TxnResponseCode`, or `Data.Message`, and nothing stops a replay of an earlier valid callback. So:
+  - Find your order by the signed `Order.Id`, which you store when you create the order, never by `MerchantOrderId`.
+  - Check the signed `AmountCents` and `Currency` against the order.
+  - Process callbacks idempotently, keyed on the transaction `Id`, so a replayed or repeated callback changes nothing.
+  - Use the failure-reason helpers (`IsDeclinedError()`, `IsRiskChecksError()`, and the others) for display and logging only. They read unsigned fields.
+- Pass cash-in amounts to the brokers in cents, as `long` (`CashInCreateIntentionRequest.Amount`, `CashInCreateOrderRequest.AmountCents`, the `amountCents` of `CashInPaymentKeyRequest`). Multiply a decimal EGP amount by 100 yourself. The `Headless.Payments.Paymob` services take decimal EGP and convert for you.
+- Pass cash-out amounts as `decimal` EGP: `CashOutDisburseRequest` and `CashOutTransaction.Amount` use whole currency, not cents.
+- Store every Paymob id as `long` (`long?` when nullable): transaction, order, integration, profile, owner, merchant, and gateway-integration ids, and kiosk bill references. They can exceed the `int` range.
+- Build a cash-out request with a `CashOutDisburseRequest` factory (`Vodafone`, `Etisalat`, `Orange`, `BankWallet`, `BankCard`, `Accept`), not with its constructor. Each factory requires the fields its channel needs.
+- Read a payout's outcome with `CashOutTransaction.IsSuccess()`, `IsFailed()`, and `IsPending()`, not by comparing status strings.
+- Inject the brokers into scoped or transient services. `IPaymobCashInBroker` and `IPaymobCashOutBroker` are scoped.
+
+---
 
 ## Core Concepts
 
-**Cash-in vs. cash-out**: cash-in means collecting money from a customer; cash-out means sending money to a recipient. They are entirely separate Paymob APIs with separate credentials, base URLs, and authentication flows.
+### Cash-in and cash-out are separate APIs
 
-**Paymob CashIn authentication**: the legacy flow uses an API key to obtain a 60-minute auth token, which is then used to create an order, request a payment key, and redirect the user to an iframe or deep link. The modern flow (v2) uses a `SecretKey` to call the Payment Intentions API directly and returns a `ClientSecret` that the frontend uses. Use `CreateIntentionAsync` for new integrations.
+Cash-in collects money from a customer. Cash-out sends money to a recipient. Paymob runs them as separate APIs with separate credentials, base URLs, and authentication.
 
-**Paymob CashOut authentication**: uses OAuth 2.0 password grant (`UserName` + `Password`) with a `ClientId`/`ClientSecret` Basic auth header to obtain a Bearer token. The token is cached and refreshed automatically by `IPaymobCashOutAuthenticator`.
+### Cash-in flows
 
-**HMAC callback validation**: Paymob POSTs transaction callbacks to your endpoint and includes an HMAC query parameter. You must compute the HMAC over a canonical concatenated string of transaction fields using your `Hmac` secret and compare with the received value. Never trust a callback that fails `IPaymobCashInBroker.Validate(...)`.
+- **Payment intention (current).** `CreateIntentionAsync` uses `SecretKey` and returns a `ClientSecret` for the front end (Paymob.js). Use it for new integrations.
+- **Order and payment key (legacy).** The `ApiKey` buys an auth token. You create an order, request a payment key, and send the user to the card iframe or a wallet deep link.
+- **Channels.** Each payment method needs its own Paymob integration id from the merchant dashboard. Cards use an iframe. Wallets redirect to a deep link. Kiosk returns a bill reference the customer pays at a kiosk. Cash collection returns a reference for a courier network.
 
-**Payment channels (CashIn)**: each payment method requires its own Paymob integration ID configured in the merchant dashboard. Card payments use an iframe; wallets redirect the user to a deep link; kiosk generates a billing reference the customer presents at a physical kiosk; cash collection generates a reference for Fawry/similar networks.
+### Authentication tokens
 
-**Disbursement channels (CashOut)**: each channel (Vodafone, Etisalat, Orange, bank wallet, bank card/IBAN, Aman kiosk) maps to a specific `Issuer` string in the Paymob request. The `CashOutDisburseRequest` factory methods enforce the required field set per channel.
+- **Cash-in.** `IPaymobCashInAuthenticator` caches the auth token for `TokenRefreshBuffer` (default 55 minutes; Paymob tokens last 60 minutes) and fetches a new one after that.
+- **Cash-out.** `IPaymobCashOutAuthenticator` uses the OAuth 2.0 password grant: `UserName` and `Password` in the body, `ClientId` and `ClientSecret` as Basic auth. It caches the bearer token for `TokenRefreshBuffer` (default 10 minutes).
+- Both authenticators are singletons and drop the cached token when their options change.
+
+### No automatic retry for writes
+
+Paymob takes no idempotency key on its write calls, so a retried POST can create a duplicate order, refund twice, or pay out twice. Both broker clients therefore never retry a POST automatically: orders, payment keys, intentions, refunds, voids, and payouts. GET inquiries keep the standard retry. The rule holds in a host that adds a resilience handler to every client, such as `AddHeadless()` service defaults, because the broker removes that handler from its own client.
+
+`merchant_order_id` and `special_reference` are fields you choose. Paymob does not use them to deduplicate a retry.
+
+The broker clients are named `Headless:PaymobCashIn` and `Headless:PaymobCashOut`. `configureClient` takes only an `Action<HttpClient>`. To add a proxy or a `DelegatingHandler`, configure the named client: `services.AddHttpClient("Headless:PaymobCashIn").ConfigurePrimaryHttpMessageHandler(...)`.
+
+To change timeouts, pass `configureResilience` to `AddPaymobCashIn` or `AddPaymobCashOut`. It runs after the defaults. Setting `Retry.ShouldHandle` there turns POST retries back on; do it only if you accept duplicates.
 
 ---
 
 ## Headless.Payments.Paymob.CashIn
 
-Paymob Accept integration for cash-in (payment collection) operations.
+The Paymob Accept cash-in broker.
 
-### API and behavior
-
-- `IPaymobCashInBroker` — main payment operations interface:
-  - `CreateIntentionAsync` — v2 Payment Intentions API; returns `ClientSecret` for frontend use
-  - `CreateOrderAsync` / `RequestPaymentKeyAsync` — legacy order/payment-key flow
-  - `CreateWalletPayAsync` / `CreateKioskPayAsync` / `CreateCashCollectionPayAsync` / `CreateSavedTokenPayAsync` — channel-specific pay execution
-  - `RefundTransactionAsync` / `VoidTransactionAsync` — post-capture operations
-  - `GetTransactionAsync` / `GetTransactionsPageAsync` — transaction queries
-  - `GetOrderAsync` / `GetOrdersPageAsync` — order queries
-  - `Validate(...)` — four overloads for HMAC callback verification
-  - `CreateIframeSrc(iframeId, token)` — builds the card iframe URL
-- `IPaymobCashInAuthenticator` — caches the 60-minute auth token; refreshes 5 minutes before expiry
-- `CashInCallbackTypes` — `TRANSACTION` and `TOKEN` callback type constants
-- `CashInStatuses` — `pending`, `declined`, `success` constants
-- `CashInBillingData` — requires first name, last name, phone number, and email in its constructor; optional address and shipping values are init-only properties that default to `"NA"`
-- `PaymobCashInException` — thrown on non-success HTTP responses from Paymob
-
-### Design constraints
-
-`IPaymobCashInBroker` is registered as scoped (not singleton) because it takes a typed `HttpClient`. `IPaymobCashInAuthenticator` is singleton and holds the cached auth token; the broker calls the authenticator on each request. Options changes invalidate the cached token automatically via `IOptionsMonitor<PaymobCashInOptions>`.
-
-The named HTTP client's resilience pipeline is derived from the declared `OutboundEffect.Unsafe` effect (`Headless.Http.Resilience`): order, payment-key, intention, refund, and void POSTs are never retried automatically, because Paymob exposes no idempotency key for them and a retried POST can create a duplicate order or refund twice. Order and transaction inquiries (GET) keep the standard retry. `merchant_order_id` and `special_reference` are caller-chosen body fields, not a retry-deduplication contract. The derived pipeline removes host-wide resilience handlers (for example `AddHeadless()` service defaults) from this client first, so the no-retry rule holds in any host. `configureResilience` runs after the derived defaults (e.g., to adjust timeouts for wallet redirects); setting `Retry.ShouldHandle` there is the explicit opt-in to retrying POSTs.
-
-`PaymobCashInOptions.ToString()` is overridden to redact `ApiKey`, `Hmac`, and `SecretKey` (printed as `***`), so logging or diagnostics that stringify the options never leak the secrets.
-
-All Paymob URL options require HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so API credentials and payment tokens cannot be configured for remote plaintext transport.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Payments.Paymob.CashIn
 ```
 
-### Setup and use
+`AddPaymobCashIn` takes `IConfiguration`, `Action<PaymobCashInOptions>`, or `Action<PaymobCashInOptions, IServiceProvider>`, then optional `configureClient` and `configureResilience`.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Option 1: delegate configuration
 builder.Services.AddPaymobCashIn(options =>
 {
     options.ApiKey = builder.Configuration["Paymob:ApiKey"]!;
@@ -106,11 +101,10 @@ builder.Services.AddPaymobCashIn(options =>
     options.SecretKey = builder.Configuration["Paymob:SecretKey"]!;
 });
 
-// Option 2: IConfiguration section
-builder.Services.AddPaymobCashIn(builder.Configuration.GetSection("Paymob:CashIn"));
+// Or: builder.Services.AddPaymobCashIn(builder.Configuration.GetSection("Paymob:CashIn"));
 ```
 
-Create a payment intention (v2 API — preferred):
+Create a payment intention (preferred), or a legacy payment key:
 
 ```csharp
 public sealed class PaymentService(IPaymobCashInBroker broker)
@@ -120,7 +114,7 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
         var response = await broker.CreateIntentionAsync(
             new CashInCreateIntentionRequest
             {
-                Amount = amountCents, // in cents, e.g. 10000 = 100 EGP
+                Amount = amountCents, // in cents: 10000 = 100 EGP
                 Currency = "EGP",
                 PaymentMethods = [integrationId],
                 BillingData = new CashInCreateIntentionRequestBillingData
@@ -135,7 +129,7 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
             ct
         );
 
-        return response!.ClientSecret; // pass to your frontend Paymob.js
+        return response!.ClientSecret; // pass to Paymob.js in the front end
     }
 
     public Task<CashInPaymentKeyResponse> CreateLegacyPaymentKeyAsync(
@@ -160,122 +154,110 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
 }
 ```
 
-Validate an incoming callback:
+Validate a transaction callback:
 
 ```csharp
-[HttpPost("paymob/callback")]
-public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transaction, [FromQuery] string hmac)
+[ApiController]
+public sealed class PaymobCallbackController(IPaymobCashInBroker broker) : ControllerBase
 {
-    if (!_broker.Validate(transaction, hmac))
-        return BadRequest("Invalid HMAC");
-
-    // Look the order up by the signed Paymob order id, not the unsigned merchant_order_id, and make the
-    // update idempotent on transaction.Id: Paymob retries callbacks and a valid one can be replayed.
-    if (transaction.Success)
+    [HttpPost("paymob/callback")]
+    public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transaction, [FromQuery] string hmac)
     {
-        // mark the order whose Paymob id is transaction.Order.Id as paid, once per transaction.Id,
-        // after checking transaction.AmountCents and transaction.Currency against it
-    }
+        if (!broker.Validate(transaction, hmac))
+        {
+            return BadRequest("Invalid HMAC");
+        }
 
-    return Ok();
+        if (transaction.Success)
+        {
+            // Mark the order whose Paymob id is transaction.Order.Id as paid, once per transaction.Id,
+            // after checking transaction.AmountCents and transaction.Currency against it.
+        }
+
+        return Ok();
+    }
 }
 ```
-
-### Configuration
-
-#### appsettings.json
 
 ```json
 {
-    "Paymob": {
-        "CashIn": {
-            "ApiKey": "your-api-key",
-            "Hmac": "your-hmac-secret",
-            "SecretKey": "your-secret-key",
-            "ExpirationPeriod": 3600,
-            "TokenRefreshBuffer": "00:55:00"
-        }
+  "Paymob": {
+    "CashIn": {
+      "ApiKey": "your-api-key",
+      "Hmac": "your-hmac-secret",
+      "SecretKey": "your-secret-key"
     }
+  }
 }
 ```
 
-#### Options (`PaymobCashInOptions`)
+**Verify:** start the host; invalid options fail the start with `OptionsValidationException`. In a test, compute the expected HMAC as the lowercase hex HMAC-SHA512 of `transaction.ToConcatenatedString()`, keyed with your `Hmac` secret. Assert that `broker.Validate(transaction, hmac)` returns `true`, and `false` after you change a signed field such as `AmountCents`.
 
-| Property | Required | Default | Description |
-|---|---|---|---|
-| `ApiKey` | Yes | — | Merchant API key for the legacy auth endpoint. |
-| `Hmac` | Yes | — | Secret used to verify callback HMAC signatures. |
-| `SecretKey` | Yes | — | Secret key for the v2 Intentions API. |
-| `ExpirationPeriod` | No | `3600` | Payment token lifetime in seconds (must be > 60). |
-| `TokenRefreshBuffer` | No | `00:55:00` | How early to refresh the auth token (must be < 60 min). |
+### Configuration
+
+| Option | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `ApiKey` | Yes | | Merchant API key for the legacy auth token. |
+| `Hmac` | Yes | | Secret that verifies callback HMACs. |
+| `SecretKey` | Yes | | Secret key for the intention API. |
+| `ExpirationPeriod` | No | `3600` | Payment key lifetime, in seconds. Greater than 60. |
+| `TokenRefreshBuffer` | No | `00:55:00` | How long the auth token is cached. Greater than zero and under 60 minutes. |
 | `ApiBaseUrl` | No | `https://accept.paymobsolutions.com/api` | Legacy API base URL. |
-| `CreateIntentionUrl` | No | `https://accept.paymob.com/v1/intention/` | v2 Intentions endpoint. |
+| `CreateIntentionUrl` | No | `https://accept.paymob.com/v1/intention/` | Intention endpoint. |
 | `RefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/refund` | Refund endpoint. |
 | `VoidRefundUrl` | No | `https://accept.paymob.com/api/acceptance/void_refund/void` | Void endpoint. |
 | `IframeBaseUrl` | No | `https://accept.paymob.com/api/acceptance/iframes` | Card iframe base URL. |
 
-### Runtime behavior
+Every URL must be HTTPS, or HTTP on loopback for a test server, with no user info.
 
-- Registers `IPaymobCashInAuthenticator` as singleton
-- Registers `IPaymobCashInBroker` as scoped with typed `HttpClient`
-- Adds named `HttpClient` (`"Headless:PaymobCashIn"`) with a resilience pipeline derived from the declared `Unsafe` effect: no automatic retry on POST, standard retry on GET
+### Design and runtime behavior
+
+- **Broker calls.** `IPaymobCashInBroker` has:
+  - `CreateIntentionAsync`: the intention API; returns the `ClientSecret`.
+  - `CreateOrderAsync` and `RequestPaymentKeyAsync`: the legacy flow.
+  - `CreateWalletPayAsync`, `CreateKioskPayAsync`, `CreateCashCollectionPayAsync`, and `CreateSavedTokenPayAsync`: pay with a payment key on one channel.
+  - `RefundTransactionAsync` and `VoidTransactionAsync`.
+  - `GetTransactionAsync`, `GetTransactionsPageAsync`, `GetOrderAsync`, and `GetOrdersPageAsync`.
+  - `Validate(...)` (four overloads) and `CreateIframeSrc(iframeId, token)`, which builds the card iframe URL.
+- **Errors.** A non-success HTTP response from Paymob throws `PaymobCashInException`.
+- **Constants.** `CashInCallbackTypes` holds `TRANSACTION` and `TOKEN`. `CashInStatuses` holds `pending`, `declined`, and `success`.
+- **Billing data.** `CashInBillingData` takes first name, last name, phone number, and email in its constructor. Its optional address and shipping properties default to `"NA"`.
+- **Secrets in logs.** `PaymobCashInOptions.ToString()` prints `ApiKey`, `Hmac`, and `SecretKey` as `***`.
 
 ---
 
 ## Headless.Payments.Paymob.CashOut
 
-Paymob integration for cash-out (disbursement) operations.
+The Paymob disbursement (cash-out) broker.
 
-### API and behavior
-
-- `IPaymobCashOutBroker` — disbursement operations interface:
-  - `DisburseAsync(request)` — execute disbursement, returns `CashOutTransaction`
-  - `GetBudgetAsync()` — query available balance, returns `CashOutBudgetResponse` (rate-limited to 5 req/min)
-  - `GetTransactionsAsync(ids, isBankTransactions, page)` — paginated transaction lookup, returns `CashOutGetTransactionsResponse`
-- `IPaymobCashOutAuthenticator` — OAuth2 password-grant token management with in-memory caching
-- `CashOutDisburseRequest` — factory methods per channel:
-  - `CashOutDisburseRequest.BankCard(amount, cardNumber, bankCode, transactionType, fullName)`
-  - `CashOutDisburseRequest.BankWallet(amount, phoneNumber, fullName)`
-  - `CashOutDisburseRequest.Vodafone(amount, phoneNumber)`
-  - `CashOutDisburseRequest.Etisalat(amount, phoneNumber)`
-  - `CashOutDisburseRequest.Orange(amount, phoneNumber, fullName)`
-  - `CashOutDisburseRequest.Accept(amount, phoneNumber, firstName, lastName, email)` — Aman kiosk
-- `BankTransactionTypes` — `CashTransfer`, `CreditCard`, `PrepaidCard`, `Salary` constants
-- `CashOutTransaction` — result with status helper methods:
-  - `IsSuccess()`, `IsFailed()`, `IsPending()`, `IsProviderDownError()`, `IsAuthenticationError()`
-  - `IsNotHaveVodafoneCashError()`, `IsNotHaveEtisalatCashError()`, `IsRequestValidationError()`
-- `CashOutBudgetResponse` — budget inquiry result; Paymob reports the balance as a human-readable sentence in `CurrentBudget` (e.g. `"Your current budget is 888.25 LE"`)
-- `CashOutGetTransactionsResponse` — paginated transaction inquiry result (`Count`, `Next`, `Previous`, `Results`)
-- `PaymobCashOutException` — thrown on non-success HTTP responses
-
-### Design constraints
-
-`IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `DisburseAsync(...)` (standard async naming). `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
-
-The broker composes every CashOut request as an absolute URL from the current `PaymobCashOutOptions.ApiBaseUrl`. The typed `HttpClient.BaseAddress` does not select or override the CashOut endpoint.
-
-The CashOut authentication uses OAuth2 password grant, unlike CashIn's proprietary API-key flow. Credentials include `ClientId`/`ClientSecret` for Basic auth on the token endpoint, plus `UserName`/`Password` as the grant body. `TokenRefreshBuffer` (default 10 min) controls how far ahead of expiry to renew.
-
-`ApiBaseUrl` requires HTTPS for external hosts. HTTP is accepted only for loopback development/test servers, and URLs containing userinfo are rejected, so OAuth credentials cannot be configured for remote plaintext transport.
-
-The named HTTP client's resilience pipeline is derived from the declared `OutboundEffect.Unsafe` effect. `/disburse` carries no idempotency key or client reference, so a retried payout POST can pay out twice: POSTs are never retried automatically, while budget and transaction inquiry (GET) keep the standard retry. The derived pipeline removes host-wide resilience handlers (for example `AddHeadless()` service defaults) from this client first, so the rule holds in any host. `configureResilience` runs after the derived defaults; setting `Retry.ShouldHandle` there is the explicit opt-in to retrying POSTs.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Payments.Paymob.CashOut
 ```
 
-### Setup and use
-
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// PaymobCashOutOptions credentials are init-only, so bind them from configuration.
+// The credentials are init-only, so bind them from configuration.
 builder.Services.AddPaymobCashOut(builder.Configuration.GetSection("Paymob:CashOut"));
 ```
 
-Disburse to a mobile wallet:
+```json
+{
+  "Paymob": {
+    "CashOut": {
+      "ApiBaseUrl": "https://disbursement.paymob.com/api/",
+      "UserName": "your-username",
+      "Password": "your-password",
+      "ClientId": "your-client-id",
+      "ClientSecret": "your-client-secret"
+    }
+  }
+}
+```
+
+Pay out to a mobile wallet:
 
 ```csharp
 public sealed class DisbursementService(IPaymobCashOutBroker broker)
@@ -301,7 +283,7 @@ public sealed class DisbursementService(IPaymobCashOutBroker broker)
 }
 ```
 
-Disburse to a bank account:
+Pay out to a bank account:
 
 ```csharp
 var request = CashOutDisburseRequest.BankCard(
@@ -314,98 +296,60 @@ var request = CashOutDisburseRequest.BankCard(
 var result = await broker.DisburseAsync(request, cancellationToken);
 ```
 
+**Verify:** start the host; a missing credential or a non-HTTPS `ApiBaseUrl` fails the start with `OptionsValidationException`. Then call `GetBudgetAsync()`: it proves the credentials without moving money, and a bad credential throws `PaymobCashOutException`.
+
 ### Configuration
 
-#### appsettings.json
+| Option | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `ApiBaseUrl` | Yes | | Cash-out API base URL. HTTPS, or HTTP on loopback for a test server, with no user info. |
+| `UserName` | Yes | | OAuth password-grant user name. |
+| `Password` | Yes | | OAuth password-grant password. |
+| `ClientId` | Yes | | OAuth client id, sent as Basic auth. |
+| `ClientSecret` | Yes | | OAuth client secret, sent as Basic auth. |
+| `TokenRefreshBuffer` | No | `00:10:00` | How long the bearer token is cached. Greater than zero and at most 60 minutes. |
 
-```json
-{
-    "Paymob": {
-        "CashOut": {
-            "ApiBaseUrl": "https://disbursement.paymob.com/api/",
-            "UserName": "your-username",
-            "Password": "your-password",
-            "ClientId": "your-client-id",
-            "ClientSecret": "your-client-secret",
-            "TokenRefreshBuffer": "00:10:00"
-        }
-    }
-}
-```
+### Design and runtime behavior
 
-#### Options (`PaymobCashOutOptions`)
-
-| Property | Required | Default | Description |
-|---|---|---|---|
-| `ApiBaseUrl` | Yes | — | CashOut API base URL. |
-| `UserName` | Yes | — | OAuth2 grant username. |
-| `Password` | Yes | — | OAuth2 grant password. |
-| `ClientId` | Yes | — | OAuth2 Basic auth client ID. |
-| `ClientSecret` | Yes | — | OAuth2 Basic auth client secret. |
-| `TokenRefreshBuffer` | No | `00:10:00` | Token cache duration (max 60 min). |
-
-### Runtime behavior
-
-- Registers `IPaymobCashOutAuthenticator` as singleton
-- Registers `IPaymobCashOutBroker` as scoped with typed `HttpClient`
-- Adds named `HttpClient` (`"Headless:PaymobCashOut"`) with a resilience pipeline derived from the declared `Unsafe` effect: no automatic retry on POST, standard retry on GET
+- **Broker calls.** `IPaymobCashOutBroker` has:
+  - `DisburseAsync(request)`: pays out and returns a `CashOutTransaction`.
+  - `GetBudgetAsync()`: returns `CashOutBudgetResponse`. Paymob reports the balance as a sentence in `CurrentBudget`, such as `"Your current budget is 888.25 LE"`.
+  - `GetTransactionsAsync(transactionsIds, isBankTransactions, page)`: a paginated inquiry; returns `CashOutGetTransactionsResponse` (`Count`, `Next`, `Previous`, `Results`).
+  - Paymob limits `GetBudgetAsync` and `GetTransactionsAsync` to 5 requests per minute.
+- **Channels.** `CashOutDisburseRequest` factories:
+  - `Vodafone(amount, phoneNumber)` and `Etisalat(amount, phoneNumber)`.
+  - `Orange(amount, phoneNumber, fullName)` and `BankWallet(amount, phoneNumber, fullName)`.
+  - `BankCard(amount, cardNumber, bankCode, transactionType, fullName)`, with `transactionType` from `BankTransactionTypes` (`CashTransfer`, `CreditCard`, `PrepaidCard`, `Salary`).
+  - `Accept(amount, phoneNumber, firstName, lastName, email)`: an Aman kiosk payout.
+- **Outcome helpers.** `CashOutTransaction` has `IsSuccess()`, `IsFailed()`, `IsPending()`, `IsProviderDownError()`, `IsAuthenticationError()`, `IsNotHaveVodafoneCashError()`, `IsNotHaveEtisalatCashError()`, and `IsRequestValidationError()`.
+- **Errors.** A non-success HTTP response throws `PaymobCashOutException`.
+- **Endpoint.** Every request goes to an absolute URL built from the current `ApiBaseUrl`. Setting the `HttpClient` base address does not change the endpoint.
 
 ---
 
 ## Headless.Payments.Paymob
 
-Higher-level service layer for Paymob CashIn and CashOut with typed per-channel request/response models, automatic error mapping, and fees calculation.
+Typed cash-in and cash-out services over the two brokers, with fee calculation and error mapping.
 
-### API and behavior
-
-- `IPaymobCashInService` — typed cash-in flows:
-  - `StartAsync(PaymobCardCashInRequest)` → `PaymobCardCashInResponse` (IframeSrc, PaymentKey, OrderId, Expiration)
-  - `StartAsync(PaymobWalletCashInRequest)` → `PaymobWalletCashInResponse` (RedirectUrl, OrderId, Expiration)
-  - `StartAsync(PaymobKioskCashInRequest)` → `PaymobKioskCashInResponse` (BillingReference, OrderId, Expiration)
-  - `StartAsync(PaymobCardSavedTokenCashInRequest)` → `PaymobCardSavedTokenCashInResponse`
-  - `StartAsync(CashInCreateIntentionRequest)` → `CashInCreateIntentionResponse?` (delegates to broker)
-  - `RefundAsync(PaymobRefundRequest)` / `VoidAsync(PaymobVoidRequest)` — post-capture operations
-- `ICashOutService` — typed disbursement flows returning `CashOutResult<T>`:
-  - `DisburseAsync(VodafoneCashOutRequest)` / `EtisalatCashOutRequest` / `OrangeCashOutRequest`
-  - `DisburseAsync(BankWalletCashOutRequest)` / `BankAccountCashOutRequest`
-  - `DisburseAsync(KioskCashOutRequest)` → `CashOutResult<KioskCashOutResponse>` (includes `BillingReference`)
-- `CashOutResult<T>` — discriminated result with `Succeeded`, `Data`, `Error` (`ErrorDescriptor`), and raw `Response` JSON
-- `IPaymobCashInFeesCalculator` / `PaymobCashInFeesCalculator` — fee arithmetic (no network calls):
-  - `CalculateDeductFees(amount)` — total gateway fee that will be deducted from the transaction
-  - `CalculateDeductFeesAndTax(amount)` — breakdown into fee and VAT tax
-  - `AddFeesForNet(net)` — gross amount to charge so the merchant receives at least `net` (rounded up to a whole unit, so it can over-cover by up to 1)
-  - `CalcFeesForNet(net)` — fee portion only for the same inverse calculation
-- `PaymobTransactionResponseCodes` — constants for card response codes (0 = approved, etc.)
-- `PaymobRiskDeclineCodes` — constants for Paymob FMS risk decline codes (111–301)
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Payments.Paymob
 ```
 
-### Setup and use
-
-Register the underlying brokers first, then register the service layer with `AddPaymobServices`:
+Register the brokers first, then the services:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Register brokers
-builder.Services.AddPaymobCashIn(options =>
-{
-    options.ApiKey = builder.Configuration["Paymob:CashIn:ApiKey"]!;
-    options.Hmac = builder.Configuration["Paymob:CashIn:Hmac"]!;
-    options.SecretKey = builder.Configuration["Paymob:CashIn:SecretKey"]!;
-});
-
+builder.Services.AddPaymobCashIn(builder.Configuration.GetSection("Paymob:CashIn"));
 builder.Services.AddPaymobCashOut(builder.Configuration.GetSection("Paymob:CashOut"));
 
-// Register the service layer (IPaymobCashInService, ICashOutService, IPaymobCashInFeesCalculator)
+// IPaymobCashInService, ICashOutService, IPaymobCashInFeesCalculator
 builder.Services.AddPaymobServices();
 ```
 
-`AddPaymobServices` registers the fees calculator with Paymob's default fee structure (6 EGP fixed fee, 2.5% rate, 14% VAT on the fee). To use merchant-specific rates, register your own `IPaymobCashInFeesCalculator` before the call — the registrations use `TryAdd`, so an existing one is preserved:
+`AddPaymobServices` registers the fee calculator with Paymob's default fees: 6 EGP per transaction, 2.5%, and 14% VAT on the fee. To use your merchant's rates, register your own calculator before the call. The services are added only when not already registered, so yours is kept:
 
 ```csharp
 builder.Services.AddSingleton<IPaymobCashInFeesCalculator>(
@@ -445,7 +389,7 @@ public sealed class CheckoutService(IPaymobCashInService cashIn)
 }
 ```
 
-Disburse to a bank account through `ICashOutService`:
+Pay out to a bank account:
 
 ```csharp
 public sealed class PayoutService(ICashOutService cashOut)
@@ -471,10 +415,31 @@ public sealed class PayoutService(ICashOutService cashOut)
 }
 ```
 
+**Verify:** without the broker registrations, resolving `IPaymobCashInService` or `ICashOutService` fails, because `AddPaymobServices` does not register the brokers. In a test, resolve both services from a scope and assert that `IPaymobCashInFeesCalculator.CalculateDeductFees(100m)` matches your merchant's fee for 100 EGP.
+
 ### Configuration
 
-No additional configuration beyond `Headless.Payments.Paymob.CashIn` and `Headless.Payments.Paymob.CashOut`. `PaymobCashInFeesCalculator` accepts constructor parameters for fee rates — pass the values Paymob has configured for your merchant account.
+No options of its own. `PaymobCashInFeesCalculator` takes the fee rates in its constructor: pass the values Paymob set for your merchant account.
 
-### Runtime behavior
+### Design and runtime behavior
 
-`AddPaymobServices()` registers `IPaymobCashInService` and `ICashOutService` as **scoped** (they depend on the scoped brokers) and `IPaymobCashInFeesCalculator` as a **singleton** with Paymob's default fee structure. All three use `TryAdd`, so pre-existing registrations are preserved. It does not register the brokers — call `AddPaymobCashIn` and `AddPaymobCashOut` first.
+- **Cash-in service.** `IPaymobCashInService` has:
+  - `StartAsync(PaymobCardCashInRequest)` returns `PaymobCardCashInResponse` (`IframeSrc`, `PaymentKey`, `OrderId`, `Expiration`).
+  - `StartAsync(PaymobWalletCashInRequest)` returns `PaymobWalletCashInResponse` (`RedirectUrl`, `OrderId`, `Expiration`).
+  - `StartAsync(PaymobKioskCashInRequest)` returns `PaymobKioskCashInResponse` (`BillingReference`, `OrderId`, `Expiration`).
+  - `StartAsync(PaymobCardSavedTokenCashInRequest)` returns `PaymobCardSavedTokenCashInResponse`.
+  - `StartAsync(CashInCreateIntentionRequest)` passes through to the broker.
+  - `RefundAsync(PaymobRefundRequest)` and `VoidAsync(PaymobVoidRequest)`.
+- **Amounts.** The service takes decimal EGP and converts to cents. It rounds a fraction of a cent up on a charge and down on a refund, so partial refunds of one charge never add up to more than it: three refunds of `100m / 3` ask for 9,999 cents of a 10,000-cent charge. As a result, a full refund of a charge with a fraction of a cent, such as `10.005m`, returns one cent less than was charged (1,000 of 1,001 cents). Charge whole cents to avoid it.
+- **Invalid amounts.** A zero or negative charge or refund, or a refund under one cent, throws `ArgumentOutOfRangeException` before any call to Paymob.
+- **Cash-out service.** `ICashOutService.DisburseAsync` takes `VodafoneCashOutRequest`, `EtisalatCashOutRequest`, `OrangeCashOutRequest`, `BankWalletCashOutRequest`, `BankAccountCashOutRequest`, or `KioskCashOutRequest`, and returns `CashOutResult<T>`. A kiosk payout's data includes the `BillingReference`.
+- **Cash-out result.** `CashOutResult<T>` has `Succeeded`, `Data` (non-null on success), `Error` (an `ErrorDescriptor`, non-null on failure), and `Response` (the raw JSON). A pending payout counts as `Succeeded`.
+- **Fees.** `IPaymobCashInFeesCalculator` does arithmetic only, with no network call:
+  - `CalculateDeductFees(amount)`: the total fee Paymob deducts.
+  - `CalculateDeductFeesAndTax(amount)`: the fee and the VAT on it.
+  - `AddFeesForNet(net)`: the gross amount to charge so you receive at least `net`. It rounds up to a whole unit, so it can over-cover by up to 1.
+  - `CalcFeesForNet(net)`: the fee part of that gross amount.
+  - A zero or negative amount throws `ArgumentOutOfRangeException`.
+- **Response codes.** `PaymobTransactionResponseCodes` holds card response codes (`0` is approved). `PaymobRiskDeclineCodes` holds Paymob fraud-check decline codes (111 to 301).
+- **Customer data in logs.** `PaymobCashInCustomerData.ToString()` redacts every field, so a logged request never carries customer PII.
+- **Lifetimes.** `IPaymobCashInService` and `ICashOutService` are scoped. `IPaymobCashInFeesCalculator` is a singleton.

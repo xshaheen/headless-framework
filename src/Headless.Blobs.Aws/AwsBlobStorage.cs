@@ -5,7 +5,6 @@ using System.IO;
 using System.Net;
 using Amazon.S3;
 using Amazon.S3.Model;
-using Headless.Blobs.Internal;
 using Headless.Checks;
 using Headless.IO;
 using Headless.Primitives;

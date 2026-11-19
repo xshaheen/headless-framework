@@ -5,126 +5,98 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, EntityFramework.T
 
 # Testing
 
-> Base classes and Docker-backed fixtures for xUnit unit and integration tests.
+> Test base classes, an ASP.NET Core test host, Docker-backed fixtures, and tenant-isolation assertions for an application's xUnit v3 tests.
 
 ## Orientation
 
-- `Headless.Testing` -- base classes (`TestBase`), retry attributes, fake helpers (`TestCurrentUser`, `TestCurrentTenant`), the `AddTestTimeProvider()` DI extension, and assertion extensions. Used for unit tests.
-- `Headless.Testing.AspNetCore` -- `HeadlessTestServer<TProgram>`, a `WebApplicationFactory<TProgram>` wrapper with deterministic time, DI-scope helpers, readiness polling, and Respawner-based database reset. Used for ASP.NET Core integration tests.
-- `Headless.Testing.Testcontainers` -- pre-configured Docker container fixtures (e.g., `HeadlessRedisFixture`). Used for integration tests requiring real infrastructure.
-- `Headless.EntityFramework.Testing` -- `TenantIsolationDbAssertions`, which prove a tenant-owned EF Core entity is invisible and unwritable to another tenant. Pairs with `TenantWorld` and `TenantIsolationHttpAssertions` from `Headless.Testing`; see [Tenant isolation](#tenant-isolation).
-- `Headless.Messaging.Testing` -- `MessagingTestHarness` that records messages at the transport boundary (covers outboxed and direct-published) and exposes typed `WaitForPublishedAsync`/`WaitForConsumedAsync`/`WaitForFaultedAsync`/`WaitForTerminalAsync` APIs.
+Pick the package by the kind of test you write:
 
-Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, and `AbortToken` out of the box. Integration tests typically build a shared xUnit collection fixture around `HeadlessTestServer<TProgram>` plus any required Testcontainers fixtures, then derive per-test classes from an `IntegrationTestBase : TestBase` that resets fixture state per test.
+| Package | Use for | Main types |
+| --- | --- | --- |
+| `Headless.Testing` | Unit tests | `TestBase`, `Bounded()`, `AddTestTimeProvider()`, `TestCurrentUser`, `TestCurrentTenant`, `TelemetryRecorder`, `TenantWorld`, `TenantIsolationHttpAssertions` |
+| `Headless.Testing.AspNetCore` | Integration tests of an ASP.NET Core host | `HeadlessTestServer<TProgram>`, `DatabaseReset` |
+| `Headless.Testing.Testcontainers` | Integration tests that need a real database, cache, broker, or blob store | `HeadlessPostgreSqlFixture`, `HeadlessSqlServerFixture`, `HeadlessRedisFixture`, `HeadlessRabbitMqFixture`, and the other fixtures |
+| `Headless.EntityFramework.Testing` | Proving an EF Core entity is isolated per tenant | `TenantIsolationDbAssertions` |
+| `Headless.Messaging.Testing` | Asserting published, consumed, and faulted messages | `MessagingTestHarness`, documented in [messaging.md](messaging/test-harness.md#headlessmessagingtesting) |
+
+The packages build on xUnit v3, AwesomeAssertions (a FluentAssertions fork), Bogus, and `Microsoft.Extensions.TimeProvider.Testing`. Write the application's tests on the same stack.
+
+The default integration setup is one xUnit collection fixture that owns a `HeadlessTestServer<Program>` and any container fixtures, plus an `IntegrationTestBase : TestBase` that resets shared state before each test.
 
 ## Agent Rules
 
-- Use `Headless.Testing` for all unit tests. Inherit from `TestBase` to get `Logger` (ILogger), `Faker` (Bogus), and `AbortToken` (CancellationToken) for free.
-- Bound every wait on a signal another thread, timer, or handler completes with `.Bounded()`: `await released.Task.Bounded()`, `await gate.WaitAsync(AbortToken).Bounded()`. An `await` with no limit turns one regression into a hang of the whole test module until the runner's timeout, which names no test; the bound fails that one test instead. The limit is a ceiling for a stuck wait, never a timing assertion, so do not tighten it to check speed.
-- Use `RetryFactAttribute` / `RetryTheoryAttribute` for flaky tests (e.g., network-dependent). Set `MaxRetries` explicitly.
-- Use `FakeTimeProvider` (from `Microsoft.Extensions.TimeProvider.Testing`) to control time in tests: construct one, inject it wherever a `TimeProvider` is needed, and call `Advance(TimeSpan)` / `SetUtcNow(...)` to simulate time passing. The framework ships no clock wrapper of its own -- `TimeProvider` **is** the abstraction.
-- Use `TestCurrentUser` and `TestCurrentTenant` for faking auth/tenant context in unit tests.
-- For tenant-isolation tests, use `TenantWorld` for the two tenants and their scopes, `TenantIsolationDbAssertions` for EF Core reads and writes, and `TenantIsolationHttpAssertions` for routes. Do not hand-roll a forged-claim battery: the tenant catalog's identifier/claim mismatch enforcement already rejects a principal whose tenant claim disagrees with the resolved tenant.
-- For ASP.NET Core integration tests, use `HeadlessTestServer<TProgram>` from `Headless.Testing.AspNetCore` rather than wiring `WebApplicationFactory<TProgram>` by hand. Wrap it for project-shaped helpers; do not reimplement its time control, DB reset, or scope-execution surface.
-- Tag every integration test with `[Trait("Category", "Integration")]` so CI can filter it from the unit-test lane and run it on a Docker-capable runner.
-- Use an xUnit collection fixture (not a class fixture) to share the test server across an entire test collection. Reset per-test state (DB, messaging harness, ambient time) via a `Fixture.ResetStateAsync()`-style hook called from `IntegrationTestBase.InitializeAsync()` so tests have no ordering dependency.
-- Resolve the time double through the abstract service type: `serviceProvider.GetRequiredService<TimeProvider>()` returns the `FakeTimeProvider` registered by `AddTestTimeProvider()`. The concrete `FakeTimeProvider` type is not registered as itself, so cast the resolved `TimeProvider` (or keep the instance `AddTestTimeProvider()` returned).
-- Advance time before seeding test data so timestamps have a known reference point. Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into the provider directly.
-- A `FakeTimeProvider` registered as the app clock does not drive the waits that ride out a failure (retry back-offs, reconnects, I/O timeouts); they run on the system clock so a never-advanced fake still recovers. Messaging resolves its waits of that kind from a separate keyed clock that a test can replace; see [messaging.md](messaging.md#headlessmessagingtesting).
-- A `FakeTimeProvider` only fakes the **app clock** -- the "when did this happen?" authority (audit fields, `CreatedAt`, logs). It cannot fake the store's clock, so lease/lock/TTL expiry driven by PostgreSQL, SQL Server, or Redis still needs a real wall-clock wait in an integration test. Anything that decides ownership deserves a clock-skew test: set the `FakeTimeProvider` far away from real time and assert the behavior is unchanged. See [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
-- Use `MessagingTestHarness` from `Headless.Messaging.Testing` to assert published, consumed, faulted, and exhausted messages. Do not query the outbox table directly -- direct-published messages bypass it.
-- When asserting EF-persisted timestamps, use `Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1))` rather than exact equality to absorb storage-precision truncation.
-- Remember what Respawner-based DB reset does **not** clear: distributed caches, in-process singletons, `MessagingTestHarness` observation buffers, ambient tenant/user scopes. Reset those explicitly per test.
-- To run a test against a host configured differently (another cache provider, a feature flag, an extra controller), call `await using var variant = await App.DeriveAsync(...)`. Never call `App.Factory.WithWebHostBuilder(...)`: that host skips the initializer wait, readiness checks, shared clock, and database reset, and stays alive until the fixture is disposed.
-- Use `Headless.Testing.Testcontainers` only for integration tests. It requires Docker to be running.
-- `HeadlessRedisFixture` provides a Redis 7 Alpine container. Access connection string via `_redis.Container.GetConnectionString()`.
-- Test lifecycle: override `InitializeAsync()` for setup and `DisposeAsyncCore()` for teardown in `TestBase` subclasses.
-- The project uses `xunit.v3`, `AwesomeAssertions` (fork of FluentAssertions), `NSubstitute`, and `Bogus`. Use these, not alternatives.
+- Derive test classes from `TestBase`. It gives `Logger` (written to the test's output), `Faker` (Bogus), and `AbortToken` (the running test's cancellation token). Pass `AbortToken` to every async call.
+- Bound every wait on a signal that another thread, timer, or handler completes with `.Bounded()`: `await released.Task.Bounded()`. An unbounded `await` turns one regression into a hang of the whole test run. The limit is a ceiling for a stuck wait, so do not tighten it to assert speed.
+- To control the app clock, use `FakeTimeProvider`. In a container, call `services.AddTestTimeProvider()`. In a `HeadlessTestServer`, call `App.AdvanceTime(...)` or `App.SetTime(...)`. Do not write a clock wrapper: `TimeProvider` is the abstraction.
+- Resolve the fake clock as `TimeProvider`, not as `FakeTimeProvider`: `(FakeTimeProvider)provider.GetRequiredService<TimeProvider>()`. The concrete type is not registered.
+- A `FakeTimeProvider` does not move lease, lock, or TTL expiry that PostgreSQL, SQL Server, or Redis decides, and it does not drive retry back-offs, reconnects, or I/O timeouts, which wait real time. Test those with a real wait in an integration test.
+- For ASP.NET Core integration tests, use `HeadlessTestServer<TProgram>`, not a hand-wired `WebApplicationFactory<TProgram>`. Wrap it for project helpers. Do not reimplement its clock, database reset, or scope execution.
+- To run a test against a host configured differently, call `await using var variant = await App.DeriveAsync(...)`. Never call `App.Factory.WithWebHostBuilder(...)`: that host skips the warm-up wait, readiness checks, shared clock, and database reset, and stays alive until the fixture is disposed.
+- Share the test server through an xUnit collection fixture, not a class fixture. Reset shared state from `IntegrationTestBase.InitializeAsync()` so tests run in any order.
+- `ResetDatabaseAsync()` clears database rows only. Reset distributed caches, singleton state, the `MessagingTestHarness` (`App.Services.ResetMessagingHarnessAsync()`), ambient tenant and user scopes, and external fakes yourself.
+- Assert EF-persisted timestamps with `Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1))`, not exact equality. The column stores fewer digits than a .NET tick.
+- Use `MessagingTestHarness` to assert messages. Do not query the outbox table: a direct-published message never enters it.
+- For tenant isolation, use `TenantWorld`, `TenantIsolationDbAssertions`, and `TenantIsolationHttpAssertions`. Do not hand-roll a forged-claim test: tenant resolution already rejects a principal whose tenant claim disagrees with the resolved tenant.
+- Use `Headless.Testing.Testcontainers` only in integration tests. It needs a running Docker engine.
 
 ---
+
 ## Headless.Testing
 
-Core testing utilities and base classes for xUnit tests.
+Base classes, waits, clock and context fakes, telemetry recording, and assertions for unit tests.
 
-### API and behavior
-
-- `TestBase` - Abstract base class with lifecycle, logging, and Faker
-- `RetryFactAttribute` / `RetryTheoryAttribute` - Automatic test retry on failure
-- `AlfaTestsOrderer` - Alphabetical test ordering
-- `TestHelpers` - Logging factory and utility methods
-- `TestCurrentUser` / `TestCurrentTenant` - Fake context implementations
-- `TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(...)` - Asserts a cross-tenant request answers exactly like a missing id, over any `HttpClient`; see [Tenant isolation](#tenant-isolation)
-- `TenantWorld` - Tenants A and B over one `ICurrentTenant`, with `AsTenantA()`, `AsTenantB()`, `AsTenant(id)`, and `AsHost()` scopes and a static `CreatePrincipal(tenantId)`; see [Tenant isolation](#tenant-isolation)
-- `RecordedTestActivity.Start()` - Starts a fully recorded `Activity` on a private source and makes it `Activity.Current`, so a test can assert span tags without an OpenTelemetry pipeline; the listener samples only that source
-- `TelemetryRecorder(sourceName, spans, metrics)` - Records the stopped activities and the meter measurements (instrument, unit, value, tags) of one named source, through `Activities`, `Measurements`, and `Of(instrument)`. Use it instead of a hand-written listener that appends to a `List`: listeners are process-wide, so other tests running in parallel fire the callback on their own threads, and the recorder's queues are safe for that. It still receives those tests' telemetry for the same source name, so filter assertions by a tag unique to the test, or run the class in a non-parallel collection
-- `AddTestTimeProvider()` - Replaces the container's `TimeProvider` with a `FakeTimeProvider` and returns it
-- `task.Bounded(timeout?)` - Waits for a `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>` for at most `HeadlessTestTaskExtensions.DefaultTimeout` (30 s) or the given limit, and until the running test is cancelled. On expiry it throws a `TimeoutException` naming the awaited expression (`Waited 30 s for 'released.Task', which did not complete.`); a `TimeoutException` the task itself threw passes through unchanged. Lives in `System.Threading.Tasks`, so it needs no `using`
-- Assertion extensions for async operations
-- `AllBeSecretHashes(algorithmId)` - Asserts a string collection (for example a queried hash column) holds only PHC-encoded secret hashes of one algorithm; failures name the offending index and reason, never the value (see [hashing.md](hashing.md))
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Testing
 ```
 
-### Setup and use
-
 ```csharp
+using Headless.Testing.Tests;
+
 public sealed class OrderServiceTests : TestBase
 {
-    private readonly OrderService _sut;
-
-    public OrderServiceTests()
-    {
-        _sut = new OrderService(Logger);
-    }
-
     [Fact]
     public async Task should_create_order()
     {
         // given
-        var order = Faker.OrderFaker().Generate();
+        var sut = new OrderService(Logger);
+        var customer = Faker.Person.FullName;
 
         // when
-        var result = await _sut.CreateAsync(order, AbortToken);
+        var result = await sut.CreateAsync(customer, AbortToken);
 
         // then
         result.Should().NotBeNull();
     }
-
-    [RetryFact(MaxRetries = 3)]
-    public async Task should_handle_flaky_operation()
-    {
-        // Test with automatic retry on failure
-    }
 }
 ```
 
-### Setup and use
+**Verify:** the test runs under `dotnet test`, and lines written through `Logger` appear in that test's output.
 
-#### Test Lifecycle
+### API
+
+| Member | Namespace | Behavior |
+| --- | --- | --- |
+| `TestBase` | `Headless.Testing.Tests` | `Logger`, `LoggerFactory`, `LoggerProvider`, `Faker`, and the static `AbortToken`. Override `InitializeAsync()` for per-test setup and `DisposeAsyncCore()` for teardown; call the base method. |
+| `task.Bounded(timeout?)` | `System.Threading.Tasks` (no `using` needed) | Waits for a `Task`, `Task<T>`, `ValueTask`, or `ValueTask<T>` for at most `HeadlessTestTaskExtensions.DefaultTimeout` (30 seconds) or the given limit, and until the running test is cancelled. On expiry it throws `TimeoutException` naming the awaited expression: `Waited 30 s for 'released.Task', which did not complete.` A `TimeoutException` the task throws itself passes through unchanged. |
+| `services.AddTestTimeProvider()` | `Headless.Testing.DependencyInjection` | Removes every `TimeProvider` registration, registers a `FakeTimeProvider` as `TimeProvider`, and returns it. It replaces the `TimeProvider.System` default that provider packages register. |
+| `RetryFactAttribute`, `RetryTheoryAttribute` | `Headless.Testing.Retry` | Run the test up to `MaxRetries` total attempts (default 3) and report the last failure. A retry hides a race in the code under test, so reserve them for a dependency you do not control. |
+| `AlphaTestsOrderer` | `Headless.Testing.Order` | Orders test cases alphabetically by method name: `[TestCaseOrderer(typeof(AlphaTestsOrderer))]`. |
+| `TestCurrentUser`, `TestCurrentTenant` | `Headless.Testing` | Settable `ICurrentUser` and `ICurrentTenant` for unit tests. `TestCurrentTenant.Change(id, name)` returns a scope that restores the previous tenant. |
+| `TestHelpers` | `Headless.Testing` | `CreateXUnitLoggerFactory(...)`, a shared `JsonSerializerOptions`, and `PrettyPrintJson()`. |
+| `RecordedTestActivity.Start()` | `Headless.Testing` | Starts a fully recorded `Activity` on a private source and makes it `Activity.Current`, so a test asserts span tags without an OpenTelemetry pipeline. Dispose it to stop it. |
+| `TelemetryRecorder(sourceName, spans, metrics)` | `Headless.Testing` | Records the stopped activities and meter measurements of one named source through `Activities`, `Measurements`, and `Of(instrument)`. See [Telemetry assertions](#telemetry-assertions). |
+| `ThrowConflictExceptionAsync()`, `ThrowEntityNotFoundExceptionAsync()` | `AwesomeAssertions.Specialized` | Assert an async call throws `ConflictException` or `EntityNotFoundException`. |
+| `AllBeSecretHashes(algorithmId)` | `AwesomeAssertions.Collections` | Asserts a string collection, such as a queried hash column, holds only PHC-encoded secret hashes of one algorithm. A failure names the index and the reason, never the value. See [hashing.md](hashing.md). |
+| `faker.NullableBool()` | `Bogus` | A random `bool?`. |
+| `TenantWorld`, `TenantIsolationHttpAssertions` | `Headless.Testing` | See [Tenant isolation](#tenant-isolation). |
+
+### Controllable time
 
 ```csharp
-public sealed class MyTests : TestBase
-{
-    public override async ValueTask InitializeAsync()
-    {
-        // Called before each test
-        await base.InitializeAsync();
-    }
+using Microsoft.Extensions.Time.Testing;
 
-    protected override async ValueTask DisposeAsyncCore()
-    {
-        // Called after each test
-        await base.DisposeAsyncCore();
-    }
-}
-```
-
-#### Controllable Time
-
-```csharp
 var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
 var service = new ExpirationService(timeProvider); // takes a TimeProvider
 
@@ -132,67 +104,47 @@ timeProvider.Advance(TimeSpan.FromDays(30));
 var isExpired = service.IsExpired(); // true
 ```
 
-To swap the double into a whole container, use `AddTestTimeProvider()` from `Headless.Testing.DependencyInjection`. It does `RemoveAll<TimeProvider>()` + `AddSingleton<TimeProvider>(fake)` -- so it overrides the `TryAddSingleton(TimeProvider.System)` that provider packages register defensively -- and returns the instance:
+To put the fake clock in a container:
 
 ```csharp
+using Headless.Testing.DependencyInjection;
+
 var services = new ServiceCollection();
 services.AddMyFeature();
 
-var timeProvider = services.AddTestTimeProvider(); // returns the registered FakeTimeProvider
+var timeProvider = services.AddTestTimeProvider(); // the registered FakeTimeProvider
 
 var provider = services.BuildServiceProvider();
 timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
 ```
 
+The fake clock is the app clock: the authority for when something happened (audit fields, `CreatedAt`, logs). Ownership time, such as lease, lock, and TTL expiry, belongs to the store's clock. To prove code that decides ownership does not read the app clock, set the `FakeTimeProvider` far from real time and assert the behavior does not change.
+
+### Telemetry assertions
+
+Use `TelemetryRecorder` instead of a hand-written `ActivityListener` that appends to a `List`. Listeners are process-wide, so tests running in parallel fire the callback on their own threads, and the recorder's queues are safe for that. The recorder still receives those tests' telemetry for the same source name. Filter assertions by a tag unique to the test, or run the class in a non-parallel collection.
+
 ### Configuration
 
-No configuration required.
-
-### Runtime behavior
-
 None.
+
 ---
+
 ## Headless.Testing.AspNetCore
 
-ASP.NET Core integration-test host wrapper with controllable time, DI-scope helpers, readiness polling, database reset, and messaging-harness reset.
+`HeadlessTestServer<TProgram>`: an integration-test host over `WebApplicationFactory<TProgram>` with a fake clock, scope helpers, warm-up and readiness waits, and database reset.
 
-### API and behavior
-
-- `HeadlessTestServer<TProgram>` -- owns the `WebApplicationFactory<TProgram>` and lifts its surface to a deterministic-by-default API.
-- Registers a `FakeTimeProvider` as the host's `TimeProvider` before `configureTestServices` runs, so tests control the app clock end-to-end. `App.TimeProvider` is whatever clock the host resolves.
-- `AdvanceTime(TimeSpan)` and `SetTime(DateTimeOffset)` move the fake clock and return the resulting UTC time.
-- A host that must run on another clock, such as `TimeProvider.System`, registers it in `configureTestServices`. The server starts on that clock; only `AdvanceTime` and `SetTime` throw `InvalidOperationException`, because they need a `FakeTimeProvider`.
-- `configureHost` (`Action<IHostBuilder>`) reaches generic-host settings that `IWebHostBuilder` cannot, such as `UseDefaultServiceProvider(...)`, `ConfigureHostOptions(...)`, or a logging provider that plugs into `IHostBuilder`. It runs after `configureWebHost`, just before the host is built.
-- `ExecuteScopeAsync(...)` opens a DI scope (optionally with a `ClaimsPrincipal`) for scoped operations.
-- `AddReadinessCheck(...)` registers a readiness check; `InitializeAsync()` runs the registered checks in order after host startup, each under its own timeout, before tests run.
-- `ConfigureDatabaseReset(...)` + `ResetDatabaseAsync()` integrate Respawner with retry. The reset keeps framework bookkeeping: both history tables always, and the host-state tables framework features declare by default (see [Tables a Reset Preserves](#tables-a-reset-preserves)).
-- `DeriveAsync(configureTestServices, configureWebHost, configureHost)` starts an initialized variant of the server with extra settings layered on its own (see [Varying Host Settings per Test](#varying-host-settings-per-test)).
-- Database reset APIs default to the active xUnit test's cancellation token. The server retries
-  database, I/O, socket, and broken-connection failures up to three times, replacing the reset
-  connection between attempts.
-- The server carries no messaging dependency. To reset a `MessagingTestHarness` registered in the host, call `App.Services.ResetMessagingHarnessAsync()` from `Headless.Messaging.Testing` (see [messaging.md](messaging.md#headlessmessagingtesting)).
-
-### Design constraints
-
-Respawn 7 does not expose cancellation tokens for its internal database commands. Headless closes
-the active reset connection when cancellation is requested and keeps the reset gate held until
-Respawn unwinds, preventing abandoned commands from racing the next reset. A cancelled standalone
-reset therefore leaves its caller-owned connection closed. The server replaces closed connections
-and transiently failed connections through `ConnectionProvider` before the next attempt.
-
-The built-in retry set covers `DbException`, `IOException`, `SocketException`, and exceptions that
-wrap one of those types. Use `AdditionalTransientExceptionFilter` for a provider-specific transient
-shape such as a bare `InvalidOperationException`; deterministic exceptions fail immediately.
-
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.Testing.AspNetCore
 ```
 
-### Setup and use
-
 ```csharp
+using Headless.Testing.AspNetCore;
+using Headless.Testing.Tests;
+using Npgsql;
+
 [CollectionDefinition(nameof(IntegrationTestCollection))]
 public sealed class IntegrationTestCollection : ICollectionFixture<TestFixture>;
 
@@ -202,12 +154,6 @@ public sealed class TestFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        App.AddReadinessCheck(async sp =>
-        {
-            var bootstrapper = sp.GetRequiredService<IBootstrapper>();
-            await bootstrapper.BootstrapAsync(); // joins the in-flight startup; returns once it completes
-        });
-
         App.ConfigureDatabaseReset(options => options.ConnectionProvider = _ => new NpgsqlConnection("..."));
 
         await App.InitializeAsync();
@@ -216,13 +162,12 @@ public sealed class TestFixture : IAsyncLifetime
     public async Task ResetStateAsync()
     {
         await App.ResetDatabaseAsync();
-        await App.Services.ResetMessagingHarnessAsync(); // Headless.Messaging.Testing
+        await App.Services.ResetMessagingHarnessAsync(); // Headless.Messaging.Testing, when the host uses it
     }
 
     public async ValueTask DisposeAsync() => await App.DisposeAsync();
 }
 
-[Trait("Category", "Integration")]
 [Collection(nameof(IntegrationTestCollection))]
 public abstract class IntegrationTestBase(TestFixture fixture) : TestBase
 {
@@ -237,84 +182,75 @@ public abstract class IntegrationTestBase(TestFixture fixture) : TestBase
 }
 ```
 
-### Setup and use
+**Verify:** `App.InitializeAsync()` completes, and `App.Services.GetRequiredService<TimeProvider>()` is a `FakeTimeProvider`. A host whose gating warm-ups do not finish fails the fixture with a `TimeoutException` naming each pending warm-up. A missing resource fails it with the host's startup error.
 
-#### Deferred Initialization
+### What the server does on start
 
-`HeadlessTestServer<TProgram>` follows xUnit v3 `IAsyncLifetime` semantics -- the host starts inside `InitializeAsync()`, not the constructor. Fixture types should call `App.InitializeAsync()` from their own `InitializeAsync()` so the WAF, time provider, readiness checks, and DI scope are wired before the first test runs. Resolving from `App.Services` before `InitializeAsync()` completes throws.
+`InitializeAsync()` starts the host, not the constructor. Fixture types call `App.InitializeAsync()` from their own `InitializeAsync()`. Reading `App.Factory`, `App.Services`, or `CreateClient()` before it completes throws `InvalidOperationException` ("Server not initialized").
 
-#### Test Fixture Composition
+On start, the server does these steps in order:
 
-- Use an xUnit **collection fixture** (`ICollectionFixture<TFixture>` + `[CollectionDefinition]`) rather than a class fixture. The integration host is expensive to construct, so sharing it across an entire test collection (often the whole assembly) is the right unit of reuse.
-- Expose a `Fixture.ResetStateAsync()` hook from the fixture that resets every piece of state that crosses tests: DB rows via `App.ResetDatabaseAsync()`, messaging observations via `await App.Services.ResetMessagingHarnessAsync()` (`Headless.Messaging.Testing`), ambient `ICurrentTenant`/`ICurrentUser` scopes, time, and any test-owned WireMock servers.
-- Call `Fixture.ResetStateAsync()` from `IntegrationTestBase.InitializeAsync()` so tests run in any order without ordering coupling. Avoid relying on xUnit test ordering or `[Trait("Order", ...)]` for state setup.
-- Tag every integration class with `[Trait("Category", "Integration")]` so CI can run integration and unit lanes on different runners (only the integration lane needs Docker).
+1. Registers a `FakeTimeProvider` as the host's `TimeProvider`, then runs `configureTestServices`.
+2. Runs the deploy steps that `AddDeployStepsOnStartup` runs: it provisions every resource and runs every seeder, through `TryAddDeployStepsOnStartup`. Pass `setupResources: false` or `seed: false` to skip either step. An application that registers the startup deploy steps itself keeps its own choice. See [utilities.md](utilities.md#resource-provisioning) and [utilities.md](utilities.md#database-seeders).
+3. Waits for every warm-up that gates readiness, up to `warmupTimeout` (default 60 seconds). See [utilities.md](utilities.md#warm-up).
+4. Runs each `AddReadinessCheck` probe in registration order, each under its own timeout (default 30 seconds). A probe that times out throws `TimeoutException`.
 
-#### Wrapping `HeadlessTestServer`
+### API
 
-Most projects benefit from a thin app-specific wrapper that adds project-shaped helpers on top of the framework type. When you wrap:
+| Member | Behavior |
+| --- | --- |
+| `TimeProvider` | The clock the host resolves: the `FakeTimeProvider`, unless `configureTestServices` registered another one. |
+| `AdvanceTime(TimeSpan)`, `SetTime(DateTimeOffset)` | Move the fake clock and return the resulting UTC time. Both throw `InvalidOperationException` when the host runs on another clock. |
+| `ExecuteScopeAsync(...)` | Runs a delegate in a new DI scope, optionally with a `ClaimsPrincipal`. Returns the delegate's result when it has one. |
+| `CreateClient()` | An `HttpClient` to the in-memory server. |
+| `AddReadinessCheck(check, timeout)` | Adds a post-start probe. Call it before `InitializeAsync()`. |
+| `ConfigureDatabaseReset(configure)` | Turns on Respawn-based reset. Call it before `InitializeAsync()`. Reset is off until you call it. |
+| `ResetDatabaseAsync(cancellationToken)` | Clears application tables. See [Database reset](#database-reset). |
+| `DeriveAsync(configureTestServices, configureWebHost, configureHost)` | Starts an initialized variant host. See [Varying host settings per test](#varying-host-settings-per-test). |
+| `serviceProvider.SetHttpContext(principal, remoteIp, userAgent)` | Creates a `DefaultHttpContext` on a scoped provider and assigns it to `IHttpContextAccessor`, for code that reads the current request outside a real request. Its feature collection is minimal, so code that reads `IHttpConnectionFeature` directly gets `null`. |
 
-- **Delegate** WAF lifecycle, time control, DB reset, readiness, scope execution, and messaging-harness reset to `HeadlessTestServer<TProgram>`.
-- **Add only** project-shaped helpers: typed scoped resolvers (e.g., `GetDbExecutor<T>()`), default-argument overloads (e.g., `AdvanceTime()` defaulting to one hour), or app-specific service factories.
-- **Do not** reimplement `ExecuteScopeAsync`, time advancement, or database reset. Duplicating the lifecycle is the most common source of drift between the wrapper and the framework type.
+### Configuration
 
-#### Resolving `FakeTimeProvider`
+`HeadlessTestServer<TProgram>` takes no options class. Configure it through its constructor and the methods above.
 
-`AddTestTimeProvider()` (called internally during host setup) replaces the `TimeProvider` registration with a `FakeTimeProvider`. It registers against the abstract service type only:
+| Constructor parameter | Default | Effect |
+| --- | --- | --- |
+| `configureTestServices` | `null` | DI registrations applied after the application's own. Register another `TimeProvider` here, such as `TimeProvider.System`, to run the host on that clock. |
+| `configureWebHost` | `null` | Web host settings, such as the environment and configuration values. |
+| `configureHost` | `null` | Generic-host settings with no web-host equivalent: `UseDefaultServiceProvider(...)`, `ConfigureHostOptions(...)`, or a logging provider for `IHostBuilder`. Runs after `configureWebHost`, just before the host is built. |
+| `warmupTimeout` | 60 seconds | How long the gating warm-ups may take before a `TimeoutException` names each pending one. |
+| `setupResources` | `true` | Provisions every resource on start. Pass `false` for a test whose resources already exist or that tests the startup check. |
+| `seed` | `true` | Runs every seeder on start, so definitions and scheduled jobs exist before the tests. |
 
-```csharp
-// Correct
-var fake = (FakeTimeProvider)serviceProvider.GetRequiredService<TimeProvider>();
+`DatabaseResetOptions`, passed to `ConfigureDatabaseReset`:
 
-// Incorrect -- the concrete type is not registered
-var fake = serviceProvider.GetRequiredService<FakeTimeProvider>();
-```
+| Property | Default | Effect |
+| --- | --- | --- |
+| `ConnectionProvider` | `null` | Required for `ResetDatabaseAsync()`. Returns an unopened `DbConnection` to the test database. |
+| `DbAdapter` | `DbAdapter.Postgres` | The Respawn adapter for the database engine. |
+| `TablesToPreserve` | empty | Your tables whose rows survive a reset, such as reference data seeded once at startup. A `Table` without a schema matches the name in every schema. |
+| `PreserveHostStateTables` | `true` | Also keeps the host-state tables framework features declare. Set `false` only for a test that re-runs the startup work that writes them. |
+| `AdditionalTransientExceptionFilter` | `null` | Adds a provider-specific transient exception, such as a bare `InvalidOperationException`, to the retry set. |
 
-Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into the provider directly; both return the resulting UTC time. `App.TimeProvider` is typed `TimeProvider`, so cast it to `FakeTimeProvider` for members the server does not lift, such as `AutoAdvanceAmount`.
+### Database reset
 
-This controls the **app clock** only -- the authority for "when did this happen?" timestamps (audit fields, `CreatedAt`, logs). Lease, lock, and TTL expiry are owned by the store's clock (PostgreSQL, SQL Server, Redis) and are unaffected by advancing the fake, so those still need a real wall-clock wait. That separation is deliberate: because ownership time never passes through the app clock, a test can hold the `FakeTimeProvider` far from real time and correct behavior must not change. See [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
-
-#### Auto-Applied EF Query Filters in Tests
-
-`HeadlessEntityModelProcessor` (from `Headless.EntityFramework`) auto-applies global query filters for two interfaces. They apply in integration tests exactly as in production:
-
-| Interface | Filter predicate | Effect |
-|-----------|------------------|--------|
-| `IMultiTenant` | `TenantId == ICurrentTenant.Id` | Rows scoped to current tenant |
-| `IDeleteAudit` | `IsDeleted == false` | Soft-deleted rows hidden |
-
-`IgnoreQueryFilters()` is rarely needed in tests because seeded data uses default flag values (`IsDeleted = false`) and runs under whatever tenant scope the test established. Reach for it only when:
-
-- The test explicitly seeds `IsDeleted = true` and needs to read the row back.
-- The test is verifying the filter's own behavior (bypass, cross-tenant isolation, etc.).
-
-For multi-tenant assertions, change the current tenant inside a `using` scope rather than bypassing the filter:
-
-```csharp
-var tenant = serviceProvider.GetRequiredService<ICurrentTenant>();
-using (tenant.Change(tenantId, "Test Tenant"))
-{
-    // Code inside this scope runs as the specified tenant.
-}
-```
-
-`ICurrentTenant.Change(...)` returns a disposable that restores the previous tenant on exit. See [multi-tenancy.md](multi-tenancy.md) for the full ownership and bypass model, including the `// MULTI-TENANCY-BYPASS:` comment convention for legitimate `IgnoreMultiTenancyFilter()` use.
+- `ResetDatabaseAsync()` defaults to the running test's cancellation token.
+- It retries `DbException`, `IOException`, `SocketException`, and any exception wrapping one of them up to three times, replacing the reset connection between attempts. Other exceptions fail at once.
+- Respawn's own commands take no cancellation token. On cancellation, the server closes the reset connection and holds the next reset until Respawn unwinds. A cancelled reset on a connection you own leaves that connection closed.
 
 #### Tables a Reset Preserves
 
-`ResetDatabaseAsync()` clears application data, not the bookkeeping the running host depends on. Three groups of tables survive a reset:
+`ResetDatabaseAsync()` clears application data and keeps the bookkeeping the running host depends on:
 
 | Tables | Kept | Why |
-|---|---|---|
-| `__EFMigrationsHistory`, `headless_schema_history` (every schema), and each registered feature's history table under the name its dialect stores it by (on SQLite `<schema>_headless_schema_history`) | Always. Standalone `DatabaseReset` keeps the dialect-named history only when created with the host's `IServiceProvider` | They record work done to a schema that the reset leaves in place. Wiping `headless_schema_history` makes the next host on the same database (a `DeriveAsync` variant) replay every schema step against tables that already exist. |
-| Host-state tables that framework features declare through `SchemaContribution.HostStateTables` | By default (`PreserveHostStateTables = true`), also by standalone `DatabaseReset` created with the host's `IServiceProvider` | The host writes them once at startup or keeps them live, and never rewrites them while it runs. Today: the feature, permission, and setting definition tables (including the feature and permission group tables), which the definition initializers write at startup, and the coordination membership tables (on PostgreSQL `coordination_node_generation`, `coordination_descriptor`, and `coordination_liveness`; on SQLite the same names with the schema prefix), whose rows the host keeps heartbeating; a reset that deletes them makes the next heartbeat report the membership as lost. |
-| `TablesToPreserve` | Always | Your own tables that hold data the application seeds once at startup, such as reference data. A `Table` without a schema matches the name in every schema. |
+| --- | --- | --- |
+| `__EFMigrationsHistory`, `headless_schema_history` in every schema, and each registered feature's history table under the name its dialect uses (on SQLite, `<schema>_headless_schema_history`) | Always | They record schema work the reset leaves in place. Without `headless_schema_history`, the next host on the database (a `DeriveAsync` variant) replays every schema step against existing tables. |
+| Host-state tables that framework features declare | When `PreserveHostStateTables` is `true` (default) | The host writes them at startup or keeps them live. Today: the feature, permission, and setting definition tables, including the feature and permission group tables, and the coordination membership tables (on PostgreSQL `coordination_node_generation`, `coordination_descriptor`, and `coordination_liveness`; on SQLite the same names with the schema prefix). Deleting membership rows makes the next heartbeat report the membership as lost. |
+| `TablesToPreserve` | Always | Your own tables. |
 
-Everything else is cleared, including Messaging's outbox and inbox, Jobs, idempotency, audit, and sequence tables: they hold the work a test produces. Jobs keeps its tables in your `DbContext` and declares none, so the cron definitions its startup seeder writes from `[Job(Cron = ...)]` are cleared too; a test that relies on them adds the cron-job table to `TablesToPreserve`.
+Everything else is cleared, including Messaging's outbox and inbox, Jobs, idempotency, audit, and sequence tables. Jobs keeps its tables in your `DbContext` and declares no host-state table, so the cron definitions its seeder writes from `[Job(Cron = ...)]` are cleared too. A test that relies on them adds the cron-job table to `TablesToPreserve`. Host-state tables are matched by their configured names, so a renamed table stays preserved.
 
-The host-state declarations are read from the feature registrations, using their configured table names, so renamed tables stay preserved. SQLite storage has no schemas and prefixes table names instead, so the reset asks each feature's schema dialect for the stored history table name (`ISchemaDialect.HistoryTableName(schema)`), and the SQLite coordination provider declares its prefixed host-state table names. Set `PreserveHostStateTables = false` only for a test that re-runs the startup work that writes those tables.
-
-A suite that drives its own `WebApplicationFactory` instead of `HeadlessTestServer` gets the same protection by passing the host's root service provider to `DatabaseReset.CreateAsync`. The overload without one cannot see the declarations or the schema each history table is named after, so it keeps only `__EFMigrationsHistory`, `headless_schema_history`, and `TablesToPreserve`, which on SQLite misses the prefixed history; use it only for a database no host runs against.
+A suite that drives its own `WebApplicationFactory` gets the same protection by passing the host's root service provider to `DatabaseReset.CreateAsync`:
 
 ```csharp
 await using var connection = new NpgsqlConnection(connectionString);
@@ -322,6 +258,8 @@ await connection.OpenAsync();
 var reset = await DatabaseReset.CreateAsync(connection, factory.Services, new DatabaseResetOptions());
 await reset.ResetAsync(connection);
 ```
+
+The overload without a service provider keeps only `__EFMigrationsHistory`, `headless_schema_history`, and `TablesToPreserve`, which on SQLite misses the prefixed history table. Use it only for a database no host runs against.
 
 ```csharp
 App.ConfigureDatabaseReset(options =>
@@ -331,9 +269,17 @@ App.ConfigureDatabaseReset(options =>
 });
 ```
 
-#### Varying Host Settings per Test
+#### State that database reset does not clear
 
-A test that needs the host configured differently, such as another cache provider or an extra test-only controller, derives a variant from the shared server instead of reaching into `App.Factory`:
+Clear this state in `ResetStateAsync()`, or observations from one test leak into the next:
+
+- **Distributed caches.** Register `Headless.Caching.InMemory` for integration tests so the cache dies with the host. When a test needs Redis, clear it explicitly (`HeadlessRedisFixture.FlushAllAsync()`).
+- **Singleton state.** Caches, registries, and schedulers held by singletons survive. Reset them, or seed them through the public API.
+- **`MessagingTestHarness` observations.** Call `await App.Services.ResetMessagingHarnessAsync()`. Otherwise `WaitForPublishedAsync<T>()` can match a message from an earlier test.
+- **Ambient `ICurrentTenant` and `ICurrentUser` scopes.** Close each scope inside the test that opened it.
+- **External fakes** such as WireMock. Reset their recorded requests and stubs.
+
+### Varying host settings per test
 
 ```csharp
 [Fact]
@@ -348,182 +294,73 @@ public async Task should_limit_attempts_with_redis_cache()
 }
 ```
 
-- The variant runs the server's own `configureTestServices`, `configureWebHost`, and `configureHost` first, then the delegates you pass, so it reaches the same containers and your settings win.
-- It waits for the host's warm-ups, runs the server's readiness checks, and supports `ResetDatabaseAsync()` with the server's reset configuration.
-- It shares the server's `TimeProvider`, registered after both sets of service delegates so neither replaces it, so `App.AdvanceTime(...)` moves both hosts' clocks.
-- It is a separate host with its own background services and connection pools. Dispose it at the end of the test; disposing it never stops the shared server. Settings that are additive, such as an extra controller, belong in the shared server's own configuration instead, because every variant costs a host startup.
-- The server must be initialized first; `DeriveAsync` throws `InvalidOperationException` otherwise.
+- The variant runs the server's own `configureTestServices`, `configureWebHost`, and `configureHost` first, then yours, so your settings win.
+- It waits for warm-ups, runs the server's readiness checks, and supports `ResetDatabaseAsync()` with the server's reset configuration.
+- It shares the server's `TimeProvider`, so `App.AdvanceTime(...)` moves both clocks.
+- It is a separate host with its own background services and connection pools. Dispose it at the end of the test. Disposing it never stops the shared server.
+- Each variant costs a host start. Put additive settings, such as an extra test controller, in the shared server's configuration instead.
+- `DeriveAsync` throws `InvalidOperationException` when the server is not initialized.
 
-`App.Factory.WithWebHostBuilder(...)` is not supported for this. Its host skips the initializer wait, the readiness checks, the shared clock, and database reset, and `WebApplicationFactory` keeps every derived host alive until the parent is disposed, so a suite that derives one per test exhausts database connections.
+### Time in integration tests
 
-#### State That DB Reset Doesn't Clear
-`App.ResetDatabaseAsync()` (Respawner) truncates configured database tables only. Tests that touch state outside the database must clear it themselves, otherwise observations from a previous test bleed into the next:
-
-- **Distributed caches.** Redis / hybrid caches are not touched by Respawner. Prefer registering `Headless.Caching.InMemory` (or the in-memory hybrid L1) for integration tests so the cache lives for the test run and dies with the host. When a test genuinely needs a distributed cache, clear it explicitly in `ResetStateAsync()`.
-- **In-process singletons.** Any state held on singleton services (caches, registries, schedulers) survives DB reset. Either reset them explicitly or design the test to seed them via the public API rather than relying on a pristine state.
-- **`MessagingTestHarness` observation buffers.** Call `await App.Services.ResetMessagingHarnessAsync()` in `ResetStateAsync()` -- otherwise `WaitForPublishedAsync<T>()` may match a message from a prior test, or a store-first publish still in flight from the prior test lands in this one.
-- **Ambient `ICurrentTenant` / `ICurrentUser` scopes.** Disposable scopes opened by one test must not leak into the next; close them inside the test's own `using` block or reset them in `ResetStateAsync()`.
-- **External fakes** (WireMock, Stripe test server, etc.). Reset their recorded requests and reconfigure their stubs as part of `ResetStateAsync()`.
-
-#### Time Advancement
-
-Advance time before seeding so timestamps have a known reference point. The framework helpers move the host's `TimeProvider` and return the resulting UTC time (`App.AdvanceTime()` with no argument is a project-wrapper convenience overload, not part of `HeadlessTestServer`):
+Advance time before you seed data, so timestamps have a known reference point:
 
 ```csharp
-// Defaults to +1 hour and returns the new time
-var now = App.AdvanceTime();
-
-// Specific delta
-now = App.AdvanceTime(TimeSpan.FromMinutes(30));
-
-// Absolute set when precise timestamps matter
+var now = App.AdvanceTime(TimeSpan.FromMinutes(30));
 App.SetTime(now.AddSeconds(5));
 ```
 
-#### DB Round-Trip Precision
+`App.TimeProvider` is typed `TimeProvider`. Cast it to `FakeTimeProvider` for members the server does not expose, such as `AutoAdvanceAmount`.
 
-PostgreSQL `timestamptz` stores microsecond precision (6 digits), while .NET `DateTimeOffset` ticks at 100 ns (7 digits). Exact equality across a DB round-trip will intermittently fail on the trailing tick. Assert with microsecond tolerance:
+PostgreSQL `timestamptz` stores microseconds, while `DateTimeOffset` ticks every 100 ns, so exact equality across a database round trip fails intermittently. The same applies to MySQL `DATETIME(6)` and SQL Server `datetime2(N)` with `N < 7`. Match the tolerance to the column precision:
 
 ```csharp
-// Brittle -- fails when the persisted value truncates the 100 ns tick
-result.CreatedAt.Should().Be(expected);
-
-// Stable -- accommodates the storage precision difference
 result.CreatedAt.Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1));
 ```
 
-The same caveat applies to other databases with sub-tick storage precision (MySQL `DATETIME(6)`, SQL Server `datetime2(N)` for `N < 7`). Match the assertion tolerance to the column precision.
+### EF Core query filters in tests
 
-### Configuration
+`Headless.EntityFramework` applies two global query filters in tests exactly as in production:
 
-`HeadlessTestServer<TProgram>` is configured through its constructor and fluent pre-initialization methods — there is no options class bound from `appsettings.json`.
+| Interface | Filter | Effect |
+| --- | --- | --- |
+| `IMultiTenant` | `TenantId == ICurrentTenant.Id` | Rows of other tenants are hidden. |
+| `IDeleteAudit` | `IsDeleted == false` | Soft-deleted rows are hidden. |
 
-| Parameter / Method | Type | Default | Description |
-|---|---|---|---|
-| `configureTestServices` | `Action<IServiceCollection>?` | `null` | Additional DI registrations layered on top of the application's own `ConfigureTestServices`. |
-| `configureWebHost` | `Action<IWebHostBuilder>?` | `null` | Additional web host configuration (e.g., environment, configuration sources). |
-| `configureHost` | `Action<IHostBuilder>?` | `null` | Generic host configuration with no web host equivalent (service provider options, host options, `IHostBuilder` logging providers). Runs just before the host is built. |
-| `warmupTimeout` | `TimeSpan?` | 60 s | How long the host may take to finish the warm-ups that gate readiness before a `TimeoutException` names each pending one. |
-| `AddReadinessCheck(check, timeout)` | fluent | 30 s per check | Registers a post-startup readiness probe. Must be called before `InitializeAsync()`. |
-| `ConfigureDatabaseReset(configure)` | fluent | (disabled) | Opts into Respawner-based DB reset. Must be called before `InitializeAsync()`. |
-| `ResetDatabaseAsync(cancellationToken)` | `Task` | active xUnit test token | Resets database state and retries transient database or transport failures up to three times. |
-| `DeriveAsync(configureTestServices, configureWebHost, configureHost)` | `Task<HeadlessTestServer<TProgram>>` | — | Starts an initialized variant with extra settings layered on this server's, sharing its clock and reset configuration. Requires an initialized server; the caller disposes the variant. |
+Use `IgnoreQueryFilters()` only when a test seeds `IsDeleted = true` and reads the row back, or tests the filter itself. To act as another tenant, change the tenant in a scope instead of bypassing the filter:
 
-`DatabaseResetOptions` properties (passed to `ConfigureDatabaseReset`):
-
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `DbAdapter` | `IDbAdapter` | `DbAdapter.Postgres` | Respawner adapter matching the target database engine. |
-| `TablesToPreserve` | `List<Table>` | `[]` | Additional tables whose rows survive a reset. `__EFMigrationsHistory` and `headless_schema_history` are always preserved in every schema. |
-| `PreserveHostStateTables` | `bool` | `true` | Also preserves the host-state tables framework features declare (definitions, coordination membership). Read by `ResetDatabaseAsync()` and by `DatabaseReset.CreateAsync(connection, services, ...)`. |
-| `ConnectionProvider` | `Func<IServiceProvider, DbConnection>?` | `null` | **Required** when using `ResetDatabaseAsync()`. Factory for an unopened `DbConnection` to the test database. |
-| `AdditionalTransientExceptionFilter` | `Func<Exception, bool>?` | `null` | Adds provider-specific transient exception shapes to the built-in database and transport retry set. |
-
-### Runtime behavior
-
-- Starts the application host under test for the lifetime of the fixture.
-- Replaces `TimeProvider` in DI with a deterministic `FakeTimeProvider`, unless `configureTestServices` registers another clock.
-- (Optional) Clears application data between tests when `ConfigureDatabaseReset(...)` is wired, keeping the history and host-state tables.
----
-## Headless.Testing.Testcontainers
-
-Testcontainers fixtures for integration testing.
-
-### API and behavior
-
-- `TestImages` — single source of truth for all container image tags (pinned, no `:latest`)
-- Fixtures for every backing service used in the framework:
-  - `HeadlessPostgreSqlFixture` (a database of its own per fixture, see [Logical isolation](#logical-isolation); override `Image` for a server with extensions such as PostGIS)
-  - `HeadlessRedisFixture`
-  - `HeadlessRedisClusterFixture` (a Redis Cluster of three primaries in one container; see [Redis Cluster](#redis-cluster))
-  - `HeadlessRabbitMqFixture` (a virtual host of its own per fixture)
-  - `HeadlessNatsFixture`
-  - `HeadlessKafkaFixture`
-  - `HeadlessAzuriteFixture`
-  - `HeadlessLocalStackFixture`
-  - `HeadlessMinioFixture`
-  - `HeadlessSqlServerFixture` (a database of its own per fixture; architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64; set `HEADLESS_SQLSERVER_IMAGE` to override, see below)
-- `SharedTestContainers` — sharing of one long-lived SQL Server, PostgreSQL, and RabbitMQ container across fixtures and test processes, on by default; set `HEADLESS_TESTCONTAINERS_SHARED=false` to turn it off (see [Shared containers](#shared-containers))
-- `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (`HeadlessRedisContainerExtensions`, namespace `Testcontainers.Redis`) — delete every key in every database by running `redis-cli FLUSHALL` inside the container, so a collection's next test starts clean without a client connection or `allowAdmin`
-- `RedisBuilder.WithHostPingWaitStrategy()` (same holder) — holds the container start until Redis answers `PING` from the test host through the mapped port. `HeadlessRedisFixture` applies it; call it on a `RedisBuilder` a test builds itself, so the first `ConnectionMultiplexer.ConnectAsync` after `StartAsync` is not refused (see [Readiness from the test host](#readiness-from-the-test-host))
-- Every fixture except Redis and Kafka checks its service port from the host after the start and restarts the container once if nothing answers. A desktop Docker engine can fail to forward the host port it picked, leaving a healthy container that refuses every connection; a restart picks another port. A second failure stops the fixture with a message naming both ports. Redis's wait strategy already pings through the host. Kafka is left out because its startup script records the mapped port once, so a restarted broker would keep advertising the dead port.
-- `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
-- `HeadlessResourceReaperFixture` — xUnit v3 assembly fixture that starts Testcontainers' resource reaper (Ryuk) before any test runs and retries the start once, so a slow Ryuk handshake does not fail a whole module (see [Resource reaper start](#resource-reaper-start)). In this repository `tests/Directory.Build.targets` adds it to every `*.Tests.Integration` and `*.Tests.Chaos` project that references this package; another assembly opts in with `[assembly: AssemblyFixture(typeof(HeadlessResourceReaperFixture))]`
-- Automatic container lifecycle management via `Testcontainers.Xunit`
-- Every fixture has the same subclassing surface: xUnit calls `IAsyncLifetime` explicitly, and a subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then seed its database) and `protected virtual ValueTask DisposeAsyncCore()`. The Redis, NATS, Kafka, Azurite, LocalStack, and MinIO fixtures also take `protected override TBuilder Configure()`. The SQL Server, PostgreSQL, and RabbitMQ fixtures fix their server configuration so one server can serve every fixture: they expose `ConnectionString` for the fixture's own database or virtual host, and the PostgreSQL and RabbitMQ fixtures take `ConfigureContainer(builder)` only together with `ShareContainer => false`. Every fixture also takes `protected override string Image`, defaulting to its `TestImages` pin (SQL Server: `HEADLESS_SQLSERVER_IMAGE`, else the architecture's image). For the SQL Server, PostgreSQL, and RabbitMQ fixtures the image is part of the shared container's name, so fixtures on another image share a server of their own. The image must keep the official entrypoint the fixture drives: for PostgreSQL, `-c` settings and `POSTGRES_USER`/`POSTGRES_PASSWORD`, as `postgis/postgis` does; for RabbitMQ, `rabbitmqctl`; for SQL Server, the "SQL Server is now ready" log line and the `sa` password.
-
-### Design constraints
-
-#### Why pin image tags
-
-Floating tags such as `:latest` force Docker to hit the registry on every pull to check the digest, even when the local image is current. Pinning each image in `TestImages` keeps the working set small and reproducible across CI and local runs. Bump versions in one place when you want a refresh.
-
-#### Logical isolation
-
-`HeadlessSqlServerFixture` and `HeadlessPostgreSqlFixture` create a database named `hf_` plus 12 hex digits for each fixture, and `ConnectionString` points at it. `HeadlessRabbitMqFixture` does the same with a virtual host; pass `VirtualHost` to the client options and `-p` to any `rabbitmqctl` command. A test that needs a second database takes its name from `DerivedDatabaseName("suffix")` and creates it with `CreateDatabaseAsync`, so it carries the owner's id. Use `AdminConnectionString` only for server-level statements.
-
-The fixture holds a session lock named after its id for its whole life (`sp_getapplock` on SQL Server, `pg_try_advisory_lock` on PostgreSQL) and takes it before creating the database. Every fixture start sweeps the server: it drops the databases of any owner whose lock it can take, because only a dead session releases one. RabbitMQ has no such lock, so a held connection into the virtual host is the lease, and the sweep deletes a virtual host no connection uses once it is two minutes old; the grace covers the moment between creating a virtual host and connecting to it. On dispose a fixture drops its own databases or virtual host.
-
-#### Shared containers
-
-The SQL Server, PostgreSQL, and RabbitMQ fixtures attach to one container per image, named `headless-testing-<kind>-<hash>` and labelled `org.headless.testing.shared=true`, and leave it running on dispose. Logical isolation keeps their data apart, so concurrent fixtures, modules, and checkouts run against one server, and a rerun starts against a warm one. With `HEADLESS_TESTCONTAINERS_SHARED=false`, every fixture starts a fresh container instead, and Testcontainers' Ryuk sidecar removes it when the run ends, even after a crash; use it on a host that must leave no container behind.
-
-- Two processes that find no shared container both try to create it. Docker refuses the second container name with 409 Conflict, and the loser attaches to the winner's container.
-- Ryuk never removes a shared container. Remove idle ones by the label: `docker rm -f -v $(docker ps -aq --filter label=org.headless.testing.shared=true)`. A CI runner that is discarded after the job needs nothing.
-- A fixture that stops, pauses, or restarts its server, changes server-wide settings, creates logins or roles, or asserts on server-wide views (`pg_stat_activity`, `sys.dm_exec_sessions`) overrides `ShareContainer => false` and keeps a private container in either mode.
-- Redis, NATS, Kafka, Azurite, LocalStack, and MinIO stay private: Redis pub/sub and `FLUSHALL` cross its numbered databases, and the others carry no isolation boundary their tests use.
-
-Testcontainers reuse stays banned for test code (`WithReuse` fails the build with RS0030, `eng/BannedSymbols.Testcontainers.txt`): a reused container keeps one run's schema and rows for the next. `SharedTestContainers` is the one place that calls it, with logical isolation around it.
-
-#### Redis Cluster
-
-`HeadlessRedisClusterFixture` runs three primaries (`PrimaryCount`), no replicas, in one container, for code that only runs on a cluster, such as per-hash-slot command splitting. Connect with `ConnectionString`, which seeds every primary; `Endpoints` lists them.
-
-- A cluster client routes by the topology the nodes announce, and a node announces its in-container address by default, which the host cannot reach. Once Docker has mapped the ports, each node announces `127.0.0.1` and its host-mapped port. The cluster bus stays on its container port: the nodes share the container's loopback, so gossip needs no host mapping. The fixture therefore needs a local Docker engine, and fails the start with `NotSupportedException` on a remote one.
-- `UnassignSlotAsync(slot)` takes one hash slot away from its primary, so commands for that slot fail with `CLUSTERDOWN Hash slot not served` while the rest of the cluster keeps serving (`cluster-require-full-coverage no`). Dispose the returned handle to give the slot back; its keys are kept.
-- `FlushAllAsync()` runs `FLUSHALL` on every primary.
-
-#### Readiness from the test host
-
-Testcontainers' stock Redis check runs `redis-cli ping` inside the container. A runtime such as OrbStack or Docker Desktop can still be setting up the host port forward when it passes, so a client that connects straight after `StartAsync` has its connection refused or reset, and StackExchange.Redis's default `abortConnect=true` turns that one failure into a `RedisConnectionException`. A TCP-only check (`UntilExternalTcpPortIsAvailable`) is not enough: it passes as soon as the runtime's port proxy accepts, before the proxy can reach Redis. `WithHostPingWaitStrategy()` sends `PING` through the mapped port and waits for `+PONG`.
-
-#### Resource reaper start
-
-Testcontainers starts Ryuk with the first container of a test process, then waits up to 60 seconds for Ryuk to acknowledge its connection. No setting changes that wait: `TESTCONTAINERS_RYUK_*` covers only disabling Ryuk, its image, and privileged mode. When several modules start containers at once, Docker can miss the window, and the `ResourceReaperException` ("Initialization has been cancelled.") fails whichever fixture started first, so every test of the module fails without running. `HeadlessResourceReaperFixture` starts Ryuk before any fixture does and, after a `ResourceReaperException`, starts a new Ryuk container once. A retry shows as an xUnit diagnostic message. When the second attempt fails too, the module fails with an error that starts "Docker infrastructure failure, not a test failure". A cancelled run is not retried, and the fixture does nothing when Ryuk is disabled or no Docker endpoint is found, which leaves the first container start to report it.
-
-#### SQL Server image override
-
-On ARM64, `HeadlessSqlServerFixture` runs Azure SQL Edge, which is a different engine build from SQL Server 2022: deadlock detection, catalog visibility, and error numbers can differ. To run a suite against real SQL Server on an ARM64 host that can emulate x86_64 (OrbStack or Docker Desktop with Rosetta), set `HEADLESS_SQLSERVER_IMAGE` to the image before the test process starts:
-
-```bash
-HEADLESS_SQLSERVER_IMAGE=mcr.microsoft.com/mssql/server:2022-latest \
-  make test-project TEST_PROJECT=tests/Headless.Sql.SqlServer.Tests.Integration/Headless.Sql.SqlServer.Tests.Integration.csproj
+```csharp
+var tenant = serviceProvider.GetRequiredService<ICurrentTenant>();
+using (tenant.Change(tenantId, "Test Tenant"))
+{
+    // Code here runs as tenantId; the previous tenant is restored on dispose.
+}
 ```
 
-Unset, the default is unchanged. Emulated startup is slower; the fixture still waits for the "SQL Server is now ready" log line and a successful login.
+See [multi-tenancy.md](multi-tenancy.md) for the ownership and bypass model.
 
-### Install
+---
+
+## Headless.Testing.Testcontainers
+
+xUnit v3 fixtures that start a real database, cache, broker, or blob store in Docker.
+
+### Setup
 
 ```bash
 dotnet add package Headless.Testing.Testcontainers
 ```
 
-### Setup and use
-
 ```csharp
-public sealed class CacheIntegrationTests : IClassFixture<HeadlessRedisFixture>
+using Headless.Testing.Testcontainers;
+using StackExchange.Redis;
+
+public sealed class CacheIntegrationTests(HeadlessRedisFixture redis) : IClassFixture<HeadlessRedisFixture>
 {
-    private readonly HeadlessRedisFixture _redis;
-
-    public CacheIntegrationTests(HeadlessRedisFixture redis)
-    {
-        _redis = redis;
-    }
-
     [Fact]
     public async Task should_cache_value()
     {
-        var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.Container.GetConnectionString());
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.Container.GetConnectionString());
         var db = multiplexer.GetDatabase();
 
         await db.StringSetAsync("key", "value");
@@ -534,32 +371,109 @@ public sealed class CacheIntegrationTests : IClassFixture<HeadlessRedisFixture>
 }
 ```
 
-### Prerequisites
+**Verify:** the fixture starts and the round-trip assertion passes. With Docker stopped, the fixture fails before any test runs.
 
-- Docker must be running
+### Fixtures
+
+| Fixture | Isolation | Shared container by default |
+| --- | --- | --- |
+| `HeadlessPostgreSqlFixture` | A database per fixture | Yes |
+| `HeadlessSqlServerFixture` | A database per fixture. SQL Server 2022 on x86_64, Azure SQL Edge on ARM64. | Yes |
+| `HeadlessRabbitMqFixture` | A virtual host per fixture | Yes |
+| `HeadlessRedisFixture` | A private container | No |
+| `HeadlessRedisClusterFixture` | A private container: three primaries, no replicas. See [Redis Cluster](#redis-cluster). | No |
+| `HeadlessNatsFixture`, `HeadlessKafkaFixture`, `HeadlessAzuriteFixture`, `HeadlessLocalStackFixture`, `HeadlessMinioFixture` | A private container | No |
+
+Other types:
+
+- `TestImages` pins every image tag. No fixture uses `:latest`.
+- `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (namespace `Testcontainers.Redis`) run `redis-cli FLUSHALL` inside the container, so the next test starts clean without a client connection or `allowAdmin`.
+- `RedisBuilder.WithHostPingWaitStrategy()` holds the container start until Redis answers `PING` through the mapped host port. `HeadlessRedisFixture` applies it. Call it on a `RedisBuilder` you build yourself: the stock check pings inside the container, so a client that connects right after `StartAsync` can be refused while Docker still sets up the port forward, and StackExchange.Redis's default `abortConnect=true` turns that into `RedisConnectionException`.
+- `HeadlessMinioFixture` runs a plain `ContainerBuilder` container, because Testcontainers removed its MinIO module in 4.16. Build a client from its `ConnectionString` and its `AccessKey` and `SecretKey` constants, not from `Container`.
+- `HeadlessResourceReaperFixture` starts Testcontainers' resource reaper (Ryuk) before any test runs and retries the start once. See [Resource reaper start](#resource-reaper-start).
+- `TestContextMessageSink` forwards Testcontainers diagnostics to xUnit v3.
+
+### Redis Cluster
+
+`HeadlessRedisClusterFixture` runs three primaries (`PrimaryCount`), with no replicas, in one container. Use it for code that only runs on a cluster, such as per-hash-slot command splitting. Connect with `ConnectionString`, which seeds every primary; `Endpoints` lists them.
+
+- Each node announces `127.0.0.1` and its host-mapped port, so the fixture needs a local Docker engine. On a remote engine it fails the start with `NotSupportedException`.
+- `UnassignSlotAsync(slot)` takes one hash slot from its primary, so commands for that slot fail with `CLUSTERDOWN Hash slot not served` while the rest of the cluster keeps serving. Dispose the returned handle to give the slot back; its keys are kept.
+- `FlushAllAsync()` runs `FLUSHALL` on every primary.
+
+### Customize a fixture
+
+- xUnit calls each fixture through `IAsyncLifetime`. A subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then seed its database) and `protected virtual ValueTask DisposeAsyncCore()`.
+- The Redis, NATS, Kafka, Azurite, LocalStack, and MinIO fixtures take `protected override TBuilder Configure()`.
+- The SQL Server, PostgreSQL, and RabbitMQ fixtures fix their server configuration so one server serves every fixture. They expose `ConnectionString` for the fixture's own database or virtual host. The PostgreSQL and RabbitMQ fixtures accept `ConfigureContainer(builder)` only together with `ShareContainer => false`.
+- Every fixture takes `protected override string Image`, defaulting to its `TestImages` pin. Override it for a server with extensions, such as PostGIS. The image must keep the official entrypoint the fixture drives: for PostgreSQL, `-c` settings and `POSTGRES_USER`/`POSTGRES_PASSWORD` (as `postgis/postgis` does); for RabbitMQ, `rabbitmqctl`; for SQL Server, the "SQL Server is now ready" log line and the `sa` password. For the shared fixtures, the image is part of the shared container's name, so a fixture on another image gets a server of its own.
+
+### Logical isolation
+
+- `HeadlessSqlServerFixture` and `HeadlessPostgreSqlFixture` create a database named `hf_` plus 12 hex digits per fixture, and `ConnectionString` points at it. Use `AdminConnectionString` only for server-level statements.
+- `HeadlessRabbitMqFixture` creates a virtual host per fixture. Pass `VirtualHost` to the client options and `-p` to any `rabbitmqctl` command.
+- For a second database, take its name from `DerivedDatabaseName("suffix")` and create it with `CreateDatabaseAsync`, so it carries the owner's id and is cleaned up with it.
+- A fixture drops its own databases or virtual host on dispose. Every fixture start also drops those left by a dead test process: a database whose owner's session lock (`sp_getapplock`, `pg_try_advisory_lock`) is free, and a RabbitMQ virtual host with no connection that is at least two minutes old.
+
+### Shared containers
+
+The SQL Server, PostgreSQL, and RabbitMQ fixtures attach to one container per image, named `headless-testing-<kind>-<hash>` and labelled `org.headless.testing.shared=true`, and leave it running on dispose. Concurrent fixtures, test processes, and checkouts run against one server, and a rerun starts against a warm one.
+
+- Set `HEADLESS_TESTCONTAINERS_SHARED=false` to give every fixture a fresh container that Ryuk removes when the run ends, even after a crash. Use it on a host that must leave no container behind.
+- Two processes that find no shared container both try to create it. Docker refuses the second name with 409 Conflict, and the loser attaches to the winner's container.
+- Ryuk never removes a shared container. Remove idle ones by label: `docker rm -f -v $(docker ps -aq --filter label=org.headless.testing.shared=true)`. A CI runner discarded after the job needs nothing.
+- Override `ShareContainer => false` for a fixture that stops, pauses, or restarts its server, changes server-wide settings, creates logins or roles, or asserts on server-wide views (`pg_stat_activity`, `sys.dm_exec_sessions`).
+- Do not use Testcontainers' `WithReuse`: a reused container keeps one run's schema and rows for the next. The shared fixtures already reuse the server with isolation around it.
+
+### Port check after start
+
+Every fixture except Redis and Kafka checks its service port from the host after the start and restarts the container once if nothing answers, because a desktop Docker engine can fail to forward the host port it picked. A second failure stops the fixture with a message naming both ports. Kafka is excluded because a restarted broker would keep advertising the dead port.
+
+### Resource reaper start
+
+Testcontainers starts Ryuk with the first container of a test process and waits up to 60 seconds for it; no setting changes that wait. When several test processes start containers at once, Docker can miss the window, and `ResourceReaperException` ("Initialization has been cancelled.") fails every test of the process. To avoid it, register `HeadlessResourceReaperFixture` as an assembly fixture:
+
+```csharp
+[assembly: AssemblyFixture(typeof(Headless.Testing.Testcontainers.HeadlessResourceReaperFixture))]
+```
+
+It starts Ryuk before any fixture does and starts a new Ryuk container once after a `ResourceReaperException`. A retry shows as an xUnit diagnostic message. When the second attempt fails, the run fails with an error that starts "Docker infrastructure failure, not a test failure". A cancelled run is not retried. The fixture does nothing when Ryuk is disabled or no Docker endpoint is found.
+
+### SQL Server image override
+
+On ARM64, `HeadlessSqlServerFixture` runs Azure SQL Edge, a different engine build: deadlock detection, catalog visibility, and error numbers can differ. To test against real SQL Server on an ARM64 host that emulates x86_64 (OrbStack, or Docker Desktop with Rosetta), set `HEADLESS_SQLSERVER_IMAGE` before the test process starts:
+
+```bash
+HEADLESS_SQLSERVER_IMAGE=mcr.microsoft.com/mssql/server:2022-latest dotnet test
+```
+
+Emulated startup is slower. The fixture still waits for the "SQL Server is now ready" log line and a successful login.
 
 ### Configuration
 
-No configuration required. Containers use sensible defaults.
+| Environment variable | Default | Effect |
+| --- | --- | --- |
+| `HEADLESS_TESTCONTAINERS_SHARED` | on | `false` gives every fixture a private container. |
+| `HEADLESS_SQLSERVER_IMAGE` | the architecture's image | The SQL Server image. |
 
 ### Runtime behavior
 
-- Starts Docker containers during test execution
-- Shared containers stay running after the run; private containers (`ShareContainer => false`, or `HEADLESS_TESTCONTAINERS_SHARED=false`) are removed when tests complete, or by Ryuk if the test process dies first
-- In shared containers each fixture drops its own databases or virtual host, and the next fixture start sweeps those of a run that died
+- Shared containers stay running after the run. Private containers are removed when the tests complete, or by Ryuk when the test process dies first.
+- In a shared container, each fixture drops its own databases or virtual host, and the next fixture start sweeps those of a run that died.
+
 ## Tenant isolation
 
-A tenant-isolation test seeds a row as tenant A and then probes it as tenant B. The kit spans two packages so `Headless.Testing` stays free of EF Core. The HTTP assertion needs only an `HttpClient`, so it works with `HeadlessTestServer.CreateClient()` or any other client:
+A tenant-isolation test seeds a row as tenant A and probes it as tenant B. The kit spans two packages so `Headless.Testing` carries no EF Core dependency. The HTTP assertion needs only an `HttpClient`, so it works with `HeadlessTestServer.CreateClient()` or any other client.
 
 | Package | Type | Proves |
 | --- | --- | --- |
-| `Headless.Testing` | `TenantWorld` | Nothing by itself: supplies tenants A and B and the scopes that make one current. |
+| `Headless.Testing` | `TenantWorld` | Nothing by itself. It supplies tenants A and B and the scopes that make one current. |
 | `Headless.Testing` | `TenantIsolationHttpAssertions` | A route answers a request for A's resource exactly as it answers a missing id. |
 | `Headless.EntityFramework.Testing` | `TenantIsolationDbAssertions` | Tenant B's query for A's row is empty, and B's update and delete of it throw `CrossTenantWriteException`. |
 
 ### What the kit asserts, and what the framework guarantees
 
-The HTTP assertion checks an **application convention**, not a framework invariant: answer another tenant's id with the same 404 a missing id gets, so a response never confirms the resource exists. The framework's own tenant statuses are narrower:
+The HTTP assertion checks an application convention, not a framework guarantee: answer another tenant's id with the same 404 a missing id gets, so a response never confirms the resource exists. The framework's own tenant answers are narrower:
 
 | Situation | Framework answer |
 | --- | --- |
@@ -567,15 +481,20 @@ The HTTP assertion checks an **application convention**, not a framework invaria
 | The EF write guard refuses a cross-tenant write | 409 `g:cross_tenant_write` |
 | A tenant-required path runs with no tenant | 403 `g:tenant_required` |
 
-An endpoint meets the convention when the tenant query filter hides the other tenant's row, so the handler takes its normal not-found path. A 403 `g:tenant_required` from the assertion is not a leak: the request carried no tenant, which usually means the test client was not authenticated as tenant B.
+An endpoint meets the convention when the tenant query filter hides the other tenant's row, so the handler takes its normal not-found path. A 403 `g:tenant_required` is not a leak: the request carried no tenant, which usually means the test client was not authenticated as tenant B.
 
-Other cross-tenant surfaces already have their own enforcement and tests; the kit does not duplicate them: catalog [mismatch enforcement](multi-tenancy.md#mismatch-enforcement) for forged tenant claims, `RejectCrossTenantEnqueue()` for [background jobs](multi-tenancy.md#background-jobs), and [strict publish tenancy](multi-tenancy.md#strict-publish-tenancy-tenantcontextrequired) for messaging.
+The kit does not cover surfaces that have their own enforcement: catalog [mismatch enforcement](multi-tenancy/identifier-resolution.md#mismatch-enforcement) for forged tenant claims, `RejectCrossTenantEnqueue()` for [background jobs](multi-tenancy/background-work.md#background-jobs), and [strict publish tenancy](messaging/publishing.md#strict-publish-tenancy) for messaging.
 
 ### The two-tenant world
 
-`TenantWorld` wraps the `ICurrentTenant` the code under test reads. `TenantWorld.Create()` builds one over a fresh `TestCurrentTenant`; `new TenantWorld(currentTenant)` wraps an existing one, including the application's ambient `CurrentTenant`. Tenant ids default to `tenant-a` and `tenant-b`; blank or equal ids are rejected. Scopes nest and restore the previous tenant on dispose.
+`TenantWorld` wraps the `ICurrentTenant` the code under test reads.
 
-The world writes nothing to the tenant catalog. EF Core's filter and guard key on the tenant id alone. A test that also exercises HTTP resolution by identifier seeds the same ids into the catalog store:
+- `TenantWorld.Create()` builds one over a new `TestCurrentTenant`. `new TenantWorld(currentTenant)` wraps an existing one, including the application's ambient `CurrentTenant`.
+- Tenant ids default to `TenantWorld.DefaultTenantA` (`tenant-a`) and `TenantWorld.DefaultTenantB` (`tenant-b`). Blank or equal ids throw.
+- `AsTenantA()`, `AsTenantB()`, `AsTenant(id)`, and `AsHost()` return scopes that nest and restore the previous tenant on dispose.
+- `TenantWorld.CreatePrincipal(tenantId, userId)` returns an authenticated `ClaimsPrincipal` with the `UserClaimTypes.TenantId` claim, for a test authentication handler that signs a client in as one tenant's user.
+
+The world writes nothing to the tenant catalog. EF Core's filter and guard key on the tenant id alone. A test that also exercises HTTP resolution by identifier seeds the same ids into the catalog:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy.Catalog(catalog => catalog.UseInMemory(options =>
@@ -584,8 +503,6 @@ builder.AddHeadlessTenancy(tenancy => tenancy.Catalog(catalog => catalog.UseInMe
     options.Tenants.Add(new TenantInfo(TenantWorld.DefaultTenantB, "tenant-b", name: null, isEnabled: true));
 })));
 ```
-
-`TenantWorld.CreatePrincipal(tenantId, userId)` returns an authenticated `ClaimsPrincipal` carrying the `UserClaimTypes.TenantId` claim, for a test authentication handler that signs a client in as one tenant's user.
 
 ### EF Core assertions
 
@@ -610,12 +527,12 @@ await TenantIsolationDbAssertions.ShouldNotSeeAcrossTenantsAsync<Order>(
 );
 ```
 
-- `ShouldNotReadAcrossTenantsAsync<TEntity>` fails when tenant B's untracked query finds the row: the entity has no tenant query filter.
-- `ShouldRefuseWritesAcrossTenantsAsync<TEntity>` loads the row as tenant B with only `HeadlessQueryFilters.MultiTenancyFilter` ignored, then expects `CrossTenantWriteException` from an update (an optional `Action<TEntity>` mutates the row first) and from a delete. It fails when either save succeeds, which means `GuardTenantWrites()` is off, and names any other exception a save throws.
+- `ShouldNotReadAcrossTenantsAsync<TEntity>` fails when tenant B's untracked query finds the row, which means the entity has no tenant query filter.
+- `ShouldRefuseWritesAcrossTenantsAsync<TEntity>` loads the row as tenant B with only `HeadlessQueryFilters.MultiTenancyFilter` ignored, then expects `CrossTenantWriteException` from an update and from a delete. An optional `Action<TEntity>` mutates the row before the update. It fails when either save succeeds, which means `GuardTenantWrites()` is off, and names any other exception a save throws.
 - `ShouldNotSeeAcrossTenantsAsync<TEntity>` runs both.
 - Every assertion first reads the row as tenant A and fails when it finds nothing, so a wrong key or a row seeded under the wrong tenant cannot pass.
-- The key is the entity's single primary-key value, of the key property's CLR type. Composite keys are rejected with `ArgumentException`.
-- The context factory is called inside each tenant scope and must return a new context each call; the assertion disposes it. A factory that picks a schema or database by the current tenant gets the probing tenant's placement.
+- The key is the entity's single primary-key value, of the key property's CLR type. A composite key throws `ArgumentException`.
+- The assertion calls the context factory inside each tenant scope and disposes each context. The factory must return a new context on each call. A factory that picks a schema or database by the current tenant gets the probing tenant's placement.
 - Tenant B's probes identify tenant A's row by key and tenant, so under per-tenant placement a row tenant B owns under the same key is not mistaken for tenant A's. When tenant B's context cannot reach tenant A's row with every query filter off, the data is physically separate and the write check passes without writing. When another query filter hides the row from tenant B, the write check fails: the tenant write guard covers only entities marked `IsTenantOwned(...)` or implementing `IMultiTenant`.
 
 ### HTTP assertion
@@ -631,30 +548,33 @@ await TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(
 );
 ```
 
-- The missing-id request runs first as a control and must answer 404; otherwise the comparison proves nothing.
-- Either request answering `g:tenant_required` (no tenant context) or `g:tenant_resolution_failed` (tenant resolution rejected it) fails the assertion as a test-setup problem, because the request never reached the endpoint as the probing tenant. Two identical tenant-resolution 404s would otherwise pass. Seed the probing tenant in the catalog, and authenticate the client as that tenant.
-- The cross-tenant request must answer 404 with the same content type and the same body once `traceId`, `timestamp`, and `instance` are removed and each request's own path is replaced with a placeholder, because the framework's endpoint-not-found detail quotes the path. Pass `ignoredMembers` for application-specific per-request members.
+- The missing-id request runs first as a control and must answer 404. Otherwise the comparison proves nothing.
+- Either request answering `g:tenant_required` or `g:tenant_resolution_failed` fails the assertion as a test-setup problem: the request never reached the endpoint as the probing tenant. Seed the probing tenant in the catalog, and authenticate the client as that tenant.
+- The cross-tenant request must answer 404 with the same content type and the same body, after `traceId`, `timestamp`, and `instance` are removed and each request's own path is replaced with a placeholder. Pass `ignoredMembers` for application-specific per-request members.
 - The `Func<HttpRequestMessage>` overload sends any verb or body.
-- Failure messages name the cause: a 2xx returned another tenant's resource; a bare 403 is an existence leak under the convention; 403 `g:tenant_required` and 409 `g:cross_tenant_write` are reported as the framework answers they are.
-- Build the test host with a production-style environment. The common ASP.NET pattern calls `UseExceptionHandler()` only outside Development, so a Development host answers framework exceptions with the developer error page instead of the ProblemDetails bodies this assertion reads.
+- Failure messages name the cause: a 2xx returned another tenant's resource, a bare 403 is an existence leak under the convention, and 403 `g:tenant_required` and 409 `g:cross_tenant_write` are reported as the framework answers they are.
+- Build the test host with a production-style environment. The common ASP.NET Core pattern calls `UseExceptionHandler()` only outside Development, so a Development host answers framework exceptions with the developer error page instead of the ProblemDetails bodies this assertion reads.
 
 ---
+
 ## Headless.EntityFramework.Testing
 
-Tenant-isolation assertions for Headless EF Core contexts. The API and behavior are in [EF Core assertions](#ef-core-assertions).
+`TenantIsolationDbAssertions` for Headless EF Core contexts. The API and behavior are in [EF Core assertions](#ef-core-assertions).
 
-### Install
+### Setup
 
 ```bash
 dotnet add package Headless.EntityFramework.Testing
 ```
 
+**Verify:** `ShouldNotSeeAcrossTenantsAsync<TEntity>` passes for a tenant-owned entity, and fails for an entity that has no tenant query filter.
+
 ### Runtime behavior
 
-Test-only: queries and saves through the contexts the caller's factory returns, and disposes each one.
+Test-only. It queries and saves through the contexts the caller's factory returns, and disposes each one.
 
 ---
 
 ## Messaging test harness
 
-`Headless.Messaging.Testing` is documented in [messaging.md](messaging.md#headlessmessagingtesting) because its delivery, unit-of-work, and observation semantics depend on the Messaging runtime. Use that package for transport-boundary assertions; use the packages in this guide for the shared xUnit and integration-test infrastructure.
+`Headless.Messaging.Testing` is documented in [messaging.md](messaging/test-harness.md#headlessmessagingtesting), because its delivery, unit-of-work, and observation semantics depend on the Messaging runtime.

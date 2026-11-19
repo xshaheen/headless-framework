@@ -255,17 +255,24 @@ internal sealed class MessagingModuleApi(
         }
 
         var take = Math.Clamp(filter.Limit ?? _DefaultListLimit, 1, MaxListLimit);
+        // The list keeps the count its first page read, so a later page skips every store's count reads.
+        var counts = string.IsNullOrEmpty(filter.After);
         var answers = await _stores
             .ReadEachAsync(
                 targets,
                 async (store, token) =>
                 {
-                    // A store whose rows an earlier page used up is still counted, so the total covers every store.
                     var page = cursor.IsDone(store.Name)
                         ? null
                         : await store
                             .Monitoring.ListMessagesAsync(query, cursor.PositionOf(store.Name), take, token)
                             .ConfigureAwait(false);
+
+                    if (!counts)
+                    {
+                        return (page, count: (MessageCount?)null);
+                    }
+
                     var count = await store
                         .Monitoring.CountMessagesAsync(query, MessageCount.DefaultCap, token)
                         .ConfigureAwait(false);
@@ -285,7 +292,7 @@ internal sealed class MessagingModuleApi(
                         count = new MessageCount(Math.Max(0, count.Count - terminal.Count), count.Capped);
                     }
 
-                    return (page, count);
+                    return (page, count: (MessageCount?)count);
                 },
                 // A search reads every row its filters leave, so it waits longer and calls a store out of time incomplete.
                 search is null
@@ -320,8 +327,8 @@ internal sealed class MessagingModuleApi(
                             }
                         ),
                 ],
-                answers.Answered.Sum(static answer => answer.Value.count.Count),
-                answers.Answered.Any(static answer => answer.Value.count.Capped),
+                counts ? answers.Answered.Sum(static answer => answer.Value.count.GetValueOrDefault().Count) : null,
+                counts ? answers.Answered.Any(static answer => answer.Value.count.GetValueOrDefault().Capped) : null,
                 next?.ToString(),
                 incomplete
                     ? [.. answers.Unavailable.Except(answers.TimedOut, StringComparer.Ordinal)]

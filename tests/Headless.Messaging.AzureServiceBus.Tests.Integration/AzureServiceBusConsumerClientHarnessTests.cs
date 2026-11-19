@@ -42,6 +42,11 @@ public sealed class AzureServiceBusConsumerClientHarnessTests(AzureServiceBusFix
         return fixture.TakeDeadLetteredMessageIdsAsync(session, cancellationToken);
     }
 
+    protected override string DescribeDeadLetterEvidence(TransportConsumerConformanceSession session)
+    {
+        return AzureServiceBusDeliveryJournal.Describe(session.Destination);
+    }
+
     [Fact]
     public override Task should_round_trip_queue_message_body_and_headers()
     {

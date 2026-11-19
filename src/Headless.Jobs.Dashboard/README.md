@@ -15,5 +15,5 @@ dotnet add package Headless.Jobs.Dashboard
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Jobs (Background Jobs) guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs.md#headlessjobsdashboard)
-- [Dashboards guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/dashboards.md#jobs-module)
+- [Jobs (Background Jobs) guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs/operations.md#headlessjobsdashboard)
+- [Dashboards guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/dashboards/jobs-module.md#jobs-module)

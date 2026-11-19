@@ -150,9 +150,6 @@ public sealed record TransportConformanceProfile(
     /// <summary>The open issue that tracks messaging scenarios no run has proven yet.</summary>
     internal const string GapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1277";
 
-    /// <summary>The open issue that tracks the network-fault scenarios no provider has proven yet.</summary>
-    internal const string NetworkFaultGapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1247";
-
     public static TransportConformanceProfile CreateDisabled(string provider)
     {
         var scenarios = Enum.GetValues<TransportConformanceScenario>()
@@ -161,11 +158,7 @@ public sealed record TransportConformanceProfile(
                 scenario =>
                     ConformanceSupport.Unsupported(
                         $"{provider} does not yet have executable evidence for {scenario}.",
-                        scenario
-                            is TransportConformanceScenario.ConnectionDropRecovery
-                                or TransportConformanceScenario.PublishDuringOutage
-                            ? NetworkFaultGapIssueUrl
-                            : GapIssueUrl
+                        GapIssueUrl
                     )
             );
 

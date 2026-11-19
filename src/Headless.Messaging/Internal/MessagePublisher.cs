@@ -11,18 +11,19 @@ namespace Headless.Messaging.Internal;
 
 internal sealed class MessagePublisher(
     IMessageSerializer serializer,
-    Func<MessageLane, ITransport> transportResolver,
+    Func<MessageLane, ITransport> defaultTransportResolver,
     IMessagePublishRequestFactory publishRequestFactory,
     IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider,
-    IMessageCapabilityGate capabilities,
+    IMessageCapabilityGate defaultCapabilities,
     Func<IDeliveryCoordinationResolver?> coordinationResolver,
     Func<OutboxMessageWriter?> outboxWriterResolver,
     MessagingTelemetry? telemetry = null,
     TimeSpan? transportPublishTimeout = null,
     DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
     IEnumerable<MessageRegistration>? registrations = null,
-    ILogger? logger = null
+    ILogger? logger = null,
+    Func<string, PublishTarget?>? namedTargetResolver = null
 )
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
@@ -50,7 +51,8 @@ internal sealed class MessagePublisher(
         MessageOptions? options,
         IUnitOfWork? unitOfWork,
         bool requireCoordination,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        PublishTarget? target = null
     )
     {
         return _PublishAsync(
@@ -61,6 +63,7 @@ internal sealed class MessagePublisher(
             requireCoordination,
             request: null,
             batch: null,
+            target,
             cancellationToken
         );
     }
@@ -84,6 +87,7 @@ internal sealed class MessagePublisher(
             requireCoordination,
             request: null,
             batch,
+            target: null,
             cancellationToken
         );
     }
@@ -113,6 +117,7 @@ internal sealed class MessagePublisher(
             requireCoordination: false,
             request,
             batch: null,
+            target: null,
             cancellationToken
         );
     }
@@ -125,9 +130,14 @@ internal sealed class MessagePublisher(
         bool requireCoordination,
         RequestStamp? request,
         OutboxStoreBatch? batch,
+        PublishTarget? target,
         CancellationToken cancellationToken
     )
     {
+        // A keyed IBus or IQueue names its transport; a unit-of-work publish names it through its options.
+        target ??= options is OutboxOptions { TransportName: { } transportName } ? _ResolveNamed(transportName) : null;
+        var capabilities = target?.Capabilities ?? defaultCapabilities;
+        var transportResolver = target?.TransportResolver ?? defaultTransportResolver;
         var coordination = _ResolveCoordination(unitOfWork);
         var declaredMessageType = options?.MessageType?.Type ?? typeof(T);
         // An enlisted publish has no mode to resolve: durable capture is the mechanism it enlists through, so
@@ -278,7 +288,9 @@ internal sealed class MessagePublisher(
                         decision.Coordination.UnitOfWork.PreventRetry();
                     }
 
-                    var storageId = await writer.WriteAsync(prepared, decision, holdIn, ct).ConfigureAwait(false);
+                    var storageId = await writer
+                        .WriteAsync(prepared, decision, holdIn, target?.TransportName, ct)
+                        .ConfigureAwait(false);
                     receipt = new PublishReceipt(prepared.Message.Headers[Headers.MessageId], storageId);
                 },
                 cancellationToken
@@ -286,6 +298,22 @@ internal sealed class MessagePublisher(
             .ConfigureAwait(false);
         // Middleware may suppress publication before the request and its identity exist.
         return receipt;
+    }
+
+    // The default transport by its reserved name resolves to no target, so the row stores no name and reads as the
+    // default one, the same as a publish that named none.
+    private PublishTarget? _ResolveNamed(string transportName)
+    {
+        if (MessagingSetupBuilder.IsDefaultTransport(transportName))
+        {
+            return null;
+        }
+
+        return namedTargetResolver?.Invoke(transportName)
+            ?? throw new MessagingConfigurationException(
+                $"No transport named '{transportName}' is registered on this host. Register it with "
+                    + $"setup.AddTransport(\"{transportName}\")."
+            );
     }
 
     private bool _CanHold<T>(T? content, MessageLane lane, MessageOptions? options, DeliveryDecision decision)
@@ -316,4 +344,18 @@ internal sealed class MessagePublisher(
             ? DeliveryCoordination.None
             : DeliveryCoordination.Incompatible(DeliveryCoordinationMismatch.MissingRelationalCapability);
     }
+}
+
+/// <summary>The transport one publish goes through when it is not the publisher's default one.</summary>
+/// <param name="TransportName">The named transport's name, stored with a durable row.</param>
+/// <param name="TransportResolver">The transport that sends a Direct publish on each lane.</param>
+/// <param name="Capabilities">What the named transport supports, which every publish through it is checked against.</param>
+internal sealed record PublishTarget(
+    string TransportName,
+    Func<MessageLane, ITransport> TransportResolver,
+    IMessageCapabilityGate Capabilities
+)
+{
+    public static PublishTarget For(MessagingTransport transport) =>
+        new(transport.Name!, transport.GetTransport, transport.Capabilities);
 }
