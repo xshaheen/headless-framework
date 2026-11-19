@@ -135,7 +135,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <param name="message">The transport message to add</param>
     public void AddSubscribeMessage(TransportMessage message)
     {
-        if (!_messageQueue.Writer.TryWrite(new Delivery(message, DeliveryCount: 1)))
+        if (!_messageQueue.Writer.TryWrite(new Delivery(message, deliveryCount: 1)))
         {
             OnLogCallback?.Invoke(
                 new LogMessageEventArgs
@@ -206,7 +206,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
 
                 // Tracked so shutdown waits for the handler before it disposes the semaphore the handler releases.
                 _inFlightHandlers.Track(handler);
-                _ObserveBackgroundFault(handler);
+                _ObserveBackgroundFault(handler, delivery);
             }
             else
             {
@@ -222,15 +222,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
                     }
                     catch (Exception ex)
                     {
-                        // Mirror the concurrent branch: log and continue so a single bad message
-                        // does not poison the in-memory listener loop.
-                        OnLogCallback?.Invoke(
-                            new LogMessageEventArgs
-                            {
-                                LogType = MqLogType.ExceptionReceived,
-                                Reason = $"Unhandled exception in message handler: {ex}",
-                            }
-                        );
+                        // Mirror the concurrent branch: keep consuming, so a single bad message does not poison the
+                        // in-memory listener loop.
+                        _ReleaseFaultedDelivery(delivery, ex, "Unhandled exception in message handler");
                     }
                 }
             }
@@ -247,6 +241,11 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A completed task</returns>
     public ValueTask CommitAsync(object? sender, CancellationToken cancellationToken = default)
     {
+        if (sender is Delivery delivery)
+        {
+            delivery.TrySettle();
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -254,7 +253,8 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// Rejects the processing of a message, which comes back to this client after a delay, as a broker redelivers a
     /// rejected message to its consumer group. The delay starts at about a second and doubles with each redelivery up
     /// to 30 seconds, so a consumer whose circuit rejects every delivery does not spin on them. A message whose delay
-    /// is still pending when the client stops or its queue is drained is dropped.
+    /// is still pending when the client stops or its queue is drained is dropped. A delivery settles once: rejecting one
+    /// that was already committed or rejected does nothing.
     /// </summary>
     /// <param name="sender">The settlement token the delivery was handed to the callback with</param>
     /// <param name="cancellationToken">Unused; the redelivery is scheduled, not awaited.</param>
@@ -270,12 +270,33 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         // The listening loop already releases the delivery's concurrency slot when the callback returns; releasing it
         // here as well would grow the group's concurrency on every reject.
-        if (sender is Delivery delivery && Volatile.Read(ref _disposed) == 0)
+        if (sender is Delivery delivery && delivery.TrySettle() && Volatile.Read(ref _disposed) == 0)
         {
             _ = _RedeliverAfterDelayAsync(delivery, redeliveryDelay, Volatile.Read(ref _drainGeneration));
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    // A callback that throws left the delivery unsettled unless it settled before throwing. A broker keeps such a
+    // delivery and hands it over again, so an unsettled one takes the reject path's redelivery instead of being lost.
+    private void _ReleaseFaultedDelivery(Delivery delivery, Exception exception, string reason)
+    {
+        var redelivered = delivery.TrySettle() && Volatile.Read(ref _disposed) == 0;
+        if (redelivered)
+        {
+            _ = _RedeliverAfterDelayAsync(delivery, TimeSpan.Zero, Volatile.Read(ref _drainGeneration));
+        }
+
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.ExceptionReceived,
+                Reason = redelivered
+                    ? $"{reason}; message '{delivery.Message.Name}' will be redelivered: {exception}"
+                    : $"{reason}: {exception}",
+            }
+        );
     }
 
     private async Task _RedeliverAfterDelayAsync(Delivery delivery, TimeSpan minimumDelay, int drainGeneration)
@@ -306,7 +327,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             return;
         }
 
-        var redelivery = delivery with { DeliveryCount = delivery.DeliveryCount + 1 };
+        var redelivery = new Delivery(delivery.Message, delivery.DeliveryCount + 1);
 
         // A completed channel (the client was disposed) refuses the write as well, so a late redelivery is dropped.
         if (!_messageQueue.Writer.TryWrite(redelivery) && Volatile.Read(ref _disposed) == 0)
@@ -341,7 +362,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         }
     }
 
-    private void _ObserveBackgroundFault(Task task)
+    private void _ObserveBackgroundFault(Task task, Delivery delivery)
     {
         _ = task.ContinueWith(
             completedTask =>
@@ -349,13 +370,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
                 var exception = completedTask.Exception?.GetBaseException();
                 if (exception is not null)
                 {
-                    OnLogCallback?.Invoke(
-                        new LogMessageEventArgs
-                        {
-                            LogType = MqLogType.ExceptionReceived,
-                            Reason = $"Unhandled exception in concurrent message handler: {exception}",
-                        }
-                    );
+                    _ReleaseFaultedDelivery(delivery, exception, "Unhandled exception in concurrent message handler");
                 }
             },
             CancellationToken.None,
@@ -429,7 +444,21 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     }
 
     /// <summary>A message handed to the consumer callback, and the settlement token that callback passes back.</summary>
-    /// <param name="Message">The delivered message.</param>
-    /// <param name="DeliveryCount">How many times the message has been delivered, this delivery included.</param>
-    private sealed record Delivery(TransportMessage Message, long DeliveryCount);
+    /// <param name="message">The delivered message.</param>
+    /// <param name="deliveryCount">How many times the message has been delivered, this delivery included.</param>
+    private sealed class Delivery(TransportMessage message, long deliveryCount)
+    {
+        private int _settled;
+
+        public TransportMessage Message { get; } = message;
+
+        /// <summary>How many times the message has been delivered, this delivery included.</summary>
+        public long DeliveryCount { get; } = deliveryCount;
+
+        /// <summary>
+        /// Marks the delivery settled. Only the first commit, reject, or callback fault wins, so a delivery is never
+        /// redelivered twice and a settled one is never redelivered by a later fault.
+        /// </summary>
+        public bool TrySettle() => Interlocked.Exchange(ref _settled, 1) == 0;
+    }
 }

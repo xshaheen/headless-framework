@@ -138,6 +138,12 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
                 )
             ),
             _BindConsumer(
+                TransportConformanceScenario.HandlerFailureRedelivery,
+                nameof(
+                    InMemoryConsumerConformanceTests.should_keep_the_delivery_and_the_listener_when_the_callback_throws
+                )
+            ),
+            _BindConsumer(
                 TransportConformanceScenario.StandardHeaderRoundTrip,
                 nameof(InMemoryConsumerConformanceTests.should_round_trip_every_standard_header_unchanged)
             ),
