@@ -139,6 +139,28 @@ public sealed class EventuallyTests : TestBase
     }
 
     [Fact]
+    public async Task should_name_the_hung_probe_and_the_last_value_when_a_later_probe_hangs()
+    {
+        var clock = new FakeTimeProvider();
+        var reads = 0;
+        var never = new TaskCompletionSource<string>();
+
+        var wait = Eventually.UntilAsync(
+            ct => ++reads == 1 ? Task.FromResult("pending") : never.Task.WaitAsync(ct),
+            s => string.Equals(s, "done", StringComparison.Ordinal),
+            _Limit,
+            timeProvider: clock,
+            cancellationToken: AbortToken
+        );
+        clock.Advance(_Limit);
+
+        var act = () => wait;
+        (await act.Should().ThrowAsync<TimeoutException>())
+            .WithMessage("*probe 2 did not return; the last value read, by probe 1, was \"pending\".")
+            .WithInnerException<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_throw_a_timeout_when_an_async_condition_hangs_past_the_limit()
     {
         var clock = new FakeTimeProvider();

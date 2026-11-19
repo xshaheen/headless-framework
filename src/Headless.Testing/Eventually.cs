@@ -218,7 +218,7 @@ public static class Eventually
             catch (OperationCanceledException e)
                 when (deadline.IsCancellationRequested && !abort.IsCancellationRequested)
             {
-                throw _Timeout(probeExpression, conditionExpression, limit, probes, observed, last, e);
+                throw _Timeout(probeExpression, conditionExpression, limit, probes, observed, last, hung: true, e);
             }
 
             probes++;
@@ -235,7 +235,16 @@ public static class Eventually
 
             if (remaining <= TimeSpan.Zero)
             {
-                throw _Timeout(probeExpression, conditionExpression, limit, probes, observed, last, inner: null);
+                throw _Timeout(
+                    probeExpression,
+                    conditionExpression,
+                    limit,
+                    probes,
+                    observed,
+                    last,
+                    hung: false,
+                    inner: null
+                );
             }
 
             // Clamped to what is left, so the last probe runs at the limit rather than up to one interval past it.
@@ -250,6 +259,7 @@ public static class Eventually
         int probes,
         bool observed,
         T last,
+        bool hung,
         Exception? inner
     )
     {
@@ -257,12 +267,20 @@ public static class Eventually
             ? $"'{probeExpression}' to hold"
             : $"'{probeExpression}' to satisfy '{conditionExpression}'";
 
-        var outcome = observed
-            ? string.Create(
+        // A hung probe is named as such even after earlier probes returned: the last value read alone would read as a
+        // plain "never satisfied" and hide that the store stopped answering.
+        var outcome = (observed, hung) switch
+        {
+            (false, _) => "the probe did not return",
+            (true, true) => string.Create(
+                CultureInfo.InvariantCulture,
+                $"probe {probes + 1} did not return; the last value read, by probe {probes}, was {Formatter.ToString(last)}"
+            ),
+            (true, false) => string.Create(
                 CultureInfo.InvariantCulture,
                 $"the last of {probes} probe(s) returned {Formatter.ToString(last)}"
-            )
-            : "the probe did not return";
+            ),
+        };
 
         return new TimeoutException(
             string.Create(
