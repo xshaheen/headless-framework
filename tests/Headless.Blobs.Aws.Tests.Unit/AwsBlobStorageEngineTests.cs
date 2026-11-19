@@ -514,6 +514,17 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                     : Task.FromResult(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK })
             );
 
+        // The copy reads the source's size and version first; a small source takes the single CopyObject.
+        _s3.GetObjectMetadataAsync(Arg.Any<GetObjectMetadataRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new GetObjectMetadataResponse
+                {
+                    HttpStatusCode = HttpStatusCode.OK,
+                    ContentLength = 16,
+                    ETag = "\"source-etag\"",
+                }
+            );
+
         _s3.CopyObjectAsync(Arg.Any<CopyObjectRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CopyObjectResponse { HttpStatusCode = HttpStatusCode.OK });
 
@@ -562,6 +573,17 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                     : Task.FromResult(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK })
             );
 
+        // The copy reads the source's size and version first; a small source takes the single CopyObject.
+        _s3.GetObjectMetadataAsync(Arg.Any<GetObjectMetadataRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new GetObjectMetadataResponse
+                {
+                    HttpStatusCode = HttpStatusCode.OK,
+                    ContentLength = 16,
+                    ETag = "\"source-etag\"",
+                }
+            );
+
         _s3.CopyObjectAsync(Arg.Any<CopyObjectRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CopyObjectResponse { HttpStatusCode = HttpStatusCode.OK });
 
@@ -586,9 +608,15 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                 Arg.Any<CancellationToken>()
             );
 
-        // The delete-false branch never re-checks the source; only the destination pre-check hits metadata.
+        // The delete-false branch never re-checks the source: besides the destination pre-check, only the copy's
+        // own source read (a request-overload HEAD) touches metadata.
         await _s3.Received(1).GetObjectMetadataAsync("bucket", "target.txt", Arg.Any<CancellationToken>());
         await _s3.DidNotReceive().GetObjectMetadataAsync("bucket", "source.txt", Arg.Any<CancellationToken>());
+        await _s3.Received(1)
+            .GetObjectMetadataAsync(
+                Arg.Is<GetObjectMetadataRequest>(request => request.Key == "source.txt"),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

@@ -86,6 +86,27 @@ public sealed class CloudflareR2BlobsRegistrationTests
     }
 
     [Fact]
+    public async Task default_and_named_r2_stores_send_no_source_preconditions()
+    {
+        // given: R2 documents neither x-amz-copy-source-if-match on UploadPartCopy nor If-Match on DeleteObject.
+        var services = _CreateServices();
+        services.AddHeadlessBlobs(blobs =>
+        {
+            blobs.UseCloudflareR2(_ConfigureR2);
+            blobs.AddNamed("images", instance => instance.UseCloudflareR2(_ConfigureR2));
+        });
+        await using var sp = services.BuildServiceProvider();
+
+        // when
+        var defaultStorage = (AwsBlobStorage)sp.GetRequiredService<IBlobStorage>();
+        var named = (AwsBlobStorage)sp.GetRequiredService<IBlobStorageProvider>().GetStorage("images");
+
+        // then: both R2 stores copy and move without the conditional headers.
+        defaultStorage.SupportsSourcePreconditions.Should().BeFalse();
+        named.SupportsSourcePreconditions.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task default_r2_does_not_mutate_unnamed_or_named_aws_options()
     {
         // given — R2 as the DEFAULT store, plus a named AWS store

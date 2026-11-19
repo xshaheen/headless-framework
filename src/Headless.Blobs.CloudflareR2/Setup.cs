@@ -85,7 +85,10 @@ public static class SetupCloudflareR2Blob
                 Options.Create(awsOptions),
                 new R2BlobNamingNormalizer(),
                 logger
-            );
+            )
+            {
+                SupportsSourcePreconditions = false,
+            };
         });
 
         // Deliberately NO IBlobContainerManager registration: R2's object-scoped tokens cannot create or manage
@@ -117,6 +120,9 @@ public static class SetupCloudflareR2Blob
                     new R2BlobNamingNormalizer(),
                     serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
                 )
+                {
+                    SupportsSourcePreconditions = false,
+                }
         );
 
         services.AddKeyedSingleton<IPresignedUrlBlobStorage>(
