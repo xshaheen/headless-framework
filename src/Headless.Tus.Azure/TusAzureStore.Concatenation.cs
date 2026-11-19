@@ -87,7 +87,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
             // As for CreateFileAsync: the rest of the creating request starts from the blob just written.
             _memo.Set(
-                fileId,
+                blobClient.Name,
                 TusAzureFile.Created(fileId, blobClient.Name, created.Value.ETag, blobMetadata, httpHeaders)
             );
 

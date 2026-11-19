@@ -61,11 +61,21 @@ public interface IConsumerClient : IAsyncDisposable
     ValueTask SubscribeAsync(IEnumerable<string> messageNames, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Starts listening for messages from the subscribed message names
+    /// Listens for messages from the subscribed message names until <paramref name="cancellationToken"/> is canceled.
     /// </summary>
+    /// <remarks>
+    /// The returned task is the client's listening loop, so it completes only when <paramref name="cancellationToken"/>
+    /// is canceled or the client can no longer receive. A push-based client that starts the broker's own receivers
+    /// still waits for cancellation before it returns. Returning normally, or throwing
+    /// <see cref="OperationCanceledException"/> from a token of the client's own, while
+    /// <paramref name="cancellationToken"/> is not canceled is a failure: the messaging core reports the subscription
+    /// unhealthy and rebuilds its clients. On cancellation, stop receiving new deliveries, but leave the in-flight
+    /// ones settleable: <see cref="ShutdownAsync"/> drains and closes them.
+    /// </remarks>
     /// <param name="timeout">Maximum time to wait when polling for messages</param>
-    /// <param name="cancellationToken">Token to cancel the listening operation</param>
-    /// <returns>A task that represents the asynchronous listening operation</returns>
+    /// <param name="cancellationToken">Token that stops listening</param>
+    /// <returns>A task that completes when listening stops.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is canceled.</exception>
     ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken);
 
     /// <summary>

@@ -4,6 +4,7 @@ using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Headless.Tus;
 using Microsoft.Extensions.DependencyInjection;
+using tusdotnet.Interfaces;
 
 namespace Tests.DistributedLock;
 
@@ -59,20 +60,26 @@ public sealed class DistributedLockTusCleanupGateTests : TestBase
     }
 
     [Fact]
-    public void should_register_the_cleanup_gate_with_the_lock_provider()
+    public async Task should_register_the_cleanup_gate_with_the_lock_provider_and_its_prefix()
     {
         // given
         var services = new ServiceCollection();
         services.AddSingleton(_distributedLock);
 
         // when
-        services.AddDistributedLockTusLockProvider("uploads");
-        using var provider = services.BuildServiceProvider();
+        services.AddHeadlessTus(tus => tus.UseStore(Substitute.For<ITusStore>()).UseDistributedLocks("uploads"));
+        await using var provider = services.BuildServiceProvider();
+        var gate = provider.GetRequiredService<ITusExpiredUploadsCleanupGate>();
+        await gate.TryClaimPassAsync(TimeSpan.FromMinutes(4), AbortToken);
 
         // then
-        provider
-            .GetRequiredService<ITusExpiredUploadsCleanupGate>()
-            .Should()
-            .BeOfType<DistributedLockTusCleanupGate>();
+        gate.Should().BeOfType<DistributedLockTusCleanupGate>();
+        await _distributedLock
+            .Received(1)
+            .TryAcquireAsync(
+                "uploads:expired-uploads-cleanup",
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 }
