@@ -11,10 +11,26 @@ namespace Tests.Scheduling;
 /// <param name="ScheduledFor">The instant the occurrence stands for (UTC).</param>
 /// <param name="Node">The host that ran it.</param>
 /// <param name="RecoveredFromUtc">For a coalesced recovery run, the first instant of the backlog it stands in for.</param>
-public sealed record CronFire(string Function, DateTime ScheduledFor, string Node, DateTime? RecoveredFromUtc = null)
+/// <param name="FiredAtStoreUtc">
+/// The store's clock when the handler ran, when the scenario registers a <see cref="StoreClock"/>. A recovery run
+/// executes after the pass that coalesced its backlog, so no instant it stands in for is later than this.
+/// </param>
+public sealed record CronFire(
+    string Function,
+    DateTime ScheduledFor,
+    string Node,
+    DateTime? RecoveredFromUtc = null,
+    DateTime? FiredAtStoreUtc = null
+)
 {
     public bool IsRecoveryRun => RecoveredFromUtc is not null;
 }
+
+/// <summary>
+/// Reads the shared store's clock. A scenario whose oracle bounds a recovery run's backlog registers one, because the
+/// node clocks are skewed and the job context does not say when a run fired.
+/// </summary>
+public sealed record StoreClock(Func<CancellationToken, Task<DateTime>> UtcNowAsync);
 
 /// <summary>The name a chaos host reports its runs under.</summary>
 public sealed record ChaosNodeName(string Value);
@@ -58,8 +74,13 @@ public sealed class SchedulingChaosJobsModule : IJobsModule
             {
                 CronExpression = string.Empty,
                 Priority = JobPriority.Normal,
-                Delegate = static (services, context, _) =>
+                Delegate = static async (services, context, cancellationToken) =>
                 {
+                    var storeClock = services.GetService<StoreClock>();
+                    DateTime? firedAt = storeClock is null
+                        ? null
+                        : await storeClock.UtcNowAsync(cancellationToken).ConfigureAwait(false);
+
                     services
                         .GetRequiredService<CronFireLog>()
                         .Record(
@@ -69,11 +90,10 @@ public sealed class SchedulingChaosJobsModule : IJobsModule
                                 services.GetService<ChaosNodeName>()?.Value ?? "local",
                                 context.RecoveredFromUtc is { } from
                                     ? DateTime.SpecifyKind(from, DateTimeKind.Utc)
-                                    : null
+                                    : null,
+                                firedAt
                             )
                         );
-
-                    return Task.CompletedTask;
                 },
                 MaxConcurrency = 1,
             };

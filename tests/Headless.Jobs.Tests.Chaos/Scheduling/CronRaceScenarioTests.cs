@@ -65,6 +65,7 @@ public abstract class CronRaceScenarioTests<TFixture>(TFixture fixture) : TestBa
                     {
                         services.AddSingleton(log);
                         services.AddSingleton(new ChaosNodeName(node));
+                        services.AddSingleton(new StoreClock(_StoreUtcNowAsync));
                     }
                 );
             })
@@ -159,10 +160,25 @@ public abstract class CronRaceScenarioTests<TFixture>(TFixture fixture) : TestBa
         }
 
         var duplicated = ordinary[1];
-        var dropped = ordinary[^2];
+
+        // The run before the dropped one must be a regular run: a recovery run that fired after the dropped instant
+        // legitimately stands in for it, so dropping that instant would prove nothing about the oracle.
+        var all = fires.OrderBy(x => x.ScheduledFor).ToList();
+        var dropped = Enumerable
+            .Range(1, all.Count - 1)
+            .Reverse()
+            .Select(i => (Fire: all[i], Previous: all[i - 1]))
+            .Where(pair =>
+                !pair.Fire.IsRecoveryRun
+                && !pair.Previous.IsRecoveryRun
+                && pair.Fire.ScheduledFor != duplicated.ScheduledFor
+                && owed.Contains(pair.Fire.ScheduledFor)
+            )
+            .Select(pair => pair.Fire)
+            .FirstOrDefault();
         List<CronFire> sabotaged =
         [
-            .. fires.Where(x => !ReferenceEquals(x, dropped)),
+            .. fires.Where(x => dropped is null || x.ScheduledFor != dropped.ScheduledFor),
             duplicated with
             {
                 Node = "sabotage",
@@ -172,10 +188,8 @@ public abstract class CronRaceScenarioTests<TFixture>(TFixture fixture) : TestBa
         var verdict = CronInstantVerdict.Evaluate(owed, _IsOnSchedule, sabotaged);
         verdict.Duplicated.Should().Contain(duplicated.ScheduledFor);
 
-        if (owed.Contains(dropped.ScheduledFor))
-        {
-            verdict.Missing.Should().Contain(dropped.ScheduledFor);
-        }
+        dropped.Should().NotBeNull("a soak this long has two regular runs in a row inside the window");
+        verdict.Missing.Should().Contain(dropped!.ScheduledFor);
     }
 
     private static bool _IsOnSchedule(DateTime instant) => instant.Ticks % _Cadence.Ticks == 0;

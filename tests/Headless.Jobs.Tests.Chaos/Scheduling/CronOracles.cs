@@ -20,9 +20,10 @@ namespace Tests.Scheduling;
 /// <para>
 /// "Misfire recovery": when more than one instant is pending at a wake (a schedule shorter than the wake latency does
 /// this legitimately), <c>Coalesce</c>, the default, runs once for the whole backlog and reports the first missed instant
-/// as its <c>ScheduledFor</c>. The later instants of that backlog are accounted for without a run of their own, so a
-/// missing instant is excused only when the nearest earlier run is such a recovery run and a later regular run shows the
-/// schedule resumed. "Overlap policy": the scenario
+/// as its <c>ScheduledFor</c>. The later instants of that backlog are accounted for without a run of their own. The
+/// backlog ends at the store instant of the recovery pass, and the run executes after that pass, so a missing instant
+/// is excused only when the nearest earlier run is such a recovery run and it fired, on the store clock, at or after
+/// the instant. A recovery run with no recorded fire time excuses nothing. "Overlap policy": the scenario
 /// keeps the default <c>Allow</c>, so an unfinished earlier run never turns an instant into a skip.
 /// </para>
 /// </remarks>
@@ -64,11 +65,9 @@ public sealed record CronInstantVerdict(
 
             var previous = ordered.LastOrDefault(fire => fire.ScheduledFor < instant);
 
-            // A coalesced backlog ends when the schedule fires on time again; an instant after a recovery run that no
-            // later regular run follows is not backlog but a schedule that stopped firing, so it stays missing.
-            var resumedAfter = ordered.Exists(fire => fire.ScheduledFor > instant && !fire.IsRecoveryRun);
-
-            if (previous is { IsRecoveryRun: true } && resumedAfter)
+            // An instant later than the recovery run's own fire was still in the future when the backlog was coalesced,
+            // so the run cannot stand in for it: it stays missing however many runs follow.
+            if (previous is { IsRecoveryRun: true, FiredAtStoreUtc: { } firedAt } && instant <= firedAt)
             {
                 excused.Add(instant);
             }

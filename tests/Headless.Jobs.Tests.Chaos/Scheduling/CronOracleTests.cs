@@ -48,13 +48,13 @@ public sealed class CronOracleTests : TestBase
     [Fact]
     public void should_excuse_instants_a_coalesced_recovery_run_stands_in_for()
     {
-        // The recovery run reports the first missed instant (2); instants 3 and 4 belong to its backlog.
+        // The recovery run reports the first missed instant (2) and fired at instant 4, so 3 and 4 belong to its backlog.
         var owed = _Owed(6);
         List<CronFire> fires =
         [
             new("f", owed[0], "node-0"),
             new("f", owed[1], "node-0"),
-            new("f", owed[2], "node-1", RecoveredFromUtc: owed[2]),
+            new("f", owed[2], "node-1", RecoveredFromUtc: owed[2], FiredAtStoreUtc: owed[4]),
             new("f", owed[5], "node-0"),
         ];
 
@@ -65,11 +65,52 @@ public sealed class CronOracleTests : TestBase
     }
 
     [Fact]
+    public void should_catch_instants_after_the_recovery_run_fired_even_when_a_regular_run_follows()
+    {
+        // The recovery run fired at instant 3, so instants 4..8 were still in the future when its backlog was coalesced;
+        // the regular run at 9 does not turn them into backlog.
+        var owed = _Owed(10);
+        List<CronFire> fires =
+        [
+            new("f", owed[0], "node-0"),
+            new("f", owed[1], "node-1", RecoveredFromUtc: owed[1], FiredAtStoreUtc: owed[3]),
+            new("f", owed[9], "node-0"),
+        ];
+
+        var verdict = CronInstantVerdict.Evaluate(owed, _OnSchedule, fires);
+
+        verdict.Excused.Should().Equal(owed[2], owed[3]);
+        verdict.Missing.Should().Equal(owed[4], owed[5], owed[6], owed[7], owed[8]);
+        verdict.Violations().Should().ContainSingle(x => x.Contains("never fired", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_excuse_nothing_for_a_recovery_run_with_no_recorded_fire_time()
+    {
+        var owed = _Owed(4);
+        List<CronFire> fires =
+        [
+            new("f", owed[0], "node-0"),
+            new("f", owed[1], "node-1", RecoveredFromUtc: owed[1]),
+            new("f", owed[3], "node-0"),
+        ];
+
+        var verdict = CronInstantVerdict.Evaluate(owed, _OnSchedule, fires);
+
+        verdict.Excused.Should().BeEmpty();
+        verdict.Missing.Should().Equal(owed[2]);
+    }
+
+    [Fact]
     public void should_catch_instants_after_a_recovery_run_when_the_schedule_never_fires_again()
     {
         // A recovery run at instant 1 and then silence: instants 2..4 are a stopped schedule, not a coalesced backlog.
         var owed = _Owed(5);
-        List<CronFire> fires = [new("f", owed[0], "node-0"), new("f", owed[1], "node-1", RecoveredFromUtc: owed[1])];
+        List<CronFire> fires =
+        [
+            new("f", owed[0], "node-0"),
+            new("f", owed[1], "node-1", RecoveredFromUtc: owed[1], FiredAtStoreUtc: owed[1]),
+        ];
 
         var verdict = CronInstantVerdict.Evaluate(owed, _OnSchedule, fires);
 
