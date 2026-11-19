@@ -40,7 +40,29 @@ internal sealed class AwsBlobStorage(
     // The S3 minimum size of every part but the last, so a non-seekable upload's parts are exactly this size.
     private const int _NonSeekablePartSize = 5 * 1024 * 1024;
 
+    // S3 refuses a single CopyObject whose source exceeds 5 GiB, and also caps one multipart part at 5 GiB.
+    private const long _MaxSingleCopySize = 5L * 1024 * 1024 * 1024;
+    private const long _MinCopyPartSize = 5L * 1024 * 1024;
+    private const int _MaxCopyParts = 10_000;
+
+    // Part copies run server side, so a few in flight shorten a large copy without moving bytes through this host.
+    private const int _CopyPartParallelism = 4;
+
     private readonly AwsBlobStorageOptions _options = optionsAccessor.Value;
+
+    /// <summary>
+    /// Source size above which <see cref="CopyAsync"/> and <see cref="MoveAsync"/> switch from one
+    /// <c>CopyObject</c> to a multipart copy. Defaults to the S3 single-copy limit; tests lower it to reach the
+    /// multipart branch without a 5 GiB object.
+    /// </summary>
+    internal long MultipartCopyThreshold { get; init; } = _MaxSingleCopySize;
+
+    /// <summary>
+    /// Whether the endpoint honours the ETag preconditions a multipart part copy (<c>x-amz-copy-source-if-match</c>)
+    /// and a move's source delete (<c>If-Match</c>) send. Cloudflare R2 documents neither, so its registration
+    /// turns them off rather than risk an endpoint that rejects the header failing every move.
+    /// </summary>
+    internal bool SupportsSourcePreconditions { get; init; } = true;
     private readonly ILogger _logger = logger ?? NullLogger<AwsBlobStorage>.Instance;
 
     // S3 rejects PutObject against a missing bucket (NoSuchBucket) and this type never creates one — R2 reuse
@@ -766,13 +788,91 @@ internal sealed class AwsBlobStorage(
             return true;
         }
 
+        var copied = await _CopyResolvedAsync(oldBucket, oldKey, newBucket, newKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        return copied is not null;
+    }
+
+    /// <summary>
+    /// Copies one object to another key and returns the source version it copied, or <see langword="null"/> when
+    /// the source is missing. A source up to <see cref="MultipartCopyThreshold"/> takes one <c>CopyObject</c>; a
+    /// larger one takes a multipart copy, which S3 requires above 5 GiB.
+    /// </summary>
+    private async ValueTask<CopiedSource?> _CopyResolvedAsync(
+        string sourceBucket,
+        string sourceKey,
+        string destinationBucket,
+        string destinationKey,
+        CancellationToken cancellationToken
+    )
+    {
+        GetObjectMetadataResponse head;
+
+        try
+        {
+            head = await s3.GetObjectMetadataAsync(
+                    new GetObjectMetadataRequest { BucketName = sourceBucket, Key = sourceKey },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if (head.HttpStatusCode is HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        head.HttpStatusCode.EnsureSuccessStatusCode();
+
+        // A bucket without versioning reports no version, and a suspended one reports the literal "null" version;
+        // neither names a version a copy can pin, so those sources bind by ETag instead.
+        var copied = new CopiedSource(
+            head.ETag,
+            string.IsNullOrEmpty(head.VersionId) || string.Equals(head.VersionId, "null", StringComparison.Ordinal)
+                ? null
+                : head.VersionId
+        );
+
+        var copiedAll =
+            head.ContentLength > MultipartCopyThreshold
+                ? await _MultipartCopyAsync(
+                        sourceBucket,
+                        sourceKey,
+                        destinationBucket,
+                        destinationKey,
+                        head,
+                        copied,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+                : await _SingleCopyAsync(sourceBucket, sourceKey, destinationBucket, destinationKey, cancellationToken)
+                    .ConfigureAwait(false);
+
+        return copiedAll ? copied : null;
+    }
+
+    private async ValueTask<bool> _SingleCopyAsync(
+        string sourceBucket,
+        string sourceKey,
+        string destinationBucket,
+        string destinationKey,
+        CancellationToken cancellationToken
+    )
+    {
+        // One CopyObject reads the source atomically, so it needs no version binding: it copies whichever version
+        // is current when S3 serves it.
         var request = new CopyObjectRequest
         {
             CannedACL = _options.CannedAcl,
-            SourceBucket = oldBucket,
-            SourceKey = oldKey,
-            DestinationBucket = newBucket,
-            DestinationKey = newKey,
+            SourceBucket = sourceBucket,
+            SourceKey = sourceKey,
+            DestinationBucket = destinationBucket,
+            DestinationKey = destinationKey,
             MetadataDirective = S3MetadataDirective.COPY,
         };
 
@@ -788,6 +888,160 @@ internal sealed class AwsBlobStorage(
         }
 
         return response.HttpStatusCode.IsSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// Copies a source above <see cref="MultipartCopyThreshold"/> as a multipart upload of <c>UploadPartCopy</c>
+    /// ranges. Every part is pinned to the version the metadata read captured, so a source overwritten mid-copy
+    /// fails the copy instead of assembling parts of two versions. Any failure aborts the upload, so no incomplete
+    /// parts stay billed on the bucket.
+    /// </summary>
+    /// <returns><see langword="false"/> when the source disappeared during the copy.</returns>
+    private async ValueTask<bool> _MultipartCopyAsync(
+        string sourceBucket,
+        string sourceKey,
+        string destinationBucket,
+        string destinationKey,
+        GetObjectMetadataResponse head,
+        CopiedSource copied,
+        CancellationToken cancellationToken
+    )
+    {
+        // A multipart upload has no COPY metadata directive, so the initiate request carries what a single
+        // CopyObject would have kept: the user metadata verbatim (uploadDate included) and the system headers.
+        var initiate = new InitiateMultipartUploadRequest
+        {
+            BucketName = destinationBucket,
+            Key = destinationKey,
+            ContentType = head.Headers.ContentType,
+            CannedACL = _options.CannedAcl,
+            Headers =
+            {
+                CacheControl = head.Headers.CacheControl,
+                ContentDisposition = head.Headers.ContentDisposition,
+                ContentEncoding = head.Headers.ContentEncoding,
+                ContentLanguage = head.Headers.ContentLanguage,
+            },
+        };
+
+        foreach (var key in head.Metadata.Keys)
+        {
+            // MetadataCollection keeps an "x-amz-meta-" key as is and prefixes any other, so this adds no prefix.
+            initiate.Metadata[key] = head.Metadata[key];
+        }
+
+        InitiateMultipartUploadResponse initiated;
+
+        try
+        {
+            initiated = await s3.InitiateMultipartUploadAsync(initiate, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            // A missing destination bucket reports false, as the single CopyObject's 404 does.
+            return false;
+        }
+
+        initiated.HttpStatusCode.EnsureSuccessStatusCode();
+
+        var uploadId =
+            initiated.UploadId
+            ?? throw new InvalidOperationException("S3 initiated a multipart copy without returning an upload id.");
+
+        var ranges = ComputeCopyPartRanges(head.ContentLength);
+        var parts = new PartETag[ranges.Count];
+
+        try
+        {
+            await Parallel
+                .ForAsync(
+                    0,
+                    ranges.Count,
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = _CopyPartParallelism,
+                        CancellationToken = cancellationToken,
+                    },
+                    async (index, ct) =>
+                    {
+                        var (firstByte, lastByte) = ranges[index];
+                        var partNumber = index + 1;
+
+                        var request = new CopyPartRequest
+                        {
+                            SourceBucket = sourceBucket,
+                            SourceKey = sourceKey,
+                            DestinationBucket = destinationBucket,
+                            DestinationKey = destinationKey,
+                            UploadId = uploadId,
+                            PartNumber = partNumber,
+                            FirstByte = firstByte,
+                            LastByte = lastByte,
+                        };
+
+                        if (copied.VersionId is not null)
+                        {
+                            // A version ID names immutable bytes, so every part reads the same version even when
+                            // the key is overwritten mid-copy.
+                            request.SourceVersionId = copied.VersionId;
+                        }
+                        else if (SupportsSourcePreconditions && copied.ETag is not null)
+                        {
+                            // An unversioned source can only be checked: a part copied after an overwrite fails
+                            // with 412 instead of taking bytes from the newer object.
+                            request.ETagToMatch = [copied.ETag];
+                        }
+
+                        var response = await s3.CopyPartAsync(request, ct).ConfigureAwait(false);
+                        response.HttpStatusCode.EnsureSuccessStatusCode();
+
+                        parts[index] = new PartETag(partNumber, response.ETag!);
+                    }
+                )
+                .ConfigureAwait(false);
+
+            // Parts land by index, so the list is already in the ascending part order S3 requires.
+            await _CompleteMultipartAsync(destinationBucket, destinationKey, uploadId, [.. parts], cancellationToken)
+                .ConfigureAwait(false);
+
+            return true;
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            // The source (or its pinned version) was deleted mid-copy: report it missing, as a single copy would.
+            await _AbortMultipartAsync(destinationBucket, destinationKey, uploadId).ConfigureAwait(false);
+
+            return false;
+        }
+        catch
+        {
+            await _AbortMultipartAsync(destinationBucket, destinationKey, uploadId).ConfigureAwait(false);
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Splits an object of <paramref name="size"/> bytes into inclusive byte ranges for <c>UploadPartCopy</c>. The
+    /// part size is the larger of the 5 MiB S3 minimum and <c>ceil(size / 10,000)</c>, because S3 accepts at most
+    /// 10,000 parts, capped at the 5 GiB part maximum.
+    /// </summary>
+    internal static IReadOnlyList<(long FirstByte, long LastByte)> ComputeCopyPartRanges(long size)
+    {
+        Argument.IsPositive(size);
+
+        var partSize = Math.Min(
+            Math.Max(_MinCopyPartSize, (size + _MaxCopyParts - 1) / _MaxCopyParts),
+            _MaxSingleCopySize
+        );
+        var ranges = new List<(long FirstByte, long LastByte)>((int)((size + partSize - 1) / partSize));
+
+        for (var firstByte = 0L; firstByte < size; firstByte += partSize)
+        {
+            ranges.Add((firstByte, Math.Min(firstByte + partSize, size) - 1));
+        }
+
+        return ranges;
     }
 
     public async ValueTask<bool> MoveAsync(
@@ -808,19 +1062,35 @@ internal sealed class AwsBlobStorage(
             return true;
         }
 
+        CopiedSource? copied = null;
+
         // Non-atomic copy-then-delete; the shared helper owns reject-occupied and rolls the destination copy back
         // only when the source delete throws with the source confirmed intact (see MoveViaCopyThenDeleteAsync).
         return await BlobStorageHelpers
             .MoveViaCopyThenDeleteAsync(
                 destinationExistsAsync: ct => _ExistsAsync(destinationBucket, destinationKey, ct),
-                copyAsync: ct => CopyAsync(source, destination, ct),
+                copyAsync: async ct =>
+                {
+                    copied = await _CopyResolvedAsync(sourceBucket, sourceKey, destinationBucket, destinationKey, ct)
+                        .ConfigureAwait(false);
+
+                    return copied is not null;
+                },
                 deleteSourceAsync: async ct =>
                 {
-                    var deleteRequest = new DeleteObjectRequest { BucketName = sourceBucket, Key = sourceKey };
+                    // Delete only the version that was copied. A source overwritten after the metadata read fails
+                    // this delete with 412, the helper finds the source intact and rolls the destination back, so
+                    // the newer source is never deleted in favour of an older copy.
+                    var deleteRequest = new DeleteObjectRequest
+                    {
+                        BucketName = sourceBucket,
+                        Key = sourceKey,
+                        IfMatch = SupportsSourcePreconditions ? copied?.ETag : null,
+                    };
                     var deleteResponse = await s3.DeleteObjectAsync(deleteRequest, ct).ConfigureAwait(false);
 
-                    // S3 DeleteObject returns 204 even for a missing key (the SDK signals real failures by
-                    // throwing), so a source-already-absent race is unobservable here in practice.
+                    // Without If-Match, S3 returns 204 even for a missing key. With it, a source deleted since the
+                    // copy throws 404; the helper then finds the source gone and keeps the destination copy.
                     return deleteResponse.HttpStatusCode.IsSuccessStatusCode();
                 },
                 sourceExistsAsync: ct => _ExistsAsync(sourceBucket, sourceKey, ct),
@@ -831,6 +1101,9 @@ internal sealed class AwsBlobStorage(
             )
             .ConfigureAwait(false);
     }
+
+    /// <summary>The source version a copy read: its ETag, and its version ID when the bucket is versioned.</summary>
+    private sealed record CopiedSource(string? ETag, string? VersionId);
 
     private async ValueTask _RollbackMoveCopyAsync(BlobLocation destination)
     {
