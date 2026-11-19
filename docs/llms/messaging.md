@@ -365,7 +365,7 @@ Set these on `setup.Options` inside `AddHeadlessMessaging`. Topic files own the 
 | `SchedulerBatchSize` | 1,000 | Rows one delayed claim takes, and the size of the in-memory scheduler queue (1 to 100,000). |
 | `DelayedMessagePollInterval` | 60 s | Poll of storage for delayed messages due within two minutes (at most 2 minutes). |
 | `ConsumerPollTimeout` | 1 s | Listening timeout of every consumer client (at most 30 s). A wait bound on Kafka and in-memory, the idle sleep on Redis and SQS, ignored on RabbitMQ and Azure Service Bus. |
-| `TransportPublishTimeout` | 10 s | A send the transport does not confirm in this time fails its attempt with `TimeoutException`. |
+| `TransportPublishTimeout` | 10 s | A send the transport does not confirm in this time fails its attempt with `TimeoutException`. It also bounds a send's confirm wait during shutdown, which does not cancel a send already handed to the transport. |
 | `CommandTimeout` | 30 s | Timeout of each storage command. |
 | `ShutdownTimeout` | 30 s | One end-to-end shutdown bound (at most 5 minutes). Give the host or orchestrator a longer termination grace. |
 | `SubscriptionEstablishedTimeout` | 30 s | Bound on each `IOnSubscriptionEstablished` call (at most 5 minutes). |

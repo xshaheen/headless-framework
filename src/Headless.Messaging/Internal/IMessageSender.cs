@@ -234,15 +234,17 @@ internal sealed class MessageSender : IMessageSender
         var transport = selected.Transport!;
         var connectivity = selected.Connectivity ?? _connectivity;
         var brokerAddress = transport.BrokerAddress;
+        // Shutdown cancels every step up to the hand-off, so a stopping host hands nothing new to the broker.
+        cancellationToken.ThrowIfCancellationRequested();
         var traceHandle = _TracingBefore(transportMsg, message.Lane, brokerAddress);
 
-        // The timer is declared first so the linked source over it is disposed first, unregistering from a live token.
-        var publishTimeout = _CreatePublishTimeoutSources();
-        using var publishTimerCts = publishTimeout.Timer;
-        using var publishCts = publishTimeout.Publish;
+        // Once handed over, the send waits out the broker's confirm even while the host stops, bounded only by the
+        // publish timeout: cancelling a publish the broker may already hold would record a sent row as unsent.
+        using var publishCts = _CreatePublishTimeoutSource();
         OperateResult result;
 
-        // Slides the lease forward while the send runs, so a send that outlasts DispatchTimeout keeps its row.
+        // Slides the lease forward while the send runs, so a send that outlasts DispatchTimeout keeps its row. It
+        // shares the send's token, so during shutdown it keeps renewing until the confirm arrives or the timeout fires.
         var renewal = _StartLeaseRenewal(message, publishCts.Token);
         try
         {
@@ -276,7 +278,8 @@ internal sealed class MessageSender : IMessageSender
         }
         catch (OperationCanceledException ex)
         {
-            // A send the publish timeout cut off is a broker that does not answer; one shutdown cut off says nothing.
+            // A send the publish timeout cut off is a broker that does not answer; a stopping host no longer reports
+            // readiness, so the failure says nothing there.
             if (!_shutdownToken.IsCancellationRequested)
             {
                 connectivity.ReportBrokerFailure();
@@ -295,6 +298,8 @@ internal sealed class MessageSender : IMessageSender
             // A publish timeout while the host keeps running is a slow broker, not a stop: rethrown, the retry engine
             // would not classify it, so the attempt would record no failure and the row would wait out its lease
             // (or be re-claimed every poll) with no back-off. As a failed attempt it takes the normal retry path.
+            // During shutdown the cancellation is rethrown instead: the attempt writes nothing, and the row is due for
+            // its next pickup once its lease runs out.
             if (publishCts.IsCancellationRequested && !_shutdownToken.IsCancellationRequested)
             {
                 return MessagingRetryAttempt.Retryable(
@@ -386,30 +391,11 @@ internal sealed class MessageSender : IMessageSender
             : null;
     }
 
-    // Returns the source that bounds the send, cancelled by the publish timeout or host shutdown, and the back-off
-    // clock's timer source when it is a separate object the caller must also dispose.
-    private (CancellationTokenSource Publish, CancellationTokenSource? Timer) _CreatePublishTimeoutSources()
+    // Returns the source that bounds a send already handed to the transport. Only the publish timeout cancels it, on the
+    // back-off clock so a test steps through a broker that never answers; host shutdown does not.
+    private CancellationTokenSource _CreatePublishTimeoutSource()
     {
-        // With no host lifetime to observe (test and non-hosted contexts) the shutdown token can never fire, so no
-        // linked source wraps the timeout in extra registration state.
-        if (ReferenceEquals(_backoffClock, TimeProvider.System))
-        {
-            // A source's own timer already runs on the system clock, so one source carries both the timeout and
-            // shutdown: the hot path allocates a single source per send.
-            var publish = _shutdownToken.CanBeCanceled
-                ? CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken)
-                : new CancellationTokenSource();
-            publish.CancelAfter(_options.TransportPublishTimeout);
-
-            return (publish, null);
-        }
-
-        // Any other back-off clock needs a timer source of its own, so a test steps through a broker that never answers.
-        var timer = new CancellationTokenSource(_options.TransportPublishTimeout, _backoffClock);
-
-        return _shutdownToken.CanBeCanceled
-            ? (CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, timer.Token), timer)
-            : (timer, null);
+        return new CancellationTokenSource(_options.TransportPublishTimeout, _backoffClock);
     }
 
     private MessageLeaseRenewal _StartLeaseRenewal(MediumMessage message, CancellationToken cancellationToken)

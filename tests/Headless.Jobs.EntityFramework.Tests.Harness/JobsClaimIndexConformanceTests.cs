@@ -42,6 +42,9 @@ public abstract class JobsClaimIndexConformanceTests<TFixture>(TFixture fixture)
     /// <summary>Whether <paramref name="plan"/>, as <see cref="ExplainAsync" /> returned it, holds a sort step.</summary>
     protected abstract bool Sorts(string plan);
 
+    /// <summary>Whether <paramref name="plan"/>, as <see cref="ExplainAsync" /> returned it, reads a whole table.</summary>
+    protected abstract bool ScansTable(string plan);
+
     public virtual async Task time_job_peek_reads_the_claimable_index()
     {
         var ct = AbortToken;
@@ -120,6 +123,90 @@ public abstract class JobsClaimIndexConformanceTests<TFixture>(TFixture fixture)
             command.Parameters.Add(batchSize);
 
             (await ExplainAsync(command, ct)).Should().Contain(indexName);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task native_fallback_claim_gates_a_due_chained_child_without_reading_the_finished_history()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildHost("claim-index-gate");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            await _SeedHistoryAsync(host, ct);
+
+            await using var db = await host
+                .Services.GetRequiredService<IDbContextFactory<JobsDbContext>>()
+                .CreateDbContextAsync(ct);
+
+            // A finished parent and its due timed child: the child is a fallback candidate only through the gate.
+            // Any instant before the statement's clock makes the child due; the plan does not depend on which.
+            var past = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var parent = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "claim-index",
+                Status = JobStatus.Succeeded,
+                CreatedAt = new DateTimeOffset(past),
+                UpdatedAt = new DateTimeOffset(past),
+            };
+            var child = new TimeJobEntity
+            {
+                Id = Guid.NewGuid(),
+                Function = "claim-index",
+                Status = JobStatus.Idle,
+                ExecutionTime = past,
+                ParentId = parent.Id,
+                RunCondition = RunCondition.OnSuccess,
+                CreatedAt = new DateTimeOffset(past),
+                UpdatedAt = new DateTimeOffset(past),
+            };
+            db.Set<TimeJobEntity>().AddRange(parent, child);
+            await db.SaveChangesAsync(ct);
+
+            await using var connection = fixture.CreateConnection();
+            await connection.OpenAsync(ct);
+            await AnalyzeAsync(connection, fixture.QualifiedTimeJobsTable, ct);
+
+            var mapping = TimeJobRelationalMapping.Create<JobsDbContext, TimeJobEntity>(db);
+
+            // The root selection of the native fallback claim, with the timed-child gate the claim embeds.
+            var sql = Dialect.Render(
+                new SqlClaimNext(
+                    mapping.Table,
+                    [mapping.Id],
+                    $"""
+                    {mapping.ExecutionTime} IS NOT NULL
+                      AND {mapping.ExecutionTime} <= {SqlDialectTokens.Now}
+                      AND {AcquirePredicateSql.Fallback(mapping.Status, mapping.Lease, reclaimOwn: false)}
+                      {TimedChildGateSql.Build(mapping)}
+                    """,
+                    [mapping.ExecutionTime, mapping.Id],
+                    $"{mapping.UpdatedAt} = {SqlDialectTokens.Now}",
+                    [mapping.Id],
+                    "batchSize"
+                )
+            );
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            var batchSize = command.CreateParameter();
+            batchSize.ParameterName = "batchSize";
+            batchSize.Value = JobsClaimStrategyDefaults.MaxCandidatePageSize;
+            command.Parameters.Add(batchSize);
+
+            var plan = await ExplainAsync(command, ct);
+
+            ScansTable(plan)
+                .Should()
+                .BeFalse("the gate reads the candidate's own parent by key, not every finished row; plan:\n{0}", plan);
         }
         finally
         {

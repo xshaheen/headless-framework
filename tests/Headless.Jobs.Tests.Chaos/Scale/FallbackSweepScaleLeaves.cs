@@ -53,13 +53,6 @@ public sealed class PostgreSqlFallbackSweepScaleTests(StoreChaosPostgreSqlFixtur
     public override Task should_read_no_jobs_table_end_to_end_when_the_store_holds_a_long_finished_history() =>
         base.should_read_no_jobs_table_end_to_end_when_the_store_holds_a_long_finished_history();
 
-    // quarantine: #1750 the native claim's timed-child gate (TimedChildGateSql) reads the parent through an uncorrelated
-    // IN subquery, which PostgreSQL plans as a hashed SubPlan over a Seq Scan of the whole time-job table; whenever a
-    // gated child is a candidate, each claim reads every finished row (90,001 at the smoke size) to admit it
-    protected override IReadOnlyList<string> KnownDefects { get; } = ["Seq Scan on time_jobs gate_parent"];
-
-    protected override string QuarantineIssue => "#1750";
-
     protected override async Task AnalyzeAsync(DbConnection connection, CancellationToken ct)
     {
         await using var command = connection.CreateCommand();
