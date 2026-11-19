@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Blobs.Internal;
+namespace Headless.Blobs;
 
 /// <summary>
 /// The single seam every provider uses to turn a validated <see cref="BlobLocation"/> or <see cref="BlobQuery"/> into a

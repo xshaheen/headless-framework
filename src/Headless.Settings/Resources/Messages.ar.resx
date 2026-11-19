@@ -15,21 +15,21 @@
     <value>لا يوجد تعريف للإعداد {0}.</value>
   </data>
   <data name="setting:provider_not_found" xml:space="preserve">
-    <value>لا يوجد موفر إعدادات باسم {0}.</value>
+    <value>لا يوجد مزوّد إعدادات باسم {0}.</value>
   </data>
   <data name="setting:provider_is_readonly" xml:space="preserve">
-    <value>موفر الإعدادات {0} للقراءة فقط ولا يمكن تعديله.</value>
+    <value>مزوّد الإعدادات {0} للقراءة فقط ولا يمكن تعديله.</value>
   </data>
   <data name="setting:user_not_available" xml:space="preserve">
-    <value>لا يوجد مستخدم متاح للاستخدام مع موفر الإعدادات.</value>
+    <value>لا يوجد مستخدم متاح للاستخدام مع مزوّد الإعدادات.</value>
   </data>
   <data name="setting:tenant_not_available" xml:space="preserve">
-    <value>لا توجد جهة متاحة للاستخدام مع موفر الإعدادات.</value>
+    <value>لا توجد جهة متاحة للاستخدام مع مزوّد الإعدادات.</value>
   </data>
   <data name="setting:decryption_failed" xml:space="preserve">
     <value>تعذّر فك تشفير قيمة الإعداد {0}.</value>
   </data>
   <data name="setting:provider_not_allowed" xml:space="preserve">
-    <value>الإعداد {0} لا يسمح للموفر {1}.</value>
+    <value>الإعداد {0} لا يسمح للمزوّد {1}.</value>
   </data>
 </root>

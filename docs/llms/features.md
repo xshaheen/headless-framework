@@ -407,7 +407,7 @@ setup.ConfigureStorage(o => o.FeatureValuesProviderKeyMaxLength = 128);
 - Each value must be between 1 and 4000. The registration refuses anything else when the options are first read.
 - One option sets the EF Core model, the raw providers' `CREATE TABLE`, and their parameter sizes. Set it before the tables are created.
 - A definition value that does not fit throws `ArgumentOutOfRangeException` when definitions are saved.
-- The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey`. Keep those three lengths together under 850. SQL Server limits a nonclustered index key to 1700 bytes (850 `nvarchar` characters), and PostgreSQL limits a B-tree entry to about 2700 bytes. A row that exceeds the limit fails on insert. `Value` is not indexed.
+- The values table's unique indexes cover `Name`, `ProviderName`, and `ProviderKey`; the definitions table indexes `Name` and `GroupName`, and the group definitions table `Name`. SQL Server limits a nonclustered index key to 1,700 bytes (850 `nvarchar` characters), so the three values lengths together, and each indexed name length, must total at most 850. The registration refuses a wider configuration when the options are first read, on every provider, so one configuration stays valid on each database. `Value` is not indexed.
 
 **Changing a length after the tables exist needs a migration in your application.** The option does not alter an existing column, and `resources provision` never re-runs an applied step. Change the option and the column in the same release:
 
