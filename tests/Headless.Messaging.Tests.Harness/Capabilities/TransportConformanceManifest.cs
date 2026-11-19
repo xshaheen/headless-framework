@@ -249,10 +249,6 @@ public static class TransportConformanceManifest
     private const string _EmulatorDeadLetterDuplicateIssueUrl =
         "https://github.com/xshaheen/headless-framework/issues/1672";
 
-    /// <summary>The open issue that tracks the in-memory consumer dropping a delivery whose callback throws.</summary>
-    private const string _InMemoryCallbackFailureIssueUrl =
-        "https://github.com/xshaheen/headless-framework/issues/1759";
-
     /// <summary>The open issue that tracks the real-namespace cells only the protected Azure workflow can prove.</summary>
     private const string _AzureWorkflowIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1760";
 
@@ -706,13 +702,7 @@ public static class TransportConformanceManifest
                     )
                 )
                 .WithScenario(TransportConformanceScenario.StaleSettlement, ConformanceSupport.Supported)
-                .WithScenario(
-                    TransportConformanceScenario.HandlerFailureRedelivery,
-                    ConformanceSupport.Unsupported(
-                        "A delivery whose callback throws is logged and dropped instead of redelivered.",
-                        _InMemoryCallbackFailureIssueUrl
-                    )
-                )
+                .WithScenario(TransportConformanceScenario.HandlerFailureRedelivery, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.DeadLetterSingleCopy,
                     ConformanceSupport.NotApplicable(

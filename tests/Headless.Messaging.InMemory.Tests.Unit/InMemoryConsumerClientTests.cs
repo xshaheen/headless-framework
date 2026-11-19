@@ -562,6 +562,152 @@ public sealed class InMemoryConsumerClientTests : TestBase
         deliveries.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData((byte)0)]
+    [InlineData((byte)1)]
+    public async Task should_redeliver_a_delivery_whose_callback_throws_and_keep_consuming(byte concurrency)
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(_queue, "throw-group", concurrency, redeliveryClock: clock);
+        await client.SubscribeAsync(["throw-messageName"], AbortToken);
+
+        var deliveredIds = new ConcurrentQueue<string>();
+        var faulted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var nextDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var redelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = 0;
+        client.OnLogCallback = args =>
+        {
+            if (args.LogType == MqLogType.ExceptionReceived)
+            {
+                faulted.TrySetResult();
+            }
+        };
+        client.OnMessageCallback = async (message, sender) =>
+        {
+            deliveredIds.Enqueue(message.Id);
+            if (string.Equals(message.Id, "next", StringComparison.Ordinal))
+            {
+                await client.CommitAsync(sender, AbortToken);
+                nextDelivered.TrySetResult();
+                return;
+            }
+
+            if (Interlocked.Increment(ref attempts) == 1)
+            {
+                throw new InvalidOperationException("callback failure");
+            }
+
+            await client.CommitAsync(sender, AbortToken);
+            redelivered.TrySetResult();
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "throw-messageName"));
+        await faulted.Task.Bounded();
+
+        // when: the listener takes the next message while the failed one waits out its back-off
+        _queue.SendBus(_CreateTestMessage("next", "throw-messageName"));
+        await nextDelivered.Task.Bounded();
+        clock.Advance(_MaxFirstRedeliveryDelay);
+
+        // then
+        await redelivered.Task.Bounded();
+        await cts.CancelAsync();
+        deliveredIds.Should().Equal("msg-1", "next", "msg-1");
+    }
+
+    [Theory]
+    [InlineData(false, (byte)0)]
+    [InlineData(false, (byte)1)]
+    [InlineData(true, (byte)0)]
+    [InlineData(true, (byte)1)]
+    public async Task should_not_redeliver_again_a_delivery_the_callback_settled_before_it_threw(
+        bool rejectBeforeThrowing,
+        byte concurrency
+    )
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        await using var client = new InMemoryConsumerClient(
+            _queue,
+            "settled-group",
+            concurrency,
+            redeliveryClock: clock
+        );
+        await client.SubscribeAsync(["settled-messageName"], AbortToken);
+
+        var deliveredIds = new ConcurrentQueue<string>();
+        var faulted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var redelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sentinelDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = 0;
+        client.OnLogCallback = args =>
+        {
+            if (args.LogType == MqLogType.ExceptionReceived)
+            {
+                faulted.TrySetResult();
+            }
+        };
+        client.OnMessageCallback = async (message, sender) =>
+        {
+            deliveredIds.Enqueue(message.Id);
+            if (string.Equals(message.Id, "sentinel", StringComparison.Ordinal))
+            {
+                sentinelDelivered.TrySetResult();
+                return;
+            }
+
+            if (Interlocked.Increment(ref attempts) > 1)
+            {
+                await client.CommitAsync(sender, AbortToken);
+                redelivered.TrySetResult();
+                return;
+            }
+
+            if (rejectBeforeThrowing)
+            {
+                await client.RejectAsync(sender, AbortToken);
+            }
+            else
+            {
+                await client.CommitAsync(sender, AbortToken);
+            }
+
+            throw new InvalidOperationException("callback failure after settling");
+        };
+
+        using var cts = new CancellationTokenSource();
+        _StartListening(client, cts.Token);
+        _queue.SendBus(_CreateTestMessage("msg-1", "settled-messageName"));
+        await faulted.Task.Bounded();
+
+        // when: every back-off a second requeue could wait has elapsed
+        clock.Advance(ReconnectBackoff.Ceiling);
+        if (rejectBeforeThrowing)
+        {
+            await redelivered.Task.Bounded();
+        }
+
+        // The redeliveries are written into the client's FIFO channel when their delay ends, so a second one would sit
+        // ahead of a sentinel sent now.
+        _queue.SendBus(_CreateTestMessage("sentinel", "settled-messageName"));
+        await sentinelDelivered.Task.Bounded();
+
+        // then: the reject requeues the delivery once, and the throw that follows a settlement requeues nothing
+        await cts.CancelAsync();
+        if (rejectBeforeThrowing)
+        {
+            deliveredIds.Should().Equal("msg-1", "msg-1", "sentinel");
+        }
+        else
+        {
+            deliveredIds.Should().Equal("msg-1", "sentinel");
+        }
+    }
+
     [Fact]
     public async Task should_wait_for_a_running_concurrent_handler_before_disposing()
     {

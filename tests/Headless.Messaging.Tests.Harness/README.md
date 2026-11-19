@@ -146,7 +146,7 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 | `ConnectionDropRecovery` | S | S | S | S | U | U | N/A | S | S |
 | `PublishDuringOutage` | S | S | S | S | U | U | N/A | S | S |
 | `StaleSettlement` | S | S | S | S | U | S‡ | S | S | S |
-| `HandlerFailureRedelivery` | S | S | S | S | U | S‡ | U | S | S |
+| `HandlerFailureRedelivery` | S | S | S | S | U | S‡ | S | S | S |
 | `BoundedGracefulShutdown` | S | S | S | S | S† | S‡ | S | S | S |
 | `BusConsumerIdentityFanOut` | S | S | S | N/A | S† | N/A | S | S | S |
 | `BusReplicaCompetition` | S | S | S | N/A | S† | N/A | S | S | S |
@@ -180,7 +180,7 @@ Evidence anchors:
 - NATS, RabbitMQ, and AWS Bus fan-out: their `TransportConsumerConformanceTestsBase` provider leaves; Azure topic/subscription fan-out: `AzureServiceBusTransportTests`.
 - AWS consumer-identity fan-out, replica competition, queue ownership, same-name lane isolation, and terminal malformed-envelope deletion: `AmazonSqsConsumerClientConformanceTests` and `MalformedMessageTests` against LocalStack.
 - Redis Streams Bus/Queue routing, group fan-out, replica competition, lane isolation, settlement, shutdown, and poison handling: `RedisConsumerConformanceTests` against Testcontainers Redis.
-- InMemory Bus/Queue group fan-out, replica competition, ownership, and lane isolation: `InMemoryProviderConformanceTests` using the shared provider driver. Its empty-body, settlement, standard-header, concurrency, and shutdown evidence also comes from `InMemoryConsumerConformanceTests`, on the system clock like the provider driver's sessions, and pause from `InMemoryBrokerFaultTests`. The broker is the host process, so its restart cell is `N/A`. Its callback-failure cell is quarantined because the client drops a delivery whose callback throws (#1759).
+- InMemory Bus/Queue group fan-out, replica competition, ownership, and lane isolation: `InMemoryProviderConformanceTests` using the shared provider driver. Its empty-body, settlement, callback-failure, standard-header, concurrency, and shutdown evidence also comes from `InMemoryConsumerConformanceTests`, on the system clock like the provider driver's sessions, and pause from `InMemoryBrokerFaultTests`. The broker is the host process, so its restart cell is `N/A`.
 - Azure Service Bus group fan-out, replica competition, Queue ownership, and lane isolation: `AzureServiceBusConsumerClientHarnessTests` on the credential-gated managed-service tier.
 - Azure Service Bus emulator round trip, settlement, stale settlement, callback failure, and bounded shutdown: `AzureServiceBusEmulatorConsumerClientHarnessTests`. Its header-builder failure test, on the `Config.json` queue declared with a max delivery count of 3, skips while the cell is quarantined: the emulator intermittently dead-letters two copies (#1672). Topic fan-out to the two `Config.json` subscriptions: `AzureServiceBusEmulatorTransportTests`; pause and broker restart: `AzureServiceBusEmulatorBrokerFaultTests`.
 - Kafka Queue ownership and terminal poison-offset handling: `KafkaConsumerClientConformanceTests`; Bus startup rejection before storage initialization: `ProviderConformanceEvidenceTests`.
