@@ -142,7 +142,13 @@ public sealed class HeadlessRequiredServiceExtensionsTests : TestBase
         services.RequireRegisteredService<IMarker>("the marker feature", _Remedy);
 
         // then
-        services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)).Should().Be(1);
+        services
+            .Count(descriptor =>
+                descriptor.ServiceType == typeof(IHostedService)
+                && descriptor.ImplementationType == typeof(StartupValidationRunner)
+            )
+            .Should()
+            .Be(1);
     }
 
     private static async Task _RunStartingAsync(IServiceCollection services)

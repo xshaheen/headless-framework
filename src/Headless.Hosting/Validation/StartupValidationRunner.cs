@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Hosting;
 
@@ -27,9 +28,16 @@ internal sealed class StartupValidationRunner(IEnumerable<IHeadlessStartupValida
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var started = Stopwatch.GetTimestamp();
+
             try
             {
                 await validator.ValidateAsync(cancellationToken).ConfigureAwait(false);
+                HostingTelemetry.StartupValidatorCompleted(
+                    validator.GetType(),
+                    Stopwatch.GetElapsedTime(started),
+                    fault: null
+                );
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -37,6 +45,11 @@ internal sealed class StartupValidationRunner(IEnumerable<IHeadlessStartupValida
             }
             catch (Exception exception)
             {
+                HostingTelemetry.StartupValidatorCompleted(
+                    validator.GetType(),
+                    Stopwatch.GetElapsedTime(started),
+                    exception
+                );
                 (failures ??= []).Add(exception);
             }
         }

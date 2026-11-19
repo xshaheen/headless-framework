@@ -95,7 +95,8 @@ public sealed class StartupValidatorTests : TestBase
 
         // then
         services.Count(descriptor => descriptor.ServiceType == typeof(IHeadlessStartupValidator)).Should().Be(1);
-        services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)).Should().Be(1);
+        _HostedServices(services, typeof(StartupValidationRunner)).Should().Be(1);
+        _HostedServices(services, typeof(HostStartTelemetry)).Should().Be(1);
     }
 
     [Fact]
@@ -110,7 +111,8 @@ public sealed class StartupValidatorTests : TestBase
 
         // then
         services.Count(descriptor => descriptor.ServiceType == typeof(IHeadlessStartupValidator)).Should().Be(2);
-        services.Count(descriptor => descriptor.ServiceType == typeof(IHostedService)).Should().Be(1);
+        _HostedServices(services, typeof(StartupValidationRunner)).Should().Be(1);
+        _HostedServices(services, typeof(HostStartTelemetry)).Should().Be(1);
     }
 
     [Fact]
@@ -143,6 +145,11 @@ public sealed class StartupValidatorTests : TestBase
         await act.Should().ThrowAsync<TypedStartupException>();
         worker.Started.Should().BeFalse();
     }
+
+    private static int _HostedServices(IServiceCollection services, Type implementation) =>
+        services.Count(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) && descriptor.ImplementationType == implementation
+        );
 
     private static async Task _RunStartingAsync(IServiceCollection services)
     {
