@@ -25,7 +25,13 @@ public sealed class PostgreSqlClaimIndexTests(PostgreSqlJobsCoordinationFixture 
     public override Task cron_job_last_run_read_takes_the_finished_history_in_order_from_the_last_run_index() =>
         base.cron_job_last_run_read_takes_the_finished_history_in_order_from_the_last_run_index();
 
+    [Fact]
+    public override Task native_fallback_claim_gates_a_due_chained_child_without_reading_the_finished_history() =>
+        base.native_fallback_claim_gates_a_due_chained_child_without_reading_the_finished_history();
+
     protected override bool Sorts(string plan) => plan.Contains("Sort", StringComparison.Ordinal);
+
+    protected override bool ScansTable(string plan) => plan.Contains("Seq Scan", StringComparison.Ordinal);
 
     // The last-run read takes every finished occurrence. At the few thousand rows a test seeds, PostgreSQL sorts them in
     // memory more cheaply than it reads the index; the index wins once the sort spills to disk, which a test-sized table

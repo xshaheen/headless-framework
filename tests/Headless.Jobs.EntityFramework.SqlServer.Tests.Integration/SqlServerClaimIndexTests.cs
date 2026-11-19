@@ -25,7 +25,15 @@ public sealed class SqlServerClaimIndexTests(SqlServerJobsCoordinationFixture fi
     public override Task cron_job_last_run_read_takes_the_finished_history_in_order_from_the_last_run_index() =>
         base.cron_job_last_run_read_takes_the_finished_history_in_order_from_the_last_run_index();
 
+    [Fact]
+    public override Task native_fallback_claim_gates_a_due_chained_child_without_reading_the_finished_history() =>
+        base.native_fallback_claim_gates_a_due_chained_child_without_reading_the_finished_history();
+
     protected override bool Sorts(string plan) => plan.Contains("PhysicalOp=\"Sort\"", StringComparison.Ordinal);
+
+    protected override bool ScansTable(string plan) =>
+        plan.Contains("PhysicalOp=\"Table Scan\"", StringComparison.Ordinal)
+        || plan.Contains("PhysicalOp=\"Clustered Index Scan\"", StringComparison.Ordinal);
 
     protected override async Task AnalyzeAsync(DbConnection connection, string qualifiedTable, CancellationToken ct)
     {
