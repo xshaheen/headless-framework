@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,6 +48,83 @@ public sealed class LogTextMaskerTests : TestBase
         masker.MaskValue(42).Should().Be(42);
         masker.MaskValue(Guid.Empty).Should().Be(Guid.Empty);
         masker.MaskValue(null).Should().BeNull();
+    }
+
+    [Fact]
+    public void should_mask_a_numeric_data_value_without_changing_the_original()
+    {
+        // given: an id held as a long, with messages that match nothing
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new InvalidOperationException("lookup failed");
+        original.Data["Citizen"] = 29001011234567L;
+        original.Data["Order"] = 42;
+
+        // when
+        var masked = masker.Mask(original);
+
+        // then
+        masked.Should().NotBeSameAs(original).And.BeOfType<InvalidOperationException>();
+        masked.Data["Citizen"].Should().Be("***");
+        masked.Data["Order"].Should().Be(42);
+        original.Data["Citizen"].Should().Be(29001011234567L);
+    }
+
+    [Fact]
+    public void should_return_the_exception_itself_when_neither_messages_nor_data_match()
+    {
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new InvalidOperationException("lookup failed");
+        original.Data["Order"] = 42;
+
+        masker.Mask(original).Should().BeSameAs(original);
+    }
+
+    [Fact]
+    public void should_record_a_span_exception_event_with_its_rendered_text_masked()
+    {
+        // given: the id appears only in the exception's own ToString(), never in its message
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var exception = new CitizenException($"lookup for {_NationalId} failed");
+        using var activity = new Activity("test");
+        activity.Start();
+
+        // when
+        masker.RecordException(activity, exception);
+
+        // then
+        var tags = activity
+            .Events.Should()
+            .ContainSingle()
+            .Which.Tags.ToDictionary(static tag => tag.Key, static tag => tag.Value);
+        tags["exception.message"].Should().Be("lookup for *** failed");
+        tags["exception.stacktrace"]
+            .Should()
+            .BeOfType<string>()
+            .Which.Should()
+            .NotContain(_NationalId)
+            .And.Contain("(citizen ***)");
+        tags["exception.type"].Should().Be(typeof(CitizenException).FullName);
+    }
+
+    [Fact]
+    public void should_record_the_exception_as_it_is_when_no_text_redactor_is_registered()
+    {
+        using var provider = _Build(setup: null);
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var exception = new InvalidOperationException($"no citizen {_NationalId}");
+        using var activity = new Activity("test");
+        activity.Start();
+
+        masker.RecordException(activity, exception);
+
+        activity
+            .Events.Should()
+            .ContainSingle()
+            .Which.Tags.Should()
+            .Contain(new KeyValuePair<string, object?>("exception.message", $"no citizen {_NationalId}"));
     }
 
     [Fact]
@@ -105,5 +183,10 @@ public sealed class LogTextMaskerTests : TestBase
     private sealed class UpperCaseRedactor : ILogTextRedactor
     {
         public string Redact(string text) => text.ToUpperInvariant();
+    }
+
+    private sealed class CitizenException(string message) : Exception(message)
+    {
+        public override string ToString() => $"{base.ToString()} (citizen {_NationalId})";
     }
 }

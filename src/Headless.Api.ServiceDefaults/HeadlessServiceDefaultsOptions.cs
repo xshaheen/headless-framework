@@ -159,8 +159,8 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptions
 
     /// <summary>Whether to record exceptions on the request span. Defaults to <see langword="true"/>.</summary>
     /// <remarks>
-    /// The event is recorded from <see cref="LogTextMasker.Mask(Exception)"/>, so the app's text redactors mask its
-    /// messages while its type and stack frames stay. The instrumentation's own
+    /// The event is recorded through <see cref="LogTextMasker.RecordException"/>, so the app's text redactors mask its
+    /// message and its rendered text, stack trace included, while its type stays. The instrumentation's own
     /// <see cref="AspNetCoreTraceInstrumentationOptions.RecordException"/> stays off: setting it in
     /// <see cref="ConfigureAspNetCoreInstrumentation"/> records a second, unmasked event, and replacing
     /// <see cref="AspNetCoreTraceInstrumentationOptions.EnrichWithException"/> there, rather than composing with it,

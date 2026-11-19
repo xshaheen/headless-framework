@@ -280,16 +280,24 @@ public static class SetupApi
                         instrumentation.EnableAspNetCoreSignalRSupport = true;
 
                         // The instrumentation would record the raw exception, and an exception event's tags cannot be
-                        // rewritten afterwards, so the event is recorded here from the masked copy instead: same type,
-                        // same stack frames, masked messages. EnrichWithException runs whether or not
-                        // RecordException is set.
+                        // rewritten afterwards, so the event is recorded here with its message and rendered text
+                        // masked instead. EnrichWithException runs whether or not RecordException is set.
                         instrumentation.RecordException = false;
 
                         if (otel.RecordException)
                         {
                             var masker = serviceProvider.GetService<LogTextMasker>();
                             instrumentation.EnrichWithException = (activity, exception) =>
-                                activity.AddException(masker?.Mask(exception) ?? exception);
+                            {
+                                if (masker is null)
+                                {
+                                    activity.AddException(exception);
+                                }
+                                else
+                                {
+                                    masker.RecordException(activity, exception);
+                                }
+                            };
                         }
 
                         // Capture otel by reference so MapHeadlessEndpoints() can replace

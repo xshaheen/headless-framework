@@ -360,14 +360,14 @@ internal sealed class OutboxMessageWriter(
         );
     }
 
-    private static void _TracingError(MessagingTraceHandle traceHandle, Exception ex)
+    private void _TracingError(MessagingTraceHandle traceHandle, Exception ex)
     {
         if (!traceHandle.IsRecording)
         {
             return;
         }
 
-        MessagingTelemetry.PersistError(traceHandle.Activity, ex);
+        MessagingTelemetry.PersistError(traceHandle.Activity, ex, _telemetry.Masker);
     }
 
     private long _NowUnixTimeMilliseconds()

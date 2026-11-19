@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.Fencing;
+using Headless.Logging;
 using Headless.Messaging.Internal;
 using Headless.Sql;
 using Headless.UnitOfWork;
@@ -87,6 +88,7 @@ internal sealed partial class RelationalDataStorage
     private readonly string _publishedTable;
     private readonly string _receivedTable;
     private readonly bool _holdsReceived;
+    private readonly LogTextMasker? _masker;
     private readonly string _terminalGuard;
     private readonly string _terminalGuardWithRetries;
     private readonly string _nextRetryAtAssignment;
@@ -120,7 +122,8 @@ internal sealed partial class RelationalDataStorage
         TimeProvider timeProvider,
         INodeMembership nodeMembership,
         ILogger<RelationalDataStorage> logger,
-        bool holdsReceived = true
+        bool holdsReceived = true,
+        LogTextMasker? masker = null
     )
     {
         _storage = Argument.IsNotNull(storage);
@@ -136,6 +139,7 @@ internal sealed partial class RelationalDataStorage
         _publishedTable = tableNames.GetPublishedTableName();
         _receivedTable = tableNames.GetReceivedTableName();
         _holdsReceived = holdsReceived;
+        _masker = masker;
 
         // A row that is Succeeded or Failed with no retry pending is permanently done: no transition may rewrite it.
         // A Failed row that still has a NextRetryAt is persisted for retry and stays mutable, so the retry processor
@@ -250,7 +254,8 @@ internal sealed partial class RelationalDataStorage
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<INodeMembership>(),
             services.GetRequiredService<ILogger<RelationalDataStorage>>(),
-            holdsReceived
+            holdsReceived,
+            services.GetService<LogTextMasker>()
         );
     }
 
@@ -623,9 +628,13 @@ internal sealed partial class RelationalDataStorage
             : reader.GetString(ordinal);
     }
 
-    private static PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception)
+    // The text is persisted and the dashboard shows it, so the app's text redactors mask it first.
+    private PoisonMessage _CreatePoisonMessage(Guid storageId, Exception exception)
     {
-        return new(storageId, $"{exception.GetType().FullName}: {exception.Message}");
+        return new(
+            storageId,
+            MessagingTelemetry.ExceptionInfoOf($"{exception.GetType().FullName}: {exception.Message}", _masker)
+        );
     }
 
     private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);

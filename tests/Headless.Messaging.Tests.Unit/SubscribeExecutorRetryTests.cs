@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Headless.Fencing;
+using Headless.Logging;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -64,7 +65,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         MessagingOptions options,
         ICircuitBreakerStateManager? circuitBreaker = null,
         TimeProvider? timeProvider = null,
-        IMessageStateObserver? stateObserver = null
+        IMessageStateObserver? stateObserver = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         storage
@@ -111,6 +113,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             services.AddSingleton(stateObserver);
         }
 
+        configureServices?.Invoke(services);
+
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
 
@@ -121,7 +125,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             timeProvider ?? TimeProvider.System,
             logger,
             Options.Create(options),
-            circuitBreaker
+            circuitBreaker,
+            configureServices is null ? null : provider.GetRequiredService<MessagingTelemetry>()
         );
     }
 
@@ -134,7 +139,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var message = _CreateMediumMessage();
         message.Origin.Headers[Headers.ExecutionInstanceId] = HostIdentity.GetInstanceHostname();
 
@@ -167,7 +172,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
         var observer = Substitute.For<IMessageStateObserver>();
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), stateObserver: observer);
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), stateObserver: observer);
         var message = _CreateMediumMessage();
 
         // when
@@ -187,7 +192,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
         var observer = Substitute.For<IMessageStateObserver>();
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), stateObserver: observer);
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), stateObserver: observer);
         storage
             .ChangeReceiveRetryStateAsync(
                 Arg.Any<MediumMessage>(),
@@ -218,7 +223,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "id", null, null)));
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var message = _CreateMediumMessage();
         message.Origin.Headers[Headers.ExecutionInstanceId] = "previous-host";
 
@@ -259,7 +264,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         {
             RetryPolicy = { RetryStrategy = TestRetryStrategies.FixedDelay(1, TimeSpan.Zero) },
         };
-        var executor = _CreateExecutor(invoker, storage, options);
+        await using var executor = _CreateExecutor(invoker, storage, options);
         var message = _CreateMediumMessage();
         message.Origin.Headers[Headers.ExecutionInstanceId] = HostIdentity.GetInstanceHostname();
 
@@ -291,7 +296,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null)));
-        var executor = _CreateExecutor(
+        await using var executor = _CreateExecutor(
             invoker,
             storage,
             new MessagingOptions { MinimumInboxGuarantee = InboxGuarantee.Durable }
@@ -329,7 +334,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         invoker
             .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null)));
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var message = _CreateMediumMessage();
         message.InboxKey = new InboxKey(
             TenantId: null,
@@ -384,7 +389,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     {
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var message = _CreateMediumMessage();
         message.InboxKey = new InboxKey(
             TenantId: null,
@@ -424,7 +429,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new TimeoutException("boom"), out var invocations);
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var descriptor = _CreateDescriptor(_Policy(immediate: 2, delayed: 3));
         var message = _CreateMediumMessage();
@@ -454,7 +459,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 InitialDispatchGrace = TimeSpan.FromSeconds(7),
             },
         };
-        var executor = _CreateExecutor(invoker, storage, options);
+        await using var executor = _CreateExecutor(invoker, storage, options);
         var writes = _CaptureWrites(storage);
         var descriptor = _CreateDescriptor(_Policy(immediate: 2, delayed: 1));
         var message = _CreateMediumMessage();
@@ -498,7 +503,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var cap = TimeSpan.FromSeconds(100);
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new TimeoutException("boom"), out var invocations);
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
         var descriptor = _CreateDescriptor(_Policy(immediate: 0, delayed: 4, initial, cap));
         var message = _CreateMediumMessage();
@@ -530,7 +535,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var cap = TimeSpan.FromMinutes(10);
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new TimeoutException("boom"), out var invocations);
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         message.Retries = 1;
@@ -560,7 +565,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new TimeoutException("boom"), out var invocations);
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         message.Retries = 3;
@@ -580,7 +585,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         options.RetryPolicy.MaxPersistedRetries.Should().BeLessThan(16);
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new TimeoutException("boom"), out var invocations);
-        var executor = _CreateExecutor(invoker, storage, options);
+        await using var executor = _CreateExecutor(invoker, storage, options);
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         message.Retries = 16;
@@ -604,7 +609,12 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var invoker = _Succeeding(out var invocations);
         var exhausted = new List<TerminalMessageInfo>();
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add), circuitBreaker);
+        await using var executor = _CreateExecutor(
+            invoker,
+            storage,
+            _OptionsCountingExhausted(exhausted.Add),
+            circuitBreaker
+        );
         var writes = _CaptureWrites(storage);
         storage
             .ChangeReceiveRetryStateAsync(
@@ -646,7 +656,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new InvalidOperationException("declined"), out var invocations);
         var exhausted = new List<TerminalMessageInfo>();
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         var policy = new FailurePolicyBuilder()
@@ -685,7 +695,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 },
             },
         };
-        var executor = _CreateExecutor(invoker, storage, options, timeProvider: new FakeTimeProvider());
+        await using var executor = _CreateExecutor(invoker, storage, options, timeProvider: new FakeTimeProvider());
         var message = _CreateMediumMessage();
 
         try
@@ -710,7 +720,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new ArgumentException("invalid param"), out var invocations);
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
 
@@ -732,7 +742,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new ArgumentException("invalid param"), out _);
         var options = _OptionsCountingExhausted(() => { });
-        var executor = _CreateExecutor(invoker, storage, options, timeProvider: clock);
+        await using var executor = _CreateExecutor(invoker, storage, options, timeProvider: clock);
         var message = _CreateMediumMessage();
         message.Added = clock.GetUtcNow().AddSeconds(-2L * options.FailedMessageExpiredAfter);
 
@@ -747,7 +757,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new TimeoutException("boom"), out var invocations);
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var policy = new FailurePolicyBuilder()
             .Immediate(2)
@@ -766,7 +776,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     {
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new TimeoutException("boom"), out _);
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         _CaptureWrites(storage);
         var seen = new List<Type>();
         var policy = new FailurePolicyBuilder()
@@ -792,7 +802,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         {
             RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(5), MaxPersistedRetries = 5 },
         };
-        var executor = _CreateExecutor(invoker, storage, options);
+        await using var executor = _CreateExecutor(invoker, storage, options);
         var writes = _CaptureWrites(storage);
 
         await executor.ExecuteAsync(
@@ -815,7 +825,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var exhausted = 0;
         var options = _OptionsCountingExhausted(() => exhausted++);
         options.RetryPolicy.MaxPersistedRetries = 0;
-        var executor = _CreateExecutor(invoker, storage, options);
+        await using var executor = _CreateExecutor(invoker, storage, options);
         var writes = _CaptureWrites(storage);
 
         // when
@@ -845,7 +855,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             out var invocations
         );
         var exhausted = new List<TerminalMessageInfo>();
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
 
@@ -876,7 +886,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         );
         var invoker = _AlwaysThrowing(wrapped, out var invocations);
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
 
@@ -896,7 +906,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var exhausted = new List<TerminalMessageInfo>();
         var options = _OptionsCountingExhausted(exhausted.Add);
         options.RetryPolicy.DispatchTimeout = TimeSpan.FromSeconds(23);
-        var executor = _CreateExecutor(invoker, storage, options);
+        await using var executor = _CreateExecutor(invoker, storage, options);
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         message.Origin.Headers[Headers.ConsumerIdentity] = "unregistered.consumer";
@@ -918,7 +928,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     {
         var storage = Substitute.For<IDataStorage>();
         var exhausted = 0;
-        var executor = _CreateExecutor(
+        await using var executor = _CreateExecutor(
             Substitute.For<ISubscribeInvoker>(),
             storage,
             _OptionsCountingExhausted(() => exhausted++)
@@ -942,12 +952,12 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         // given — two nodes run the final attempt of the same row; storage lets only the first terminal write land.
         var storage = Substitute.For<IDataStorage>();
         var exhausted = 0;
-        var nodeA = _CreateExecutor(
+        await using var nodeA = _CreateExecutor(
             _AlwaysThrowing(new TimeoutException("boom"), out _),
             storage,
             _OptionsCountingExhausted(() => Interlocked.Increment(ref exhausted))
         );
-        var nodeB = _CreateExecutor(
+        await using var nodeB = _CreateExecutor(
             _AlwaysThrowing(new TimeoutException("boom"), out _),
             storage,
             _OptionsCountingExhausted(() => Interlocked.Increment(ref exhausted))
@@ -987,7 +997,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
 
         var storage = Substitute.For<IDataStorage>();
         ScopedMarker? observed = null;
-        var executor = _CreateExecutor(
+        await using var executor = _CreateExecutor(
             _AlwaysThrowing(new TimeoutException("boom"), out _),
             storage,
             _OptionsCountingExhausted(info => observed = info.ServiceProvider.GetRequiredService<ScopedMarker>())
@@ -1012,7 +1022,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         // given — redelivery where storage is already terminal: the terminal write affects no row.
         var storage = Substitute.For<IDataStorage>();
         var exhausted = 0;
-        var executor = _CreateExecutor(
+        await using var executor = _CreateExecutor(
             _AlwaysThrowing(new TimeoutException("boom"), out _),
             storage,
             _OptionsCountingExhausted(() => exhausted++)
@@ -1049,7 +1059,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 return new ConsumerExecutedResult(null, null, null!, null, null);
             });
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var policy = new FailurePolicyBuilder()
             .Immediate(2)
@@ -1080,7 +1090,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             out var invocations
         );
         var exhausted = new List<TerminalMessageInfo>();
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
 
         // when
@@ -1118,7 +1128,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 return new ConsumerExecutedResult(null, null, null!, null, null);
             });
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
 
         // when
@@ -1153,7 +1163,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                     new TaskCanceledException("HttpClient timeout", null, clientTimeout.Token)
                 );
             });
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         message.InboxKey = new InboxKey(
@@ -1205,7 +1215,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             out var invocations
         );
         var exhausted = new List<TerminalMessageInfo>();
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         var policy = new FailurePolicyBuilder()
@@ -1237,7 +1247,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _SucceedingInScope(out var invocations);
         var exhausted = new List<TerminalMessageInfo>();
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateTransactionalInboxMessage();
         await using var dispatchServices = _ServicesWithRunnerFailingAfterHandler(_ => new TaskCanceledException(
@@ -1271,7 +1281,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _SucceedingInScope(out var invocations);
         var exhausted = new List<TerminalMessageInfo>();
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
         var writes = _CaptureWrites(storage);
         var message = _CreateTransactionalInboxMessage();
         await using var dispatchServices = _ServicesWithRunnerFailingAfterHandler(_ => new TaskCanceledException(
@@ -1299,7 +1309,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _SucceedingInScope(out var invocations);
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var message = _CreateTransactionalInboxMessage();
         await using var dispatchServices = _ServicesWithRunnerFailingAfterHandler(token =>
@@ -1383,7 +1393,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
         var options = new MessagingOptions { RetryPolicy = { DispatchTimeout = TimeSpan.FromSeconds(17) } };
-        var executor = _CreateExecutor(invoker, storage, options);
+        await using var executor = _CreateExecutor(invoker, storage, options);
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         // The first dispatch of a 2-immediate policy reserves at most 3 attempts; all 3 were reserved before a crash.
@@ -1420,7 +1430,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         // given — a delayed pickup gets one attempt; the crashed dispatch already reserved it.
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         message.Retries = 1;
@@ -1440,7 +1450,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         message.Retries = 4;
@@ -1465,7 +1475,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         // short-circuit without invoking the consumer body and without writing any state.
         var invoker = Substitute.For<ISubscribeInvoker>();
         var storage = Substitute.For<IDataStorage>();
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
 
         // Override the happy-path stub from _CreateExecutor so the fresh-dispatch combined
         // lease+reserve write reports lease contention.
@@ -1493,7 +1503,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     {
         var storage = Substitute.For<IDataStorage>();
         var invoker = Substitute.For<ISubscribeInvoker>();
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         storage
             .ReserveReceiveAttemptAsync(Arg.Any<MediumMessage>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(false));
@@ -1531,7 +1541,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, Guid.NewGuid().ToString(), null, null)));
         var options = new MessagingOptions { RetryPolicy = { DispatchTimeout = TimeSpan.FromSeconds(17) } };
-        var executor = _CreateExecutor(invoker, storage, options);
+        await using var executor = _CreateExecutor(invoker, storage, options);
         var message = _CreateMediumMessage();
 
         var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
@@ -1564,7 +1574,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                     ? Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom"))
                     : Task.FromResult(new ConsumerExecutedResult(null, null, Guid.NewGuid().ToString(), null, null))
             );
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         _CaptureWrites(storage);
         var message = _CreateMediumMessage();
         var executionState = new RetryExecutionState();
@@ -1593,7 +1603,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<ConsumerExecutedResult>(_Catch(() => _ThrowOutOfStock(orders.Dequeue()))));
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
 
         // when
@@ -1619,6 +1629,38 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
+    public async Task should_store_the_failure_text_masked_when_redaction_is_registered()
+    {
+        // given — the handler's exception names the order the app's text redactor masks
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<ConsumerExecutedResult>(_Catch(() => _ThrowOutOfStock("order-1001"))));
+        await using var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions(),
+            configureServices: static services =>
+                services.AddHeadlessRedaction(static setup => setup.MaskText(@"order-\d+"))
+        );
+        var writes = _CaptureWrites(storage);
+
+        // when
+        await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(FailurePolicyDefinition.None),
+            AbortToken
+        );
+
+        // then — the stored text the dashboard shows is masked, and the fingerprint still comes from the live exception
+        var write = writes.Should().ContainSingle().Which;
+        write.ExceptionInfo.Should().Contain("Order *** has an item out of stock").And.NotContain("order-1001");
+        write.FailureFingerprint.Should().MatchRegex("^v1:[0-9a-f]{16}$");
+    }
+
+    [Fact]
     public async Task should_store_a_fingerprint_on_the_retry_write_and_a_different_one_when_the_cause_changes()
     {
         // given — the first attempt fails one way and its immediate retry fails another
@@ -1632,7 +1674,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                     attempt++ == 0 ? _Catch(() => _ThrowOutOfStock("order-1")) : _Catch(_ThrowTimedOut)
                 )
             );
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
 
         // when
@@ -1656,7 +1698,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         var invoker = _AlwaysThrowing(new TimeoutException("handler"), out var invocations);
         var exhausted = 0;
-        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        await using var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
         var writes = _CaptureWrites(storage);
         var message = _CreateInboxMessage();
         var runner = _NotStartingRunner(message, new TimeoutException("pool exhausted"), out var runs);
@@ -1696,7 +1738,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     {
         // given — the row already failed before entry three times
         var storage = Substitute.For<IDataStorage>();
-        var executor = _CreateExecutor(_Succeeding(out _), storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(_Succeeding(out _), storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
         var message = _CreateInboxMessage();
         message.PreEntryFailures = 3;
@@ -1724,7 +1766,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var terminals = new List<TerminalMessageInfo>();
         var options = _OptionsCountingExhausted(terminals.Add);
         options.RetryPolicy.MaxPreEntryFailures = 2;
-        var executor = _CreateExecutor(_Succeeding(out _), storage, options);
+        await using var executor = _CreateExecutor(_Succeeding(out _), storage, options);
         var writes = _CaptureWrites(storage);
         var message = _CreateInboxMessage();
         message.PreEntryFailures = 2;
@@ -1755,7 +1797,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var exhausted = 0;
         var options = _OptionsCountingExhausted(() => exhausted++);
         options.RetryPolicy.MaxPreEntryFailures = 3;
-        var executor = _CreateExecutor(_Succeeding(out var invocations), storage, options);
+        await using var executor = _CreateExecutor(_Succeeding(out var invocations), storage, options);
         var writes = _CaptureWrites(storage);
         var descriptor = _CreateDescriptor(_Policy(immediate: 0, delayed: 1));
         var message = _CreateInboxMessage();
@@ -1793,7 +1835,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     {
         // given — a request: its caller waits only until the deadline, so a free reschedule could outlive it
         var storage = Substitute.For<IDataStorage>();
-        var executor = _CreateExecutor(_Succeeding(out _), storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(_Succeeding(out _), storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
         var message = _CreateInboxMessage();
         message.Lane = MessageLane.Queue;
@@ -1824,7 +1866,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         invoker
             .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<ConsumerExecutedResult>(new TimeoutException("handler")));
-        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        await using var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
         var writes = _CaptureWrites(storage);
         var message = _CreateInboxMessage();
         var runner = Substitute.For<IInboxTransactionRunner>();

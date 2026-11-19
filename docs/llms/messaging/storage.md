@@ -172,7 +172,7 @@ Every published and received row carries a change marker (`changed_at` / `Change
 
 ## Failure text and fingerprint
 
-Every row stores the failure that last ended or delayed it: `exception_info` / `ExceptionInfo` (the exception text) and `failure_fingerprint` / `FailureFingerprint`, a versioned value that groups failures by cause. `MediumMessage.ExceptionInfo`, `MediumMessage.FailureFingerprint`, and the monitoring API return both.
+Every row stores the failure that last ended or delayed it: `exception_info` / `ExceptionInfo` (the exception text) and `failure_fingerprint` / `FailureFingerprint`, a versioned value that groups failures by cause. `MediumMessage.ExceptionInfo`, `MediumMessage.FailureFingerprint`, and the monitoring API return both. When `AddHeadlessRedaction` registers a text redactor, the exception text is masked with it before it is stored ([channel coverage](../logging.md#channel-coverage)).
 
 The fingerprint comes from `Headless.FailureFingerprint.Compute`: the innermost exception type and the top three non-framework stack frames, never the message, so failures that differ only by an id group together. Failures caused by the delivery rather than the code store a fixed value from `MessagingFailureFingerprints`:
 

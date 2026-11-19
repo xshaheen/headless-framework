@@ -6,6 +6,7 @@ using Headless.Checks;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Hosting;
+using Headless.Logging;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
@@ -158,7 +159,8 @@ public static class SetupMessaging
         services.TryAddSingleton(sp => new MessagingTelemetry(
             messagingEnrichers,
             sp.GetService<ILogger<MessagingTelemetry>>(),
-            sp.GetService<IOptions<TenantTelemetryOptions>>()?.Value
+            sp.GetService<IOptions<TenantTelemetryOptions>>()?.Value,
+            sp.GetService<LogTextMasker>()
         ));
 
         // Resolving it validates the primary storage and every AddOutbox(name) registration together, so the

@@ -626,6 +626,7 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Fencing.Sql": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Logging.Redaction": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",

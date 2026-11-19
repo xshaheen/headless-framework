@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Checks;
 using Headless.Logging.Internal;
 
@@ -68,10 +69,16 @@ public sealed class LogTextMasker
     }
 
     /// <summary>
-    /// Returns <paramref name="exception"/> itself when no message in its chain matched; otherwise a copy of the same
-    /// type whose own message and inner exceptions are masked, keeping its stack frames, or a
-    /// <see cref="RedactedException"/> when such a copy cannot be masked. The exception passed in is never changed.
+    /// Returns <paramref name="exception"/> itself when no message or <see cref="Exception.Data"/> value in its chain
+    /// matched; otherwise a copy of the same type whose own message, data values, and inner exceptions are masked,
+    /// keeping its stack frames, or a <see cref="RedactedException"/> when such a copy cannot be masked. The exception
+    /// passed in, and its <see cref="Exception.Data"/>, are never changed.
     /// </summary>
+    /// <remarks>
+    /// Text that the exception builds only in its own <see cref="Exception.ToString"/>, or that appears only in its
+    /// stack trace, is not scanned. Use <see cref="RecordException"/> to record an exception on a span, which masks
+    /// that rendered text too.
+    /// </remarks>
     /// <param name="exception">The exception to mask.</param>
     /// <returns>The exception to hand to telemetry.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
@@ -82,5 +89,47 @@ public sealed class LogTextMasker
         return _redactors.Length == 0
             ? exception
             : ExceptionMasker.Mask(exception, static (text, masker) => masker.Mask(text), this);
+    }
+
+    /// <summary>
+    /// Records <paramref name="exception"/> on <paramref name="activity"/> as an exception event whose
+    /// <c>exception.message</c> and <c>exception.stacktrace</c> are the exception's rendered text, masked.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Use it in place of <see cref="Activity.AddException"/>: an exception event's tags cannot be rewritten once it is
+    /// recorded, so a span processor cannot mask it afterwards. The rendered text is masked, not only the messages, so a
+    /// value that appears only in a custom <see cref="Exception.ToString"/> or a stack frame does not reach the span.
+    /// <c>exception.type</c> names the original type. An <see cref="ActivityListener.ExceptionRecorder"/> receives
+    /// <see cref="Mask(Exception)"/>.
+    /// </para>
+    /// <para>When no text redactor is registered, it records <paramref name="exception"/> as it is.</para>
+    /// </remarks>
+    /// <param name="activity">The span to record the event on.</param>
+    /// <param name="exception">The exception to record.</param>
+    /// <returns><paramref name="activity"/>, for chaining.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="activity"/> or <paramref name="exception"/> is <see langword="null"/>.
+    /// </exception>
+    public Activity RecordException(Activity activity, Exception exception)
+    {
+        Argument.IsNotNull(activity);
+        Argument.IsNotNull(exception);
+
+        if (_redactors.Length == 0)
+        {
+            return activity.AddException(exception);
+        }
+
+        // AddException keeps a tag the caller already set and fills only the missing ones from the exception it is
+        // given, so these replace the unmasked message, ToString() text, and type it would otherwise write.
+        var tags = new TagList
+        {
+            { "exception.message", Mask(exception.Message) },
+            { "exception.stacktrace", Mask(exception.ToString()) },
+            { "exception.type", exception.GetType().ToString() },
+        };
+
+        return activity.AddException(Mask(exception), tags);
     }
 }

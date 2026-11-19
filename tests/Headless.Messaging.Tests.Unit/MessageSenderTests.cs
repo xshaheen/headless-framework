@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Headless.Fencing;
+using Headless.Logging;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -223,7 +224,8 @@ public sealed class MessageSenderTests : TestBase
         TimeProvider? timeProvider = null,
         ILoggerProvider? loggerProvider = null,
         TimeProvider? backoffClock = null,
-        IMessageStateObserver? stateObserver = null
+        IMessageStateObserver? stateObserver = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         storage
@@ -296,6 +298,8 @@ public sealed class MessageSenderTests : TestBase
         {
             services.AddSingleton(stateObserver);
         }
+
+        configureServices?.Invoke(services);
 
         var provider = services.BuildServiceProvider();
         return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);
@@ -865,6 +869,67 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [Fact]
+    public async Task should_store_the_exception_text_masked_when_redaction_is_registered()
+    {
+        // given — a terminal broker refusal naming a topic the app's text redactor masks
+        var storage = Substitute.For<IDataStorage>();
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<IMessageSerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(transportMessage));
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
+            .Returns(_ => OperateResult.Failed(_CatchBrokerRefusal("orders-7731")));
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(0), MaxPersistedRetries = 0 },
+            },
+            configureServices: static services =>
+            {
+                services.AddHeadlessRedaction(static setup => setup.MaskText(@"orders-\d+"));
+                services.AddSingleton(static provider => new MessagingTelemetry(
+                    [],
+                    masker: provider.GetService<LogTextMasker>()
+                ));
+            }
+        );
+        var written = new List<string?>();
+        storage
+            .When(x =>
+                x.ChangePublishRetryStateAsync(
+                    Arg.Any<MediumMessage>(),
+                    Arg.Any<StatusName>(),
+                    Arg.Any<MessageContentWrite>(),
+                    Arg.Any<RetryDelay?>(),
+                    Arg.Any<bool>(),
+                    Arg.Any<int>(),
+                    Arg.Any<int>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(call => written.Add(call.ArgAt<MediumMessage>(0).ExceptionInfo));
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then — the text the store persists and the dashboard shows is masked
+        result.Succeeded.Should().BeFalse();
+        written
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("The broker refused the publish to ***.")
+            .And.NotContain("orders-7731");
+    }
+
     private static Exception _CatchBrokerRefusal(string topic)
     {
         try

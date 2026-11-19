@@ -61,6 +61,28 @@ public sealed class ServiceDefaultsExceptionRecordingTests : TestBase
     }
 
     [Fact]
+    public async Task should_mask_text_the_exception_renders_only_in_its_own_to_string()
+    {
+        // given: the id is in neither message, only in a ToString() override
+        await using var app = _Build(recordException: true);
+        var instrumentation = app.Services.GetRequiredService<IOptions<AspNetCoreTraceInstrumentationOptions>>().Value;
+        using var activity = new Activity("request");
+        activity.Start();
+
+        // when
+        instrumentation.EnrichWithException!(activity, new CitizenException("lookup failed"));
+
+        // then
+        var tags = activity.Events.Should().ContainSingle().Which.Tags.ToDictionary(t => t.Key, t => t.Value);
+        tags["exception.stacktrace"]
+            .Should()
+            .BeOfType<string>()
+            .Which.Should()
+            .NotContain(_NationalId)
+            .And.Contain("(citizen ***)");
+    }
+
+    [Fact]
     public async Task should_record_no_exception_event_when_recording_is_off()
     {
         // given
@@ -91,5 +113,10 @@ public sealed class ServiceDefaultsExceptionRecordingTests : TestBase
         builder.Services.AddHeadlessRedaction(static setup => setup.MaskText(@"\b\d{14}\b"));
 
         return builder.Build();
+    }
+
+    private sealed class CitizenException(string message) : Exception(message)
+    {
+        public override string ToString() => $"{base.ToString()} (citizen {_NationalId})";
     }
 }

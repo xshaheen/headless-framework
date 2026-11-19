@@ -149,6 +149,7 @@ public sealed class MessagingTelemetryTests : TestBase
             publishMessage,
             broker,
             new PublisherSentFailedException("send failed", new TimeoutException("broker down")),
+            masker: null,
             elapsedMs: 1500
         );
 
@@ -160,6 +161,7 @@ public sealed class MessagingTelemetryTests : TestBase
             consumeMessage,
             broker,
             new InvalidOperationException("boom"),
+            masker: null,
             elapsedMs: 10
         );
 
@@ -180,6 +182,7 @@ public sealed class MessagingTelemetryTests : TestBase
             _Method,
             broker.Name,
             new SubscriberExecutionFailedException("failed", new FormatException("bad")),
+            masker: null,
             elapsedMs: 20
         );
 
@@ -344,6 +347,7 @@ public sealed class MessagingTelemetryTests : TestBase
             publishMessage,
             _Broker,
             new PublisherSentFailedException("send failed", new TimeoutException("broker down")),
+            masker: null,
             elapsedMs: 5
         );
 
@@ -354,6 +358,7 @@ public sealed class MessagingTelemetryTests : TestBase
             ambiguousMessage,
             _Broker,
             new OperationCanceledException(),
+            masker: null,
             elapsedMs: 5
         );
 
@@ -364,6 +369,7 @@ public sealed class MessagingTelemetryTests : TestBase
             consumeMessage,
             _Broker,
             new InvalidOperationException("boom"),
+            masker: null,
             elapsedMs: 5
         );
 
@@ -382,6 +388,7 @@ public sealed class MessagingTelemetryTests : TestBase
             _Method,
             messagingSystem: null,
             new SubscriberExecutionFailedException("failed", new FormatException("bad")),
+            masker: null,
             elapsedMs: 5
         );
 
