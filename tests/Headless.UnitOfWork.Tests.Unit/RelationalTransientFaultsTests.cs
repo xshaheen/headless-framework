@@ -68,7 +68,7 @@ public sealed class RelationalTransientFaultsTests : TestBase
     [InlineData(1, 1, false)] // SQLITE_ERROR
     public void should_classify_sqlite_faults_by_result_code(int errorCode, int extendedErrorCode, bool expected)
     {
-        var exception = new Microsoft.Data.Sqlite.SqliteException(errorCode, extendedErrorCode);
+        var exception = new Microsoft.Data.Sqlite.SqliteException("SQLite failure", errorCode, extendedErrorCode);
 
         RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().Be(expected);
     }

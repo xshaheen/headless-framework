@@ -19,24 +19,7 @@ public sealed class R2CapabilityProbeTests : S3CapabilityProbeTestsBase
 {
     protected override S3TestClient CreateClient()
     {
-        var accountId = Environment.GetEnvironmentVariable("R2_ACCOUNT_ID");
-        var accessKey = Environment.GetEnvironmentVariable("R2_ACCESS_KEY_ID");
-        var secretKey = Environment.GetEnvironmentVariable("R2_SECRET_ACCESS_KEY");
-
-        Assert.SkipWhen(
-            string.IsNullOrWhiteSpace(accountId)
-                || string.IsNullOrWhiteSpace(accessKey)
-                || string.IsNullOrWhiteSpace(secretKey),
-            "R2 credentials are not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)."
-        );
-
-        return new S3TestClient(
-            $"https://{accountId}.r2.cloudflarestorage.com",
-            accessKey!,
-            secretKey!,
-            "auto",
-            TusS3Provider.R2
-        );
+        return TusS3R2Fixture.CreateAccountClient();
     }
 
     // R2 answers an If-Match write to a missing key with 412, where AWS answers 404 NoSuchKey.

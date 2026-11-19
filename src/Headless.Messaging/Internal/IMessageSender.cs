@@ -46,6 +46,9 @@ internal sealed class MessageSender : IMessageSender
     private readonly IMessageSerializer _serializer;
     private readonly Lazy<IBusTransport?> _busTransport;
     private readonly Lazy<IQueueTransport?> _queueTransport;
+
+    // The named transports a published row can name; absent in a host built without messaging's setup.
+    private readonly Lazy<MessagingTransports?> _transports;
     private readonly TimeProvider _timeProvider;
 
     // The publish timeout and the lease-renewal timeout wait out a broker or store that stopped answering.
@@ -65,6 +68,7 @@ internal sealed class MessageSender : IMessageSender
         _serializer = serviceProvider.GetRequiredService<IMessageSerializer>();
         _busTransport = new Lazy<IBusTransport?>(serviceProvider.GetService<IBusTransport>);
         _queueTransport = new Lazy<IQueueTransport?>(serviceProvider.GetService<IQueueTransport>);
+        _transports = new Lazy<MessagingTransports?>(serviceProvider.GetService<MessagingTransports>);
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
         _backoffClock = BackoffClock.Resolve(serviceProvider);
         _telemetry = serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
@@ -113,8 +117,15 @@ internal sealed class MessageSender : IMessageSender
         {
             // Persisted envelopes may outlive their original topology configuration. Revalidate before reserving
             // an attempt or resolving a native client so a deployment cannot silently degrade keyed backlog.
+            // A row bound to a named transport is checked against that broker's mapping, not the default one's.
             var capabilities =
-                _serviceProvider.GetService<IMessageCapabilityGate>()
+                (
+                    message.TransportName is { } transportName
+                    && _transports.Value?.TryGet(transportName, out var named) == true
+                        ? named.Capabilities
+                        : null
+                )
+                ?? _serviceProvider.GetService<IMessageCapabilityGate>()
                 ?? throw new MessagingConfigurationException(
                     "Stored routing affinity requires a frozen capability mapping."
                 );
@@ -221,6 +232,7 @@ internal sealed class MessageSender : IMessageSender
         }
 
         var transport = selected.Transport!;
+        var connectivity = selected.Connectivity ?? _connectivity;
         var brokerAddress = transport.BrokerAddress;
         var traceHandle = _TracingBefore(transportMsg, message.Lane, brokerAddress);
 
@@ -267,7 +279,7 @@ internal sealed class MessageSender : IMessageSender
             // A send the publish timeout cut off is a broker that does not answer; one shutdown cut off says nothing.
             if (!_shutdownToken.IsCancellationRequested)
             {
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
             }
 
             // Timeout or shutdown can race broker acceptance; record the at-least-once duplicate window either way.
@@ -299,7 +311,7 @@ internal sealed class MessageSender : IMessageSender
         }
         catch (Exception ex)
         {
-            _ReportSendFailure(ex);
+            _ReportSendFailure(ex, connectivity);
 
             // A throwing send must stop the span and record the failed send exactly like the failed-OperateResult
             // path below; the exception then propagates unchanged.
@@ -313,7 +325,7 @@ internal sealed class MessageSender : IMessageSender
 
         if (result.Succeeded)
         {
-            _connectivity.ReportBrokerSuccess();
+            connectivity.ReportBrokerSuccess();
 
             try
             {
@@ -342,7 +354,7 @@ internal sealed class MessageSender : IMessageSender
         // Only a failure that could not reach the broker counts: one message the broker refused says nothing about it.
         if (result.IsBrokerUnreachable)
         {
-            _connectivity.ReportBrokerFailure();
+            connectivity.ReportBrokerFailure();
         }
 
         _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, result);
@@ -353,11 +365,11 @@ internal sealed class MessageSender : IMessageSender
     // Serialization and storage failures happen outside the transport call, so only what the transport itself failed
     // reaches here. A transport that throws instead of returning a result is judged by the failures all transports
     // share; a transport disposed under a stopping host refuses the send without asking the broker.
-    private void _ReportSendFailure(Exception exception)
+    private static void _ReportSendFailure(Exception exception, TransportConnectivity connectivity)
     {
         if (BrokerFailures.IsConnectivity(exception))
         {
-            _connectivity.ReportBrokerFailure();
+            connectivity.ReportBrokerFailure();
         }
     }
 
@@ -413,7 +425,11 @@ internal sealed class MessageSender : IMessageSender
         );
     }
 
-    private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(
+    private async Task<(
+        ITransport? Transport,
+        TransportConnectivity? Connectivity,
+        OperateResult? Result
+    )> _ResolveTransportAsync(
         MediumMessage message,
         IServiceProvider dispatchServices,
         RetryExecutionState? executionState
@@ -429,13 +445,19 @@ internal sealed class MessageSender : IMessageSender
             );
             await _MarkMissingLaneTransportFailedAsync(message, ex, dispatchServices, executionState)
                 .ConfigureAwait(false);
-            return (null, OperateResult.Failed(ex));
+            return (null, null, OperateResult.Failed(ex));
+        }
+
+        if (message.TransportName is { } transportName)
+        {
+            return await _ResolveNamedTransportAsync(message, transportName, dispatchServices, executionState)
+                .ConfigureAwait(false);
         }
 
         return message.Lane switch
         {
-            MessageLane.Bus when _busTransport.Value is { } busTransport => (busTransport, null),
-            MessageLane.Queue when _queueTransport.Value is { } queueTransport => (queueTransport, null),
+            MessageLane.Bus when _busTransport.Value is { } busTransport => (busTransport, null, null),
+            MessageLane.Queue when _queueTransport.Value is { } queueTransport => (queueTransport, null, null),
             MessageLane.Bus => await _MissingTransportAsync(
                     message,
                     nameof(IBusTransport),
@@ -454,7 +476,11 @@ internal sealed class MessageSender : IMessageSender
         };
     }
 
-    private async Task<(ITransport? Transport, OperateResult? Result)> _MissingTransportAsync(
+    private async Task<(
+        ITransport? Transport,
+        TransportConnectivity? Connectivity,
+        OperateResult? Result
+    )> _MissingTransportAsync(
         MediumMessage message,
         string transportType,
         IServiceProvider dispatchServices,
@@ -465,7 +491,46 @@ internal sealed class MessageSender : IMessageSender
             $"Stored message {message.StorageId} requires {transportType}, but no matching transport is registered."
         );
         await _MarkMissingLaneTransportFailedAsync(message, ex, dispatchServices, executionState).ConfigureAwait(false);
-        return (null, OperateResult.Failed(ex));
+        return (null, null, OperateResult.Failed(ex));
+    }
+
+    // A row names the transport it was published through. Every host that shares the storage must register it, as it
+    // must register the lane's transport: a host without it cannot send the row anywhere, so the row ends like one whose
+    // lane has no transport instead of reaching the wrong broker.
+    private async Task<(
+        ITransport? Transport,
+        TransportConnectivity? Connectivity,
+        OperateResult? Result
+    )> _ResolveNamedTransportAsync(
+        MediumMessage message,
+        string transportName,
+        IServiceProvider dispatchServices,
+        RetryExecutionState? executionState
+    )
+    {
+        if (_transports.Value is { } transports && transports.TryGet(transportName, out var named))
+        {
+            if (named.FindTransport(message.Lane) is { } transport)
+            {
+                return (transport, named.Connectivity, null);
+            }
+
+            return await _MissingTransportAsync(
+                    message,
+                    $"a {message.Lane} transport on transport '{named.DisplayName}'",
+                    dispatchServices,
+                    executionState
+                )
+                .ConfigureAwait(false);
+        }
+
+        var ex = new InvalidOperationException(
+            $"Stored message {message.StorageId} was published through transport '{transportName}', which this host "
+                + "does not register. Every host that shares the messaging storage must register the same named "
+                + "transports with setup.AddTransport(name)."
+        );
+        await _MarkMissingLaneTransportFailedAsync(message, ex, dispatchServices, executionState).ConfigureAwait(false);
+        return (null, null, OperateResult.Failed(ex));
     }
 
     private async Task _MarkMissingLaneTransportFailedAsync(

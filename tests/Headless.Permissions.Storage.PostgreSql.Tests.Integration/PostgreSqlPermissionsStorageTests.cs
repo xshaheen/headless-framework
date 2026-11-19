@@ -22,45 +22,12 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
     private const string _Schema = "permissions_pg_raw";
 
     [Fact]
-    public async Task should_initialize_tables_and_round_trip_permission_grant_and_definition()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-
-        // when
-        await host.StartAsync(AbortToken);
-        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        var definitionRepository = host.Services.GetRequiredService<IPermissionDefinitionRecordRepository>();
-        var record = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: true);
-        var group = new PermissionGroupDefinitionRecord(Guid.NewGuid(), "Users", "Users");
-        var permission = new PermissionDefinitionRecord(Guid.NewGuid(), "Users", "Users.Create", null, "Create users");
-
-        await grantRepository.InsertAsync(record, AbortToken);
-        await definitionRepository.SaveAsync([group], [], [], [permission], [], [], AbortToken);
-        var stored = await grantRepository.FindAsync("Users.Create", "Role", "admin", AbortToken);
-        var storedGroups = await definitionRepository.GetGroupsListAsync(AbortToken);
-        var storedPermissions = await definitionRepository.GetPermissionsListAsync(AbortToken);
-
-        // then
-        (await _TableExistsAsync("permission_grants"))
-            .Should()
-            .BeTrue();
-        (await _TableExistsAsync("permission_definitions")).Should().BeTrue();
-        (await _TableExistsAsync("permission_group_definitions")).Should().BeTrue();
-        stored.Should().NotBeNull();
-        stored!.IsGranted.Should().BeTrue();
-        storedGroups.Should().ContainSingle(x => x.Name == "Users");
-        storedPermissions.Should().ContainSingle(x => x.Name == "Users.Create");
-    }
-
-    [Fact]
     public async Task should_round_trip_definition_extra_properties_with_their_keys_and_values_as_written()
     {
         // given — keys that a camelCasing dictionary policy would rename, and values the store reads back as CLR
         // primitives
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
         await host.StartAsync(AbortToken);
         var repository = host.Services.GetRequiredService<IPermissionDefinitionRecordRepository>();
         var group = new PermissionGroupDefinitionRecord(Guid.NewGuid(), "Users", "Users");
@@ -85,7 +52,7 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
     {
         // given — the shared serializer carries the host's JSON options for caches and blob metadata; a storage that
         // registered its own first would decide those options by registration order
-        using var host = _CreateHost();
+        using var host = fixture.CreateHost(_Schema);
 
         // when
         var serializer = host.Services.GetService<IJsonSerializer>();
@@ -98,8 +65,8 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
     public async Task should_enforce_unique_host_permission_grants()
     {
         // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
         await host.StartAsync(AbortToken);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var first = new PermissionGrantRecord(Guid.NewGuid(), "Users.Delete", "Role", "admin", isGranted: true);
@@ -113,219 +80,13 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         await act.Should().ThrowAsync<PostgresException>().Where(x => x.SqlState == PostgresErrorCodes.UniqueViolation);
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(100)]
-    [InlineData(101)]
-    public async Task should_batch_permission_grants_from_single_use_enumerable(int count)
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        await _CreateInsertCommandCounterAsync();
-        var records = Enumerable
-            .Range(0, count)
-            .Select(index => new PermissionGrantRecord(
-                Guid.NewGuid(),
-                $"Bulk.Permission.{index}",
-                "Role",
-                "bulk-admin",
-                isGranted: true
-            ))
-            .ToArray();
-        var enumerationCount = 0;
-
-        IEnumerable<PermissionGrantRecord> enumerateOnce()
-        {
-            enumerationCount++;
-
-            foreach (var record in records)
-            {
-                yield return record;
-            }
-        }
-
-        // when
-        await grantRepository.InsertManyAsync(enumerateOnce(), AbortToken);
-        var stored = await grantRepository.GetListAsync("Role", "bulk-admin", AbortToken);
-
-        // then
-        enumerationCount.Should().Be(1);
-        stored.Should().HaveCount(count);
-        (await _InsertCommandCountAsync()).Should().Be((count + 99) / 100);
-    }
-
-    [Fact]
-    public async Task should_roll_back_all_permission_grants_when_later_batch_conflicts()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        var records = Enumerable
-            .Range(0, 100)
-            .Select(index => new PermissionGrantRecord(
-                Guid.NewGuid(),
-                $"Atomic.Permission.{index}",
-                "Role",
-                "atomic-admin",
-                isGranted: true
-            ))
-            .Append(
-                new PermissionGrantRecord(
-                    Guid.NewGuid(),
-                    "Atomic.Permission.0",
-                    "Role",
-                    "atomic-admin",
-                    isGranted: false
-                )
-            )
-            .ToArray();
-
-        // when
-        var act = () => grantRepository.InsertManyAsync(records, AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<PostgresException>().Where(x => x.SqlState == PostgresErrorCodes.UniqueViolation);
-        (await grantRepository.GetListAsync("Role", "atomic-admin", AbortToken)).Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task should_replace_a_grant_with_a_denial_in_one_save()
-    {
-        // given
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        var granted = new PermissionGrantRecord(
-            Guid.NewGuid(),
-            "Flip.Permission",
-            "Role",
-            "flip-admin",
-            isGranted: true
-        );
-        await grantRepository.InsertAsync(granted, AbortToken);
-        var denial = new PermissionGrantRecord(
-            Guid.NewGuid(),
-            "Flip.Permission",
-            "Role",
-            "flip-admin",
-            isGranted: false
-        );
-
-        // when — the denial reuses the grant's unique key, so the delete has to run first
-        await grantRepository.SaveAsync([denial], [granted], AbortToken);
-
-        // then
-        var stored = await grantRepository.GetListAsync("Role", "flip-admin", AbortToken);
-        stored.Should().ContainSingle().Which.Id.Should().Be(denial.Id);
-        stored[0].IsGranted.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task should_keep_the_deleted_grant_when_its_replacement_cannot_be_inserted()
-    {
-        // given — the replacement's id collides with another row, so its insert fails after the delete ran
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        var granted = new PermissionGrantRecord(
-            Guid.NewGuid(),
-            "Flip.Permission",
-            "Role",
-            "flip-admin",
-            isGranted: true
-        );
-        var other = new PermissionGrantRecord(Guid.NewGuid(), "Flip.Other", "Role", "flip-admin", isGranted: true);
-        await grantRepository.InsertManyAsync([granted, other], AbortToken);
-        var denial = new PermissionGrantRecord(other.Id, "Flip.Permission", "Role", "flip-admin", isGranted: false);
-
-        // when
-        var act = () => grantRepository.SaveAsync([denial], [granted], AbortToken);
-
-        // then — the delete rolled back with the insert, so the explicit grant is still there
-        await act.Should().ThrowAsync<PostgresException>().Where(x => x.SqlState == PostgresErrorCodes.UniqueViolation);
-        var stored = await grantRepository.FindAsync("Flip.Permission", "Role", "flip-admin", AbortToken);
-        stored.Should().NotBeNull();
-        stored!.Id.Should().Be(granted.Id);
-        stored.IsGranted.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_not_enumerate_permission_grants_when_insertion_is_already_cancelled()
-    {
-        // given
-        using var host = _CreateHost();
-        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync();
-        var enumerated = false;
-
-        IEnumerable<PermissionGrantRecord> records()
-        {
-            enumerated = true;
-            yield return new PermissionGrantRecord(Guid.NewGuid(), "Cancelled", "Role", "admin", isGranted: true);
-        }
-
-        // when
-        var act = () => grantRepository.InsertManyAsync(records(), cancellation.Token);
-
-        // then
-        await act.Should().ThrowAsync<OperationCanceledException>();
-        enumerated.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task should_scope_permission_grant_reads_to_current_tenant()
-    {
-        // given
-        await _DropSchemaAsync();
-        var currentTenant = new TestCurrentTenant("tenant-a");
-        using var host = _CreateHost(currentTenant);
-        await host.StartAsync(AbortToken);
-        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        var tenantA = new PermissionGrantRecord(
-            Guid.NewGuid(),
-            "Users.Approve",
-            "Role",
-            "admin",
-            isGranted: true,
-            tenantId: "tenant-a"
-        );
-        var tenantB = new PermissionGrantRecord(
-            Guid.NewGuid(),
-            "Users.Approve",
-            "Role",
-            "admin",
-            isGranted: false,
-            tenantId: "tenant-b"
-        );
-
-        // when
-        await grantRepository.InsertManyAsync([tenantA, tenantB], AbortToken);
-        var found = await grantRepository.FindAsync("Users.Approve", "Role", "admin", AbortToken);
-        var list = await grantRepository.GetListAsync("Role", "admin", AbortToken);
-
-        // then
-        found.Should().NotBeNull();
-        found!.TenantId.Should().Be("tenant-a");
-        found.IsGranted.Should().BeTrue();
-        list.Should().ContainSingle(x => x.TenantId == "tenant-a");
-    }
-
     [Fact]
     public async Task should_repair_missing_indexes_when_tables_already_exist()
     {
         // given
-        await _DropSchemaAsync();
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
         await _CreateTablesWithoutIndexesAsync();
-        using var host = _CreateHost();
+        using var host = fixture.CreateHost(_Schema);
 
         // when
         await host.StartAsync(AbortToken);
@@ -338,93 +99,6 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         (await _IndexExistsAsync("ix_permission_definitions_name")).Should().BeTrue();
         (await _IndexExistsAsync("ix_permission_grants_tenant_id_name_provider_name_provider_key")).Should().BeTrue();
         (await _IndexExistsAsync("ix_permission_grants_name_provider_name_provider_key_no_tenant")).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_refuse_a_padded_provider_key_and_leave_the_unpadded_grant_intact()
-    {
-        // given a stored grant for "acme"; SQL Server compares "acme " equal to it, PostgreSQL does not
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        var paddedTenant = Substitute.For<ICurrentTenant>();
-        paddedTenant.Id.Returns("t1 ");
-        var store = new PermissionGrantStore(
-            Substitute.For<IPermissionDefinitionManager>(),
-            repository,
-            new SequentialGuidGenerator(SequentialGuidType.Version7),
-            Substitute.For<ICache<PermissionGrantCacheItem>>(),
-            paddedTenant,
-            Options.Create(new PermissionManagementOptions()),
-            NullLogger<PermissionGrantStore>.Instance
-        );
-        await repository.InsertAsync(
-            new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "acme", isGranted: true),
-            AbortToken
-        );
-
-        // when
-        var revoke = async () => await store.RevokeAsync("Users.Create", "Role", "acme ", AbortToken);
-        var isGranted = async () => await store.IsGrantedAsync("Users.Create", "Role", "acme ", AbortToken);
-        var grantToPaddedTenant = async () => await store.GrantAsync("Users.Delete", "Role", "acme", AbortToken);
-
-        // then
-        await revoke.Should().ThrowExactlyAsync<ArgumentException>();
-        await isGranted.Should().ThrowExactlyAsync<ArgumentException>();
-        await grantToPaddedTenant.Should().ThrowExactlyAsync<ArgumentException>();
-        var stored = await repository.GetListAsync("Role", "acme", AbortToken);
-        stored.Should().ContainSingle().Which.IsGranted.Should().BeTrue();
-    }
-
-    private IHost _CreateHost(ICurrentTenant? currentTenant = null)
-    {
-        var builder = Host.CreateApplicationBuilder();
-        if (currentTenant is not null)
-        {
-            builder.Services.AddSingleton(currentTenant);
-        }
-
-        // unify: management-core deps
-        builder.Services.AddSingleton(TimeProvider.System);
-        // Grant caching is required, and the host refuses to start without a registered cache.
-        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
-        builder.Services.AddHeadlessPermissions(setup =>
-        {
-            setup.ConfigureStorage(options => options.Schema = _Schema);
-            setup.UsePostgreSql(fixture.ConnectionString);
-        });
-
-        builder.Services.AddDeployStepsOnStartup(o => o.Seed = false);
-        return builder.Build();
-    }
-
-    private async Task _DropSchemaAsync()
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE;""", connection);
-        await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
-    private async Task<bool> _TableExistsAsync(string tableName)
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = @schema AND table_name = @table
-            )
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue("schema", _Schema);
-        command.Parameters.AddWithValue("table", tableName);
-
-        return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task<bool> _IndexExistsAsync(string indexName)
@@ -445,46 +119,6 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         command.Parameters.AddWithValue("index", indexName);
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
-    }
-
-    private async Task _CreateInsertCommandCounterAsync()
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            $"""
-            CREATE TABLE "{_Schema}"."PermissionGrantInsertCommandCounter" ("Count" integer NOT NULL);
-            INSERT INTO "{_Schema}"."PermissionGrantInsertCommandCounter" ("Count") VALUES (0);
-
-            CREATE FUNCTION "{_Schema}"."CountPermissionGrantInsertCommand"() RETURNS trigger
-            LANGUAGE plpgsql
-            AS $function$
-            BEGIN
-                UPDATE "{_Schema}"."PermissionGrantInsertCommandCounter" SET "Count" = "Count" + 1;
-                RETURN NULL;
-            END;
-            $function$;
-
-            CREATE TRIGGER "TR_PermissionGrant_InsertCommandCounter"
-            AFTER INSERT ON "{_Schema}".permission_grants
-            FOR EACH STATEMENT
-            EXECUTE FUNCTION "{_Schema}"."CountPermissionGrantInsertCommand"();
-            """,
-            connection
-        );
-        await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
-    private async Task<int> _InsertCommandCountAsync()
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new NpgsqlCommand(
-            $"""SELECT "Count" FROM "{_Schema}"."PermissionGrantInsertCommandCounter";""",
-            connection
-        );
-
-        return (int)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task _CreateTablesWithoutIndexesAsync()
@@ -530,56 +164,5 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
             connection
         );
         await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
-    private sealed class TestCurrentTenant(string? tenantId) : ICurrentTenant
-    {
-        public bool IsAvailable => Id is not null;
-
-        public string? Id { get; private set; } = tenantId;
-
-        public string? Name => null;
-
-        public IDisposable Change(string? id, string? name = null)
-        {
-            var previousId = Id;
-            Id = id;
-
-            return new RestoreAction(() => Id = previousId);
-        }
-    }
-
-    private sealed class RestoreAction(Action action) : IDisposable
-    {
-        public void Dispose()
-        {
-            action();
-        }
-    }
-
-    [Fact]
-    public async Task should_not_match_a_stored_prefix_when_a_lookup_value_is_longer_than_its_column()
-    {
-        // given a grant whose name and provider key fill their columns
-        await _DropSchemaAsync();
-        using var host = _CreateHost();
-        await host.StartAsync(AbortToken);
-        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
-        var name = new string('n', PermissionGrantRecordConstants.NameMaxLength);
-        var providerKey = new string('k', PermissionGrantRecordConstants.ProviderKeyMaxLength);
-        await grantRepository.InsertAsync(
-            new PermissionGrantRecord(Guid.NewGuid(), name, "Role", providerKey, isGranted: true),
-            AbortToken
-        );
-
-        // when each lookup carries one character more than the column holds
-        var found = await grantRepository.FindAsync(name + "x", "Role", providerKey, AbortToken);
-        var byNames = await grantRepository.GetListAsync([name + "x"], "Role", providerKey, AbortToken);
-        var byScope = await grantRepository.GetListAsync("Role", providerKey + "x", AbortToken);
-
-        // then none of them matches the stored grant, which is the lookup value's prefix
-        found.Should().BeNull();
-        byNames.Should().BeEmpty();
-        byScope.Should().BeEmpty();
     }
 }

@@ -143,8 +143,8 @@ That policy holds only while the real brokers keep passing, so `.github/workflow
 | `RejectRedelivery` | S | S | S | S | S† | S‡ | S | S | S |
 | `ConsumerPauseRecovery` | S | S | S | S | S† | S‡ | S | S | S |
 | `BrokerInterruptionRecovery` | S | S | S | S | N/A | S‡ | N/A | S | S |
-| `ConnectionDropRecovery` | S | S | S | S | U | U | U | S | S |
-| `PublishDuringOutage` | S | S | S | S | U | U | U | S | S |
+| `ConnectionDropRecovery` | S | S | S | S | U | U | N/A | S | S |
+| `PublishDuringOutage` | S | S | S | S | U | U | N/A | S | S |
 | `StaleSettlement` | S | S | S | S | U | S‡ | S | S | S |
 | `HandlerFailureRedelivery` | S | S | S | S | U | S‡ | U | S | S |
 | `BoundedGracefulShutdown` | S | S | S | S | S† | S‡ | S | S | S |

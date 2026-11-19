@@ -25,8 +25,9 @@ public sealed partial class TusS3Store
     public async Task<ITusFile?> GetFileAsync(string fileId, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
+        var keys = _Keys();
 
-        var upload = await _stateStore.LoadAsync(fileId, cancellationToken).ConfigureAwait(false);
+        var upload = await _stateStore.LoadAsync(keys, fileId, cancellationToken).ConfigureAwait(false);
 
         return upload switch
         {
@@ -36,7 +37,7 @@ public sealed partial class TusS3Store
                 isComplete: true,
                 _s3,
                 _options,
-                _keys,
+                keys,
                 _logger
             ),
             { State: { Status: not TusS3UploadStatus.Gone } state } => new TusS3File(
@@ -45,7 +46,7 @@ public sealed partial class TusS3Store
                 isComplete: false,
                 _s3,
                 _options,
-                _keys,
+                keys,
                 _logger
             ),
             _ => null,

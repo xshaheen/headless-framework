@@ -76,7 +76,15 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
         // Derived from RecoveredFromUtc so the two cannot disagree; never a column.
         builder.Ignore(x => x.IsRecoveryRun);
 
-        builder.HasIndex("CronJobId").HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "CronJobId"));
+        // The dashboard's last-run read numbers each definition's finished occurrences newest first, by
+        // (ExecutionTime DESC, Id DESC). Keyed in that order, the index hands the window its rows already sorted, and
+        // the trailing Status and ExecutedAt let the read filter and project without a lookup per row. The unique
+        // (CronJobId, ExecutionTime) index cannot serve it: it holds only live rows. Leading with CronJobId, it also
+        // serves the foreign key's cascade.
+        builder
+            .HasIndex("CronJobId", "ExecutionTime", "Id", "Status", "ExecutedAt")
+            .IsDescending(false, true, true, false, false)
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "CronJobId", "ExecutionTime", "Id"));
 
         builder
             .HasIndex("ExecutionTime")

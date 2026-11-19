@@ -36,7 +36,7 @@ public sealed partial class TusS3Store
     /// Another request changed or removed the state since this one read it, so the finished object is not recorded.
     /// Not translated, for the same reason as a stale append: tusdotnet answers it with a retryable 500.
     /// </exception>
-    private async Task _FinishCompletionAsync(string fileId, TusS3LoadedUpload upload)
+    private async Task _FinishCompletionAsync(TusS3Keys keys, string fileId, TusS3LoadedUpload upload)
     {
         var state = upload.State ?? throw new InvalidOperationException("A completed upload needs no completion.");
         var length = state.UploadLength ?? throw new InvalidDataException("A completing upload has no length.");
@@ -49,11 +49,11 @@ public sealed partial class TusS3Store
 
             if (state.MultipartUploadId is null)
             {
-                await _WriteFinishedObjectFromSegmentsAsync(fileId, state, length).ConfigureAwait(false);
+                await _WriteFinishedObjectFromSegmentsAsync(keys, fileId, state, length).ConfigureAwait(false);
             }
             else
             {
-                await _CompleteMultipartUploadAsync(fileId, upload, parts, length).ConfigureAwait(false);
+                await _CompleteMultipartUploadAsync(keys, fileId, upload, parts, length).ConfigureAwait(false);
             }
 
             state.Status = TusS3UploadStatus.Committing;
@@ -61,11 +61,11 @@ public sealed partial class TusS3Store
 
             try
             {
-                await _stateStore.UpdateAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
+                await _stateStore.UpdateAsync(keys, fileId, upload, CancellationToken.None).ConfigureAwait(false);
             }
             catch (AmazonS3Exception e) when (TusS3StateStore.IsStaleWrite(e))
             {
-                await _RemoveUnownedFinishedObjectAsync(fileId).ConfigureAwait(false);
+                await _RemoveUnownedFinishedObjectAsync(keys, fileId).ConfigureAwait(false);
 
                 throw;
             }
@@ -78,7 +78,7 @@ public sealed partial class TusS3Store
             Concat = state.Concat,
         };
 
-        await _stateStore.CommitCompletionAsync(fileId, record, CancellationToken.None).ConfigureAwait(false);
+        await _stateStore.CommitCompletionAsync(keys, fileId, record, CancellationToken.None).ConfigureAwait(false);
         await TusS3PartWriter
             .DeleteSegmentsAsync(_appendServices, fileId, state.Segments, CancellationToken.None)
             .ConfigureAwait(false);
@@ -119,7 +119,12 @@ public sealed partial class TusS3Store
     }
 
     // Without a multipart upload every byte sits in tail segments, which together stay below one part.
-    private async Task _WriteFinishedObjectFromSegmentsAsync(string fileId, TusS3UploadState state, long length)
+    private async Task _WriteFinishedObjectFromSegmentsAsync(
+        TusS3Keys keys,
+        string fileId,
+        TusS3UploadState state,
+        long length
+    )
     {
         if (length > _options.MaxPartSize)
         {
@@ -140,13 +145,13 @@ public sealed partial class TusS3Store
                 .ReadSegmentsAsync(_appendServices, state.Segments, buffer, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            await _PutFinishedObjectAsync(fileId, state.Metadata, buffer, (int)length, CancellationToken.None)
+            await _PutFinishedObjectAsync(keys, fileId, state.Metadata, buffer, (int)length, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.PreconditionFailed)
         {
             // An earlier attempt already wrote it; the object is only ever written from these same segments.
-            if (!await _FinishedObjectHasLengthAsync(fileId, length).ConfigureAwait(false))
+            if (!await _FinishedObjectHasLengthAsync(keys, fileId, length).ConfigureAwait(false))
             {
                 throw;
             }
@@ -163,6 +168,7 @@ public sealed partial class TusS3Store
     }
 
     private async Task _CompleteMultipartUploadAsync(
+        TusS3Keys keys,
         string fileId,
         TusS3LoadedUpload upload,
         List<TusS3CommittedPart> parts,
@@ -179,13 +185,13 @@ public sealed partial class TusS3Store
             // part failed and its bytes were kept as tail instead, or when a declared length ended the upload.
             if (state.Segments.Count > 0)
             {
-                etags.AddRange(await _UploadSegmentsAsPartsAsync(fileId, state).ConfigureAwait(false));
+                etags.AddRange(await _UploadSegmentsAsPartsAsync(keys, fileId, state).ConfigureAwait(false));
             }
 
             var request = new CompleteMultipartUploadRequest
             {
                 BucketName = _options.Bucket,
-                Key = _keys.FinishedObject(fileId),
+                Key = keys.FinishedObject(fileId),
                 UploadId = state.MultipartUploadId,
                 PartETags = etags,
             };
@@ -196,14 +202,14 @@ public sealed partial class TusS3Store
         }
         catch (AmazonS3Exception e) when (e.HasErrorCode(TusS3ErrorCodes.NoSuchUpload))
         {
-            if (await _FinishedObjectHasLengthAsync(fileId, length).ConfigureAwait(false))
+            if (await _FinishedObjectHasLengthAsync(keys, fileId, length).ConfigureAwait(false))
             {
                 _logger.LogS3FinishedObjectAlreadyWritten(fileId);
 
                 return;
             }
 
-            await _MarkGoneAsync(fileId, upload, e.ErrorCode).ConfigureAwait(false);
+            await _MarkGoneAsync(keys, fileId, upload, e.ErrorCode).ConfigureAwait(false);
 
             throw new TusStoreException($"File {fileId} does not exist: its multipart upload is gone");
         }
@@ -214,7 +220,7 @@ public sealed partial class TusS3Store
             )
         {
             // The provider lost or refuses the recorded parts; retrying cannot change that, so the upload is gone.
-            await _MarkGoneAsync(fileId, upload, e.ErrorCode).ConfigureAwait(false);
+            await _MarkGoneAsync(keys, fileId, upload, e.ErrorCode).ConfigureAwait(false);
 
             throw new TusStoreException($"File {fileId} does not exist: its parts can no longer be assembled");
         }
@@ -223,7 +229,11 @@ public sealed partial class TusS3Store
     // Uploads the tail as the upload's last parts, all of the part size but the last. The numbers start at the state's
     // counter, which no committed part uses; every attempt uploads the same bytes under the same numbers, so a repeat
     // replaces a part with identical content.
-    private async Task<List<PartETag>> _UploadSegmentsAsPartsAsync(string fileId, TusS3UploadState state)
+    private async Task<List<PartETag>> _UploadSegmentsAsPartsAsync(
+        TusS3Keys keys,
+        string fileId,
+        TusS3UploadState state
+    )
     {
         var partSize = state.PartSize;
         var tailLength = state.Segments.Sum(segment => segment.Length);
@@ -264,7 +274,8 @@ public sealed partial class TusS3Store
                     if (filled == partSize)
                     {
                         etags.Add(
-                            await _UploadPartAsync(fileId, state, partNumber++, buffer, filled).ConfigureAwait(false)
+                            await _UploadPartAsync(keys, fileId, state, partNumber++, buffer, filled)
+                                .ConfigureAwait(false)
                         );
                         filled = 0;
                     }
@@ -273,7 +284,9 @@ public sealed partial class TusS3Store
 
             if (filled > 0)
             {
-                etags.Add(await _UploadPartAsync(fileId, state, partNumber, buffer, filled).ConfigureAwait(false));
+                etags.Add(
+                    await _UploadPartAsync(keys, fileId, state, partNumber, buffer, filled).ConfigureAwait(false)
+                );
             }
         }
         finally
@@ -285,6 +298,7 @@ public sealed partial class TusS3Store
     }
 
     private async Task<PartETag> _UploadPartAsync(
+        TusS3Keys keys,
         string fileId,
         TusS3UploadState state,
         int partNumber,
@@ -296,7 +310,7 @@ public sealed partial class TusS3Store
             .UploadPartAsync(
                 _s3,
                 _options,
-                _keys.FinishedObject(fileId),
+                keys.FinishedObject(fileId),
                 state.MultipartUploadId,
                 partNumber,
                 buffer,
@@ -308,12 +322,12 @@ public sealed partial class TusS3Store
         return new PartETag(partNumber, etag);
     }
 
-    private async Task<bool> _FinishedObjectHasLengthAsync(string fileId, long length)
+    private async Task<bool> _FinishedObjectHasLengthAsync(TusS3Keys keys, string fileId, long length)
     {
         try
         {
             var metadata = await _s3.GetObjectMetadataAsync(
-                    new GetObjectMetadataRequest { BucketName = _options.Bucket, Key = _keys.FinishedObject(fileId) },
+                    new GetObjectMetadataRequest { BucketName = _options.Bucket, Key = keys.FinishedObject(fileId) },
                     CancellationToken.None
                 )
                 .ConfigureAwait(false);
@@ -339,11 +353,11 @@ public sealed partial class TusS3Store
     /// writes the same bytes under the same key), so its object stays. A failure here is logged and leaves the object
     /// to storage cost only: the caller rethrows the stale write either way.
     /// </remarks>
-    private async Task _RemoveUnownedFinishedObjectAsync(string fileId)
+    private async Task _RemoveUnownedFinishedObjectAsync(TusS3Keys keys, string fileId)
     {
         try
         {
-            var current = await _stateStore.LoadAsync(fileId, CancellationToken.None).ConfigureAwait(false);
+            var current = await _stateStore.LoadAsync(keys, fileId, CancellationToken.None).ConfigureAwait(false);
 
             if (current is { Completed: not null } || current?.State is { Status: not TusS3UploadStatus.Gone })
             {
@@ -351,7 +365,7 @@ public sealed partial class TusS3Store
             }
 
             await _s3.DeleteObjectAsync(
-                    new DeleteObjectRequest { BucketName = _options.Bucket, Key = _keys.FinishedObject(fileId) },
+                    new DeleteObjectRequest { BucketName = _options.Bucket, Key = keys.FinishedObject(fileId) },
                     CancellationToken.None
                 )
                 .ConfigureAwait(false);
@@ -366,10 +380,10 @@ public sealed partial class TusS3Store
         }
     }
 
-    private async Task _MarkGoneAsync(string fileId, TusS3LoadedUpload upload, string errorCode)
+    private async Task _MarkGoneAsync(TusS3Keys keys, string fileId, TusS3LoadedUpload upload, string errorCode)
     {
         _logger.LogS3CompletionPartsRejected(fileId, errorCode);
-        await _stateStore.TryMarkGoneAsync(fileId, upload, CancellationToken.None).ConfigureAwait(false);
+        await _stateStore.TryMarkGoneAsync(keys, fileId, upload, CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -378,6 +392,7 @@ public sealed partial class TusS3Store
     /// </summary>
     /// <exception cref="AmazonS3Exception">A finished object already exists under the id (412).</exception>
     private async Task _PutFinishedObjectAsync(
+        TusS3Keys keys,
         string fileId,
         string? metadata,
         byte[] content,
@@ -390,7 +405,7 @@ public sealed partial class TusS3Store
         var request = new PutObjectRequest
         {
             BucketName = _options.Bucket,
-            Key = _keys.FinishedObject(fileId),
+            Key = keys.FinishedObject(fileId),
             InputStream = body,
             AutoCloseStream = false,
             IfNoneMatch = "*",

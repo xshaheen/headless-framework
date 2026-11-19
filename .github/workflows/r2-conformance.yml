@@ -31,11 +31,30 @@ jobs:
       contents: read
       packages: read
 
-    # The R2 credentials live in this protected environment. The job runs without them too (suite self-skips).
+    # The R2 credentials live in this protected environment. The suites skip without them, which is right for local
+    # and fork runs but would report a green release check that touched no R2, so the first step refuses to go on.
     environment:
       name: "R2 Conformance"
 
     steps:
+      - name: "Require R2 credentials"
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        # Names only, never values. Whitespace counts as empty, as it does for the tests' skip check.
+        run: |
+          missing=0
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            value="${!name:-}"
+            if [[ -z "${value//[[:space:]]/}" ]]; then
+              echo "::error title=Missing R2 secret::${name} is empty or not set in the 'R2 Conformance' environment; the R2 suites would skip instead of running."
+              missing=1
+            fi
+          done
+          exit "${missing}"
+        shell: bash
+
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,8 +76,6 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Restore test project"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Blobs.CloudflareR2.Tests.Integration/Headless.Blobs.CloudflareR2.Tests.Integration.csproj
 
       - name: "Build test project"
@@ -73,8 +90,6 @@ jobs:
         shell: bash
 
       - name: "Restore tus S3 test project"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Tus.S3.Tests.Integration/Headless.Tus.S3.Tests.Integration.csproj
 
       - name: "Build tus S3 test project"

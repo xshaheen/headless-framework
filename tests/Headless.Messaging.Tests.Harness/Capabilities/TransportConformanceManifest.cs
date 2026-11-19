@@ -155,9 +155,6 @@ public sealed record TransportConformanceProfile(
     TransportMalformedEnvelopeBound? MalformedEnvelopeBound
 )
 {
-    /// <summary>The open issue that tracks the network-fault scenarios no provider has proven yet.</summary>
-    internal const string NetworkFaultGapIssueUrl = "https://github.com/xshaheen/headless-framework/issues/1247";
-
     /// <summary>
     /// Starts a profile that declares no scenario. Every scenario must then be declared explicitly, so a scenario added
     /// later fails the manifest's validation on each provider until that provider decides its cell.
@@ -274,11 +271,8 @@ public static class TransportConformanceManifest
         _EmulatorGapIssueUrl
     );
 
-    private static ConformanceSupport _NetworkFaultGap(string provider) =>
-        ConformanceSupport.Unsupported(
-            $"{provider} has no network-fault leaf yet.",
-            TransportConformanceProfile.NetworkFaultGapIssueUrl
-        );
+    private static ConformanceSupport _NetworkFaultGap(string provider, string issueUrl) =>
+        ConformanceSupport.Unsupported($"{provider} has no network-fault leaf yet.", issueUrl);
 
     private static readonly TransportConformanceScenario[] _MandatoryBaselineScenarios =
     [
@@ -604,9 +598,12 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.KeySequencing, _AzureWorkflowGap)
                 .WithScenario(
                     TransportConformanceScenario.ConnectionDropRecovery,
-                    _NetworkFaultGap("Azure Service Bus")
+                    _NetworkFaultGap("Azure Service Bus", _AzureWorkflowIssueUrl)
                 )
-                .WithScenario(TransportConformanceScenario.PublishDuringOutage, _NetworkFaultGap("Azure Service Bus"))
+                .WithScenario(
+                    TransportConformanceScenario.PublishDuringOutage,
+                    _NetworkFaultGap("Azure Service Bus", _AzureWorkflowIssueUrl)
+                )
                 .WithRequestReplyScenarios(
                     ConformanceSupport.Unsupported(
                         "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
@@ -689,8 +686,18 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MessageExpiry,
                     ConformanceSupport.NotApplicable("InMemory has no message time-to-live.")
                 )
-                .WithScenario(TransportConformanceScenario.ConnectionDropRecovery, _NetworkFaultGap("InMemory"))
-                .WithScenario(TransportConformanceScenario.PublishDuringOutage, _NetworkFaultGap("InMemory"))
+                .WithScenario(
+                    TransportConformanceScenario.ConnectionDropRecovery,
+                    ConformanceSupport.NotApplicable(
+                        "The in-memory broker lives in the host process, so there is no connection to drop."
+                    )
+                )
+                .WithScenario(
+                    TransportConformanceScenario.PublishDuringOutage,
+                    ConformanceSupport.NotApplicable(
+                        "The in-memory broker lives in the host process, so it cannot be unreachable while the host runs."
+                    )
+                )
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(
                     TransportConformanceScenario.BrokerInterruptionRecovery,
@@ -1094,11 +1101,11 @@ public static class TransportConformanceManifest
             .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
             .WithScenario(
                 TransportConformanceScenario.ConnectionDropRecovery,
-                _NetworkFaultGap("Azure Service Bus Emulator")
+                _NetworkFaultGap("Azure Service Bus Emulator", _EmulatorGapIssueUrl)
             )
             .WithScenario(
                 TransportConformanceScenario.PublishDuringOutage,
-                _NetworkFaultGap("Azure Service Bus Emulator")
+                _NetworkFaultGap("Azure Service Bus Emulator", _EmulatorGapIssueUrl)
             )
             .WithRequestReplyScenarios(
                 ConformanceSupport.Unsupported(

@@ -14,9 +14,8 @@ namespace Tests;
 
 /// <summary>
 /// A store's context from its own factory runs one call on a caller's unit-of-work transaction, then gets its own
-/// connection back. Each test uses its own database file under the test output: an open in-memory SQLite connection
-/// reports no data source, and an open file connection reports its resolved path, so a temp directory behind a symlink
-/// (macOS) would not match the configured one.
+/// connection back. Each test uses its own database file under the test output, because an open in-memory SQLite
+/// connection reports no data source to compare.
 /// </summary>
 public sealed class EntityFrameworkEnlistmentTests : TestBase
 {

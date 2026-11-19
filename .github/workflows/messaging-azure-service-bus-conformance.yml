@@ -58,8 +58,6 @@ jobs:
         shell: bash
 
       - name: "Restore"
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore-project PROJECT=tests/Headless.Messaging.AzureServiceBus.Tests.Integration/Headless.Messaging.AzureServiceBus.Tests.Integration.csproj
 
       - name: "Build"

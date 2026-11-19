@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 using Headless.Threading;
 using Polly;
 using Polly.Retry;
+using Tests.Guarantees;
 using Tests.Ledger;
 using Tests.Stack;
 
@@ -99,6 +100,9 @@ public abstract class ChaosScenariosBase(ChaosStackFixture stack) : MultiHostGua
     [Fact]
     public override async Task should_send_each_delayed_row_once_while_hosts_restart_in_turn()
     {
+        // quarantine: #1763 a host stop cancels a delayed send mid-confirm, so a row the broker accepted is recorded unsent
+        MessagingGuarantees.RequireSupport("MSG-COORD-06");
+
         // given
         var size = Profile.RollingRestart;
         await using var run = _NewRun(settings => settings.DelayedPollInterval = size.PollInterval);

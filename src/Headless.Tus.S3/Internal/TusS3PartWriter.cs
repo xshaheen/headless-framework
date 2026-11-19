@@ -36,6 +36,7 @@ namespace Headless.Tus.Internal;
 internal sealed class TusS3PartWriter : IAsyncDisposable
 {
     private readonly TusS3AppendServices _services;
+    private readonly TusS3Keys _keys;
     private readonly string _fileId;
     private readonly TusS3UploadState _state;
     private readonly int _partSize;
@@ -61,9 +62,15 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
     private long _appendedBytes;
     private ExceptionDispatchInfo? _halt;
 
-    public TusS3PartWriter(TusS3AppendServices services, string fileId, TusS3LoadedUpload upload)
+    /// <summary>Prepares a writer for one PATCH to <paramref name="upload"/>.</summary>
+    /// <param name="services">what every append of the store shares</param>
+    /// <param name="keys">the keys of the tenant the upload belongs to</param>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="upload">the upload as loaded for the append</param>
+    public TusS3PartWriter(TusS3AppendServices services, TusS3Keys keys, string fileId, TusS3LoadedUpload upload)
     {
         _services = services;
+        _keys = keys;
         _fileId = fileId;
         _upload = upload;
         _state = upload.State ?? throw new InvalidOperationException("A completed upload accepts no appends.");
@@ -231,7 +238,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
             _state.NextPartNumber = (_partFailed ? Math.Max(lastCommitted, _highestAttemptedPart) : lastCommitted) + 1;
         }
 
-        _upload = await _services.StateStore.UpdateAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
+        _upload = await _services.StateStore.UpdateAsync(_keys, _fileId, _upload, StorageToken).ConfigureAwait(false);
         _upload.AppendCommittedAt = committedAt;
 
         _services.Logger.LogS3AppendCommitted(
@@ -337,7 +344,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
                 TusS3Requests.UploadPartAsync(
                     _services.S3,
                     _services.Options,
-                    _services.Keys.FinishedObject(_fileId),
+                    _keys.FinishedObject(_fileId),
                     _state.MultipartUploadId,
                     partNumber,
                     held.Buffer,
@@ -362,7 +369,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         if (_state.MultipartUploadId is null)
         {
             _state.MultipartUploadId = await _services
-                .CreateMultipartUploadAsync(_fileId, _state.Metadata, StorageToken)
+                .CreateMultipartUploadAsync(_keys, _fileId, _state.Metadata, StorageToken)
                 .ConfigureAwait(false);
             _state.MultipartUploadCreatedAt = _services.TimeProvider.GetUtcNow();
         }
@@ -371,7 +378,9 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         {
             // Crashes and lost fences used every part number this multipart upload has; no later part can be stored.
             _services.Logger.LogS3PartNumbersExhausted(_fileId);
-            _upload = await _services.StateStore.TryMarkGoneAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
+            _upload = await _services
+                .StateStore.TryMarkGoneAsync(_keys, _fileId, _upload, StorageToken)
+                .ConfigureAwait(false);
 
             throw new TusStoreException($"File {_fileId} has used every part number and can no longer be resumed");
         }
@@ -382,7 +391,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         // write that already landed, and then the state records that upload and a later append writes parts to it.
         // The upload holds no part yet, so leaving it costs nothing; when the write truly lost, the expiry sweep aborts
         // it once it is older than its grace period.
-        _upload = await _services.StateStore.UpdateAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
+        _upload = await _services.StateStore.UpdateAsync(_keys, _fileId, _upload, StorageToken).ConfigureAwait(false);
 
         _window = window;
     }
@@ -403,7 +412,9 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
         {
             _services.ReturnPartBuffer(oldest.Buffer);
             _services.Logger.LogS3MultipartUploadMissing(_fileId);
-            _upload = await _services.StateStore.TryMarkGoneAsync(_fileId, _upload, StorageToken).ConfigureAwait(false);
+            _upload = await _services
+                .StateStore.TryMarkGoneAsync(_keys, _fileId, _upload, StorageToken)
+                .ConfigureAwait(false);
 
             throw new TusStoreException($"File {_fileId} does not exist: its multipart upload is gone");
         }
@@ -531,11 +542,7 @@ internal sealed class TusS3PartWriter : IAsyncDisposable
 
     private async Task<TusS3CommittedSegment> _PutSegmentAsync(HeldBuffer held)
     {
-        var key = _services.Keys.Segment(
-            _fileId,
-            held.Offset,
-            Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)
-        );
+        var key = _keys.Segment(_fileId, held.Offset, Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
         await using var body = new MemoryStream(held.Buffer, held.BufferOffset, held.Length, writable: false);
 
         var request = new PutObjectRequest

@@ -160,6 +160,30 @@ internal static class DistributedLockCoreHelpers
     }
 
     /// <summary>
+    /// Announces a confirmed release through <paramref name="releaseSignal"/>, logging instead of throwing when the
+    /// signal fails. The announcement only wakes waiters early (a waiter that misses it wakes on its backoff poll),
+    /// so a faulty or broker-backed signal must not turn a release that storage already confirmed into a failed
+    /// release for the caller. The release paths run under <see cref="CancellationToken.None"/>, so no exception
+    /// here can come from the caller's own cancellation.
+    /// </summary>
+    public static void AnnounceRelease(
+        IDistributedLockReleaseSignal releaseSignal,
+        ILogger logger,
+        string resource,
+        string leaseId
+    )
+    {
+        try
+        {
+            releaseSignal.Announce(resource, leaseId);
+        }
+        catch (Exception exception)
+        {
+            logger.LogReleaseSignalAnnounceFailed(exception, resource, leaseId);
+        }
+    }
+
+    /// <summary>
     /// Long-running pipeline for the release path (critical path: failure to release strands
     /// waiters until TTL expiry). 15 total attempts (1 + 14 retries) matches the prior
     /// <c>_MaxReleaseRetryAttempts</c> in <see cref="DistributedLock"/>. Shared with

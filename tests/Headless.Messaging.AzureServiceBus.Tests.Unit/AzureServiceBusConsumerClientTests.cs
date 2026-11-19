@@ -768,7 +768,9 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
         client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
-        await client.ListeningAsync(TimeSpan.FromSeconds(5), AbortToken);
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listen = client.ListeningAsync(TimeSpan.FromSeconds(5), listening.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
         processor.ClearReceivedCalls();
         var restarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         processor.When(p => p.StartProcessingAsync(Arg.Any<CancellationToken>())).Do(_ => restarted.TrySetResult());
@@ -790,6 +792,8 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         finally
         {
             handlerReturned.TrySetResult();
+            await listening.CancelAsync();
+            await listen;
             await client.DisposeAsync();
         }
     }
@@ -801,7 +805,9 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var (client, processor) = await _CreateQueueClientWithProcessorAsync(handlerReturned.Task);
         client.AttachCallbacks((_, _) => Task.CompletedTask, _ => { });
-        await client.ListeningAsync(TimeSpan.FromSeconds(5), AbortToken);
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listen = client.ListeningAsync(TimeSpan.FromSeconds(5), listening.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
         processor.ClearReceivedCalls();
         var secondStop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var stops = 0;
@@ -830,6 +836,8 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
         finally
         {
             handlerReturned.TrySetResult();
+            await listening.CancelAsync();
+            await listen;
             await client.DisposeAsync();
         }
     }
@@ -963,6 +971,37 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
 
         // then
         reports.Contains(MqLogType.BrokerUnreachable).Should().Be(reported);
+    }
+
+    [Fact]
+    public async Task should_log_processor_error_through_logger_when_no_log_callback_is_attached()
+    {
+        // given
+        var logger = Substitute.For<ILogger>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        await using var client = new AzureServiceBusConsumerClient(
+            logger,
+            "test-sub",
+            1,
+            _options,
+            _serviceProvider,
+            _clientPool
+        );
+        var failure = new ServiceBusException("Settlement failed", ServiceBusFailureReason.GeneralError);
+
+        // when
+        await _RaiseProcessorErrorAsync(client, failure, ServiceBusErrorSource.Complete);
+
+        // then
+        logger
+            .Received(1)
+            .Log(
+                LogLevel.Warning,
+                Arg.Any<EventId>(),
+                Arg.Any<Arg.AnyType>(),
+                failure,
+                Arg.Any<Func<Arg.AnyType, Exception?, string>>()
+            );
     }
 
     [Fact]

@@ -157,6 +157,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 |--------|-------------|-------------------------|
 | Caching | `AddHeadlessCaching` | `UseInMemory`, `UseRedis`, `UseHybrid` (L1+L2, with `UseRedisBackplane`, `UseMessagingBackplane`, or `UseSingleInstanceBackplane`) |
 | Blob storage | `AddHeadlessBlobs` | `UseAws`, `UseAzure`, `UseCloudflareR2`, `UseFileSystem`, `UseRedis`, `UseSsh` |
+| Resumable uploads (TUS) | `AddHeadlessTus` | `UseAzure`, `UseS3`, `UseStore` (any other `ITusStore`) |
 | Email | `AddHeadlessEmails` | `UseAwsSes`, `UseAzure`, `UseMailkit`, `UseDevelopment`, `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment` |
 | Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseApns`, `UseNoop` |
@@ -172,7 +173,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | Audit log | `AddHeadlessAuditLog` | `UsePostgreSqlEntityFramework<TContext>`, `UseSqlServerEntityFramework<TContext>`, `UseEntityFramework<TContext>`, `UsePostgreSql`, `UseSqlServer` |
 | CAPTCHA | `AddHeadlessCaptcha` | `UseReCaptchaV2`, `UseReCaptchaV3`, `UseTurnstile` |
-| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`, `UseKafka`, `UseAws`, `UseAzureServiceBus`, `UseNats`, `UseRedis`, `UseInMemory`. Storage: `UsePostgreSql`, `UseSqlServer`, `UseInMemoryStorage` |
+| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`, `UseKafka`, `UseAws`, `UseAzureServiceBus`, `UseNats`, `UseRedis`, `UseInMemory`. Named transport: `AddTransport(name)` with `UseRabbitMq` or `UseInMemory`. Storage: `UsePostgreSql`, `UseSqlServer`, `UseInMemoryStorage` |
 | Background jobs | `AddHeadlessJobs` | EF Core persistence with PostgreSQL or SQL Server atomic claims |
 
 Two rules follow from that shape:
@@ -719,11 +720,11 @@ Base classes, builders, fixtures, and Testcontainers integration for real-databa
 
 ### TUS (Resumable Uploads)
 
-[TUS protocol](https://tus.io) support for resumable file uploads, with Azure Blob Storage, S3-compatible storage (Cloudflare R2, Amazon S3, MinIO), and distributed locking.
+[TUS protocol](https://tus.io) support for resumable file uploads: upload endpoints that isolate each upload by owner and tenant, validate it, and give the application the finished file it asks for, with Azure Blob Storage, S3-compatible storage (Cloudflare R2, Amazon S3, MinIO), and distributed locking.
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Tus](src/Headless.Tus/README.md) | TUS protocol utilities |
+| [Headless.Tus](src/Headless.Tus/README.md) | TUS registration and upload endpoints: isolation, validation, finished-upload lookup, CORS defaults, expired-upload cleanup |
 | [Headless.Tus.Azure](src/Headless.Tus.Azure/README.md) | Azure Blob TUS store |
 | [Headless.Tus.S3](src/Headless.Tus.S3/README.md) | Cloudflare R2, Amazon S3, and S3-compatible TUS store |
 | [Headless.Tus.DistributedLocks](src/Headless.Tus.DistributedLocks/README.md) | TUS file locking |

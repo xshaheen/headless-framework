@@ -84,6 +84,9 @@ public sealed class TransportConsumerConformanceSession(
 
     public IConsumerClient Consumer { get; } = consumer;
 
+    /// <summary>Gets whether the consumer's <see cref="IConsumerClient.ListeningAsync"/> has started and not yet returned.</summary>
+    public bool IsListening => _listeningTask is { IsCompleted: false };
+
     public async Task StartAsync(
         Func<TransportConformanceDelivery, Task>? onDelivery = null,
         Action<LogMessageEventArgs>? onLog = null,
@@ -562,6 +565,16 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
     }
 
     /// <summary>
+    /// What the broker reported about each delivery of <paramref name="session"/> and each dead-letter copy taken from it,
+    /// such as sequence numbers and delivery counts, so a failed single-copy check says whether two copies were sent or
+    /// one copy was returned twice. Empty when the provider records nothing.
+    /// </summary>
+    protected virtual string DescribeDeadLetterEvidence(TransportConsumerConformanceSession session)
+    {
+        return string.Empty;
+    }
+
+    /// <summary>
     /// The largest body the provider accepts with the conformance headers, from the broker's documented message limit;
     /// a leaf that supports the body-size scenario overrides it.
     /// </summary>
@@ -815,6 +828,25 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
     }
 
+    /// <summary>
+    /// A client listens until its token is canceled. One that returns earlier, as a push-based client that only starts
+    /// the broker's receivers would, leaves the messaging core with no loop to watch, so the core reads it as a failure.
+    /// </summary>
+    [Fact]
+    public virtual async Task should_keep_listening_until_the_listening_token_is_canceled()
+    {
+        RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        (await session.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
+        session.IsListening.Should().BeTrue("ListeningAsync must not return before its token is canceled");
+
+        await session.StopAsync(TimeSpan.FromSeconds(2));
+        session.IsListening.Should().BeFalse("ListeningAsync must return once its token is canceled");
+    }
+
     [Guarantee("MSG-SHUT-03")]
     public virtual async Task should_bound_shutdown_while_handler_is_active()
     {
@@ -924,7 +956,7 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
             },
             TimeSpan.FromSeconds(60),
             () =>
-                $"the broker never gave up on a message whose builder kept failing, after {attempts.GetValueOrDefault(poisoned)} attempts"
+                $"the broker never gave up on a message whose builder kept failing, after {attempts.GetValueOrDefault(poisoned)} attempts; {DescribeDeadLetterEvidence(session)}"
         );
 
         (await session.RemainsEmptyAsync(session.NoRedeliveryWindow, AbortToken))
@@ -932,12 +964,24 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
             .BeTrue("a message whose builder never succeeded must not reach the consumer");
         attempts[poisoned]
             .Should()
-            .BeInRange(2, deliveryLimit, "the broker must redeliver the message, and only within its budget");
+            .BeInRange(
+                2,
+                deliveryLimit,
+                "the broker must redeliver the message, and only within its budget; {0}",
+                DescribeDeadLetterEvidence(session)
+            );
 
         if (HasDeadLetterDestination)
         {
             deadLettered.AddRange(await TakeDeadLetteredMessageIdsAsync(session, AbortToken));
-            deadLettered.Count(id => string.Equals(id, poisoned, StringComparison.Ordinal)).Should().Be(1);
+            deadLettered
+                .Count(id => string.Equals(id, poisoned, StringComparison.Ordinal))
+                .Should()
+                .Be(
+                    1,
+                    "the broker keeps one dead-letter copy of a message it gave up on; {0}",
+                    DescribeDeadLetterEvidence(session)
+                );
         }
     }
 
@@ -985,7 +1029,11 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
             .Should()
             .BeTrue("a dead-lettered delivery is settled and must not be redelivered");
         deadLettered.AddRange(await TakeDeadLetteredMessageIdsAsync(session, AbortToken));
-        deadLettered.Should().ContainSingle().Which.Should().Be(message.Id);
+        deadLettered
+            .Should()
+            .ContainSingle("a dead-lettered delivery leaves one copy; {0}", DescribeDeadLetterEvidence(session))
+            .Which.Should()
+            .Be(message.Id);
     }
 
     /// <summary>

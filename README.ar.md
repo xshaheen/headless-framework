@@ -186,6 +186,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 |------------|------------|---------------------|
 | Caching | `AddHeadlessCaching` | `UseInMemory`، `UseRedis`، `UseHybrid` (L1+L2، مع `UseRedisBackplane` أو `UseMessagingBackplane` أو `UseSingleInstanceBackplane`) |
 | Blob storage | `AddHeadlessBlobs` | `UseAws`، `UseAzure`، `UseCloudflareR2`، `UseFileSystem`، `UseRedis`، `UseSsh` |
+| Resumable uploads (TUS) | `AddHeadlessTus` | `UseAzure`، `UseS3`، `UseStore` (لأي `ITusStore` تاني) |
 | Emails | `AddHeadlessEmails` | `UseAwsSes`، `UseAzure`، `UseMailkit`، `UseDevelopment`، `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`، `UseAwsSns`، `UseInfobip`، `UseCequens`، `UseConnekio`، `UseVictoryLink`، `UseVodafone`، `UseDevelopment` |
 | Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`، `UseNoop` |
@@ -201,7 +202,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Permissions | `AddHeadlessPermissions` | `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | Audit log | `AddHeadlessAuditLog` | `UsePostgreSqlEntityFramework<TContext>`، `UseSqlServerEntityFramework<TContext>`، `UseEntityFramework<TContext>`، `UsePostgreSql`، `UseSqlServer` |
 | CAPTCHA | `AddHeadlessCaptcha` | `UseReCaptchaV2`، `UseReCaptchaV3`، `UseTurnstile` |
-| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`، `UseKafka`، `UseAws`، `UseAzureServiceBus`، `UseNats`، `UseRedis`، `UseInMemory`. Storage: `UsePostgreSql`، `UseSqlServer`، `UseInMemoryStorage` |
+| Messaging | `AddHeadlessMessaging` | Transport: `UseRabbitMq`، `UseKafka`، `UseAws`، `UseAzureServiceBus`، `UseNats`، `UseRedis`، `UseInMemory`. Named transport: `AddTransport(name)` مع `UseRabbitMq` أو `UseInMemory`. Storage: `UsePostgreSql`، `UseSqlServer`، `UseInMemoryStorage` |
 | Background jobs | `AddHeadlessJobs` | Storage على EF Core مع atomic claims في PostgreSQL أو SQL Server |
 
 وقاعدتين بتيجوا مع الشكل دا:
@@ -758,11 +759,11 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 
 ### TUS (Resumable Uploads)
 
-دعم [بروتوكول TUS](https://tus.io) للـ resumable uploads، مع Azure Blob Storage، وstorage متوافق مع S3 (Cloudflare R2، وAmazon S3، وMinIO)، وdistributed locking.
+دعم [بروتوكول TUS](https://tus.io) للـ resumable uploads: upload endpoints بتعزل كل upload على الـ owner والـ tenant بتوعه، وبتعمله validation، وبتدّي التطبيق الملف المكتمل اللي بيطلبه، مع Azure Blob Storage، وstorage متوافق مع S3 (Cloudflare R2، وAmazon S3، وMinIO)، وdistributed locking.
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.Tus](src/Headless.Tus/README.md) | أدوات بروتوكول TUS |
+| [Headless.Tus](src/Headless.Tus/README.md) | Setup الـ TUS والـ upload endpoints: isolation، وvalidation، وfinished-upload lookup، وCORS defaults، وتنظيف الـ uploads المنتهية |
 | [Headless.Tus.Azure](src/Headless.Tus.Azure/README.md) | TUS store على Azure Blob |
 | [Headless.Tus.S3](src/Headless.Tus.S3/README.md) | TUS store على Cloudflare R2 وAmazon S3 وأي storage متوافق مع S3 |
 | [Headless.Tus.DistributedLocks](src/Headless.Tus.DistributedLocks/README.md) | Locking لملفات الـ TUS |

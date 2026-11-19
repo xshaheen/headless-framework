@@ -266,6 +266,12 @@ public sealed class TusAzureStoreTests(TusAzureFixture fixture) : TusStoreConfor
     }
 
     [Fact]
+    public override Task should_reject_upload_length_below_uploaded_bytes()
+    {
+        return base.should_reject_upload_length_below_uploaded_bytes();
+    }
+
+    [Fact]
     public override Task should_check_file_existence()
     {
         return base.should_check_file_existence();

@@ -85,21 +85,22 @@ public sealed class SettingsColumnLengthTests : TestBase
     }
 
     [Theory]
-    [InlineData(nameof(SettingsStorageOptions.SettingValuesNameMaxLength))]
-    [InlineData(nameof(SettingsStorageOptions.SettingValuesValueMaxLength))]
-    [InlineData(nameof(SettingsStorageOptions.SettingValuesProviderNameMaxLength))]
-    [InlineData(nameof(SettingsStorageOptions.SettingValuesProviderKeyMaxLength))]
-    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsNameMaxLength))]
-    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsDisplayNameMaxLength))]
-    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsDescriptionMaxLength))]
-    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsDefaultValueMaxLength))]
-    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsProvidersMaxLength))]
-    public void should_reject_a_column_length_outside_one_to_four_thousand(string option)
+    [InlineData(nameof(SettingsStorageOptions.SettingValuesNameMaxLength), true)]
+    [InlineData(nameof(SettingsStorageOptions.SettingValuesValueMaxLength), false)]
+    [InlineData(nameof(SettingsStorageOptions.SettingValuesProviderNameMaxLength), true)]
+    [InlineData(nameof(SettingsStorageOptions.SettingValuesProviderKeyMaxLength), true)]
+    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsNameMaxLength), true)]
+    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsDisplayNameMaxLength), false)]
+    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsDescriptionMaxLength), false)]
+    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsDefaultValueMaxLength), false)]
+    [InlineData(nameof(SettingsStorageOptions.SettingDefinitionsProvidersMaxLength), false)]
+    public void should_reject_a_column_length_outside_one_to_four_thousand(string option, bool indexed)
     {
-        // given — 4000 is the widest sized nvarchar on SQL Server, the narrowest of the supported databases
+        // given — 4000 is the widest sized nvarchar on SQL Server, the narrowest of the supported databases; an
+        // indexed column also stays inside SQL Server's 1700-byte index key, which 4000 characters overflow
         var property = typeof(SettingsStorageOptions).GetProperty(option)!;
 
-        foreach (var (length, accepted) in new[] { (0, false), (1, true), (4000, true), (4001, false) })
+        foreach (var (length, accepted) in new[] { (0, false), (1, true), (4000, !indexed), (4001, false) })
         {
             using var provider = _Provider(options => property.SetValue(options, length));
 
@@ -154,6 +155,33 @@ public sealed class SettingsColumnLengthTests : TestBase
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new SettingDefinitionSerializer(guidGenerator, Options.Create(options));
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void should_reject_index_columns_wider_together_than_the_sql_server_index_key(int overflow, bool accepted)
+    {
+        // given — the widest SettingValues index holds every key column; nvarchar takes two bytes per character
+        using var provider = _Provider(options =>
+            options.SettingValuesProviderKeyMaxLength =
+                850 - (options.SettingValuesNameMaxLength + options.SettingValuesProviderNameMaxLength) + overflow
+        );
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<SettingsStorageOptions>>().Value;
+
+        // then
+        if (accepted)
+        {
+            act.Should().NotThrow();
+        }
+        else
+        {
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*SettingValues (*1702 bytes*1700-byte*SettingValuesProviderKeyMaxLength*");
+        }
     }
 
     private static ServiceProvider _Provider(Action<SettingsStorageOptions> configure)

@@ -24,7 +24,7 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
-        return WriteAsync(publishRequest, decision, batch: null, cancellationToken);
+        return WriteAsync(publishRequest, decision, batch: null, transportName: null, cancellationToken);
     }
 
     /// <summary>
@@ -36,6 +36,7 @@ internal sealed class OutboxMessageWriter(
         PreparedPublishMessage publishRequest,
         DeliveryDecision decision,
         OutboxStoreBatch? batch,
+        string? transportName,
         CancellationToken cancellationToken
     )
     {
@@ -55,6 +56,7 @@ internal sealed class OutboxMessageWriter(
                 Origin = publishRequest.Message,
                 Content = serializer.Serialize(publishRequest.Message, transport.Body),
                 Lane = publishRequest.Lane,
+                TransportName = transportName,
             };
 
             // Use the unit of work/transaction captured in the caller's frame — never re-read Current here. If the

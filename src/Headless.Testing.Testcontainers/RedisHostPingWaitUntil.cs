@@ -12,14 +12,13 @@ namespace Headless.Testing.Testcontainers;
 /// the container, which passes before a runtime such as OrbStack or Docker Desktop forwards the port: a client that
 /// connects right after the start then has its connection refused or reset by the port proxy.
 /// </summary>
-internal sealed class RedisHostPingWaitUntil : IWaitUntil
+internal sealed class RedisHostPingWaitUntil(int containerPort = RedisBuilder.RedisPort) : IWaitUntil
 {
     private static readonly TimeSpan _AttemptTimeout = TimeSpan.FromSeconds(1);
 
     public async Task<bool> UntilAsync(IContainer container)
     {
-        return await PingAsync(container.Hostname, container.GetMappedPublicPort(RedisBuilder.RedisPort))
-            .ConfigureAwait(false);
+        return await PingAsync(container.Hostname, container.GetMappedPublicPort(containerPort)).ConfigureAwait(false);
     }
 
     internal static async Task<bool> PingAsync(string host, int port)

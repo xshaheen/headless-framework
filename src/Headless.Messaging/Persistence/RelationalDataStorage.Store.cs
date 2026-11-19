@@ -92,6 +92,7 @@ internal sealed partial class RelationalDataStorage
                     _t.NextRetryAt,
                     _t.StatusName,
                     _t.MessageId,
+                    _t.Transport,
                     _t.ChangedAt,
                 ],
                 [
@@ -107,6 +108,7 @@ internal sealed partial class RelationalDataStorage
                     $"CASE WHEN @ExpiresAt IS NULL THEN {_dialect.ShiftByDuration(SqlDialectTokens.Now, "Grace")} END",
                     $"CASE WHEN @ExpiresAt IS NULL THEN '{nameof(StatusName.Scheduled)}' WHEN @ExpiresAt <= {_dialect.ShiftByDuration(SqlDialectTokens.Now, "QueueWindow")} THEN '{nameof(StatusName.Queued)}' ELSE '{nameof(StatusName.Delayed)}' END",
                     "@MessageId",
+                    "@Transport",
                     SqlDialectTokens.Now,
                 ],
                 [_t.Added, _t.NextRetryAt]
@@ -122,6 +124,7 @@ internal sealed partial class RelationalDataStorage
             Origin = message.Origin,
             Content = _ContentOf(message),
             Lane = message.Lane,
+            TransportName = message.TransportName,
             ExpiresAt = publishAt,
             Retries = 0,
             InlineAttempts = 0,
@@ -226,6 +229,7 @@ internal sealed partial class RelationalDataStorage
         _dialect.AddDuration(command, "Grace", Options.RetryPolicy.InitialDispatchGrace);
         _dialect.AddDuration(command, "QueueWindow", TimeSpan.FromMinutes(1));
         _dialect.AddParameter(command, "MessageId", _MessageIdType, stored.Origin.Id);
+        _dialect.AddParameter(command, "Transport", _TransportType, stored.TransportName);
     }
 
     private static async Task<(DateTimeOffset Added, DateTimeOffset? NextRetryAt)> _ReadStoredPublishedAsync(

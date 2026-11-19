@@ -94,6 +94,36 @@ public abstract class TusStoreConformanceTestsBase<TStore>(ITusConformanceBacken
         (await Store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
     }
 
+    public virtual async Task should_reject_upload_length_below_uploaded_bytes()
+    {
+        // given - a deferred-length upload that already holds 100 bytes
+        var content = Faker.Random.Bytes(100);
+        var fileId = await Store.CreateFileAsync(-1L, metadata: null, AbortToken);
+
+        await using (var stream = new MemoryStream(content))
+        {
+            await Store.AppendDataAsync(fileId, stream, AbortToken);
+        }
+
+        // when - the client declares a length below what it already sent
+        var act = () => Store.SetUploadLengthAsync(fileId, 50, AbortToken);
+
+        // then - the store refuses it (tusdotnet answers 400) and the length stays deferred, so a later request
+        // can still declare the right one
+        await act.Should().ThrowAsync<tusdotnet.Models.TusStoreException>();
+        (await Store.GetUploadLengthAsync(fileId, AbortToken)).Should().BeNull();
+        (await Store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
+
+        // and when - the client declares a length equal to the bytes held
+        await Store.SetUploadLengthAsync(fileId, content.Length, AbortToken);
+
+        // then - the upload reads as complete
+        (await Store.GetUploadLengthAsync(fileId, AbortToken))
+            .Should()
+            .Be(content.Length);
+        (await Store.GetUploadOffsetAsync(fileId, AbortToken)).Should().Be(content.Length);
+    }
+
     /* Store Core */
 
     // -- FileExist

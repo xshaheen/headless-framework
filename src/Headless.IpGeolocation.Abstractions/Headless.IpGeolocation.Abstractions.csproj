@@ -5,7 +5,4 @@
     <PackageTags>headless;geolocation;geoip;ip;dotnet</PackageTags>
     <RootNamespace>Headless.IpGeolocation</RootNamespace>
   </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
-  </ItemGroup>
 </Project>

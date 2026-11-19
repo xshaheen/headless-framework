@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Headless.IpGeolocation;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
@@ -47,16 +49,10 @@ public abstract class MaxMindTestBase : TestBase
     }
 
     /// <summary>Polls <paramref name="condition" /> until it holds, failing the test after 10 seconds.</summary>
-    protected static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-
-        while (!condition())
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(20), timeout.Token);
-        }
-    }
+    protected static Task WaitUntilAsync(
+        Func<bool> condition,
+        [CallerArgumentExpression(nameof(condition))] string? conditionExpression = null
+    ) => Eventually.UntilAsync(condition, TimeSpan.FromSeconds(10), conditionExpression: conditionExpression);
 
     protected override ValueTask DisposeAsyncCore()
     {

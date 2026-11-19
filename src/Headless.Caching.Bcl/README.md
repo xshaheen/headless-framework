@@ -15,4 +15,4 @@ dotnet add package Headless.Caching.Bcl
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Caching guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching.md#headlesscachingbcl)
+- [Caching guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching/adapters.md#headlesscachingbcl)

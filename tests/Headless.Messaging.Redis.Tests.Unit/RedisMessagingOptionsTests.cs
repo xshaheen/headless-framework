@@ -127,6 +127,7 @@ public sealed class RedisMessagingOptionsTests : TestBase
         var currentDocumentation = string.Join(
             '\n',
             File.ReadAllText(Path.Combine(repositoryRoot, "docs", "llms", "messaging.md")),
+            File.ReadAllText(Path.Combine(repositoryRoot, "docs", "llms", "messaging", "redis.md")),
             File.ReadAllText(Path.Combine(repositoryRoot, "docs", "llms", "index.md")),
             File.ReadAllText(Path.Combine(repositoryRoot, "src", "Headless.Messaging.Redis", "README.md"))
         );

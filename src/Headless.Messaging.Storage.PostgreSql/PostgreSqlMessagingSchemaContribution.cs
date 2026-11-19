@@ -368,6 +368,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                 "exception_info" text NULL,
                 -- See the received table's failure fingerprint.
                 "failure_fingerprint" VARCHAR(64) NULL,
+                -- The named transport that sends the row; NULL for the default transport.
+                "transport" VARCHAR(64) NULL,
                 -- See the received table's change marker.
                 "changed_at" TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
             );

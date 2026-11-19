@@ -62,6 +62,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private int _disposed;
     private int _hasStartedProcessing;
+    private int _listeningStopped;
 
     // Pauses stop the processors and resumes restart them one after another on this chain, so a restart never runs
     // beside a stop. A processor's stop waits for every handler it dispatched, whichever circuit identity it serves, so
@@ -306,6 +307,24 @@ internal sealed class AzureServiceBusConsumerClient(
 
         Volatile.Write(ref _hasStartedProcessing, 1);
         _ready.TrySetResult();
+
+        // The processors receive on their own threads, so this call is only the loop's lifetime: it ends when the caller
+        // stops listening, which is what tells the core that a returned listener is a dead one.
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Stop receiving now, without waiting: a processor's stop waits for every handler it dispatched, and those
+            // still settle through it, because only shutdown closes the processors. A later resume must not restart
+            // processors that nothing listens to any more.
+            Volatile.Write(ref _listeningStopped, 1);
+            if (Volatile.Read(ref _disposed) == 0)
+            {
+                _ = _AppendTransition(() => _StopProcessorsAsync([.. processors]));
+            }
+        }
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
@@ -359,7 +378,7 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         try
         {
-            // Not the caller's token: the stop outlives the pause call that started it.
+            // Not the caller's token: the stop outlives the call that started it.
             await Task.WhenAll(processors.ConvertAll(static processor => processor.StopProcessingAsync()))
                 .ConfigureAwait(false);
         }
@@ -369,7 +388,7 @@ internal sealed class AzureServiceBusConsumerClient(
                 new LogMessageEventArgs
                 {
                     LogType = MqLogType.ConsumeError,
-                    Reason = $"Failed to stop Azure Service Bus processors for a pause: {e.GetBaseException()}",
+                    Reason = $"Failed to stop Azure Service Bus processors: {e.GetBaseException()}",
                 }
             );
         }
@@ -447,8 +466,8 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private async Task _RestartProcessorsAsync(bool deferred, CancellationToken cancellationToken)
     {
-        // A pause that came after this resume, or a shutdown, wins: the processors stay stopped.
-        if (Volatile.Read(ref _disposed) != 0 || _pauseGate.IsPaused)
+        // A pause that came after this resume, a shutdown, or the end of listening wins: the processors stay stopped.
+        if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _listeningStopped) != 0 || _pauseGate.IsPaused)
         {
             return;
         }
@@ -652,7 +671,15 @@ internal sealed class AzureServiceBusConsumerClient(
 
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.ExceptionReceived, Reason = exceptionMessage };
 
-        OnLogCallback!(logArgs);
+        // The processor can report an error before the core attaches its log callback; the client's logger keeps it.
+        if (OnLogCallback is { } onLog)
+        {
+            onLog(logArgs);
+        }
+        else
+        {
+            logger.ProcessorErrorWithoutCallback(args.Exception, args.ErrorSource, args.EntityPath);
+        }
 
         // The processor retries a lost receive on its own. A failed receive or session accept is the broker; a failed
         // settlement or handler callback is about one message and says nothing about reaching Service Bus.
@@ -1186,4 +1213,16 @@ internal static partial class AzureServiceBusConsumerClientLog
         Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
     )]
     internal static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
+
+    [LoggerMessage(
+        EventId = 3030,
+        Level = LogLevel.Warning,
+        Message = "Azure Service Bus processor reported a {ErrorSource} error on {EntityPath} before a log callback was attached"
+    )]
+    internal static partial void ProcessorErrorWithoutCallback(
+        this ILogger logger,
+        Exception exception,
+        ServiceBusErrorSource errorSource,
+        string entityPath
+    );
 }

@@ -8,7 +8,7 @@ namespace Headless.Messaging.Internal;
 
 /// <summary>
 /// Offers each registered <see cref="ITransportTopologyProvisioner"/> as one resource provisioner, over the topology the
-/// registered consumers and messages describe.
+/// registered consumers and messages describe. A named transport's provisioners get only the subscriptions bound to it.
 /// </summary>
 internal sealed class TransportTopologyProvisionerSource(
     IEnumerable<ITransportTopologyProvisioner> provisioners,
@@ -29,22 +29,43 @@ internal sealed class TransportTopologyProvisionerSource(
                 services.GetService<IMessagingCapabilityModel>()
             )
         );
-        IReadOnlyList<IResourceProvisioner> resources =
+        List<IResourceProvisioner> resources =
         [
-            .. provisioners.Select(p => new TransportTopologyResourceProvisioner(p, topology)),
+            .. provisioners.Select(p => new TransportTopologyResourceProvisioner(p, topology, transportName: null)),
         ];
 
-        return Task.FromResult(resources);
+        foreach (var named in services.GetService<MessagingTransports>()?.Named ?? [])
+        {
+            var namedTopology = new Lazy<MessagingTopology>(() =>
+                BuildTopology(
+                    services.GetRequiredService<MethodMatcherCache>(),
+                    messages: null,
+                    named.Capabilities,
+                    named.Name
+                )
+            );
+
+            resources.AddRange(
+                named.Provisioners.Select(p => new TransportTopologyResourceProvisioner(p, namedTopology, named.Name))
+            );
+        }
+
+        return Task.FromResult<IReadOnlyList<IResourceProvisioner>>(resources);
     }
 
     /// <summary>
-    /// Builds the shared topology the registered consumers and messages need. It reads only registrations frozen with
-    /// the container, so every caller of one host sees the same topology.
+    /// Builds the shared topology the registered consumers and messages need on one transport. It reads only
+    /// registrations frozen with the container, so every caller of one host sees the same topology.
     /// </summary>
+    /// <remarks>
+    /// The default transport also gets the declared messages, whose Queue-lane queues its publishers declare. A named
+    /// transport gets only the subscriptions bound to it: its consumers' topology is what this host knows it needs there.
+    /// </remarks>
     internal static MessagingTopology BuildTopology(
         MethodMatcherCache selector,
         IMessageMetadataRegistry? messages,
-        IMessagingCapabilityModel? capabilities = null
+        IMessagingCapabilityModel? capabilities = null,
+        string? transportName = null
     )
     {
         var subscriptions = new List<TopologySubscription>();
@@ -52,6 +73,11 @@ internal sealed class TransportTopologyProvisionerSource(
 
         foreach (var (key, descriptors) in selector.GetCandidatesBySubscription())
         {
+            if (!string.Equals(key.TransportName, transportName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             // A runtime subscription carries a handler id: no deploy step knows it, so its client creates its topology.
             var names = descriptors
                 .Where(static d => d.HandlerId is null)
@@ -104,12 +130,14 @@ internal sealed class TransportTopologyProvisionerSource(
 /// <summary>One transport's shared topology as a resource provisioner.</summary>
 internal sealed class TransportTopologyResourceProvisioner(
     ITransportTopologyProvisioner provisioner,
-    Lazy<MessagingTopology> topology
+    Lazy<MessagingTopology> topology,
+    string? transportName
 ) : IResourceProvisioner
 {
     public string Kind => provisioner.Kind;
 
-    public string Name => "topology";
+    // Two transports of one provider each own a topology resource, so a named one carries its transport's name.
+    public string Name => transportName is null ? "topology" : $"topology-{transportName}";
 
     public ResourceStartupCheck StartupCheck => provisioner.StartupCheck;
 

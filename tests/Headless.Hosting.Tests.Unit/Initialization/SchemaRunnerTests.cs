@@ -205,6 +205,8 @@ public sealed class SchemaRunnerTests : TestBase
 
         public string ReadHistorySql(string schema) => throw new NotSupportedException();
 
+        public string HistoryTableExistsSql(string schema) => throw new NotSupportedException();
+
         public string InsertHistorySql(string schema) =>
             $"INSERT {schema} @Feature @StepVersion @Description @Checksum";
 

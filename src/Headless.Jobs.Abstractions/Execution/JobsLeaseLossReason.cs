@@ -37,4 +37,7 @@ internal enum JobsLeaseLossReason
 
     /// <summary>A write handing the row back threw, so the node cannot tell whether the row is still its own.</summary>
     ReleaseFailed = 8,
+
+    /// <summary>The write that starts a chain child matched no row: the child's row was no longer the claim's to start.</summary>
+    StartRejected = 9,
 }

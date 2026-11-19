@@ -192,6 +192,45 @@ public sealed partial class SetupLoggingSerilogTests : TestBase
             .BeEquivalentTo(new ScalarValue(_NationalId));
     }
 
+    [Fact]
+    public void should_redact_a_classified_property_name_on_serilogs_own_logger()
+    {
+        // given: a property classified by name, and no text pattern at all
+        var sink = new CollectingSink();
+        using var configuration = new ConfigurationManager();
+        var builder = _CreateBuilder(configuration);
+        builder.Services.AddHeadlessRedaction(static setup =>
+        {
+            _StarPrivateData(setup);
+            setup.ClassifyProperty("ApiSecret", HeadlessDataClassifications.Private);
+        });
+        builder.AddHeadlessSerilog(
+            new SerilogOptions { WriteToFiles = false },
+            (_, loggerConfiguration) => loggerConfiguration.WriteTo.Sink(sink)
+        );
+        using var provider = builder.Services.BuildServiceProvider();
+        var logger = provider.GetRequiredService<Serilog.ILogger>();
+
+        // when: as a template hole, a sequence, a destructured value, and a context property, matched ignoring case
+        logger.Information("Calling with {ApiSecret} for {Order}", "sk-live-1", 7);
+        logger.Information("Keys {apisecret}", new[] { "sk-live-2", "sk-live-3" });
+        logger.Information("Key {@ApiSecret}", new { Value = "sk-live-4" });
+        logger.ForContext("ApiSecret", "sk-live-5").Information("Called");
+
+        // then: every value is redacted, in the property and in the rendered text, and other properties are kept
+        sink.Events.Should().HaveCount(4);
+        sink.Events[0].Properties["ApiSecret"].Should().BeEquivalentTo(new ScalarValue("*****"));
+        sink.Events[0].Properties["Order"].Should().BeEquivalentTo(new ScalarValue(7));
+        sink.Events[0].RenderMessage().Should().Be("Calling with \"*****\" for 7");
+        sink.Events[1]
+            .Properties["apisecret"]
+            .Should()
+            .BeEquivalentTo(new SequenceValue([new ScalarValue("*****"), new ScalarValue("*****")]));
+        sink.Events[2].Properties["ApiSecret"].Should().BeEquivalentTo(new ScalarValue("*****"));
+        sink.Events[3].Properties["ApiSecret"].Should().BeEquivalentTo(new ScalarValue("*****"));
+        sink.Events.Select(static e => e.RenderMessage()).Should().NotContain(static m => m.Contains("sk-live"));
+    }
+
     [LoggerMessage(2, LogLevel.Information, "Lookup for {Id}")]
     private static partial void LogLookup(ILogger logger, string id);
 

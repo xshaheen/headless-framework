@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using Headless.Checks;
 using Headless.Coordination;
@@ -89,6 +90,14 @@ public static class SetupMessaging
         {
             throw new InvalidOperationException(
                 $"AddOutbox(\"{unconfigured.Name}\") was called without a storage. Chain UsePostgreSqlEntityFramework<TContext>(), UseSqlServerEntityFramework<TContext>(), UsePostgreSql(...), or UseSqlServer(...) on it."
+            );
+        }
+
+        if (setup.TransportBuilders.Find(static builder => !builder.IsConfigured) is { } unconfiguredTransport)
+        {
+            throw new InvalidOperationException(
+                $"AddTransport(\"{unconfiguredTransport.Name}\") was called without a provider. Chain the transport's "
+                    + "Use… call on it, such as AddTransport(name).UseRabbitMq(...)."
             );
         }
 
@@ -254,6 +263,9 @@ public static class SetupMessaging
             extensionRegistrations.Record(services, serviceExtension);
         }
 
+        // The default transport and every named one; each resolves its broker services only when first used.
+        services.TryAddSingleton(MessagingTransports.Create);
+
         // Generic publisher facades are provider-order independent. They resolve transport/storage implementations
         // only after the immutable capability gate accepts the individual call.
         services.TryAddSingleton(sp =>
@@ -270,6 +282,13 @@ public static class SetupMessaging
                     ),
                 };
 
+            // A named target is built once per transport, on its first publish.
+            var namedTargets = new ConcurrentDictionary<string, PublishTarget>(StringComparer.OrdinalIgnoreCase);
+            PublishTarget? ResolveNamedTarget(string name) =>
+                sp.GetRequiredService<MessagingTransports>().TryGet(name, out var transport)
+                    ? namedTargets.GetOrAdd(transport.Name!, static (_, t) => PublishTarget.For(t), transport)
+                    : null;
+
             return new MessagePublisher(
                 sp.GetRequiredService<IMessageSerializer>(),
                 ResolveTransport,
@@ -283,7 +302,8 @@ public static class SetupMessaging
                 options.TransportPublishTimeout,
                 sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode,
                 sp.GetRequiredService<ConsumerRegistry>().DeclaredRoutes,
-                sp.GetService<ILogger<MessagePublisher>>()
+                sp.GetService<ILogger<MessagePublisher>>(),
+                ResolveNamedTarget
             );
         });
         // Singleton: these facades are autonomous, so they hold no scope-bound state and framework singletons
@@ -291,6 +311,29 @@ public static class SetupMessaging
         // active unit of work is the unit-of-work outbox's job, reached from the unit itself.
         services.TryAddSingleton<IBus>(sp => new Bus(sp.GetRequiredService<MessagePublisher>()));
         services.TryAddSingleton<IQueue>(sp => new Queue(sp.GetRequiredService<MessagePublisher>()));
+
+        // A named transport's IBus and IQueue are keyed by its name, so [FromKeyedServices("partner")] picks the broker;
+        // the unkeyed ones above stay the default transport's.
+        foreach (var transport in setup.TransportBuilders)
+        {
+            var name = transport.Name;
+            services.AddKeyedSingleton<IBus>(
+                name,
+                (sp, _) =>
+                    new Bus(
+                        sp.GetRequiredService<MessagePublisher>(),
+                        PublishTarget.For(sp.GetRequiredService<MessagingTransports>().Get(name))
+                    )
+            );
+            services.AddKeyedSingleton<IQueue>(
+                name,
+                (sp, _) =>
+                    new Queue(
+                        sp.GetRequiredService<MessagePublisher>(),
+                        PublishTarget.For(sp.GetRequiredService<MessagingTransports>().Get(name))
+                    )
+            );
+        }
 
         // The other half of that split: unit.Outbox resolves this feature from the unit's scope, so a publish
         // reached from a unit of work always enlists in it and refuses when the storage cannot join. A singleton
@@ -324,7 +367,11 @@ public static class SetupMessaging
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
         // Readiness for every host, consuming or publish-only; the probes read state only and connect to nothing.
-        MessagingHealthChecks.Add(services, hasAdditionalOutboxes: setup.OutboxBuilders.Count != 0);
+        MessagingHealthChecks.Add(
+            services,
+            hasAdditionalOutboxes: setup.OutboxBuilders.Count != 0,
+            [.. setup.TransportBuilders.Select(static transport => transport.Name)]
+        );
 
         return new MessagingBuilder(services);
     }
@@ -372,7 +419,11 @@ public static class SetupMessaging
             options.DefaultFailurePolicy
         );
 
-        var consumeFilter = _RegisterConsumers(registrations, options, registry, controls);
+        var transportNames = provider
+            .GetServices<MessagingTransportRegistration>()
+            .Select(static registration => registration.Name)
+            .ToArray();
+        var consumeFilter = _RegisterConsumers(registrations, options, registry, controls, transportNames);
         registry.Complete(declarations, consumeFilter);
 
         return registry;
@@ -449,7 +500,8 @@ public static class SetupMessaging
         IReadOnlyCollection<MessageRegistration> registrations,
         MessagingOptions options,
         ConsumerRegistry registry,
-        MessagingHostControls controls
+        MessagingHostControls controls,
+        IReadOnlyList<string> transportNames
     )
     {
         var registeredKeys =
@@ -534,6 +586,7 @@ public static class SetupMessaging
         // after registration: a conflicting declaration surfaces first.
         var errors = new List<string>();
         var tuned = ConsumerTuningApplier.Apply(consumers, controls, errors);
+        _BindTransports(tuned, transportNames, errors);
         var circuitBreakerKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var consumer in tuned)
         {
@@ -559,6 +612,63 @@ public static class SetupMessaging
 
         // Resolved against every registered identity, so a filter never makes a message unpublishable.
         return MessagingConsumeFilter.Create(controls.ConsumeOnly, tuned);
+    }
+
+    /// <summary>
+    /// Checks every consumer's transport binding against the host's <c>AddTransport</c> calls and rewrites it to the
+    /// registered spelling, so a binding that differs only in case names the same broker everywhere.
+    /// </summary>
+    private static void _BindTransports(
+        ConsumerMetadata[] tuned,
+        IReadOnlyList<string> transportNames,
+        List<string> errors
+    )
+    {
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var index = 0; index < tuned.Length; index++)
+        {
+            var consumer = tuned[index];
+            if (consumer.TransportName is not { } bound)
+            {
+                continue;
+            }
+
+            var registered = transportNames.FirstOrDefault(name =>
+                string.Equals(name, bound, StringComparison.OrdinalIgnoreCase)
+            );
+
+            if (registered is null)
+            {
+                if (reported.Add(consumer.ConsumerIdentity))
+                {
+                    errors.Add(
+                        $"Consumer '{consumer.ConsumerIdentity}' is bound to transport '{bound}', which this host does "
+                            + $"not register. Register it with setup.AddTransport(\"{bound}\"), or bind the consumer to "
+                            + "a registered transport."
+                    );
+                }
+
+                continue;
+            }
+
+            // A responder answers on the reply channel of the transport its requester used, and only the default
+            // transport opens one.
+            if (consumer.IsResponder)
+            {
+                if (reported.Add(consumer.ConsumerIdentity))
+                {
+                    errors.Add(
+                        $"Responder '{consumer.ConsumerIdentity}' is bound to transport '{registered}'. Request/reply "
+                            + "runs on the default transport only, so a responder cannot be bound to a named transport."
+                    );
+                }
+
+                continue;
+            }
+
+            tuned[index] = consumer with { TransportName = registered };
+        }
     }
 
     private readonly record struct ConsumerRegistrationKey(string MessageName, MessageLane Lane, Type ConsumerType)

@@ -380,9 +380,16 @@ internal sealed class JobsExecutionTaskHandler
 
         context.SetProperty(x => x.Status, JobStatus.InProgress);
 
-        if (isChild)
+        // A chain child's start is its first write on its own row. A refused start means the row is no longer this
+        // claim's to start (cancelled, released, reclaimed, or already running), so the child must not run on it.
+        if (
+            isChild
+            && await _internalJobsManager.UpdateTickerAsync(context, cancellationToken).ConfigureAwait(false) == 0
+        )
         {
-            await _internalJobsManager.UpdateTickerAsync(context, cancellationToken).ConfigureAwait(false);
+            context.MarkLeaseLost(JobsLeaseLossReason.StartRejected);
+            _logger.LogJobLeaseLostBeforeExecution(context.JobId, context.FunctionName);
+            return;
         }
 
         // The start is written now: by the claim for a root run, above for a chain child. Left in the change set, it

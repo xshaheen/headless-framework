@@ -5,90 +5,82 @@ packages: Api.Abstractions, Api, Api.ServiceDefaults, DataProtection.Blobs, Api.
 
 # API & Web
 
-> ASP.NET Core API infrastructure: service registration, middleware, validation, logging, and endpoint integration for Minimal API and MVC.
+> ASP.NET Core API infrastructure: service registration, middleware, problem details, validation, logging, and endpoint integration for Minimal API and MVC.
 
 ## Orientation
 
-The package split:
+Start every new Headless API with `Headless.Api.ServiceDefaults`. It brings in `Headless.Api` and has three entry points:
 
-- **`Headless.Api.ServiceDefaults`** — the one-line bootstrap. Call `AddHeadless()` to register compression, health checks, problem details, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience in one shot. Antiforgery is opt-in (`options.Antiforgery.Enabled = true`) and the middleware is consumer-owned. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health`, `/alive`, OpenAPI JSON, and static assets. Pull this for the happy path — it transitively brings in `Headless.Api`.
-- **`Headless.Api`** — the building blocks only. Pull this when composing your own pipeline without the framework orchestrator, or when you only need individual primitives like `AddHeadlessProblemDetails()`, `AddHeadlessAntiforgery()`, or `AddHeadlessApiResponseCompression()`.
+- `builder.AddHeadless()` registers compression, health checks, problem details, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience.
+- `app.UseHeadless()` applies the edge of the middleware pipeline in a fixed order.
+- `app.MapHeadlessEndpoints()` maps `/health`, `/alive`, the OpenAPI JSON documents, and static assets.
+
+Reference `Headless.Api` alone only when you compose your own pipeline from primitives such as `AddHeadlessProblemDetails()`, `AddHeadlessAntiforgery()`, or `AddHeadlessApiResponseCompression()`.
 
 Choose an endpoint style:
 
-- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureHeadlessMinimalApi()` for the JSON conventions. The package adds mediator dispatch (`MapPostRequest<TRequest, TResponse>`, `sender.DispatchAsync(request, ct)`), `ApiResult` results with complete OpenAPI metadata, and group-level validation and problem-response conventions. Exception handling comes from `AddHeadlessProblemDetails()`, which `AddHeadless()` registers.
-- **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureHeadlessMvc()` for base controllers, exception filters, and URL canonicalization.
+- **Minimal API** (the default for new projects): add `Headless.Api.MinimalApi` and call `ConfigureHeadlessMinimalApi()`. It adds mediator dispatch (`MapPostRequest<TRequest, TResponse>`, `sender.DispatchAsync(request, ct)`), `ApiResult` results with complete OpenAPI metadata, and group-level validation.
+- **MVC controllers**: add `Headless.Api.Mvc` and call `ConfigureHeadlessMvc()` for base controllers, exception filters, and URL canonicalization.
 
-Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`, `IWebClientInfoProvider`) without pulling in the full API stack.
+Other packages:
 
-Additional packages:
-
-- `Headless.Api.FluentValidation` — the `Headless.FluentValidation` file rules (size, content type, magic bytes) for `IFormFile` uploads, plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
-- `Headless.DataProtection.Blobs` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
-- `Headless.Api.Identity` — ASP.NET Core Identity helpers: token providers, localized `auth:`/`user:` errors, `HeadlessLookupNormalizer`, and the Identity-backed `AddBasicSchema()` and `AddApiKey()` schemes.
-- `Headless.Api.UserAgent` — the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
-- `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
-- `Headless.Idempotency.ResponseReplay` — Stripe-style idempotency middleware: admits each key through the durable `Headless.Idempotency` store and replays the captured HTTP response byte-equivalent on identical retries. Its options and setup live in [idempotency.md § Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay), beside the durable admission contract; see [mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
+- `Headless.Api.Abstractions`: the interfaces alone (`IRequestContext`, `IWebClientInfoProvider`, `IProblemDetailsCreator`), for libraries that must not pull the API stack.
+- `Headless.Api.FluentValidation`: file rules (size, content type, magic bytes) for `IFormFile` uploads, plus the request contracts `PhoneNumberRequest`, `GeoCoordinateRequest`, and `PageMetadataRequest`.
+- `Headless.DataProtection.Blobs`: persists ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
+- `Headless.Api.Identity`: ASP.NET Core Identity helpers: token providers, localized `auth:` and `user:` errors, `HeadlessLookupNormalizer`, and the `Basic` and `ApiKey` authentication schemes.
+- `Headless.Api.UserAgent`: the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
+- `Headless.Api.Logging.Serilog`: Serilog enrichment with per-request user, account, and correlation ID, plus client IP and selected request headers.
+- `Headless.Idempotency.ResponseReplay`: idempotency middleware that replays the captured HTTP response on identical retries. [idempotency.md § Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay) owns its setup.
 
 ## Agent Rules
 
-- Default install for any new Headless API: `Headless.Api.ServiceDefaults`. It transitively pulls in `Headless.Api`. Only reach for `Headless.Api` directly when you specifically want primitives without the orchestrator.
-- Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation, antiforgery). Antiforgery is opt-in — set `options.Antiforgery.Enabled = true` for cookie-auth apps and wire `app.UseAntiforgery()` yourself after `UseAuthentication()`/`UseAuthorization()`; bearer-token APIs leave it disabled.
-- Use `UseHeadless()` for the edge of the pipeline (forwarded headers, compression, status-code pages, exception handler, HTTPS redirection, HSTS, no-cache header), then routing, CORS, authentication, tenancy, and authorization, then map endpoints. Call `UseHeadless()` first: its order is fixed, and the app's own middleware goes after it, inside the edge. To drop a step, turn off its `Use*` switch. Do not turn steps off and re-add them by hand: that loses the order (for example, the exception handler must stay inside status-code pages). HTTPS redirection and HSTS never run in the Development or Test environment. `UseHeadless` and `MapHeadlessEndpoints` are idempotent. See [Standard middleware order](#standard-middleware-order).
-- For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
-- For identifier-based (pre-auth) tenant resolution, add a `.Catalog(...)` store and `.Http(http => http.ResolveFromCatalog(sources => sources.AddHostSource("{tenant}.example.com")))` — or `AddRouteSource()`, `AddHeaderSource()`, `AddSource(context => ...)` — and place `app.UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()`, with `UseForwardedHeaders()` (behind a proxy), host filtering, and `UseCors()` ahead of it. Sources run in registration order; register the host source before a header source where hostnames carry perimeter controls. See [multi-tenancy.md](multi-tenancy.md#tenant-catalog).
-- For idempotent-replay middleware, register `services.AddHeadlessIdempotency(...)` with a provider (relational; `UseCache()` over a shared Redis cache for replicas without SQL, autonomous calls only; or `UseInMemory()` for tests and single-instance hosts), then `services.AddHeadlessHttpIdempotency(o => { ... })`, and place `app.UseHeadlessHttpIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. The durable store scopes every admission by the authenticated principal's tenant claim, never by the ambient pre-auth tenant (anonymous requests share one host-scope namespace); auth must be resolved first so unauthenticated/unauthorized requests do not admit a key. `InFlightStrategy = WaitAndReplay` polls the durable store with a bounded backoff — it has no `IDistributedLock` dependency.
-- Basic and API-key handlers authenticate only credentials supplied for their own scheme. Do not rely on an existing cookie/bearer principal to satisfy an endpoint that explicitly requires `Basic` or `ApiKey`.
-- API-key query-string authentication is opt-in (`AllowApiKeyInQueryString = true`); the dynamic scheme provider ignores `?api_key=` unless the API-key handler would accept it.
-- Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`. Provider packages (SQL, EF Core contexts, Redis, NATS, Azure blobs) and the Messaging and Jobs hosts add readiness checks tagged `ready` that appear on `/health` but not `/alive`; see [Health checks](utilities.md#health-checks). `/health` and `/alive` are never rate limited; see [HTTP edge limits](rate-limiting.md#http-edge-limits).
-- Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
-- Configure the proxy (`KnownProxies`, `KnownIPNetworks`, `ForwardLimit`, `ForwardedHeaders`) with `builder.Services.Configure<ForwardedHeadersOptions>(...)`. `UseHeadless()` reads those options, so do not call `app.UseForwardedHeaders()` a second time: a second pass consumes the next hop of `X-Forwarded-For` again.
-- Write a CORS policy in code with ASP.NET Core's `AddCors`; use `services.AddHeadlessCors(configuration.GetSection("Cors"))` when the origins come from configuration, which registers `HeadlessCorsConstants.RestrictedCors` and validates it at startup. Do not hand-write a policy with `SetIsOriginAllowed(_ => true)` plus `AllowCredentials()`, which reflects every origin and hands it the user's session; origins known only at request time (tenant custom domains) go through an `ICorsOriginSource`, which works over either kind of policy. `AddHeadlessAllowAnyCors()` is for development: it never allows credentials and fails startup outside Development unless `AllowAnyOriginOutsideDevelopment` confirms a public API. A cookie-authenticated SPA on `http://localhost:5173` belongs in `AllowedOrigins` instead.
-- CORS governs browsers only. A native mobile client (React Native on iOS or Android, Flutter, a native SDK) sends no `Origin` header, so no policy applies and its requests pass unchanged; authenticate it like any client and never treat CORS as protection against non-browser callers. Its browser-hosted variants do need origins: an Expo or React Native Web dev server (`http://localhost:8081`, `http://localhost:19006`), the deployed web build, and Capacitor or Ionic webviews (`capacitor://localhost`, `ionic://localhost`).
-- `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
-- `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set the regex timeout and FluentValidation defaults, including the Headless formal Arabic (`ar`) and Egyptian Arabic (`ar-EG`) wording of FluentValidation's built-in messages. It no longer changes the `JsonWebTokenHandler` statics: the Headless token factory and bearer scheme turn off inbound claim mapping on their own handlers. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
-- Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Call `.ValidateArguments()` on a route group (or a surface) to validate every argument that has a registered `IValidator<T>`; use `.Validate<T>()` on a single endpoint only when the group convention does not fit, and never both for the same argument. Return `ApiResult` through `ToHttpResult()`, `sender.DispatchAsync(...)`, or the `Map*Request` helpers, not a hand-written bridge.
-- For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
-- Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
-- Use `PersistKeysToBlobStorage()` from `Headless.DataProtection.Blobs` to persist Data Protection keys in distributed/containerized environments.
-- For Serilog enrichment, call `UseHeadlessSerilogEnrichers()` on the app, after `UseAuthentication()` so the enrichers can read the user. It needs no service registration beyond `AddHeadless()`: the middleware is built once with the pipeline and reads `IRequestContext` per request.
-- Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
-- `AddHeadless()` registers neither `IFieldEncryptor` nor `IBlindIndexer` and reads no encryption configuration. An app that encrypts values (including encrypted `Headless.Settings` definitions) or builds blind indexes calls `AddHeadlessEncryption(...)`; see [Encryption](encryption.md).
-- Place `UseResponseCompression()` **before** `UseHeadlessHttpIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses. In the right order the middleware stores the uncompressed body without the compressor's `Content-Encoding`, and each replay is compressed again for the retry's `Accept-Encoding`.
-- `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddHeadlessHttpIdempotency(o => o.HeaderName = ...)` only.
-- `TenantRequirement` must be in `DefaultPolicy` or `FallbackPolicy` for framework-level enforcement; placing it in a named policy is not detected by the startup validator.
-- `UseHeadlessTenancy()` must run after `UseRouting()` so `HttpContext.GetEndpoint()` returns metadata when `[SkipTenantResolution]` is checked.
-- `UseHeadlessTenantCatalogResolution()` must also run after `UseRouting()`: placed earlier it still resolves host, header, and delegate sources and only loses the `[SkipTenantResolution]` opt-out, but a route source then finds nothing and every request runs as host context (logged once per host at Error level as `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED`).
+- Install `Headless.Api.ServiceDefaults` for a new API. Do not register compression, security headers, JSON defaults, OpenTelemetry, OpenAPI, or problem details by hand: `AddHeadless()` does it. Pass toggles through `AddHeadless(configureServices: options => ...)`.
+- Call `UseHeadless()` first in the pipeline, then add the app's own middleware after it. To drop an edge step, turn off its switch in `UseHeadless(options => ...)`. Do not turn a step off and re-add it by hand, because that breaks the fixed order. See [Standard middleware order](#standard-middleware-order).
+- Configure proxies (`KnownProxies`, `KnownIPNetworks`, `ForwardLimit`, `ForwardedHeaders`) with `builder.Services.Configure<ForwardedHeadersOptions>(...)`. Do not call `app.UseForwardedHeaders()` a second time: each pass consumes one more `X-Forwarded-For` hop.
+- Keep `TrustForwardedHeadersFromAnyProxy` off unless only trusted proxy infrastructure can reach the service. With it on, any client can spoof the forwarded host and scheme.
+- Antiforgery is off by default. For cookie-authenticated apps, set `options.Antiforgery.Enabled = true` and call `app.UseAntiforgery()` yourself after `UseAuthentication()` and `UseAuthorization()`. Bearer-token APIs leave it off.
+- Inject `IRequestContext` for the request's user, tenant, locale, time zone, and correlation ID. Do not read `HttpContext` in service code.
+- Branch on a problem's `error.code`, `title`, or `type`, never on `detail` or a description: those are localized. Call a `*MessageDescriber` factory per response, never cache its result in a `static`. See [What clients branch on, and what is localized](#what-clients-branch-on-and-what-is-localized).
+- Write a CORS policy in code with ASP.NET Core's `AddCors`, or bind it from configuration with `services.AddHeadlessCors(configuration.GetSection("Cors"))`. Never combine `SetIsOriginAllowed(_ => true)` with `AllowCredentials()`: that reflects every origin and hands it the user's session. Approve origins known only at request time (tenant custom domains) through an `ICorsOriginSource`. See [CORS](#cors).
+- Use `AddHeadlessAllowAnyCors()` in Development only. It never allows credentials and fails startup outside Development unless `AllowAnyOriginOutsideDevelopment` is set for a deliberately public API.
+- Do not treat CORS as protection from non-browser callers. Native mobile clients send no `Origin` header, so no policy applies to them.
+- For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after `UseRouting()` and `UseAuthentication()`, and before `UseAuthorization()`. Put `TenantRequirement` in `DefaultPolicy` or `FallbackPolicy`: the startup check ignores named policies. See [multi-tenancy.md](multi-tenancy/http.md#http-setup).
+- For identifier-based (pre-authentication) tenant resolution, place `app.UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()`, with `UseForwardedHeaders()` (behind a proxy), host filtering, and `UseCors()` ahead of it. Register the host source before a header source where hostnames carry perimeter controls. See [multi-tenancy.md](multi-tenancy/catalog.md#tenant-catalog).
+- For response replay, register `services.AddHeadlessIdempotency(...)` with a provider and `services.AddHeadlessHttpIdempotency(...)`, then place `app.UseHeadlessHttpIdempotency()` after `UseAuthorization()` and `UseHeadlessTenancy()`, so a request that fails authentication or authorization never admits a key. Keep response compression outside it (`UseHeadless()` already does). Change the key header only globally through `AddHeadlessHttpIdempotency(o => o.HeaderName = ...)`: a per-endpoint `HeaderName` set through `.WithIdempotency()` is ignored.
+- `Basic` and `ApiKey` handlers authenticate only credentials sent for their own scheme. A cookie or bearer principal does not satisfy an endpoint that requires `Basic` or `ApiKey`. Query-string API keys work only with `AllowApiKeyInQueryString = true`.
+- `AddHeadless()` registers neither `IFieldEncryptor` nor `IBlindIndexer`. An app that encrypts values, including encrypted `Headless.Settings` definitions, calls `AddHeadlessEncryption(...)`. See [Encryption](encryption.md).
+- Prefer `Headless.Api.MinimalApi` for new projects. Call `.ValidateArguments()` on a route group. Use `.Validate<T>()` on one endpoint only when the group convention does not fit, and never both for one argument. Return `ApiResult` through `ToHttpResult()`, `sender.DispatchAsync(...)`, or a `Map*Request` helper, not a hand-written bridge.
+- Validate a mediator request in one place: either at the endpoint (`ValidateArguments()`, `AddHeadlessMvcArgumentValidation()`) or in the mediator (`AddMediatorValidationRequestBehavior()`), never both. With both, every validator runs twice.
+- For MVC, inherit from `ApiControllerBase` and call `ConfigureHeadlessMvc()`. Do not configure `MvcOptions` by hand for what it covers.
+- Use the `Headless.Api.FluentValidation` rules (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) instead of hand-written file or request-contract validation.
+- In a distributed or containerized deployment, persist Data Protection keys with `PersistKeysToBlobStorage()` and give the key container a name unique to the app and environment.
+- Call `UseHeadlessSerilogEnrichers()` after `UseAuthentication()`, so the enrichers can read the user.
 
 ## Core Concepts
 
 ### Bootstrap model: ServiceDefaults vs Core
 
-`Headless.Api.ServiceDefaults` is the orchestrator. It wires together the primitives in `Headless.Api` with Aspire-style conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience) and exposes three entry points:
+`Headless.Api.ServiceDefaults` composes the `Headless.Api` primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience) behind `AddHeadless()`, `UseHeadless()`, and `MapHeadlessEndpoints()`. `Headless.Api` exposes the same primitives one by one (`AddHeadlessProblemDetails()`, `AddHeadlessApiResponseCompression()`, `AddHeadlessAntiforgery()`, `ConfigureHeadlessDefaultApi()`). Use `Headless.Api` directly only when you must compose the pipeline yourself.
 
-- `builder.AddHeadless()` — registers all services in one call.
-- `app.UseHeadless()` — applies the framework's standard middleware order.
-- `app.MapHeadlessEndpoints()` — maps `/health`, `/alive`, OpenAPI JSON, static assets.
-
-`Headless.Api` exposes the same primitives individually (`AddHeadlessProblemDetails()`, `AddHeadlessApiResponseCompression()`, `AddHeadlessAntiforgery()`, `ConfigureHeadlessDefaultApi()`, etc.). Pull Core directly only when you must compose your own pipeline or toggle individual features; otherwise ServiceDefaults is the right default.
+`AddHeadless()` calls `SetupApi.ConfigureGlobalSettings()`, which sets the regex timeout and the FluentValidation defaults, including the Headless formal Arabic (`ar`) and Egyptian Arabic (`ar-EG`) wording of FluentValidation's built-in messages. The call is idempotent. Call it yourself only when you need those defaults before `AddHeadless()` runs. It does not change the `JsonWebTokenHandler` statics.
 
 ### Request context: `IRequestContext`
 
-`IRequestContext` (from `Headless.Api.Abstractions`, implemented in `Headless.Api`) is the single abstraction for all request-scoped facts: user ID and claims, tenant ID, preferred locale, timezone, correlation ID, and request start time. Inject it in services instead of `IHttpContextAccessor`; the implementation reads from `HttpContext` behind the interface so services remain testable without a real HTTP context.
+`IRequestContext` (in `Headless.Api.Abstractions`) gives one view of the request: user ID and claims, tenant ID, preferred locale, time zone, correlation ID, and request start time. `AddHeadless()` registers it as scoped. Substitute the interface in unit tests instead of building an `HttpContext`.
 
 ### Problem details and error codes
 
-`AddHeadlessProblemDetails()` registers `IProblemDetailsCreator` (for building structured ProblemDetails responses) and `HeadlessApiExceptionHandler` (a single `IExceptionHandler` covering all framework-known exceptions). The creator adds standard extensions to every ProblemDetails: `traceId`, `buildNumber`, `commitNumber`, `instance`, `timestamp`. Error codes follow the `g:lower_snake_case` shape (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`). Every framework-emitted code — including FluentValidation validator failures (both the built-in codes mapped by `HeadlessFluentValidationErrorCodeMapper` and the Headless validators surfaced by `FluentValidatorErrorDescriber`) — uses this single `g:` shape, so clients see one consistent code namespace in `errors[].code`. Stable codes are exposed as compile-time `public const string` on `*ErrorCodes` holders (`GeneralErrorCodes`, `IdentityErrorCodes` in `Headless.Api.Resources`; `HttpIdempotencyErrorCodes`) — branch on these constants.
+`AddHeadlessProblemDetails()`, which `AddHeadless()` calls, registers `IProblemDetailsCreator` and one exception handler for every exception the framework knows (see [the exception table](#map-your-own-exceptions-and-errors)). Every problem body carries the extensions `traceId`, `buildNumber`, `commitNumber`, `instance`, and `timestamp`. Every framework error code, FluentValidation failures included, has the shape `g:lower_snake_case` (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`) and appears in `error.code` or `errors[].code`. Branch on the `public const string` values of the `*ErrorCodes` holders: `GeneralErrorCodes` and `IdentityErrorCodes` (in `Headless.Api.Resources`), and `HttpIdempotencyErrorCodes`.
 
 #### What clients branch on, and what is localized
 
-`type`, `status`, `title`, and every error `code` are the machine contract: they never vary by culture or release. `title` is a kebab-case identifier from `HeadlessProblemDetailsConstants.Titles` (`entity-not-found`, `validation-problem`), not prose. Clients branch on `code`, `title`, and `type`, never on `detail` or an error `description`.
+`type`, `status`, `title`, and every error `code` never vary by culture or release. `title` is a kebab-case identifier from `HeadlessProblemDetailsConstants.Titles` (`entity-not-found`, `validation-problem`), not prose. Clients branch on `code`, `title`, and `type`, never on `detail` or an error `description`.
 
-- **Default details are localized per call.** Every `IProblemDetailsCreator` factory, and `Normalize` when it fills a missing `Detail` for 404/408/413/500/501, resolves the default text from `Headless.Api` resources under `CultureInfo.CurrentUICulture` at the moment it runs. English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`) ship with the framework; see [Regional Arabic](utilities.md#regional-arabic). An application without request localization (no `UseRequestLocalization()`, or any culture without a translation) gets English.
-- **Responses written by `UseHeadless()` follow the request culture.** `RequestLocalizationMiddleware` sets the culture only for the middleware after it, so by the time an exception or a bare status code unwinds to the exception handler, the status-code rewriter, or status-code pages, `CurrentUICulture` is back to the server default. Those three re-apply the culture the request negotiated (`IRequestCultureFeature`) while they build the framework's default text, so an Arabic request gets Arabic problem details whether `UseRequestLocalization()` runs before or after `UseHeadless()`. A request that request localization never reached keeps `CurrentUICulture`. Your own `CustomizeProblemDetails` delegates and `IProblemDetailsWriter` implementations run outside that scope, so read `IRequestCultureFeature` there yourself.
-- **A caller-supplied `detail` passes through untouched.** `creator.Forbidden(detail: "...")` writes exactly that string under every culture, and `Normalize` never replaces a `Detail` that is already set. Only the framework default is localized, so a decorator that rewrites `Detail` unconditionally overwrites the caller's text.
-- **Framework error descriptions are localized the same way.** `GeneralMessageDescriber`, `IdentityMessageDescriber`, `TenancyMessageDescriber`, and the other `*MessageDescriber` factories build a new descriptor per call from resources. Call them per response: a descriptor cached in a `static` keeps the culture of its first caller.
-- **Applications localize their own codes through `IErrorDescriptionLocalizer`.** `Normalize`, which every factory and therefore the Minimal API `ToHttpResult` and MVC `ToActionResult` bridges run, passes each `ErrorDescriptor` in the `error` and `errors` extensions to the localizer. Returning a string replaces the description on a copy of the descriptor (code, severity, and params are kept, and the caller's instance is never mutated); returning `null` keeps the original. `AddHeadlessProblemDetails()` registers a no-op default with `TryAddSingleton`, so register yours before or after it. The localizer is a singleton called concurrently: read the culture per call.
+- **Default details are localized per call.** Every `IProblemDetailsCreator` factory, and `Normalize` when it fills a missing `Detail` for 404, 408, 413, 500, or 501, resolves the default text under `CultureInfo.CurrentUICulture` at the moment it runs. English, formal Arabic (`ar`), and Egyptian Arabic (`ar-EG`) ship with the framework. See [Regional Arabic](utilities.md#regional-arabic). A culture without a translation, or an app without `UseRequestLocalization()`, gets English.
+- **Responses written by `UseHeadless()` follow the request culture.** The exception handler, the status-code rewriter, and status-code pages re-apply the culture the request negotiated (`IRequestCultureFeature`), so an Arabic request gets Arabic problem details whether `UseRequestLocalization()` runs before or after `UseHeadless()`. A request that request localization never reached keeps `CurrentUICulture`. Your own `CustomizeProblemDetails` delegates and `IProblemDetailsWriter` implementations do not get this. Read `IRequestCultureFeature` there yourself.
+- **A caller-supplied `detail` passes through unchanged.** `creator.Forbidden(detail: "...")` writes exactly that string under every culture, and `Normalize` never replaces a `Detail` that is already set. A decorator that rewrites `Detail` unconditionally overwrites the caller's text.
+- **Framework error descriptions are localized the same way.** `GeneralMessageDescriber`, `IdentityMessageDescriber`, `TenancyMessageDescriber`, and the other `*MessageDescriber` factories build a new descriptor per call. Call them per response: a descriptor cached in a `static` keeps the culture of its first caller.
+- **Localize your own codes through `IErrorDescriptionLocalizer`.** `Normalize`, which every factory and the `ToHttpResult` and `ToActionResult` bridges run, passes each `ErrorDescriptor` in the `error` and `errors` extensions to the localizer. A returned string replaces the description on a copy of the descriptor: code, severity, and params are kept, and the caller's instance is never changed. `null` keeps the original. `AddHeadlessProblemDetails()` registers a no-op default with `TryAddSingleton`, so register yours before or after it. The localizer is a singleton called concurrently, so read the culture per call.
 
 ```csharp
 public sealed class AppErrorLocalizer(IStringLocalizer<AppErrors> strings) : IErrorDescriptionLocalizer
@@ -105,33 +97,35 @@ builder.Services.AddLocalization();
 builder.Services.AddSingleton<IErrorDescriptionLocalizer, AppErrorLocalizer>();
 ```
 
-`IStringLocalizer<T>` resolves against `CultureInfo.CurrentUICulture` on each lookup, so the singleton follows each request's culture. When the framework logs a problem-details failure it records event IDs and exception types, never the localized `detail` or `description`, so log queries stay stable across cultures. Log your own failures by `code` for the same reason.
+**Verify:** send a request with `Accept-Language: ar` to an endpoint that returns one of your codes, and assert that `errors[].description` is the Arabic text while `errors[].code` is unchanged.
 
-The exception table (see `# Headless.Api` below) covers MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
+The framework logs problem-details failures by event ID and exception type, never by the localized `detail` or `description`. Log your own failures by `code` for the same reason.
+
+The exception handler covers MVC actions, Minimal API endpoints, and middleware that runs inside `UseExceptionHandler()`. Middleware before it, hosted and background services, and SignalR hubs need their own catch sites.
 
 ### Standard middleware order
 
-`UseHeadless()` applies the edge of the pipeline in a fixed order. An earlier step runs outside a later one: it sees the request first and the response last.
+`UseHeadless()` applies the edge of the pipeline in a fixed order. An earlier step runs outside a later one: it sees the request first and the response last. Turn a step off with its switch in `UseHeadless(options => ...)` (`HeadlessApiDefaultsOptions`).
 
 | Step | Middleware | Switch |
 | --- | --- | --- |
 | 1 | `UseForwardedHeaders()` with the app's `ForwardedHeadersOptions` from DI, then `TrustForwardedHeadersFromAnyProxy` and `ConfigureForwardedHeaders` | `UseForwardedHeaders` |
 | 2 | `UseResponseCompression()` | `UseResponseCompression` |
 | 3 | `UseStatusCodePages()`, then `UseStatusCodesRewriter()`, which writes bare 400, 401, 403, and 404 responses as `application/problem+json` | `UseStatusCodePages` |
-| 4 | `UseExceptionHandler()`, which runs `HeadlessApiExceptionHandler` for framework-known exceptions | `UseExceptionHandler` |
+| 4 | `UseExceptionHandler()`, which maps framework-known exceptions | `UseExceptionHandler` |
 | 5 | `UseHttpsRedirection()`, never in Development or Test | `UseHttpsRedirection` |
 | 6 | `UseHsts()`, never in Development or Test | `UseHsts` |
 | 7 | Adds `Cache-Control: no-cache,no-store,must-revalidate` when the response sets no `Cache-Control` | `SetNoCacheWhenMissingCacheHeaders` |
 
-`UseStatusCodePages()` runs outside `UseExceptionHandler()`, so bare status responses from middleware, including the 408s that ASP.NET Core's `RequestTimeoutsMiddleware` issues, are normalized through `IProblemDetailsCreator.Normalize`.
+- Status-code pages run outside the exception handler, so bare status responses from middleware, including the 408s from ASP.NET Core's request-timeout middleware, become problem details.
+- HTTPS redirection and HSTS never run in Development or Test, because those hosts usually serve plain HTTP and `TestServer` cannot follow the redirect.
+- Middleware you add after `UseHeadless()` runs inside every step, so the exception handler and the status-code rewriter cover it.
+- Add `UseRequestLocalization()` after `UseHeadless()` and before any middleware that writes localized text itself, such as `UseRateLimiter()` and `UseAuthorization()`. When a `RouteDataRequestCultureProvider` reads the culture from route values, add it after `UseRouting()` instead.
+- Put middleware that must see every request and response before the edge, such as `UseHttpLogging()`, before `UseHeadless()`. It then sees the proxy's address, not the forwarded client's.
+- Requirement gates such as `[RequiresFeature]` and permission policies run in `UseAuthorization()`. A host that calls `UseRouting()` without `UseAuthorization()` skips them silently. ASP.NET Core's own startup check covers only `[Authorize]`.
+- `UseHeadless()` and `MapHeadlessEndpoints()` are idempotent.
 
-HTTPS redirection and HSTS are skipped in the Development and Test environments because those hosts usually serve plain HTTP: a redirect breaks local clients and `TestServer`, and HSTS would pin HTTPS for a local host name in the browser.
-
-The order is not configurable. Middleware the app adds after `UseHeadless()` runs inside every step, so the exception handler and the status-code rewriter cover it. Add `UseRequestLocalization()` after `UseHeadless()` and before any middleware that writes localized text itself, such as `UseRateLimiter()` and `UseAuthorization()` (after `UseRouting()` instead when a `RouteDataRequestCultureProvider` reads the culture from route values): the edge reads the culture it negotiated, but middleware that runs before it sees only the server culture. Middleware that must see every request and response before the edge, such as `UseHttpLogging()`, goes before `UseHeadless()`; it then sees the proxy's address rather than the forwarded client's.
-
-Requirement gates such as `[RequiresFeature]` and permission policies run in `UseAuthorization()`, which must come after routing. A host that calls `UseRouting()` without `UseAuthorization()` skips them, as ASP.NET Core does for its own requirement attributes (its startup check covers only `[Authorize]`).
-
-The application owns everything after the edge. A typical host continues in this order:
+A typical host continues after the edge in this order:
 
 ```csharp
 app.UseHeadless();
@@ -151,32 +145,37 @@ app.MapHeadlessEndpoints();
 app.MapControllers();
 ```
 
+**Verify:** the host starts. With `Headless.Api.ServiceDefaults`, a host that never called `UseHeadless()`, `UseStatusCodesRewriter()`, or `MapHeadlessEndpoints()` fails at start with an `InvalidOperationException` naming each missing call.
+
 ### Idempotency as HTTP middleware
 
-Idempotency is an HTTP-layer concern, not a Mediator pipeline behavior. The middleware admits the request through `Headless.Idempotency`'s durable store, captures the full HTTP response (status code, allowlisted headers, body bytes), and replays it byte-equivalent on retry. A Mediator behavior has no access to the raw HTTP response after it leaves the handler — it would need to serialize/deserialize the action result, losing headers and body encoding, which breaks the byte-equivalent replay guarantee. See [idempotency.md § Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay) for the middleware and the admission contract it shares, and [mediator.md](mediator.md) for the full doctrine.
+Idempotency is HTTP middleware, not a Mediator pipeline behavior, because only the middleware sees the full HTTP response (status, allowlisted headers, body bytes) it must replay byte for byte. See [idempotency.md § Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay) for setup and the admission contract, and [mediator.md](mediator.md) for the request pipeline.
 
 ---
 
 ## Headless.Api.Abstractions
 
-Defines core interfaces and contracts for HTTP request context, user identity, web client information, ProblemDetails construction, and absolute-URL building in ASP.NET Core applications.
+Interfaces and contracts for request context, client information, problem details, absolute URLs, and API surfaces. Reference it from a library that must not depend on the full API stack.
 
 ### API and behavior
 
-- `IRequestContext` — unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
-- `IWebClientInfoProvider` — client detection (IP address, user agent, device info). `AddHeadless()` also registers an `IAuditClientInfoProvider` over it, so audit entries record the request's IP address and user agent when the writer leaves them unset.
-- `IUserAgentParser` — parses a raw `User-Agent` header (implemented over DeviceDetector.NET in `Headless.Api.UserAgent`; without that package `AddHeadless()` registers a parser that identifies nothing, so both methods return `null`). `Parse(userAgent)` returns a `UserAgentInfo?` carrying everything identifiable: `IsBot`, a coarse `DeviceType` (`Desktop`/`Phone`/`Tablet`/`Bot`/…), device brand and model, OS name/version/platform, client name/version/type/engine, and bot name/category. Unidentified fields are `null`, never `""`. `GetDeviceInfo(userAgent)` is the display shorthand for `UserAgentInfo.Summary` — the `"Windows Chrome"` string behind `IWebClientInfoProvider.DeviceInfo` — so call `Parse` when any individual field is wanted rather than string-splitting the summary. Both return `null` for a blank agent or one nothing could be identified from, and both share a single memoized parse. **A User-Agent is self-reported and trivially forged: use it for diagnostics, session display, and analytics, never as an authorization input.** A consumer persisting `DeviceType` should store the name rather than the number so the set can gain members without rewriting rows. Substitute the interface to stub device detection in tests, or to swap the parser entirely. The default implementation owns a bounded private `MemoryCache`: parsing is local CPU work, entries come from untrusted request headers, and neither the keys nor results need to cross a process boundary or consume the host application's cache budget. Negatives (unidentifiable agents) are cached too, so subsequent calls reuse the memoized result while it remains valid. `UserAgentParserOptions`: `MaxEntries` 1,000, `SlidingExpiration` 6h, `Duration` (absolute cap) 24h, and `MaxUserAgentLength` 512 — longer values are truncated before parsing and keying, and `UserAgentInfo.UserAgent` reports the truncated value, so a caller persisting it is never handed an unbounded string. The singleton parser disposes its cache with its own lifetime and never registers or consumes the shared `IMemoryCache`.
-- `IRequestedApiVersion` — API versioning abstraction
-- `ITimezoneProvider` / `TimezoneOption` — time-zone enumeration and conversion (implemented in `Headless.Api`)
-- `IEnumLocaleAccessor` — localized enum display names (implemented in `Headless.Api` as `DefaultEnumLocaleAccessor`)
-- `IErrorDescriptionLocalizer` — `string? Localize(ErrorDescriptor error)`; the hook `IProblemDetailsCreator.Normalize` calls for every descriptor in the `error` and `errors` extensions, so an application can localize its own error codes. Return `null` to keep the description. `Headless.Api` registers a no-op default. See [What clients branch on, and what is localized](#what-clients-branch-on-and-what-is-localized)
-- `IProblemDetailsCreator` — contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api`). Every single-error factory has one parameter order: its type-specific arguments first, then an optional `string? detail` that replaces the default `Detail` text, then an optional `ErrorDescriptor? error` stamped into `Extensions["error"]`. That covers `EndpointNotFound(detail, error)`, `EntityNotFound(detail, error)`, `BadRequest(detail, error)`, `Forbidden(detail, error)`, `Unauthorized(detail, error)`, `RequestTimeout(detail, error)`, `NotImplemented(detail, error)`, `TooManyRequests(retryAfterSeconds, detail, error)`, and `ServiceUnavailable(retryAfterSeconds, detail, error)`. To attach only a descriptor, name it: `EntityNotFound(error: descriptor)`. `Conflict(errors)` and `UnprocessableEntity(errors)` carry a descriptor collection in `Extensions["errors"]` and keep the default `Detail`. The default `Detail` is resolved per call under the current UI culture; a supplied `detail` is written as given. Never put an entity name or key in an `EntityNotFound` detail; it belongs in server logs
-- `IProblemDetailsCreator.ServiceUnavailable(retryAfterSeconds, detail, error)` — the 503 for a control that fails closed, such as a limiter whose counter store is unreachable. `retryAfterSeconds` is optional and is stamped into `Extensions["retryAfter"]` only when supplied, so a client never reads a wait the server did not promise. Set the matching `Retry-After` header yourself, as with `TooManyRequests`
-- `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api`)
-- Framework constants for HTTP headers and common values
-- `RequireIfMatchAttribute` — portable marker used by MVC and OpenAPI concurrency profiles
-- `HttpContractMetadata` — endpoint metadata a feature that runs around the handler (a middleware, a filter) attaches to describe HTTP behavior the handler's signature does not show, so API documentation can render it without referencing the feature: `RequestHeaders` (`HttpRequestHeaderDescription(name, required, description)`), `Responses` (`HttpResponseDescription(statusCode, description)`), and `ResponseHeaders` (`HttpResponseHeaderDescription(name, statusCode, description)` or `(name, minStatusCode, maxStatusCode, description)`, with an optional `Required`). It describes and never enforces; an endpoint may carry several. `Headless.OpenApi` renders it as header parameters, problem-details responses, and response headers, and `Headless.Idempotency.ResponseReplay` attaches one for its key header. A response header range (`200`–`299`) covers success statuses the feature cannot name. It describes only what framework features write or read on the wire, not a general OpenAPI model. The description types are sealed records, so two descriptions with the same values are equal
-- Documentation contracts that other packages implement and Headless.OpenApi reads, so neither side references the other: `IEnvironmentRestrictionMetadata.IsAvailableIn(IHostEnvironment)` (endpoint metadata for an endpoint that answers 404 outside some environments, left out of documents there), `IHttpCredentialSchemeOptions.Credentials` (implemented by an authentication scheme's options; each `HttpCredentialDescription.Header(name, description)`, `.Query(...)`, or `.Authorization(scheme, description)` becomes a security scheme), and `TenantCatalogResolutionDescription` (registered by `ResolveFromCatalog(...)`: `IsConfigured`, `DetailedResolutionErrors`, `HeaderNames`, `HostTemplates`, `HasNonHeaderSource`, read from registrations so a build-time document matches the running app)
+- `IRequestContext`: the request's user, tenant, locale, time zone, correlation ID, and start time.
+- `IWebClientInfoProvider`: the client's IP address, user agent, and `DeviceInfo`. `AddHeadless()` also registers an `IAuditClientInfoProvider` over it, so audit entries record the request's IP address and user agent when the writer leaves them unset.
+- `IUserAgentParser`: parses a raw `User-Agent` header. `Headless.Api.UserAgent` implements it. Without that package, `AddHeadless()` registers a parser that identifies nothing. See [Headless.Api.UserAgent](#headlessapiuseragent).
+- `IRequestedApiVersion`: the requested API version.
+- `ITimezoneProvider` and `TimezoneOption`: time-zone enumeration and conversion.
+- `IEnumLocaleAccessor`: localized enum display names.
+- `IErrorDescriptionLocalizer`: `string? Localize(ErrorDescriptor error)`, the hook that localizes your own error codes. See [What clients branch on, and what is localized](#what-clients-branch-on-and-what-is-localized).
+- `IProblemDetailsCreator`: builds normalized RFC 7807 `ProblemDetails`. Every single-error factory takes its type-specific arguments first, then an optional `string? detail` that replaces the default `Detail`, then an optional `ErrorDescriptor? error` written to `Extensions["error"]`: `EndpointNotFound`, `EntityNotFound`, `BadRequest`, `Forbidden`, `Unauthorized`, `RequestTimeout`, `NotImplemented`, `TooManyRequests(retryAfterSeconds, detail, error)`, and `ServiceUnavailable(retryAfterSeconds, detail, error)`. To attach only a descriptor, name it: `EntityNotFound(error: descriptor)`. `Conflict(errors)` and `UnprocessableEntity(errors)` write a descriptor collection to `Extensions["errors"]` and keep the default `Detail`.
+  - Never put an entity name or key in an `EntityNotFound` detail. It belongs in server logs.
+  - `ServiceUnavailable` is the 503 for a control that fails closed, such as a limiter whose counter store is unreachable. It writes `Extensions["retryAfter"]` only when you pass `retryAfterSeconds`. Set the matching `Retry-After` header yourself, as with `TooManyRequests`.
+- `IAbsoluteUrlFactory`: builds absolute URLs from the current request.
+- `RequireIfMatchAttribute`: marks a conditional write for the MVC and OpenAPI concurrency profiles.
+- `HttpContractMetadata`: endpoint metadata that a middleware or filter you write attaches to describe HTTP behavior the handler's signature does not show. It has `RequestHeaders` (`HttpRequestHeaderDescription(name, required, description)`), `Responses` (`HttpResponseDescription(statusCode, description)`), and `ResponseHeaders` (`HttpResponseHeaderDescription(name, statusCode, description)`, or `(name, minStatusCode, maxStatusCode, description)` for a range such as `200` to `299`, with an optional `Required`). It describes and never enforces. An endpoint may carry several. `Headless.OpenApi` renders them as header parameters, problem responses, and response headers.
+- Documentation contracts that `Headless.OpenApi` reads:
+  - `IEnvironmentRestrictionMetadata.IsAvailableIn(IHostEnvironment)`: endpoint metadata for an endpoint that answers 404 outside some environments. The endpoint is left out of documents generated there.
+  - `IHttpCredentialSchemeOptions.Credentials`: implement it on an authentication scheme's options. Each `HttpCredentialDescription.Header(name, description)`, `.Query(...)`, or `.Authorization(scheme, description)` becomes a security scheme.
+  - `TenantCatalogResolutionDescription`: registered by `ResolveFromCatalog(...)`, so a build-time document describes the tenant headers and hosts the running app accepts.
 
 ### Install
 
@@ -186,7 +185,7 @@ dotnet add package Headless.Api.Abstractions
 
 ### Setup and use
 
-Inject `IRequestContext` to access request-scoped information:
+Inject `IRequestContext` to read request-scoped information:
 
 ```csharp
 public sealed class OrderService(IRequestContext context, IOrderRepository repository)
@@ -212,15 +211,15 @@ public sealed class OrderService(IRequestContext context, IOrderRepository repos
 }
 ```
 
+**Verify:** this package registers nothing. `IRequestContext` resolves only in a host that called `AddHeadless()`. Otherwise, activating `OrderService` throws the container's `InvalidOperationException` for the missing service.
+
 ### Configuration
 
 #### API surfaces
 
-`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable `RoutePrefix`, `DefaultAuthorizationPolicy`, `DefaultTenancyMode`, and `OpenApi` settings. `HttpContext.GetApiSurface()` in `Headless.Api` resolves that descriptor from the selected endpoint after routing. It does not describe the effective endpoint authorization policy.
+`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` holds the immutable `RoutePrefix`, `DefaultAuthorizationPolicy`, `DefaultTenancyMode`, and `OpenApi` settings. `HttpContext.GetApiSurface()` (in `Headless.Api`) returns the selected endpoint's descriptor after routing. It does not describe the endpoint's effective authorization policy.
 
-`ApiSurfaceTenancyMode` has `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution` values. These add metadata defaults only. `RequireTenant` needs the tenancy authorization handler and an applicable policy containing `TenantRequirement`; selecting the mode does not register either. Skipping resolution does not permit a missing tenant. Explicit endpoint metadata takes precedence.
-
-No runtime registration is required by this package.
+`ApiSurfaceTenancyMode` has the values `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution`. A mode adds metadata defaults only. `RequireTenant` needs the tenancy authorization handler and a policy containing `TenantRequirement`, and selecting the mode registers neither. Skipping resolution does not permit a missing tenant. Explicit endpoint metadata wins over the mode.
 
 ### Runtime behavior
 
@@ -230,46 +229,44 @@ None. This is an abstractions-only package.
 
 ## Headless.Api
 
-Building blocks for ASP.NET Core APIs — primitives only. Provides service registration helpers, middleware, problem details, tenancy, and request-context abstractions. ASP.NET Core Identity and user-agent parsing ship in `Headless.Api.Identity` and `Headless.Api.UserAgent`. The framework issues no JWTs; a host that needs them registers ASP.NET Core's `AddJwtBearer` itself. `Headless.Api.ServiceDefaults` is the orchestrator that composes these into a single `AddHeadless()` call.
+The ASP.NET Core building blocks that `Headless.Api.ServiceDefaults` composes: service registration helpers, middleware, problem details, CORS, tenancy, and API surfaces. ASP.NET Core Identity and user-agent parsing ship in `Headless.Api.Identity` and `Headless.Api.UserAgent`. The framework issues no JWTs: a host that needs them registers ASP.NET Core's `AddJwtBearer` itself.
 
 ### API and behavior
 
-- `AddHeadlessProblemDetails(problems => ...)` — the same registration plus the application's `HeadlessProblemDetailsOptions` mappings (`MapException<TException>(status, describe)`, `MapError<TError>(status)`, read-only `MappedStatusCodes`)
-- `AddHeadlessProblemDetails()` — registers `IProblemDetailsCreator`, a no-op `IErrorDescriptionLocalizer` (`TryAddSingleton`), `HeadlessApiExceptionHandler`, and the `CustomizeProblemDetails` hook that normalizes every response
-- `GeneralMessageDescriber.TenantRequired()` (`g:tenant_required`), `CrossTenantWrite()` (`g:cross_tenant_write`), `TenantMismatch()` (`g:tenant_mismatch`), `InvalidRequestType()` (`g:invalid_request_type`), and `InvalidParameterValue(parameter)` (`g:invalid_parameter_value`, answered by MVC when a request value cannot be bound) — per-call localized descriptors for the framework's tenancy and request-type failures, with their codes on `GeneralErrorCodes`
-- `AddHeadlessApiResponseCompression()` — Brotli + Gzip at `Fastest` level; extends MIME list with `application/problem+json`, `image/svg+xml`, `image/x-icon`
-- `AddHeadlessAntiforgery()` — antiforgery service registration
-- `AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()` — rewrites bare 400, 401, 403, 404 to structured `application/problem+json` via `IProblemDetailsCreator`. The 400 case covers a Minimal API body that cannot be bound when `RouteHandlerOptions.ThrowOnBadRequest` is off (the default outside Development), so it answers with the same `bad-request` problem as the thrown path. It also wraps the registered `IAuthorizationMiddlewareResultHandler`: when authorization forbids a request and a handler called `Fail(new AuthorizationFailureReason(...))`, the 403 problem carries the reasons' messages as `detail`. Messages passed to `Fail(new AuthorizationFailureReason(...))` are shown to the caller in the 403 `detail`; keep internal detail out of them. A handler that set its own rejection (the tenant requirement) keeps its response, and a challenge (401) is unchanged. A result handler registered after this call replaces the wrapper
-- `IStatusCodeRejectionFeature` — a handler that fails a request (an authorization handler, a filter) can supply the response the rewriter writes instead of the bare-status rewrite. Set it with `httpContext.TrySetStatusCodeRejection(rejection)`, which stores it under the interface type only when no rejection is already set, so the first failure keeps ownership. `TryWriteResponseAsync` returns `false` to decline and fall back to the bare-status rewrite. The tenant identifier mismatch rejection is the one exception that always replaces an earlier rejection, because it must stay byte-identical to the unknown-tenant response
-- `ConfigureHeadlessDefaultApi()` — Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomain, preload), lowercase route URLs, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), default `self` liveness health check
-- `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
-- `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` as `TzConvertTimezoneProvider` (all `TryAddSingleton`). The provider's Windows/IANA ID lists and mapping come from the TimeZoneConverter package's embedded CLDR data; offsets and DST rules come from the host OS time-zone database
-- `DefaultEnumLocaleAccessor` — the `IEnumLocaleAccessor` implementation
-- `MapHostRedirects(mainHost, redirectHosts)` — maps an anonymous catch-all `GET` that answers 301 to the same path and query under `mainHost` for requests whose host is in `redirectHosts`. The entries are host names (`www.example.com`, `example.net:8080`), not URLs
-- `Server-Timing` is not provided; an app that wants the header uses the community [`Lib.AspNetCore.ServerTiming`](https://www.nuget.org/packages/Lib.AspNetCore.ServerTiming) package
-- `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
-- HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
-- HTTP tenant catalog resolution (pre-authentication): `ResolveFromCatalog(...)`, `UseHeadlessTenantCatalogResolution()`, `ITenantIdentifierSource` returning `TenantIdentifierSourceResult` (`None` / `Found` / `Invalid`), and the `HeadlessTenantCatalogResolutionBuilder` members `AddHostSource(...)`, `AddRouteSource(...)`, `AddHeaderSource(...)`, `AddSource<T>()`, `AddSource(instance)`, `AddSource(Func<HttpContext, string?>)` with options `HostTenantIdentifierSourceOptions` (`Templates`), `RouteTenantIdentifierSourceOptions` (`RouteValueName`, `PromoteAmbientRouteValue`), and `HeaderTenantIdentifierSourceOptions` (`HeaderNames`, `DefaultHeaderName` = `X-Tenant`)
-- HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
-- `AddHeadlessAuthorizationDenialAudit<TContext>()` — opt-in; wraps `IAuthorizationMiddlewareResultHandler` and writes an `authorization.challenged` or `authorization.forbidden` audit entry (method, route template, policy names; never the body or path) through `IAuditLogWriter<TContext>`. Requires an audit log storage provider; see [Authorization denial entries](audit-log.md#authorization-denial-entries)
-- `AddHeadlessCors([policyName,] IConfiguration | Action<HeadlessCorsOptions>)` — registers a named CORS policy from validated `HeadlessCorsOptions`, once per name; without a name it registers `HeadlessCorsConstants.RestrictedCors`. `AddHeadlessAllowAnyCors(Action<HeadlessCorsOptions>?)` registers `HeadlessCorsConstants.AllowAnyCors` (any origin, never credentials). `AddHeadlessCorsOriginSource<TSource>(policyName, lifetime)` attaches an `ICorsOriginSource` that approves origins at request time for any policy, including one written with `AddCors`. `HeadlessCorsOptions.FrameworkExposedHeaders` lists the framework's non-safelisted response headers for an `AddCors` policy's `WithExposedHeaders`. Opt-in; `AddHeadless()` calls none of them
-- Single-claim authorization: `RequireSingleClaimValue(claimType, value)`, `RequireSingleClaim(claimType, predicate)`, and `SingleClaimRequirement`
-- HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with 429 ProblemDetails (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`), and `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter itself; see [HTTP edge limits](rate-limiting.md#http-edge-limits)
-- Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
-- `IServiceCollection.FreezeHeadlessApiSurfaces()` — freezes the set of API surfaces and returns their OpenAPI document names, so a later `AddHeadlessApiSurface(...)` throws. `AddHeadlessApiSurfaceDocuments()` and `AddHeadless()` call it; a custom document provider calls it while the service collection is still writable
+- `AddHeadlessProblemDetails()`: registers `IProblemDetailsCreator`, a no-op `IErrorDescriptionLocalizer` (`TryAddSingleton`), the framework exception handler, and the `CustomizeProblemDetails` hook that normalizes every response. `AddHeadlessProblemDetails(problems => ...)` adds the application's own mappings (`MapException<TException>(status, describe)`, `MapError<TError>(status)`, read-only `MappedStatusCodes`). See [Map your own exceptions and errors](#map-your-own-exceptions-and-errors).
+- `GeneralMessageDescriber.TenantRequired()` (`g:tenant_required`), `CrossTenantWrite()` (`g:cross_tenant_write`), `TenantMismatch()` (`g:tenant_mismatch`), `InvalidRequestType()` (`g:invalid_request_type`), and `InvalidParameterValue(parameter)` (`g:invalid_parameter_value`, which MVC answers when a request value cannot be bound): per-call localized descriptors. Their codes are on `GeneralErrorCodes`.
+- `AddHeadlessApiResponseCompression()`: Brotli and Gzip at `Fastest` level. Adds `application/problem+json`, `image/svg+xml`, and `image/x-icon` to the compressed MIME types.
+- `AddHeadlessAntiforgery()`: registers antiforgery services.
+- `AddStatusCodesRewriterMiddleware()` and `UseStatusCodesRewriter()`: rewrite bare 400, 401, 403, and 404 responses as `application/problem+json`.
+  - The 400 case covers a Minimal API body that cannot be bound while `RouteHandlerOptions.ThrowOnBadRequest` is off (the default outside Development), so it answers with the same `bad-request` problem as the thrown path.
+  - When authorization forbids a request and a handler called `Fail(new AuthorizationFailureReason(...))`, the 403 problem carries the reasons' messages as `detail`. The caller sees those messages, so keep internal detail out of them.
+  - A challenge (401) is unchanged. A handler that set its own rejection keeps its response.
+  - It wraps the registered `IAuthorizationMiddlewareResultHandler`. A result handler registered after this call replaces the wrapper.
+- `IStatusCodeRejectionFeature`: lets a handler that fails a request (an authorization handler, a filter) supply the response the rewriter writes. Set it with `httpContext.TrySetStatusCodeRejection(rejection)`, which keeps the first rejection set. `TryWriteResponseAsync` returns `false` to fall back to the bare-status rewrite. The tenant identifier mismatch rejection always replaces an earlier rejection, because it must match the unknown-tenant response byte for byte.
+- `ConfigureHeadlessDefaultApi()`: Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomains, preload), lowercase route URLs with no trailing slash, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), and the `self` liveness health check tagged `live`.
+- `AddHeadlessJsonService()`: `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, and `ISerializer`, all `TryAddSingleton`, so a registration you make first wins.
+- `AddHeadlessTimeService()`: `TimeProvider.System` and `ITimezoneProvider` as `TzConvertTimezoneProvider`, both `TryAddSingleton`. Windows and IANA ID mapping comes from the TimeZoneConverter package's embedded CLDR data. Offsets and DST rules come from the host OS time-zone database.
+- `DefaultEnumLocaleAccessor`: the `IEnumLocaleAccessor` implementation.
+- `MapHostRedirects(mainHost, redirectHosts)`: maps an anonymous catch-all `GET` that answers 301 to the same path and query under `mainHost` for requests whose host is in `redirectHosts`. The entries are host names (`www.example.com`, `example.net:8080`), not URLs.
+- `UseNoCacheWhenMissingCacheHeaders()`: adds `Cache-Control: no-cache,no-store,must-revalidate` when the response sets no `Cache-Control`.
+- HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, and `.SkipTenantResolution()`.
+- HTTP tenant catalog resolution (pre-authentication): `ResolveFromCatalog(...)`, `UseHeadlessTenantCatalogResolution()`, and `ITenantIdentifierSource` returning `TenantIdentifierSourceResult` (`None`, `Found`, or `Invalid`). The `HeadlessTenantCatalogResolutionBuilder` members are `AddHostSource(...)`, `AddRouteSource(...)`, `AddHeaderSource(...)`, `AddSource<T>()`, `AddSource(instance)`, and `AddSource(Func<HttpContext, string?>)`. See [Tenant identifier sources](#tenant-identifier-sources).
+- HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, and `.RequireTenant()`.
+- `AddHeadlessAuthorizationDenialAudit<TContext>()`: opt-in. Writes an `authorization.challenged` or `authorization.forbidden` audit entry (method, route template, policy names, never the body or path) through `IAuditLogWriter<TContext>`. It needs an audit log storage provider. See [Authorization denial entries](audit-log.md#authorization-denial-entries).
+- `AddHeadlessCors(...)`, `AddHeadlessAllowAnyCors(...)`, and `AddHeadlessCorsOriginSource<TSource>(...)`: opt-in CORS registration. `AddHeadless()` calls none of them. See [CORS](#cors).
+- Single-claim authorization: `RequireSingleClaimValue(claimType, value)`, `RequireSingleClaim(claimType, predicate)`, and `SingleClaimRequirement`.
+- HTTP edge rate limiting: `RateLimiterOptions.UseHeadlessProblemDetails()` rejects with a 429 problem (`g:rate_limit_exceeded`, `Retry-After`, `Cache-Control: no-store`). `HttpContext.GetIpAddressPartition(ipv6PrefixLength = 64)` keys anonymous callers by IPv4 address or IPv6 /64. The application owns the limiter. See [HTTP edge limits](rate-limiting.md#http-edge-limits).
+- `AddHeadlessApiDiagnosticListeners()`: logs Kestrel bad-request events and middleware-analysis events. Dispose the returned handle to unsubscribe.
+- `IServiceCollection.FreezeHeadlessApiSurfaces()`: freezes the set of API surfaces and returns their OpenAPI document names, so a later `AddHeadlessApiSurface(...)` throws. `AddHeadlessApiSurfaceDocuments()` and `AddHeadless()` call it. Call it from a custom document provider while the service collection is still writable.
+- The framework does not write `Server-Timing`. Use the community [`Lib.AspNetCore.ServerTiming`](https://www.nuget.org/packages/Lib.AspNetCore.ServerTiming) package for it.
 
 ### Design constraints
 
-- `IProblemDetailsCreator` factory methods normalize Headless fields (`traceId`, build metadata, `instance`, timestamp) but leave consumer `ProblemDetailsOptions.CustomizeProblemDetails` callbacks to the final response writer. Exception-handler and status-code-rewriter responses run consumer customization once through ASP.NET Core's `IProblemDetailsService`; MVC direct `ObjectResult` responses built from Headless-normalized ProblemDetails are customized once by `Headless.Api.Mvc`.
-- `HeadlessApiExceptionHandler` honors `Accept` quality values when deciding whether to write JSON ProblemDetails. A request that rejects JSON, or explicitly rejects `application/problem+json`, with `q=0` is left for downstream/default handlers instead of receiving a JSON body.
-- Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
-- `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` propagates optional cancellation through asynchronous upload buffering; callers can omit the token.
-- `HttpRequest.IsAjaxRequest()` is `true` only when the request carries the `X-Requested-With: XMLHttpRequest` header. A query-string parameter of the same name does not count: anyone can put one in a link, so a branch keyed on it (a 401 instead of a login redirect) would be selectable from a URL.
-- Tenant identifier sources run in first-registration order and the first `Found` result wins; `AddSource<T>()` and the built-in `AddHostSource` / `AddRouteSource` / `AddHeaderSource` registrations deduplicate by type (the first call fixes the position, every call's options contribution still applies), while `AddSource(instance)` and the delegate overload always append. A source result of `Invalid` (present but ambiguous input, such as two `X-Tenant` values) rejects with 400 `g:tenant_identifier_invalid` before any catalog call; `Found` with a blank value normalizes to `None`. Sources never trim, lowercase, or shape-validate — the catalog does.
-- The header source (default `X-Tenant`) can only select an existing enabled tenant, and the identifier/claim mismatch check still rejects an authenticated caller whose tenant claim disagrees, but it bypasses any WAF rule, mTLS policy, IP allowlist, or CDN configuration bound to a tenant's hostname — register the host source first where hostnames carry such controls, or strip/overwrite the header at the edge. A requested header name replaces the untouched default and appends afterwards (`AddHeaderSource("X-Legacy")` reads only `X-Legacy`); any second value across the configured names is `Invalid`, a single line `a,b` is one value, and every consult appends the configured names to `Vary`.
-- `AddRouteSource` (every overload) wraps the routing `LinkGenerator` once so `Url.Action`, `GetPathByAction`, and `GetPathByName` keep the current request's `{tenant}` segment, which ASP.NET Core would otherwise drop (required-value invalidation; the endpoint-name scheme passes no ambient values — only `GetPathByRouteValues` kept it). An explicit `tenant` value always wins; `RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue = false` opts out per call. A link from a tenant request to an endpoint without a `{tenant}` segment carries the value as a query string (`/plain?tenant=acme`); a link from a request with no tenant segment to a tenant endpoint returns `null` without an explicit value.
-- The diagnostic listeners subscribe typed `IObserver<KeyValuePair<string, object?>>` observers with an `IsEnabled` filter, so the listener reports only the bad-request and middleware-analysis events as enabled. The bad-request observer reads the `IFeatureCollection` Kestrel writes as the event payload. The middleware-analysis observer reads the anonymous payload's `name`, `httpContext`, `timestamp`, `duration`, and `exception` properties by name and ignores an event missing one of them.
-- Every catalog rejection carries `Cache-Control: no-store`, and no tenancy log event carries a raw host, route value, header value, or identifier. The host source reads the post-forwarding `Request.Host`, never `X-Forwarded-Host`; a host template match timeout (practically unreachable with the non-backtracking compiled templates) maps to `Invalid` plus a once-per-process warning naming the template only.
+- The exception handler and the status-code rewriter run your `ProblemDetailsOptions.CustomizeProblemDetails` callback once, through ASP.NET Core's `IProblemDetailsService`. `IProblemDetailsCreator` factories do not run it. `Headless.Api.Mvc` runs it once for an MVC `ObjectResult` that carries a Headless problem.
+- The exception handler honors `Accept` quality values. A request that rejects JSON, or rejects `application/problem+json` with `q=0`, gets no JSON body from it and falls to the next handler.
+- Batch `IFormFile.SaveAsync(...)` keeps result order and copies at most `Environment.ProcessorCount` file streams at once.
+- `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` honors cancellation while it buffers the upload.
+- `HttpRequest.IsAjaxRequest()` is `true` only for the `X-Requested-With: XMLHttpRequest` header. A query-string parameter of that name does not count, because anyone can put one in a link.
 
 ### Install
 
@@ -279,7 +276,7 @@ dotnet add package Headless.Api
 
 ### Setup and use
 
-Composing primitives without ServiceDefaults:
+Compose the primitives without ServiceDefaults:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -301,7 +298,9 @@ app.MapHealthChecks("/health");
 app.Run();
 ```
 
-HTTP tenant resolution (used internally by ServiceDefaults via `ResolveFromClaims()`):
+**Verify:** `GET /health` answers 200 with the `self` check, and a request to an unmapped path answers 404 with `Content-Type: application/problem+json`.
+
+Claim-based HTTP tenant resolution:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy =>
@@ -325,7 +324,9 @@ app.UseAuthorization();
 app.MapGet("/webhook", handler).SkipTenantResolution().AllowMissingTenant();
 ```
 
-Single-claim authorization policies enforce that a principal carries exactly one claim of a given type and validates its value, contrasting with ASP.NET Core's default `RequireClaim`, which succeeds if *any* claim of the type matches:
+**Verify:** startup fails when neither `DefaultPolicy` nor `FallbackPolicy` contains `TenantRequirement`, or when `UseHeadlessTenancy()` is missing. An authenticated request without a tenant claim answers 403 with `error.code` `g:tenant_required`.
+
+Single-claim policies require exactly one claim of the type and check its value. ASP.NET Core's `RequireClaim` passes when any claim of the type matches:
 
 ```csharp
 builder.Services.AddAuthorization(options =>
@@ -342,7 +343,9 @@ builder.Services.AddAuthorization(options =>
 });
 ```
 
-Identifier-based (pre-authentication) tenant resolution through the tenant catalog — host, route, header, and delegate sources, consulted in registration order:
+**Verify:** in a test, a principal with two `tier` claims gets 403 from an endpoint under `BronzeOnly`.
+
+Identifier-based (pre-authentication) tenant resolution through the tenant catalog. Sources run in registration order:
 
 ```csharp
 builder.Services.AddHeadlessCaching(caching => caching.UseInMemory()); // catalog prerequisite
@@ -377,41 +380,55 @@ app.UseAuthorization();
 // [SkipTenantResolution] also bypasses catalog resolution and rejection for the endpoint.
 ```
 
-A custom source implements `ITenantIdentifierSource` and returns `TenantIdentifierSourceResult.None`, `.Found(value)`, or `.Invalid`; a source written against the earlier `string?` contract migrates by returning `Found(value)` / `None` instead of the string / `null`. The delegate overload cannot express `Invalid`.
+**Verify:** startup fails with `CATALOG_RESOLUTION_WITHOUT_REWRITER` when `UseStatusCodesRewriter()` is missing. A request to `unknown.example.com` answers 404 with `error.code` `g:tenant_resolution_failed`.
+
+A custom source implements `ITenantIdentifierSource` and returns `TenantIdentifierSourceResult.None`, `.Found(value)`, or `.Invalid`. The delegate overload cannot return `Invalid`.
 
 ### Configuration
 
 #### Tenant identifier sources
 
-Each built-in source has a validated options type (startup fails on an invalid value):
+Each built-in source has a validated options type. Startup fails on an invalid value.
 
 | Options | Property | Default | Notes |
 |---|---|---|---|
-| `HostTenantIdentifierSourceOptions` | `Templates` | `[]` (at least one required) | Matched in order against the post-forwarding `Request.Host`; `{tenant}` captures one label, `?` one label, `*` zero or more labels, a bare `{tenant}` the whole host. Case-insensitive, port excluded, one trailing dot stripped; IP literals and hosts over 253 characters yield `None`. Compiled once as non-backtracking regexes with the shared 100 ms `RegexPatterns.MatchTimeout`. The string overload appends to the list. |
-| `RouteTenantIdentifierSourceOptions` | `RouteValueName` | `tenant` (`DefaultRouteValueName`) | Read from `Request.RouteValues`; a non-string value is `None`. Requires `UseHeadlessTenantCatalogResolution()` after `UseRouting()`. Last contribution wins. |
-| `RouteTenantIdentifierSourceOptions` | `PromoteAmbientRouteValue` | `true` | Keeps the current request's tenant segment in generated links; read per call. |
-| `HeaderTenantIdentifierSourceOptions` | `HeaderNames` | `["X-Tenant"]` (`DefaultHeaderName`) | Names must be HTTP tokens. A requested name replaces the untouched default and appends afterwards (an already-listed name is not appended again); one duplicate-detection scope across all names, blank lines count as absent; every consult appends the names to `Vary`. |
+| `HostTenantIdentifierSourceOptions` | `Templates` | `[]` (at least one required) | Matched in order against the post-forwarding `Request.Host`. `{tenant}` captures one label, `?` matches one label, `*` matches zero or more labels, and a bare `{tenant}` captures the whole host. Case-insensitive, port excluded, one trailing dot stripped. IP literals and hosts over 253 characters yield `None`. Each template has a 100 ms match timeout. The string overload appends to the list. |
+| `RouteTenantIdentifierSourceOptions` | `RouteValueName` | `tenant` (`DefaultRouteValueName`) | Read from `Request.RouteValues`. A non-string value is `None`. Needs `UseHeadlessTenantCatalogResolution()` after `UseRouting()`. The last contribution wins. |
+| `RouteTenantIdentifierSourceOptions` | `PromoteAmbientRouteValue` | `true` | Keeps the current request's tenant segment in generated links. Read per call. |
+| `HeaderTenantIdentifierSourceOptions` | `HeaderNames` | `["X-Tenant"]` (`DefaultHeaderName`) | Names must be HTTP tokens. A requested name replaces the untouched default, and later names append (`AddHeaderSource("X-Legacy")` reads only `X-Legacy`). A second value across all configured names is `Invalid`. A single line `a,b` is one value. Blank lines count as absent. |
 
-Each source also accepts an `IConfiguration` section (`AddHostSource(section)` with a `Templates` array, `AddRouteSource(section)` with `RouteValueName`, `AddHeaderSource(section)` with a `HeaderNames` array — a listed array replaces the untouched default, a section without it keeps the default).
+Each source also accepts an `IConfiguration` section: `AddHostSource(section)` with a `Templates` array, `AddRouteSource(section)` with `RouteValueName`, and `AddHeaderSource(section)` with a `HeaderNames` array. A listed array replaces the untouched default. A section without it keeps the default.
 
-Ignored identifiers (for example `www`) stay on `TenantCatalogOptions.IgnoredIdentifiers` in `Headless.MultiTenancy`; there is no per-source list. An ignored identifier, an apex host, and an unmatched host all fall through to host context with no store call, so endpoints that need a tenant must sit under `TenantRequirement`. A whole-host (bare `{tenant}`) template needs `TenantCatalogOptions.MaxIdentifierLength = 253` and an `IdentifierPattern` shaped for hostnames that carries a match timeout; both are catalog-wide, so mixing a subdomain source with a custom-domain source relaxes the subdomain shape too, and hostile identifier cardinality is bounded by negative caching plus the consumer's rate limiting.
+Source behavior:
+
+- **Order.** Sources run in first-registration order, and the first `Found` result wins. `AddSource<T>()` and the built-in sources deduplicate by type: the first call fixes the position, and every call's options still apply. `AddSource(instance)` and the delegate overload always append.
+- **Results.** `Invalid` (present but ambiguous input, such as two `X-Tenant` values) rejects with 400 `g:tenant_identifier_invalid` before any catalog call, and later sources do not run. `Found` with a blank value becomes `None`. Do not trim, lowercase, or validate the shape inside a source: the catalog does that.
+- **Header source and perimeter controls.** The header source can select only an existing enabled tenant, and the mismatch check still rejects an authenticated caller whose tenant claim disagrees. It does bypass any WAF rule, mTLS policy, IP allowlist, or CDN configuration bound to a tenant's hostname. Where hostnames carry such controls, register the host source first, or strip or overwrite the header at the edge.
+- **Caching headers.** Every catalog rejection carries `Cache-Control: no-store`. Every consult of the header source appends the configured names to `Vary`. A CDN cache key that omits the host breaks host tenancy, and many CDNs refuse to cache on unknown `Vary` values.
+- **Forwarded host.** The host source reads the post-forwarding `Request.Host`, never `X-Forwarded-Host`.
+- **Logs.** No tenancy log event carries a raw host, route value, header value, or identifier. A host template match timeout maps to `Invalid` and logs one warning per process that names only the template.
+- **Route links.** `AddRouteSource` makes `Url.Action`, `GetPathByAction`, and `GetPathByName` keep the current request's `{tenant}` segment, which ASP.NET Core would otherwise drop. An explicit `tenant` value always wins. `PromoteAmbientRouteValue = false` turns this off per call. A link from a tenant request to an endpoint without a `{tenant}` segment carries the value as a query string (`/plain?tenant=acme`). A link from a request with no tenant segment to a tenant endpoint returns `null` unless you pass a value.
+- **Middleware order.** Placed before `UseRouting()`, `UseHeadlessTenantCatalogResolution()` still resolves host, header, and delegate sources but loses the `[SkipTenantResolution]` opt-out (one warning per host). A route source then finds nothing and every request runs as host context. The host logs that once at Error level as `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED`, but only after a request reaches the middleware, so a host whose requests all 404 or all reject never logs it.
+- **Mismatch-check limits.** A principal with no tenant claim, or an endpoint where authorization never runs (`[AllowAnonymous]`, or no policy and no fallback policy), passes a source-selected tenant unchecked. Map such credentials to a tenant claim so the check applies, and never derive authorization on such endpoints from the ambient tenant.
+
+Ignored identifiers (for example `www`) live on `TenantCatalogOptions.IgnoredIdentifiers` in `Headless.MultiTenancy`. No source has its own list. An ignored identifier, an apex host, and an unmatched host all fall through to host context with no store call, so put every endpoint that needs a tenant under `TenantRequirement`. A whole-host (bare `{tenant}`) template needs `TenantCatalogOptions.MaxIdentifierLength = 253` and an `IdentifierPattern` shaped for hostnames that carries a match timeout. Both settings are catalog-wide, so mixing a subdomain source with a custom-domain source relaxes the subdomain shape too. Bound hostile identifier cardinality with your own rate limiting: negative caching covers only repeated identifiers.
 
 #### CORS
 
-ASP.NET Core's `AddCors` remains the way to write a policy in code. Headless adds two things it lacks: a policy bound from configuration and validated at startup, and origins approved at request time. Each `AddHeadlessCors` policy is a named `HeadlessCorsOptions` instance validated at startup (`ValidateOnStart`); registering the same name twice throws `InvalidOperationException`.
+Write a policy in code with ASP.NET Core's `AddCors`. Headless adds a policy bound from configuration and validated at startup, and origins approved at request time. Each `AddHeadlessCors([policyName,] IConfiguration | Action<HeadlessCorsOptions>)` call registers one named `HeadlessCorsOptions` policy, validated with `ValidateOnStart`. Without a name it registers `HeadlessCorsConstants.RestrictedCors`. Registering the same name twice throws `InvalidOperationException`. `AddHeadlessAllowAnyCors(Action<HeadlessCorsOptions>?)` registers `HeadlessCorsConstants.AllowAnyCors`, which admits any origin and never credentials.
 
 | Property | Default | Notes |
 |---|---|---|
 | `AllowedOrigins` | `[]` | Exact serialized origins: scheme, host, optional port. Any scheme with a host is accepted, so `capacitor://localhost` and `ionic://localhost` work. |
 | `AllowedOriginTemplates` | `[]` | `https://*.example.com` matches any subdomain at any depth with the same scheme and port, never the bare suffix. |
 | `AllowAnyOrigin` | `false` | Admits every origin. Excludes origin lists, origin sources, and credentials. |
-| `AllowAnyOriginOutsideDevelopment` | `false` | Required for an `AllowAnyOrigin` policy in every environment other than Development, including one with a custom name or none; a public API that any site may call sets it deliberately. |
+| `AllowAnyOriginOutsideDevelopment` | `false` | Required for an `AllowAnyOrigin` policy in every environment other than Development, whatever the policy's name. Set it only for a public API that any site may call. |
 | `AllowCredentials` | `false` | Sends `Access-Control-Allow-Credentials: true`. |
 | `AllowedHeaders` | `[]` = any | A `*` entry also means any. |
 | `AllowedMethods` | `[]` = any | A `*` entry also means any. |
 | `ExposedHeaders` | `[]` | Response headers scripts may read, beyond the framework's own. |
-| `ExposeFrameworkHeaders` | `true` | Also exposes `FrameworkExposedHeaders`: `ETag`, `Location`, `Retry-After`, `Content-Disposition`, `Idempotent-Replayed`. A switch, not a pre-filled list, because configuration binding appends to lists. |
-| `MaxAge` | 10 minutes | Preflight cache lifetime. Without the header Chromium caches a preflight for five seconds; `00:00:00` sends `0` and turns caching off. Browsers cap it (Chromium at two hours). |
+| `ExposeFrameworkHeaders` | `true` | Also exposes `HeadlessCorsOptions.FrameworkExposedHeaders`: `ETag`, `Location`, `Retry-After`, `Content-Disposition`, `Idempotent-Replayed`. Pass that list to `WithExposedHeaders` in an `AddCors` policy. |
+| `MaxAge` | 10 minutes | Preflight cache lifetime. Without the header Chromium caches a preflight for five seconds. `00:00:00` sends `0` and turns caching off. Browsers cap it (Chromium at two hours). |
 
 ```csharp
 builder.Services.AddHeadlessCors(builder.Configuration.GetSection("Cors"));    // RestrictedCors
@@ -445,24 +462,31 @@ app.MapGroup("/public").RequireCors("public");
 }
 ```
 
-**Origins known only at request time.** Implement `ICorsOriginSource.IsOriginAllowedAsync(origin, context, cancellationToken)` and register it per policy with `AddHeadlessCorsOriginSource<TSource>(policyName = RestrictedCors, lifetime = Scoped)`; it resolves from the request's services, so a scoped source may use a `DbContext`. The policy may come from `AddCors` or `AddHeadlessCors`. The source runs only when a request carries exactly one `Origin` header that the policy's static origins do not admit, never for the opaque origin `null`, and never for another policy. An approved origin gets that policy's headers, methods, and credentials setting. Every allowed response of a policy with a source carries `Vary: Origin`, including one for a single static origin, so a shared cache cannot replay it to another origin. Preflight and actual requests both consult it, so cache lookups. The source decorates the registered `ICorsPolicyProvider`; register a custom provider before it.
+**Verify:** an invalid policy fails startup with `OptionsValidationException`. A preflight `OPTIONS` request with `Origin: https://app.example.com` and `Access-Control-Request-Method: POST` answers with `Access-Control-Allow-Origin: https://app.example.com`.
 
-**Native and mobile clients.** CORS is enforced by browsers, so it neither blocks nor protects non-browser callers. React Native on iOS and Android sends no `Origin`, and the CORS middleware passes such requests through unchanged. What does need an origin is anything running in a browser engine: Expo and React Native Web (`http://localhost:8081` for the Metro dev server, `http://localhost:19006` for older Expo web, then the deployed web origin), and Capacitor or Ionic webviews. A `react-native-webview` page loaded from a local file has the opaque origin `null`, which no policy can safely admit; serve that content from an `http(s)` origin instead. WebSocket upgrades bypass CORS entirely; restrict them with `WebSocketOptions.AllowedOrigins`.
+**Origins known only at request time.** Implement `ICorsOriginSource.IsOriginAllowedAsync(origin, context, cancellationToken)` and register it per policy with `AddHeadlessCorsOriginSource<TSource>(policyName = RestrictedCors, lifetime = Scoped)`. It resolves from the request's services, so a scoped source may use a `DbContext`. The policy may come from `AddCors` or `AddHeadlessCors`. Register a custom `ICorsPolicyProvider` before the source.
 
-**Origins per environment.** Configuration merges arrays by index, not by replacement: an environment variable `Cors__AllowedOrigins__0` replaces only the first entry, and every later entry in `appsettings.json` still reaches production. Keep development origins such as `http://localhost:5173` in `appsettings.Development.json` and leave the base file with only the origins every environment needs, or set each index explicitly for a deployment. The validator cannot catch this, because a loopback origin is legitimate for some production clients, such as a Capacitor webview on `http://localhost`.
+- The source runs only when a request carries exactly one `Origin` header that the policy's static origins do not admit. It never runs for the opaque origin `null` or for another policy.
+- An approved origin gets that policy's headers, methods, and credentials setting.
+- Every allowed response of a policy with a source carries `Vary: Origin`, so a shared cache cannot replay it to another origin.
+- Preflight and actual requests both call the source, so cache your lookups.
+
+**Native and mobile clients.** Browsers enforce CORS, so it neither blocks nor protects non-browser callers. React Native on iOS and Android sends no `Origin`, and the CORS middleware passes such requests through unchanged. Anything running in a browser engine needs an origin: Expo and React Native Web (`http://localhost:8081` for the Metro dev server, `http://localhost:19006` for older Expo web, then the deployed web origin), and Capacitor or Ionic webviews. A `react-native-webview` page loaded from a local file has the opaque origin `null`, which no policy can safely admit. Serve that content from an `http(s)` origin instead. WebSocket upgrades bypass CORS. Restrict them with `WebSocketOptions.AllowedOrigins`.
+
+**Origins per environment.** Configuration merges arrays by index, not by replacement. An environment variable `Cors__AllowedOrigins__0` replaces only the first entry, and every later entry in `appsettings.json` still reaches production. Keep development origins such as `http://localhost:5173` in `appsettings.Development.json`, and leave only the origins every environment needs in the base file. The validator cannot catch this, because a loopback origin is legitimate for some production clients, such as a Capacitor webview on `http://localhost`.
 
 Startup fails with `OptionsValidationException` when:
 
-- A policy has no `AllowedOrigins`, no `AllowedOriginTemplates`, no origin source, and no `AllowAnyOrigin`, with or without credentials.
+- A policy has no `AllowedOrigins`, no `AllowedOriginTemplates`, no origin source, and no `AllowAnyOrigin`.
 - `AllowAnyOrigin` is combined with origin lists, an origin source, or `AllowCredentials`, or is registered outside Development without `AllowAnyOriginOutsideDevelopment`.
-- An origin contains `*`. Wildcards belong in `AllowedOriginTemplates`; any-origin access belongs to `AllowAnyOrigin`.
-- An origin or template is not a bare `scheme://host[:port]` origin: it carries a path or trailing slash, user info, a query, a fragment, surrounding whitespace, or an explicit default port (`https://app.example.com:443`), has no host, is a `file:` URL, or is not absolute (including the literal `null`). The browser's `Origin` header never carries these parts, so such an entry would silently match nothing.
-- A template does not start with `<scheme>://*.`, has a second `*`, or has a literal suffix of fewer than two labels (`https://*`, `https://*.`, `https://*.com`). A two-label public suffix such as `https://*.co.uk` passes and admits every site under it; never configure one.
+- An origin contains `*`. Wildcards belong in `AllowedOriginTemplates`, and any-origin access belongs to `AllowAnyOrigin`.
+- An origin or template is not a bare `scheme://host[:port]` origin: it carries a path or trailing slash, user info, a query, a fragment, surrounding whitespace, or an explicit default port (`https://app.example.com:443`), has no host, is a `file:` URL, or is not absolute (including the literal `null`). The browser's `Origin` header never carries these parts, so such an entry would match nothing.
+- A template does not start with `<scheme>://*.`, has a second `*`, or has a literal suffix of fewer than two labels (`https://*`, `https://*.`, `https://*.com`). A two-label public suffix such as `https://*.co.uk` passes and admits every site under it. Never configure one.
 - A header, method, or exposed-header entry is blank, or `MaxAge` is negative.
 
 #### API surfaces
 
-An API surface is a named set of endpoints sharing routing, authorization and tenancy defaults, plus an OpenAPI document. `AddHeadlessApiSurface(name, configure)` runs its optional callback immediately, validates the definition, and registers an immutable descriptor plus a singleton `ApiSurfaceRegistry`. MVC, Minimal API, telemetry, and OpenAPI share these definitions. Configure definitions during registration; the builders do not use the deferred .NET options pipeline. Changes to a retained builder after registration have no effect.
+An API surface is a named set of endpoints that share routing, authorization, and tenancy defaults, plus an OpenAPI document. MVC, Minimal API, telemetry, and OpenAPI read the same definitions.
 
 ```csharp
 using Headless.Api;
@@ -475,43 +499,54 @@ builder.Services.AddHeadlessApiSurface("portal", surface =>
 });
 ```
 
-For an atomic batch, use `AddHeadlessApiSurfaces(surfaces => surfaces.Add("portal").Add("console"))`. Its `ApiSurfacesBuilder` validates every definition before registering any from the batch. Both registration methods return `IServiceCollection` for chaining and may be combined before document inference. Document names and titles are inferred; override `surface.OpenApi.DocumentName` and `.Title` only when needed. `surface.OpenApi.StandardProblemResponses` (`null` by default, inheriting the API-wide setting) turns the 404/409/422 problem responses on or off in the surface's documents; an endpoint, group, controller, or action marker overrides it.
+**Verify:** after routing, `HttpContext.GetApiSurface()` returns the `portal` descriptor for an endpoint mapped under the surface. An invalid definition fails at the `AddHeadlessApiSurface` call.
 
-`DefaultAuthorizationPolicy` adds a native named policy alongside endpoint policies. `[AllowAnonymous]` / `.AllowAnonymous()` still bypass authorization. `DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant` requires a policy containing `TenantRequirement`, the Headless tenant authorization handler, and current-tenant services. The mode alone does not install enforcement. Configure these through `AddHeadlessTenancy(...)` as shown above.
+Registration:
 
-Explicit controller or endpoint `RequireTenant` / `AllowMissingTenant` metadata takes precedence over surface defaults. `SkipTenantResolution` skips HTTP tenant extraction; it does not permit a missing tenant. An explicit tenancy requirement or exemption also suppresses a surface's skip-resolution default.
+- `AddHeadlessApiSurface(name, configure)` runs its callback immediately and validates the definition. Changes to a builder you keep after the call have no effect.
+- `AddHeadlessApiSurfaces(surfaces => surfaces.Add("portal").Add("console"))` validates the whole batch before it registers any surface. Both methods return `IServiceCollection` and may be combined.
+- Register every surface before `AddHeadless()` or a parameterless OpenAPI surface registration. Document inference closes registration, and a later addition throws.
+- Surface and document names are case-insensitive and contain only ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. The surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate names and invalid configuration fail validation.
+- The document name defaults to the lowercase surface name, and the title to `<surfaceName> API`. Override `surface.OpenApi.DocumentName` and `.Title` only when needed.
+- `surface.OpenApi.StandardProblemResponses` (`null` by default, inheriting the API-wide setting) turns the 404, 409, and 422 problem responses on or off in the surface's documents. An endpoint, group, controller, or action marker overrides it.
 
-API surfaces require no middleware call. After routing, use `HttpContext.GetApiSurface()` to read the selected endpoint's immutable defaults. The lookup returns `null` for unmatched or unmarked endpoints and follows endpoint changes during re-execution. A marked endpoint whose surface is not registered throws.
+Defaults:
 
-With `Headless.Api.ServiceDefaults` OpenTelemetry enabled, completed request spans receive the `headless.api.surface.name` tag. Unmatched requests use `unknown`; matched endpoints without surface metadata use `unclassified`. The tag reflects the endpoint visible at response completion and is not available during authentication. Custom telemetry callbacks that run after request disposal must capture `ApiSurfaceRegistry` from host services and resolve the selected endpoint's `IApiSurfaceMetadata`. `GetApiSurface()` uses request services and is intended for the active request pipeline.
+- `DefaultAuthorizationPolicy` adds a named policy alongside the endpoint's own policies. `[AllowAnonymous]` and `.AllowAnonymous()` still bypass authorization.
+- `DefaultTenancyMode = ApiSurfaceTenancyMode.RequireTenant` needs a policy containing `TenantRequirement`, the tenant authorization handler, and the current-tenant services. Configure them through `AddHeadlessTenancy(...)`. The mode alone enforces nothing.
+- Explicit `RequireTenant` or `AllowMissingTenant` metadata on a controller or endpoint wins over surface defaults, and also cancels a surface's skip-resolution default. `SkipTenantResolution` skips tenant extraction. It does not permit a missing tenant.
 
-Surface and document names are case-insensitive identities containing ASCII letters, digits, periods, hyphens, or underscores. `.` and `..` are invalid. Surface names `unknown`, `unclassified`, and `infrastructure` are reserved. Duplicate surface/document names and invalid configuration fail validation. Unknown surface lookups throw. Document names default to the lowercase surface name; titles default to `<surfaceName> API`.
+Lookup:
 
-`ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` resolves the document owner from the same immutable definitions. It matches names case-insensitively and throws when no surface owns the document. Register all surfaces before `AddHeadless()` or a parameterless OpenAPI surface registration. Inference closes surface registration; later additions throw rather than silently missing documents.
+- Surfaces need no middleware. `HttpContext.GetApiSurface()` returns `null` for an unmatched or unmarked endpoint and follows endpoint changes during re-execution. A marked endpoint whose surface is not registered throws.
+- `ApiSurfaceRegistry.GetRequiredSurfaceForDocument(documentName)` finds the surface that owns a document, case-insensitively, and throws when none does.
+- With OpenTelemetry enabled in `Headless.Api.ServiceDefaults`, completed request spans carry `headless.api.surface.name`: `unknown` for unmatched requests and `unclassified` for endpoints without surface metadata. The tag reflects the endpoint at response completion and is not set during authentication. A telemetry callback that runs after the request's services are disposed must capture `ApiSurfaceRegistry` from the host services and read the endpoint's `IApiSurfaceMetadata`, because `GetApiSurface()` uses request services.
+
+#### Map your own exceptions and errors
 
 Exception mapping from `AddHeadlessProblemDetails()`:
 
 | Exception | Response |
 |-----------|----------|
 | `MissingTenantContextException` | 403 with `error.code: g:tenant_required` |
-| `TenantMismatchException` (thrown by `ICurrentTenant.EnterOrVerify`) | 403 with `error.code: g:tenant_mismatch`; neither tenant id reaches the response |
+| `TenantMismatchException` (thrown by `ICurrentTenant.EnterOrVerify`) | 403 with `error.code: g:tenant_mismatch`. Neither tenant id reaches the response |
 | `CrossTenantWriteException` | 409 with `error.code: g:cross_tenant_write` |
-| `UnauthorizedException` | 401; a descriptor's description becomes `detail` |
-| `ForbiddenException` | 403 with `error`; its description becomes `detail` |
+| `UnauthorizedException` | 401. A descriptor's description becomes `detail` |
+| `ForbiddenException` | 403 with `error`. Its description becomes `detail` |
 | `ConflictException` | 409 with `errors` |
-| `TooManyRequestsException` | 429 with `Retry-After` header (whole seconds, rounded up, at least 1), `retryAfter`, and optional `error` |
+| `TooManyRequestsException` | 429 with a `Retry-After` header (whole seconds, rounded up, at least 1), `retryAfter`, and an optional `error` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
-| EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
-| EF Core `DbUpdateException` (matched by type name) whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601` in any error the `SqlException` carries, SQLite extended code `2067` or `1555` (read through `RelationalFaults.IsUniqueViolation` in `Headless.Extensions`) | 409 with `errors[].code: g:unique_violation`; event 5013 (Warning) logs only the provider exception type and SQLSTATE, never the exception: SQL Server's message carries the duplicate value |
-| `LockAcquisitionTimeoutException` from `Headless.DistributedLocks` (matched by type name) | 503 with `error.code: g:resource_busy` and no `Retry-After`: the lock wait says nothing about when the holder finishes. The resource name stays in the logs (event 5014) |
-| `ServiceUnavailableException` and derived types, such as `AttemptLimiterUnavailableException` | 503 with `Cache-Control: no-store`, the exception's `Error` descriptor when it has one, and no `Retry-After`. The message and inner exception stay in the logs (event 5016). Throw it, or a type derived from it, when a dependency the request needs cannot answer; its message must be safe to log |
-| `TimeoutException` | 503 with no `Retry-After`. A timeout raised while serving the request (a cache factory, Redis, a database command) is the server's wait running out, not a slow client; 408 would invite clients, and browsers on a reused connection, to resend a request whose writes may have committed. Only ASP.NET Core's request-timeout middleware answers 408 |
+| EF Core `DbUpdateConcurrencyException` | 409 with a concurrency-failure error |
+| EF Core `DbUpdateException` whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601`, SQLite extended code `2067` or `1555` (`RelationalFaults.IsUniqueViolation` in `Headless.Extensions` tests the same) | 409 with `errors[].code: g:unique_violation`. Event 5013 (Warning) logs only the provider exception type and SQLSTATE, never the message, which on SQL Server carries the duplicate value |
+| `LockAcquisitionTimeoutException` from `Headless.DistributedLocks` | 503 with `error.code: g:resource_busy` and no `Retry-After`, because the lock wait says nothing about when the holder finishes. The resource name stays in the logs (event 5014) |
+| `ServiceUnavailableException` and derived types, such as `AttemptLimiterUnavailableException` | 503 with `Cache-Control: no-store`, the exception's `Error` descriptor when it has one, and no `Retry-After`. The message and inner exception stay in the logs (event 5016). Throw it, or a derived type, when a dependency the request needs cannot answer. Keep its message safe to log |
+| `TimeoutException` | 503 with no `Retry-After`. A timeout while serving the request (a cache factory, Redis, a database command) is the server's wait running out. A 408 would invite clients to resend a request whose writes may have committed. Only ASP.NET Core's request-timeout middleware answers 408 |
 | `NotImplementedException` | 501 |
-| `BadHttpRequestException` (a Minimal API body that cannot be bound with `ThrowOnBadRequest` on, the Development default; an unsupported content type; an oversized body) | Its `StatusCode`: 400 `bad-request`, or 413 `payload-too-large`. The exception message, which names the failed parameter or the JSON parse position, stays out of the body and is logged at Information with the exception (event 5015) |
-| `OperationCanceledException` (or inner OCE at any depth) when `HttpContext.RequestAborted` is the source | 499 (no body) |
+| `BadHttpRequestException` (a Minimal API body that cannot be bound while `ThrowOnBadRequest` is on, as in Development, an unsupported content type, or an oversized body) | Its `StatusCode`: 400 `bad-request`, or 413 `payload-too-large`. The exception message, which names the failed parameter or the JSON parse position, stays out of the body and is logged at Information (event 5015) |
+| `OperationCanceledException`, or an inner one at any depth, when `HttpContext.RequestAborted` is the source | 499 with no body |
 
-An exception the application mapped (below) answers with its mapped status. All other exceptions return `false`; the host default or a downstream handler renders them.
+An exception you mapped answers with its mapped status. The handler passes every other exception on, and the host default or a later handler renders it.
 
 Map your own exceptions and result errors with `AddHeadlessProblemDetails(problems => ...)`. It is safe to call alongside `AddHeadless()`, and the mappings from every call add up:
 
@@ -529,47 +564,37 @@ builder.Services.AddHeadlessProblemDetails(problems =>
 });
 ```
 
-- A mapping covers the registered type and every type derived from it; the most derived registration wins, and registering a type again replaces its mapping.
-- Without `describe`, a mapped exception writes only the standard fields. Its own message never reaches the response. A mapped error always carries its `ToErrorDescriptor()`.
-- Mapping a failure the framework already maps throws `InvalidOperationException`: every exception in the table above or derived from one, and `NotFoundError`, `ValidationError`, `ForbiddenError`, `UnauthorizedError`, `ConflictError`, and `AggregateError`. The framework's statuses never change, so the documented baseline stays true.
-- The status must be 400 to 599. `Headless.OpenApi` lists every mapped status on every operation, under the same control as 404/409/422 (see [openapi.md](openapi.md#headlessopenapi)).
+**Verify:** an endpoint that throws `PaymentDeclinedException` answers 402 with `error.code` `billing:declined`.
 
-`StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. It is wired by ServiceDefaults; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `TenantRequirement` and `[AllowMissingTenant]` work whether authorization passes the `HttpContext` or, under the `Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource` switch, the `Endpoint` as its resource. `UseHeadlessTenancy()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated. `UseHeadlessTenantCatalogResolution()` runs after `UseRouting()` and before `UseAuthentication()`; placed before `UseRouting()` it still resolves host, header, and delegate sources and only loses the `[SkipTenantResolution]` opt-out (a once-per-host warning), but a registered route source then finds nothing and every request runs as host context, logged once per host at Error level as `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED` — best-effort, since a host whose requests all 404 or all reject never logs. Behind a proxy, `UseForwardedHeaders()` with `KnownProxies`/`KnownNetworks` and host filtering (`AllowedHosts` scoped to the tenant suffix) must precede it, and `UseCors()` must precede it so preflights short-circuit. CDN caveats: a cache key that omits the host breaks host tenancy, and many CDNs refuse to cache on unknown `Vary` values. Mismatch-check limits: a principal with no tenant claim, or an endpoint where authorization never runs (`[AllowAnonymous]`, policy-less without a fallback policy), passes a source-selected tenant unchecked — map such credentials to a tenant claim so the check applies, and never derive authorization on such endpoints from the ambient tenant.
+- A mapping covers the registered type and every type derived from it. The most derived registration wins, and registering a type again replaces its mapping.
+- Without `describe`, a mapped exception writes only the standard fields. Its message never reaches the response. A mapped error always carries its `ToErrorDescriptor()`.
+- Mapping a failure the framework already maps throws `InvalidOperationException`: every exception in the table above or derived from one, and `NotFoundError`, `ValidationError`, `ForbiddenError`, `UnauthorizedError`, `ConflictError`, and `AggregateError`. The framework's statuses never change.
+- The status must be 400 to 599. `Headless.OpenApi` lists every mapped status on every operation, under the same switch as 404, 409, and 422. See [openapi.md](openapi.md#headlessopenapi).
+
+`TenantRequirement` and `[AllowMissingTenant]` work whether authorization passes the `HttpContext` or, under the `Microsoft.AspNetCore.Authorization.SuppressUseHttpContextAsAuthorizationResource` switch, the `Endpoint` as its resource.
 
 ### Runtime behavior
 
-- Opt-in surface registration validates options at startup and registers the immutable singleton registry; middleware sets the request feature and activity tag.
-- Registers `HttpContextAccessor` (via `AddHeadlessProblemDetails`)
-- `AddHeadlessCors(...)` calls `AddCors()` and registers one `IConfigureOptions<CorsOptions>` per policy that builds it when `CorsOptions` first resolves; templates enable `SetIsOriginAllowedToAllowWildcardSubdomains()`. `AddHeadlessCorsOriginSource` calls `AddCors()`, and its first call decorates `ICorsPolicyProvider` once; an approved source origin gets a per-request policy admitting exactly that origin
-- `ResolveFromCatalog(...)` registers `TenantCatalogResolutionMiddleware`, `TenantIdentifierIntegrityHandler` (`IAuthorizationHandler`, `TryAddEnumerable`), `IHttpContextAccessor`, and `TryAdd` fallbacks for `IProblemDetailsCreator`, `TimeProvider`, and `IBuildInformationAccessor`; `AddHostSource` / `AddRouteSource` / `AddHeaderSource` each register their singleton `ITenantIdentifierSource` (`TryAddEnumerable`, deduplicated by type) and validated options (`ValidateOnStart`); `AddSource(instance)` and the delegate overload append a singleton; `AddRouteSource` also calls `AddRouting()` and decorates the routing `LinkGenerator` once with `TenantAmbientRouteValueLinkGenerator`
-- Every catalog rejection response sets `Cache-Control: no-store`; the header source appends its configured names to the response `Vary` header on every consult
-- Configures response compression providers (Brotli, Gzip)
-- Configures Kestrel limits and disables `Server` response header (via `ConfigureHeadlessDefaultApi`)
-- Configures route options (lowercase URLs, no trailing slash)
-- Configures form options (value limit, multipart limits)
-- Configures HSTS options
-- Registers `self` liveness health check tagged `live`
+- `AddHeadlessProblemDetails()` registers `IHttpContextAccessor`.
+- `AddHeadlessCors(...)` and `AddHeadlessCorsOriginSource(...)` call `AddCors()`. An origin source decorates `ICorsPolicyProvider` once, and an approved origin gets a per-request policy that admits exactly that origin.
+- `AddRouteSource` calls `AddRouting()`.
+- `ConfigureHeadlessDefaultApi()` configures Kestrel limits, turns off the `Server` header, sets lowercase routes with no trailing slash, sets form and HSTS options, and registers the `self` liveness check tagged `live`.
+- `AddHeadlessApiResponseCompression()` configures the Brotli and Gzip providers.
 
 ---
 
 ## Headless.Api.ServiceDefaults
 
-The one-line bootstrap for Headless APIs. Combines `Headless.Api` primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience).
+The one-line bootstrap for Headless APIs. It composes the `Headless.Api` primitives with Aspire-style host conventions: OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience.
 
 ### API and behavior
 
-- One-call service registration via `AddHeadless()` (covers primitives + Aspire conventions)
-- One-call middleware defaults via `UseHeadless()`
-- One-call endpoint mapping via `MapHeadlessEndpoints()` (`/health`, `/alive`, OpenAPI JSON, static assets)
-- Opt-in host manifest endpoint via `MapHeadlessHostManifest(pattern, authorizationPolicy)`, behind authorization by default
-- Service-provider validation on startup
-- Startup filter validates `UseHeadless()` and `MapHeadlessEndpoints()` were called
-- OpenTelemetry logging, metrics, tracing with sensible defaults; traces and meters subscribe to `Headless.*`, the application name (`IHostEnvironment.ApplicationName`), and every source and meter under it (`{ApplicationName}.*`), so an app names its `ActivitySource` and `Meter` `MyApp.Api.Orders` and needs no `AddSource` call
-- OpenAPI document registration and mapping
-- Service discovery and HttpClient resilience
-- MVC and Minimal API JSON defaults
-- ASP.NET Core source-generated input validation
-- Transitively brings in all `Headless.Api` primitives
+- `AddHeadless()`: registers every primitive and convention in one call.
+- `UseHeadless()`: applies the edge middleware in a fixed order. See [Standard middleware order](#standard-middleware-order).
+- `MapHeadlessEndpoints()`: maps `/health`, `/alive`, the OpenAPI JSON documents, and static assets.
+- `MapHeadlessHostManifest(pattern, authorizationPolicy)`: opt-in host manifest endpoint, behind authorization by default.
+- OpenTelemetry logging, metrics, and tracing. Traces and meters subscribe to `Headless.*`, the application name (`IHostEnvironment.ApplicationName`), and every source and meter under it (`{ApplicationName}.*`). Name your `ActivitySource` and `Meter` like `MyApp.Api.Orders` and you need no `AddSource` call.
+- OpenAPI document registration and mapping, service discovery, HttpClient resilience, MVC and Minimal API JSON defaults, and ASP.NET Core source-generated input validation.
 
 ### Install
 
@@ -597,36 +622,36 @@ app.MapHeadlessEndpoints();
 app.Run();
 ```
 
+**Verify:** `GET /alive` answers 200, and `GET /health` answers a JSON body with `status` and a `results` entry for `self`. A host that skips `UseHeadless()` or `MapHeadlessEndpoints()` fails at start with an `InvalidOperationException` naming each missing call. When the host runs through `RunHeadlessAsync(args)`, `dotnet MyApp.dll check` runs the health checks once and exits non-zero on an `Unhealthy` check. See [Health check command](utilities.md#health-check-command).
+
+The middleware-analysis listener logs only after `services.AddMiddlewareAnalyzerFilter()` is registered.
+
 ### Configuration
 
 #### Pipeline and Endpoint Behavior
 
-`UseHeadless()` applies Headless' standard edge middleware in this fixed order:
+`UseHeadless(options => ...)` takes `HeadlessApiDefaultsOptions`: one `Use*` switch per edge step, plus `TrustForwardedHeadersFromAnyProxy` and `ConfigureForwardedHeaders`. The order is fixed. [Standard middleware order](#standard-middleware-order) lists the steps and a full host pipeline.
 
-- `UseForwardedHeaders()`
-- `UseResponseCompression()`
-- `UseStatusCodePages()`
-- `UseStatusCodesRewriter()`
-- `UseExceptionHandler()`
-- `UseHttpsRedirection()` outside Development and Test
-- `UseHsts()` outside Development and Test
-- no-cache response header when the response did not set `Cache-Control`
+Forwarded headers:
 
-`HeadlessApiDefaultsOptions` turns each step off with its `Use*` switch; the order is fixed. See [Standard middleware order](#standard-middleware-order) for the step table and a full host pipeline.
+- The step starts from the app's `IOptions<ForwardedHeadersOptions>`, so `KnownProxies`, `KnownIPNetworks`, `ForwardLimit`, and `ForwardedHeaders` set through `builder.Services.Configure<ForwardedHeadersOptions>(...)` apply, before or after `AddHeadless()`.
+- When the app leaves `ForwardedHeaders` unset, the step uses `XForwardedFor | XForwardedProto | XForwardedHost`.
+- To process no forwarded headers, set `UseForwardedHeaders = false`.
+- `TrustForwardedHeadersFromAnyProxy` (default `false`) and `ConfigureForwardedHeaders` adjust the same options when `UseHeadless()` runs. Turn the trust switch on only when untrusted clients cannot reach the app directly. Otherwise clients can spoof the forwarded host and scheme.
+- Do not add a second `app.UseForwardedHeaders()`. Each pass consumes one more `X-Forwarded-For` hop, and a pass with default options trusts only loopback.
 
-Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register the antiforgery service unless `options.Antiforgery.Enabled = true`, and `UseHeadless()` never wires `app.UseAntiforgery()` (cookie-auth consumers call it themselves after auth/authz so the middleware sees the authenticated principal). Bearer-token APIs have no CSRF surface and leave the flag false.
+Antiforgery is opt-in and app-owned. `AddHeadless()` registers antiforgery services only when `options.Antiforgery.Enabled = true`, and `UseHeadless()` never calls `app.UseAntiforgery()`. A cookie-authenticated app calls it after `UseAuthentication()` and `UseAuthorization()`, so the middleware sees the authenticated principal. Bearer-token APIs have no CSRF exposure and leave it off.
 
-`UseStatusCodePages()` intentionally runs before `UseExceptionHandler()` so bare status responses, including middleware-emitted 408s, can be normalized by `IProblemDetailsCreator.Normalize`. `UseStatusCodesRewriter()` runs inside it so bare 401, 403, and unmatched-route 404 responses use the framework-specific `IProblemDetailsCreator` factories before the generic status-code page fills the response.
+`MapHeadlessEndpoints(options => ...)` takes `HeadlessApiDefaultEndpointOptions`:
 
-The forwarded-headers step starts from the app's `IOptions<ForwardedHeadersOptions>`, so `KnownProxies`, `KnownIPNetworks`, `ForwardLimit`, and `ForwardedHeaders` set through `builder.Services.Configure<ForwardedHeadersOptions>(...)` apply to it. When the app leaves `ForwardedHeaders` unset, `UseHeadless()` applies the framework default, `XForwardedFor | XForwardedProto | XForwardedHost`; any value the app sets wins, whether it configures the options before or after `AddHeadless()`. To process no forwarded headers, set `UseForwardedHeaders = false`. `TrustForwardedHeadersFromAnyProxy` and `ConfigureForwardedHeaders` then adjust those same options when `UseHeadless()` runs. Do not add a second `app.UseForwardedHeaders()`: each pass consumes one more `X-Forwarded-For` hop, and a pass with default options trusts only loopback.
-
-`TrustForwardedHeadersFromAnyProxy` defaults to `false`. Turn it on only when the app is not directly reachable by untrusted clients; otherwise clients can spoof forwarded host/scheme values.
-
-`MapHeadlessEndpoints()` maps `/health` for all health checks with a JSON body containing `status` and per-check `results`, and `/alive` for checks tagged `live`. It also maps OpenAPI JSON documents and static web assets when configured. Health endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. They also carry `DisableRateLimiting` metadata, so neither a global limiter nor an endpoint policy rejects a probe. `AddHeadless()` registers the default `self` liveness check, disables Kestrel's `Server` response header, and applies conservative Kestrel limits: 30MB max request body and 40 request headers. Both `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
+- `/health` (`HealthPath`) runs every health check and writes a JSON body with `status` and per-check `results`. `/alive` (`AlivePath`) runs only checks tagged `live` (`AliveTag`).
+- Provider packages (SQL, EF Core contexts, Redis, NATS, Azure blobs) and the Messaging and Jobs hosts add readiness checks that appear on `/health` but not on `/alive`. See [Health checks](utilities.md#health-checks).
+- The health endpoints are named, left out of OpenAPI documents, and anonymous by default (`AllowAnonymous`). They carry `DisableRateLimiting` metadata, so neither a global limiter nor an endpoint policy rejects a probe. See [HTTP edge limits](rate-limiting.md#http-edge-limits).
+- The OpenAPI documents are ordinary endpoints, so authorization applies: under a fallback authorization policy they answer 401. To publish them anonymously, set `OpenApi.Enabled = false`, register the documents yourself, and map them with `app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous()`.
 
 #### Host manifest endpoint
 
-`MapHeadlessHostManifest(pattern, authorizationPolicy = null)` maps `GET` at `pattern` to the host manifest JSON that `RunHeadlessAsync(args)` prints for `describe`: what each feature registered in this host, such as Messaging consumers and Jobs functions. [Utilities](utilities.md#host-manifest) owns the document. `MapHeadlessEndpoints()` does not map it; call it explicitly.
+`MapHeadlessHostManifest(pattern, authorizationPolicy = null)` maps `GET` at `pattern` to the host manifest JSON that `RunHeadlessAsync(args)` prints for `describe`: what each feature registered in this host, such as Messaging consumers and Jobs functions. [Utilities](utilities.md#host-manifest) owns the document. `MapHeadlessEndpoints()` does not map it.
 
 ```csharp
 builder.Services.AddAuthorizationBuilder()
@@ -635,9 +660,11 @@ builder.Services.AddAuthorizationBuilder()
 app.MapHeadlessHostManifest("/_headless/describe", authorizationPolicy: "operators");
 ```
 
-- **Fails closed.** The endpoint always requires authorization, because a forgotten authorization call would publish the host's whole consumer and job topology. With no `authorizationPolicy`, the default policy applies, which admits any authenticated principal. A host that accepts end-user tokens must pass an operator policy. To serve it anonymously, for example on a port only the cluster reaches, call `.AllowAnonymous()` on the returned `RouteHandlerBuilder`.
-- **Response.** `200` with the document as `application/json`. When a contributor fails, the endpoint logs the error (event `HEADLESS_HOST_MANIFEST_FAILED`) and returns a fixed `500` problem response that never carries the error text, because a contributor's message can name internal configuration.
-- **Not in OpenAPI.** The endpoint is excluded from OpenAPI documents. The returned builder takes other conventions too, such as a rate-limiting policy.
+**Verify:** an operator's `GET /_headless/describe` answers 200 with the manifest JSON, and an anonymous request answers 401.
+
+- **Fails closed.** The endpoint always requires authorization, because an open endpoint publishes the host's whole consumer and job topology. With no `authorizationPolicy`, the default policy applies, which admits any authenticated principal. A host that accepts end-user tokens must pass an operator policy. To serve it anonymously, for example on a port only the cluster reaches, call `.AllowAnonymous()` on the returned `RouteHandlerBuilder`.
+- **Response.** `200` with the document as `application/json`. When a contributor fails, the endpoint logs `HEADLESS_HOST_MANIFEST_FAILED` and returns a fixed `500` problem that never carries the error text.
+- **Not in OpenAPI.** The returned builder takes other conventions, such as a rate-limiting policy.
 - An empty or whitespace `pattern` or `authorizationPolicy` throws `ArgumentException`.
 
 #### Service Options
@@ -667,11 +694,14 @@ builder.AddHeadless(configureServices: options =>
 });
 ```
 
-With HTTP tenancy configured, the request span carries `tenant.id`, and so does every span started during the request. Every log record written during the request carries a `TenantId` attribute naming the tenant ambient when it was written. ServiceDefaults adds both through OpenTelemetry processors registered ahead of your `ConfigureLogging`/`ConfigureTracing` callbacks and the OTLP exporter, so every exporter sees them. The names and switches live in `TenantTelemetryOptions`; see [Multi-tenancy observability](multi-tenancy.md#observability).
+For a custom pipeline that does not call `UseHeadless()`, `UseStatusCodesRewriter()`, or `MapHeadlessEndpoints()`, turn off the matching `options.Validation.Require*` switch.
 
-When API surfaces are registered, the default OpenTelemetry response enricher adds `headless.api.surface.name` to completed request spans. It uses the selected endpoint's configured name, `unknown` for unmatched requests, and `unclassified` for unmarked endpoints. Replacing `EnrichWithHttpResponse` replaces this default too; capture and invoke the existing delegate to preserve it.
+Telemetry:
 
-With OpenAPI enabled, `AddHeadless()` infers document names from surfaces registered before it:
+- With HTTP tenancy configured, the request span and every span started during the request carry `tenant.id`, and every log record written during the request carries `TenantId`. Every exporter sees both. Do not add them yourself. `TenantTelemetryOptions` holds the names and switches. See [Multi-tenancy observability](multi-tenancy/observability.md#observability).
+- With API surfaces registered, the default response enricher adds `headless.api.surface.name` to completed request spans. Replacing `EnrichWithHttpResponse` replaces this default too. To keep it, capture the existing delegate and call it from yours.
+
+OpenAPI documents per surface:
 
 ```csharp
 builder.Services
@@ -682,49 +712,43 @@ builder.AddHeadless();
 app.MapHeadlessEndpoints();
 ```
 
-`SurfaceDocumentNames` defaults to `null`, which publishes every registered surface document. Without surfaces, the ordinary `v1` document remains. Set a nonempty list only to select specific documents; each name must match a configured `OpenApi.DocumentName`. An explicit empty list selects the ordinary, unfiltered `v1` document. Set `OpenApi.Enabled = false` to disable registration. `MapHeadlessEndpoints()` serves documents at the configured route. Adding surfaces after inference throws; unknown explicit document names fail startup.
+**Verify:** `GET /openapi/portal.json` and `GET /openapi/console.json` answer with one document each.
 
-For hosts using individual registrations, call `builder.Services.AddHeadlessApiSurfaceDocuments()` from `Headless.OpenApi` after surface registration and pair it with native `app.MapOpenApi()`. An optional document list selects a subset; no surfaces or an empty list registers no documents on this standalone path. Use it without the default `AddHeadless()` OpenAPI registration, or disable that registration with `OpenApi.Enabled = false` and map documents yourself. Native `AddOpenApi(...)` can register additional documents.
-
-Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` can narrow the selected endpoints with `ShouldInclude` and append document transformers, including a title override. The standalone method takes a per-surface callback, `Action<OpenApiOptions, ApiSurfaceDescriptor>`, for the same purpose. Every document these registrations create carries the Headless transformers (security schemes, typed problem details, operation ids, FluentValidation constraints); configure them with `builder.Services.ConfigureHeadlessOpenApi(...)`. See [OpenAPI](openapi.md).
-
-`MapHeadlessEndpoints()` maps the documents as ordinary endpoints, so authorization applies to them: under a fallback authorization policy they answer 401. To publish them anonymously, set `OpenApi.Enabled = false`, register the documents yourself, and map them with `app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous()`.
+- With OpenAPI enabled, `AddHeadless()` infers document names from the surfaces registered before it. Adding a surface after inference throws.
+- `SurfaceDocumentNames` (default `null`) publishes every surface document. Without surfaces, the ordinary `v1` document remains. A nonempty list selects documents, and each name must match a configured `OpenApi.DocumentName`, or startup fails. An empty list selects the ordinary, unfiltered `v1` document.
+- Set `OpenApi.Enabled = false` to turn off registration.
+- A host that registers services one by one calls `builder.Services.AddHeadlessApiSurfaceDocuments()` from `Headless.OpenApi` after surface registration and pairs it with `app.MapOpenApi()`. An optional document list selects a subset. With no surfaces, or an empty list, it registers no documents. Use it without the `AddHeadless()` OpenAPI registration, or turn that off with `OpenApi.Enabled = false`. Native `AddOpenApi(...)` can register more documents.
+- Surface filtering runs before schema generation and is independent of API Explorer version groups. `ConfigureOpenApi` narrows the selected endpoints with `ShouldInclude` and appends document transformers, including a title override. The standalone method takes a per-surface callback, `Action<OpenApiOptions, ApiSurfaceDescriptor>`, for the same purpose.
+- Every document these registrations create carries the Headless transformers (security schemes, typed problem details, operation IDs, FluentValidation constraints). Configure them with `builder.Services.ConfigureHeadlessOpenApi(...)`. See [OpenAPI](openapi.md).
 
 ### Runtime behavior
 
-- Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
-- Registers no field-encryption or blind-index service and requires no `Headless:Encryption` configuration.
-- Registers all core primitives from `Headless.Api` including problem details, response compression, status-code rewriting, and default API conventions.
-- Registers no JWT, Identity, or authentication-scheme services; add `Headless.Api.Identity` or ASP.NET Core's own schemes and call their registration methods.
-- Registers `ICurrentUser` (`HttpCurrentUser`, reading `user_id`, `account_id`, `account_type`, and `role` claims from the request principal), replacing only the framework fallback `NullCurrentUser` that EF Core and relational audit-log storage register, in either call order; a consumer-registered `ICurrentUser` is kept.
-- Registers a fallback `IUserAgentParser` that identifies nothing (`TryAddSingleton`); `AddHeadlessUserAgentParser()` from `Headless.Api.UserAgent` replaces it in either call order.
+- Validates the service provider on build (`ValidateOnBuild`, `ValidateScopes`).
+- Registers every `Headless.Api` primitive: problem details, response compression, status-code rewriting, and the default API conventions, including the `self` liveness check, no `Server` header, a 30 MB request body limit, and a 40-header limit.
+- Registers `IRequestContext` (scoped).
+- Registers `ICurrentUser` over the request principal, reading the `user_id`, `account_id`, `account_type`, and `role` claims. It replaces only the `NullCurrentUser` fallback that EF Core and relational audit-log storage register, in either call order. An `ICurrentUser` you registered is kept.
+- Registers a fallback `IUserAgentParser` that identifies nothing. `AddHeadlessUserAgentParser()` replaces it in either call order.
+- Registers no JWT, Identity, or authentication-scheme services, and no field-encryption or blind-index service. It needs no `Headless:Encryption` configuration.
 - Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
-- Configures MVC and Minimal API JSON serializer defaults.
-- Registers ASP.NET Core source-generated input validation (`services.AddValidation()`).
-- Registers OpenTelemetry logging, metrics, and tracing when `OpenTelemetry.Enabled` is `true`.
-- Registers OpenAPI services when `OpenApi.Enabled` is `true`.
-- Configures service discovery when `HttpClient.UseServiceDiscovery` is `true`.
-- Configures HttpClient defaults for standard resilience, service discovery, and application User-Agent.
-- Adds a startup validator (`IHeadlessStartupValidator`) that fails host start, naming every missing call, when `UseHeadless()`, `UseStatusCodesRewriter()`, or `MapHeadlessEndpoints()` was not applied.
+- Configures the MVC and Minimal API JSON serializer defaults and registers source-generated input validation (`services.AddValidation()`).
+- Registers OpenTelemetry when `OpenTelemetry.Enabled` is `true`, and OpenAPI when `OpenApi.Enabled` is `true`.
+- Configures HttpClient defaults: standard resilience, service discovery when `HttpClient.UseServiceDiscovery` is `true`, and the application `User-Agent`.
+- Fails host start with an `InvalidOperationException` naming every missing call when `UseHeadless()`, `UseStatusCodesRewriter()`, or `MapHeadlessEndpoints()` was not applied.
 
 ---
 
 ## Headless.DataProtection.Blobs
 
-Extends ASP.NET Core Data Protection to persist encryption keys to blob storage providers.
+Persists ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 
 ### API and behavior
 
-- `PersistKeysToBlobStorage()` extension for `IDataProtectionBuilder`
-- Works with any `IBlobStorage` implementation
-- Stores the key ring in the container named by `BlobStorageDataProtectionOptions.ContainerName` (default `DataProtection`), set through every overload's `configure` parameter or `services.Configure<BlobStorageDataProtectionOptions>(...)`
-- Ensures the key container before writes when an `IBlobContainerManager` is registered or supplied
-- Supports factory-based storage resolution for DI scenarios, including keyed/named stores via a `serviceKey` overload
-- Enforces container provisioning up front: with no manager and a provisioning-requiring storage (`IBlobStorage.RequiresContainerProvisioning`), configuration throws unless `provisioning: BlobContainerProvisioning.PreProvisioned` acknowledges out-of-band provisioning
-- `ValidateKeyRing()` — opt-in warm-up that runs after the host starts and keeps the host unready until it passes: it exercises the key ring, verifies write access with a real sentinel write, and fails an empty key ring on read-only nodes — converting lazy first-write/rotation failures into deploy-time failures without delaying the start
-- `AddDataProtectionKeyRing()` — opt-in readiness health check, the continuous complement to the one-shot validation: re-validates the key-ring store on every health probe, catching a container deleted or write permission revoked after boot. The default probe is the definitive sentinel write (so `Healthy` uniformly means "the key ring can be persisted"); `KeyRingProbeStyle.ContainerExistence` is a cheap explicit opt-down that does not verify write access
-- Key-ring reads are bounded to 1 MiB per XML blob, 1,000 blobs, and 16 MiB aggregate XML. DTD processing is prohibited. Exceeding any resource limit aborts the complete key-ring load; malformed XML within the limits is skipped as before.
-- Container ensure runs inside the same retry pipeline as the key upload; terminal write failures surface as `InvalidOperationException` naming the key container, whether a manager was wired, and the remediation (original exception as inner)
+- `PersistKeysToBlobStorage()` on `IDataProtectionBuilder`, with overloads for the registered `IBlobStorage`, an explicit instance, a factory, and a keyed store (`serviceKey`).
+- Stores the key ring in the container that `BlobStorageDataProtectionOptions.ContainerName` names (default `DataProtection`).
+- Ensures the key container before writes when an `IBlobContainerManager` is registered or passed.
+- `ValidateKeyRing()`: opt-in check that runs after the host starts and keeps the host unready until the key ring can be read and written.
+- `AddDataProtectionKeyRing()`: opt-in readiness health check that re-checks the key-ring store on every probe.
+- Key-ring reads are bounded to 1 MiB per XML blob, 1,000 blobs, and 16 MiB of XML in total. DTD processing is prohibited. Exceeding any limit aborts the whole key-ring load. Malformed XML within the limits is skipped.
 
 ### Install
 
@@ -766,6 +790,8 @@ builder.Services.AddDataProtection()
     .PersistKeysToBlobStorage(configure: options => options.ContainerName = "orders-api-prod-keys");
 ```
 
+**Verify:** with `ValidateKeyRing()`, the `warmup` readiness check on `/health` turns `Healthy` once the key ring is readable and writable, and stays `Unhealthy` with a message naming the key container while it is not. `AddDataProtectionKeyRing()` adds the `dataprotection-keyring` check to the same report.
+
 ### Configuration
 
 `BlobStorageDataProtectionOptions` (validated at startup):
@@ -774,47 +800,63 @@ builder.Services.AddDataProtection()
 | --- | --- | --- |
 | `ContainerName` | `"DataProtection"` | Top-level container for the key XML blobs. Must not be empty. The storage's naming normalizer applies, so on S3 the default is the bucket `dataprotection`. |
 
-Set `ContainerName` per application and environment whenever the container namespace is shared. S3 bucket names are global across all AWS accounts, so the default `dataprotection` bucket almost certainly belongs to someone else: the ensure or the first write fails, or, if that bucket grants write access, the keys land in a foreign bucket. Applications sharing one Azure storage account, file-system root, or Redis server also share the default container, and each one loads every other application's keys.
+Set it through any overload's `configure` parameter or `services.Configure<BlobStorageDataProtectionOptions>(...)`.
 
-Everything else depends on the underlying `IBlobStorage` configuration. Cloud/object-store providers should also register or pass the matching `IBlobContainerManager` so the key container is created before the first key write.
+Set `ContainerName` per application and environment whenever the container namespace is shared. S3 bucket names are global across all AWS accounts, so the default `dataprotection` bucket almost certainly belongs to someone else: the ensure or the first write fails, or, if that bucket grants write access, the keys land in a foreign bucket. Applications that share one Azure storage account, file-system root, or Redis server also share the default container, and each one loads every other application's keys.
 
-The missing-container failure mode is **enforced at configuration time**, not just documented: whenever the effective container manager is `null` and the storage reports `IBlobStorage.RequiresContainerProvisioning == true`, `PersistKeysToBlobStorage` throws `InvalidOperationException` (at call time for the storage-instance overload; at first options resolution for the DI/factory/keyed overloads) unless `provisioning: BlobContainerProvisioning.PreProvisioned` acknowledges that the key container was provisioned out-of-band (portal, CLI, IaC). When a manager is present it is always used to ensure the container — `PreProvisioned` never disables it.
+**Container provisioning.** When no container manager is present and the storage reports `IBlobStorage.RequiresContainerProvisioning == true`, `PersistKeysToBlobStorage` throws `InvalidOperationException` unless you pass `provisioning: BlobContainerProvisioning.PreProvisioned` to confirm the container was created out of band (portal, CLI, infrastructure as code). The storage-instance overload throws at the call. The DI, factory, and keyed overloads throw when the options first resolve. A present manager always ensures the container. `PreProvisioned` never turns it off.
 
-The repository reads and writes the key ring through `IScopedBlobStorage.Unscoped` when the store is scoped, so a store wrapped by the blob tenancy seam (`tenancy.Blobs(b => b.ScopeByTenant())`) keeps one host-level key ring at the physical key container root instead of placing it in the prefix of whichever tenant first touched data protection. See [Tenant-Scoped Blobs and Caches](multi-tenancy.md#tenant-scoped-blobs-and-caches).
+| Mode | When | What to do |
+| --- | --- | --- |
+| Managed | A manager is registered, keyed, or passed | Nothing. The container is ensured before writes. |
+| Pre-provisioned | No manager on AWS, Azure, FileSystem, SSH, or Cloudflare R2 (R2 ships no `IBlobContainerManager`, so this is its only mode) | Create the container out of band and pass `BlobContainerProvisioning.PreProvisioned`. |
+| Exempt | Redis (`RequiresContainerProvisioning == false`) | Nothing. The storage-only overload works. |
 
-Provisioning matrix: **managed** — a manager is registered/keyed/passed, the container is ensured before writes, no acknowledgment needed; **explicit pre-provisioned** — no manager on a provisioning-requiring backend (AWS, Azure, FileSystem, SSH — and Cloudflare R2, where this is the *only* option because R2 ships no `IBlobContainerManager`), provision the container out-of-band and pass `provisioning: BlobContainerProvisioning.PreProvisioned`; **exempt** — Redis reports `RequiresContainerProvisioning == false` (the backing hash materializes on first write), so the storage-only overload works with no acknowledgment.
+**Tenant-scoped stores.** On a store wrapped by the blob tenancy seam (`tenancy.Blobs(b => b.ScopeByTenant())`), the key ring stays one host-level ring at the physical container root, not in the prefix of whichever tenant first touched data protection. See [Tenant-Scoped Blobs and Caches](multi-tenancy/blobs-and-caches.md#tenant-scoped-blobs-and-caches).
 
-**Key-ring validation** — key writes are lazy (first boot + ~90-day rotation), so misconfiguration can stay hidden for months post-deploy. `ValidateKeyRing(Action<DataProtectionKeyRingValidationOptions>? configure = null)` registers an opt-in `IWarmup` named `DataProtectionKeyRing` (see [Warm-up](utilities.md#warm-up)): it runs in the background after the host has started, so the key-blob reads (one listing plus one read per key, through the synchronous `IXmlRepository` contract) and the sentinel write never delay the start. ASP.NET Core's own data-protection hosted service still loads the key ring once during the start and only logs a failure; this validation adds nothing to the start. With `KeyManagementOptions.AutoGenerateKeys == true` (default) it protects/unprotects a payload through the real provider — on a fresh deployment this generates a key and drives the full persistence path (container ensure + upload); with `AutoGenerateKeys == false` (designated-key-writer topologies) it performs a read-only `IKeyManager.GetAllKeys()` probe and never forces key generation — and a reachable-but-empty key ring FAILS validation (the node would have no usable key; the message asks whether the designated key writer has run / the container is right). Unless `DataProtectionKeyRingValidationOptions.ProbeWritePath` is disabled (default `true`), BOTH modes also verify write access with a real write: a reserved sentinel blob (`startup-write-probe.xml`) is uploaded and deleted through the same ensure + retry pipeline the key writes use — the only way to catch lost write permission when a valid key already exists (the round-trip performs no write then) and the only write guarantee on read-only nodes; the sentinel is always excluded from key-ring loading, and the probe is skipped with a debug log for non-blob repositories. `DataProtectionKeyRingValidationOptions.Check` selects `KeyRingCheck.GateReadiness` (default — the warm-up gates readiness: on failure the `warmup` readiness check stays `Unhealthy`, reporting an actionable message that names the key container, the provisioning/manager remediation, and the backend's innermost error, and the runner retries with a jittered 1 s–30 s back-off until the store works; the host keeps running and liveness is unaffected) or `KeyRingCheck.LogOnly` (does not gate readiness; runs once, logs a failure at `Critical` level, and is not retried). A stop request cancels the validation without logging it as a failure. Registration is idempotent; a second call's `configure` still applies.
+**Key-ring validation.** Key writes happen lazily, on first boot and at the ~90-day rotation, so a misconfiguration can stay hidden for months. `ValidateKeyRing(Action<DataProtectionKeyRingValidationOptions>? configure = null)` registers an opt-in warm-up named `DataProtectionKeyRing` (see [Warm-up](utilities.md#warm-up)). It runs in the background after the host starts and never delays the start.
 
-**Key-ring health check** — `ValidateKeyRing` is a one-shot validation; once it passes it cannot see a container deleted or write permission revoked later. `AddDataProtectionKeyRing(this IHealthChecksBuilder, string name = "dataprotection-keyring", HealthStatus? failureStatus = null, IEnumerable<string>? tags = null, KeyRingProbeStyle probeStyle = KeyRingProbeStyle.WriteProbe)` registers the opt-in continuous complement: a readiness health check that re-validates the key-ring store on every health probe. The probe is selected by `KeyRingProbeStyle`, not by the wiring, so `Healthy` has one meaning per registration (each probe reports a distinct description so operators can tell which ran): `KeyRingProbeStyle.WriteProbe` (default) is the definitive sentinel write probe — the reserved `startup-write-probe.xml` blob is uploaded and deleted through the same ensure + retry pipeline the key writes use, manager or not (crash-safe; the sentinel is always excluded from key-ring loading), so `Healthy` means the key ring can actually be persisted (what the ~90-day rotation needs); `KeyRingProbeStyle.ContainerExistence` is the explicit opt-down — a cheap `ContainerExistsAsync(ContainerName)` existence check via the wired `IBlobContainerManager` (a missing container fails the check — key rotation would fail) that does NOT verify write access: revoked write permission still reports `Healthy` while the next rotation write would fail. With `ContainerExistence` and no manager wired (pre-provisioned mode), the check falls back to the write probe — the only probe possible — and says so in its description (that legitimate wiring does not report `Degraded`). Statuses: `Healthy` — the probe that ran succeeded (with the default style that means the full persistence path is verified); `Degraded` — `KeyManagementOptions.XmlRepository` is not the blob-backed repository (registration misuse, nothing to check — not an outage); `Unhealthy` (default failure status, override via `failureStatus:`) — container missing, existence check threw, or the sentinel write failed, with the probe exception attached. Probe-interval note: the default write probe performs a real write + delete per readiness ping — pair it with a probe interval you are comfortable with, or opt down to `probeStyle: KeyRingProbeStyle.ContainerExistence` and accept its weaker guarantee; the check deliberately does no caching or throttling of its own.
+- With `KeyManagementOptions.AutoGenerateKeys == true` (the default), it protects and unprotects a payload through the real provider. On a fresh deployment that generates the first key right after boot and drives the full write path.
+- With `AutoGenerateKeys == false` (designated key-writer topologies), it reads the keys without generating one. A reachable but empty key ring fails, because the node would have no usable key.
+- Unless `ProbeWritePath` is `false` (default `true`), both modes also upload and delete the sentinel blob `startup-write-probe.xml`. That is the only way to detect lost write permission while a valid key exists, and the only write check on read-only nodes. Key-ring loading always ignores the sentinel. A repository that is not blob-backed skips the probe.
+- `Check` selects `KeyRingCheck.GateReadiness` (default) or `KeyRingCheck.LogOnly`. `GateReadiness` keeps the `warmup` readiness check `Unhealthy`, with a message that names the key container, the provisioning remediation, and the backend's innermost error, and retries with a jittered 1 s to 30 s back-off until the store works. The host keeps running and liveness is unaffected. `LogOnly` runs once, logs a failure at `Critical`, does not gate readiness, and does not retry.
+- A stop request cancels the validation without logging a failure. A second `ValidateKeyRing` call registers nothing new, but its `configure` still applies.
 
-**Write resilience & failure context** — the container ensure runs inside the same retry pipeline as the key upload (transient ensure failures are retried under the same predicate), and a terminal write failure is wrapped in `InvalidOperationException` naming the key container, whether a manager was wired, and the remediation, with the original backend exception as the inner exception (context only — no failure-kind guessing).
+**Key-ring health check.** `ValidateKeyRing` checks once. It cannot see a container deleted or write permission revoked after it passes. `AddDataProtectionKeyRing(this IHealthChecksBuilder, string name = "dataprotection-keyring", HealthStatus? failureStatus = null, IEnumerable<string>? tags = null, KeyRingProbeStyle probeStyle = KeyRingProbeStyle.WriteProbe)` re-checks on every probe:
+
+- `KeyRingProbeStyle.WriteProbe` (default) uploads and deletes the sentinel blob through the same ensure and retry path as key writes. `Healthy` means the key ring can be persisted. Each probe writes and deletes a blob, so choose the probe interval with that in mind.
+- `KeyRingProbeStyle.ContainerExistence` only checks that the container exists through the `IBlobContainerManager`. It does not verify write access, so revoked write permission still reports `Healthy`. With no manager wired (pre-provisioned mode), it falls back to the write probe and says so in its description.
+- Statuses: `Healthy` when the probe succeeded. `Degraded` when `KeyManagementOptions.XmlRepository` is not the blob-backed repository (a wiring mistake, not an outage). `Unhealthy` (or your `failureStatus`) when the container is missing, the existence check threw, or the sentinel write failed, with the exception attached.
+- The check does no caching or throttling of its own.
+
+**Write failures.** The container ensure retries under the same policy as the key upload. A terminal write failure throws `InvalidOperationException` naming the key container, whether a manager was wired, and the remediation, with the backend exception as the inner exception.
 
 ### Runtime behavior
 
-- Configures `KeyManagementOptions.XmlRepository` to use blob storage
-- `ValidateKeyRing()` registers an `IWarmup` (and, with the first warm-up, the warm-up runner and the `warmup` readiness check) that probes the key ring after the host starts (with `AutoGenerateKeys`, the first key may be created right after boot instead of at first use; with `ProbeWritePath`, a sentinel blob is written and deleted on each run)
-- `AddDataProtectionKeyRing()` adds an `IHealthCheck` registration (default name `dataprotection-keyring`); with the default `KeyRingProbeStyle.WriteProbe`, each probe writes and deletes the sentinel blob
+- Sets `KeyManagementOptions.XmlRepository` to the blob-backed repository.
+- `ValidateKeyRing()` registers a warm-up and, with the first warm-up, the warm-up runner and the `warmup` readiness check.
+- `AddDataProtectionKeyRing()` registers a health check named `dataprotection-keyring` by default.
 
 ---
 
 ## Headless.Api.FluentValidation
 
-FluentValidation extensions for ASP.NET Core file uploads and reusable Headless API request contracts. The file rules are the `Headless.FluentValidation` rules read from an `IFormFile`: same checks, error codes, and messages.
+FluentValidation rules for ASP.NET Core file uploads and the reusable Headless API request contracts. The file rules are the `Headless.FluentValidation` rules read from an `IFormFile`, with the same checks, error codes, and messages.
 
 ### API and behavior
 
-- `FileNotEmpty()` — validates file has content
-- `GreaterThanOrEqualTo(bytes)` — minimum file size validation
-- `LessThanOrEqualTo(bytes)` — maximum file size validation
-- `ContentTypes(list)` — MIME type allowlist validation; the rule copies the list when it is built. A failure reports `g:file_unexpected_content_type` and lists the accepted types
-- `HaveSignatures(inspector, predicate)` — magic bytes/file signature validation, reporting `g:file_unexpected_signature`; built on FileSignatures. It opens a new stream through `OpenReadStream()`, asks the `IFileFormatInspector` for the format, and passes it (or `null`) to the predicate; the inspector needs a seekable stream. The rule is asynchronous, so validate with `ValidateAsync`. `AddHeadlessFileFormatInspector()` (`Headless.FluentValidation` namespace) registers a singleton `IFileFormatInspector` over every format FileSignatures ships, so a validator can take it from its constructor; it is `TryAdd`, so an inspector the application registered first, such as one limited to the formats it accepts, is kept. `Headless.Api.ServiceDefaults` does not register one.
-- The size and content-type rules are typed validators implementing `IFileSizeValidator` and `IFileContentTypeValidator` (`Headless.FluentValidation`), so Headless.OpenApi documents a form's accepted part types and size bounds; `HaveSignatures` is a predicate and documents nothing
-- Validate the upload at the endpoint, where the `IFormFile` is bound. A command handled after the endpoint stores the file carries a reference to the stored content (a blob location, for example), not the live upload
-- `PhoneNumber()` — validates `PhoneNumberRequest` country code and local subscriber number
-- `GeoCoordinate()` — validates `GeoCoordinateRequest` latitude/longitude ranges
-- `PageMetadata()` — validates `PageMetadataRequest` SEO field length and element-count limits
-- Localized error messages (English, formal Arabic, Egyptian Arabic)
+- `FileNotEmpty()`: the file has content.
+- `GreaterThanOrEqualTo(bytes)` and `LessThanOrEqualTo(bytes)`: minimum and maximum file size.
+- `ContentTypes(list)`: MIME type allowlist. The rule copies the list when it is built. A failure reports `g:file_unexpected_content_type` and lists the accepted types.
+- `HaveSignatures(inspector, predicate)`: checks the file's magic bytes with FileSignatures and reports `g:file_unexpected_signature`. It opens a new stream through `OpenReadStream()`, asks the `IFileFormatInspector` for the format, and passes it (or `null`) to the predicate. The inspector needs a seekable stream. The rule is asynchronous, so validate with `ValidateAsync`.
+- `AddHeadlessFileFormatInspector()` (`Headless.FluentValidation` namespace) registers a singleton `IFileFormatInspector` over every format FileSignatures ships. It is `TryAdd`, so an inspector you registered first, such as one limited to the formats you accept, is kept. `Headless.Api.ServiceDefaults` does not register one.
+- The size and content-type rules implement `IFileSizeValidator` and `IFileContentTypeValidator`, so `Headless.OpenApi` documents a form's accepted part types and size bounds. `HaveSignatures` documents nothing.
+- `PhoneNumber()`: validates `PhoneNumberRequest` country code and local subscriber number.
+- `GeoCoordinate()`: validates `GeoCoordinateRequest` latitude and longitude ranges.
+- `PageMetadata()`: validates `PageMetadataRequest` SEO field lengths and element counts.
+- Error messages ship in English, formal Arabic, and Egyptian Arabic.
+
+Validate an upload at the endpoint, where the `IFormFile` is bound. A command handled after the endpoint stores the file carries a reference to the stored content, such as a blob location, not the live upload.
 
 ### Install
 
@@ -859,12 +901,11 @@ public sealed class ProfileRequestValidator : AbstractValidator<ProfileRequest>
 }
 ```
 
+**Verify:** in a unit test, `await new ProfileRequestValidator(inspector).ValidateAsync(request)` with a PNG renamed to `.jpg` and declared `text/plain` fails with `g:file_unexpected_content_type`.
+
 ### Configuration
 
-No configuration required.
-
-File-validation extensions remain in the `FluentValidation` namespace. Stable file error-code constants and
-localized descriptor factories live in `Headless.FluentValidation.Resources`.
+No configuration. The file-validation extensions are in the `FluentValidation` namespace. The file error-code constants and localized descriptor factories are in `Headless.FluentValidation.Resources`.
 
 ### Runtime behavior
 
@@ -874,22 +915,25 @@ None.
 
 ## Headless.Api.Identity
 
-ASP.NET Core Identity integration for Headless APIs. Apps that do not use ASP.NET Core Identity do not need it.
+ASP.NET Core Identity integration. Apps that do not use ASP.NET Core Identity do not need it.
 
 ### API and behavior
 
-- `IdentityBuilder.AddHeadlessLookupNormalizer()` — replaces Identity's upper-invariant `ILookupNormalizer` with `HeadlessLookupNormalizer`, so stored usernames and emails normalize the same way as `Headless.Text.LookupNormalizer`
-- `IdentityBuilder.AddPasswordResetTokenProvider<TUser>()`, `AddPasswordResetCodeProvider<TUser>()`, `AddEmailConfirmationTokenProvider<TUser>()`, `AddEmailConfirmationCodeProvider<TUser>()` — register the provider and make it Identity's password-reset or email-confirmation provider; the code providers share one RFC 6238 `TotpRfc6238Generator`
-- `HeadlessIdentityErrorDescriber`, `IdentityResultExtensions`, and `IdentityMessageDescriber` / `IdentityErrorCodes` (`Headless.Api.Identity.Resources`) — localized `auth:` and `user:` error descriptors
-- `ConfigureApiApplicationCookie()` — answers the Identity cookie's login and access-denied redirects with 401 and 403 instead of a redirect
-- Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme. Both also register `DynamicAuthenticationSchemeProvider`, which picks `ApiKey`, `Basic`, or `Bearer` per request from the credentials it carries for authenticate, challenge, and forbid; the sign-in and sign-out defaults stay the configured ones, because none of those schemes can sign in or out
+- `IdentityBuilder.AddHeadlessLookupNormalizer()`: replaces Identity's upper-invariant `ILookupNormalizer` with `HeadlessLookupNormalizer`, so stored usernames and emails normalize the same way as `Headless.Text.LookupNormalizer`.
+- `IdentityBuilder.AddPasswordResetTokenProvider<TUser>()`, `AddPasswordResetCodeProvider<TUser>()`, `AddEmailConfirmationTokenProvider<TUser>()`, and `AddEmailConfirmationCodeProvider<TUser>()`: register the provider and make it Identity's password-reset or email-confirmation provider. The code providers share one RFC 6238 `TotpRfc6238Generator`.
+- `HeadlessIdentityErrorDescriber`, `IdentityResultExtensions`, and `IdentityMessageDescriber` with `IdentityErrorCodes` (`Headless.Api.Identity.Resources`): localized `auth:` and `user:` error descriptors.
+- `ConfigureApiApplicationCookie()`: answers the Identity cookie's login and access-denied redirects with 401 and 403 instead of a redirect.
+- `AddBasicSchema()` and `AddApiKey()`: register the `Basic` and `ApiKey` schemes. Each handler authenticates only credentials sent for its own scheme. Both also register `DynamicAuthenticationSchemeProvider`, which picks the API-key, Basic, or bearer scheme per request from the credentials it carries, for authenticate, challenge, and forbid, whatever name each scheme was registered under (rules under this section's Runtime behavior). Sign-in and sign-out keep the configured defaults, because none of those schemes can sign in or out.
 
 ### Design constraints
 
-- Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
-- Basic and API-key authentication can reuse a successful result for a short time. `BasicAuthenticationOptions.CredentialCacheDuration` and `ApiKeyAuthenticationSchemeOptions.CredentialCacheDuration` default to `null` (off), and every request runs the full check: the user or key lookup, the password hash for Basic (PBKDF2, about 35 ms of CPU per request), the sign-in and lockout checks, and the claims and role queries. Set a lifetime per scheme (above zero, at most one hour) to answer a repeated credential from an in-process cache instead: a hit makes no store call and costs microseconds. The trade-off is revocation delay: until its entry expires, a revoked or deactivated key, an old password, and a user who has since been locked out or disabled, or whose roles or claims changed, keep authenticating with the principal the first request built. A Basic hit also skips the reset of the user's failed-attempt count that a successful password check makes, so failures from elsewhere add up toward lockout until the next full check.
-- The credential cache stores only successes; a failed credential always runs the full check, so it still counts toward lockout and the cache answers no guess. Entries expire a fixed time after the request that created them (hits do not extend them), and each scheme holds at most `CredentialCacheMaxEntries` (default 1000) in a private `MemoryCache`, not the application's `IMemoryCache`. Keys are an HMAC-SHA256 of the scheme and the credential under a random per-process key, so the cache never holds the secret and empties on restart. Each request gets its own copy of the cached principal. Expiry follows the registered `TimeProvider`.
-- `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format their durations with Humanizer's `TimeSpan.Humanize()` in the current UI culture. The package ships `Humanizer.Core.ar` beside its Arabic `Messages.ar.resx` and `Messages.ar-EG.resx`, so any Arabic request, `ar-EG` included, gets Arabic durations; any other culture falls back to English unless the application references the matching `Humanizer.Core.<culture>` package.
+- Basic authentication validates the password through `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so Identity lockout policies apply to failed Basic credentials.
+- **Credential cache.** `BasicAuthenticationOptions.CredentialCacheDuration` and `ApiKeyAuthenticationSchemeOptions.CredentialCacheDuration` default to `null` (off), and every request runs the full check: the user or key lookup, the Basic password hash (PBKDF2, about 35 ms of CPU per request), the sign-in and lockout checks, and the claims and role queries. Set a lifetime per scheme (above zero, at most one hour) to answer a repeated credential from an in-process cache with no store call.
+  - The cost is revocation delay. Until its entry expires, a revoked or deactivated key, an old password, and a user who was locked out, disabled, or had roles or claims changed keep authenticating with the principal the first request built.
+  - A Basic cache hit skips the reset of the user's failed-attempt count, so failures from elsewhere add up toward lockout until the next full check.
+  - Only successes are cached. A failed credential always runs the full check, so it still counts toward lockout.
+  - Entries expire a fixed time after the request that created them. Hits do not extend them. Each scheme holds at most `CredentialCacheMaxEntries` (default 1000) in a private cache, not the application's `IMemoryCache`. The cache never holds the secret and empties on restart. Each request gets its own copy of the cached principal, so claims a request changes do not reach the next cache hit. Expiry follows the registered `TimeProvider`.
+- `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format durations with Humanizer in the current UI culture. The package ships `Humanizer.Core.ar`, so any Arabic request, `ar-EG` included, gets Arabic durations. Any other culture gets English unless the application references the matching `Humanizer.Core.<culture>` package.
 
 ### Install
 
@@ -912,7 +956,9 @@ builder.Services
     .AddBasicSchema<AppUser, Guid>();
 ```
 
-To skip the store and the password hash for a client that repeats the same credential, opt a scheme into the credential cache. A revoked credential then keeps working until its entry expires, so keep the lifetime short:
+**Verify:** a request with a valid `Authorization: Basic` header reaches an endpoint that requires the `Basic` scheme, and the same endpoint answers 401 to a wrong password. An invalid `CredentialCacheDuration` fails host start.
+
+To skip the store and the password hash for a client that repeats the same credential, opt a scheme into the credential cache. A revoked credential keeps working until its entry expires, so keep the lifetime short:
 
 ```csharp
 builder.Services
@@ -923,27 +969,36 @@ builder.Services
         options.CredentialCacheDuration = TimeSpan.FromMinutes(1));
 ```
 
-`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`. Both options classes implement `IHttpCredentialSchemeOptions`, so Headless.OpenApi publishes each registered scheme from its own options: an `apiKey` header scheme named after the scheme, an `apiKey` query scheme (`{scheme}Query`) while the query fallback is on, and an HTTP `basic` scheme for `AddBasicSchema()`.
+API keys are read from the configured header. Query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`. Both options classes implement `IHttpCredentialSchemeOptions`, so `Headless.OpenApi` publishes each registered scheme: an `apiKey` header scheme named after the scheme, an `apiKey` query scheme (`{scheme}Query`) while the query fallback is on, and an HTTP `basic` scheme for `AddBasicSchema()`.
 
 ### Runtime behavior
 
-- `AddHeadless()` registers none of these services. `AddHeadlessLookupNormalizer()` removes any earlier `ILookupNormalizer` registration, so it wins whether it runs before or after `AddIdentityCore`.
-- `AddApiKey()` and `AddBasicSchema()` set `IdentityOptions.ClaimsIdentity.UserIdClaimType` to `user_id` (`UserClaimTypes.UserId`) and `RoleClaimType` to `role` (`UserClaimTypes.Roles`), so the principal Identity builds for a Basic or API-key caller carries the user id and roles `ICurrentUser` reads (idempotency scoping, permission grants, audit actor). They replace only Identity's defaults (`ClaimTypes.NameIdentifier`, `ClaimTypes.Role`); a claim type the application set explicitly is kept in either registration order, and then `ICurrentUser` does not see that claim. The setting is global to Identity, so cookie sign-ins through the same `SignInManager` carry the same claim types.
-- `AddApiKey()` and `AddBasicSchema()` validate their scheme's options with FluentValidation on start: a negative or over-one-hour `CredentialCacheDuration`, or a `CredentialCacheMaxEntries` below 1, fails the host. They also register the credential cache as a singleton and `TimeProvider.System` when no `TimeProvider` is registered; a scheme with the cache off never resolves it.
-- `AddApiKey()` and `AddBasicSchema()` replace ASP.NET Core's stock `AuthenticationSchemeProvider` with `DynamicAuthenticationSchemeProvider` and register `IHttpContextAccessor`, which it reads. A scheme provider the app registered itself is kept, whichever order the calls run in. The Basic handler's ticket carries the name the scheme was registered under (`AddBasicSchema("partner-basic")` issues `partner-basic` tickets); `BasicAuthenticationOptions` no longer has a `Scheme` property. A host that uses only a bearer scheme keeps ASP.NET Core's provider and selects the scheme through `AddAuthentication(defaultScheme)`.
+- `AddHeadless()` registers none of these services.
+- `AddHeadlessLookupNormalizer()` removes any earlier `ILookupNormalizer` registration, so it wins before or after `AddIdentityCore`.
+- `AddApiKey()` and `AddBasicSchema()` set `IdentityOptions.ClaimsIdentity.UserIdClaimType` to `user_id` (`UserClaimTypes.UserId`) and `RoleClaimType` to `role` (`UserClaimTypes.Roles`), so a Basic or API-key principal carries the user ID and roles that `ICurrentUser` reads (idempotency scoping, permission grants, audit actor). They replace only Identity's defaults. A claim type you set explicitly is kept in either order, and then `ICurrentUser` does not see that claim. The setting is global to Identity, so cookie sign-ins through the same `SignInManager` carry the same claim types.
+- `AddApiKey()` and `AddBasicSchema()` validate their scheme's options at start: a negative or over-one-hour `CredentialCacheDuration`, or a `CredentialCacheMaxEntries` below 1, fails the host. They register `TimeProvider.System` when no `TimeProvider` is registered.
+- `AddApiKey()` and `AddBasicSchema()` replace ASP.NET Core's `AuthenticationSchemeProvider` with `DynamicAuthenticationSchemeProvider` and register `IHttpContextAccessor`. A scheme provider you registered yourself is kept, in either order. A host that uses only a bearer scheme keeps ASP.NET Core's provider and selects the scheme through `AddAuthentication(defaultScheme)`.
+- `DynamicAuthenticationSchemeProvider` selects a scheme by the handler it was registered with, so a custom name works like the canonical one:
+  - An API key in the header (or, when that scheme allows it, the query parameter) of an `AddApiKey()` scheme selects that scheme. Each scheme matches its own `ApiKeyHeaderName` and `ApiKeyParamName`, so `AddApiKey("PartnerKey", configureOptions: o => o.ApiKeyHeaderName = "X-Partner-Key")` beside the default `ApiKey` scheme routes each header to its own scheme. This check runs first.
+  - `Authorization: Basic …` selects the `AddBasicSchema()` scheme.
+  - Any other `Authorization` header selects the scheme named `Bearer`, or else a scheme registered with ASP.NET Core's `JwtBearerHandler` (`AddJwtBearer("PartnerJwt")`). Another bearer handler is selected only under the name `Bearer`, or through `AddAuthentication(defaultScheme)`.
+  - A scheme under a canonical name (`ApiKey`, `Basic`, `Bearer`) is selected whatever its handler.
+  - When several schemes of one kind match, the canonical name wins. Without it the provider picks none and the configured default scheme applies.
+- The Basic handler's ticket carries the name the scheme was registered under: `AddBasicSchema("partner-basic")` issues `partner-basic` tickets.
 
 ---
 
 ## Headless.Api.Logging.Serilog
 
-Serilog integration for ASP.NET Core APIs with custom enrichers for request context.
+Serilog enrichment for ASP.NET Core APIs.
 
 ### API and behavior
 
-- Custom Serilog enricher middleware
-- Client info enrichment (IP, user agent)
-- Request context enrichment (user, tenant, correlation ID)
-- Integration with `Headless.Logging.Serilog` configuration
+- `UseHeadlessSerilogEnrichers()`: middleware that pushes `UserId`, `AccountId`, and `CorrelationId` from `IRequestContext` into the Serilog `LogContext` for the request. Each property is pushed only when its value is not `null`.
+- `ApiSerilogFactory.CreateApiLogger(app)` and `ConfigureApiLoggerConfiguration(...)`: the `Headless.Logging.Serilog` reloadable logger plus enrichers for the client IP and the sanitized `User-Agent`, `X-Client-Version`, and `X-Api-Version` request headers. Each header value is cut to `SerilogOptions.MaxHeaderLength` characters and stripped of control characters and ANSI escape sequences.
+- `WithSanitizedRequestHeader(...)`: adds the same sanitized enrichment for another request header.
+
+The enrichers do not add a tenant ID. With HTTP tenancy configured, `Headless.Api.ServiceDefaults` adds `TenantId` to log records through OpenTelemetry. See [Service Options](#service-options).
 
 ### Install
 
@@ -969,44 +1024,49 @@ app.MapHeadlessEndpoints();
 app.Run();
 ```
 
+**Verify:** a log event written inside an authenticated request carries the `UserId` property, and one written for a request with a correlation header carries `CorrelationId`.
+
 ### Configuration
 
-Inherits Serilog configuration from `Headless.Logging.Serilog`. See that package for sink and enricher configuration.
+Sinks, levels, and the base enrichers come from `Headless.Logging.Serilog`. See [logging.md](logging.md#headlessloggingserilog).
 
 ### Runtime behavior
 
-- Adds middleware to the request pipeline
-- Enriches log context per-request
+- Adds one middleware to the request pipeline. It needs no service registration beyond `AddHeadless()`.
 
 ---
 
 ## Headless.Api.MinimalApi
 
-Framework integration for ASP.NET Core Minimal APIs: JSON configuration, mediator dispatch, `ApiResult` responses with complete OpenAPI metadata, FluentValidation filters, and entity-tag concurrency.
+ASP.NET Core Minimal API integration: JSON configuration, mediator dispatch, `ApiResult` responses with complete OpenAPI metadata, FluentValidation filters, and entity-tag concurrency.
 
 ### API and behavior
 
-- `ConfigureHeadlessMinimalApi()` — applies the Headless JSON conventions to Minimal API `JsonOptions`, indented in Development and Test. It registers nothing else: exception handling comes from `AddHeadlessProblemDetails()` in `Headless.Api`, and validation is per endpoint or per group (below).
-- `ApiResult<T>.ToHttpResult()`, `ApiResult.ToHttpResult()`, and `ApiResult<T>.ToCreatedHttpResult(value => location)` — 200 with the value, 204, or 201 with a `Location` field on success, and the error's problem-details response on failure. They return `ApiResultHttpResult<T>`, `ApiResultHttpResult`, and `ApiResultCreatedHttpResult<T>`, which publish only the success type to OpenAPI; `Headless.OpenApi` documents the error responses on every operation, whatever the handler returns (see [openapi.md](openapi.md#headlessopenapi)). The problem body is built when the result executes, from the request's `IProblemDetailsCreator`, so the endpoint never injects the creator. `ApiResultError.ToHttpResult(httpContext)` returns a plain `ProblemHttpResult` for composing your own `Results<...>` union, built from the request's creator and mappings. A custom error's `Metadata` reaches the body as its descriptor's `params` (`errors[].params` for the default 409, `error.params` for a mapped status), never as top-level extensions, so a client reads structured details such as missing prerequisites there. Before it executes, a result reports its `IStatusCodeHttpResult.StatusCode` for the framework's errors only; an application error reports `null`, because only the request's mappings can say its status.
-- `ApiResult<T>.ToAcceptedHttpResult()` / `ToAcceptedHttpResult(value => location)` and `ApiResult.ToAcceptedHttpResult()` / `ToAcceptedHttpResult(location)` — 202 Accepted for work that continues after the response, such as an enqueued job: the valued form writes the value (typically a status or tracking resource) and the unit form writes no body; the `location` overloads add a `Location` field pointing at the status monitor. They return `ApiResultAcceptedHttpResult<T>` and `ApiResultAcceptedHttpResult`, which publish only the 202 response to OpenAPI. On failure they answer the error's problem-details response with no `Location`, and the location callback never runs.
-- `ISender.DispatchAsync(request, ct)`, `ISender.DispatchCreatedAsync(request, value => location, ct)`, and `ISender.DispatchAcceptedAsync(request, ct)` / `DispatchAcceptedAsync(request, location, ct)` (`HeadlessSenderExtensions`) — send a `Mediator` request whose handler returns `ApiResult` or `ApiResult<T>`, and return the matching result type above. A `null` request answers 400 without reaching the mediator, as the MVC `ApiControllerBase` helpers do.
-- `MapGetRequest`, `MapDeleteRequest`, `MapPostRequest`, `MapPutRequest`, `MapPatchRequest` (`HeadlessRequestEndpointRouteBuilderExtensions`) — map a route whose whole handler is bind, dispatch, respond. `<TRequest, TResponse>` returns 200 with the value; `<TRequest>` returns 204. `MapPostRequest<TRequest, TResponse>(pattern, value => location)` returns 201.
-- `.ValidateArguments()` on a route group or endpoint — validates each handler argument that has a registered `IValidator<T>`. `.Validate<T>()` on one endpoint — validates one argument type with `MinimalApiValidatorFilter<T>`. Both answer 422; `.Validate<T>()` also answers 400 when the argument is missing. Neither adds response metadata: `Headless.OpenApi` documents the 400 on every operation that binds a value and the 422 on every operation.
-- `.RejectEnumNumbers()` on a route group or endpoint — answers 400 `g:invalid_parameter_value` naming the value when an enum arrives as a number in a route, query, header, or form value, which ASP.NET Core would otherwise bind. `MapApiSurface(...)` applies it to every surface endpoint.
-- `.WithoutStandardProblemResponses()` / `.WithStandardProblemResponses()` on a route group, endpoint, or `MapApiSurface(...)` (from `Headless.Api`) — leaves the 404/409/422 problem responses out of the OpenAPI document, or puts them back; the innermost setting wins.
-- `app.MapApiSurface(name)` — maps a surface's route group with its prefix, authorization, tenancy, and OpenAPI tag defaults.
-- Entity-tag concurrency via `.WithEntityTag()` and `.RequireIfMatch()` endpoint filters.
-- The extensions and result types live in `Headless.Api`, the namespace the rest of the package's endpoint API uses, so a file that imports `Headless.Api` and `Headless.Primitives` (for `ApiResult`) sees them; do not write a local bridge.
+- `ConfigureHeadlessMinimalApi()`: applies the Headless JSON conventions to Minimal API `JsonOptions`, indented in Development and Test. It registers nothing else. Exception handling comes from `AddHeadlessProblemDetails()`, and validation is per endpoint or per group.
+- `ApiResult<T>.ToHttpResult()`, `ApiResult.ToHttpResult()`, and `ApiResult<T>.ToCreatedHttpResult(value => location)`: on success, 200 with the value, 204, or 201 with a `Location` field. On failure, the error's problem-details response. They return `ApiResultHttpResult<T>`, `ApiResultHttpResult`, and `ApiResultCreatedHttpResult<T>`, which publish only the success type to OpenAPI. `Headless.OpenApi` documents the error responses on every operation. See [openapi.md](openapi.md#headlessopenapi).
+  - The problem body is built when the result executes, from the request's `IProblemDetailsCreator`, so the endpoint never injects the creator.
+  - `ApiResultError.ToHttpResult(httpContext)` returns a plain `ProblemHttpResult` for your own `Results<...>` union.
+  - A custom error's `Metadata` reaches the body as its descriptor's `params` (`errors[].params` for the default 409, `error.params` for a mapped status), never as top-level extensions.
+  - Before it executes, a result reports `IStatusCodeHttpResult.StatusCode` for the framework's errors only. An application error reports `null`, because only the request's mappings know its status.
+- `ApiResult<T>.ToAcceptedHttpResult()`, `ToAcceptedHttpResult(value => location)`, `ApiResult.ToAcceptedHttpResult()`, and `ToAcceptedHttpResult(location)`: 202 Accepted for work that continues after the response, such as an enqueued job. The valued form writes the value, and the unit form writes no body. The `location` overloads add a `Location` field. They return `ApiResultAcceptedHttpResult<T>` and `ApiResultAcceptedHttpResult`, which publish only the 202 response to OpenAPI. On failure they answer the error's problem with no `Location`, and the location callback never runs.
+- `ISender.DispatchAsync(request, ct)`, `ISender.DispatchCreatedAsync(request, value => location, ct)`, and `ISender.DispatchAcceptedAsync(request, ct)` or `DispatchAcceptedAsync(request, location, ct)`: send a `Mediator` request whose handler returns `ApiResult` or `ApiResult<T>`, and return the matching result type. A `null` request answers 400 without reaching the mediator.
+- `MapGetRequest`, `MapDeleteRequest`, `MapPostRequest`, `MapPutRequest`, and `MapPatchRequest`: map a route whose whole handler is bind, dispatch, respond. `<TRequest, TResponse>` returns 200 with the value. `<TRequest>` returns 204. `MapPostRequest<TRequest, TResponse>(pattern, value => location)` returns 201.
+- `.ValidateArguments()` on a route group or endpoint: validates each handler argument that has a registered `IValidator<T>`. `.Validate<T>()` on one endpoint: validates one argument type with `MinimalApiValidatorFilter<T>`. Both answer 422. `.Validate<T>()` also answers 400 when the argument is missing. `Headless.OpenApi` documents the 400 on every operation that binds a value and the 422 on every operation.
+- `.RejectEnumNumbers()` on a route group or endpoint: answers 400 `g:invalid_parameter_value` naming the value when an enum arrives as a number in a route, query, header, or form value. `MapApiSurface(...)` applies it to every surface endpoint.
+- `.WithoutStandardProblemResponses()` and `.WithStandardProblemResponses()` on a route group, endpoint, or `MapApiSurface(...)`: leave the 404, 409, and 422 problem responses out of the OpenAPI document, or put them back. The innermost setting wins.
+- `app.MapApiSurface(name)`: maps a surface's route group with its prefix, authorization, tenancy, and OpenAPI tag defaults.
+- `.WithEntityTag()` and `.RequireIfMatch()`: entity-tag concurrency filters.
+- The extensions and result types are in the `Headless.Api` namespace. Import `Headless.Api` and `Headless.Primitives` (for `ApiResult`). Do not write a local bridge.
 
 ### Design constraints
 
-- **The dispatch helpers take `IRequest<T>` only.** They mirror the `Headless.Mediator` pipeline behaviors, which constrain on `IRequest<TResponse>`. A `Mediator` `ICommand<T>` or `IQuery<T>` goes through `sender.Send(...)` and `ToHttpResult()`.
-- **No envelope-specific dispatch.** A handler that returns `ApiResult<DataEnvelope<T>>`, `ApiResult<CollectionEnvelope<T>>`, or `ApiResult<MessageEnvelope>` gets that envelope as the 200 body and as the OpenAPI schema.
-- **The `Map*Request` helpers bind the whole request from one source.** GET and DELETE use `[AsParameters]` (route values and the query string); POST, PUT, and PATCH use the JSON body. A request whose body also needs a route value, such as `PUT /orders/{id}`, needs its own handler that binds both and calls `DispatchAsync`.
-- **A result's `Value` is `null` for a failure.** The problem body exists only once the result executes against a request. Assert a failure's body by executing the result, or call `ApiResultError.ToHttpResult(httpContext)`.
-- **`ValidateArguments()` decides once per endpoint, at build time.** It closes `IValidator<T>` over each handler parameter type and keeps the parameters with a registration. An endpoint with none gets no filter. A validator registered after the endpoints are built is not seen. Do not also apply `.Validate<T>()` for the same argument, or its validators run twice.
-- **`RejectEnumNumbers()` only refuses enum numbers; ASP.NET Core does the rest.** ASP.NET Core parses an enum outside the body with `Enum.TryParse`: it binds the member name exactly as declared, answers its own generic 400 for anything else (other casing, an unknown name, a `[JsonStringEnumMemberName]` alias), and also binds a number. The Headless web preset writes enums under their member names, so a value a client copies from a response or the OpenAPI document binds as it is. The convention wraps the built request delegate and, before ASP.NET Core binds, refuses a value whose text, or any comma-separated part of a `[Flags]` value, starts with a digit or a sign. It checks route, query, and header values, a simple `[FromForm]` enum, the direct enum members of a `[FromForm]` type, and the members of an `[AsParameters]` type; an enum nested deeper in a form type is left to ASP.NET Core, which binds a number there. It reads the values in place and allocates nothing, the values are chosen once per endpoint, an endpoint with no enum parameter runs unchanged, and applying it twice has no further effect. Other simple values (`?page=abc`) and an empty value are ASP.NET Core's to answer, with its generic bad-request. Do not alias an enum you bind from a route, query, header, or form; rename the member instead, because an alias binds only from the body
-- **Validate a mediator request in one place.** With `AddMediatorValidationRequestBehavior()` registered (see [mediator.md](mediator.md)), the validators of a request type that a `Map*Request` route or `DispatchAsync` sends run twice: once in the `ValidateArguments()` endpoint filter, which answers 422, and again in the mediator's `ValidationRequestPreProcessor`, which throws `ValidationException`. An MVC action that binds the request and sends it under `AddHeadlessMvcArgumentValidation()` does the same. An async validator that queries a database doubles its I/O. Pick one: leave the HTTP validation off when the requests go through the mediator, which also validates the requests a message consumer or a job sends, or leave the mediator pre-processor unregistered and validate at the endpoint. Both answer the same 422, because `HeadlessApiExceptionHandler` maps the thrown `ValidationException` to it. The framework does not detect the overlap at run time, because detecting it would couple `Headless.Api.MinimalApi` and `Headless.Api.Mvc` to `Headless.Mediator` internals.
+- **The dispatch helpers take `IRequest<T>` only.** Send a `Mediator` `ICommand<T>` or `IQuery<T>` with `sender.Send(...)` and call `ToHttpResult()` on the result.
+- **No envelope-specific dispatch.** A handler that returns `ApiResult<DataEnvelope<T>>`, `ApiResult<CollectionEnvelope<T>>`, or `ApiResult<MessageEnvelope>` gets that envelope as the 200 body and the OpenAPI schema.
+- **The `Map*Request` helpers bind the whole request from one source.** GET and DELETE use `[AsParameters]` (route values and the query string). POST, PUT, and PATCH use the JSON body. A request whose body also needs a route value, such as `PUT /orders/{id}`, needs its own handler that binds both and calls `DispatchAsync`.
+- **A failed result's `Value` is `null`.** The problem body exists only once the result executes against a request. To assert a failure's body in a test, execute the result or call `ApiResultError.ToHttpResult(httpContext)`.
+- **`ValidateArguments()` decides once per endpoint, when endpoints are built.** It keeps the handler parameters whose type has an `IValidator<T>` registration. An endpoint with none gets no filter. A validator registered after the endpoints are built is not seen. Do not also apply `.Validate<T>()` for the same argument, or its validators run twice.
+- **`RejectEnumNumbers()` refuses only enum numbers.** Outside the body, ASP.NET Core binds an enum member name exactly as declared, answers its own generic 400 for anything else (other casing, an unknown name, a `[JsonStringEnumMemberName]` alias), and also binds a number. The convention refuses a value whose text, or any comma-separated part of a `[Flags]` value, starts with a digit or a sign. It checks route, query, and header values, a simple `[FromForm]` enum, the direct enum members of a `[FromForm]` type, and the members of an `[AsParameters]` type. An enum nested deeper in a form type is left to ASP.NET Core, which binds a number there. An endpoint with no enum parameter runs unchanged, and applying it twice has no further effect. Other bad simple values (`?page=abc`) and empty values get ASP.NET Core's generic bad-request. The Headless web preset writes enums by member name, so a value a client copies from a response or the OpenAPI document binds as it is. Do not alias an enum you bind from a route, query, header, or form value. Rename the member instead, because an alias binds only from the body.
+- **Validate a mediator request in one place.** With `AddMediatorValidationRequestBehavior()` registered (see [mediator.md](mediator.md)), the validators of a request that a `Map*Request` route or `DispatchAsync` sends run twice: once in the `ValidateArguments()` filter, which answers 422, and again in the mediator, which throws `ValidationException`. An MVC action under `AddHeadlessMvcArgumentValidation()` does the same. An async validator that queries a database doubles its I/O. Pick one. Validate in the mediator when requests also come from message consumers or jobs, and leave HTTP validation off. Otherwise leave the mediator behavior unregistered and validate at the endpoint. Both answer the same 422. The framework does not detect the overlap.
 
 ### Install
 
@@ -1068,11 +1128,13 @@ public sealed record RenameOrderBody(string Name);
 public sealed record RenameOrder(Guid Id, string Name) : IRequest<ApiResult>;
 ```
 
+**Verify:** `POST /orders` with an invalid body answers 422 with `errors`, `GET /orders/{id}` answers with an `ETag` header, and `PUT /orders/{id}/lines` without `If-Match` answers 428 with `g:if_match_required`.
+
 ### Configuration
 
 #### API surfaces
 
-After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a native `RouteGroupBuilder` with the configured prefix and named authorization policy. The optional callback and returned builder support ordinary ASP.NET Core endpoint conventions, including `ValidateArguments()` and `WithoutStandardProblemResponses()` for the whole surface. The example assumes the app does not register `AddMediatorValidationRequestBehavior()`; see "Validate a mediator request in one place" under Design constraints above.
+After `AddHeadlessApiSurface(...)`, `app.MapApiSurface("portal")` returns a `RouteGroupBuilder` with the surface's prefix and named authorization policy. The optional callback and the returned builder take ordinary endpoint conventions, including `ValidateArguments()` and `WithoutStandardProblemResponses()` for the whole surface. The example assumes the app does not register `AddMediatorValidationRequestBehavior()`.
 
 ```csharp
 var portal = app.MapApiSurface("portal").ValidateArguments();
@@ -1082,9 +1144,13 @@ portal.MapGet("status", () => "ready").AllowAnonymous();
 portal.MapGroup("orders").WithTags("Orders").MapGetRequest<ListOrders, CollectionEnvelope<OrderView>>("/");
 ```
 
-Endpoint tenancy choices override surface defaults. Native authorization policies remain additive, and `AllowAnonymous` bypasses them. `RequireTenant` metadata needs the policy and services described in `Headless.Api`. An endpoint with no OpenAPI tag of its own, from the endpoint or a nested group, is tagged with the surface's `OpenApi.Title` (default `"{SurfaceName} API"`). Unknown surface names throw during mapping; nested groups with conflicting surface identities throw when endpoints are built. API Explorer version groups remain independent.
+**Verify:** `GET /api/portal/status` answers 200 anonymously when the surface's `RoutePrefix` is `api/portal`. An unknown surface name throws at `MapApiSurface`.
 
-Representation validation is optional. The default accepts any strong entity tag. Configure the shared MVC and Minimal API validator when every conditional write uses a specific representation format:
+- Endpoint tenancy choices override surface defaults. Authorization policies add up, and `AllowAnonymous` bypasses them. `RequireTenant` metadata needs the policy and services described under [API surfaces](#api-surfaces-1) in `Headless.Api`.
+- An endpoint with no OpenAPI tag of its own, from the endpoint or a nested group, is tagged with the surface's `OpenApi.Title` (default `"{SurfaceName} API"`).
+- Nested groups with conflicting surfaces throw when endpoints are built. API Explorer version groups stay independent.
+
+Representation validation is optional. The default accepts any strong entity tag. To require a specific representation format for every conditional write, configure the validator that MVC and Minimal API share:
 
 ```csharp
 builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
@@ -1094,33 +1160,36 @@ builder.Services.AddHeadlessMinimalApiEntityTagConcurrency(options =>
 
 ### Runtime behavior
 
-- `MapApiSurface` adds group route, authorization, tenancy, and default-tag conventions using the shared surface registry, and applies `RejectEnumNumbers()` to every endpoint of the surface.
-- `ConfigureHeadlessMinimalApi` configures `JsonOptions` for Minimal APIs and nothing else.
-- Returning an `ApiResult` result type publishes its success response to OpenAPI without manual `.Produces(...)` calls. The error responses come from `Headless.OpenApi`, the same for an endpoint that returns a plain value and throws, so no endpoint needs `.ProducesProblem(...)` for 404, 409, or 422.
-- A `ForbiddenError` writes its descriptor's description, after `IErrorDescriptionLocalizer`, as the problem `detail`; so does an `UnauthorizedError` that carries a descriptor. MVC `ToActionResult` shares the mapping, and so does `HeadlessApiExceptionHandler` for the exception of the same kind: a thrown `UnauthorizedException`, `ForbiddenException`, `ConflictException`, FluentValidation `ValidationException`, or `EntityNotFoundException` writes the same status and body as the returned `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, or `NotFoundError`, so an `UnauthorizedException` that carries a descriptor also puts its description in `detail`. An error's `Metadata` stays on the wire as the descriptor's `params` in the `errors` extension; it is not copied to top-level problem fields.
-- An empty body on a `Map{Post,Put,Patch}Request` route, or a JSON `null`, answers a problem-details 400 before the mediator runs. A body that is not valid JSON gets the framework's bare 400, which `UseStatusCodesRewriter()` turns into problem details.
-- `ValidateArguments()` runs every validator of every validated argument one after another, each with its own validation context, and returns all failures as one 422. An optional argument the request omitted is skipped.
-- When opted in, endpoint filters emit ETags for successful `IHasEntityTag` results and reject missing or invalid `If-Match` preconditions before invoking the handler.
+- `MapApiSurface` adds the surface's route, authorization, tenancy, and default-tag conventions, and applies `RejectEnumNumbers()` to every surface endpoint.
+- `ConfigureHeadlessMinimalApi` configures `JsonOptions` and nothing else.
+- An `ApiResult` result type publishes its success response to OpenAPI with no `.Produces(...)` call. The error responses come from `Headless.OpenApi`, so no endpoint needs `.ProducesProblem(...)` for 404, 409, or 422.
+- A `ForbiddenError` writes its descriptor's description, after `IErrorDescriptionLocalizer`, as the problem `detail`, and so does an `UnauthorizedError` that carries a descriptor. A thrown `UnauthorizedException`, `ForbiddenException`, `ConflictException`, FluentValidation `ValidationException`, or `EntityNotFoundException` writes the same status and body as the returned `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, or `NotFoundError`. MVC `ToActionResult` shares the mapping.
+- An empty body on a `Map{Post,Put,Patch}Request` route, or a JSON `null`, answers a 400 problem before the mediator runs. A body that is not valid JSON gets ASP.NET Core's bare 400, which `UseStatusCodesRewriter()` turns into a problem.
+- `ValidateArguments()` runs every validator of every validated argument in turn, each with its own validation context, and returns all failures as one 422. An optional argument the request omitted is skipped.
+- The entity-tag filters write an `ETag` for a successful `IHasEntityTag` result and reject a missing or invalid `If-Match` before the handler runs.
 
 ---
 
 ## Headless.Api.Mvc
 
-Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JSON configuration, and common utilities.
+ASP.NET Core MVC integration: controllers, filters, JSON configuration, and URL canonicalization.
 
 ### API and behavior
 
-- `ApiControllerBase` — base controller with common utilities
-- Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`). Outside their environment they answer 404, and they implement `IEnvironmentRestrictionMetadata`, so Headless.OpenApi leaves the action out of documents generated there
-- URL canonicalization middleware (`RedirectToCanonicalUrlRule`, registered via `UseRedirectToCanonicalUrl()`)
-- Pre-configured JSON and MVC options
-- An enum bound from a route, query, header, or form value binds by member name in any casing (`?status=Active`, `active`), through MVC's own enum binder, and comma-separated names for `[Flags]`. A value with a numeric part (`1`, `-1`, `Read,2`) is a binding failure, which MVC's binder would otherwise accept, as is an unknown name. A `[JsonStringEnumMemberName]` alias binds only from the body; outside it, use the member name. An explicit `[ModelBinder]` on the parameter still wins. A Minimal API endpoint under `RejectEnumNumbers()` refuses numbers the same way and binds the exact member name
-- A value that cannot be bound answers 400 before the action runs, through ASP.NET Core's own `[ApiController]` check, which Headless keeps on and shapes with `ApiBehaviorOptions.InvalidModelStateResponseFactory`: `g:invalid_parameter_value` naming the first failing route, query, header, or form value, or the plain bad-request problem for a missing or unreadable body. Headless clears MVC's validator providers, so model state holds only binding failures; a controller without `[ApiController]` gets ASP.NET Core's default behavior
-- Opt-in argument validation: `services.AddHeadlessMvcArgumentValidation()` validates every action argument whose type has a registered FluentValidation `IValidator<T>` before the action runs, and all failures answer one 422, as `ValidateArguments()` does for Minimal APIs. `ConfigureHeadlessMvc()` does not add it. The arguments are chosen once per action; an action with none pays one lookup. A request whose binding failed is not validated: under `[ApiController]` it has already answered 400, and on a controller without it the action receives the model state as ASP.NET Core leaves it. Leave it off when the actions send their arguments through a mediator registered with `AddMediatorValidationRequestBehavior()`, which validates them for every caller, HTTP, message consumers, and jobs alike; with both, each request's validators run twice
-- Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
-- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures, returning `ApiActionResult<T>` / `ApiActionResult`. `ApiResult<T>.ToCreatedActionResult(controller, creator, value => location)` answers 201 Created with the value and a `Location` field (`ApiCreatedActionResult<T>`), and `ToAcceptedActionResult(controller, creator)` answers 202 Accepted for work that continues after the response, with the value for `ApiResult<T>` and no body for `ApiResult` (`ApiAcceptedActionResult<T>` / `ApiAcceptedActionResult`); each has an overload that adds the `Location` field. An action that declares one of them as its return type (`Task<ApiActionResult<Order>>`) publishes the same OpenAPI success response as the Minimal API bridge: 200 with `T`, or a bodyless 204, with no `[ProducesResponseType]` attributes. `Headless.OpenApi` documents its error responses, as it does for every action, so a base controller needs no problem `[ProducesResponseType]` attributes either. MVC converts the result to the controller helper's typed result (`OkObjectResult`, `NotFoundObjectResult`, ...) before result filters run, so filters see the same results as before; `Result` exposes it to tests. `ApiResultError.ToActionResult(...)` still returns a plain `ActionResult` and publishes nothing. The extensions (`ApiResultMvcExtensions`) and both result types live in `Headless.Api`, as the Minimal API bridge does
-- API versioning integration with API Explorer
-- Opt-in strong ETag responses and `If-Match` request validation
+- `ApiControllerBase`: base controller with common helpers.
+- `BlockInEnvironmentAttribute` and `RequireEnvironmentAttribute`: answer 404 outside their environment, and `Headless.OpenApi` leaves the action out of documents generated there.
+- `UseRedirectToCanonicalUrl()`: URL canonicalization (`RedirectToCanonicalUrlRule`). See [URL Canonicalization](#url-canonicalization).
+- Preconfigured JSON and MVC options.
+- **Enum binding.** An enum bound from a route, query, header, or form value binds by member name in any casing (`?status=Active`, `active`), and as comma-separated names for `[Flags]`. A value with a numeric part (`1`, `-1`, `Read,2`) or an unknown name is a binding failure. A `[JsonStringEnumMemberName]` alias binds only from the body. An explicit `[ModelBinder]` on the parameter still wins.
+- **Binding failures.** Under `[ApiController]`, a value that cannot be bound answers 400 before the action runs: `g:invalid_parameter_value` naming the first failing route, query, header, or form value, or the plain bad-request problem for a missing or unreadable body. Headless removes MVC's validator providers, so model state holds only binding failures. A controller without `[ApiController]` gets ASP.NET Core's default behavior.
+- **Argument validation (opt-in).** `services.AddHeadlessMvcArgumentValidation()` validates every action argument whose type has a registered `IValidator<T>` before the action runs, and answers all failures as one 422. `ConfigureHeadlessMvc()` does not add it. A request whose binding failed is not validated: under `[ApiController]` it already answered 400, and without it the action receives the model state as ASP.NET Core leaves it. Leave it off when actions send their arguments through a mediator registered with `AddMediatorValidationRequestBehavior()`, or every validator runs twice.
+- An `ObjectResult` carrying a Headless problem runs `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization.
+- **`ApiResult` bridge.** `ApiResult<T>.ToActionResult(...)` and `ApiResult.ToActionResult(...)` map expected failures to the same problems as the equivalent exceptions, returning `ApiActionResult<T>` and `ApiActionResult`. `ToCreatedActionResult(controller, creator, value => location)` answers 201 with the value and a `Location` field (`ApiCreatedActionResult<T>`). `ToAcceptedActionResult(controller, creator)` answers 202, with the value for `ApiResult<T>` and no body for `ApiResult` (`ApiAcceptedActionResult<T>` and `ApiAcceptedActionResult`). Each has an overload that adds `Location`.
+  - An action that declares one of these as its return type (`Task<ApiActionResult<Order>>`) publishes 200 with `T`, or a bodyless 204, to OpenAPI with no `[ProducesResponseType]` attributes. `Headless.OpenApi` documents the error responses.
+  - MVC converts the result to the controller helper's result (`OkObjectResult`, `NotFoundObjectResult`) before result filters run. `Result` exposes it to tests.
+  - `ApiResultError.ToActionResult(...)` returns a plain `ActionResult` and publishes nothing.
+- API versioning integration with API Explorer.
+- Opt-in strong `ETag` responses and `If-Match` validation.
 
 ### Install
 
@@ -1149,6 +1218,8 @@ app.MapControllers();
 app.Run();
 ```
 
+**Verify:** an action argument that fails its validator answers 422 with `errors`, and `?status=1` for an enum parameter answers 400 with `g:invalid_parameter_value`.
+
 #### Controller Example
 
 ```csharp
@@ -1167,52 +1238,63 @@ public sealed class OrdersController(IOrderService service, IProblemDetailsCreat
 
 #### ETag concurrency
 
-`AddHeadlessMvcEntityTagConcurrency()` emits an `ETag` for successful MVC `ObjectResult` values implementing `IHasEntityTag`. Add `[RequireIfMatch]` to write actions, or attach `RequireIfMatchAttribute` to many at once with a `MapControllers().WithMetadata(new RequireIfMatchAttribute())` convention; the filter reads the routed endpoint's metadata, accepts exactly one strong tag and exposes it through scoped `IIfMatchContext`. Missing tags return 428 with `g:if_match_required`, invalid tags return 400 with `g:if_match_invalid`, and persistence conflicts return 409 with `g:concurrency_failure`.
+`AddHeadlessMvcEntityTagConcurrency()` writes an `ETag` for a successful `ObjectResult` whose value implements `IHasEntityTag`. Add `[RequireIfMatch]` to write actions, or attach it to many actions with a `MapControllers().WithMetadata(new RequireIfMatchAttribute())` convention. The filter accepts exactly one strong tag and exposes it through the scoped `IIfMatchContext`.
 
-Use `AddHeadlessMvcEntityTagConcurrency(options => ...)` to apply API-wide representation validation after the strong tag is parsed. For PostgreSQL `xmin`, set `options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)`. The same option is available for Minimal APIs.
+| Condition | Response |
+| --- | --- |
+| `If-Match` missing | 428 `g:if_match_required` |
+| `If-Match` invalid | 400 `g:if_match_invalid` |
+| Persistence conflict | 409 `g:concurrency_failure` |
 
-`EntityTag` is an HTTP representation value, independent from persistence. Keep database concurrency versions provider-native (`uint`/PostgreSQL `xmin`, `byte[]`/SQL Server `rowversion`) and convert them with `EntityTag.FromUInt32(...)` or `EntityTag.FromBytes(...)` at the response boundary. Minimal APIs register `AddHeadlessMinimalApiEntityTagConcurrency()`, add `.WithEntityTag()` to response endpoints, and add `.RequireIfMatch()` to conditional writes.
+To check the tag's representation after it is parsed, pass `AddHeadlessMvcEntityTagConcurrency(options => ...)`. For PostgreSQL `xmin`, set `options.IfMatchValidator = static tag => tag.TryGetUInt32(out _)`. The same option exists for Minimal APIs.
+
+`EntityTag` is an HTTP representation value, independent of persistence. Keep database concurrency versions provider-native (`uint` for PostgreSQL `xmin`, `byte[]` for SQL Server `rowversion`) and convert them with `EntityTag.FromUInt32(...)` or `EntityTag.FromBytes(...)` at the response boundary.
 
 #### URL Canonicalization
 
-`RedirectToCanonicalUrlRule` answers non-canonical GET requests with a 301 to a single canonical URL: a trailing slash appended or stripped per `RouteOptions.AppendTrailingSlash`, path and query string lower-cased per `RouteOptions.LowercaseUrls`. `ConfigureHeadlessDefaultApi()` sets those to `false` / `true` respectively.
+`RedirectToCanonicalUrlRule` answers a non-canonical GET with a 301 to one canonical URL: a trailing slash appended or stripped per `RouteOptions.AppendTrailingSlash`, and the path and query string lowercased per `RouteOptions.LowercaseUrls`. `ConfigureHeadlessDefaultApi()` sets those to `false` and `true`.
 
-Register it **after `UseRouting()`**:
+Register it after `UseRouting()`:
 
 ```csharp
 app.UseRouting();
 app.UseRedirectToCanonicalUrl(); // or: UseRedirectToCanonicalUrl(appendTrailingSlash: false, lowercaseUrls: true)
 ```
 
-Two attributes opt an endpoint out, and both are read from endpoint metadata, which exists only once routing has matched the request:
+**Verify:** with an `/orders` route mapped, `GET /Orders/` answers 301 to `/orders`.
 
-- `[NoTrailingSlash]` — stops the rule from appending a trailing slash. (The same attribute is a resource filter that 404s trailing-slash requests.)
-- `[NoLowercaseQueryString]` — preserves query-string casing for case-sensitive tokens such as OAuth `state`/`code` values or signed URLs.
+Two attributes opt an endpoint out. Both are read from endpoint metadata, which exists only after routing matched the request:
 
-Requests with no routed endpoint are left untouched. Registered before `UseRouting()` — or for a URL that matches no endpoint — the rule performs no canonicalization at all rather than redirecting past an opt-out it cannot see, and logs a one-time `HEADLESS_CANONICAL_URL_ENDPOINT_UNAVAILABLE` warning naming the ordering requirement. This is the same trade-off as `UseHeadlessTenancy()`'s `[SkipTenantResolution]` marker: metadata-driven opt-outs need the middleware to sit after routing.
+- `[NoTrailingSlash]`: stops the rule from appending a trailing slash. The same attribute is a resource filter that answers 404 to trailing-slash requests.
+- `[NoLowercaseQueryString]`: keeps query-string casing for case-sensitive tokens such as OAuth `state` and `code` values or signed URLs.
+
+A request with no routed endpoint is left unchanged. Registered before `UseRouting()`, the rule canonicalizes nothing, rather than redirect past an opt-out it cannot see, and logs `HEADLESS_CANONICAL_URL_ENDPOINT_UNAVAILABLE` once.
 
 ### Configuration
 
 #### API surfaces
 
-Register `AddHeadlessMvcApiSurfaces()` alongside `AddControllers()` and `AddHeadlessApiSurface(...)`. Mark controllers with `[ApiSurface("portal")]`. The convention adds the registry's prefix, named authorization policy, and tenancy defaults to their actions.
+Register `AddHeadlessMvcApiSurfaces()` with `AddControllers()` and `AddHeadlessApiSurface(...)`, and mark controllers with `[ApiSurface("portal")]`. The convention adds the surface's prefix, named authorization policy, and tenancy defaults to their actions.
 
-Controller/action tenancy metadata takes precedence over surface defaults. Native authorization remains additive, and `[AllowAnonymous]` bypasses it. `RequireTenant` metadata needs the policy and services described in `Headless.Api`. Unknown surface names fail MVC model construction. Controllers with a configured prefix must use relative controller and action routes; absolute templates are rejected because they escape that prefix. Existing `ApiExplorerSettings.GroupName` values are preserved for versioning. Repeated integration registration adds only one convention configurator.
+- Controller and action tenancy metadata wins over surface defaults. Authorization policies add up, and `[AllowAnonymous]` bypasses them. `RequireTenant` metadata needs the policy and services described under [API surfaces](#api-surfaces-1) in `Headless.Api`.
+- An unknown surface name fails MVC model construction.
+- A controller with a configured prefix must use relative controller and action routes. Absolute templates are rejected, because they escape the prefix.
+- Existing `ApiExplorerSettings.GroupName` values are kept for versioning. Calling `AddHeadlessMvcApiSurfaces()` twice adds one convention.
 
-Other MVC features require no additional configuration.
+Other MVC features need no configuration.
 
 ### Runtime behavior
 
-- `AddHeadlessMvcApiSurfaces` registers one MVC options configurator that applies surface defaults during model construction.
-- Configures `MvcOptions` and `JsonOptions` for controllers
-- Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
-- When opted in, emits ETags for `IHasEntityTag` responses
+- Configures `MvcOptions` and `JsonOptions` for controllers.
+- Adds a result filter that applies problem-details customization to Headless-generated MVC object results.
+- `AddHeadlessMvcApiSurfaces` applies surface defaults during model construction.
+- When opted in, writes `ETag` headers for `IHasEntityTag` responses.
 
 ---
 
 ## Headless.Api.UserAgent
 
-The DeviceDetector.NET-backed `IUserAgentParser`. DeviceDetector.NET ships a large regex database, so it lives in its own package. The parser contract, `UserAgentInfo`, and the options are described under [Headless.Api.Abstractions](#headlessapiabstractions).
+The DeviceDetector.NET-backed `IUserAgentParser`. DeviceDetector.NET ships a large regex database, so it has its own package.
 
 ### Install
 
@@ -1227,8 +1309,28 @@ builder.AddHeadless();
 builder.Services.AddHeadlessUserAgentParser(builder.Configuration.GetSection("UserAgent"));
 ```
 
-`AddHeadlessUserAgentParser()` has parameterless, `IConfiguration`, `Action<UserAgentParserOptions>`, and `Action<UserAgentParserOptions, IServiceProvider>` overloads. The options are validated at startup.
+**Verify:** for a request from a desktop Chrome browser, `IWebClientInfoProvider.DeviceInfo` returns a summary such as `"Windows Chrome"` instead of `null`. Invalid options fail startup.
+
+`AddHeadlessUserAgentParser()` has parameterless, `IConfiguration`, `Action<UserAgentParserOptions>`, and `Action<UserAgentParserOptions, IServiceProvider>` overloads.
+
+### Configuration
+
+`UserAgentParserOptions` (validated at startup):
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `MaxEntries` | 1,000 | Parsed agents kept in the parser's own cache. |
+| `SlidingExpiration` | 6 hours | Sliding lifetime of a cached parse. |
+| `Duration` | 24 hours | Absolute lifetime of a cached parse. |
+| `MaxUserAgentLength` | 512 | Longer values are cut before parsing and caching. `UserAgentInfo.UserAgent` reports the cut value. |
 
 ### Runtime behavior
 
-- Replaces any registered `IUserAgentParser`, including the identify-nothing fallback `AddHeadless()` registers, whichever call runs first.
+- `IUserAgentParser.Parse(userAgent)` returns a `UserAgentInfo?` with `IsBot`, a coarse `DeviceType` (`Desktop`, `Phone`, `Tablet`, `Bot`, and others), device brand and model, OS name, version, and platform, client name, version, type, and engine, and bot name and category. Unidentified fields are `null`, never `""`.
+- `GetDeviceInfo(userAgent)` returns `UserAgentInfo.Summary`, the `"Windows Chrome"` string behind `IWebClientInfoProvider.DeviceInfo`. Call `Parse` when you need a single field instead of splitting the summary.
+- Both return `null` for a blank agent or one nothing could be identified from, and both share one cached parse. Unidentifiable agents are cached too.
+- The parser uses its own bounded cache, never the application's `IMemoryCache`, and disposes it with the singleton.
+- A User-Agent is self-reported and easy to forge. Use it for diagnostics, session display, and analytics, never as an authorization input.
+- Store `DeviceType` by name, not by number, so new members do not need a row rewrite.
+- To stub device detection in tests, substitute `IUserAgentParser`.
+- Replaces any registered `IUserAgentParser`, including the identify-nothing fallback that `AddHeadless()` registers, whichever call runs first.

@@ -1,134 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Amazon.S3.Model;
 using Headless.Tus;
-using Microsoft.Extensions.Logging;
 using Tests.TestSetup;
 
 namespace Tests.R2;
 
 // The shared tus conformance scenarios against a real Cloudflare R2 account, the same set the MinIO and LocalStack
-// classes run. There is no R2 emulator, so every scenario skips when the R2_* environment variables are absent (local
-// runs, forks); R2CapabilityProbeTests holds the credential-free fact that keeps the module from reporting zero tests.
-
-/// <summary>
-/// Cloudflare R2, reached with the configuration the docs give an application. The run gets its own bucket, created on
-/// the first scenario and dropped with everything in it when the collection finishes, so a real account keeps no
-/// conformance state and two runs never share uploads. The token must allow bucket creation.
-/// </summary>
-[UsedImplicitly]
-[CollectionDefinition]
-public sealed class TusS3R2Fixture
-    : ICollectionFixture<TusS3R2Fixture>,
-        ITusConformanceBackend<TusS3Store>,
-        IAsyncDisposable
-{
-    private readonly string _bucket = $"tus-conformance-{Guid.NewGuid():N}";
-    private readonly TusS3StoreFactory _stores;
-    private volatile bool _bucketTouched;
-
-    public TusS3R2Fixture()
-    {
-        _stores = new TusS3StoreFactory(_bucket);
-    }
-
-    public Task<TusS3Store> CreateStoreAsync(ILoggerFactory loggerFactory, CancellationToken cancellationToken)
-    {
-        var client = _CreateClient();
-        _bucketTouched = true;
-
-        return _stores.CreateAsync(client, loggerFactory, cancellationToken);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        try
-        {
-            if (_bucketTouched)
-            {
-                using var client = _CreateClient();
-                await _DeleteBucketAsync(client);
-            }
-        }
-        finally
-        {
-            _stores.Dispose();
-        }
-    }
-
-    private static S3TestClient _CreateClient()
-    {
-        var accountId = Environment.GetEnvironmentVariable("R2_ACCOUNT_ID");
-        var accessKey = Environment.GetEnvironmentVariable("R2_ACCESS_KEY_ID");
-        var secretKey = Environment.GetEnvironmentVariable("R2_SECRET_ACCESS_KEY");
-
-        Assert.SkipWhen(
-            string.IsNullOrWhiteSpace(accountId)
-                || string.IsNullOrWhiteSpace(accessKey)
-                || string.IsNullOrWhiteSpace(secretKey),
-            "R2 credentials are not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)."
-        );
-
-        return new S3TestClient(
-            $"https://{accountId}.r2.cloudflarestorage.com",
-            accessKey!,
-            secretKey!,
-            "auto",
-            TusS3Provider.R2
-        );
-    }
-
-    // Aborts the multipart uploads the scenarios left open, empties the bucket page by page, and drops it. Teardown
-    // runs after the scenarios' own tokens are gone, so it does not take one.
-    private async Task _DeleteBucketAsync(S3TestClient client)
-    {
-        var s3 = client.S3;
-        var uploads = new ListMultipartUploadsRequest { BucketName = _bucket };
-
-        while (true)
-        {
-            var page = await s3.ListMultipartUploadsAsync(uploads, CancellationToken.None);
-
-            foreach (var upload in page.MultipartUploads ?? [])
-            {
-                await s3.AbortMultipartUploadAsync(_bucket, upload.Key, upload.UploadId, CancellationToken.None);
-            }
-
-            if (page.IsTruncated != true)
-            {
-                break;
-            }
-
-            uploads.KeyMarker = page.NextKeyMarker;
-            uploads.UploadIdMarker = page.NextUploadIdMarker;
-        }
-
-        var objects = new ListObjectsV2Request { BucketName = _bucket };
-
-        while (true)
-        {
-            var page = await s3.ListObjectsV2Async(objects, CancellationToken.None);
-            var keys = (page.S3Objects ?? []).ConvertAll(o => new KeyVersion { Key = o.Key });
-
-            if (keys.Count > 0)
-            {
-                await s3.DeleteObjectsAsync(
-                    new DeleteObjectsRequest { BucketName = _bucket, Objects = keys },
-                    CancellationToken.None
-                );
-            }
-
-            if (page.IsTruncated != true)
-            {
-                break;
-            }
-
-            objects.ContinuationToken = page.NextContinuationToken;
-        }
-
-        await s3.DeleteBucketAsync(_bucket, CancellationToken.None);
-    }
-}
+// classes run. TusS3R2Fixture skips each one without R2 credentials; R2CapabilityProbeTests holds the credential-free
+// fact that keeps the module from reporting zero tests.
 
 [Collection<TusS3R2Fixture>]
 public sealed class R2TusS3StoreConformanceTests(TusS3R2Fixture fixture)
@@ -147,6 +26,10 @@ public sealed class R2TusS3StoreConformanceTests(TusS3R2Fixture fixture)
     [Fact]
     public override Task should_upload_data_before_upload_length_is_known() =>
         base.should_upload_data_before_upload_length_is_known();
+
+    [Fact]
+    public override Task should_reject_upload_length_below_uploaded_bytes() =>
+        base.should_reject_upload_length_below_uploaded_bytes();
 
     [Fact]
     public override Task should_check_file_existence() => base.should_check_file_existence();
@@ -195,6 +78,10 @@ public sealed class R2TusS3ProtocolConformanceTests(TusS3R2Fixture fixture)
     [Fact]
     public override Task defer_length_upload_reports_defer_header_until_length_is_declared() =>
         base.defer_length_upload_reports_defer_header_until_length_is_declared();
+
+    [Fact]
+    public override Task patch_declaring_length_below_offset_is_rejected_and_keeps_length_deferred() =>
+        base.patch_declaring_length_below_offset_is_rejected_and_keeps_length_deferred();
 
     [Fact]
     public override Task patch_advances_offset_and_reports_expiration() =>

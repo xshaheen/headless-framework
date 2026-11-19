@@ -5,7 +5,6 @@ using Azure.Storage;
 using Azure.Storage.Blobs;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
-using Headless.Blobs.Internal;
 using Headless.IO;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;

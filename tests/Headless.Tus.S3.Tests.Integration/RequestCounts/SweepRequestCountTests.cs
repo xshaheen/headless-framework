@@ -19,7 +19,7 @@ public abstract class SweepRequestCountTestsBase(IS3TestBackend backend) : TestB
 
     private readonly TusS3StoreOptions _options = new()
     {
-        Bucket = TusS3StoreFactory.Bucket,
+        Bucket = backend.Bucket,
         Prefix = $"sweep-counts-{Guid.NewGuid():N}/",
     };
 
@@ -109,6 +109,19 @@ public sealed class MinioSweepRequestCountTests(TusS3MinioFixture fixture) : Swe
 [Collection<TusS3LocalStackFixture>]
 public sealed class LocalStackSweepRequestCountTests(TusS3LocalStackFixture fixture)
     : SweepRequestCountTestsBase(fixture)
+{
+    [Fact]
+    public override Task should_list_once_and_read_each_in_progress_upload_once() =>
+        base.should_list_once_and_read_each_in_progress_upload_once();
+
+    [Fact]
+    public override Task should_add_only_the_multipart_listing_when_removing() =>
+        base.should_add_only_the_multipart_listing_when_removing();
+}
+
+// Cloudflare R2 through a gated client; skips without R2 credentials.
+[Collection<TusS3R2Fixture>]
+public sealed class R2SweepRequestCountTests(TusS3R2Fixture fixture) : SweepRequestCountTestsBase(fixture)
 {
     [Fact]
     public override Task should_list_once_and_read_each_in_progress_upload_once() =>

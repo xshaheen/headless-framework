@@ -89,6 +89,9 @@ internal sealed partial class ConsumerRegister(
     private ResponderReplies? _responderReplies;
 
     private IConsumerClientFactory _consumerClientFactory = null!;
+
+    // The named transports a subscription can be bound to; absent in a host built without messaging's setup.
+    private MessagingTransports? _transports;
 #pragma warning disable CA2213 // Disposed through the remaining-budget DisposeAsync(TimeSpan) overload.
     private IDispatcher _dispatcher = null!;
 #pragma warning restore CA2213
@@ -111,7 +114,6 @@ internal sealed partial class ConsumerRegister(
 
     private MethodMatcherCache _selector = null!;
     private IMessageSerializer _serializer = null!;
-    private BrokerAddress _serverAddress;
     private CancellationToken _hostStoppingToken;
 #pragma warning disable CA2213 // Disposed under the gate in _TeardownUnderGateAsync after the drain-reacquire.
     private CancellationTokenSource _stoppingCts = new();
@@ -164,6 +166,7 @@ internal sealed partial class ConsumerRegister(
         _serializer = serviceProvider.GetRequiredService<IMessageSerializer>();
         _storage = serviceProvider.GetRequiredService<IDataStorage>();
         _consumerClientFactory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
+        _transports = serviceProvider.GetService<MessagingTransports>();
         _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
         _subscribeInvoker = serviceProvider.GetRequiredService<ISubscribeInvoker>();
         _lockProvider = serviceProvider.GetKeyedService<IDistributedLock>(MessagingKeys.LockProvider);
@@ -890,9 +893,20 @@ internal sealed partial class ConsumerRegister(
         List<Task>? startupTasks = null;
         var establishments = new ConcurrentQueue<Task>();
 
+        // The transports whose broker refused a subscription in this pass: their remaining subscriptions would only wait
+        // out the same connect failure, so they are left for the next pass.
+        HashSet<string>? unreachableTransports = null;
+
         foreach (var match in subscriptions)
         {
             var subscriptionKey = match.Key;
+            var transportKey = subscriptionKey.TransportName ?? string.Empty;
+            if (unreachableTransports?.Contains(transportKey) == true)
+            {
+                continue;
+            }
+
+            var connectivity = _ConnectivityOf(subscriptionKey);
             var handleName = _CreateHandleName(subscriptionKey);
             var everyInstance = subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance;
             var descriptors = match.Value;
@@ -927,18 +941,31 @@ internal sealed partial class ConsumerRegister(
                     .ConfigureAwait(false);
                 // The probe belongs to no handle, and its failures surface as exceptions here, so its events log and
                 // report connectivity without touching any subscription's health.
-                client.AttachCallbacks(onMessage: null, onLog: log => _WriteLog(log, handle: null, client: null));
+                client.AttachCallbacks(
+                    onMessage: null,
+                    onLog: log => _WriteLog(log, handle: null, client: null, connectivity)
+                );
                 messageNames = await client
                     .FetchMessageNamesAsync(match.Value.Select(x => x.MessageName), _stoppingCts.Token)
                     .ConfigureAwait(false);
             }
             catch (BrokerConnectionException e)
             {
-                // This and every later subscription in the pass get no handle, so no handle can carry the failure.
-                _needsFullRestart = true;
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
                 _logger.FailedToConnectToBroker(e);
-                return establishments;
+
+                if (_transports is not { Named.Count: > 0 })
+                {
+                    // This and every later subscription in the pass get no handle, so no handle can carry the failure.
+                    _needsFullRestart = true;
+                    return establishments;
+                }
+
+                // With several brokers, one that is down must not stop the others: the subscriptions of this transport
+                // stay missing, and the next pass recreates exactly those, leaving the running ones alone.
+                _needsPartialRestart = true;
+                (unreachableTransports ??= new HashSet<string>(StringComparer.Ordinal)).Add(transportKey);
+                continue;
             }
 
             var groupCts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
@@ -948,6 +975,7 @@ internal sealed partial class ConsumerRegister(
                 Cts = groupCts,
                 SubscriptionName = handleName,
                 Shape = _GetGroupShape(subscriptionKey, descriptors),
+                Connectivity = connectivity,
                 CircuitKeys = everyInstance
                     ? []
                     : match.Value.Select(CircuitBreakerKeys.For).ToFrozenSet(StringComparer.Ordinal),
@@ -1012,6 +1040,9 @@ internal sealed partial class ConsumerRegister(
                 continue;
             }
 
+            // Read once: the handle disposes its token source after cancelling it, and a disposed source refuses .Token.
+            var groupToken = groupCts.Token;
+
             for (var i = 0; i < clientCount; i++)
             {
                 var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1021,56 +1052,66 @@ internal sealed partial class ConsumerRegister(
                         {
                             try
                             {
-                                var failureMark = _connectivity.FailureMark;
+                                var failureMark = connectivity.FailureMark;
                                 var innerClient = await _CreateConsumerClientAsync(
                                         subscriptionKey,
                                         limit,
                                         provisionsTopology,
                                         singleActiveConsumer,
-                                        groupCts.Token
+                                        groupToken
                                     )
                                     .ConfigureAwait(false);
 
                                 await handle.AddClientAsync(innerClient).ConfigureAwait(false);
 
-                                _serverAddress = innerClient.BrokerAddress;
-
-                                _RegisterMessageProcessor(innerClient, subscriptionKey, handle, groupCts.Token);
+                                _RegisterMessageProcessor(innerClient, subscriptionKey, handle, groupToken);
 
                                 Action? onReady = null;
                                 if (everyInstance)
                                 {
                                     onReady = () =>
                                         establishments.Enqueue(
-                                            _RaiseSubscriptionEstablished(handleName, descriptors, groupCts.Token)
+                                            _RaiseSubscriptionEstablished(handleName, descriptors, groupToken)
                                         );
 
                                     // A transport that recovers the subscription on its own reports it here, so the
                                     // consumer learns about a gap the core never saw.
                                     innerClient.AttachReestablishedCallback(_ =>
-                                        _RaiseSubscriptionEstablished(handleName, descriptors, groupCts.Token)
+                                        _RaiseSubscriptionEstablished(handleName, descriptors, groupToken)
                                     );
                                 }
 
-                                await innerClient.SubscribeAsync(messageNames, groupCts.Token).ConfigureAwait(false);
+                                await innerClient.SubscribeAsync(messageNames, groupToken).ConfigureAwait(false);
                                 await _AwaitConsumerReadyThenListenAsync(
                                         innerClient,
                                         startupReady,
                                         onReady,
+                                        connectivity,
                                         failureMark,
-                                        groupCts.Token
+                                        groupToken
                                     )
                                     .ConfigureAwait(false);
+
+                                // A client listens until its subscription stops, so one that returned while the
+                                // subscription runs consumes nothing more: report it, and the next transport check
+                                // rebuilds the subscription.
+                                if (!groupToken.IsCancellationRequested)
+                                {
+                                    handle.MarkClientLoopFailed();
+                                    _logger.LogConsumerClientStoppedListening(handleName);
+                                }
                             }
-                            catch (OperationCanceledException)
+                            // Only the subscription's own cancellation is a stop; a client's internal cancellation that
+                            // ends its loop is a failure, handled below.
+                            catch (OperationCanceledException) when (groupToken.IsCancellationRequested)
                             {
-                                startupReady.TrySetCanceled(groupCts.Token);
+                                startupReady.TrySetCanceled(groupToken);
                             }
                             catch (BrokerConnectionException e)
                             {
                                 startupReady.TrySetException(e);
                                 handle.MarkClientLoopFailed();
-                                _connectivity.ReportBrokerFailure();
+                                connectivity.ReportBrokerFailure();
                                 _logger.FailedToConnectToBroker(e);
                             }
                             catch (Exception e)
@@ -1187,6 +1228,7 @@ internal sealed partial class ConsumerRegister(
 
                 // The client stopped listening on its own and the lock is released, so another host can take over;
                 // this one competes again after the interval instead of rebuilding a client that just stopped.
+                _logger.LogConsumerClientStoppedListening(handle.SubscriptionName);
                 await Task.Delay(ActiveHostRetryInterval, _backoffClock, stoppingToken).ConfigureAwait(false);
             }
 
@@ -1200,7 +1242,7 @@ internal sealed partial class ConsumerRegister(
         {
             startupReady.TrySetException(e);
             handle.MarkClientLoopFailed();
-            _connectivity.ReportBrokerFailure();
+            _ConnectivityOf(handle).ReportBrokerFailure();
             _logger.FailedToConnectToBroker(e);
         }
         catch (Exception e)
@@ -1260,7 +1302,7 @@ internal sealed partial class ConsumerRegister(
 
         try
         {
-            var failureMark = _connectivity.FailureMark;
+            var failureMark = _ConnectivityOf(handle).FailureMark;
             client = await _CreateConsumerClientAsync(
                     subscriptionKey,
                     limit,
@@ -1272,13 +1314,18 @@ internal sealed partial class ConsumerRegister(
 
             await handle.AddClientAsync(client).ConfigureAwait(false);
 
-            _serverAddress = client.BrokerAddress;
-
             // Admitted deliveries run on the host's token, so losing the lease stops intake but not their handlers.
             _RegisterMessageProcessor(client, subscriptionKey, handle, stoppingToken);
 
             await client.SubscribeAsync(messageNames, listening.Token).ConfigureAwait(false);
-            await _AwaitConsumerReadyThenListenAsync(client, startupReady, onReady: null, failureMark, listening.Token)
+            await _AwaitConsumerReadyThenListenAsync(
+                    client,
+                    startupReady,
+                    onReady: null,
+                    _ConnectivityOf(handle),
+                    failureMark,
+                    listening.Token
+                )
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (lease.IsLost && !stoppingToken.IsCancellationRequested)
@@ -1296,6 +1343,15 @@ internal sealed partial class ConsumerRegister(
         }
     }
 
+    private TransportConnectivity _ConnectivityOf(SubscriptionHandle handle) => handle.Connectivity ?? _connectivity;
+
+    // A subscription reports into its own broker's connectivity, so one broker's outage never reads as another's.
+    private TransportConnectivity _ConnectivityOf(ConsumerSubscriptionKey subscriptionKey) =>
+        subscriptionKey.TransportName is { } transportName
+        && _transports?.TryGet(transportName, out var transport) == true
+            ? transport.Connectivity
+            : _connectivity;
+
     private Task<IConsumerClient> _CreateConsumerClientAsync(
         ConsumerSubscriptionKey subscriptionKey,
         byte groupConcurrent,
@@ -1304,7 +1360,11 @@ internal sealed partial class ConsumerRegister(
         CancellationToken cancellationToken
     )
     {
-        return _consumerClientFactory.CreateAsync(
+        var factory = subscriptionKey.TransportName is { } transportName
+            ? _transports!.Get(transportName).ConsumerClientFactory
+            : _consumerClientFactory;
+
+        return factory.CreateAsync(
             new ConsumerClientRequest(
                 subscriptionKey.SubscriptionName,
                 groupConcurrent,
@@ -1324,6 +1384,12 @@ internal sealed partial class ConsumerRegister(
     // part of the name because a competing and an every-instance subscription never share clients.
     private static string _CreateHandleName(ConsumerSubscriptionKey subscriptionKey)
     {
+        // A named transport's subscription is its own broker object, never the default one's of the same name.
+        if (subscriptionKey.TransportName is { } transportName)
+        {
+            return $"{transportName}/{_CreateHandleName(subscriptionKey with { TransportName = null })}";
+        }
+
         return subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance
             ? string.Create(
                 CultureInfo.InvariantCulture,
@@ -1339,6 +1405,7 @@ internal sealed partial class ConsumerRegister(
         IConsumerClient innerClient,
         TaskCompletionSource startupReady,
         Action? onReady,
+        TransportConnectivity connectivity,
         long failureMark,
         CancellationToken cancellationToken
     )
@@ -1349,7 +1416,7 @@ internal sealed partial class ConsumerRegister(
         {
             await readinessTask.ConfigureAwait(false);
             // A ready client is the success that ends an outage on a transport whose clients the register rebuilds.
-            _connectivity.ReportEstablished(failureMark);
+            connectivity.ReportEstablished(failureMark);
             onReady?.Invoke();
             startupReady.TrySetResult();
             await innerClient.ListeningAsync(_options.ConsumerPollTimeout, cancellationToken).ConfigureAwait(false);
@@ -1365,10 +1432,17 @@ internal sealed partial class ConsumerRegister(
         if (completedTask == listeningTask)
         {
             await listeningTask.ConfigureAwait(false);
+
+            // A client that returned before it was ready will never be: waiting for it would hold the start forever.
+            if (!readinessTask.IsCompleted)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new InvalidOperationException("The consumer client stopped listening before it was ready.");
+            }
         }
 
         await readinessTask.ConfigureAwait(false);
-        _connectivity.ReportEstablished(failureMark);
+        connectivity.ReportEstablished(failureMark);
 
         // The hook is raised once the subscription receives and runs beside the listening client, so no message
         // published after establishment is lost to it. The listening loop never waits for it: a hook that restarts the
@@ -1642,7 +1716,7 @@ internal sealed partial class ConsumerRegister(
                 (transportMessage, sender) =>
                 {
                     // A delivery proves the broker answers, so it ends any failure run, a sends' run included.
-                    _connectivity.ReportBrokerSuccess();
+                    _ConnectivityOf(clientHandle).ReportBrokerSuccess();
 
                     return _OnEveryInstanceMessageAsync(
                         client,
@@ -1652,7 +1726,7 @@ internal sealed partial class ConsumerRegister(
                         hostShutdownToken
                     );
                 },
-                log => _WriteLog(log, clientHandle, client)
+                log => _WriteLog(log, clientHandle, client, _ConnectivityOf(clientHandle))
             );
 
             return;
@@ -1661,7 +1735,7 @@ internal sealed partial class ConsumerRegister(
         client.AttachCallbacks(
             (transportMessage, sender) =>
             {
-                _connectivity.ReportBrokerSuccess();
+                _ConnectivityOf(clientHandle).ReportBrokerSuccess();
 
                 return _OnCompetingMessageAsync(
                     client,
@@ -1672,7 +1746,7 @@ internal sealed partial class ConsumerRegister(
                     hostShutdownToken
                 );
             },
-            log => _WriteLog(log, clientHandle, client)
+            log => _WriteLog(log, clientHandle, client, _ConnectivityOf(clientHandle))
         );
     }
 
@@ -1681,7 +1755,12 @@ internal sealed partial class ConsumerRegister(
     /// the client was created for. Binding the handle object rather than its name keeps a retired client's late event
     /// on the retired handle, which nothing reads, instead of on its replacement.
     /// </summary>
-    private void _WriteLog(LogMessageEventArgs logMessage, SubscriptionHandle? handle, IConsumerClient? client)
+    private void _WriteLog(
+        LogMessageEventArgs logMessage,
+        SubscriptionHandle? handle,
+        IConsumerClient? client,
+        TransportConnectivity connectivity
+    )
     {
         var reason = LogSanitizer.Sanitize(logMessage.Reason) ?? string.Empty;
 
@@ -1703,7 +1782,7 @@ internal sealed partial class ConsumerRegister(
                     handle?.MarkClientHealthy(client);
                 }
 
-                _connectivity.ReportBrokerSuccess();
+                connectivity.ReportBrokerSuccess();
                 _logger.RabbitMqConsumerRegistered(reason);
                 break;
             case MqLogType.ConsumerUnregistered:
@@ -1711,7 +1790,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ConsumerShutdown:
                 _MarkClientDegraded(handle, client);
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
                 _logger.RabbitMqConsumerShutdown(reason);
                 break;
             case MqLogType.ConsumeError:
@@ -1722,7 +1801,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ServerConnError:
                 _MarkClientDegraded(handle, client);
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
                 _logger.KafkaServerConnectionError(reason);
                 break;
             case MqLogType.ExceptionReceived:
@@ -1733,7 +1812,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             case MqLogType.ConnectError:
                 _MarkClientDegraded(handle, client);
-                _connectivity.ReportBrokerFailure();
+                connectivity.ReportBrokerFailure();
                 _logger.NatsServerConnectionError(reason);
                 break;
             case MqLogType.InvalidIdFormat:
@@ -1755,8 +1834,8 @@ internal sealed partial class ConsumerRegister(
             {
                 // A client that retries on a timer reports every retry. Once the run has made the broker unreachable,
                 // the outage is already logged, so further retries stay quiet until the broker is reachable again.
-                var counted = _connectivity.IsReachable;
-                _connectivity.ReportBrokerFailure();
+                var counted = connectivity.IsReachable;
+                connectivity.ReportBrokerFailure();
                 if (counted)
                 {
                     _logger.TransportBrokerUnreachable(reason);
@@ -1765,7 +1844,7 @@ internal sealed partial class ConsumerRegister(
                 break;
             }
             case MqLogType.BrokerReachable:
-                _connectivity.ReportBrokerSuccess();
+                connectivity.ReportBrokerSuccess();
                 _logger.TransportBrokerReachable(reason);
                 break;
             case MqLogType.SettlementFailed:
@@ -1849,6 +1928,9 @@ internal sealed partial class ConsumerRegister(
         public required string Shape { get; init; }
 
         /// <summary>The lane-qualified circuit keys of the consumer identities this handle's clients deliver to.</summary>
+        // The broker this subscription's clients report their sends and receives into; null reports into the default one.
+        public TransportConnectivity? Connectivity { get; init; }
+
         public FrozenSet<string> CircuitKeys { get; init; } = [];
         public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
@@ -2196,4 +2278,12 @@ internal static partial class ConsumerRegisterLog
         string resource,
         TimeSpan delay
     );
+
+    [LoggerMessage(
+        EventId = 4146,
+        EventName = "ConsumerClientStoppedListening",
+        Level = LogLevel.Error,
+        Message = "A consumer client of subscription '{SubscriptionName}' stopped listening before its subscription was stopped; the subscription consumes nothing on it until it is rebuilt."
+    )]
+    internal static partial void LogConsumerClientStoppedListening(this ILogger logger, string subscriptionName);
 }

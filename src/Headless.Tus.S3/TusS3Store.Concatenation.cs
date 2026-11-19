@@ -50,6 +50,9 @@ public sealed partial class TusS3Store
     {
         Argument.IsNotNullOrEmpty(partialFiles);
 
+        // The partial uploads and the final upload belong to one tenant: the request's.
+        var keys = _Keys();
+
         // Set once the finished object exists, so a failure after it knows there is an object no record points at.
         string? writtenFileId = null;
 
@@ -57,7 +60,7 @@ public sealed partial class TusS3Store
         {
             _EnsureValidMetadata(metadata);
 
-            var lengths = await _LoadPartialLengthsAsync(partialFiles, cancellationToken).ConfigureAwait(false);
+            var lengths = await _LoadPartialLengthsAsync(keys, partialFiles, cancellationToken).ConfigureAwait(false);
             var length = lengths.Sum();
             var partSize = TusS3PartSize.ForUpload(length, _options);
             var fileId = TusS3Keys.EnsureValid(await _fileIdProvider.CreateId(metadata).ConfigureAwait(false));
@@ -65,12 +68,12 @@ public sealed partial class TusS3Store
 
             if (plan.Count <= 1)
             {
-                await _PutFinalObjectAsync(fileId, partialFiles, metadata, plan, cancellationToken)
+                await _PutFinalObjectAsync(keys, fileId, partialFiles, metadata, plan, cancellationToken)
                     .ConfigureAwait(false);
             }
             else
             {
-                await _BuildFinalMultipartUploadAsync(fileId, partialFiles, metadata, plan, cancellationToken)
+                await _BuildFinalMultipartUploadAsync(keys, fileId, partialFiles, metadata, plan, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -85,7 +88,7 @@ public sealed partial class TusS3Store
 
             // Last, and only if absent: until this record exists the final upload is invisible, so a build that dies
             // before here never surfaces as an upload whose object is half-built.
-            await _stateStore.CreateCompletedRecordAsync(fileId, record, cancellationToken).ConfigureAwait(false);
+            await _stateStore.CreateCompletedRecordAsync(keys, fileId, record, cancellationToken).ConfigureAwait(false);
 
             _logger.LogS3FinalFileCreated(
                 fileId,
@@ -107,7 +110,7 @@ public sealed partial class TusS3Store
                 && e is not AmazonS3Exception { StatusCode: HttpStatusCode.PreconditionFailed }
             )
             {
-                await _DeleteUnrecordedFinalObjectAsync(writtenFileId).ConfigureAwait(false);
+                await _DeleteUnrecordedFinalObjectAsync(keys, writtenFileId).ConfigureAwait(false);
             }
 
             throw;
@@ -116,12 +119,12 @@ public sealed partial class TusS3Store
 
     // No client can reach a final upload without its record, so its object would only cost storage forever: nothing
     // lists finished objects, and the sweep keeps every object outside the working sets.
-    private async Task _DeleteUnrecordedFinalObjectAsync(string fileId)
+    private async Task _DeleteUnrecordedFinalObjectAsync(TusS3Keys keys, string fileId)
     {
         try
         {
             await _s3.DeleteObjectAsync(
-                    new DeleteObjectRequest { BucketName = _options.Bucket, Key = _keys.FinishedObject(fileId) },
+                    new DeleteObjectRequest { BucketName = _options.Bucket, Key = keys.FinishedObject(fileId) },
                     CancellationToken.None
                 )
                 .ConfigureAwait(false);
@@ -136,7 +139,11 @@ public sealed partial class TusS3Store
 
     // tusdotnet checks the partials before calling the store, but holds no lock while it builds the final upload, so
     // a partial may have changed since; the store checks again and reads each length from the completed record.
-    private async Task<long[]> _LoadPartialLengthsAsync(string[] partialFiles, CancellationToken cancellationToken)
+    private async Task<long[]> _LoadPartialLengthsAsync(
+        TusS3Keys keys,
+        string[] partialFiles,
+        CancellationToken cancellationToken
+    )
     {
         var lengths = new long[partialFiles.Length];
 
@@ -146,7 +153,7 @@ public sealed partial class TusS3Store
             await _EnsureValidFileIdAsync(partialFileId).ConfigureAwait(false);
 
             var upload =
-                await _stateStore.LoadAsync(partialFileId, cancellationToken).ConfigureAwait(false)
+                await _stateStore.LoadAsync(keys, partialFileId, cancellationToken).ConfigureAwait(false)
                 ?? throw new TusStoreException($"Partial file {partialFileId} does not exist");
 
             if ((upload.Completed?.Concat ?? upload.State?.Concat) is not { Kind: TusS3ConcatKind.Partial })
@@ -178,6 +185,7 @@ public sealed partial class TusS3Store
     }
 
     private async Task _PutFinalObjectAsync(
+        TusS3Keys keys,
         string fileId,
         string[] partialFiles,
         string? metadata,
@@ -187,7 +195,7 @@ public sealed partial class TusS3Store
     {
         if (plan.Count == 0)
         {
-            await _PutFinishedObjectAsync(fileId, metadata, [], 0, cancellationToken).ConfigureAwait(false);
+            await _PutFinishedObjectAsync(keys, fileId, metadata, [], 0, cancellationToken).ConfigureAwait(false);
 
             return;
         }
@@ -197,8 +205,8 @@ public sealed partial class TusS3Store
 
         try
         {
-            await _ReadConcatSourcesAsync(partialFiles, part, buffer, cancellationToken).ConfigureAwait(false);
-            await _PutFinishedObjectAsync(fileId, metadata, buffer, (int)part.Length, cancellationToken)
+            await _ReadConcatSourcesAsync(keys, partialFiles, part, buffer, cancellationToken).ConfigureAwait(false);
+            await _PutFinishedObjectAsync(keys, fileId, metadata, buffer, (int)part.Length, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
@@ -213,6 +221,7 @@ public sealed partial class TusS3Store
     /// that gives up should stop it. The abort after a failure runs without one, so it still happens then.
     /// </remarks>
     private async Task _BuildFinalMultipartUploadAsync(
+        TusS3Keys keys,
         string fileId,
         string[] partialFiles,
         string? metadata,
@@ -220,7 +229,8 @@ public sealed partial class TusS3Store
         CancellationToken cancellationToken
     )
     {
-        var uploadId = await _CreateMultipartUploadAsync(fileId, metadata, cancellationToken).ConfigureAwait(false);
+        var uploadId = await _CreateMultipartUploadAsync(keys, fileId, metadata, cancellationToken)
+            .ConfigureAwait(false);
 
         try
         {
@@ -240,9 +250,9 @@ public sealed partial class TusS3Store
                     async (part, token) =>
                     {
                         var etag = part.IsCopy
-                            ? await _CopyFinalPartAsync(fileId, uploadId, partialFiles, part, token)
+                            ? await _CopyFinalPartAsync(keys, fileId, uploadId, partialFiles, part, token)
                                 .ConfigureAwait(false)
-                            : await _StreamFinalPartAsync(fileId, uploadId, partialFiles, part, token)
+                            : await _StreamFinalPartAsync(keys, fileId, uploadId, partialFiles, part, token)
                                 .ConfigureAwait(false);
 
                         etags[part.Number - 1] = new PartETag(part.Number, etag);
@@ -253,7 +263,7 @@ public sealed partial class TusS3Store
             var request = new CompleteMultipartUploadRequest
             {
                 BucketName = _options.Bucket,
-                Key = _keys.FinishedObject(fileId),
+                Key = keys.FinishedObject(fileId),
                 UploadId = uploadId,
                 PartETags = [.. etags],
             };
@@ -262,13 +272,14 @@ public sealed partial class TusS3Store
         }
         catch
         {
-            await _AbortFinalMultipartUploadAsync(fileId, uploadId).ConfigureAwait(false);
+            await _AbortFinalMultipartUploadAsync(keys, fileId, uploadId).ConfigureAwait(false);
 
             throw;
         }
     }
 
     private async Task<string> _CopyFinalPartAsync(
+        TusS3Keys keys,
         string fileId,
         string uploadId,
         string[] partialFiles,
@@ -282,9 +293,9 @@ public sealed partial class TusS3Store
         var request = new CopyPartRequest
         {
             SourceBucket = _options.Bucket,
-            SourceKey = _keys.FinishedObject(partialFileId),
+            SourceKey = keys.FinishedObject(partialFileId),
             DestinationBucket = _options.Bucket,
-            DestinationKey = _keys.FinishedObject(fileId),
+            DestinationKey = keys.FinishedObject(fileId),
             UploadId = uploadId,
             PartNumber = part.Number,
             FirstByte = source.Offset,
@@ -304,6 +315,7 @@ public sealed partial class TusS3Store
     }
 
     private async Task<string> _StreamFinalPartAsync(
+        TusS3Keys keys,
         string fileId,
         string uploadId,
         string[] partialFiles,
@@ -315,13 +327,13 @@ public sealed partial class TusS3Store
 
         try
         {
-            await _ReadConcatSourcesAsync(partialFiles, part, buffer, cancellationToken).ConfigureAwait(false);
+            await _ReadConcatSourcesAsync(keys, partialFiles, part, buffer, cancellationToken).ConfigureAwait(false);
 
             return await TusS3Requests
                 .UploadPartAsync(
                     _s3,
                     _options,
-                    _keys.FinishedObject(fileId),
+                    keys.FinishedObject(fileId),
                     uploadId,
                     part.Number,
                     buffer,
@@ -339,6 +351,7 @@ public sealed partial class TusS3Store
     // The ranges fill non-overlapping slices of the buffer, so they are read concurrently, under the same bound as
     // the part uploads because each read holds a connection.
     private async Task _ReadConcatSourcesAsync(
+        TusS3Keys keys,
         string[] partialFiles,
         TusS3ConcatPart part,
         byte[] buffer,
@@ -374,7 +387,7 @@ public sealed partial class TusS3Store
                             .ReadRangeAsync(
                                 _s3,
                                 _options.Bucket,
-                                _keys.FinishedObject(partialFileId),
+                                keys.FinishedObject(partialFileId),
                                 source.Offset,
                                 buffer.AsMemory(positions[i], (int)source.Length),
                                 () =>
@@ -392,7 +405,7 @@ public sealed partial class TusS3Store
             .ConfigureAwait(false);
     }
 
-    private async Task _AbortFinalMultipartUploadAsync(string fileId, string uploadId)
+    private async Task _AbortFinalMultipartUploadAsync(TusS3Keys keys, string fileId, string uploadId)
     {
         try
         {
@@ -400,7 +413,7 @@ public sealed partial class TusS3Store
                     new AbortMultipartUploadRequest
                     {
                         BucketName = _options.Bucket,
-                        Key = _keys.FinishedObject(fileId),
+                        Key = keys.FinishedObject(fileId),
                         UploadId = uploadId,
                     },
                     CancellationToken.None
