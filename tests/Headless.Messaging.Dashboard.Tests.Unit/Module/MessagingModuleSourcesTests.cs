@@ -65,8 +65,7 @@ public sealed class MessagingModuleSourcesTests : TestBase
         monitoring
             .CountMessagesAsync(Arg.Any<MessageListQuery>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(call => new ValueTask<MessageCount>(
-                Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>())
-                    .ContinueWith(static _ => new MessageCount(0, false), TaskScheduler.Default)
+                HangingReads.NeverAnswerAsync<MessageCount>(call.Arg<CancellationToken>())
             ));
         hanging.GetMonitoringApi().Returns(monitoring);
         var module = _Module(primary, hanging, storeTimeout: TimeSpan.FromMilliseconds(200));

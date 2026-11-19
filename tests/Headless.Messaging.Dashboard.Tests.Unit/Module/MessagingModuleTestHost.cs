@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Dashboard;
 using Headless.Jobs;
 using Headless.Messaging;
@@ -228,5 +229,20 @@ internal sealed class RecordingEventPublisher : IDashboardEventPublisher
         {
             _changes.Add(change);
         }
+    }
+}
+
+/// <summary>Store reads that never answer, for the tests of a store that runs out of time.</summary>
+internal static class HangingReads
+{
+    /// <summary>
+    /// A read that ends only by throwing when its token is cancelled, as a provider's cancelled command does. A read that
+    /// returned a value on cancellation could beat the deadline's own cancellation and count as the store answering.
+    /// </summary>
+    public static async Task<T> NeverAnswerAsync<T>(CancellationToken cancellationToken)
+    {
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+
+        throw new UnreachableException("An infinite delay ends only by cancellation.");
     }
 }
