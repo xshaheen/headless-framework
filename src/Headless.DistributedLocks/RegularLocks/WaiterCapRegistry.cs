@@ -11,8 +11,9 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// This isolates only the cap-counting concern so multiple providers can share identical enforcement
-/// without duplicating the count map and the cap checks. Providers that also drive per-resource wake
-/// events (reset-event ref-counting) keep that lifecycle in their own type — it is not portable here.
+/// without duplicating the count map and the cap checks. Wake-ups on release live in
+/// <see cref="ReleaseWaiterRegistry"/>; a provider that caps waiters enters this registry first, so a
+/// refused waiter never registers for wake-ups.
 /// All access is serialized on an internal lock; <see cref="Enter"/>/<see cref="Exit"/> must be paired.
 /// </remarks>
 internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int? maxWaitersPerResource)
