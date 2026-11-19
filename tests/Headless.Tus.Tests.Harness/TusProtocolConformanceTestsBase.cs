@@ -88,6 +88,56 @@ public abstract class TusProtocolConformanceTestsBase<TStore>(ITusConformanceBac
         }
     }
 
+    public virtual async Task patch_declaring_length_below_offset_is_rejected_and_keeps_length_deferred()
+    {
+        using var host = await CreateHostAsync();
+        using var client = host.GetTestClient();
+
+        // given - a deferred-length upload that already holds 100 bytes
+        using var create = new HttpRequestMessage(HttpMethod.Post, Endpoint);
+        create.Headers.Add("Tus-Resumable", "1.0.0");
+        create.Headers.Add("Upload-Defer-Length", "1");
+        using var created = await client.SendAsync(create, AbortToken);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var location = created.Headers.Location!.ToString();
+
+        var content = Faker.Random.Bytes(100);
+        using (var first = await PatchAsync(client, location, content, offset: 0))
+        {
+            first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        // when - a PATCH declares a length below the bytes already uploaded
+        using (var shrink = await PatchAsync(client, location, [], offset: content.Length, uploadLength: 50))
+        {
+            // then - the request is refused
+            shrink.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        // and HEAD still reports the length as deferred with the offset unchanged
+        using (var head = await HeadAsync(client, location))
+        {
+            head.Headers.GetValues("Upload-Defer-Length").Should().ContainSingle().Which.Should().Be("1");
+            head.Headers.Contains("Upload-Length").Should().BeFalse();
+            head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("100");
+        }
+
+        // and when - a PATCH declares a length equal to the bytes held
+        using (
+            var finish = await PatchAsync(client, location, [], offset: content.Length, uploadLength: content.Length)
+        )
+        {
+            finish.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        // then - the upload is complete
+        using (var head = await HeadAsync(client, location))
+        {
+            head.Headers.GetValues("Upload-Length").Should().ContainSingle().Which.Should().Be("100");
+            head.Headers.GetValues("Upload-Offset").Should().ContainSingle().Which.Should().Be("100");
+        }
+    }
+
     public virtual async Task patch_advances_offset_and_reports_expiration()
     {
         using var host = await CreateHostAsync();

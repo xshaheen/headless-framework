@@ -234,6 +234,12 @@ public sealed class TusProtocolTests(TusAzureFixture fixture) : TusProtocolConfo
     }
 
     [Fact]
+    public override Task patch_declaring_length_below_offset_is_rejected_and_keeps_length_deferred()
+    {
+        return base.patch_declaring_length_below_offset_is_rejected_and_keeps_length_deferred();
+    }
+
+    [Fact]
     public override Task patch_advances_offset_and_reports_expiration()
     {
         return base.patch_advances_offset_and_reports_expiration();

@@ -28,6 +28,10 @@ public sealed class R2TusS3StoreConformanceTests(TusS3R2Fixture fixture)
         base.should_upload_data_before_upload_length_is_known();
 
     [Fact]
+    public override Task should_reject_upload_length_below_uploaded_bytes() =>
+        base.should_reject_upload_length_below_uploaded_bytes();
+
+    [Fact]
     public override Task should_check_file_existence() => base.should_check_file_existence();
 
     [Fact]
@@ -74,6 +78,10 @@ public sealed class R2TusS3ProtocolConformanceTests(TusS3R2Fixture fixture)
     [Fact]
     public override Task defer_length_upload_reports_defer_header_until_length_is_declared() =>
         base.defer_length_upload_reports_defer_header_until_length_is_declared();
+
+    [Fact]
+    public override Task patch_declaring_length_below_offset_is_rejected_and_keeps_length_deferred() =>
+        base.patch_declaring_length_below_offset_is_rejected_and_keeps_length_deferred();
 
     [Fact]
     public override Task patch_advances_offset_and_reports_expiration() =>
