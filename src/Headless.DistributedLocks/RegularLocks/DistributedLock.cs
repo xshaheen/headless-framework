@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
-using Nito.AsyncEx;
 using Polly;
 using Polly.Retry;
 
@@ -66,13 +64,14 @@ public sealed class DistributedLock(
     // Short pipeline for query/renew operations where 5 attempts mirror the prior default.
     private readonly ResiliencePipeline _queryPipeline = _BuildQueryPipeline(logger);
 
-    private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(
-        StringComparer.Ordinal
+    private readonly ReleaseWaiterRegistry _releaseWaiters = new();
+
+    private readonly WaiterCapRegistry _waiterCaps = new(
+        lockOptions.MaxConcurrentWaitingResources,
+        lockOptions.MaxWaitersPerResource
     );
 
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
-
-    private readonly Lock _resetEventLock = new();
 
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
 
@@ -97,8 +96,6 @@ public sealed class DistributedLock(
 
     // Configurable limits from options
     private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
-    private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
-    private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
 
     /// <inheritdoc />
     public TimeProvider TimeProvider => timeProvider;
@@ -212,7 +209,7 @@ public sealed class DistributedLock(
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
 
         var acquireResult = DistributedLockAcquireResult.Failed;
-        ResetEventWithRefCount? autoResetEvent = null;
+        ReleaseWaiterRegistry.Entry? releaseWaiter = null;
         var retryAttempt = 0;
         var isFirstAttempt = true;
         var insertFaulted = false;
@@ -284,26 +281,25 @@ public sealed class DistributedLock(
                     break;
                 }
 
-                autoResetEvent ??= _IncrementResetEvent(resource);
+                releaseWaiter ??= _EnterReleaseWaiter(resource);
 
                 // Use exponential backoff instead of storage call
                 var delayAmount = DistributedLockCoreHelpers.GetBackoffDelay(retryAttempt++);
                 logger.LogDelayBeforeRetry(resource, leaseId, delayAmount);
 
-                // Wait until we get a message saying the lock was released by (autoResetEvent.Target.Set())
-                // or delayAmount has elapsed
-                // or acquire timeout cancellation has been requested
+                // Wake on a release signal for this resource, the end of the backoff, or the acquire timeout, so a
+                // released lock is retried at once instead of after the full backoff.
                 using var delayCts = timeProvider.CreateCancellationTokenSource(delayAmount);
                 using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
                     delayCts.Token,
                     cts.Token
                 );
-                await autoResetEvent.Target.SafeWaitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
+                await releaseWaiter.WaitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
             } while (!cts.IsCancellationRequested);
         }
         finally
         {
-            _DecrementResetEvent(autoResetEvent, resource);
+            _ExitReleaseWaiter(resource, releaseWaiter);
         }
 
         var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
@@ -518,61 +514,23 @@ public sealed class DistributedLock(
         return handle;
     }
 
-    private ResetEventWithRefCount _IncrementResetEvent(string resource)
+    private ReleaseWaiterRegistry.Entry _EnterReleaseWaiter(string resource)
     {
-        lock (_resetEventLock)
-        {
-            if (_autoResetEvents.TryGetValue(resource, out var existing))
-            {
-                // Prevent unbounded waiters per resource (DoS protection)
-                if (_maxWaitersPerResource is { } max)
-                {
-                    Ensure.True(existing.RefCount < max, $"Maximum waiters per resource ({max}) exceeded");
-                }
+        // The cap check runs first so a waiter refused by a cap never registers for wake-ups.
+        _waiterCaps.Enter(resource);
 
-                existing.Increment();
-
-                return existing;
-            }
-
-            // Prevent unbounded unique resources (DoS protection)
-            if (_maxConcurrentWaitingResources is { } maxResources)
-            {
-                Ensure.True(
-                    _autoResetEvents.Count < maxResources,
-                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
-                );
-            }
-
-            var newEvent = new ResetEventWithRefCount();
-            _autoResetEvents[resource] = newEvent;
-
-            return newEvent;
-        }
+        return _releaseWaiters.Enter(resource);
     }
 
-    private void _DecrementResetEvent(ResetEventWithRefCount? autoResetEvent, string resource)
+    private void _ExitReleaseWaiter(string resource, ReleaseWaiterRegistry.Entry? releaseWaiter)
     {
-        if (autoResetEvent is null)
+        if (releaseWaiter is null)
         {
             return;
         }
 
-        lock (_resetEventLock)
-        {
-            // Always decrement - we incremented when we got this reference
-            var newCount = autoResetEvent.Decrement();
-
-            // Only remove if this is still the current entry AND ref count hit zero
-            if (
-                newCount == 0
-                && _autoResetEvents.TryGetValue(resource, out var exist)
-                && ReferenceEquals(exist, autoResetEvent)
-            )
-            {
-                _autoResetEvents.TryRemove(resource, out _);
-            }
-        }
+        _releaseWaiters.Exit(resource, releaseWaiter);
+        _waiterCaps.Exit(resource);
     }
 
     private async ValueTask<(DistributedLockAcquireResult Result, bool Faulted)> _TryInsertAsync(
@@ -961,24 +919,6 @@ public sealed class DistributedLock(
             .Build();
     }
 
-    private sealed class ResetEventWithRefCount
-    {
-        public int RefCount { get; private set; } = 1;
-
-        public AsyncAutoResetEvent Target { get; } = new();
-
-        // No Interlocked needed - all access protected by _resetEventLock
-        public void Increment()
-        {
-            RefCount++;
-        }
-
-        public int Decrement()
-        {
-            return --RefCount;
-        }
-    }
-
     #endregion
 
     #region Release Listener
@@ -987,14 +927,8 @@ public sealed class DistributedLock(
     {
         logger.LogGotLockReleasedMessage(resource, leaseId);
 
-        // Signal waiters immediately when lock released instead of waiting for delay timeout.
-        // No lock needed - ConcurrentDictionary.TryGetValue is thread-safe for reads.
-        // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
-        // ReSharper disable once InconsistentlySynchronizedField
-        if (_autoResetEvents.TryGetValue(resource, out var autoResetEvent))
-        {
-            autoResetEvent.Target.Set();
-        }
+        // Wake one waiter now instead of letting it sleep out its backoff.
+        _releaseWaiters.Signal(resource);
 
         _monitorRegistry.NudgeActive(resource);
     }

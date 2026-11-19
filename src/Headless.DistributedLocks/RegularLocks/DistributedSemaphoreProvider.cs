@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
-using Nito.AsyncEx;
 using Polly;
 
 namespace Headless.DistributedLocks;
@@ -46,15 +44,15 @@ internal sealed class DistributedSemaphoreProvider(
 
     private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(logger);
 
-    private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(
-        StringComparer.Ordinal
+    private readonly ReleaseWaiterRegistry _releaseWaiters = new();
+
+    private readonly WaiterCapRegistry _waiterCaps = new(
+        lockOptions.MaxConcurrentWaitingResources,
+        lockOptions.MaxWaitersPerResource
     );
 
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
-    private readonly Lock _resetEventLock = new();
     private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
-    private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
-    private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
     private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
     private readonly string _keyPrefix = lockOptions.KeyPrefix;
 
@@ -223,7 +221,7 @@ internal sealed class DistributedSemaphoreProvider(
 
         using var timeoutCts = timeProvider.CreateCancellationTokenSource(acquireTimeout ?? DefaultAcquireTimeout);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
-        ResetEventWithRefCount? autoResetEvent = null;
+        ReleaseWaiterRegistry.Entry? releaseWaiter = null;
         var retryAttempt = 0;
         var isFirstAttempt = true;
         DistributedLockAcquireResult result;
@@ -265,14 +263,14 @@ internal sealed class DistributedSemaphoreProvider(
                     break;
                 }
 
-                autoResetEvent ??= _IncrementResetEvent(resource);
+                releaseWaiter ??= _EnterReleaseWaiter(resource);
                 var delayAmount = DistributedLockCoreHelpers.GetBackoffDelay(retryAttempt++);
                 using var delayCts = timeProvider.CreateCancellationTokenSource(delayAmount);
                 using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
                     delayCts.Token,
                     cts.Token
                 );
-                await autoResetEvent.Target.SafeWaitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
+                await releaseWaiter.WaitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
             } while (!cts.IsCancellationRequested);
         }
         catch (OperationCanceledException)
@@ -290,7 +288,7 @@ internal sealed class DistributedSemaphoreProvider(
         }
         finally
         {
-            _DecrementResetEvent(autoResetEvent, resource);
+            _ExitReleaseWaiter(resource, releaseWaiter);
         }
 
         var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
@@ -500,67 +498,29 @@ internal sealed class DistributedSemaphoreProvider(
         return _keyPrefix + resource;
     }
 
-    private ResetEventWithRefCount _IncrementResetEvent(string resource)
+    private ReleaseWaiterRegistry.Entry _EnterReleaseWaiter(string resource)
     {
-        lock (_resetEventLock)
-        {
-            if (_autoResetEvents.TryGetValue(resource, out var existing))
-            {
-                if (_maxWaitersPerResource is { } max)
-                {
-                    Ensure.True(existing.RefCount < max, $"Maximum waiters per resource ({max}) exceeded");
-                }
+        // The cap check runs first so a waiter refused by a cap never registers for wake-ups.
+        _waiterCaps.Enter(resource);
 
-                existing.Increment();
-
-                return existing;
-            }
-
-            if (_maxConcurrentWaitingResources is { } maxResources)
-            {
-                Ensure.True(
-                    _autoResetEvents.Count < maxResources,
-                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
-                );
-            }
-
-            var newEvent = new ResetEventWithRefCount();
-            _autoResetEvents[resource] = newEvent;
-
-            return newEvent;
-        }
+        return _releaseWaiters.Enter(resource);
     }
 
-    private void _DecrementResetEvent(ResetEventWithRefCount? autoResetEvent, string resource)
+    private void _ExitReleaseWaiter(string resource, ReleaseWaiterRegistry.Entry? releaseWaiter)
     {
-        if (autoResetEvent is null)
+        if (releaseWaiter is null)
         {
             return;
         }
 
-        lock (_resetEventLock)
-        {
-            var newCount = autoResetEvent.Decrement();
-            if (
-                newCount == 0
-                && _autoResetEvents.TryGetValue(resource, out var existing)
-                && ReferenceEquals(existing, autoResetEvent)
-            )
-            {
-                _autoResetEvents.TryRemove(resource, out _);
-            }
-        }
+        _releaseWaiters.Exit(resource, releaseWaiter);
+        _waiterCaps.Exit(resource);
     }
 
     void IDistributedLockReleaseListener.OnReleased(string resource, string leaseId)
     {
-        // _autoResetEvents is a ConcurrentDictionary (self-synchronizing). _resetEventLock guards the compound
-        // refcount invariant (count-check+create / decrement+conditional-remove), not this lock-free read fast path.
-        // ReSharper disable once InconsistentlySynchronizedField
-        if (_autoResetEvents.TryGetValue(resource, out var autoResetEvent))
-        {
-            autoResetEvent.Target.Set();
-        }
+        // Wake one waiter now instead of letting it sleep out its backoff.
+        _releaseWaiters.Signal(resource);
 
         _monitorRegistry.NudgeActive(resource);
     }
@@ -606,23 +566,6 @@ internal sealed class DistributedSemaphoreProvider(
         )
         {
             return provider.TryAcquireAsync(Resource, MaxCount, options, cancellationToken);
-        }
-    }
-
-    private sealed class ResetEventWithRefCount
-    {
-        public int RefCount { get; private set; } = 1;
-
-        public AsyncAutoResetEvent Target { get; } = new();
-
-        public void Increment()
-        {
-            RefCount++;
-        }
-
-        public int Decrement()
-        {
-            return --RefCount;
         }
     }
 }
