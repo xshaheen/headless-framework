@@ -62,11 +62,10 @@ internal static class JobsClaimedWrite
             return released == LeaseSettlementStatus.Released;
         }
 
-        // A start must find the row still Queued, so a duplicate start of the same claim cannot restart a running row.
-        var condition =
-            writesStatus && state.Status == JobStatus.InProgress
-                ? $"{set.Column(nameof(TimeJobEntity.Status))} = {set.Parameter(nameof(TimeJobEntity.Status), JobStatus.Queued)}"
-                : null;
+        // A start must find the row not yet running, so a duplicate start of the same claim cannot restart it. The SQL
+        // restates ChainRunConditionRules.CanStart: a claimed row is Queued, and a chain child claimed under its root's
+        // lease is still Idle. Cron occurrences have no parent column and are always claimed Queued.
+        var condition = writesStatus && state.Status == JobStatus.InProgress ? _StartCondition(set, state.Type) : null;
         var written = await FencedRows
             .WriteAsync<Guid, bool>(
                 table,
@@ -80,6 +79,21 @@ internal static class JobsClaimedWrite
             .ConfigureAwait(false);
 
         return written.IsAccepted;
+    }
+
+    private static string _StartCondition(JobsRowSet set, JobType type)
+    {
+        var status = set.Column(nameof(TimeJobEntity.Status));
+        var queued = $"{status} = {set.Parameter(nameof(TimeJobEntity.Status), JobStatus.Queued)}";
+
+        if (type != JobType.TimeJob)
+        {
+            return queued;
+        }
+
+        var idle = set.Parameter(nameof(TimeJobEntity.Status), JobStatus.Idle);
+
+        return $"({queued} OR ({status} = {idle} AND {set.Column(nameof(TimeJobEntity.ParentId))} IS NOT NULL))";
     }
 
     /// <summary>
