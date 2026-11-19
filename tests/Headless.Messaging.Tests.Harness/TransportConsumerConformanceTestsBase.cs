@@ -84,6 +84,9 @@ public sealed class TransportConsumerConformanceSession(
 
     public IConsumerClient Consumer { get; } = consumer;
 
+    /// <summary>Gets whether the consumer's <see cref="IConsumerClient.ListeningAsync"/> has started and not yet returned.</summary>
+    public bool IsListening => _listeningTask is { IsCompleted: false };
+
     public async Task StartAsync(
         Func<TransportConformanceDelivery, Task>? onDelivery = null,
         Action<LogMessageEventArgs>? onLog = null,
@@ -823,6 +826,25 @@ public abstract class TransportConsumerConformanceTestsBase : TransportConsumerC
         await session.StopAsync(TimeSpan.FromSeconds(2));
 
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    /// <summary>
+    /// A client listens until its token is canceled. One that returns earlier, as a push-based client that only starts
+    /// the broker's receivers would, leaves the messaging core with no loop to watch, so the core reads it as a failure.
+    /// </summary>
+    [Fact]
+    public virtual async Task should_keep_listening_until_the_listening_token_is_canceled()
+    {
+        RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
+
+        await using var session = await CreateSessionAsync(AbortToken);
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        (await session.RemainsEmptyAsync(TimeSpan.FromSeconds(1), AbortToken)).Should().BeTrue();
+        session.IsListening.Should().BeTrue("ListeningAsync must not return before its token is canceled");
+
+        await session.StopAsync(TimeSpan.FromSeconds(2));
+        session.IsListening.Should().BeFalse("ListeningAsync must return once its token is canceled");
     }
 
     [Guarantee("MSG-SHUT-03")]

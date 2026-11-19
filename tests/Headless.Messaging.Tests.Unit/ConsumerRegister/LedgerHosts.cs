@@ -44,7 +44,8 @@ internal static class LedgerHosts
     public static Task<SimulationHost> StartAsync(
         PipelineProbe probe,
         CancellationToken cancellationToken,
-        Action<MessagingSetupBuilder>? configure = null
+        Action<MessagingSetupBuilder>? configure = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         var broker = new SimulatedBroker(new SimulationClock());
@@ -69,6 +70,7 @@ internal static class LedgerHosts
                     messaging.Message<PipelineOrder>(PipelineOrder.Name);
                     messaging.Message<PipelineRefund>(PipelineRefund.Name);
                 });
+                configureServices?.Invoke(services);
             },
             broker,
             cancellationToken

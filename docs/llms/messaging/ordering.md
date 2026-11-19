@@ -58,7 +58,7 @@ await queue.EnqueueAsync(order, new QueueOptions { RoutingAffinityKey = order.Or
 
 - `Headless:Messaging:Consumers:{identity}:Sequential` is `true` or `false` and replaces the `Tune` value. Any other value fails startup.
 - The host manifest writes `sequential: true` with `activeHost`: `keyRouted`, `broker`, `lock`, or `none`.
-- Logs: 4142 (Warning) no messaging lock, every host listens. 4143 (Information) this host took the lock and listens. 4144 (Warning) this host lost the lock and stopped listening. 4145 (Warning) acquiring the lock threw; the host retries after the interval. A standby host that finds the lock held logs nothing above Debug.
+- Logs: 4142 (Warning) no messaging lock, every host listens. 4143 (Information) this host took the lock and listens. 4144 (Warning) this host lost the lock and stopped listening. 4145 (Warning) acquiring the lock threw; the host retries after the interval. 4146 (Error) the listening client returned before the host stopped it; the host releases the lock and competes again after the interval. A standby host that finds the lock held logs nothing above Debug.
 
 ## Transport-Specific Ordering
 
