@@ -216,7 +216,7 @@ public sealed class ChecksumTrailerVerifiedOffsetTests(TusAzureFixture fixture) 
         }
 
         (await _store.GetExpirationAsync(fileId, AbortToken)).Should().BeNull();
-        (await _ReadContentAsync(fileId)).Should().Equal(chunks.SelectMany(chunk => chunk).ToArray());
+        (await _ReadContentAsync(fileId)).Should().Equal([.. chunks.SelectMany(chunk => chunk)]);
     }
 
     /// <summary>One PATCH whose digest arrives as a trailer: the append, then the verification tusdotnet runs.</summary>
@@ -259,7 +259,7 @@ public sealed class ChecksumTrailerVerifiedOffsetTests(TusAzureFixture fixture) 
     private void _BeginTrailerRequest(byte[]? digest)
     {
         var context = new DefaultHttpContext();
-        context.Request.Headers["Trailer"] = "Upload-Checksum";
+        context.Request.Headers.Trailer = "Upload-Checksum";
 
         var trailers = new HeaderDictionary();
 

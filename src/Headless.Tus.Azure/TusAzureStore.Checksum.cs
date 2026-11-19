@@ -76,10 +76,10 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         var request = _httpContextAccessor?.HttpContext?.Request;
 
         if (
-            request is null
-            || !request
-                .GetDeclaredTrailers()
+            request
+                ?.GetDeclaredTrailers()
                 .Any(static name => string.Equals(name, _UploadChecksumTrailer, StringComparison.Ordinal))
+            is not true
         )
         {
             return false;
