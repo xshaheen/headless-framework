@@ -197,4 +197,10 @@ public abstract class SqlServerChainConformanceTestsBase<TFixture>(TFixture fixt
     {
         return base.deep_chain_claim_truncates_at_configured_depth_without_erroring();
     }
+
+    [Fact]
+    public override Task running_chain_child_records_its_start()
+    {
+        return base.running_chain_child_records_its_start();
+    }
 }

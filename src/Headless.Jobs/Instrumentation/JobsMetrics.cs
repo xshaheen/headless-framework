@@ -323,6 +323,7 @@ internal static class JobsMetrics
             JobsLeaseLossReason.CompletionRejected => "completion_rejected",
             JobsLeaseLossReason.ReleaseUnmatched => "release_unmatched",
             JobsLeaseLossReason.ReleaseFailed => "release_failed",
+            JobsLeaseLossReason.StartRejected => "start_rejected",
             _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unknown lease-loss reason."),
         };
     }

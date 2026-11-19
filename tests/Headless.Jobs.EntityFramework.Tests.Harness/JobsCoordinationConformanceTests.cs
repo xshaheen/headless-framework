@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Diagnostics;
 using Headless.Coordination;
 using Headless.Fencing;
 using Headless.Jobs;
 using Headless.Jobs.Internal;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -804,19 +804,13 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             disposed = true;
 
             // B's bridge should reclaim A's Queued row back to Idle. NodeLeft fires shortly after DeadThreshold.
-            await _WaitUntilAsync(
-                async () =>
-                {
-                    var (status, ownerId) = await fixture.ReadTimeJobAsync(jobId, ct);
-                    return status == (int)JobStatus.Idle && ownerId is null;
-                },
+            await Eventually.UntilAsync(
+                probeCt => fixture.ReadTimeJobAsync(jobId, probeCt),
+                row => row == ((int)JobStatus.Idle, null),
                 timeout: TimeSpan.FromSeconds(20),
-                ct
+                interval: TimeSpan.FromMilliseconds(250),
+                cancellationToken: ct
             );
-
-            var (finalStatus, finalOwnerId) = await fixture.ReadTimeJobAsync(jobId, ct);
-            finalStatus.Should().Be((int)JobStatus.Idle);
-            finalOwnerId.Should().BeNull();
         }
         finally
         {
@@ -2672,21 +2666,4 @@ public abstract partial class JobsCoordinationConformanceTests<TFixture>(TFixtur
             ScheduleRevision = revision,
             OnNodeDeath = definition.OnNodeDeath,
         };
-
-    private static async Task _WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken ct)
-    {
-        var stopwatch = Stopwatch.StartNew();
-
-        while (stopwatch.Elapsed < timeout)
-        {
-            if (await condition())
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
-        }
-
-        throw new TimeoutException($"Condition was not satisfied within {timeout}.");
-    }
 }

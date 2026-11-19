@@ -89,6 +89,7 @@ Register one with AddHeadlessCoordination(...) before AddHeadlessJobs(... UseEnt
 | `scheduler.DeadNodeReconcileInterval` | `null` (half the coordination `DeadRetentionWindow`) | See [execution.md](execution.md#node-identity-and-recovery) |
 
 - **Object names follow the database.** On PostgreSQL every Jobs object is snake_case: tables `time_jobs`, `cron_jobs`, `cron_job_occurrences`, and `time_job_idempotency_reservations`, with columns, keys, and indexes to match. SQL Server and other providers use PascalCase (`TimeJobs`, `ExecutionTime`). Your own `ToTable` and `HasColumnName` mappings still apply, including in the claim SQL.
+- **Cron last-run index.** The `(CronJobId, ExecutionTime DESC, Id DESC)` occurrence index (`ix_cron_job_occurrences_cron_job_id_execution_time_id` on PostgreSQL), which also carries `Status` and `ExecutedAt`, hands the dashboard's last-run-per-cron-job read its rows already in order on PostgreSQL and SQL Server, so that read scans the occurrence history once and never sorts it.
 - **Attempt history tables** are `TimeJobAttempts` and `CronJobOccurrenceAttempts` (snake_case on PostgreSQL). A model without them keeps working with no attempt history.
 - **Cron-expression cache.** The store reuses the host's `ICache` (`Headless.Caching.InMemory`, `.Redis`, or `.Hybrid`) when one is registered. Do not install a Jobs-specific cache package. Without an `ICache`, cron expressions are read from the database. Cache failures fall back to the database.
 
