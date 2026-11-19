@@ -28,6 +28,6 @@ public sealed partial class TusAzureStore : ITusReadableStore
         var blobClient = _GetBlobClient(fileId);
         var tusFile = await _LoadFileAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
-        return tusFile == null ? null : new TusAzureFileWrapper(tusFile, tusFile.VerifiedLength, blobClient, _logger);
+        return tusFile == null ? null : new TusAzureFileWrapper(tusFile, blobClient, _logger);
     }
 }
