@@ -339,6 +339,7 @@ A keyed `ITransportTopologyProvisioner` becomes the named transport's `topology-
 
 - Publish `message.Body` as the broker payload and preserve `message.Headers`.
 - Return `OperateResult.Success` when the broker accepts it. Let `OperationCanceledException` propagate.
+- Observe only the `cancellationToken` the core passes, never a host-stopping token of your own. The core cancels it at `MessagingOptions.TransportPublishTimeout`, and not on host shutdown, so a send in flight when the host stops still waits for the broker's confirm.
 - Return `OperateResult.BrokerUnreachable(new PublisherSentFailedException(...))` when the broker could not be reached (a lost connection, a timeout, a broker that reports itself down). It counts toward [broker reachability](operations.md#broker-reachability).
 - Return `OperateResult.Failed(new PublisherSentFailedException(...))` when the broker refused this message. It does not count toward reachability.
 - After `DisposeAsync`, return `OperateResult.Failed(new ObjectDisposedException(...))` without contacting the broker, and do not throw. This holds even when a shared pool owns the connection.
