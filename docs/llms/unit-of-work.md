@@ -202,7 +202,7 @@ A host has one Jobs store and one primary messaging storage, plus one additional
 - The database name must match exactly.
 - The data source must match after a conservative normalization: the host compares case-insensitively, a `tcp:` or `tcp://` prefix is ignored, and `localhost`, `127.0.0.1`, `::1`, `[::1]`, `.`, and `(local)` name the same host. Ports, instance names, and Unix-socket paths compare exactly.
 - A multi-host Npgsql source (`Host=pg1,pg2`) matches when the unit's connection reaches one of the listed hosts, each with its inline port or the shared `Port`. The database name must still match.
-- On SQLite, the file path compares after symbolic links resolve, so name the file by its real path in every connection string a store and a unit share.
+- On SQLite, files compare by their real path: both the configured path and the path an open connection reports have every symbolic link along them resolved, so a store and a unit that reach one file through different links (the macOS temp directory, `/var` and `/private/var`) share it. A relative path resolves against the process working directory, as SQLite opens it. On Windows the comparison ignores case. An in-memory or `file:` URI data source names no comparable file and is refused.
 
 So spell a database the same way in every connection string. A false match would commit a row into a database whose relay or poller never reads it, so the check refuses anything it cannot prove and names the mismatch.
 
@@ -656,7 +656,7 @@ dotnet add package Headless.Sql.Sqlite
 - `IUnitOfWorkFactory.Enlist(connection, transaction)`: observed mode, with explicit completion as on PostgreSQL. Begin the transaction with `BeginTransaction()` (immediate). A `deferred: true` transaction that reads before it writes can fail with `SQLITE_BUSY` when another writer got there first.
 - `IUnitOfWorkFactory.RunAsync(connection, operation, …)`, with `TResult` overloads: joins a live unit on the connection, else runs begin, operation, and complete. Never replays.
 - `IUnitOfWorkFactory.RunAsync(connectionFactory, operation, …)`, with the `isolation, retry` overload and `TResult` overloads: each attempt takes a new `SqliteConnection` from the factory, as on SQL Server. `SQLITE_BUSY` and `SQLITE_LOCKED` before the commit are transient under `UnitOfWorkRetryOptions.DefaultShouldHandle`.
-- No provider-specific registration and no provider options. Name the database file by its real path in every connection string a store and a unit share (see [Database identity](#database-identity-and-several-databases)).
+- No provider-specific registration and no provider options. A store and a unit share a database file when their paths resolve to the same real file (see [Database identity](#database-identity-and-several-databases)).
 
 ---
 
