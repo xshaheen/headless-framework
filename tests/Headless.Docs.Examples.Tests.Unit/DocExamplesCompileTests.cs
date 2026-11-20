@@ -18,6 +18,7 @@ public sealed class DocExamplesCompileTests : TestBase
         ["docs/llms/messaging.md"] = ["Common.cs", "Messaging.cs"],
         ["docs/llms/jobs.md"] = ["Common.cs", "Jobs.cs"],
         ["docs/llms/dashboards.md"] = ["Common.cs", "Dashboards.cs"],
+        ["docs/llms/encryption.md"] = ["Common.cs", "Encryption.cs"],
     };
 
     // Every compiled document: each entry guide plus the topic files under docs/llms/<domain>/, which share its preludes.
