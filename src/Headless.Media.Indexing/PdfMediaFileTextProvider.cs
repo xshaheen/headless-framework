@@ -18,8 +18,8 @@ namespace Headless.Media.Indexing;
 /// hold seekable streams should prefer to pass them directly.
 /// </para>
 /// <para>
-/// PdfPig inflates each Flate-encoded stream whole in memory, so a stream that would inflate past 100 MiB is refused
-/// before it is inflated: a few kilobytes of a crafted PDF can otherwise expand to gigabytes.
+/// PdfPig decodes each Flate- or LZW-encoded stream whole in memory, so a stream that would decode past 100 MiB is
+/// refused before it is decoded: a few kilobytes of a crafted PDF can otherwise expand to gigabytes.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -48,8 +48,8 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before extraction completes.
     /// </exception>
     /// <exception cref="InvalidDataException">
-    /// Thrown when a non-seekable <paramref name="fileStream"/> exceeds 100 MiB, a Flate-encoded stream in the PDF
-    /// inflates past 100 MiB, or the extracted text exceeds 16 Mi characters.
+    /// Thrown when a non-seekable <paramref name="fileStream"/> exceeds 100 MiB, a Flate- or LZW-encoded stream in the
+    /// PDF decodes past 100 MiB, or the extracted text exceeds 16 Mi characters.
     /// </exception>
     public async Task<string> GetTextAsync(
         Stream fileStream,
