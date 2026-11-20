@@ -94,6 +94,8 @@ A data key is random and stored, not derived, so deleting its row destroys it. E
 A blind index is a deterministic keyed hash of a value, stored next to its `EncryptedValue`. It lets the application find rows by exact match without storing or querying the plaintext. The hash key is the scope's Lookup data key, so the database, its indexes, and its query logs see only hashes. A tenant shred destroys the tenant's hash key with its data key.
 
 ```csharp
+using Microsoft.EntityFrameworkCore;
+
 private static readonly BlindIndexContext _NationalIdIndex = new("Beneficiary.NationalId");
 
 // Write: encrypt the value and hash it under the current tenant's keys.
@@ -122,7 +124,7 @@ var match = await db.Beneficiaries.Where(b => hashes.Contains(b.NationalIdHash))
 - **Input text.** Every `IBlindIndexer` method encodes the value as strict UTF-8 and throws `ArgumentException` on a lone surrogate.
 - **Writes.** `ComputeAsync` hashes under the scope's active Lookup key and creates it on first use, like encryption. On a shredded scope it throws `DataKeyScopeShreddedException`.
 - **Queries.** `ComputeCandidatesAsync` hashes under every stored version, newest first, and never creates a key. A scope with no Lookup key, or a shredded scope, returns no candidates, so the query matches nothing. It reads the scope's version list from the store on every call, so a rotation, retirement, or shred on another host shows at once.
-- **Rotation.** `RotateAsync(scope, DataKeyKind.Lookup)` adds a version. `ComputeAsync` uses it once each host's cached active key expires. Meanwhile `ComputeCandidatesAsync` returns both versions, so no row stops matching. A rehash job decrypts each row's value and calls `RehashAsync(context, value, storedKeyVersion)`. It returns the hash to store under the active version, or `null` when the row is already current. It also returns `null` when the stored version is above this host's cached active version, so a host that has not seen the rotation never moves a row back. When the job has finished and `KeyCacheDuration` has passed since the rotation, call `RetireAsync(scope, DataKeyKind.Lookup, oldVersion)`. Queries then stop hashing a candidate for that version. `RetireAsync` refuses Data keys and the active version.
+- **Rotation.** `RotateAsync(scope, DataKeyKind.Lookup)` adds a version. `ComputeAsync` uses it once each host's cached active key expires. Meanwhile `ComputeCandidatesAsync` returns both versions, so no row stops matching. A rehash job decrypts each row's value and calls `RehashAsync(context, value, storedKeyVersion)`. It returns the hash to store under the active version, or `null` when the row is already current. It also returns `null` when the stored version is above this host's cached active version, so a host that has not seen the rotation never moves a row back. When the job has finished and no row still carries the old version, call `RetireAsync(scope, DataKeyKind.Lookup, oldVersion)`. [Re-encrypting and rehashing after a rotation](#re-encrypting-and-rehashing-after-a-rotation) gives the job and the order of its steps. Queries then stop hashing a candidate for that version. `RetireAsync` refuses Data keys and the active version.
 - **Shredding.** A blind index cannot be recomputed after its tenant is shredded, but the hashes left in the rows still link that tenant's rows to each other. Clear the hash columns when you erase the tenant's data. Host-scope hashes are unaffected by a tenant shred.
 - **Not supported.** Prefix, partial, and range matching. Automatic hashing in an EF Core converter: compute the hash explicitly next to `EncryptAsync`.
 - **Logging.** The lookup key, the derived hash key, and the input value are never logged or put in an exception message.
@@ -145,7 +147,7 @@ Decryption looks up the key by the id in the frame. It never tries keys in turn.
 ### Key lifecycle
 
 - **Creation.** The first encryption for a scope with no data key creates version 1, with one KEK wrap. Two hosts racing on a new tenant agree on one key. To fail onboarding early when the KEK is unreachable, call `IDataKeyManager.EnsureAsync(tenantId)`: it creates the tenant's Data and Lookup keys up front.
-- **Rotation.** `RotateAsync(scope, DataKeyKind.Data)` adds the next version, which encrypts every new value. Older versions keep decrypting. `FieldDecryption.KeyIsCurrent` is `false` for a value under an older version, so a re-encryption job decrypts and encrypts it again. Other hosts switch to the new version when their cached active key expires.
+- **Rotation.** `RotateAsync(scope, DataKeyKind.Data)` adds the next version, which encrypts every new value. Older versions keep decrypting. `FieldDecryption.KeyIsCurrent` is `false` for a value under an older version, so a re-encryption job decrypts and encrypts it again. See [Re-encrypting and rehashing after a rotation](#re-encrypting-and-rehashing-after-a-rotation). Other hosts switch to the new version when their cached active key expires.
 - **KEK rotation.** Make a new KEK version current (for the local key: add a key and point `ActiveKeyId` at it), then run `RewrapAsync()`. It re-wraps every data key the current KEK version did not wrap and returns how many it changed. No encrypted value changes. Keep the old KEK version enabled until a run returns 0.
 - **Switching providers.** Register the new provider with its `Use…` member and keep the old one with `setup.KeepPreviousKeyEncryptionKey(previous => previous.UseLocalKey(...))`. The new provider wraps new data keys. The provider named in each key's row unwraps old keys. `RewrapAsync()` moves every old key to the new provider. Once it returns 0, remove the previous provider. A previous provider must have a different name from the active one. To rotate keys within one provider, use its own key versions.
 - **Shredding.** `ShredAsync(scope)` deletes every key of the scope, marks the scope shredded, and returns how many keys it deleted. This host forgets them at once. Another host forgets them when its cached copy expires (`EncryptionOptions.KeyCacheDuration`, 1 hour by default). After that, every value of the scope fails with `KeyNotFound`.
@@ -155,6 +157,143 @@ Decryption looks up the key by the id in the frame. It never tries keys in turn.
 **Backup limit.** A database backup taken before a shred still holds the wrapped keys, and restoring it while the shared KEK exists recovers the data. Shredding is immediate on live systems and complete once backup retention passes. A guarantee against backups needs a per-tenant KEK deleted in the key service. The stored KEK id per key allows that without a schema change.
 
 A per-tenant KEK adds only that backup guarantee. It does not shred faster, because key services delay deletion on purpose. AWS KMS waits 7 to 30 days (30 by default) before deleting a key. Azure Key Vault keeps a deleted key recoverable for 7 to 90 days (90 by default), with soft-delete that cannot be turned off and, under purge protection, no early purge. Deleting the data-key rows is faster: immediate on this host, and on every host within `KeyCacheDuration`.
+
+### Re-encrypting and rehashing after a rotation
+
+A rotation changes only new writes. Existing rows keep their old frames and hashes until your application rewrites them. Headless ships no rewrite helper, because the paging, the tables, and the columns are the application's. Write one job per entity, and run the steps in this order for each scope:
+
+1. **Rotate.** Call `RotateAsync(scope, DataKeyKind.Data)`, `RotateAsync(scope, DataKeyKind.Lookup)`, or both.
+2. **Wait `KeyCacheDuration`.** Until every host's cached active key expires, a host can still write a new row under the old version. Schedule the rewrite for at least `EncryptionOptions.KeyCacheDuration` after the rotation, for example as a one-off job.
+3. **Rewrite.** Page through the entity, decrypt each value, encrypt it again when `KeyIsCurrent` is `false`, rehash it with `RehashAsync`, and save each page in one unit of work.
+4. **Confirm.** Check that no row of the scope still stores a hash under the old lookup version. The Lookup key is per scope, not per column, so check every blind-index column the scope hashes, in every table.
+5. **Retire.** Only then call `RetireAsync(scope, DataKeyKind.Lookup, oldVersion)`. A retired version is gone, so a row still hashed under it stops matching every query.
+
+Data keys never retire. After step 3, no value of the scope needs the old Data version, but the version stays stored. Run the rewrite after a Data rotation when the scope must stop depending on the old version, or when a column approaches the [values-per-key limit](#limits).
+
+The job below rewrites one tenant's `Beneficiary.NationalId` column and its blind index:
+
+```csharp
+using System.Data;
+using System.Security.Cryptography;
+using Microsoft.EntityFrameworkCore;
+
+public sealed class Beneficiary
+{
+    public long Id { get; init; }
+    public required string TenantId { get; init; }
+    public EncryptedValue NationalId { get; set; }
+    public byte[] NationalIdHash { get; set; } = [];
+    public int NationalIdHashVersion { get; set; }
+    public uint Version { get; set; } // a concurrency token (xmin on PostgreSQL), so the job never overwrites a concurrent edit
+}
+
+public sealed class BeneficiaryKeyRotationJob(
+    IDbContextFactory<AppDbContext> dbFactory,
+    IUnitOfWorkFactory unitOfWorkFactory,
+    IFieldEncryptor encryptor,
+    IBlindIndexer blindIndexer,
+    IDataKeyManager keyManager
+)
+{
+    private const string _Purpose = "Beneficiary.NationalId";
+    private const int _PageSize = 500;
+
+    // Step 3. Run it at least KeyCacheDuration after the rotation.
+    public async Task RewriteAsync(string tenantId, CancellationToken ct)
+    {
+        var field = new FieldContext(_Purpose) { Scope = tenantId };
+        var index = new BlindIndexContext(_Purpose) { Scope = tenantId };
+        long afterId = 0;
+
+        while (true)
+        {
+            // A fresh context per page keeps the change tracker small and lets the page replay.
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+            long? lastId = await unitOfWorkFactory.RunAsync(
+                db,
+                async (_, token) =>
+                {
+                    var page = await db.Set<Beneficiary>()
+                        .Where(b => b.TenantId == tenantId && b.Id > afterId)
+                        .OrderBy(b => b.Id)
+                        .Take(_PageSize)
+                        .ToListAsync(token);
+
+                    foreach (var row in page)
+                    {
+                        var decryption = await encryptor.DecryptAsync(row.NationalId, field, token);
+
+                        if (!decryption.KeyIsCurrent)
+                        {
+                            row.NationalId = await encryptor.EncryptAsync(decryption.Plaintext, field, token);
+                        }
+
+                        // The stored value was normalized before it was hashed, so it rehashes as it is.
+                        var rehashed = await blindIndexer.RehashAsync(
+                            index,
+                            decryption.GetString(),
+                            row.NationalIdHashVersion,
+                            token
+                        );
+
+                        if (rehashed is { } current)
+                        {
+                            row.NationalIdHash = current.Hash;
+                            row.NationalIdHashVersion = current.KeyVersion;
+                        }
+
+                        CryptographicOperations.ZeroMemory(decryption.Plaintext);
+                    }
+
+                    await db.SaveChangesAsync(token); // saves only the rows that changed
+                    return page.Count == 0 ? (long?)null : page[^1].Id;
+                },
+                IsolationLevel.ReadCommitted,
+                retry: EntityFrameworkConflictRetry.Create(), // re-reads the page when a concurrent edit wins
+                ct
+            );
+
+            if (lastId is not { } next)
+            {
+                return;
+            }
+
+            afterId = next;
+        }
+    }
+
+    // Steps 4 and 5. Retires each older lookup version that no row carries any more.
+    public async Task RetireUnusedLookupVersionsAsync(string tenantId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var index = new BlindIndexContext(_Purpose) { Scope = tenantId };
+
+        // One candidate per stored version, newest (active) first. Only the versions are read, so any input works.
+        var versions = await blindIndexer.ComputeCandidatesAsync(index, "version-probe", ct);
+
+        foreach (var old in versions.Skip(1))
+        {
+            // Check every blind-index column this scope hashes, not only this one.
+            var inUse = await db.Set<Beneficiary>()
+                .AnyAsync(b => b.TenantId == tenantId && b.NationalIdHashVersion == old.KeyVersion, ct);
+
+            if (!inUse)
+            {
+                await keyManager.RetireAsync(tenantId, DataKeyKind.Lookup, old.KeyVersion, ct);
+            }
+        }
+    }
+}
+```
+
+- **Paging.** Page by an indexed, ordered key and resume after the last key seen, as `RewriteAsync` does. An offset (`Skip`) skips rows when rows are deleted while the job runs.
+- **One unit per page.** `RunAsync(db, …)` commits each page atomically, so a crash loses at most the page in flight. A run that stops can start again from the beginning: rows already current return `KeyIsCurrent = true` and a `null` rehash, and the job does not save them again.
+- **Concurrent edits.** Without a concurrency token, an application edit between the page read and the save is overwritten by the job's copy of the old value. Map a concurrency token (`xmin` on PostgreSQL, a `rowversion` column on SQL Server), and pass `EntityFrameworkConflictRetry.Create()` so the page re-reads and runs again.
+- **A host that has not seen the rotation.** `RehashAsync` returns `null` while this host's cached active lookup version is still the old one, so a rewrite started too early leaves those rows unchanged. Step 4 then finds them, and the version is not retired. Wait `KeyCacheDuration` and run the rewrite again.
+- **Shredded scope.** A tenant shredded while the job runs throws `FieldDecryptionException` with `Failure = KeyNotFound`. Stop the job for that tenant.
+
+**Verify:** after `RewriteAsync`, a second run saves no row, decrypting any row returns `KeyIsCurrent = true`, and `RehashAsync` returns `null` for every row. After `RetireUnusedLookupVersionsAsync`, `ComputeCandidatesAsync` returns one candidate per version still in use, and the log shows event 4303 `DataKeyRetired` for each retired version.
 
 ### Deploy and startup
 
@@ -313,7 +452,10 @@ Wraps data keys with an RSA key held in Azure Key Vault.
 dotnet add package Headless.Encryption.AzureKeyVault
 ```
 
-```csharp
+```csharp no-compile
+using Azure.Identity;
+using Azure.Security.KeyVault.Keys;
+
 builder.Services.AddSingleton(new KeyClient(new Uri("https://pii-kv.vault.azure.net/"), new DefaultAzureCredential()));
 builder.Services.AddHeadlessEncryption(setup =>
 {
@@ -351,6 +493,8 @@ dotnet add package Headless.Encryption.EntityFramework
 ```
 
 ```csharp
+using Microsoft.EntityFrameworkCore;
+
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

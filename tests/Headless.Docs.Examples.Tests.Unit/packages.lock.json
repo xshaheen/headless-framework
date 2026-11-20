@@ -778,6 +778,50 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
+      "headless.encryption": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Encryption.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.encryption.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.encryption.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Encryption.Abstractions": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.15, )"
+        }
+      },
+      "headless.encryption.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Encryption": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )"
+        }
+      },
+      "headless.encryption.sqlserver": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Encryption": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.SqlServer": "[1.0.0, )"
+        }
+      },
       "headless.entityframework.primitives": {
         "type": "Project",
         "dependencies": {
