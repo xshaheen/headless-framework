@@ -70,6 +70,7 @@ internal sealed partial class ConsumerRegister(
 
     // Resolved on start, beside the other pipeline services; null only in a host built without messaging's setup.
     private IDistributedLock? _lockProvider;
+    private SequentialIntakeHolds? _intakeHolds;
 
 #pragma warning disable CA2213 // False positive: the container owns the shared singleton and disposes it with the host.
     private readonly ConsumerRateLimiters? _rateLimiters = serviceProvider.GetService<ConsumerRateLimiters>();
@@ -170,6 +171,7 @@ internal sealed partial class ConsumerRegister(
         _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
         _subscribeInvoker = serviceProvider.GetRequiredService<ISubscribeInvoker>();
         _lockProvider = serviceProvider.GetKeyedService<IDistributedLock>(MessagingKeys.LockProvider);
+        _intakeHolds = serviceProvider.GetService<SequentialIntakeHolds>();
 
         try
         {
@@ -1199,17 +1201,26 @@ internal sealed partial class ConsumerRegister(
                 await using (lease.ConfigureAwait(false))
                 {
                     _logger.LogSequentialIntakeAcquired(handle.SubscriptionName, resource);
-                    await _ListenUnderLeaseAsync(
-                            subscriptionKey,
-                            handle,
-                            limit,
-                            provisionsTopology,
-                            messageNames,
-                            startupReady,
-                            lease,
-                            stoppingToken
-                        )
-                        .ConfigureAwait(false);
+                    _intakeHolds?.Hold(resource, lease.LeaseId);
+
+                    try
+                    {
+                        await _ListenUnderLeaseAsync(
+                                subscriptionKey,
+                                handle,
+                                limit,
+                                provisionsTopology,
+                                messageNames,
+                                startupReady,
+                                lease,
+                                stoppingToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _intakeHolds?.Release(resource, lease.LeaseId);
+                    }
 
                     // Read while the lease is alive: a disposed lease owes its caller no loss state.
                     lost = lease.IsLost;

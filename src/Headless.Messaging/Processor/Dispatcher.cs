@@ -62,6 +62,29 @@ internal sealed class Dispatcher
 
     internal Action? StartPublicationHookForTest { get; set; }
 
+    /// <summary>
+    /// The messages <paramref name="consumerIdentity"/> holds on this host that have not started, behind an earlier
+    /// message of their key or waiting for a slot; zero when it holds none, and <see langword="null"/> while the
+    /// dispatcher is not running. The <c>headless.messaging.sequential.waiting</c> gauge reports the same count.
+    /// </summary>
+    internal int? SequentialWaiting(string consumerIdentity)
+    {
+        if (Volatile.Read(ref _sequencers) is not { } sequencers)
+        {
+            return null;
+        }
+
+        foreach (var (identity, waiting) in sequencers.WaitingByConsumer())
+        {
+            if (string.Equals(identity, consumerIdentity, StringComparison.Ordinal))
+            {
+                return waiting;
+            }
+        }
+
+        return 0;
+    }
+
     // How long a committed publish (or one unit-of-work flush) may wait for room in a full publish channel. Long
     // enough to ride out a burst the sender is about to drain, short enough that a saturated host adds a small,
     // fixed cost to the commit rather than holding it until the sender catches up; past it the relay delivers.

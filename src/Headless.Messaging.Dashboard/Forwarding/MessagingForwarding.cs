@@ -463,6 +463,35 @@ internal sealed class MessagingForwarding(
         return _Read<DashboardPayload>(peer, response);
     }
 
+    /// <summary>
+    /// Asks <paramref name="peer"/> whether it holds the sequential intake lock <paramref name="resource"/>, and for
+    /// <paramref name="consumer"/>'s waiting count there; <see langword="null"/> when the peer did not answer.
+    /// </summary>
+    public async Task<PeerIntakeHold?> GetIntakeHoldAsync(
+        MessagingPeer peer,
+        string resource,
+        string consumer,
+        CancellationToken cancellationToken
+    )
+    {
+        var response = await client
+            .SendAsync(
+                peer,
+                HttpMethod.Get,
+                "/peer/sequential?resource="
+                    + Uri.EscapeDataString(resource)
+                    + "&consumer="
+                    + Uri.EscapeDataString(consumer),
+                user: null,
+                operate: false,
+                json: null,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return response.IsSuccess ? JsonSerializer.Deserialize<PeerIntakeHold>(response.Body, JsonOptions) : null;
+    }
+
     /// <summary>Reads a dashboard-only host's sidebar counts or Overview from the node it opens on.</summary>
     public async Task<T?> ReadFromDefaultAsync<T>(string path, CancellationToken cancellationToken)
         where T : class

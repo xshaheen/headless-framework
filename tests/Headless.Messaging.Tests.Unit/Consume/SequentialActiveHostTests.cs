@@ -154,6 +154,43 @@ public sealed class SequentialActiveHostTests : TestBase
     }
 
     [Fact]
+    public async Task should_record_the_lease_on_the_holder_only_and_forget_it_when_the_holder_stops()
+    {
+        // given
+        var broker = new SimulatedBroker(new SimulationClock());
+        await using var locks = _CreateLocks(broker.Clock);
+        await using var holder = await PipelineHosts.StartAsync(
+            new PipelineProbe(),
+            AbortToken,
+            _Sequential,
+            broker,
+            services => _UseLock(services, locks)
+        );
+        await using var other = await PipelineHosts.StartBesideAsync(
+            holder,
+            new PipelineProbe(),
+            AbortToken,
+            _Sequential,
+            services => _UseLock(services, locks)
+        );
+        var intake = (await _IntakeLocksAsync(locks)).Should().ContainSingle().Subject;
+
+        // then: the dashboard can name the holder from the lease the lock store reports
+        holder
+            .Services.GetRequiredService<SequentialIntakeHolds>()
+            .LeaseOf(intake.Resource)
+            .Should()
+            .Be(intake.LeaseId);
+        other.Services.GetRequiredService<SequentialIntakeHolds>().LeaseOf(intake.Resource).Should().BeNull();
+
+        // when
+        await holder.StopAsync(AbortToken);
+
+        // then
+        holder.Services.GetRequiredService<SequentialIntakeHolds>().LeaseOf(intake.Resource).Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_listen_on_every_host_and_warn_when_no_lock_is_configured()
     {
         // given
