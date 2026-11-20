@@ -99,6 +99,38 @@ public sealed class PdfMediaFileTextProviderTests : TestBase
         await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*Flate*");
     }
 
+    [Fact]
+    public async Task should_extract_text_from_an_lzw_encoded_page_within_the_decode_limit()
+    {
+        // given: a page whose content stream is LZW-encoded, as some PDF 1.0 and 1.1 writers produced
+        var codes = LzwTestEncoder.Compress("BT /F1 12 Tf 72 712 Td (Bounded hello) Tj ET"u8);
+        await using var pdf = _PdfWithPage(
+            LzwTestEncoder.Pack([LzwTestEncoder.ClearTable, .. codes, LzwTestEncoder.EndOfData]),
+            "/LZWDecode"
+        );
+
+        // when
+        var result = await _sut.GetTextAsync(pdf, cancellationToken: AbortToken);
+
+        // then
+        result.Should().Be("Bounded hello");
+    }
+
+    [Fact]
+    public async Task should_refuse_an_lzw_stream_that_decodes_past_the_decode_limit()
+    {
+        // given: about 40 KiB of PDF whose page content decodes to 101 MiB, just past the 100 MiB limit
+        var encoded = LzwTestEncoder.Pack(LzwTestEncoder.Bomb((byte)' ', 101L * 1024 * 1024));
+        await using var pdf = _PdfWithPage(encoded, "/LZWDecode");
+        pdf.Length.Should().BeLessThan(64 * 1024);
+
+        // when
+        var act = async () => await _sut.GetTextAsync(pdf, cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*LZW*");
+    }
+
     /// <summary>
     /// Builds a one-page PDF whose content stream is the zlib data <paramref name="writeContent"/> writes, using a
     /// standard font so no font program is embedded.
@@ -112,6 +144,15 @@ public sealed class PdfMediaFileTextProviderTests : TestBase
             writeContent(zlib);
         }
 
+        return _PdfWithPage(compressed.ToArray(), "/FlateDecode");
+    }
+
+    /// <summary>
+    /// Builds a one-page PDF whose content stream is <paramref name="encoded"/> under <paramref name="filter"/>, using
+    /// a standard font so no font program is embedded.
+    /// </summary>
+    private static MemoryStream _PdfWithPage(byte[] encoded, string filter)
+    {
         var pdf = new MemoryStream();
         var offsets = new List<long>();
 
@@ -131,9 +172,8 @@ public sealed class PdfMediaFileTextProviderTests : TestBase
                 + "/Resources << /Font << /F1 5 0 R >> >> >>"
         );
         offsets.Add(pdf.Position);
-        write($"4 0 obj\n<< /Length {compressed.Length} /Filter /FlateDecode >>\nstream\n");
-        compressed.Position = 0;
-        compressed.CopyTo(pdf);
+        write($"4 0 obj\n<< /Length {encoded.Length} /Filter {filter} >>\nstream\n");
+        pdf.Write(encoded);
         write("\nendstream\nendobj\n");
         writeObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
 
