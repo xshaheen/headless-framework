@@ -3,6 +3,7 @@
 using System.Net;
 using Headless.DistributedLocks;
 using Headless.Messaging;
+using Headless.Messaging.Dashboard;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -136,6 +137,134 @@ public sealed class ForwardingSequentialStateTests : TestBase
             .GetString()
             .Should()
             .Be("Another host holds it, and a node that may hold it did not answer.");
+    }
+
+    [Fact]
+    public async Task should_say_unavailable_when_the_lock_store_does_not_answer_in_time()
+    {
+        // given: the read's own time limit cancels it, while the caller still waits
+        await using var nodeA = await _StartAsync("node-a", _discoveryA);
+        _locks
+            .GetLockInfoAsync(_Resource, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<DistributedLockInfo?>(new OperationCanceledException()));
+
+        // when
+        var holder = _Holder(await _ReadAsync(nodeA, LedgerModule.Sequential));
+
+        // then
+        holder.GetProperty("state").GetString().Should().Be("unavailable");
+        holder.GetProperty("reason").GetString().Should().Be("The lock store did not answer in time.");
+    }
+
+    [Fact]
+    public async Task should_say_unavailable_when_another_host_holds_it_and_this_node_does_not_forward()
+    {
+        // given: a node with no discovery cannot ask another node
+        await using var nodeA = await MessagingCommandHost.StartAsync(
+            _time,
+            _log,
+            AbortToken,
+            configure: services => services.AddKeyedSingleton(MessagingKeys.LockProvider, _locks),
+            messaging: LedgerModule.Setup
+        );
+        await _StartedAsync(nodeA);
+        _LockedBy("lease-elsewhere");
+
+        // when
+        var holder = _Holder(await _ReadAsync(nodeA, LedgerModule.Sequential));
+
+        // then
+        holder.GetProperty("state").GetString().Should().Be("unavailable");
+        holder
+            .GetProperty("reason")
+            .GetString()
+            .Should()
+            .Be("Another host holds it, and this node does not forward to other nodes.");
+    }
+
+    [Theory]
+    [InlineData("lane=bus", "identity")]
+    [InlineData("identity=ledger.sequential", "lane")]
+    [InlineData("identity=ledger.sequential&lane=default", "lane")]
+    public async Task should_refuse_with_400_a_read_that_names_no_consumer_or_an_unknown_lane(
+        string query,
+        string field
+    )
+    {
+        // given
+        await using var nodeA = await _StartAsync("node-a", _discoveryA);
+        using var client = MessagingCommandHost.Client(nodeA);
+        var cookie = await MessagingCommandHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var response = await MessagingCommandHost.GetAsync(client, $"{_Path}?{query}", cookie, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await MessagingCommandHost.ReadAsync(response, AbortToken))
+            .GetProperty("errors")
+            .TryGetProperty(field, out _)
+            .Should()
+            .BeTrue();
+    }
+
+    [Fact]
+    public async Task should_answer_a_signed_peer_call_with_the_lease_and_refuse_one_without_a_consumer()
+    {
+        // given
+        await using var nodeB = await _StartAsync("node-b", new StaticDiscovery());
+        _Hold(nodeB, "lease-b");
+        using var client = MessagingCommandHost.Client(nodeB);
+
+        // when
+        using var answered = await _PeerGetAsync(
+            client,
+            $"/headless/api/messaging/peer/sequential?resource={Uri.EscapeDataString(_Resource)}&consumer={LedgerModule.Sequential}"
+        );
+        using var refused = await _PeerGetAsync(
+            client,
+            $"/headless/api/messaging/peer/sequential?resource={Uri.EscapeDataString(_Resource)}"
+        );
+
+        // then
+        answered.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await MessagingCommandHost.ReadAsync(answered, AbortToken))
+            .GetProperty("leaseId")
+            .GetString()
+            .Should()
+            .Be("lease-b");
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task should_answer_404_to_a_peer_call_the_forwarding_scheme_did_not_admit()
+    {
+        // given
+        await using var nodeB = await _StartAsync("node-b", new StaticDiscovery());
+        using var client = MessagingCommandHost.Client(nodeB);
+        var cookie = await MessagingCommandHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var response = await MessagingCommandHost.GetAsync(
+            client,
+            $"/headless/api/messaging/peer/sequential?resource=r&consumer={LedgerModule.Sequential}",
+            cookie,
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private async Task<HttpResponseMessage> _PeerGetAsync(HttpClient client, string path)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(path, UriKind.Relative));
+        request.Headers.TryAddWithoutValidation(ForwardingProtocol.HopHeader, "node-a");
+        request.Headers.TryAddWithoutValidation(ForwardingProtocol.AccessHeader, ForwardingProtocol.AccessView);
+        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        await ForwardingHost.SignAsync(request, _time, AbortToken);
+
+        return await client.SendAsync(request, AbortToken);
     }
 
     [Fact]
