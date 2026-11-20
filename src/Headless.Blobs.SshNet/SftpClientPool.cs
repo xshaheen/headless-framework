@@ -14,9 +14,10 @@ namespace Headless.Blobs.SshNet;
 /// <remarks>
 /// Uses <see cref="System.Threading.Channels.Channel{T}"/> for lock-free, async-first connection reuse
 /// (Npgsql-style pooling). The pool creates new connections on demand up to
-/// <see cref="SshBlobStorageOptions.MaxPoolSize"/> (and, for open read streams, up to
-/// <see cref="SshBlobStorageOptions.MaxReadStreamConnections"/> in <see cref="ReadStreams"/>) and validates each
-/// client before returning it to a caller.
+/// <see cref="SshBlobStorageOptions.MaxPoolSize"/> (for open read streams, up to
+/// <see cref="SshBlobStorageOptions.MaxReadStreamConnections"/> in <see cref="ReadStreams"/>, and for uploads from a
+/// network-backed source, up to <see cref="SshBlobStorageOptions.MaxUploadStreamConnections"/> in
+/// <see cref="UploadStreams"/>) and validates each client before returning it to a caller.
 /// Invalid or disconnected clients are disposed and replaced. Dispose the pool when the application shuts down
 /// to close all open SSH connections.
 /// </remarks>
@@ -27,6 +28,7 @@ internal sealed class SftpClientPool : IDisposable
     private readonly SshBlobStorageOptions _options;
     private readonly ILogger<SftpClientPool> _logger;
     private readonly SftpClientPool? _readStreams;
+    private readonly SftpClientPool? _uploadStreams;
     private readonly PrivateKeyFile? _privateKey;
     private volatile bool _disposed;
 
@@ -34,6 +36,7 @@ internal sealed class SftpClientPool : IDisposable
         : this(options.Value, options.Value.MaxPoolSize, logger, _ReadPrivateKey(options.Value))
     {
         _readStreams = new SftpClientPool(_options, _options.MaxReadStreamConnections, logger, _privateKey);
+        _uploadStreams = new SftpClientPool(_options, _options.MaxUploadStreamConnections, logger, _privateKey);
     }
 
     private SftpClientPool(
@@ -71,13 +74,27 @@ internal sealed class SftpClientPool : IDisposable
     public SftpClientPool ReadStreams => _readStreams ?? this;
 
     /// <summary>
+    /// The separate set of connections, bounded by <see cref="SshBlobStorageOptions.MaxUploadStreamConnections"/>, that
+    /// backs uploads whose source is not a <see cref="MemoryStream"/>.
+    /// </summary>
+    /// <remarks>
+    /// Such an upload reads its source while it writes, so its hold time is the sender's pace, not SFTP latency: a
+    /// signed-URL upload from a slow client holds the connection for the whole transfer. A buffered request body reports
+    /// <see cref="Stream.CanSeek"/> yet still reads from the network, so seekability does not mark a source as fast.
+    /// Serving those uploads from this pool means slow senders wait on each other and never starve the store's deletes,
+    /// listings, or info reads. On a sub-pool this returns the same instance.
+    /// </remarks>
+    public SftpClientPool UploadStreams => _uploadStreams ?? this;
+
+    /// <summary>
     /// Acquires an SFTP client from the pool, reusing an idle connection when available or creating a new one.
     /// </summary>
     /// <param name="ct">Cancellation token. Passed to the connection semaphore and to the SSH handshake.</param>
     /// <returns>A connected <see cref="SftpClient"/>. The caller must return it via <see cref="ReleaseAsync"/> when done.</returns>
     /// <remarks>
-    /// The pool is bounded (<see cref="SshBlobStorageOptions.MaxPoolSize"/> connections, or
-    /// <see cref="SshBlobStorageOptions.MaxReadStreamConnections"/> for <see cref="ReadStreams"/>) and applies
+    /// The pool is bounded (<see cref="SshBlobStorageOptions.MaxPoolSize"/> connections,
+    /// <see cref="SshBlobStorageOptions.MaxReadStreamConnections"/> for <see cref="ReadStreams"/>, or
+    /// <see cref="SshBlobStorageOptions.MaxUploadStreamConnections"/> for <see cref="UploadStreams"/>) and applies
     /// backpressure by design: there is no acquire timeout, so when every slot is in use this call blocks until a slot
     /// frees or <paramref name="ct"/> is cancelled. A slot is only ever returned by <see cref="ReleaseAsync"/> /
     /// <see cref="Release"/> — the store releases it when an operation finishes, and for
@@ -191,7 +208,7 @@ internal sealed class SftpClientPool : IDisposable
     }
 
     // Reading the key consumes (and disposes) the option's stream, so it is read once, when the owning pool is created,
-    // and every connection of both pools offers the same parsed key. Parsing it per connection would authenticate only
+    // and every connection of every pool offers the same parsed key. Parsing it per connection would authenticate only
     // the first one.
     private static PrivateKeyFile? _ReadPrivateKey(SshBlobStorageOptions options)
     {
@@ -328,10 +345,11 @@ internal sealed class SftpClientPool : IDisposable
 
         _maxConnections.Dispose();
 
-        // Only the owning pool disposes the key; the read-stream pool shares it and has no read-stream pool of its own.
+        // Only the owning pool disposes its sub-pools and the key; the sub-pools share the key and have no sub-pools.
         if (_readStreams is not null)
         {
             _readStreams.Dispose();
+            _uploadStreams?.Dispose();
             _privateKey?.Dispose();
         }
 

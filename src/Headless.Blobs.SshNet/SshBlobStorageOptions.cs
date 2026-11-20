@@ -63,10 +63,24 @@ public sealed class SshBlobStorageOptions
     /// (for example through the signed-URL endpoint) holds the connection for the whole transfer. These connections
     /// are separate from the <see cref="MaxPoolSize"/> pool, so open streams never block uploads, deletes, listings,
     /// or info reads; once all of them are in use, the next <c>OpenReadStreamAsync</c> waits for a stream to be
-    /// disposed or for its own cancellation. A store can therefore hold up to
-    /// <see cref="MaxPoolSize"/> + <see cref="MaxReadStreamConnections"/> SSH connections.
+    /// disposed or for its own cancellation.
     /// </remarks>
     public int MaxReadStreamConnections { get; set; } = 4;
+
+    /// <summary>
+    /// Maximum SFTP connections held by uploads whose source is not a <see cref="MemoryStream"/>. Default is 4.
+    /// </summary>
+    /// <remarks>
+    /// Such an upload holds its connection while it reads the source, so an upload sent at a slow client's pace (for
+    /// example a request body through the signed-URL endpoint) holds it for the whole transfer. A seekable source, such
+    /// as a buffered request body, still counts, because it can still read from the network. These connections are
+    /// separate from the <see cref="MaxPoolSize"/> pool, so slow uploads never block deletes, listings, info reads, or
+    /// in-memory uploads; once all of them are in use, the next such upload waits for one to finish or for its own
+    /// cancellation. All such uploads share this budget, so a slow sender can fill it. A store can therefore hold up to
+    /// <see cref="MaxPoolSize"/> + <see cref="MaxReadStreamConnections"/> + <see cref="MaxUploadStreamConnections"/> SSH
+    /// connections.
+    /// </remarks>
+    public int MaxUploadStreamConnections { get; set; } = 4;
 
     /// <summary>
     /// Allow none-authentication fallback. When false (default), throws if no password or private key is provided.
@@ -89,5 +103,6 @@ internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlob
             .WithMessage("MaxPoolSize must be >= MaxConcurrentOperations");
 
         RuleFor(x => x.MaxReadStreamConnections).InclusiveBetween(1, 100);
+        RuleFor(x => x.MaxUploadStreamConnections).InclusiveBetween(1, 100);
     }
 }

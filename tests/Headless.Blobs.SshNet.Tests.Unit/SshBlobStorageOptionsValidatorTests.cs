@@ -135,6 +135,29 @@ public sealed class SshBlobStorageOptionsValidatorTests
         _CreateValidOptions().MaxReadStreamConnections.Should().Be(4);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(101)]
+    public void should_fail_when_max_upload_stream_connections_out_of_range(int value)
+    {
+        // given
+        var options = _CreateValidOptions();
+        options.MaxUploadStreamConnections = value;
+
+        // when
+        var result = _sut.TestValidate(options);
+
+        // then
+        result.ShouldHaveValidationErrorFor(x => x.MaxUploadStreamConnections);
+    }
+
+    [Fact]
+    public void should_default_max_upload_stream_connections_to_four()
+    {
+        _CreateValidOptions().MaxUploadStreamConnections.Should().Be(4);
+    }
+
     [Fact]
     public void should_pass_for_valid_options()
     {
