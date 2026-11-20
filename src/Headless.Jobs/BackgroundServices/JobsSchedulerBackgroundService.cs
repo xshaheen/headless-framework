@@ -199,15 +199,20 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                 // This is a restart request - release this wake's claims and continue loop. Explicit ids only,
                 // and only when the context actually holds claims: the empty form releases every Queued row this
                 // owner holds, including rows whose admissions from earlier ticks are still parked in the pool.
+                // Not on the loop token, as on the exit arm below: a cancellation thrown from inside this catch skips
+                // that arm and faults ExecuteAsync, which stops the whole host on a membership loss.
                 if (_executionContext.Functions.Length != 0)
                 {
                     await _internalJobsManager
-                        .ReleaseAcquiredResources(_executionContext.Functions, loopToken)
+                        .ReleaseAcquiredResources(_executionContext.Functions, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
 
-                // Small delay to allow resources to be released
-                await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), loopToken).ConfigureAwait(false);
+                // Small delay to allow resources to be released. It ends early without throwing when the loop token
+                // fires, for the same reason, and the loop condition then exits.
+                await _timeProvider
+                    .Delay(TimeSpan.FromMilliseconds(100), loopToken)
+                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
             catch (OperationCanceledException) when (loopToken.IsCancellationRequested)
             {
@@ -221,16 +226,17 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                         .ConfigureAwait(false);
                 }
 
-                _LogLoopStopReason(stoppingToken);
-
                 break;
             }
             catch (Exception ex)
             {
                 await _ReleaseAllResourcesAsync(ex).ConfigureAwait(false);
-                // Continue running - don't exit the scheduler loop on exceptions
-                // Add a small delay to prevent tight loop if errors persist
-                await _timeProvider.Delay(TimeSpan.FromSeconds(1), loopToken).ConfigureAwait(false);
+                // Continue running - don't exit the scheduler loop on exceptions. The delay keeps a persistent error
+                // from spinning, and ends early without throwing when the loop token fires: a store outage that keeps
+                // the loop here is also what makes the node miss heartbeats and lose membership.
+                await _timeProvider
+                    .Delay(TimeSpan.FromSeconds(1), loopToken)
+                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
             finally
             {
@@ -238,10 +244,14 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                 Interlocked.Exchange(ref _schedulerLoopCancellationTokenSource, value: null)?.Dispose();
             }
         }
+
+        // Every exit reaches here: the cancellation arm breaks out, and the restart and error delays end on the loop
+        // condition.
+        _LogLoopStopReason(stoppingToken);
     }
 
     // Either exit is permanent for the host's lifetime — under StopMembershipOnly the process keeps running without a
-    // scheduler — so the cause must be visible in logs. Shared by the loop's cancellation arm and the activation wait
+    // scheduler — so the cause must be visible in logs. Shared by the loop's exit and the activation wait
     // so the two can never drift into one of them exiting silently.
     private void _LogLoopStopReason(CancellationToken stoppingToken)
     {
