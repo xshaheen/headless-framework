@@ -25,7 +25,15 @@ import { Link, useNavigate } from '@headless/dashboard-sdk/router'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { cronJobsTopic, cronStatusMark, fetchCronJobs, type CronJob, type JobFunction } from '../cron.ts'
 import { CellText, JobsStats, StaleNotice, useFunctions } from '../parts.tsx'
-import { fetchRuns, runStatusMark, runsTopic, statusLabel, viewOnlyReason, type Run } from '../runs.ts'
+import {
+  fetchRuns,
+  runStatusMark,
+  runsTopic,
+  statusLabel,
+  useCronOccurrenceRemovals,
+  viewOnlyReason,
+  type Run,
+} from '../runs.ts'
 
 /** A function declared with a cron expression is fired by its schedule; any other is added as a time job. */
 function FunctionKind({ item }: { item: Pick<JobFunction, 'cronExpression'> }) {
@@ -271,6 +279,7 @@ function WhereItRuns({ item }: { item: JobFunction }) {
 function FunctionRuns({ name }: { name: string }) {
   const { api } = useDashboard()
   const filter = { function: name }
+  useCronOccurrenceRemovals()
   const runs = useDashboardKeysetList<Run>({
     topic: runsTopic,
     params: filter,

@@ -29,6 +29,7 @@ import {
   readRunProjection,
   runStatusMark,
   runsTopic,
+  useCronOccurrenceRemovals,
   statusLabel,
   useJobsCommands,
   viewOnlyReason,
@@ -388,6 +389,7 @@ function CronOccurrences({ cronJob }: { cronJob: CronJob }) {
   const { api } = useDashboard()
   const [stableWindowStart] = useState(() => Date.now() - 24 * hour)
   const filter = { cronJobId: cronJob.id, from: new Date(stableWindowStart).toISOString() }
+  useCronOccurrenceRemovals()
   const occurrences = useDashboardKeysetList<Run>({
     topic: runsTopic,
     params: filter,

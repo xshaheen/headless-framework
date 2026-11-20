@@ -16,6 +16,13 @@ internal static class JobsViews
     /// <summary>A registered function, identified by its name.</summary>
     public const string FunctionKind = "function";
 
+    /// <summary>
+    /// The stored occurrences of one cron job, identified by the cron job's id; its stream topic is
+    /// <c>jobs.cron-occurrences</c>. Only a removal is published for it: deleting a cron job deletes every occurrence it
+    /// stored, which can be any number, so one change names the cron job and each run list drops that cron job's rows.
+    /// </summary>
+    public const string CronOccurrencesKind = "cron-occurrences";
+
     /// <summary>The version a removal carries: above any marker, so no earlier change of the row follows it.</summary>
     public const string RemovedVersion = "9223372036854775807";
 
