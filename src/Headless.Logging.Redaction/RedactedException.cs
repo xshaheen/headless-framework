@@ -27,8 +27,9 @@ namespace Headless.Logging;
 /// </para>
 /// <para>
 /// A provider that reports <see cref="object.GetType"/> sees this type; <see cref="OriginalTypeName"/> names the
-/// original. <see cref="Exception.TargetSite"/> is <see langword="null"/>, and <see cref="Data"/> holds the original's
-/// entries unscanned.
+/// original. <see cref="Exception.TargetSite"/> is <see langword="null"/>. <see cref="Data"/> holds the original's
+/// entries, each value masked the way log property values are; it is a new dictionary when any value matched, so the
+/// original's is never changed.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -37,6 +38,7 @@ public sealed class RedactedException : Exception
     private readonly Exception _original;
     private readonly Func<string, string> _redact;
     private readonly string _message;
+    private readonly IDictionary? _data;
     private string? _stackTrace;
     private string? _text;
 
@@ -44,6 +46,7 @@ public sealed class RedactedException : Exception
         Exception original,
         string redactedMessage,
         IReadOnlyList<Exception> innerExceptions,
+        IDictionary? maskedData,
         Func<string, string> redact
     )
         : base(message: null, innerException: innerExceptions.Count > 0 ? innerExceptions[0] : null)
@@ -51,6 +54,7 @@ public sealed class RedactedException : Exception
         _original = Argument.IsNotNull(original);
         _redact = Argument.IsNotNull(redact);
         _message = Argument.IsNotNull(redactedMessage);
+        _data = maskedData;
 
         OriginalTypeName = original.GetType().FullName ?? original.GetType().Name;
         InnerExceptions = innerExceptions;
@@ -76,7 +80,7 @@ public sealed class RedactedException : Exception
     public override string? StackTrace => _stackTrace ??= _original.StackTrace is { } trace ? _redact(trace) : null;
 
     /// <inheritdoc />
-    public override IDictionary Data => _original.Data;
+    public override IDictionary Data => _data ?? _original.Data;
 
     /// <inheritdoc />
     public override string ToString() => _text ??= _redact(_original.ToString());

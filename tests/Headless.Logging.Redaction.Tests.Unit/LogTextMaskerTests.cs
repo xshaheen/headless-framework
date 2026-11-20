@@ -50,6 +50,42 @@ public sealed class LogTextMaskerTests : TestBase
     }
 
     [Fact]
+    public void should_mask_a_numeric_data_value_without_changing_the_original()
+    {
+        // given: an id held as a long, with messages that match nothing
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new InvalidOperationException("lookup failed");
+        original.Data["Citizen"] = 29001011234567L;
+        original.Data["Order"] = 42;
+        original.Data["Tracking"] = Guid.Empty;
+        original.Data["Retried"] = true;
+
+        // when
+        var masked = masker.Mask(original);
+
+        // then: the long is masked; a short number, a GUID, and a boolean pass through with their own types
+        masked.Should().NotBeSameAs(original).And.BeOfType<InvalidOperationException>();
+        masked.Data["Citizen"].Should().Be("***");
+        masked.Data["Order"].Should().Be(42);
+        masked.Data["Tracking"].Should().Be(Guid.Empty);
+        masked.Data["Retried"].Should().Be(true);
+        original.Data["Citizen"].Should().Be(29001011234567L);
+    }
+
+    [Fact]
+    public void should_return_the_exception_itself_when_neither_messages_nor_data_match()
+    {
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new InvalidOperationException("lookup failed");
+        original.Data["Order"] = 42;
+        original.Data["Retried"] = true;
+
+        masker.Mask(original).Should().BeSameAs(original);
+    }
+
+    [Fact]
     public void should_return_its_arguments_when_no_text_redactor_is_registered()
     {
         // given
