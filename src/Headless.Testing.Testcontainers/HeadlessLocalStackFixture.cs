@@ -20,6 +20,14 @@ public class HeadlessLocalStackFixture()
     /// </summary>
     protected virtual string Image => TestImages.LocalStack;
 
+    /// <summary>
+    /// Gets the check that proves the container's edge port reaches this container's LocalStack, by its session id.
+    /// Start a container that a test stopped through its <see cref="PublishedPortCheck.StartAsync"/>, so a restart that
+    /// lands on another host listener's port moves on.
+    /// </summary>
+    public PublishedPortCheck PortCheck { get; } =
+        new(LocalStackBuilder.LocalStackPort, PublishedPortProbes.LocalStackSessionId);
+
     protected override LocalStackBuilder Configure()
     {
         return base.Configure().WithImage(Image);
@@ -29,12 +37,8 @@ public class HeadlessLocalStackFixture()
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync().ConfigureAwait(false);
-        await ContainerHostPort
-            .EnsureReachableAsync(
-                Container,
-                LocalStackBuilder.LocalStackPort,
-                cancellationToken: TestContext.Current.CancellationToken
-            )
+        await PortCheck
+            .VerifyAsync(Container, cancellationToken: TestContext.Current.CancellationToken)
             .ConfigureAwait(false);
     }
 }

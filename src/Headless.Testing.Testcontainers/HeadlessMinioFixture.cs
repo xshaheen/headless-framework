@@ -38,6 +38,19 @@ public class HeadlessMinioFixture() : ContainerFixture<ContainerBuilder, IContai
     /// <remarks>The image's entrypoint must be the <c>minio</c> binary, which the fixture runs as <c>server /data</c>.</remarks>
     protected virtual string Image => TestImages.Minio;
 
+    /// <summary>
+    /// Gets the check that proves the container's S3 port reaches this container: MinIO answers with no value of its
+    /// own, so it sees the probe's open connection inside the container. Start a container that a test stopped through
+    /// its <see cref="PublishedPortCheck.StartAsync"/>, so a restart that lands on another host listener's port moves on.
+    /// </summary>
+    public PublishedPortCheck PortCheck { get; } =
+        new(
+            MinioPort,
+            PublishedPortProbes.ConnectionSeenInside(
+                "GET /minio/health/live HTTP/1.1\r\nHost: localhost\r\n\r\n"u8.ToArray()
+            )
+        );
+
     protected override ContainerBuilder Configure()
     {
         return new ContainerBuilder(Image)
@@ -45,18 +58,17 @@ public class HeadlessMinioFixture() : ContainerFixture<ContainerBuilder, IContai
             .WithCommand("server", "/data")
             .WithEnvironment("MINIO_ROOT_USER", AccessKey)
             .WithEnvironment("MINIO_ROOT_PASSWORD", SecretKey)
-            .WithWaitStrategy(
-                Wait.ForUnixContainer()
-                    .UntilHttpRequestIsSucceeded(request => request.ForPath("/minio/health/ready").ForPort(MinioPort))
-            );
+            // Logged once the S3 API serves. A readiness request through the host would wait forever on a port another
+            // listener holds; the port check after the start covers the host path.
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("API:"));
     }
 
     /// <inheritdoc />
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync().ConfigureAwait(false);
-        await ContainerHostPort
-            .EnsureReachableAsync(Container, MinioPort, cancellationToken: TestContext.Current.CancellationToken)
+        await PortCheck
+            .VerifyAsync(Container, cancellationToken: TestContext.Current.CancellationToken)
             .ConfigureAwait(false);
     }
 }

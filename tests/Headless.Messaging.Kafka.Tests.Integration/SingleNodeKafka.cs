@@ -19,9 +19,6 @@ internal static class SingleNodeKafka
     private const int _InterBrokerPort = 9093;
     private const int _ControllerPort = 9094;
 
-    // Any fixed base64 UUID; a KRaft log is formatted once for the cluster it names, and this broker never outlives its test.
-    private const string _ClusterId = "4L6g3nShT-eMCtK--X86sw";
-
     private const string _StartScriptPath = "/headless-kafka-start.sh";
 
     /// <summary>Creates the container builder.</summary>
@@ -32,9 +29,14 @@ internal static class SingleNodeKafka
     /// broker keeps those addresses across a stop and start, so an address that must survive a restart cannot name a
     /// port Docker publishes per start.
     /// </param>
+    /// <param name="clusterId">
+    /// The KRaft cluster id, from <see cref="PublishedPortProbes.NewKafkaClusterId"/>. A port check compares it with the
+    /// one the published port answers, so it must be this broker's alone.
+    /// </param>
     public static ContainerBuilder CreateBuilder(
         IReadOnlyList<(string Name, int Port)> clientListeners,
-        Func<IContainer, CancellationToken, Task<string>> advertiseAsync
+        Func<IContainer, CancellationToken, Task<string>> advertiseAsync,
+        string clusterId
     )
     {
         var listeners = string.Join(
@@ -52,7 +54,7 @@ internal static class SingleNodeKafka
         }
 
         return builder
-            .WithEnvironment("CLUSTER_ID", _ClusterId)
+            .WithEnvironment("CLUSTER_ID", clusterId)
             .WithEnvironment("KAFKA_NODE_ID", "1")
             .WithEnvironment("KAFKA_PROCESS_ROLES", "broker,controller")
             .WithEnvironment("KAFKA_CONTROLLER_QUORUM_VOTERS", $"1@localhost:{_ControllerPort}")

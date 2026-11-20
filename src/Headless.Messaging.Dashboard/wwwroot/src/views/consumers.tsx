@@ -44,6 +44,7 @@ import {
   type MessagingCircuit,
   type MessagingConsumer,
 } from '../parts.tsx'
+import { useSequentialState, type IntakeHolder, type SequentialState } from '../sequential.ts'
 
 /**
  * The types that implement a consumer, short: the class name without its namespace, as the list has room for. A
@@ -213,6 +214,95 @@ export default function ConsumersView() {
   )
 }
 
+/** How hosts share a sequential consumer when no one host holds it, in the words the panel shows. */
+const sharedIntakeLabels: Record<string, string> = {
+  keyRouted: 'Every host, each key on one',
+  broker: 'Chosen by the broker',
+  none: 'Every host: no lock elects one',
+}
+
+function holderLabel(holder: IntakeHolder) {
+  switch (holder.state) {
+    case 'held':
+      return holder.node
+    case 'none':
+      return 'None'
+    case 'unavailable':
+      return `Unavailable: ${holder.reason}`
+  }
+}
+
+/**
+ * The host that takes a sequential consumer's deliveries in, and the messages waiting to run there. Under the
+ * messaging lock that is the holder of each subscription; otherwise every host, or the broker, shares it, so the
+ * waiting count is the viewed node's own.
+ */
+function SequentialFields({ consumer }: { consumer: MessagingConsumer }) {
+  const format = useFormat()
+  const { node } = useNode()
+  const state = useSequentialState(consumer, node, true)
+
+  if (state.isPending) {
+    return <GridField label="Active host">Reading…</GridField>
+  }
+
+  if (state.isError) {
+    return <GridField label="Active host">Unavailable: {state.error.message}</GridField>
+  }
+
+  return <SequentialStateFields state={state.data} formatNumber={format.number} />
+}
+
+function SequentialStateFields({
+  state,
+  formatNumber,
+}: {
+  state: SequentialState
+  formatNumber: (value: number) => string
+}) {
+  const waiting = (value: number | undefined) => (value === undefined ? 'Not reported' : formatNumber(value))
+
+  if (state.intake !== 'lock') {
+    return (
+      <>
+        <GridField label="Active host">
+          {(state.intake && sharedIntakeLabels[state.intake]) ?? 'Not reported by this host'}
+        </GridField>
+        <GridField label="Waiting here">{waiting(state.waiting)}</GridField>
+      </>
+    )
+  }
+
+  // One subscription on the Bus lane; one per message on the Queue lane, each with its own holder.
+  const isSingle = state.holders.length === 1
+  // A host counts the consumer's waiting messages across every subscription it holds, so each host shows once.
+  const holdingHosts = new Map<string, number | undefined>()
+
+  for (const holder of state.holders) {
+    if (holder.state === 'held' && !holdingHosts.has(holder.node)) {
+      holdingHosts.set(holder.node, holder.waiting)
+    }
+  }
+
+  return (
+    <>
+      {state.holders.map((holder) => (
+        <GridField
+          key={`host-${holder.subscription}`}
+          label={isSingle ? 'Active host' : `Active host (${holder.subscription})`}
+        >
+          {holderLabel(holder)}
+        </GridField>
+      ))}
+      {[...holdingHosts].map(([node, count]) => (
+        <GridField key={`waiting-${node}`} label={isSingle ? 'Waiting on active host' : `Waiting on ${node}`}>
+          {waiting(count)}
+        </GridField>
+      ))}
+    </>
+  )
+}
+
 function deliveryLabel(consumer: Pick<MessagingConsumer, 'delivery'>) {
   return consumer.delivery === 'every-instance' ? 'Every instance' : 'Competing'
 }
@@ -366,6 +456,9 @@ function ConsumerPanel({
                   </GridField>
                   <GridField label="Concurrency">{format.number(consumer.concurrency)}</GridField>
                   {consumer.sequential ? <GridField label="Ordering">One at a time per key</GridField> : null}
+                  {consumer.sequential && consumer.delivery === 'competing' ? (
+                    <SequentialFields consumer={consumer} />
+                  ) : null}
                   {consumer.consumeOnly ? (
                     <GridField label="Consume-only list">
                       {consumer.consumeOnly === 'listed' ? 'Listed' : 'Not listed'}

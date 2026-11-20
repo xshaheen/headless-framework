@@ -34,7 +34,8 @@ internal static class MessagingCommandHost
         string nodeName = "node-a",
         IDataStorage? sharedStorage = null,
         IDataProtectionProvider? sharedProtection = null,
-        Action<IServiceCollection>? configure = null
+        Action<IServiceCollection>? configure = null,
+        Action<MessagingSetupBuilder>? messaging = null
     )
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -53,6 +54,7 @@ internal static class MessagingCommandHost
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
+            messaging?.Invoke(setup);
         });
 
         if (sharedStorage is not null)

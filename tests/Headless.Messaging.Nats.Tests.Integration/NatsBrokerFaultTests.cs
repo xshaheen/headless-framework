@@ -37,7 +37,7 @@ public sealed class NatsBrokerFaultTests(NatsFixture fixture) : BrokerFaultTests
                 async token =>
                 {
                     await broker.Container.StopAsync(token);
-                    await broker.Container.StartAsync(token);
+                    await broker.PortCheck.StartAsync(broker.Container, token);
                 },
                 () => ((IAsyncDisposable)broker).DisposeAsync()
             );

@@ -892,6 +892,11 @@ export interface MessagingConsumer {
   concurrency: number
   /** Whether it handles the messages that share a routing affinity key one at a time; missing when it does not. */
   sequential?: boolean
+  /**
+   * How hosts share a sequential consumer: by the transport's key routing, by the broker, by the host that holds the
+   * messaging lock, or not at all. Missing when it is not sequential.
+   */
+  activeHost?: string
   inboxRetentionSeconds?: number
   rateLimit?:
     | { algorithm: 'token-bucket'; tokenLimit: number; tokensPerPeriod: number; replenishmentPeriodSeconds: number }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,7 +49,8 @@ internal static class ForwardingHost
         RecordingOperatorLog log,
         CancellationToken cancellationToken,
         Action<MessagingDashboardOptions>? options = null,
-        Action<IServiceCollection>? configure = null
+        Action<IServiceCollection>? configure = null,
+        Action<MessagingSetupBuilder>? messaging = null
     )
     {
         return MessagingCommandHost.StartAsync(
@@ -68,7 +70,8 @@ internal static class ForwardingHost
                     .AddHttpClient(ForwardingProtocol.ClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => network.ForCaller(nodeName));
                 configure?.Invoke(services);
-            }
+            },
+            messaging: messaging
         );
     }
 

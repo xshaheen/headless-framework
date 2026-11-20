@@ -70,6 +70,7 @@ import {
   runsNoun,
   runStatusMark,
   runsTopic,
+  useCronOccurrenceRemovals,
   useJobsCommands,
   usePending,
   viewOnlyReason,
@@ -136,6 +137,7 @@ export default function RunsView() {
       setScopeReset((count) => count + 1)
     }
   }, [search])
+  useCronOccurrenceRemovals()
   const runs = useDashboardKeysetList<Run>({
     topic: runsTopic,
     params: filter,

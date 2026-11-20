@@ -110,7 +110,7 @@ internal sealed class FixedPortRabbitMqFixture : HeadlessRabbitMqFixture
 
         try
         {
-            await Container.StartAsync(bound.Token);
+            await PortCheck.StartAsync(Container, bound.Token);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {
