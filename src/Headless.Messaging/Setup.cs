@@ -246,6 +246,9 @@ public static class SetupMessaging
 
         services.TryAddSingleton<IDispatcher, Dispatcher>();
 
+        // The sequential intake locks this host holds, so the dashboard can name the host that holds one.
+        services.TryAddSingleton<SequentialIntakeHolds>();
+
         // Circuit breaker
         services.AddMetrics();
         services.TryAddSingleton(sp => sp.GetRequiredService<ConsumerRegistry>().CircuitBreakers);

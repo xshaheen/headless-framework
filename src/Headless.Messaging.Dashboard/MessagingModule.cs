@@ -69,7 +69,16 @@ internal sealed class MessagingModule
         LocalSources = new MessagingSources(stores, LocalCounts, metrics);
         LocalChanges = new MessagingChangeSource(stores, options.ChangePageSize, options.ChangeOverlapWindow);
         PeerChanges = new PeerChangeFeed(LocalChanges, circuitChanges);
-        _api = new MessagingModuleApi(stores, LocalSources, metrics, services, options.SearchTimeout, forwarding);
+        SequentialStates = new MessagingSequentialStates(services, options.NodeName, forwarding);
+        _api = new MessagingModuleApi(
+            stores,
+            LocalSources,
+            metrics,
+            services,
+            options.SearchTimeout,
+            SequentialStates,
+            forwarding
+        );
         LocalCommands = new MessagingCommands(stores, LocalSources, services, options.SearchTimeout);
         _options = options;
         _forwarding = forwarding;
@@ -92,6 +101,9 @@ internal sealed class MessagingModule
     internal PeerChangeFeed PeerChanges { get; }
 
     internal MessagingCommands LocalCommands { get; }
+
+    /// <summary>Who holds each sequential consumer subscription, and the waiting count on the holder.</summary>
+    internal MessagingSequentialStates SequentialStates { get; }
 
     // A dashboard-only host reads no store: every answer comes from a discovered node.
     private bool IsStandalone => _forwarding?.IsStandalone == true;

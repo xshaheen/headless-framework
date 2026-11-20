@@ -1,10 +1,17 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition, type RowResult } from '@headless/dashboard-sdk/commands'
 import type { DashboardStateRole } from '@headless/dashboard-sdk'
-import { isNewerVersion, type DashboardApi, type DashboardListPage } from '@headless/dashboard-sdk/data'
+import {
+  isNewerVersion,
+  listKey,
+  objectKey,
+  type DashboardApi,
+  type DashboardListPage,
+} from '@headless/dashboard-sdk/data'
 import type { ListPageRequest, ListRange, ListSort } from '@headless/dashboard-sdk/table'
-import { useQuery } from '@headless/dashboard-sdk/query'
+import { useQuery, useQueryClient, type QueryClient } from '@headless/dashboard-sdk/query'
 import { useNavigate } from '@headless/dashboard-sdk/router'
+import { useStreamEvent, useTopics } from '@headless/dashboard-sdk/stream'
 import { useState } from 'react'
 
 export const runKinds = ['TimeJob', 'CronJobOccurrence'] as const
@@ -282,6 +289,95 @@ export const attemptTones: Readonly<Record<AttemptOutcome, DashboardStateRole>> 
 }
 
 export const runsTopic = 'jobs.run'
+
+/**
+ * The topic on which the server announces that a deleted cron job's stored occurrences are gone: one change whose id
+ * is the cron job's, whatever the number of occurrences, because a cron job can store any number of them.
+ */
+export const cronOccurrencesTopic = 'jobs.cron-occurrences'
+
+interface CachedRunPages {
+  pages: DashboardListPage<Run>[]
+  pageParams: unknown[]
+}
+
+function isRunPage(value: unknown): value is DashboardListPage<Run> {
+  return isRecord(value) && Array.isArray(value.items)
+}
+
+function isRunPages(value: unknown): value is CachedRunPages {
+  return isRecord(value) && Array.isArray(value.pages) && value.pages.every(isRunPage)
+}
+
+/** A page without the occurrences of `cronJobId`, its exact count lowered by the rows it dropped. */
+function withoutOccurrences(page: DashboardListPage<Run>, cronJobId: string): DashboardListPage<Run> {
+  const items = page.items.filter((run) => run.cronJobId !== cronJobId)
+
+  return items.length === page.items.length ? page : { ...page, items }
+}
+
+/**
+ * Drops a deleted cron job's occurrences from every cached run list and run, in place. A list's count, on its first
+ * page, drops by the rows it held; when more pages are left to load, rows it never held may have gone too, so that
+ * list is read again for its count and its next page.
+ */
+export function dropCronOccurrences(client: QueryClient, cronJobId: string) {
+  for (const [key, data] of client.getQueriesData({ queryKey: listKey(runsTopic) })) {
+    if (isRunPage(data)) {
+      const page = withoutOccurrences(data, cronJobId)
+      const dropped = data.items.length - page.items.length
+
+      if (dropped > 0) {
+        client.setQueryData(key, lowerCount(page, dropped))
+      }
+    } else if (isRunPages(data)) {
+      const pages = data.pages.map((page) => withoutOccurrences(page, cronJobId))
+      const dropped = data.pages.reduce((sum, page, index) => sum + page.items.length - pages[index]!.items.length, 0)
+
+      if (dropped === 0) {
+        continue
+      }
+
+      const [first, ...rest] = pages
+      client.setQueryData(key, { ...data, pages: first ? [lowerCount(first, dropped), ...rest] : pages })
+
+      if (pages.at(-1)?.nextCursor) {
+        void client.invalidateQueries({ queryKey: key, exact: true })
+      }
+    }
+  }
+
+  // An open run's page reads the run again and shows that it is gone. The key is the prefix every run's object key
+  // starts with.
+  void client.invalidateQueries({
+    queryKey: objectKey(runsTopic, '').slice(0, 2),
+    predicate: (query) => isRecord(query.state.data) && query.state.data.cronJobId === cronJobId,
+  })
+}
+
+function lowerCount(page: DashboardListPage<Run>, dropped: number): DashboardListPage<Run> {
+  // A capped count is a floor the server stopped at, so it stays.
+  return page.count && !page.count.capped
+    ? { ...page, count: { value: Math.max(0, page.count.value - dropped), capped: false } }
+    : page
+}
+
+/**
+ * Keeps the cached run lists free of a deleted cron job's occurrences while the calling view is mounted: the server
+ * announces them as one change on {@link cronOccurrencesTopic} rather than one removal per run.
+ */
+export function useCronOccurrenceRemovals() {
+  const client = useQueryClient()
+
+  useTopics([cronOccurrencesTopic])
+  // The shell's cache binding also files the change as a new row of this topic; no list reads that topic, so it never
+  // shows.
+  useStreamEvent('change', (change) => {
+    if (change.topic === cronOccurrencesTopic) {
+      dropCronOccurrences(client, change.id)
+    }
+  })
+}
 
 /** The fields of a live change's projection that decide which reads the change makes stale. */
 export interface RunProjectionFacts {

@@ -12,8 +12,8 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// The endpoints another node calls at <c>{base}/api/messaging/peer</c>: this node's own Needs you, id lookup,
-/// payloads, command availability, change feed, sidebar counts, Overview, a ping, and the scope and chunks of an
-/// Operation over this node's rows.
+/// payloads, command availability, change feed, sidebar counts, Overview, the sequential intake locks it holds, a
+/// ping, and the scope and chunks of an Operation over this node's rows.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -88,6 +88,11 @@ internal static class PeerEndpoints
                     async token => await module.LocalSources.GetOverviewAsync(token).ConfigureAwait(false)
                 )
         );
+        peer.MapGet(
+            "/sequential",
+            (HttpContext context, string? resource, string? consumer) =>
+                _IntakeHoldAsync(context, module, resource, consumer)
+        );
         // A ping proves this node admits the calling node's signed call and answers; it reads nothing.
         peer.MapGet(
             "/ping",
@@ -147,6 +152,34 @@ internal static class PeerEndpoints
             .ConfigureAwait(false);
 
         return payload is null ? Results.NotFound() : Results.Json(payload, MessagingForwarding.JsonOptions);
+    }
+
+    private static Task<IResult> _IntakeHoldAsync(
+        HttpContext context,
+        MessagingModule module,
+        string? resource,
+        string? consumer
+    )
+    {
+        if (!_IsPeerCall(context))
+        {
+            return Task.FromResult(Results.NotFound());
+        }
+
+        if (string.IsNullOrEmpty(resource) || string.IsNullOrEmpty(consumer))
+        {
+            return Task.FromResult<IResult>(
+                DashboardValidation.Problem(
+                    string.IsNullOrEmpty(resource) ? "resource" : "consumer",
+                    DashboardValidation.RequiredRule,
+                    "Send the lock resource and the consumer identity."
+                )
+            );
+        }
+
+        return Task.FromResult(
+            Results.Json(module.SequentialStates.ReadLocal(resource, consumer), MessagingForwarding.JsonOptions)
+        );
     }
 
     private static async Task<IResult> _AllowedAsync(

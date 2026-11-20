@@ -4,6 +4,8 @@ using System.Collections.Concurrent;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Processor;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -151,6 +153,50 @@ public sealed class SequentialActiveHostTests : TestBase
         );
         (firstProbe.Attempts("a-1") + secondProbe.Attempts("a-1")).Should().Be(1);
         broker.ClientsOf(PipelineOrder.Name).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_record_the_lease_on_the_holder_only_and_forget_it_when_the_holder_stops()
+    {
+        // given
+        var broker = new SimulatedBroker(new SimulationClock());
+        await using var locks = _CreateLocks(broker.Clock);
+        var holderProbe = new PipelineProbe();
+        await using var holder = await PipelineHosts.StartAsync(
+            holderProbe,
+            AbortToken,
+            _Sequential,
+            broker,
+            services => _UseLock(services, locks)
+        );
+        await using var other = await PipelineHosts.StartBesideAsync(
+            holder,
+            new PipelineProbe(),
+            AbortToken,
+            _Sequential,
+            services => _UseLock(services, locks)
+        );
+        var intake = (await _IntakeLocksAsync(locks)).Should().ContainSingle().Subject;
+
+        // then: the dashboard can name the holder from the lease the lock store reports
+        holder
+            .Services.GetRequiredService<SequentialIntakeHolds>()
+            .LeaseOf(intake.Resource)
+            .Should()
+            .Be(intake.LeaseId);
+        other.Services.GetRequiredService<SequentialIntakeHolds>().LeaseOf(intake.Resource).Should().BeNull();
+
+        // and: once the holder has run a message, it reports the consumer's waiting count, none being left
+        await _EnqueueAsync(holder, "a-0");
+        await holder.WithinBoundAsync(holderProbe.WhenCompletedAsync("a-0", 1), AbortToken);
+        var dispatcher = (Dispatcher)holder.Services.GetRequiredService<IDispatcher>();
+        dispatcher.SequentialWaiting(PipelineOrderConsumer.Identity).Should().Be(0);
+
+        // when
+        await holder.StopAsync(AbortToken);
+
+        // then
+        holder.Services.GetRequiredService<SequentialIntakeHolds>().LeaseOf(intake.Resource).Should().BeNull();
     }
 
     [Fact]
