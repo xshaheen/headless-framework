@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
@@ -18,6 +19,7 @@ namespace Tests.Diagnostics;
 /// </summary>
 public sealed class MessagingInstrumentationDiTests : TestBase
 {
+    private const string _NationalId = "29001011234567";
     private static readonly BrokerAddress _Broker = new("Test", "localhost");
 
     [Fact]
@@ -68,6 +70,88 @@ public sealed class MessagingInstrumentationDiTests : TestBase
         publish.Should().NotBeNull();
         publish!.GetTagItem("app.custom").Should().BeNull();
         MessagingTelemetry.PublishStop(publish, message, _Broker, 100, 120);
+    }
+
+    [Fact]
+    public void should_record_a_consume_failure_through_the_registered_text_masker()
+    {
+        // given: the id is in the message and, separately, only in the exception's own ToString()
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ILogTextMasker>(new ReplacingMasker());
+        services.AddHeadlessMessaging(_ => { });
+        using var provider = services.BuildServiceProvider();
+        var telemetry = provider.GetRequiredService<MessagingTelemetry>();
+        using var activity = new Activity("message.consume");
+        activity.Start();
+
+        // when
+        MessagingTelemetry.ConsumeError(
+            activity,
+            _CreateTransportMessage("orders.placed"),
+            _Broker,
+            new CitizenException($"no citizen {_NationalId}"),
+            telemetry.Masker,
+            elapsedMs: 5
+        );
+
+        // then: the event the exporter sends carries neither copy of the id
+        telemetry.Masker.Should().BeOfType<ReplacingMasker>();
+        var tags = activity.Events.Should().ContainSingle().Which.Tags.ToDictionary(t => t.Key, t => t.Value);
+        tags["exception.message"].Should().Be("no citizen ***");
+        tags["exception.stacktrace"]
+            .Should()
+            .BeOfType<string>()
+            .Which.Should()
+            .NotContain(_NationalId)
+            .And.Contain("(citizen ***)");
+        tags["exception.type"].Should().Be(typeof(CitizenException).FullName);
+    }
+
+    [Fact]
+    public void should_record_the_raw_exception_when_no_text_masker_is_registered()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(_ => { });
+        using var provider = services.BuildServiceProvider();
+        var telemetry = provider.GetRequiredService<MessagingTelemetry>();
+        using var activity = new Activity("message.consume");
+        activity.Start();
+
+        // when
+        MessagingTelemetry.ConsumeError(
+            activity,
+            _CreateTransportMessage("orders.placed"),
+            _Broker,
+            new InvalidOperationException($"no citizen {_NationalId}"),
+            telemetry.Masker,
+            elapsedMs: 5
+        );
+
+        // then
+        telemetry.Masker.Should().BeNull();
+        activity
+            .Events.Should()
+            .ContainSingle()
+            .Which.Tags.Should()
+            .Contain(new KeyValuePair<string, object?>("exception.message", $"no citizen {_NationalId}"));
+    }
+
+    private sealed class ReplacingMasker : ILogTextMasker
+    {
+        public string Mask(string text) => text.Replace(_NationalId, "***", StringComparison.Ordinal);
+
+        public Exception Mask(Exception exception) =>
+            exception.Message.Contains(_NationalId, StringComparison.Ordinal)
+                ? new InvalidOperationException(Mask(exception.Message))
+                : exception;
+    }
+
+    private sealed class CitizenException(string message) : Exception(message)
+    {
+        public override string ToString() => $"{base.ToString()} (citizen {_NationalId})";
     }
 
     private static ActivityListener _StartActivityListener()

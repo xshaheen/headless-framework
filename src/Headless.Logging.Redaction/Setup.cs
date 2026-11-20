@@ -85,6 +85,9 @@ public static class SetupLoggingRedaction
                 .. LogTextRedactorRegistration.All(provider).Select(static registration => registration.Redactor),
             ]));
 
+            // Features that cannot reference this package reach the same masker through the Hosting contract.
+            services.TryAddSingleton<ILogTextMasker>(static provider => provider.GetRequiredService<LogTextMasker>());
+
             return services;
         }
     }

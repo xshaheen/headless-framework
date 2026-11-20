@@ -270,6 +270,7 @@ internal sealed class MessageSender : IMessageSender
                 transportMsg,
                 brokerAddress,
                 ex,
+                _telemetry.Masker,
                 traceHandle.ElapsedMs(_NowMs()),
                 message.Lane
             );
@@ -291,6 +292,7 @@ internal sealed class MessageSender : IMessageSender
                 transportMsg,
                 brokerAddress,
                 ex,
+                _telemetry.Masker,
                 traceHandle.ElapsedMs(_NowMs()),
                 message.Lane
             );
@@ -345,6 +347,7 @@ internal sealed class MessageSender : IMessageSender
                     transportMsg,
                     brokerAddress,
                     ex,
+                    _telemetry.Masker,
                     traceHandle.ElapsedMs(_NowMs()),
                     message.Lane
                 );
@@ -1058,6 +1061,7 @@ internal sealed class MessageSender : IMessageSender
             message,
             broker,
             ex,
+            _telemetry.Masker,
             traceHandle.ElapsedMs(_NowMs()),
             lane
         );

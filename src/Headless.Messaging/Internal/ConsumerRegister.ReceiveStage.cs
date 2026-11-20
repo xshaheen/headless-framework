@@ -466,7 +466,14 @@ internal sealed partial class ConsumerRegister
         }
 
         var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        MessagingTelemetry.ConsumeError(traceHandle.Activity, message, broker, ex, traceHandle.ElapsedMs(now));
+        MessagingTelemetry.ConsumeError(
+            traceHandle.Activity,
+            message,
+            broker,
+            ex,
+            _telemetry.Masker,
+            traceHandle.ElapsedMs(now)
+        );
     }
 
     #endregion

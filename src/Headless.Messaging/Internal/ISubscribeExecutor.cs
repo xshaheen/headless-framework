@@ -1609,6 +1609,7 @@ internal sealed class SubscribeExecutor(
             method,
             messagingSystem,
             ex,
+            _telemetry.Masker,
             now - traceHandle.StartTimestampMs!.Value
         );
     }

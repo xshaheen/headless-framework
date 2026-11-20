@@ -94,7 +94,7 @@ Other public types:
 - `[SecretData]`, `[PrivateData]`, `[IdentifierData]`: `DataClassificationAttribute`s for properties, fields, parameters, and types.
 - `PrefixMaskRedactor`: keeps the first characters (8 by default) and appends `***`, for device tokens and similar. Map it to a classification with `ConfigureRedaction`.
 - `ILogTextRedactor`: a text redactor of your own. A library can register one directly as an `ILogTextRedactor` singleton, without the builder; it then scans every entry.
-- `LogTextMasker`: applies every registered text redactor outside the logger factory. `Mask(string)`, `MaskValue(object?)`, and `Mask(Exception)` each return the argument unchanged when nothing matched. `IsEnabled` is `true` when any text redactor is registered. Resolve it to mask a channel the framework does not write, such as an error tracker's before-send hook (Sentry's `SetBeforeSend`, an Application Insights telemetry processor). Every redactor applies through it, whatever its scope, because these channels have no category or level.
+- `LogTextMasker`: applies every registered text redactor outside the logger factory. `Mask(string)`, `MaskValue(object?)`, and `Mask(Exception)` each return the argument unchanged when nothing matched. `AddHeadlessRedaction` also registers it as `ILogTextMasker` (package `Headless.Hosting`), which a library resolves without referencing this package. `IsEnabled` is `true` when any text redactor is registered. Resolve it to mask a channel the framework does not write, such as an error tracker's before-send hook (Sentry's `SetBeforeSend`, an Application Insights telemetry processor). Every redactor applies through it, whatever its scope, because these channels have no category or level.
 - `ILogPathRedactor`: declares request paths that carry a credential (`bool TryRedact(string path, out string? redacted)`). Register implementations as `ILogPathRedactor` singletons. `UseSignedUrlEndpoint` registers one for signed blob URLs. `ILogPathRedactor.TryRedactAny(redactors, path, out redacted)` and `ILogPathRedactor.RedactAny(redactors, path)` apply the first matching redactor, for paths your own code logs.
 - `RedactedException`: see exception masking below.
 
@@ -127,7 +127,7 @@ Exception masking:
 - **The logged exception is never changed.** A text redactor in scope scans the `Message` of the logged exception and of each inner exception, every `AggregateException` member included. With no match, providers receive the same object. With a match, they receive a copy of the same type with masked messages and masked inner exceptions. The copy keeps the original's stack frames, `TargetSite`, `Data`, `HResult`, and `GetType()`, so error trackers group and symbolicate it as before.
 - **`RedactedException` is the fallback.** When a matching exception cannot be masked in a copy of its own type (a subclass that builds `Message` from its own fields, for example), providers receive a `RedactedException`. Its `ToString()` is the original's full text, masked. `Message` and `StackTrace` are the original's, masked. `OriginalTypeName` names the original type. `InnerException` and `InnerExceptions` hold the original's inner exceptions. `Data` is the original's dictionary, unscanned. `TargetSite` is `null`. A provider that reports `GetType()` reports `RedactedException`: read `OriginalTypeName`.
 - **Not masked:** text only in a stack trace or a `ToString()` override, `Exception.Data` values (enrichers such as Serilog.Exceptions write them as they are), and exception text returned in an HTTP response. Classification does not apply to exception text.
-- **Span exception events.** An event another library or your code records on a span (`Activity.AddException`, an instrumentation's `RecordException`) cannot be rewritten afterwards. Record it from `LogTextMasker.Mask(exception)` instead.
+- **Span exception events.** An event another library or your code records on a span (`Activity.AddException`, an instrumentation's `RecordException`) cannot be rewritten afterwards. Record it with `masker.RecordException(activity, exception)` on `ILogTextMasker` instead of `activity.AddException(masker.Mask(exception))`. It masks the event's `exception.message`, and its `exception.stacktrace` from the exception's full `ToString()` text, so a value only in a stack frame or a `ToString()` override is masked too. The framework records its own span exception events this way: the request span and every messaging span.
 - **Every channel masks the same way.** Logs, the spans `AddHeadless` records, span failure text, and Serilog's own `ILogger` use the same redactors and the same exception copy, so a value is masked identically wherever it appears and nothing else in the record changes.
 
 ### Channel coverage
@@ -143,7 +143,8 @@ Exception masking:
 | Outgoing `HttpClient` logging | Microsoft's `AddExtendedHttpClientLogging` (package `Microsoft.Extensions.Http.Diagnostics`), with the same classifications. It replaces the default `HttpClient` logger rather than adding beside it. |
 | Exported OTLP logs and spans | everything above, plus the [collector backstop](#collector-backstop) |
 | Exception messages and inner-exception messages logged through `ILogger` | `MaskText` and any `ILogTextRedactor`, through a masked copy of the same type, or a `RedactedException` |
-| The request span's exception event | `AddHeadless()` records it from the masked copy when `OpenTelemetry.RecordException` is on; events other code records are not rewritten |
+| The request span's exception event | `AddHeadless()` records it through `ILogTextMasker.RecordException` when `OpenTelemetry.RecordException` is on; events other code records are not rewritten |
+| Messaging span exception events (publish, persist, consume, subscriber invoke) | `AddHeadlessRedaction()` with a text redactor; Messaging resolves `ILogTextMasker` when it is registered and records the raw exception otherwise |
 | A span's status description and `exception.message` and `exception.stacktrace` tags | `AddHeadlessTextRedaction()` on the tracer provider (`AddHeadless()` adds it) |
 | Events written through an injected Serilog `ILogger` | `AddHeadlessSerilog()`: classified property names (`ClassifyProperty`), the template text, scalar properties, `ForContext` values, and the exception |
 
@@ -210,7 +211,7 @@ With `AddHeadless()`, skip the tracing block: it already adds both processors ah
 - **Add both span processors before any exporter.** Processors run in the order they are added, and an exporter added first exports the raw value.
 - **The request span is redacted when the first middleware runs.** Exporters receive the redacted value. A sampler, or a processor's `OnStart`, runs earlier and still sees the raw path.
 - **HTTP logging writes no header you do not list.** A listed header is logged by name with its value through its classification's redactor. An unlisted header is left out entirely.
-- **Recorded exception events are not rewritten.** Record span exception events from `LogTextMasker.Mask(exception)`, as `AddHeadless()` does for the request span.
+- **Recorded exception events are not rewritten.** Record span exception events with `ILogTextMasker.RecordException(activity, exception)`, as `AddHeadless()` does for the request span.
 
 ---
 

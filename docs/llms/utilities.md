@@ -301,6 +301,7 @@ The host's deploy verbs, health checks, startup validation, seeders, resource pr
 | Conditional, replacing, and decorating registrations | `AddIf`, `AddOrReplace*`, `TryDecorateWith` | [Service registration helpers](#service-registration-helpers) |
 | Sequential GUIDs | `AddHeadlessGuidGenerator()` | Registers keyed `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`, plus an unkeyed default. The contracts are in [extensions.md](extensions.md). |
 | Structured logging scopes | `LogState`, `HeadlessLoggerExtensions` | A scope builder with fluent property and tag methods, and level-gated `Log*` overloads that build the scope inline |
+| Mask text and exceptions without referencing the redaction package | `ILogTextMasker`, `RecordException(activity, exception)` | `AddHeadlessRedaction` registers it. Resolve it with `GetService` as optional and write the raw value when it is `null`. `RecordException` records a span exception event with its message and rendered text masked. See [logging.md](logging.md#headlessloggingredaction) |
 | Relational schema steps | `AddHeadlessSchemaContribution` | [SQL](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), including [its observability](sql.md#schema-runner-observability) |
 
 ### Setup
