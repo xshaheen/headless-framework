@@ -101,6 +101,26 @@ describe('messaging sequential consumer state', () => {
     expect(field(panel, 'Waiting here')).toBe('2')
   })
 
+  it('names each Queue-lane subscription’s holder and counts each holding host once', async () => {
+    const { panel } = await openPanel({
+      consumers: [{ ...sequential, lane: 'Queue' }],
+      extra: answering({
+        intake: 'lock',
+        holders: [
+          { subscription: 'OrderPlaced', state: 'held', node: 'node-a', waiting: 4 },
+          { subscription: 'OrderShipped', state: 'held', node: 'node-a', waiting: 4 },
+          { subscription: 'OrderCancelled', state: 'none' },
+        ],
+      }),
+    })
+
+    await waitFor(() => expect(field(panel, 'Active host (OrderPlaced)')).toBe('node-a'))
+    expect(field(panel, 'Active host (OrderShipped)')).toBe('node-a')
+    expect(field(panel, 'Active host (OrderCancelled)')).toBe('None')
+    expect(within(panel).getAllByText('Waiting on node-a', { selector: 'dt' })).toHaveLength(1)
+    expect(field(panel, 'Waiting on node-a')).toBe('4')
+  })
+
   it('shows neither field, and asks nothing, for a consumer that is not sequential', async () => {
     const { view, panel } = await openPanel({
       consumers: [consumer],

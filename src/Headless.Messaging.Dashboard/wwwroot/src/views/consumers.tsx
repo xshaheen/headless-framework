@@ -275,6 +275,14 @@ function SequentialStateFields({
 
   // One subscription on the Bus lane; one per message on the Queue lane, each with its own holder.
   const isSingle = state.holders.length === 1
+  // A host counts the consumer's waiting messages across every subscription it holds, so each host shows once.
+  const holdingHosts = new Map<string, number | undefined>()
+
+  for (const holder of state.holders) {
+    if (holder.state === 'held' && !holdingHosts.has(holder.node)) {
+      holdingHosts.set(holder.node, holder.waiting)
+    }
+  }
 
   return (
     <>
@@ -286,16 +294,11 @@ function SequentialStateFields({
           {holderLabel(holder)}
         </GridField>
       ))}
-      {state.holders
-        .filter((holder) => holder.state === 'held')
-        .map((holder) => (
-          <GridField
-            key={`waiting-${holder.subscription}`}
-            label={isSingle ? 'Waiting on active host' : `Waiting on ${holder.node} (${holder.subscription})`}
-          >
-            {waiting(holder.waiting)}
-          </GridField>
-        ))}
+      {[...holdingHosts].map(([node, count]) => (
+        <GridField key={`waiting-${node}`} label={isSingle ? 'Waiting on active host' : `Waiting on ${node}`}>
+          {waiting(count)}
+        </GridField>
+      ))}
     </>
   )
 }

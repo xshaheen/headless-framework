@@ -4,6 +4,8 @@ using System.Collections.Concurrent;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Processor;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -159,8 +161,9 @@ public sealed class SequentialActiveHostTests : TestBase
         // given
         var broker = new SimulatedBroker(new SimulationClock());
         await using var locks = _CreateLocks(broker.Clock);
+        var holderProbe = new PipelineProbe();
         await using var holder = await PipelineHosts.StartAsync(
-            new PipelineProbe(),
+            holderProbe,
             AbortToken,
             _Sequential,
             broker,
@@ -182,6 +185,12 @@ public sealed class SequentialActiveHostTests : TestBase
             .Should()
             .Be(intake.LeaseId);
         other.Services.GetRequiredService<SequentialIntakeHolds>().LeaseOf(intake.Resource).Should().BeNull();
+
+        // and: once the holder has run a message, it reports the consumer's waiting count, none being left
+        await _EnqueueAsync(holder, "a-0");
+        await holder.WithinBoundAsync(holderProbe.WhenCompletedAsync("a-0", 1), AbortToken);
+        var dispatcher = (Dispatcher)holder.Services.GetRequiredService<IDispatcher>();
+        dispatcher.SequentialWaiting(PipelineOrderConsumer.Identity).Should().Be(0);
 
         // when
         await holder.StopAsync(AbortToken);
