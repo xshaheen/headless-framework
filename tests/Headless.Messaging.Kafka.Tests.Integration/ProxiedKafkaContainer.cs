@@ -4,6 +4,7 @@ using System.Globalization;
 using DotNet.Testcontainers.Containers;
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
+using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.Toxiproxy;
@@ -71,7 +72,8 @@ internal sealed class ProxiedKafkaContainer : IAsyncDisposable
 
                     return $"PLAINTEXT://{proxy.Host}:{proxy.Port.ToString(CultureInfo.InvariantCulture)},"
                         + $"DIRECT://{directBootstrap}";
-                }
+                },
+                PublishedPortProbes.NewKafkaClusterId()
             )
             .Build();
 

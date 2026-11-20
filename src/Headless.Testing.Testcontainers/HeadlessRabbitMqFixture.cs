@@ -48,6 +48,14 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
     /// <remarks>The image must keep the official <c>rabbitmq</c> entrypoint and <c>rabbitmqctl</c>, which the fixture uses.</remarks>
     protected virtual string Image => TestImages.RabbitMq;
 
+    /// <summary>
+    /// Gets the check that proves the container's AMQP port reaches this container's broker, by the host name in its
+    /// cluster name. Start a private container that a test stopped through its <see cref="PublishedPortCheck.StartAsync"/>,
+    /// so a restart that lands on another host listener's port moves on.
+    /// </summary>
+    public PublishedPortCheck PortCheck { get; } =
+        new(RabbitMqBuilder.RabbitMqPort, PublishedPortProbes.RabbitMqClusterName);
+
     /// <summary>Gets the started container, for its host, mapped port, or command execution.</summary>
     public RabbitMqContainer Container =>
         _container ?? throw new InvalidOperationException("The RabbitMQ fixture has not been initialized.");
@@ -110,14 +118,7 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
         }
 
         _container = await SharedTestContainers.StartAsync(_Build, cancellationToken).ConfigureAwait(false);
-        await ContainerHostPort
-            .EnsureReachableAsync(
-                _container,
-                RabbitMqBuilder.RabbitMqPort,
-                allowRestart: !_shared,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        await PortCheck.VerifyAsync(_container, allowRestart: !_shared, cancellationToken).ConfigureAwait(false);
         await _WaitUntilBrokerAnswersAsync(_container, cancellationToken).ConfigureAwait(false);
 
         if (_shared)

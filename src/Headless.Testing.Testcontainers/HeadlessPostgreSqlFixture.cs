@@ -36,6 +36,9 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
     // 100 fails a start with 53300 long before memory runs short.
     private const string _MaxConnections = "max_connections=1000";
 
+    private const string _Username = "postgres";
+    private const string _Password = "postgres";
+
     private PostgreSqlContainer? _container;
     private PostgreSqlDatabaseOwnership? _ownership;
     private bool _shared;
@@ -57,6 +60,14 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
     /// sets the superuser through <c>POSTGRES_USER</c> and <c>POSTGRES_PASSWORD</c>.
     /// </remarks>
     protected virtual string Image => TestImages.PostgreSql;
+
+    /// <summary>
+    /// Gets the check that proves the container's published port reaches this container's server, by its
+    /// <c>system_identifier</c>. Start a private container that a test stopped through its
+    /// <see cref="PublishedPortCheck.StartAsync"/>, so a restart that lands on another host listener's port moves on.
+    /// </summary>
+    public PublishedPortCheck PortCheck { get; } =
+        new(PostgreSqlBuilder.PostgreSqlPort, PublishedPortProbes.PostgreSqlSystemIdentifier(_Username, _Password));
 
     /// <summary>Gets the started container, for its host, mapped port, or command execution.</summary>
     public PostgreSqlContainer Container =>
@@ -121,14 +132,7 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
         }
 
         _container = await SharedTestContainers.StartAsync(_Build, cancellationToken).ConfigureAwait(false);
-        await ContainerHostPort
-            .EnsureReachableAsync(
-                _container,
-                PostgreSqlBuilder.PostgreSqlPort,
-                allowRestart: !_shared,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        await PortCheck.VerifyAsync(_container, allowRestart: !_shared, cancellationToken).ConfigureAwait(false);
         _ownership = await PostgreSqlDatabaseOwnership
             .CreateAsync(AdminConnectionString, cancellationToken)
             .ConfigureAwait(false);
@@ -165,8 +169,8 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
     {
         var image = Image;
         var builder = new PostgreSqlBuilder(image)
-            .WithUsername("postgres")
-            .WithPassword("postgres")
+            .WithUsername(_Username)
+            .WithPassword(_Password)
             .WithDatabase("postgres")
             .WithCommand("-c", _MaxConnections);
 

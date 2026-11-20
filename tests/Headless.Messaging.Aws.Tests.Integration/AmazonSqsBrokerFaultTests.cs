@@ -74,7 +74,7 @@ public sealed class AmazonSqsBrokerFaultTests(LocalStackTestFixture fixture) : B
         }
 
         await broker.Container.StopAsync(cancellationToken);
-        await broker.Container.StartAsync(cancellationToken);
+        await broker.PortCheck.StartAsync(broker.Container, cancellationToken);
 
         using (var sqs = _CreateSqsClient(broker))
         {

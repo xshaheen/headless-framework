@@ -47,7 +47,7 @@ public sealed class KafkaBrokerFaultTests(KafkaFixture fixture) : BrokerFaultTes
                     // loses it, and the broker then correctly replays the settled delivery, so wait for it to land.
                     await _WaitForCommittedOffsetAsync(broker.ConnectionString, group, session.Destination, token);
                     await broker.Container.StopAsync(token);
-                    await broker.Container.StartAsync(token);
+                    await broker.PortCheck.StartAsync(broker.Container, token);
                 },
                 broker.DisposeAsync
             );
