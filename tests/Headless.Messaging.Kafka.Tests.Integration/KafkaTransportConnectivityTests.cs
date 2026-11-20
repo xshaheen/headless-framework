@@ -2,6 +2,7 @@
 
 using DotNet.Testcontainers.Containers;
 using Headless.Messaging;
+using Headless.Testing.Testcontainers;
 
 namespace Tests;
 
@@ -36,7 +37,7 @@ public sealed class KafkaTransportConnectivityTests : TransportConnectivityTests
 
     protected override Task RestoreBrokerAsync(CancellationToken cancellationToken)
     {
-        return _broker.Container.StartAsync(cancellationToken);
+        return _broker.PortCheck.StartAsync(_broker.Container, cancellationToken);
     }
 
     protected override ValueTask StopBrokerAsync()
@@ -63,19 +64,25 @@ internal sealed class FixedPortKafkaFixture : IAsyncDisposable
     {
         _forwarder = new BrokerPortForwarder(_GetContainer, _ClientPort);
         var advertised = $"PLAINTEXT://{_forwarder.Address}";
+        var clusterId = PublishedPortProbes.NewKafkaClusterId();
         Container = SingleNodeKafka
-            .CreateBuilder([("PLAINTEXT", _ClientPort)], (_, _) => Task.FromResult(advertised))
+            .CreateBuilder([("PLAINTEXT", _ClientPort)], (_, _) => Task.FromResult(advertised), clusterId)
             .Build();
+        // The broker advertises the forwarder, not its published port, so a restart on another port keeps working.
+        PortCheck = new PublishedPortCheck(_ClientPort, PublishedPortProbes.KafkaClusterId);
     }
 
     public IContainer Container { get; }
+
+    /// <summary>Gets the check that proves the published port reaches this broker; start the broker only through it.</summary>
+    public PublishedPortCheck PortCheck { get; }
 
     /// <summary>Gets the bootstrap address, which stays the same across a stop and start.</summary>
     public string ConnectionString => _forwarder.Address;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        return Container.StartAsync(cancellationToken);
+        return PortCheck.StartAsync(Container, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

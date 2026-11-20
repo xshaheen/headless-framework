@@ -36,7 +36,7 @@ public sealed class NatsTransportConnectivityTests : TransportConnectivityTestsB
 
     protected override Task RestoreBrokerAsync(CancellationToken cancellationToken)
     {
-        return _broker.Container.StartAsync(cancellationToken);
+        return _broker.PortCheck.StartAsync(_broker.Container, cancellationToken);
     }
 
     protected override ValueTask StopBrokerAsync()
@@ -80,6 +80,7 @@ internal sealed class FixedPortNatsFixture : HeadlessNatsFixture
     {
         return new NatsBuilder(TestImages.Nats)
             .WithResourceMapping(_Config, FilePath.Of("/etc/nats/nats-server.conf"))
+            .WithCommand("--server_name", ServerName)
             .WithWaitStrategy(
                 Wait.ForUnixContainer()
                     .UntilMessageIsLogged("Server is ready")

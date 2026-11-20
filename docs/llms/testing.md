@@ -390,7 +390,7 @@ Other types:
 
 - `TestImages` pins every image tag. No fixture uses `:latest`.
 - `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (namespace `Testcontainers.Redis`) run `redis-cli FLUSHALL` inside the container, so the next test starts clean without a client connection or `allowAdmin`.
-- `RedisBuilder.WithHostPingWaitStrategy()` holds the container start until Redis answers `PING` through the mapped host port. `HeadlessRedisFixture` applies it. Call it on a `RedisBuilder` you build yourself: the stock check pings inside the container, so a client that connects right after `StartAsync` can be refused while Docker still sets up the port forward, and StackExchange.Redis's default `abortConnect=true` turns that into `RedisConnectionException`.
+- `RedisBuilder.WithHostPingWaitStrategy()` holds the container start until this container's Redis answers through the mapped host port, compared by its `run_id`. Call it on a `RedisBuilder` you build yourself: the stock check pings inside the container, so a client that connects right after `StartAsync` can be refused while Docker still sets up the port forward, and StackExchange.Redis's default `abortConnect=true` turns that into `RedisConnectionException`. When another Redis or listener answers on the host port, the start fails with `InvalidOperationException`. To restart on another port instead, start the container through `PublishedPortCheck` (see [Port check after start](#port-check-after-start)).
 - `HeadlessMinioFixture` runs a plain `ContainerBuilder` container, because Testcontainers removed its MinIO module in 4.16. Build a client from its `ConnectionString` and its `AccessKey` and `SecretKey` constants, not from `Container`.
 - `HeadlessResourceReaperFixture` starts Testcontainers' resource reaper (Ryuk) before any test runs and retries the start once. See [Resource reaper start](#resource-reaper-start).
 - `TestContextMessageSink` forwards Testcontainers diagnostics to xUnit v3.
@@ -429,7 +429,25 @@ The SQL Server, PostgreSQL, and RabbitMQ fixtures attach to one container per im
 
 ### Port check after start
 
-Every fixture except Redis and Kafka checks its service port from the host after the start and restarts the container once if nothing answers, because a desktop Docker engine can fail to forward the host port it picked. A second failure stops the fixture with a message naming both ports. Kafka is excluded because a restarted broker would keep advertising the dead port.
+A desktop Docker engine (OrbStack, Docker Desktop) hands out host ports in sequence without looking at the host. When a test process already listens on that port on `127.0.0.1`, every connection to the container's published port reaches that process instead, for the container's whole run. A forward that fails outright refuses every connection instead. So every fixture checks, after the start, that each port clients dial answers with a value only its own container gives, and starts the container again on other ports while one does not.
+
+| Fixture | What the port must answer |
+| --- | --- |
+| `HeadlessPostgreSqlFixture` | The server's `system_identifier`, compared with `psql` inside the container |
+| `HeadlessSqlServerFixture` | `SERVERPROPERTY('MachineName')`, the container's host name, after a login |
+| `HeadlessRabbitMqFixture` | An AMQP cluster name `rabbit@<container host name>` |
+| `HeadlessRedisFixture` | The `INFO server` `run_id`, compared with `redis-cli` inside the container |
+| `HeadlessNatsFixture` | The `server_name` the fixture started the server with (`ServerName`) |
+| `HeadlessKafkaFixture` | The cluster id the broker stored in `meta.properties` inside the container |
+| `HeadlessLocalStackFixture` | The `/_localstack/info` `session_id`, compared with the one read inside the container |
+| `HeadlessAzuriteFixture` | An account only this container serves, on the blob, queue, and table ports |
+| `HeadlessMinioFixture` | Any reply, while the container shows the probe's connection as established on its port |
+
+- Each fixture exposes the check as `PortCheck`, except Kafka. After a test stops a private container, start it with `await fixture.PortCheck.StartAsync(fixture.Container, ct)`, not `Container.StartAsync`, so a restart that lands on a held port moves on.
+- A port refused for 15 seconds, or one that accepts but never answers as the container for two minutes, counts as lost too. Three starts that all lose a port fail the fixture with `InvalidOperationException` naming each port and why.
+- A shared container (SQL Server, PostgreSQL, RabbitMQ with sharing on) and the Kafka fixture are never restarted. They fail at once with `InvalidOperationException`: a restart would cut every other run on the shared server, and Kafka keeps advertising the port it started on.
+- For a container you build yourself, create `new PublishedPortCheck(containerPort, probe)` with a probe from `PublishedPortProbes` and start the container through `check.StartAsync(container, ct)`. Start a KRaft Kafka with `CLUSTER_ID` set from `PublishedPortProbes.NewKafkaClusterId()`, because a fixed id is the same in every broker started with it, and a NATS server with its own `--server_name`. `PublishedPortProbes.ConnectionSeenInside(hello)` suits a server with no value of its own to compare, but needs `cat` in the image and no other client on the port while it starts.
+- `HeadlessRedisClusterFixture` checks every node's `run_id` but cannot restart, because the nodes announce the ports they started on. A held port fails its start.
 
 ### Resource reaper start
 

@@ -34,7 +34,7 @@ public sealed class RedisTransportConnectivityTests : TransportConnectivityTests
 
     protected override Task RestoreBrokerAsync(CancellationToken cancellationToken)
     {
-        return _broker.Container.StartAsync(cancellationToken);
+        return _broker.PortCheck.StartAsync(_broker.Container, cancellationToken);
     }
 
     protected override ValueTask StopBrokerAsync()
