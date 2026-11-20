@@ -12,7 +12,7 @@ using Renci.SshNet.Common;
 namespace Tests;
 
 [Collection<SshBlobStorageFixture>]
-public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobStorageTestsBase
+public sealed partial class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {
@@ -155,6 +155,67 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         shortWait.CancelAfter(TimeSpan.FromMilliseconds(500));
         var blocked = async () => await storage.OpenReadStreamAsync(location, shortWait.Token);
         await blocked.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task slow_uploads_do_not_block_store_operations(bool seekable)
+    {
+        // given: a store whose operation pool is fully covered by uploads that stall mid-body, as a signed-URL upload
+        // from a slow client does; a seekable source stands for a buffered request body that still reads the network
+        var options = new SshBlobStorageOptions
+        {
+            ConnectionString = fixture.GetConnectionString(),
+            MaxPoolSize = 2,
+            MaxConcurrentOperations = 2,
+        };
+        using var pool = new SftpClientPool(
+            new OptionsWrapper<SshBlobStorageOptions>(options),
+            NullLogger<SftpClientPool>.Instance
+        );
+        await using var storage = _CreateStorage(pool, options);
+        await ResetAsync(storage);
+
+        var existing = new BlobLocation(ContainerName, "existing.txt");
+        await storage.UploadContentAsync(existing, "payload", AbortToken);
+
+        await using var firstBody = new StalledStream(seekable);
+        await using var secondBody = new StalledStream(seekable);
+        var firstUpload = storage
+            .UploadAsync(new BlobLocation(ContainerName, "slow-1.bin"), firstBody, cancellationToken: AbortToken)
+            .AsTask();
+        var secondUpload = storage
+            .UploadAsync(new BlobLocation(ContainerName, "slow-2.bin"), secondBody, cancellationToken: AbortToken)
+            .AsTask();
+
+        try
+        {
+            await firstBody.Started.WaitAsync(AbortToken);
+            await secondBody.Started.WaitAsync(AbortToken);
+
+            // when: the store's own operations run while both uploads hold their connections
+            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+            bounded.CancelAfter(TimeSpan.FromSeconds(30));
+
+            var info = await storage.GetBlobInfoAsync(existing, bounded.Token);
+            var listed = await storage.GetBlobsListAsync(Container, cancellationToken: bounded.Token);
+            var deleted = await storage.DeleteAsync(existing, bounded.Token);
+
+            // then: none of them waited on the stalled uploads
+            info.Should().NotBeNull();
+            listed.Should().Contain(blob => blob.BlobKey.EndsWith("existing.txt", StringComparison.Ordinal));
+            deleted.Should().BeTrue();
+        }
+        finally
+        {
+            firstBody.Finish();
+            secondBody.Finish();
+            await Task.WhenAll(firstUpload, secondUpload);
+        }
+
+        (await storage.ExistsAsync(new BlobLocation(ContainerName, "slow-1.bin"), AbortToken)).Should().BeTrue();
+        (await storage.ExistsAsync(new BlobLocation(ContainerName, "slow-2.bin"), AbortToken)).Should().BeTrue();
     }
 
     [Fact]
@@ -853,4 +914,79 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     }
 
     #endregion
+
+    private SshBlobStorage _CreateStorage(SftpClientPool pool, SshBlobStorageOptions options)
+    {
+        return new SshBlobStorage(
+            pool,
+            fixture.CrossOsNamingNormalizer,
+            new SystemJsonSerializer(),
+            new OptionsMonitorWrapper<SshBlobStorageOptions>(options),
+            TimeProvider.System,
+            LoggerFactory.CreateLogger<SshBlobStorage>()
+        );
+    }
+
+    /// <summary>
+    /// An upload body that hands out one byte, then stalls until <see cref="Finish"/>: a client sending its body
+    /// slowly. <see cref="Started"/> completes once the upload has read from it, so it holds its SFTP connection.
+    /// </summary>
+    private sealed class StalledStream(bool seekable) : Stream
+    {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private bool _sentFirstByte;
+
+        public Task Started => _started.Task;
+
+        public void Finish() => _finished.TrySetResult();
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => seekable;
+
+        public override bool CanWrite => false;
+
+        public override long Length => seekable ? 1 : throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => seekable ? (_sentFirstByte ? 1 : 0) : throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (!_sentFirstByte)
+            {
+                _sentFirstByte = true;
+                buffer.Span[0] = (byte)'x';
+                _started.TrySetResult();
+
+                return 1;
+            }
+
+            await _finished.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }
