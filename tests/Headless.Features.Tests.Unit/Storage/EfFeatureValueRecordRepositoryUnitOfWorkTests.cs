@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Caching;
 using Headless.Features;
 using Headless.Hosting;
@@ -129,6 +130,34 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         // then
         unit.IsRetryPrevented.Should().BeTrue();
         (await Repository.GetListAsync("Tenant", "t1", AbortToken)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_save_a_versioned_group_only_while_it_keeps_its_version()
+    {
+        // given a stored value and the version of its group
+        await using var owner = await _CreateOwnerAsync();
+        var stored = _Value("Reports");
+        await Repository.InsertAsync(stored, AbortToken);
+        HashSet<string> names = ["Reports", "Exports"];
+        var version = FeatureValueVersion.Compute(
+            "Tenant",
+            "t1",
+            names,
+            await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)
+        );
+        var added = _Value("Exports");
+        stored.ChangeValue("light");
+
+        // when one save presents the version, and a second presents the same, now stale, one
+        await Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [added], [stored], [], AbortToken);
+        var replay = () => Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [], [], [added], AbortToken);
+
+        // then the first commits, and the second fails and writes nothing
+        await replay.Should().ThrowExactlyAsync<DBConcurrencyException>();
+        var current = await Repository.GetListAsync(names, "Tenant", "t1", AbortToken);
+        current.Select(x => (x.Name, x.Value)).Should().BeEquivalentTo([("Reports", "light"), ("Exports", "dark")]);
+        FeatureValueVersion.Compute("Tenant", "t1", names, current).Should().NotBe(version);
     }
 
     protected override async ValueTask DisposeAsyncCore()

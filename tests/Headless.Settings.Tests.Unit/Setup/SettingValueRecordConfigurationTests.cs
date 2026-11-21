@@ -65,7 +65,16 @@ public sealed class SettingValueRecordConfigurationTests
             .GetProperties()
             .Select(p => p.GetColumnName(table))
             .Should()
-            .BeEquivalentTo("id", "name", "value", "provider_name", "provider_key", "created_at", "updated_at");
+            .BeEquivalentTo(
+                "id",
+                "name",
+                "value",
+                "provider_name",
+                "provider_key",
+                "created_at",
+                "updated_at",
+                "concurrency_stamp"
+            );
         entity.FindPrimaryKey()!.GetName().Should().Be("pk_setting_values");
         entity
             .GetIndexes()

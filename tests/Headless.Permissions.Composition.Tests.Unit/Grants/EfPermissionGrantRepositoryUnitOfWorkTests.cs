@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Caching;
 using Headless.Hosting;
 using Headless.Permissions;
@@ -167,6 +168,34 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
         // then
         unit.IsRetryPrevented.Should().BeTrue();
         (await Repository.GetListAsync("Role", "admin", AbortToken)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_save_a_versioned_group_only_while_it_keeps_its_version()
+    {
+        // given a stored grant and the version of its group
+        await using var owner = await _CreateOwnerAsync();
+        var granted = _Grant("Users.Create");
+        await Repository.InsertAsync(granted, AbortToken);
+        string[] names = ["Users.Create", "Users.Delete"];
+        var version = PermissionGrantVersion.Compute(
+            "Role",
+            "admin",
+            tenantId: null,
+            names,
+            await Repository.GetListAsync(names, "Role", "admin", AbortToken)
+        );
+        var prohibited = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: false);
+
+        // when one save turns the grant into a prohibition, and a second presents the same, now stale, version
+        await Repository.SaveIfVersionAsync(names, "Role", "admin", version, [prohibited], [granted], AbortToken);
+        var replay = () =>
+            Repository.SaveIfVersionAsync(names, "Role", "admin", version, [_Grant("Users.Delete")], [], AbortToken);
+
+        // then the first commits, and the second fails and writes nothing
+        await replay.Should().ThrowExactlyAsync<DBConcurrencyException>();
+        var current = await Repository.GetListAsync(names, "Role", "admin", AbortToken);
+        current.Should().ContainSingle().Which.IsGranted.Should().BeFalse();
     }
 
     protected override async ValueTask DisposeAsyncCore()

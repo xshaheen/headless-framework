@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Caching;
 using Headless.Hosting;
 using Headless.Settings;
@@ -160,6 +161,37 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         // then each write stores what it wrote (a delete stores an empty entry) instead of removing the entry
         written.Should().Equal("dark", "light", "blue", null);
         await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_save_a_versioned_group_only_while_it_keeps_its_version()
+    {
+        // given a stored value and the version of its group
+        await using var owner = await _CreateOwnerAsync();
+        var stored = _Value("App.Theme");
+        await Repository.InsertAsync(stored, AbortToken);
+        HashSet<string> names = ["App.Theme", "App.Locale"];
+        var version = SettingValueVersion.Compute(
+            "Tenant",
+            "t1",
+            names,
+            await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)
+        );
+        var added = _Value("App.Locale");
+        stored.ChangeValue("light");
+
+        // when one save presents the version, and a second presents the same, now stale, one
+        await Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [added], [stored], [], AbortToken);
+        var replay = () => Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [], [], [added], AbortToken);
+
+        // then the first commits, and the second fails and writes nothing
+        await replay.Should().ThrowExactlyAsync<DBConcurrencyException>();
+        var current = await Repository.GetListAsync(names, "Tenant", "t1", AbortToken);
+        current
+            .Select(x => (x.Name, x.Value))
+            .Should()
+            .BeEquivalentTo([("App.Theme", "light"), ("App.Locale", "dark")]);
+        SettingValueVersion.Compute("Tenant", "t1", names, current).Should().NotBe(version);
     }
 
     protected override async ValueTask DisposeAsyncCore()
