@@ -157,7 +157,8 @@ public static class SetupSequencesSqlServer
                 SqlServerDialect.Instance,
                 sp.GetRequiredService<IOptions<SqlServerSequencesOptions>>().Value,
                 "Headless.Sequences.SqlServer",
-                sp.GetRequiredService<TimeProvider>()
+                sp.GetRequiredService<TimeProvider>(),
+                autocommitIncrement: SqlServerSequenceIncrement.Autocommit
             ));
         }
     }
