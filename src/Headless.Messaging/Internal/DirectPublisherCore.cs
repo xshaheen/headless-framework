@@ -57,7 +57,7 @@ internal static class DirectPublisherCore
             if (!result.Succeeded)
             {
                 var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, ex, nowMs);
+                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, ex, nowMs, telemetry);
                 throw ex;
             }
 
@@ -73,6 +73,7 @@ internal static class DirectPublisherCore
                 transportMsg,
                 brokerAddress,
                 ex,
+                telemetry.Masker,
                 traceHandle.ElapsedMs(nowMs()),
                 lane
             );
@@ -84,7 +85,7 @@ internal static class DirectPublisherCore
         {
             try
             {
-                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, e, nowMs);
+                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, e, nowMs, telemetry);
             }
 #pragma warning disable ERP022 // Intentional: tracing failure should not mask the original exception
             catch
@@ -147,7 +148,8 @@ internal static class DirectPublisherCore
         MessageLane lane,
         BrokerAddress brokerAddress,
         Exception exception,
-        Func<long> nowMs
+        Func<long> nowMs,
+        MessagingTelemetry telemetry
     )
     {
         if (!traceHandle.IsRecording)
@@ -160,6 +162,7 @@ internal static class DirectPublisherCore
             message,
             brokerAddress,
             exception,
+            telemetry.Masker,
             traceHandle.ElapsedMs(nowMs()),
             lane
         );

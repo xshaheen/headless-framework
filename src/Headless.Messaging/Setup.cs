@@ -158,7 +158,8 @@ public static class SetupMessaging
         services.TryAddSingleton(sp => new MessagingTelemetry(
             messagingEnrichers,
             sp.GetService<ILogger<MessagingTelemetry>>(),
-            sp.GetService<IOptions<TenantTelemetryOptions>>()?.Value
+            sp.GetService<IOptions<TenantTelemetryOptions>>()?.Value,
+            sp.GetService<ILogTextMasker>()
         ));
 
         // Resolving it validates the primary storage and every AddOutbox(name) registration together, so the

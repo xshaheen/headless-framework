@@ -2,6 +2,7 @@
 
 using System.Collections;
 using System.Reflection;
+using Headless.Hosting;
 using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -140,6 +141,20 @@ public sealed class LogTextMaskerTests : TestBase
         masker.Mask($"no citizen {_NationalId}").Should().Be($"no citizen {_NationalId}");
         masker.Mask(exception).Should().BeSameAs(exception);
         masker.MaskValue(29001011234567L).Should().Be(29001011234567L);
+    }
+
+    [Fact]
+    public void should_register_the_masker_under_the_hosting_contract()
+    {
+        // given: a feature that resolves the Hosting contract instead of referencing this package
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+
+        // when
+        var contract = provider.GetService<ILogTextMasker>();
+
+        // then
+        contract.Should().BeSameAs(provider.GetRequiredService<LogTextMasker>());
+        contract!.Mask($"no citizen {_NationalId}").Should().Be("no citizen ***");
     }
 
     [Fact]

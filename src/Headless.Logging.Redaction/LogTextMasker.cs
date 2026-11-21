@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Logging.Internal;
 
 namespace Headless.Logging;
@@ -22,7 +23,7 @@ namespace Headless.Logging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed class LogTextMasker
+public sealed class LogTextMasker : ILogTextMasker
 {
     private readonly ILogTextRedactor[] _redactors;
 

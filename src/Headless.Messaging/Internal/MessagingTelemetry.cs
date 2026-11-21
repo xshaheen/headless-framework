@@ -2,6 +2,7 @@
 
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
@@ -19,9 +20,16 @@ namespace Headless.Messaging.Internal;
 internal sealed class MessagingTelemetry(
     IActivityTagEnricher[] enrichers,
     ILogger<MessagingTelemetry>? logger = null,
-    TenantTelemetryOptions? tenantTelemetry = null
+    TenantTelemetryOptions? tenantTelemetry = null,
+    ILogTextMasker? masker = null
 )
 {
+    /// <summary>
+    /// The app's text masker when <c>AddHeadlessRedaction</c> registered one; <see langword="null"/> otherwise, and then
+    /// span exception events are recorded from the raw exception.
+    /// </summary>
+    public ILogTextMasker? Masker { get; } = masker;
+
     private readonly TenantTelemetryOptions _tenantTelemetry = tenantTelemetry ?? new TenantTelemetryOptions();
 
     // The tenant attribute is written here rather than by an enricher because its name comes from
@@ -116,7 +124,7 @@ internal sealed class MessagingTelemetry(
         activity?.Stop();
     }
 
-    public static void PersistError(Activity? activity, Exception exception)
+    public static void PersistError(Activity? activity, Exception exception, ILogTextMasker? masker)
     {
         if (activity is null)
         {
@@ -124,7 +132,7 @@ internal sealed class MessagingTelemetry(
         }
 
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
-        activity.AddException(exception);
+        _RecordException(activity, exception, masker);
         activity.Stop();
     }
 
@@ -218,6 +226,7 @@ internal sealed class MessagingTelemetry(
         TransportMessage message,
         BrokerAddress broker,
         Exception exception,
+        ILogTextMasker? masker,
         long? elapsedMs,
         MessageLane lane = MessageLane.Bus
     )
@@ -233,7 +242,7 @@ internal sealed class MessagingTelemetry(
 
         activity.SetTag(MessagingMetrics.TagErrorType, errorType);
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
-        activity.AddException(exception);
+        _RecordException(activity, exception, masker);
         activity.Stop();
     }
 
@@ -242,6 +251,7 @@ internal sealed class MessagingTelemetry(
         TransportMessage message,
         BrokerAddress broker,
         Exception exception,
+        ILogTextMasker? masker,
         long? elapsedMs,
         MessageLane lane = MessageLane.Bus
     )
@@ -264,7 +274,7 @@ internal sealed class MessagingTelemetry(
         activity.SetTag(MessagingTags.DeliveryOutcome, "ambiguous");
         activity.SetTag(MessagingMetrics.TagErrorType, MessagingMetrics.ErrorTypeAmbiguousDelivery);
         activity.SetStatus(ActivityStatusCode.Error, "Transport acceptance is ambiguous.");
-        activity.AddException(exception);
+        _RecordException(activity, exception, masker);
         activity.AddEvent(new ActivityEvent("message.publish.ambiguous"));
         activity.Stop();
     }
@@ -362,6 +372,7 @@ internal sealed class MessagingTelemetry(
         TransportMessage message,
         BrokerAddress broker,
         Exception exception,
+        ILogTextMasker? masker,
         long? elapsedMs
     )
     {
@@ -375,7 +386,7 @@ internal sealed class MessagingTelemetry(
 
         activity.SetTag(MessagingMetrics.TagErrorType, errorType);
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
-        activity.AddException(exception);
+        _RecordException(activity, exception, masker);
         activity.Stop();
     }
 
@@ -473,6 +484,7 @@ internal sealed class MessagingTelemetry(
         string method,
         string? messagingSystem,
         Exception exception,
+        ILogTextMasker? masker,
         long elapsedMs
     )
     {
@@ -493,11 +505,25 @@ internal sealed class MessagingTelemetry(
 
         activity.SetTag(MessagingMetrics.TagErrorType, errorType);
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
-        activity.AddException(exception);
+        _RecordException(activity, exception, masker);
         activity.Stop();
     }
 
     // --- Helpers --------------------------------------------------------------------------------------------
+
+    // An exception event's tags cannot be rewritten once recorded, so the span processor that masks span text at export
+    // cannot reach it; the masker records it with its message and rendered text already masked.
+    private static void _RecordException(Activity activity, Exception exception, ILogTextMasker? masker)
+    {
+        if (masker is null)
+        {
+            activity.AddException(exception);
+        }
+        else
+        {
+            masker.RecordException(activity, exception);
+        }
+    }
 
     /// <summary>
     /// The <c>error.type</c> value for a failed operation: the fully qualified type of the exception that caused it.
