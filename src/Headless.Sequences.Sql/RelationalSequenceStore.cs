@@ -14,7 +14,8 @@ namespace Headless.Sequences;
 /// <remarks>
 /// Concurrent first calls on one new key need no retry: the upsert serializes them on the key (PostgreSQL's unique
 /// index, SQL Server's key-range lock), and the loser takes the update branch. The row lock is held until the
-/// surrounding transaction ends, which is what makes a gap-free counter serialize its writers until commit.
+/// transaction that wrote it ends: the caller's unit for a gap-free counter, which is what serializes its writers
+/// until commit, and the increment's own command for a fast counter whose provider renders one.
 /// </remarks>
 #pragma warning disable CA2100 // SQL text comes from the dialect over validated schema and table names.
 internal sealed class RelationalSequenceStore(
@@ -22,7 +23,7 @@ internal sealed class RelationalSequenceStore(
     RelationalSequencesOptions options,
     string packageName,
     TimeProvider timeProvider,
-    bool incrementIsOneStatement = false
+    Func<string, string>? autocommitIncrement = null
 ) : ISequenceStore
 {
     private const string _Operation = "gap-free sequence";
@@ -32,6 +33,13 @@ internal sealed class RelationalSequenceStore(
     private readonly string _packageName = Argument.IsNotNullOrWhiteSpace(packageName);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly string _incrementSql = _BuildIncrementSql(dialect, options);
+
+    // Null when the provider cannot send the increment as one self-committing command; the fast path then wraps it in
+    // an explicit transaction. Built from the same upsert, so the two paths cannot drift.
+    private readonly string? _autocommitIncrementSql = autocommitIncrement?.Invoke(
+        _BuildIncrementSql(dialect, options)
+    );
+
     private readonly string _advanceInsertSql = _BuildAdvanceInsertSql(dialect, options);
     private readonly string _advanceSql = _BuildAdvanceSql(dialect, options);
 
@@ -42,15 +50,16 @@ internal sealed class RelationalSequenceStore(
         CancellationToken cancellationToken = default
     )
     {
-        if (incrementIsOneStatement)
+        if (_autocommitIncrementSql is { } sql)
         {
-            // One statement is atomic on its own, so it runs autocommit: no BEGIN or COMMIT round trip, and the row lock
-            // ends with the statement instead of after a separate commit, which is what concurrent callers of one counter
-            // queue on. No attempt marks a commit as started, so a fault raised after the server applied the statement
-            // is retried too; the value it wrote was never returned, so the retry leaves a gap, never a duplicate.
+            // The command commits on its own (one atomic statement, or a batch that opens and commits its own
+            // transaction), so it costs one round trip with no client BEGIN or COMMIT, and the row lock ends with the
+            // command instead of after a separate commit, which is what concurrent callers of one counter queue on. No
+            // attempt marks a commit as started, so a fault raised after the server applied the command is retried
+            // too; the value it wrote was never returned, so the retry leaves a gap, never a duplicate.
             return SqlAutonomousTransaction.RetryAsync(
                 "sequences.increment",
-                (_, ct) => _IncrementAutocommitAsync(key, insertValue, delta, ct),
+                (_, ct) => _IncrementAutocommitAsync(sql, key, insertValue, delta, ct),
                 _timeProvider,
                 onRetry: null,
                 cancellationToken
@@ -63,13 +72,15 @@ internal sealed class RelationalSequenceStore(
         return SqlAutonomousTransaction.RunAsync(
             "sequences.increment",
             () => _dialect.CreateConnection(_options.ConnectionString),
-            (connection, transaction, ct) => _ExecuteAsync(connection, transaction, key, insertValue, delta, ct),
+            (connection, transaction, ct) =>
+                _ExecuteAsync(connection, transaction, _incrementSql, key, insertValue, delta, ct),
             _timeProvider,
             cancellationToken
         );
     }
 
     private async Task<long> _IncrementAutocommitAsync(
+        string sql,
         SequenceKey key,
         long insertValue,
         long delta,
@@ -79,7 +90,7 @@ internal sealed class RelationalSequenceStore(
         await using var connection = _dialect.CreateConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        return await _ExecuteAsync(connection, transaction: null, key, insertValue, delta, cancellationToken)
+        return await _ExecuteAsync(connection, transaction: null, sql, key, insertValue, delta, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -108,9 +119,11 @@ internal sealed class RelationalSequenceStore(
         // Re-checked here rather than trusted from validation: the caller may have ended the transaction or closed the
         // connection in between. No retry: a deadlock has already rolled back the caller's transaction, so only the
         // unit's owner can decide whether to run the whole unit again.
+        // The plain upsert, never the autocommit form: the unit's transaction owns the commit, and the caller's session
+        // settings stay as the caller set them.
         var (connection, transaction) = _RequireLive(unitOfWork);
 
-        return await _ExecuteAsync(connection, transaction, key, insertValue, delta, cancellationToken)
+        return await _ExecuteAsync(connection, transaction, _incrementSql, key, insertValue, delta, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -184,18 +197,19 @@ internal sealed class RelationalSequenceStore(
     private async Task<long> _ExecuteAsync(
         DbConnection connection,
         DbTransaction? transaction,
+        string sql,
         SequenceKey key,
         long insertValue,
         long delta,
         CancellationToken cancellationToken
     )
     {
-        await using var command = _Command(connection, transaction, _incrementSql, key);
+        await using var command = _Command(connection, transaction, sql, key);
         _dialect.AddParameter(command, "InsertValue", SqlColumnType.Int64, insertValue);
         _dialect.AddParameter(command, "Delta", SqlColumnType.Int64, delta);
 
         var upserted = await SqlUpsertCommand
-            .ExecuteAsync(command, static (reader, _) => ValueTask.FromResult(reader.GetInt64(1)), cancellationToken)
+            .ExecuteAsync(command, _ReadWrittenToEndAsync, cancellationToken)
             .ConfigureAwait(false);
 
         // The upsert has no guard, so it always writes.
@@ -203,6 +217,21 @@ internal sealed class RelationalSequenceStore(
             static (value, _) => value,
             static () => throw new InvalidOperationException("An unguarded counter upsert reported a refusal.")
         );
+    }
+
+    private static async ValueTask<long> _ReadWrittenToEndAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        var written = reader.GetInt64(1);
+
+        // A self-committing batch reports the value before its COMMIT runs, and SqlClient discards an error raised after
+        // the first result set when the reader is only disposed. Reading the remaining results raises it, so a value
+        // whose batch did not commit is never returned: a retry then leaves a gap instead of issuing it twice.
+        while (await reader.NextResultAsync(cancellationToken).ConfigureAwait(false)) { }
+
+        return written;
     }
 
     private (DbConnection Connection, DbTransaction Transaction) _RequireLive(IUnitOfWork unitOfWork)

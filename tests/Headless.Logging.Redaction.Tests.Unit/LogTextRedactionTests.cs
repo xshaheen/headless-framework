@@ -391,6 +391,63 @@ public sealed partial class LogTextRedactionTests : TestBase
     }
 
     [Fact]
+    public void should_mask_a_data_value_of_an_exception_whose_messages_match_nothing()
+    {
+        // given: clean messages, and the id only in Data, where enrichers write it as it is
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var original = _Thrown<InvalidOperationException>(() => throw new InvalidOperationException("lookup failed"));
+        original.Data["Order"] = 7;
+        original.Data["Citizen"] = $"citizen {_NationalId}";
+
+        // when
+        LogFailure(logger, original, 7);
+
+        // then: a copy of the same type carries a masked dictionary in the original's order
+        var copy = sink
+            .Entries.Should()
+            .ContainSingle()
+            .Which.Exception.Should()
+            .BeOfType<InvalidOperationException>()
+            .Subject;
+        copy.Should().NotBeSameAs(original);
+        copy.Message.Should().Be("lookup failed");
+        copy.StackTrace.Should().Be(original.StackTrace);
+        copy.Data.Should().NotBeSameAs(original.Data);
+        copy.Data.Keys.Cast<object>().Should().Equal("Order", "Citizen");
+        copy.Data["Order"].Should().Be(7);
+        copy.Data["Citizen"].Should().Be("citizen ***");
+
+        // the caught exception's dictionary is left as it was
+        original.Data["Citizen"].Should().Be($"citizen {_NationalId}");
+    }
+
+    [Fact]
+    public void should_mask_the_data_of_a_stand_in()
+    {
+        // given: a subclass that forces the stand-in, with the id also in Data
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var original = _Thrown<CitizenLookupException>(() => throw new CitizenLookupException(_NationalId));
+        original.Data["Citizen"] = 29001011234567L;
+
+        // when
+        LogFailure(logger, original, 7);
+
+        // then
+        var redacted = sink
+            .Entries.Should()
+            .ContainSingle()
+            .Which.Exception.Should()
+            .BeOfType<RedactedException>()
+            .Subject;
+        redacted.Data["Citizen"].Should().Be("***");
+        original.Data["Citizen"].Should().Be(29001011234567L);
+    }
+
+    [Fact]
     public void should_leave_an_exception_untouched_when_no_text_redactor_is_registered()
     {
         // given: redaction without a text redactor, so loggers are not wrapped for text
