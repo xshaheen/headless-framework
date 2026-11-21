@@ -151,6 +151,47 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         return await Store.DeleteEnlistedAsync(unitOfWork, Name, pk, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    public virtual async Task<VersionedFeatureValues> GetAllVersionedAsync(
+        IReadOnlyList<FeatureDefinition> features,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
+
+        return await Store
+            .GetAllVersionedAsync(
+                features.Select(x => x.Name).ToHashSet(StringComparer.Ordinal),
+                Name,
+                pk,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public virtual async Task SetAllVersionedAsync(
+        IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
+        string? providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var valuesByName = new Dictionary<string, string?>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (feature, value) in values)
+        {
+            valuesByName[feature.Name] = value;
+        }
+
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
+
+        await Store
+            .SetAllVersionedAsync(valuesByName, Name, pk, expectedVersion, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>The key the default reads use for <paramref name="providerKey"/>.</summary>
     internal ValueTask<string?> ResolveProviderKeyAsync(string? providerKey, CancellationToken cancellationToken)
     {

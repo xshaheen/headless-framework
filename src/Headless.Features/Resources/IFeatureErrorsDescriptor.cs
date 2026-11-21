@@ -32,6 +32,15 @@ public interface IFeatureErrorsDescriptor
     /// <remarks>A default member, so an existing implementation keeps compiling and returns the built-in message.</remarks>
     ErrorDescriptor ProviderNotAllowed(string featureName, string providerName) =>
         DefaultFeatureErrorsDescriptor.CreateProviderNotAllowed(featureName, providerName);
+
+    /// <summary>
+    /// Returns the error for a versioned write whose features changed after the caller read their version.
+    /// </summary>
+    /// <param name="providerName">The provider name of the scope the write targeted.</param>
+    /// <returns>An error with the code <c>features:version-mismatch</c>.</returns>
+    /// <remarks>A default member, so an existing implementation keeps compiling and returns the built-in message.</remarks>
+    ErrorDescriptor VersionMismatch(string providerName) =>
+        DefaultFeatureErrorsDescriptor.CreateVersionMismatch(providerName);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
@@ -84,6 +93,17 @@ public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
     /// <inheritdoc/>
     public ErrorDescriptor ProviderNotAllowed(string featureName, string providerName) =>
         CreateProviderNotAllowed(featureName, providerName);
+
+    /// <inheritdoc/>
+    public ErrorDescriptor VersionMismatch(string providerName) => CreateVersionMismatch(providerName);
+
+    internal static ErrorDescriptor CreateVersionMismatch(string providerName)
+    {
+        return new ErrorDescriptor("features:version-mismatch", FeatureMessages.features_version_mismatch).WithParam(
+            "providerName",
+            providerName
+        );
+    }
 
     internal static ErrorDescriptor CreateProviderNotAllowed(string featureName, string providerName)
     {

@@ -6,7 +6,9 @@ namespace Headless.Settings;
 
 /// <summary>Persistence contract for <see cref="SettingValueRecord"/> aggregates.</summary>
 /// <remarks>
-/// New members arrive as default interface members, so a third-party implementation keeps compiling. The enlisted
+/// New members arrive as default interface members, so a third-party implementation keeps compiling.
+/// <see cref="SaveIfVersionAsync"/> defaults to throwing <see cref="NotSupportedException" />, so a versioned write
+/// through a repository that cannot check the version is refused, never silently unversioned. The enlisted
 /// members (<c>*EnlistedAsync</c>) run inside a caller's <see cref="IUnitOfWork" /> and default to throwing
 /// <see cref="NotSupportedException" />; an implementation that cannot join a unit leaves them, and <c>unit.Settings</c>
 /// then refuses before any write.
@@ -105,6 +107,44 @@ public interface ISettingValueRecordRepository
         IReadOnlyCollection<SettingValueRecord> deleted,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Inserts, updates, and deletes the given records in one transaction, but only while the group of
+    /// <paramref name="names"/> in the scope still has <paramref name="expectedVersion"/>.
+    /// </summary>
+    /// <remarks>
+    /// Read the group's records inside the transaction, compute <see cref="SettingValueVersion.Compute"/> over them, and
+    /// throw <see cref="System.Data.DBConcurrencyException"/> before writing anything when it differs. The transaction
+    /// must also keep a concurrent writer from inserting one of the absent names between that read and the commit
+    /// (the built-in stores run it at <see cref="System.Data.IsolationLevel.Serializable"/>). Every inserted and
+    /// updated record carries a new <see cref="SettingValueRecord.ConcurrencyStamp"/>, which the write must store.
+    /// </remarks>
+    /// <param name="names">The names of the group the version covers.</param>
+    /// <param name="providerName">The name of the value provider.</param>
+    /// <param name="providerKey">The resolved provider-specific scope key.</param>
+    /// <param name="expectedVersion">The version the caller read.</param>
+    /// <param name="inserted">The new records to insert.</param>
+    /// <param name="updated">The existing records whose values changed.</param>
+    /// <param name="deleted">The existing records to delete.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <exception cref="System.Data.DBConcurrencyException">The group's version is no longer <paramref name="expectedVersion"/>.</exception>
+    /// <exception cref="NotSupportedException">This storage cannot write a versioned group.</exception>
+    Task SaveIfVersionAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        string expectedVersion,
+        IReadOnlyCollection<SettingValueRecord> inserted,
+        IReadOnlyCollection<SettingValueRecord> updated,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotSupportedException(
+            "The configured setting value repository cannot write a versioned group. Use the EF Core, PostgreSQL, or "
+                + "SQL Server settings storage, or implement SaveIfVersionAsync."
+        );
+    }
 
     /// <summary>
     /// Returns the records for <paramref name="names"/> in one provider scope, read inside

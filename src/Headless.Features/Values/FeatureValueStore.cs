@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Threading;
@@ -120,7 +121,7 @@ public sealed class FeatureValueStore(
         }
         else
         {
-            featureValue.Value = value;
+            featureValue.ChangeValue(value);
             await repository.UpdateAsync(featureValue, cancellationToken).ConfigureAwait(false);
         }
 
@@ -226,7 +227,7 @@ public sealed class FeatureValueStore(
             }
             else
             {
-                existing.Value = value;
+                existing.ChangeValue(value);
                 changes.Updated.Add(existing);
             }
         }
@@ -267,6 +268,120 @@ public sealed class FeatureValueStore(
         await FeatureValueCacheInvalidation
             .SyncAsync(cache, repository, [name], providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<VersionedFeatureValues> GetAllVersionedAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(names);
+
+        // Not through the cache: the values and the version must come from one read, or a stale cached value could be
+        // edited and saved under a current version.
+        var records = await repository
+            .GetListAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        var valueByName = new Dictionary<string, string>(records.Count, StringComparer.Ordinal);
+
+        foreach (var record in records)
+        {
+            valueByName.TryAdd(record.Name, record.Value);
+        }
+
+        var values = names.Select(name => new FeatureValue(name, valueByName.GetValueOrDefault(name))).ToList();
+
+        return new VersionedFeatureValues(
+            values,
+            FeatureValueVersion.Compute(providerName, providerKey, names, records)
+        );
+    }
+
+    /// <inheritdoc/>
+    public async Task SetAllVersionedAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(values);
+        Argument.IsNotNull(providerName);
+        Argument.IsNotNull(expectedVersion);
+        _EnsureKey(providerName, providerKey);
+        _EnsureNames(values.Keys);
+
+        var names = values.Keys.ToHashSet(StringComparer.Ordinal);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            var existingRecords = await repository
+                .GetListAsync(names, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Checked here too, so a stale write fails before it opens a serializable transaction.
+            _EnsureVersion(FeatureValueVersion.Compute(providerName, providerKey, names, existingRecords));
+
+            var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
+
+            try
+            {
+                await repository
+                    .SaveIfVersionAsync(
+                        names,
+                        providerName,
+                        providerKey,
+                        expectedVersion,
+                        changes.Inserted,
+                        changes.Updated,
+                        changes.Deleted,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception)
+                when (exception is not DBConcurrencyException and not NotSupportedException
+                    && !cancellationToken.IsCancellationRequested
+                )
+            {
+                // A serialization failure, a deadlock victim, or a unique-key violation: the engine stopped this
+                // transaction because another one touched the group. Only the stored version says whether that
+                // writer committed a change; if it did not, the failure was spurious and the batch is tried again.
+                var currentRecords = await repository
+                    .GetListAsync(names, providerName, providerKey, cancellationToken)
+                    .ConfigureAwait(false);
+
+                _EnsureVersion(FeatureValueVersion.Compute(providerName, providerKey, names, currentRecords));
+
+                if (attempt < _MaxSaveAttempts)
+                {
+                    continue;
+                }
+
+                throw;
+            }
+
+            await FeatureValueCacheInvalidation
+                .SyncAsync(cache, repository, names, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        void _EnsureVersion(string currentVersion)
+        {
+            if (!string.Equals(currentVersion, expectedVersion, StringComparison.Ordinal))
+            {
+                throw new DBConcurrencyException("The feature values changed after the version was read.");
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -684,6 +799,58 @@ public interface IFeatureValueStore
     );
 
     /// <summary>
+    /// Reads the stored values of <paramref name="names"/> in one scope straight from the repository, with the group's
+    /// version.
+    /// </summary>
+    /// <param name="names">The feature names of the group.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>
+    /// One entry per name, holding the stored (still encrypted) value or <see langword="null"/>, and the version that
+    /// <see cref="FeatureValueVersion.Compute"/> gives the stored records.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="names"/> is empty.</exception>
+    /// <exception cref="NotSupportedException">This store cannot read a versioned group.</exception>
+    Task<VersionedFeatureValues> GetAllVersionedAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    /// <summary>
+    /// Writes the same changes as <see cref="SetAllAsync"/>, but only while the group of the dictionary's names still
+    /// has <paramref name="expectedVersion"/>.
+    /// </summary>
+    /// <remarks>
+    /// The names must be the same set <see cref="GetAllVersionedAsync"/> read, or the version cannot match. A failure
+    /// that leaves the version unchanged, such as a spurious serialization failure, is tried again, up to three
+    /// attempts.
+    /// </remarks>
+    /// <param name="values">The values keyed by feature name; a <see langword="null"/> value removes the stored entry.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="expectedVersion">The version <see cref="GetAllVersionedAsync"/> returned.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <exception cref="ArgumentException"><paramref name="values"/> is empty.</exception>
+    /// <exception cref="DBConcurrencyException">The group changed after <paramref name="expectedVersion"/> was read.</exception>
+    /// <exception cref="NotSupportedException">This store or its repository cannot write a versioned group.</exception>
+    Task SetAllVersionedAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    /// <summary>
     /// Reads the stored value inside <paramref name="unitOfWork" />'s transaction, bypassing the cache, so a value the
     /// unit already wrote is seen.
     /// </summary>
@@ -751,5 +918,10 @@ public interface IFeatureValueStore
     private static NotSupportedException _NotEnlistable()
     {
         return new NotSupportedException("The configured feature value store cannot run inside a unit of work.");
+    }
+
+    private static NotSupportedException _NotVersioned()
+    {
+        return new NotSupportedException("The configured feature value store cannot read or write a versioned group.");
     }
 }

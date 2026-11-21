@@ -135,6 +135,86 @@ public interface IFeatureManager
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Reads a group of features in one provider scope together with the group's version, for an edit form that saves
+    /// them back with <see cref="SetVersionedAsync"/>.
+    /// </summary>
+    /// <param name="names">The features of the group. Save back exactly this set of names.</param>
+    /// <param name="providerName">The provider whose scope the form edits, for example <c>"Tenant"</c>.</param>
+    /// <param name="providerKey">
+    /// The provider-specific key (e.g. a tenant ID). When <see langword="null"/>, the provider resolves its default key,
+    /// such as the current tenant.
+    /// </param>
+    /// <param name="fallback">
+    /// When <see langword="true"/>, a feature that this scope does not store shows the value the next provider
+    /// supplies (for a tenant, its edition's value). The version never covers those inherited values.
+    /// </param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>
+    /// One <see cref="FeatureValue"/> per requested name, in no particular order, read from storage rather than the
+    /// cache, and the group's version.
+    /// </returns>
+    /// <remarks>
+    /// The version changes when any feature of the group is saved at this scope, through any write member, even when
+    /// the save stores the value it already held. It is the same for every caller of the same names and scope, so it
+    /// serves as an HTTP <c>ETag</c>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="names"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="names"/> is empty.</exception>
+    /// <exception cref="Headless.ConflictException">
+    /// A feature is not defined or does not allow the provider, or the provider is not registered or is read-only.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The provider's storage cannot version its values, or more than one provider is registered under the name.
+    /// </exception>
+    Task<VersionedFeatureValues> GetVersionedAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey = null,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Saves a group of features read with <see cref="GetVersionedAsync"/>, unless any of them was saved at the same
+    /// scope after that read.
+    /// </summary>
+    /// <param name="values">
+    /// The new values keyed by feature name, for exactly the names the version was read for. A <see langword="null"/>
+    /// value clears that feature.
+    /// </param>
+    /// <param name="providerName">The provider that will store the values.</param>
+    /// <param name="providerKey">The provider-specific key, as passed to <see cref="GetVersionedAsync"/>.</param>
+    /// <param name="version">The <see cref="VersionedFeatureValues.Version"/> the caller read.</param>
+    /// <param name="forceToSet">
+    /// When <see langword="true"/>, stores each value even when it equals the value the next provider would supply;
+    /// otherwise such a value is cleared instead so the feature keeps inheriting it.
+    /// </param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <remarks>
+    /// The check and the write run in one serializable transaction, so of two saves made from the same version exactly
+    /// one succeeds. A successful save writes every value in the batch, gives the group a new version, and announces
+    /// one <see cref="FeatureChangedMessage"/>; a refused one writes nothing.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="values"/> is empty, or <paramref name="version"/> is empty or white space.</exception>
+    /// <exception cref="Headless.ConflictException">
+    /// The group changed after <paramref name="version"/> was read (error code <c>features:version-mismatch</c>, also
+    /// raised when the names differ from the ones read), or a feature is not defined or does not allow the provider, or
+    /// the provider is not registered or is read-only.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// The provider's storage cannot version its values, or more than one provider is registered under the name.
+    /// </exception>
+    Task SetVersionedAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        string version,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Deletes all feature values for the given provider and key.</summary>
     /// <param name="providerName">The provider whose values should be deleted.</param>
     /// <param name="providerKey">The provider-specific key identifying the scope to clear (e.g., a tenant ID).</param>

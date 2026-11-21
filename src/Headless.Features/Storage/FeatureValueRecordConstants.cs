@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Domain;
+
 namespace Headless.Features;
 
 /// <summary>
@@ -19,4 +21,7 @@ public static class FeatureValueRecordConstants
 
     /// <summary>Maximum length (128) for <see cref="FeatureValueRecord.Value"/>.</summary>
     public const int ValueMaxLength = 128;
+
+    /// <summary>Character length of <see cref="FeatureValueRecord.ConcurrencyStamp"/>, which is not configurable.</summary>
+    public const int ConcurrencyStampMaxLength = DomainConstants.ConcurrencyStampMaxLength;
 }

@@ -12,6 +12,7 @@ namespace Headless.Features.SqlServer;
 internal static class SqlServerFeaturesSchemaContribution
 {
     public const string StepVersion = "1";
+    public const string ConcurrencyStampStepVersion = "2";
 
     private static readonly RelationalFeaturesTables _Defaults = new(
         SqlServerDialect.Instance,
@@ -94,6 +95,15 @@ internal static class SqlServerFeaturesSchemaContribution
             """
         );
 
+        // Nullable: a row written before this step has no stamp, and a versioned read hashes its id in place of one.
+        var concurrencyStampSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            IF COL_LENGTH(N'{valuesObject}', N'ConcurrencyStamp') IS NULL
+                ALTER TABLE {valuesTable} ADD [ConcurrencyStamp] nvarchar({FeatureValueRecordConstants.ConcurrencyStampMaxLength}) NULL;
+            """
+        );
+
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Features",
@@ -107,6 +117,11 @@ internal static class SqlServerFeaturesSchemaContribution
             steps:
             [
                 new SchemaStep(StepVersion, "Create the value, definition, and group tables and their indexes.", sql),
+                new SchemaStep(
+                    ConcurrencyStampStepVersion,
+                    "Add the feature value concurrency stamp column.",
+                    concurrencyStampSql
+                ),
             ],
             hostStateTables: [definitionsName, groupsName],
             objects:

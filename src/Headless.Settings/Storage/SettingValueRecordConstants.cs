@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Domain;
+
 namespace Headless.Settings;
 
 /// <summary>
@@ -19,4 +21,7 @@ public static class SettingValueRecordConstants
 
     /// <summary>Maximum character length for <see cref="SettingValueRecord.ProviderKey"/>.</summary>
     public const int ProviderKeyMaxLength = 64;
+
+    /// <summary>Character length of <see cref="SettingValueRecord.ConcurrencyStamp"/>, which is not configurable.</summary>
+    public const int ConcurrencyStampMaxLength = DomainConstants.ConcurrencyStampMaxLength;
 }

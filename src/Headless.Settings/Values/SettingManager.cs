@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Context;
@@ -392,7 +393,181 @@ public sealed class SettingManager(
         CancellationToken cancellationToken = default
     )
     {
-        return _SetCoreAsync(unitOfWork: null, values, providerName, providerKey, forceToSet, cancellationToken);
+        return _SetCoreAsync(
+            unitOfWork: null,
+            values,
+            providerName,
+            providerKey,
+            forceToSet,
+            expectedVersion: null,
+            cancellationToken
+        );
+    }
+
+    /// <inheritdoc/>
+    public async Task<VersionedSettingValues> GetVersionedAsync(
+        HashSet<string> settingNames,
+        string providerName,
+        string? providerKey = null,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(settingNames);
+        Argument.IsNotNull(providerName);
+
+        var settings = new List<SettingDefinition>(settingNames.Count);
+
+        foreach (var settingName in settingNames)
+        {
+            settings.Add(await _FindWritableAsync(settingName, providerName, cancellationToken).ConfigureAwait(false));
+        }
+
+        var providers = _ProvidersFrom(providerName);
+        var provider = _VersionedProvider(providerName, _WriteProviders(providerName, providers));
+        var stored = await provider
+            .GetAllVersionedAsync(settings, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+        var storedByName = new Dictionary<string, string?>(stored.Values.Count, StringComparer.Ordinal);
+
+        foreach (var storedValue in stored.Values)
+        {
+            storedByName[storedValue.Name] = storedValue.Value;
+        }
+
+        var resolved = new Dictionary<string, SettingValue>(settings.Count, StringComparer.Ordinal);
+        var inheriting = new List<SettingDefinition>();
+
+        foreach (var setting in settings)
+        {
+            if (storedByName.GetValueOrDefault(setting.Name) is { } storedValue)
+            {
+                await _AddSettingValueAsync(resolved, setting, storedValue, provider, providerKey, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else if (fallback && setting.IsInherited)
+            {
+                inheriting.Add(setting);
+            }
+        }
+
+        // An absent value shows what the scope inherits, the value it would get if it kept storing none. The version
+        // covers only what this scope stores, the part a versioned write replaces.
+        var nextProvider = providers.Find(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal));
+
+        if (inheriting.Count != 0 && nextProvider is not null)
+        {
+            var inherited = await _GetAllFromProviderAsync(
+                    inheriting,
+                    nextProvider.Name,
+                    providerKey: null,
+                    fallback: true,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            foreach (var value in inherited)
+            {
+                resolved[value.Name] = value;
+            }
+        }
+
+        var values = settings.ConvertAll(setting =>
+            resolved.TryGetValue(setting.Name, out var value) ? value : new SettingValue(setting.Name, Value: null)
+        );
+
+        return new VersionedSettingValues(values, stored.Version);
+    }
+
+    /// <inheritdoc/>
+    public Task SetVersionedAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        string version,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(values);
+        Argument.IsNotNullOrWhiteSpace(version);
+
+        return _SetCoreAsync(
+            unitOfWork: null,
+            values,
+            providerName,
+            providerKey,
+            forceToSet,
+            version,
+            cancellationToken
+        );
+    }
+
+    /// <summary>Returns the definition of <paramref name="settingName"/> when it may be written through the provider.</summary>
+    private async Task<SettingDefinition> _FindWritableAsync(
+        string settingName,
+        string providerName,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(settingName);
+
+        var setting =
+            await definitionManager.FindAsync(settingName, cancellationToken).ConfigureAwait(false)
+            ?? throw new ConflictException(errorsDescriptor.NotDefined(settingName));
+
+        if (!_AllowsProvider(setting, providerName))
+        {
+            throw new ConflictException(errorsDescriptor.ProviderNotAllowed(settingName, providerName));
+        }
+
+        return setting;
+    }
+
+    /// <summary>Returns the provider chain from the first provider named <paramref name="providerName"/>.</summary>
+    private List<ISettingValueReadProvider> _ProvidersFrom(string providerName)
+    {
+        var providers = valueProviderManager
+            .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
+            .ToList();
+
+        return providers.Count == 0
+            ? throw new ConflictException(errorsDescriptor.ProviderNotFound(providerName))
+            : providers;
+    }
+
+    /// <summary>Returns every provider registered under <paramref name="providerName"/>, all of which must be writable.</summary>
+    private List<ISettingValueProvider> _WriteProviders(string providerName, List<ISettingValueReadProvider> providers)
+    {
+        var writeProviders = new List<ISettingValueProvider>();
+
+        foreach (
+            var provider in providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))
+        )
+        {
+            // Rejected before anything is written: a read-only provider found half-way through the write loop would
+            // otherwise leave the providers ahead of it already written.
+            writeProviders.Add(
+                provider as ISettingValueProvider
+                    ?? throw new ConflictException(errorsDescriptor.ProviderIsReadonly(providerName))
+            );
+        }
+
+        return writeProviders;
+    }
+
+    /// <summary>The one provider a versioned group belongs to: a version covers one store, never several.</summary>
+    private static ISettingValueProvider _VersionedProvider(
+        string providerName,
+        List<ISettingValueProvider> writeProviders
+    )
+    {
+        return writeProviders is [var provider]
+            ? provider
+            : throw new NotSupportedException(
+                $"{writeProviders.Count} setting value providers are registered under the name '{providerName}'. "
+                    + "A versioned read or write needs exactly one."
+            );
     }
 
     /// <inheritdoc/>
@@ -407,13 +582,22 @@ public sealed class SettingManager(
     {
         Argument.IsNotNull(unitOfWork);
 
-        return _SetCoreAsync(unitOfWork, values, providerName, providerKey, forceToSet, cancellationToken);
+        return _SetCoreAsync(
+            unitOfWork,
+            values,
+            providerName,
+            providerKey,
+            forceToSet,
+            expectedVersion: null,
+            cancellationToken
+        );
     }
 
     /// <summary>
     /// Validates every setting and the provider, resolves the values to store, and writes them through each provider
     /// registered under <paramref name="providerName"/>. With a unit, the fallback comparison and the writes run inside
-    /// its transaction and the change is announced after it commits.
+    /// its transaction and the change is announced after it commits. With <paramref name="expectedVersion"/>, the one
+    /// provider writes only while the group still has that version.
     /// </summary>
     private async Task _SetCoreAsync(
         IUnitOfWork? unitOfWork,
@@ -421,6 +605,7 @@ public sealed class SettingManager(
         string providerName,
         string? providerKey,
         bool forceToSet,
+        string? expectedVersion,
         CancellationToken cancellationToken
     )
     {
@@ -436,42 +621,18 @@ public sealed class SettingManager(
 
         foreach (var (settingName, value) in values)
         {
-            Argument.IsNotNull(settingName);
-
-            var setting =
-                await definitionManager.FindAsync(settingName, cancellationToken).ConfigureAwait(false)
-                ?? throw new ConflictException(errorsDescriptor.NotDefined(settingName));
-
-            if (!_AllowsProvider(setting, providerName))
-            {
-                throw new ConflictException(errorsDescriptor.ProviderNotAllowed(settingName, providerName));
-            }
-
+            var setting = await _FindWritableAsync(settingName, providerName, cancellationToken).ConfigureAwait(false);
             requested.Add(new(setting, value));
         }
 
-        var providers = valueProviderManager
-            .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
-            .ToList();
+        var providers = _ProvidersFrom(providerName);
 
-        if (providers.Count == 0)
+        // A list for the case of more than one provider registered under the same name.
+        var writeProviders = _WriteProviders(providerName, providers);
+
+        if (expectedVersion is not null)
         {
-            throw new ConflictException(errorsDescriptor.ProviderNotFound(providerName));
-        }
-
-        // Getting list for case of there are more than one provider with the same providerName
-        var writeProviders = new List<ISettingValueProvider>();
-
-        foreach (
-            var provider in providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))
-        )
-        {
-            // Rejected before anything is written: a read-only provider found half-way through the loop below
-            // would otherwise leave the providers ahead of it already written.
-            writeProviders.Add(
-                provider as ISettingValueProvider
-                    ?? throw new ConflictException(errorsDescriptor.ProviderIsReadonly(providerName))
-            );
+            writeProviders = [_VersionedProvider(providerName, writeProviders)];
         }
 
         var writes = new List<KeyValuePair<SettingDefinition, string?>>(requested.Count);
@@ -495,7 +656,20 @@ public sealed class SettingManager(
 
         foreach (var provider in writeProviders)
         {
-            if (unitOfWork is null)
+            if (expectedVersion is not null)
+            {
+                try
+                {
+                    await provider
+                        .SetAllVersionedAsync(writes, providerKey, expectedVersion, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (DBConcurrencyException)
+                {
+                    throw new ConflictException(errorsDescriptor.VersionMismatch(providerName));
+                }
+            }
+            else if (unitOfWork is null)
             {
                 await provider.SetAllAsync(writes, providerKey, cancellationToken).ConfigureAwait(false);
             }

@@ -130,6 +130,45 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
     }
 
     /// <summary>The key <see cref="GetOrDefaultAsync"/> reads the store with for <paramref name="providerKey"/>.</summary>
+    /// <inheritdoc/>
+    public Task<VersionedSettingValues> GetAllVersionedAsync(
+        IReadOnlyList<SettingDefinition> settings,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Store.GetAllVersionedAsync(
+            settings.Select(x => x.Name).ToHashSet(StringComparer.Ordinal),
+            Name,
+            NormalizeProviderKey(providerKey),
+            cancellationToken
+        );
+    }
+
+    /// <inheritdoc/>
+    public Task SetAllVersionedAsync(
+        IReadOnlyList<KeyValuePair<SettingDefinition, string?>> values,
+        string? providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var valuesByName = new Dictionary<string, string?>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (setting, value) in values)
+        {
+            valuesByName[setting.Name] = value;
+        }
+
+        return Store.SetAllVersionedAsync(
+            valuesByName,
+            Name,
+            NormalizeProviderKey(providerKey),
+            expectedVersion,
+            cancellationToken
+        );
+    }
+
     internal string? ResolveProviderKey(string? providerKey)
     {
         return NormalizeProviderKey(providerKey);

@@ -99,6 +99,52 @@ public interface IFeatureValueProvider : IFeatureValueReadProvider
         throw _NotEnlistable(Name);
     }
 
+    /// <summary>
+    /// Reads the values this provider stores for <paramref name="features"/> under <paramref name="providerKey"/>, with
+    /// the version of that group.
+    /// </summary>
+    /// <param name="features">The feature definitions of the group.</param>
+    /// <param name="providerKey">Optional scoping key (e.g. a tenant or edition identifier).</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>One entry per feature, holding the stored value or <see langword="null"/>, and the version.</returns>
+    /// <exception cref="NotSupportedException">This provider cannot version its values.</exception>
+    Task<VersionedFeatureValues> GetAllVersionedAsync(
+        IReadOnlyList<FeatureDefinition> features,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    /// <summary>
+    /// Persists <paramref name="values"/> like <see cref="SetAllAsync"/>, but only while their group still has
+    /// <paramref name="expectedVersion"/>.
+    /// </summary>
+    /// <param name="values">The feature definitions and the values to store; the same group the version was read for.</param>
+    /// <param name="providerKey">Optional scoping key (e.g. a tenant or edition identifier).</param>
+    /// <param name="expectedVersion">The version <see cref="GetAllVersionedAsync"/> returned.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <exception cref="System.Data.DBConcurrencyException">The group changed after the version was read.</exception>
+    /// <exception cref="NotSupportedException">This provider cannot version its values.</exception>
+    Task SetAllVersionedAsync(
+        IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
+        string? providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    private NotSupportedException _NotVersioned()
+    {
+        return new NotSupportedException(
+            $"The feature value provider '{Name}' cannot read or write a versioned group. Derive it from "
+                + "StoreFeatureValueProvider, or implement GetAllVersionedAsync and SetAllVersionedAsync."
+        );
+    }
+
     private static NotSupportedException _NotEnlistable(string name)
     {
         return new NotSupportedException(

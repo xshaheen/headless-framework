@@ -13,6 +13,7 @@ internal static class PostgreSqlFeaturesSchemaContribution
 {
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
+    public const string ConcurrencyStampStepVersion = "3";
 
     private static readonly RelationalFeaturesTables _Defaults = new(
         PostgreSqlDialect.Instance,
@@ -79,6 +80,14 @@ internal static class PostgreSqlFeaturesSchemaContribution
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{valuesName}_name_provider_name_null_provider_key" ON {valuesTable} ("name", "provider_name") WHERE "provider_key" IS NULL;
             """;
 
+        // Nullable: a row written before this step has no stamp, and a versioned read hashes its id in place of one.
+        var concurrencyStampSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            ALTER TABLE {valuesTable} ADD COLUMN IF NOT EXISTS "concurrency_stamp" character varying({FeatureValueRecordConstants.ConcurrencyStampMaxLength});
+            """
+        );
+
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Features",
@@ -93,6 +102,11 @@ internal static class PostgreSqlFeaturesSchemaContribution
             [
                 new SchemaStep(TablesStepVersion, "Create the value, definition, and group tables.", tablesSql),
                 new SchemaStep(IndexesStepVersion, "Create the value, definition, and group indexes.", indexesSql),
+                new SchemaStep(
+                    ConcurrencyStampStepVersion,
+                    "Add the feature value concurrency stamp column.",
+                    concurrencyStampSql
+                ),
             ],
             hostStateTables: [definitionsName, groupsName],
             objects:

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Context;
@@ -294,7 +295,178 @@ public sealed class FeatureManager(
         CancellationToken cancellationToken = default
     )
     {
-        return _SetCoreAsync(unitOfWork: null, values, providerName, providerKey, forceToSet, cancellationToken);
+        return _SetCoreAsync(
+            unitOfWork: null,
+            values,
+            providerName,
+            providerKey,
+            forceToSet,
+            expectedVersion: null,
+            cancellationToken
+        );
+    }
+
+    /// <inheritdoc/>
+    public async Task<VersionedFeatureValues> GetVersionedAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey = null,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNull(providerName);
+
+        var features = new List<FeatureDefinition>(names.Count);
+
+        foreach (var name in names)
+        {
+            features.Add(await _FindWritableAsync(name, providerName, cancellationToken).ConfigureAwait(false));
+        }
+
+        var providers = _ProvidersFrom(providerName);
+        var provider = _VersionedProvider(providerName, _WriteProviders(providerName, providers));
+        var stored = await provider
+            .GetAllVersionedAsync(features, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+        var storedByName = new Dictionary<string, string?>(stored.Values.Count, StringComparer.Ordinal);
+
+        foreach (var storedValue in stored.Values)
+        {
+            storedByName[storedValue.Name] = storedValue.Value;
+        }
+
+        var values = new List<FeatureValue>(features.Count);
+        var nextProvider = providers.Find(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal));
+
+        // An absent value shows what the scope inherits, the value it would get if it kept storing none, read in the
+        // scope's own context (for a tenant, its edition). The version covers only what this scope stores, the part a
+        // versioned write replaces.
+        await using (
+            await providers[0].HandleContextAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false)
+        )
+        {
+            foreach (var feature in features)
+            {
+                if (storedByName.GetValueOrDefault(feature.Name) is { } storedValue)
+                {
+                    values.Add(new(feature.Name, storedValue, new(providerName, providerKey)));
+                }
+                else if (fallback && nextProvider is not null)
+                {
+                    var inherited = await _CoreGetOrDefaultAsync(
+                            feature,
+                            nextProvider.Name,
+                            providerKey: null,
+                            fallback: true,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    values.Add(inherited);
+                }
+                else
+                {
+                    values.Add(new(feature.Name, Value: null));
+                }
+            }
+        }
+
+        return new VersionedFeatureValues(values, stored.Version);
+    }
+
+    /// <inheritdoc/>
+    public Task SetVersionedAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        string version,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(values);
+        Argument.IsNotNullOrWhiteSpace(version);
+
+        return _SetCoreAsync(
+            unitOfWork: null,
+            values,
+            providerName,
+            providerKey,
+            forceToSet,
+            version,
+            cancellationToken
+        );
+    }
+
+    /// <summary>Returns the definition of <paramref name="name"/> when it may be written through the provider.</summary>
+    private async Task<FeatureDefinition> _FindWritableAsync(
+        string name,
+        string providerName,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(name);
+
+        var feature =
+            await definitionManager.FindAsync(name, cancellationToken).ConfigureAwait(false)
+            ?? throw new ConflictException(errorsDescriptor.FeatureIsNotDefined(name));
+
+        // A feature that names its providers (for example only "Edition") must not take a value from another one: a
+        // tenant value would otherwise override what the plan grants.
+        if (!_AllowsProvider(feature, providerName))
+        {
+            throw new ConflictException(errorsDescriptor.ProviderNotAllowed(name, providerName));
+        }
+
+        return feature;
+    }
+
+    /// <summary>Returns the provider chain from the first provider named <paramref name="providerName"/>.</summary>
+    private List<IFeatureValueReadProvider> _ProvidersFrom(string providerName)
+    {
+        var providers = valueProviderManager
+            .ValueProviders.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
+            .ToList();
+
+        return providers.Count == 0
+            ? throw new ConflictException(errorsDescriptor.ProviderNotFound(providerName))
+            : providers;
+    }
+
+    /// <summary>Returns every provider registered under <paramref name="providerName"/>, all of which must be writable.</summary>
+    private List<IFeatureValueProvider> _WriteProviders(string providerName, List<IFeatureValueReadProvider> providers)
+    {
+        var writeProviders = new List<IFeatureValueProvider>();
+
+        foreach (
+            var provider in providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))
+        )
+        {
+            // Rejected before anything is written: a read-only provider found half-way through the write loop would
+            // otherwise leave the providers ahead of it already written.
+            writeProviders.Add(
+                provider as IFeatureValueProvider
+                    ?? throw new ConflictException(errorsDescriptor.ProviderIsReadonly(providerName))
+            );
+        }
+
+        return writeProviders;
+    }
+
+    /// <summary>The one provider a versioned group belongs to: a version covers one store, never several.</summary>
+    private static IFeatureValueProvider _VersionedProvider(
+        string providerName,
+        List<IFeatureValueProvider> writeProviders
+    )
+    {
+        return writeProviders is [var provider]
+            ? provider
+            : throw new NotSupportedException(
+                $"{writeProviders.Count} feature value providers are registered under the name '{providerName}'. "
+                    + "A versioned read or write needs exactly one."
+            );
     }
 
     /// <inheritdoc/>
@@ -309,13 +481,22 @@ public sealed class FeatureManager(
     {
         Argument.IsNotNull(unitOfWork);
 
-        return _SetCoreAsync(unitOfWork, values, providerName, providerKey, forceToSet, cancellationToken);
+        return _SetCoreAsync(
+            unitOfWork,
+            values,
+            providerName,
+            providerKey,
+            forceToSet,
+            expectedVersion: null,
+            cancellationToken
+        );
     }
 
     /// <summary>
     /// Validates every feature and the provider, clears values equal to their fallback, and writes them through each
     /// provider registered under <paramref name="providerName"/>. With a unit, the fallback comparison and the writes
-    /// run inside its transaction and the change is announced after it commits.
+    /// run inside its transaction and the change is announced after it commits. With <paramref name="expectedVersion"/>,
+    /// the one provider writes only while the group still has that version.
     /// </summary>
     private async Task _SetCoreAsync(
         IUnitOfWork? unitOfWork,
@@ -323,6 +504,7 @@ public sealed class FeatureManager(
         string providerName,
         string? providerKey,
         bool forceToSet,
+        string? expectedVersion,
         CancellationToken cancellationToken
     )
     {
@@ -338,44 +520,18 @@ public sealed class FeatureManager(
 
         foreach (var (name, value) in values)
         {
-            Argument.IsNotNull(name);
-
-            var feature =
-                await definitionManager.FindAsync(name, cancellationToken).ConfigureAwait(false)
-                ?? throw new ConflictException(errorsDescriptor.FeatureIsNotDefined(name));
-
-            // A feature that names its providers (for example only "Edition") must not take a value from another
-            // one: a tenant value would otherwise override what the plan grants.
-            if (!_AllowsProvider(feature, providerName))
-            {
-                throw new ConflictException(errorsDescriptor.ProviderNotAllowed(name, providerName));
-            }
-
+            var feature = await _FindWritableAsync(name, providerName, cancellationToken).ConfigureAwait(false);
             writes.Add(new(feature, value));
         }
 
-        var providers = valueProviderManager
-            .ValueProviders.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
-            .ToList();
+        var providers = _ProvidersFrom(providerName);
 
-        if (providers.Count == 0)
+        // A list for the case of more than one provider registered under the same name.
+        var writeProviders = _WriteProviders(providerName, providers);
+
+        if (expectedVersion is not null)
         {
-            throw new ConflictException(errorsDescriptor.ProviderNotFound(providerName));
-        }
-
-        // Getting list for case of there are more than one provider with the same providerName
-        var writeProviders = new List<IFeatureValueProvider>();
-
-        foreach (
-            var provider in providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))
-        )
-        {
-            // Rejected before anything is written: a read-only provider found half-way through the loop below
-            // would otherwise leave the providers ahead of it already written.
-            writeProviders.Add(
-                provider as IFeatureValueProvider
-                    ?? throw new ConflictException(errorsDescriptor.ProviderIsReadonly(providerName))
-            );
+            writeProviders = [_VersionedProvider(providerName, writeProviders)];
         }
 
         // A batch of clears has nothing to compare, so it skips opening the provider context.
@@ -394,7 +550,20 @@ public sealed class FeatureManager(
 
         foreach (var provider in writeProviders)
         {
-            if (unitOfWork is null)
+            if (expectedVersion is not null)
+            {
+                try
+                {
+                    await provider
+                        .SetAllVersionedAsync(writes, providerKey, expectedVersion, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (DBConcurrencyException)
+                {
+                    throw new ConflictException(errorsDescriptor.VersionMismatch(providerName));
+                }
+            }
+            else if (unitOfWork is null)
             {
                 await provider.SetAllAsync(writes, providerKey, cancellationToken).ConfigureAwait(false);
             }

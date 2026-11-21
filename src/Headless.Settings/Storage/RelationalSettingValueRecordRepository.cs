@@ -214,6 +214,58 @@ internal sealed class RelationalSettingValueRecordRepository(
     }
 
     /// <inheritdoc/>
+    public async Task SaveIfVersionAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        string expectedVersion,
+        IReadOnlyCollection<SettingValueRecord> inserted,
+        IReadOnlyCollection<SettingValueRecord> updated,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNull(expectedVersion);
+
+        await using var connection = _dialect.CreateConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // Serializable, so the group read below holds until the commit: a concurrent insert of a name that was absent
+        // here fails one of the two transactions instead of letting both commit against the same version.
+        await using var transaction = await connection
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            .ConfigureAwait(false);
+
+        var (sql, bind) = _ByNames(names, providerName, providerKey);
+        var current = await _ReadAsync(connection, transaction, sql, bind, cancellationToken).ConfigureAwait(false);
+
+        if (
+            !string.Equals(
+                SettingValueVersion.Compute(providerName, providerKey, names, current),
+                expectedVersion,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw new DBConcurrencyException("The setting values changed after the version was read.");
+        }
+
+        await _WriteAsync(
+                connection,
+                transaction,
+                inserted,
+                updated,
+                deleted,
+                requireUpdatedRows: true,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task SaveEnlistedAsync(
         IUnitOfWork unitOfWork,
         IReadOnlyCollection<SettingValueRecord> inserted,
@@ -291,6 +343,7 @@ internal sealed class RelationalSettingValueRecordRepository(
             _dialect.AddParameter(command, "Value", _Written, setting.Value);
             _dialect.AddParameter(command, "ProviderName", _Written, setting.ProviderName);
             _dialect.AddParameter(command, "ProviderKey", _Written, setting.ProviderKey);
+            _dialect.AddParameter(command, "ConcurrencyStamp", _Written, setting.ConcurrencyStamp);
             // A caller-supplied CreatedAt is kept, as the EF path does, so pinned and backfilled timestamps round-trip;
             // only a default one is stamped now.
             _dialect.AddParameter(
@@ -307,6 +360,7 @@ internal sealed class RelationalSettingValueRecordRepository(
             await using var command = _CreateCommand(connection, transaction, _update);
             _dialect.AddParameter(command, "Id", SqlColumnType.Guid, setting.Id);
             _dialect.AddParameter(command, "Value", _Written, setting.Value);
+            _dialect.AddParameter(command, "ConcurrencyStamp", _Written, setting.ConcurrencyStamp);
             _dialect.AddParameter(
                 command,
                 "UpdatedAt",
@@ -417,7 +471,8 @@ internal sealed class RelationalSettingValueRecordRepository(
                     await reader.GetFieldValueAsync<DateTimeOffset>(5, cancellationToken).ConfigureAwait(false),
                     await reader.IsDBNullAsync(6, cancellationToken).ConfigureAwait(false)
                         ? null
-                        : await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken).ConfigureAwait(false)
+                        : await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken).ConfigureAwait(false),
+                    await reader.IsDBNullAsync(7, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(7)
                 )
             );
         }
@@ -443,7 +498,8 @@ internal sealed class RelationalSettingValueRecordRepository(
     private static string _BuildSelect(RelationalSettingsTables t)
     {
         return $"SELECT {t.Column("Id")}, {t.Column("Name")}, {t.Column("Value")}, {t.Column("ProviderName")}, "
-            + $"{t.Column("ProviderKey")}, {t.Column("CreatedAt")}, {t.Column("UpdatedAt")} FROM {t.Values}";
+            + $"{t.Column("ProviderKey")}, {t.Column("CreatedAt")}, {t.Column("UpdatedAt")}, "
+            + $"{t.Column("ConcurrencyStamp")} FROM {t.Values}";
     }
 
     // Null-safe on both engines: a null key matches only the host-scope rows.
@@ -458,14 +514,15 @@ internal sealed class RelationalSettingValueRecordRepository(
     private static string _BuildInsert(RelationalSettingsTables t)
     {
         return $"INSERT INTO {t.Values} ({t.Column("Id")}, {t.Column("Name")}, {t.Column("Value")}, "
-            + $"{t.Column("ProviderName")}, {t.Column("ProviderKey")}, {t.Column("CreatedAt")}) "
-            + "VALUES (@Id, @Name, @Value, @ProviderName, @ProviderKey, @CreatedAt);";
+            + $"{t.Column("ProviderName")}, {t.Column("ProviderKey")}, {t.Column("CreatedAt")}, "
+            + $"{t.Column("ConcurrencyStamp")}) "
+            + "VALUES (@Id, @Name, @Value, @ProviderName, @ProviderKey, @CreatedAt, @ConcurrencyStamp);";
     }
 
     private static string _BuildUpdate(RelationalSettingsTables t)
     {
-        return $"UPDATE {t.Values} SET {t.Column("Value")} = @Value, {t.Column("UpdatedAt")} = @UpdatedAt "
-            + $"WHERE {t.Column("Id")} = @Id;";
+        return $"UPDATE {t.Values} SET {t.Column("Value")} = @Value, {t.Column("UpdatedAt")} = @UpdatedAt, "
+            + $"{t.Column("ConcurrencyStamp")} = @ConcurrencyStamp WHERE {t.Column("Id")} = @Id;";
     }
 }
 #pragma warning restore CA2100

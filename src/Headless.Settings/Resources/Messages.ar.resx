@@ -32,4 +32,7 @@
   <data name="setting:provider_not_allowed" xml:space="preserve">
     <value>الإعداد {0} لا يسمح للمزوّد {1}.</value>
   </data>
+  <data name="setting:version_mismatch" xml:space="preserve">
+    <value>تغيّرت الإعدادات بعد قراءتها. اقرأها مرة أخرى ثم أعد المحاولة.</value>
+  </data>
 </root>

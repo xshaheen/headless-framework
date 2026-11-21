@@ -31,6 +31,9 @@ internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions opt
         b.Property(x => x.Value).HasMaxLength(options.SettingValuesValueMaxLength).IsRequired();
         b.Property(x => x.ProviderName).HasMaxLength(options.SettingValuesProviderNameMaxLength).IsRequired();
         b.Property(x => x.ProviderKey).HasMaxLength(options.SettingValuesProviderKeyMaxLength).IsRequired(false);
+        b.Property(x => x.ConcurrencyStamp)
+            .HasMaxLength(SettingValueRecordConstants.ConcurrencyStampMaxLength)
+            .IsRequired(false);
 
         var providerKey = HeadlessStorageNaming.Apply(style, nameof(SettingValueRecord.ProviderKey));
 
