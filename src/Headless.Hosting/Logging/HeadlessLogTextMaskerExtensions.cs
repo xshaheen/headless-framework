@@ -21,7 +21,9 @@ public static class HeadlessLogTextMaskerExtensions
         /// is recorded, so a span processor cannot mask it afterwards. The rendered text is masked, not only the
         /// messages, so a value that appears only in a custom <see cref="Exception.ToString"/> or a stack frame does not
         /// reach the span. <c>exception.type</c> names the original type. An
-        /// <see cref="ActivityListener.ExceptionRecorder"/> receives the masked exception.
+        /// <see cref="ActivityListener.ExceptionRecorder"/> receives the masked exception. Nothing is recorded, and nothing
+        /// rendered or masked, on a span that is not recording (<see cref="Activity.IsAllDataRequested"/> is
+        /// <see langword="false"/>), because no exporter would send the event.
         /// </remarks>
         /// <param name="activity">The span to record the event on.</param>
         /// <param name="exception">The exception to record.</param>
@@ -34,16 +36,25 @@ public static class HeadlessLogTextMaskerExtensions
             Argument.IsNotNull(activity);
             Argument.IsNotNull(exception);
 
+            if (!activity.IsAllDataRequested)
+            {
+                return activity;
+            }
+
+            // Mask(Exception) returns the exception itself when its message matched nothing, and otherwise one whose
+            // message is masked, so its message is the masked text without scanning it again.
+            var masked = masker.Mask(exception);
+
             // AddException keeps a tag the caller already set and fills only the missing ones from the exception it is
             // given, so these replace the unmasked message, ToString() text, and type it would otherwise write.
             var tags = new TagList
             {
-                { "exception.message", masker.Mask(exception.Message) },
+                { "exception.message", masked.Message },
                 { "exception.stacktrace", masker.Mask(exception.ToString()) },
                 { "exception.type", exception.GetType().ToString() },
             };
 
-            return activity.AddException(masker.Mask(exception), tags);
+            return activity.AddException(masked, tags);
         }
     }
 }

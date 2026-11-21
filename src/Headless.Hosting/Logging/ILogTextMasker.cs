@@ -30,6 +30,10 @@ public interface ILogTextMasker
     /// Returns <paramref name="exception"/> itself when nothing in it matched; otherwise an exception to hand to
     /// telemetry in its place, with the matching text masked. The exception passed in is never changed.
     /// </summary>
+    /// <remarks>
+    /// The returned exception's <see cref="Exception.Message"/> is masked as <see cref="Mask(string)"/> would mask the
+    /// original's: <see cref="HeadlessLogTextMaskerExtensions.RecordException"/> records it without scanning it again.
+    /// </remarks>
     /// <param name="exception">The exception to mask.</param>
     /// <returns>The exception to hand to telemetry.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>

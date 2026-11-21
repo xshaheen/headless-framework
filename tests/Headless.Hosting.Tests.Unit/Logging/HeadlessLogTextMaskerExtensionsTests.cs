@@ -55,7 +55,39 @@ public sealed class HeadlessLogTextMaskerExtensionsTests : TestBase
         masker.RecordException(activity, original);
 
         // then
-        recorded.Should().BeSameAs(masker.MaskedException);
+        recorded.Should().NotBeNull().And.BeSameAs(masker.LastMasked);
+    }
+
+    [Fact]
+    public void should_record_nothing_on_a_span_that_is_not_recording()
+    {
+        // given: a span kept only to propagate its context
+        var masker = new ReplacingMasker();
+        using var activity = new Activity("test");
+        activity.Start();
+        activity.IsAllDataRequested = false;
+
+        // when
+        masker.RecordException(activity, new CitizenException($"lookup for {_NationalId} failed"));
+
+        // then
+        activity.Events.Should().BeEmpty();
+        masker.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public void should_scan_the_message_once()
+    {
+        // given
+        var masker = new ReplacingMasker();
+        using var activity = new Activity("test");
+        activity.Start();
+
+        // when
+        masker.RecordException(activity, new InvalidOperationException($"lookup for {_NationalId} failed"));
+
+        // then: one scan of the exception and one of its rendered text
+        masker.Calls.Should().Be(2);
     }
 
     [Fact]
@@ -73,11 +105,26 @@ public sealed class HeadlessLogTextMaskerExtensionsTests : TestBase
 
     private sealed class ReplacingMasker : ILogTextMasker
     {
-        public Exception MaskedException { get; } = new InvalidOperationException("masked");
+        public int Calls { get; private set; }
 
-        public string Mask(string text) => text.Replace(_NationalId, "***", StringComparison.Ordinal);
+        public Exception? LastMasked { get; private set; }
 
-        public Exception Mask(Exception exception) => MaskedException;
+        public string Mask(string text)
+        {
+            Calls++;
+
+            return _Replace(text);
+        }
+
+        public Exception Mask(Exception exception)
+        {
+            Calls++;
+            LastMasked = new InvalidOperationException(_Replace(exception.Message));
+
+            return LastMasked;
+        }
+
+        private static string _Replace(string text) => text.Replace(_NationalId, "***", StringComparison.Ordinal);
     }
 
     private sealed class CitizenException(string message) : Exception(message)
