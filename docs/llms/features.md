@@ -55,6 +55,7 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - `FeatureDefinition.Providers` limits which providers may hold a value. An empty list allows all. A write through another provider throws `ConflictException` with error code `features:provider-not-allowed`, and reads ignore a value another provider holds. A feature limited to `Edition` cannot be overridden by a tenant value.
 - Gate HTTP endpoints with `[RequiresFeature("Name")]`, `.WithMetadata(new RequiresFeatureAttribute("Name"))`, or `.RequireAuthorization(policy => policy.RequireFeatures("Name"))`. A disabled feature returns 403 (401 for an anonymous caller). `IFeatureManager.EnsureEnabledAsync` in application code throws `ConflictException` instead, returned as 409. See [Gating HTTP endpoints](#gating-http-endpoints).
 - Never combine `[AllowAnonymous]` with a feature gate. `[AllowAnonymous]` skips all authorization, feature requirements included.
+- When you upgrade to the release that adds versioned writes, an existing database needs one change. On the PostgreSQL or SQL Server store, run `resources provision` so it applies the new schema step (`Features/3` on PostgreSQL, `Features/2` on SQL Server); the start fails until it does. On EF Core storage, add and apply the migration for the new `ConcurrencyStamp` column; without it, the first uncached read fails.
 - Keep feature names, provider names, and provider keys free of leading or trailing white space, NUL characters, and lone UTF-16 surrogates. Every read and write throws `ArgumentException` for such a key instead of trimming it, because SQL Server ignores trailing spaces when it compares keys and would merge `"acme "` with `"acme"`. Normalize keys at your own boundary.
 
 ## Core Concepts
@@ -584,9 +585,9 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
-Then add an EF migration for the feature tables. The EF provider writes no DDL. An existing model gains the nullable `ConcurrencyStamp` column on the feature values table (`concurrency_stamp` on Npgsql), which [versioned writes](#editing-a-group-with-optimistic-concurrency) need, so add a migration after upgrading.
+Then add an EF migration for the feature tables. The EF provider writes no DDL. An existing model gains a nullable `ConcurrencyStamp` column (40 characters, `concurrency_stamp` on Npgsql) on the feature values table. Add and apply that migration before the upgraded version serves traffic: every features read and write selects the column, so without it the first call that misses the cache fails with a missing-column error, and the start does not detect it.
 
-**Verify:** the host starts. A context that does not map the feature entities fails the start with `InvalidOperationException`: "the registered DbContext ... does not contain ... Call `modelBuilder.ConfigureHeadlessFeatures(this)`".
+**Verify:** the host starts. A context that does not map the feature entities fails the start with `InvalidOperationException`: "the registered DbContext ... does not contain ... Call `modelBuilder.ConfigureHeadlessFeatures(this)`". After upgrading, a read that misses the cache fails with a missing-column error until the `ConcurrencyStamp` migration is applied.
 
 ### Configuration
 

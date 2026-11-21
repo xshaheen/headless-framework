@@ -47,6 +47,7 @@ Define settings in an `ISettingDefinitionProvider`. Read with `ISettingManager.G
 - Do not call `IDynamicSettingDefinitionStore.SaveAsync` to persist definitions. The `SettingDefinitions` seeder does that when the deployment runs `seed`. See [Definition Seeding](#definition-seeding).
 - To remove every value of a deleted tenant or user, call `DeleteAsync(providerName, providerKey)`.
 - Write through `ISettingManager`, `unit.Settings`, or the EF `ISettingValueRecordRepository` only. A raw SQL write, a direct `DbContext` write, or a direct call to the PostgreSQL or SQL Server repository leaves the cache stale until `ValueCacheExpiration` (5 hours by default).
+- When you upgrade to the release that adds versioned writes, an existing database needs one change. On the PostgreSQL or SQL Server store, run `resources provision` so it applies the new schema step (`Settings/3`); the start fails until it does. On EF Core storage, add and apply the migration for the new `ConcurrencyStamp` column; without it, the first uncached read fails.
 - Normalize setting names, provider names, and provider keys at your own boundary. Every read and write throws `ArgumentException` for a key with leading or trailing white space, a NUL character, or an unpaired UTF-16 surrogate.
 - Create definitions through `ISettingDefinitionContext.Add(new SettingDefinitionCreateOptions { … })`. The `SettingDefinition` constructor is not public. `Add` returns the definition, so you can then change its `Providers` or `ExtraProperties`.
 
@@ -504,9 +505,9 @@ builder.Services.AddHeadlessSettings(setup =>
 });
 ```
 
-Then add an EF Core migration for the settings tables and apply it as you apply every migration. This provider writes no DDL. An existing model gains the nullable `ConcurrencyStamp` column on the setting values table (`concurrency_stamp` on Npgsql), which [versioned writes](#editing-a-group-with-optimistic-concurrency) need, so add a migration after upgrading.
+Then add an EF Core migration for the settings tables and apply it as you apply every migration. This provider writes no DDL. An existing model gains a nullable `ConcurrencyStamp` column (40 characters, `concurrency_stamp` on Npgsql) on the setting values table. Add and apply that migration before the upgraded version serves traffic: every settings read and write selects the column, so without it the first call that misses the cache fails with a missing-column error, and the start does not detect it.
 
-**Verify:** `dotnet app.dll check` passes. Without `ConfigureHeadlessSettings(this)`, it fails with `InvalidOperationException`: "the registered DbContext … does not contain …. Call `modelBuilder.ConfigureHeadlessSettings(this)` in your `OnModelCreating`." A scoped or transient context factory fails with `InvalidServiceLifetimeException`.
+**Verify:** `dotnet app.dll check` passes. Without `ConfigureHeadlessSettings(this)`, it fails with `InvalidOperationException`: "the registered DbContext … does not contain …. Call `modelBuilder.ConfigureHeadlessSettings(this)` in your `OnModelCreating`." A scoped or transient context factory fails with `InvalidServiceLifetimeException`. After upgrading, a read that misses the cache fails with a missing-column error until the `ConcurrencyStamp` migration is applied.
 
 ### Configuration
 
