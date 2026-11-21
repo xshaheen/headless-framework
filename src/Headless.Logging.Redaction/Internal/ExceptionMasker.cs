@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Specialized;
+using System.Reflection;
 
 namespace Headless.Logging.Internal;
 
@@ -17,6 +19,8 @@ namespace Headless.Logging.Internal;
 /// </remarks>
 internal static class ExceptionMasker
 {
+    private static readonly ConcurrentDictionary<Type, bool> _OverridesDataByType = new();
+
     /// <summary>
     /// Returns <paramref name="exception"/> itself when no message or data value in the chain
     /// matched; otherwise a masked copy, or a <see cref="RedactedException"/>.
@@ -25,7 +29,7 @@ internal static class ExceptionMasker
     {
         var message = exception.Message;
         var maskedMessage = mask(message, state);
-        var maskedData = _MaskData(exception.Data, mask, state);
+        var maskedData = _MaskData(exception, mask, state);
         var changed = maskedData is not null || !string.Equals(maskedMessage, message, StringComparison.Ordinal);
         Exception[]? inners = null;
 
@@ -68,7 +72,9 @@ internal static class ExceptionMasker
         };
 
         if (
-            ExceptionCopier.TryGetOwnMessage(exception, out var ownMessage)
+            // A copy of a type that overrides Data would still return the original's entries, so it takes the fallback.
+            (maskedData is null || !_OverridesDataByType.GetOrAdd(exception.GetType(), _OverridesData))
+            && ExceptionCopier.TryGetOwnMessage(exception, out var ownMessage)
             && ExceptionCopier.TryCopy(
                 exception,
                 ownMessage is null ? null : mask(ownMessage, state),
@@ -92,11 +98,28 @@ internal static class ExceptionMasker
     }
 
     /// <summary>
-    /// Returns a new dictionary holding every entry of <paramref name="data"/> with its value masked the way log property
+    /// Returns a new dictionary holding every entry of the exception's <see cref="Exception.Data"/> with its value masked the way log property
     /// values are, or <see langword="null"/> when no value matched. Keys are kept as they are.
     /// </summary>
-    private static ListDictionary? _MaskData<TState>(IDictionary data, Func<string, TState, string> mask, TState state)
+    private static ListDictionary? _MaskData<TState>(
+        Exception exception,
+        Func<string, TState, string> mask,
+        TState state
+    )
     {
+        // Reading Exception.Data creates the container the first time, and most exceptions never get one, so the field
+        // is checked first. A type that overrides Data may keep its entries elsewhere, so it is always read.
+        if (
+            !_OverridesDataByType.GetOrAdd(exception.GetType(), _OverridesData)
+            && ExceptionCopier.TryGetOwnData(exception, out var own)
+            && own is null
+        )
+        {
+            return null;
+        }
+
+        var data = exception.Data;
+
         if (data.Count == 0)
         {
             return null;
@@ -131,4 +154,14 @@ internal static class ExceptionMasker
 
         return masked;
     }
+
+    private static bool _OverridesData(Type type) =>
+        type.GetProperty(
+            nameof(Exception.Data),
+            BindingFlags.Public | BindingFlags.Instance,
+            null,
+            typeof(IDictionary),
+            Type.EmptyTypes,
+            null
+        )?.GetMethod?.DeclaringType != typeof(Exception);
 }

@@ -43,6 +43,33 @@ internal static class ExceptionCopier
     }
 
     /// <summary>
+    /// The exception's own <see cref="Exception.Data"/> container, read without creating it; <see langword="null"/> when
+    /// nothing has read or written <see cref="Exception.Data"/> yet.
+    /// </summary>
+    public static bool TryGetOwnData(Exception exception, out IDictionary? data)
+    {
+        data = null;
+
+        if (_unavailable)
+        {
+            return false;
+        }
+
+        try
+        {
+            data = _Data(exception);
+
+            return true;
+        }
+        catch (MissingFieldException)
+        {
+            _unavailable = true;
+
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Copies <paramref name="exception"/> with <paramref name="message"/> as its own message and
     /// <paramref name="inners"/> as its inner exceptions (every member of an <see cref="AggregateException"/>, otherwise
     /// one or none), and <paramref name="data"/> as its <see cref="Exception.Data"/> when not <see langword="null"/>.
