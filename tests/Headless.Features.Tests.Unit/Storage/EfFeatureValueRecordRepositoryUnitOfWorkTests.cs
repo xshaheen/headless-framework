@@ -84,7 +84,7 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         }
 
         // and a second unit updates it
-        value.Value = "light";
+        value.ChangeValue("light");
         await using (var unit = await Factory.BeginAsync(owner, AbortToken))
         {
             await Repository.SaveEnlistedAsync(unit, [], [value], [], AbortToken);

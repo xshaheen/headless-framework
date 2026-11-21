@@ -446,8 +446,11 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
             fallback: false,
             cancellationToken: AbortToken
         );
-        current.Values.Single(x => x.Name == "Setting1").Value.Should().Be("First");
-        current.Values.Single(x => x.Name == "Setting2").Value.Should().BeNull();
+        current
+            .Values.Single(x => string.Equals(x.Name, "Setting1", StringComparison.Ordinal))
+            .Value.Should()
+            .Be("First");
+        current.Values.Single(x => string.Equals(x.Name, "Setting2", StringComparison.Ordinal)).Value.Should().BeNull();
         current.Version.Should().NotBe(read.Version);
     }
 

@@ -52,7 +52,7 @@ public static class SettingValueVersion
 
             // A row written before the store kept stamps hashes its id instead. Its first update stores a stamp,
             // which changes the hash as any other write does.
-            stamps.Add(record.ConcurrencyStamp ?? "id:" + record.Id.ToString("N"));
+            stamps.Add(record.ConcurrencyStamp ?? ("id:" + record.Id.ToString("N")));
         }
 
         var builder = new StringBuilder();

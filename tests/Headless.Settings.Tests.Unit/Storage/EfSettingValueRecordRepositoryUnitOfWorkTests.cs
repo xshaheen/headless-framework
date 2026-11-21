@@ -84,7 +84,7 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         }
 
         // and a second unit updates it
-        value.Value = "light";
+        value.ChangeValue("light");
         await using (var unit = await Factory.BeginAsync(owner, AbortToken))
         {
             await Repository.SaveEnlistedAsync(unit, [], [value], [], AbortToken);
@@ -151,9 +151,9 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
 
         // when the row is inserted, updated, saved in a batch, and deleted outside a unit
         await Repository.InsertAsync(value, AbortToken);
-        value.Value = "light";
+        value.ChangeValue("light");
         await Repository.UpdateAsync(value, AbortToken);
-        value.Value = "blue";
+        value.ChangeValue("blue");
         await Repository.SaveAsync([], [value], [], AbortToken);
         await Repository.DeleteAsync([value], AbortToken);
 
