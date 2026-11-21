@@ -32,6 +32,7 @@ internal sealed class MessagingModuleApi(
     MessagingMetricsEventListener metrics,
     IServiceProvider services,
     TimeSpan searchTimeout,
+    MessagingSequentialStates sequentialStates,
     MessagingForwarding? forwarding = null
 )
 {
@@ -46,6 +47,7 @@ internal sealed class MessagingModuleApi(
     private readonly MessagingSources _sources = Argument.IsNotNull(sources);
     private readonly MessagingMetricsEventListener _metrics = Argument.IsNotNull(metrics);
     private readonly IServiceProvider _services = Argument.IsNotNull(services);
+    private readonly MessagingSequentialStates _sequentialStates = Argument.IsNotNull(sequentialStates);
 
     /// <summary>
     /// Maps the reads on <paramref name="routes"/>, and the node list and Ping, which are always this node's, on
@@ -67,6 +69,7 @@ internal sealed class MessagingModuleApi(
         routes.MapGet("/scheduled", _ListScheduledAsync);
         routes.MapGet("/receipts", _ListReceiptsAsync);
         routes.MapGet("/consumers", _Consumers);
+        routes.MapGet("/consumers/sequential", _SequentialAsync);
         routes.MapGet("/contracts", _Contracts);
         routes.MapGet("/circuits", _Circuits);
         routes.MapGet("/backlog", _BacklogAsync);
@@ -675,6 +678,86 @@ internal sealed class MessagingModuleApi(
     private FileContentHttpResult _Consumers() => _ManifestPart("consumers");
 
     private FileContentHttpResult _Contracts() => _ManifestPart("messages");
+
+    // A sequential consumer's holder and waiting count. Read on request rather than with the consumer list: the holder
+    // changes when a host stops or loses its lease, and finding it may ask every node.
+    private async Task<Results<JsonHttpResult<MessagingSequentialState>, ValidationProblem, NotFound>> _SequentialAsync(
+        string? identity,
+        string? lane,
+        CancellationToken cancellationToken
+    )
+    {
+        if (string.IsNullOrEmpty(identity) || string.IsNullOrEmpty(lane))
+        {
+            return DashboardValidation.Problem(
+                string.IsNullOrEmpty(identity) ? "identity" : "lane",
+                DashboardValidation.RequiredRule,
+                "Send the consumer identity and its lane."
+            );
+        }
+
+        var messageLane = lane switch
+        {
+            "bus" => MessageLane.Bus,
+            "queue" => MessageLane.Queue,
+            _ => (MessageLane?)null,
+        };
+
+        if (messageLane is null)
+        {
+            return DashboardValidation.Problem("lane", DashboardValidation.EnumRule, "Send bus or queue.");
+        }
+
+        if (_FindSequentialConsumer(identity, lane) is not { } consumer)
+        {
+            return TypedResults.NotFound();
+        }
+
+        // A subscription is named after the consumer identity on the Bus lane and after each message on the Queue lane.
+        IReadOnlyList<string> subscriptions =
+            messageLane == MessageLane.Bus ? [identity] : [.. consumer.Messages.Distinct(StringComparer.Ordinal)];
+        var state = await _sequentialStates
+            .ReadAsync(identity, messageLane.Value, subscriptions, consumer.Intake, cancellationToken)
+            .ConfigureAwait(false);
+
+        return TypedResults.Json(state, MessagingDashboardJsonContext.Default.MessagingSequentialState);
+    }
+
+    // The manifest decides what this host registered and how hosts share it, so the read takes both from there.
+    private (string? Intake, List<string> Messages)? _FindSequentialConsumer(string identity, string lane)
+    {
+        using var manifest = _ReadManifest();
+
+        if (manifest?.RootElement.TryGetProperty("consumers", out var consumers) != true)
+        {
+            return null;
+        }
+
+        foreach (var consumer in consumers.EnumerateArray())
+        {
+            if (
+                consumer.TryGetProperty("identity", out var id)
+                && string.Equals(id.GetString(), identity, StringComparison.Ordinal)
+                && consumer.TryGetProperty("lane", out var consumerLane)
+                && string.Equals(consumerLane.GetString(), lane, StringComparison.Ordinal)
+                && consumer.TryGetProperty("sequential", out var sequential)
+                && sequential.ValueKind == JsonValueKind.True
+            )
+            {
+                var intake = consumer.TryGetProperty("activeHost", out var activeHost) ? activeHost.GetString() : null;
+                var messages = consumer.TryGetProperty("messages", out var list)
+                    ? list.EnumerateArray()
+                        .Select(static message => message.GetProperty("name").GetString())
+                        .OfType<string>()
+                        .ToList()
+                    : [];
+
+                return (intake, messages);
+            }
+        }
+
+        return null;
+    }
 
     private JsonHttpResult<MessagingCircuitList> _Circuits()
     {

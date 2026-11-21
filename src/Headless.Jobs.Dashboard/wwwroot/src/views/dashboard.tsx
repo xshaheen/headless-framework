@@ -39,6 +39,7 @@ import {
   readFilter,
   readRunProjection,
   runsTopic,
+  useCronOccurrenceRemovals,
   useJobsCommands,
   usePending,
   viewOnlyReason,
@@ -118,6 +119,7 @@ function ProcessingNow() {
   const module = useModule()
   const format = useFormat()
   const client = useQueryClient()
+  useCronOccurrenceRemovals()
   const runs = useDashboardKeysetList<Run>({
     topic: runsTopic,
     params: processingFilter,

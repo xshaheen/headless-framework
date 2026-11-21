@@ -23,7 +23,7 @@ internal static class MediaTextLimits
     public const long MaxBufferedBytes = 100L * 1024 * 1024;
 
     /// <summary>
-    /// The most bytes one Flate-encoded PDF stream may inflate to; PdfPig holds each decoded stream whole in memory.
+    /// The most bytes one Flate- or LZW-encoded PDF stream may decode to; PdfPig holds each decoded stream whole in memory.
     /// </summary>
     public const long MaxDecodedPdfStreamBytes = 100L * 1024 * 1024;
 

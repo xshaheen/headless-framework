@@ -744,6 +744,7 @@ internal sealed record MessagingListScope
 [JsonSerializable(typeof(MessagingScheduledList))]
 [JsonSerializable(typeof(MessagingReceiptList))]
 [JsonSerializable(typeof(MessagingCircuitList))]
+[JsonSerializable(typeof(MessagingSequentialState))]
 [JsonSerializable(typeof(MessagingBacklog))]
 [JsonSerializable(typeof(MessagingNodeList))]
 [JsonSerializable(typeof(MessagingRealtimeMetrics))]

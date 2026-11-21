@@ -909,10 +909,11 @@ The store reads the `PrivateKey` stream once, when it creates its connection poo
 | `Proxy` | `null` | Proxy URI (`http://user:pass@host:port` or a SOCKS URI). |
 | `ProxyType` | `ProxyTypes.None` | SSH.NET proxy type. Detected from the `Proxy` scheme when left at `None`. |
 | `MaxConcurrentOperations` | `4` | Parallel operations in bulk calls. Keep it low; SFTP channels are limited. |
-| `MaxPoolSize` | `4` | Pooled connections for uploads, deletes, listings, and info reads. At least `MaxConcurrentOperations`. |
+| `MaxPoolSize` | `4` | Pooled connections for deletes, listings, info reads, copies, and uploads from a `MemoryStream`. At least `MaxConcurrentOperations`. |
 | `MaxReadStreamConnections` | `4` | Connections held by open download streams. |
+| `MaxUploadStreamConnections` | `4` | Connections held by uploads whose source is not a `MemoryStream`, such as a request body. |
 
-A store can open up to `MaxPoolSize + MaxReadStreamConnections` SSH connections.
+A store can open up to `MaxPoolSize + MaxReadStreamConnections + MaxUploadStreamConnections` SSH connections.
 
 ### Design and runtime behavior
 
@@ -923,8 +924,9 @@ A store can open up to `MaxPoolSize + MaxReadStreamConnections` SSH connections.
 - **A directory is not a blob.** A key that names a directory reads as missing: `ExistsAsync` returns `false`, `GetBlobInfoAsync` returns `null`, and `DeleteAsync` returns `false` (`Ok(false)` in `BulkDeleteAsync`) and leaves the directory in place.
 - **Atomic replace.** `UploadAsync` and `CopyAsync` write to temporary sibling files and rename them over the final path with OpenSSH's `posix-rename@openssh.com` extension, so a failed write leaves the earlier blob in place. On a server without that extension, the earlier blob is first renamed aside, then deleted after the new file takes its path, or renamed back on failure. A partial write is never visible, but the blob is briefly absent during the replace.
 - **Download streams hold a connection.** `OpenReadStreamAsync` keeps its SFTP connection until you dispose the `BlobDownloadResult`, so a slow client holds it for the whole transfer. These connections come from the separate `MaxReadStreamConnections` set, so open downloads never block other operations.
-- **No acquire timeout.** A full pool waits until a connection frees or the operation's `CancellationToken` cancels. After `MaxReadStreamConnections` undisposed downloads, every later `OpenReadStreamAsync` waits. Dispose download results promptly, size both pools for peak concurrency, and always pass a cancellation token.
-- **Uploads.** A non-seekable stream passes through unbuffered.
+- **Uploads from a stream hold a connection.** An upload reads its source while it holds its SFTP connection, so a client that sends its body slowly holds it for the whole transfer. Every upload whose source is not a `MemoryStream` takes its connection from the separate `MaxUploadStreamConnections` set, a seekable source such as a buffered request body included, so slow uploads never block deletes, listings, info reads, or in-memory uploads. The body passes through unbuffered.
+- **Slow senders share one upload budget.** All stream uploads to a store, signed-URL uploads included, wait on the same `MaxUploadStreamConnections` connections, so any holder of an upload URL can fill them by sending slowly. Bound how long a URL can hold one: mint upload URLs with a `MaxLength` constraint and a short expiry, and set Kestrel's `KestrelServerOptions.Limits.MinRequestBodyDataRate` so the server drops a client that sends below the rate. To keep your own uploads off this budget, upload from a `MemoryStream`.
+- **No acquire timeout.** A full pool waits until a connection frees or the operation's `CancellationToken` cancels. After `MaxReadStreamConnections` undisposed downloads, every later `OpenReadStreamAsync` waits. Dispose download results promptly, size every pool for peak concurrency, and always pass a cancellation token.
 
 ---
 
@@ -982,7 +984,7 @@ Call both `UseSignedUrlEndpoint` (services) and `MapBlobSignedUrlEndpoint` (rout
 - **Token.** The URL is `{BaseUrl}{RoutePrefix}/{token}`. The token is an ASP.NET Core Data Protection payload that authenticates the store name, container, path, verb, expiry, upload constraints, and download options, so a URL cannot be reused for another blob, store, or verb. Expiry is checked against the registered `TimeProvider`. A token is reusable until it expires and cannot be revoked one at a time.
 - **404 for every refusal.** An expired, tampered, wrong-verb, or unknown-store token, and a missing blob, all return `404`, never `403`, so a probe learns nothing.
 - **Download.** `GET` streams the blob, with range support when the stream is seekable. The response type is derived from the key's extension, or from `PresignedDownloadOptions.ContentType`. Responses carry `Content-Disposition: attachment` (named after the last path segment, or `PresignedDownloadOptions.FileName`), `X-Content-Type-Options: nosniff`, and `Content-Security-Policy: sandbox`, because an uploaded HTML or SVG file would otherwise run script in your app's origin. A browser downloads the file instead of rendering it; an `<img>` tag still works. For untrusted uploads, prefer a separate host name for `BaseUrl`.
-- **Upload.** `PUT` writes the body through `UploadAsync` and returns `200`.
+- **Upload.** `PUT` writes the body through `UploadAsync` and returns `200`. The body streams to the store as the client sends it, so a slow client holds the store's upload resources for the whole request. On SFTP every such upload shares the `MaxUploadStreamConnections` budget; bound it with `MaxLength`, a short expiry, and Kestrel's `MinRequestBodyDataRate` ([Headless.Blobs.SshNet](#headlessblobssshnet)).
   - A `ContentType` constraint must name one exact media type (`image/*` throws `ArgumentException` when minting). Another type gets `415`; parameters such as `charset` are ignored.
   - A `MaxLength` constraint requires `Content-Length` and no `Transfer-Encoding` (`411` otherwise), answers a larger declared length with `413` before any byte reaches the store, and sets the server's request-body limit to that length where the server allows it. Without `MaxLength`, the server's default body limit applies.
   - A missing container is a server error, as for `UploadAsync`.

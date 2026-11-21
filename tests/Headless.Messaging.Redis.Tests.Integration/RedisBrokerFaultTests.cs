@@ -47,7 +47,7 @@ public sealed class RedisBrokerFaultTests(RedisMessagingFixture fixture) : Broke
                 async token =>
                 {
                     await broker.Container.StopAsync(token);
-                    await broker.Container.StartAsync(token);
+                    await broker.PortCheck.StartAsync(broker.Container, token);
                 },
                 () => ((IAsyncDisposable)broker).DisposeAsync()
             );

@@ -53,7 +53,7 @@ public sealed class AmazonSqsTransportConnectivityTests : TransportConnectivityT
 
     protected override async Task RestoreBrokerAsync(CancellationToken cancellationToken)
     {
-        await _broker.Container.StartAsync(cancellationToken);
+        await _broker.PortCheck.StartAsync(_broker.Container, cancellationToken);
 
         using var sqs = _CreateSqsClient();
         foreach (var queueName in _queueNames)

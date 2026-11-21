@@ -941,7 +941,7 @@ internal sealed class JobsCommands(
             return (_Skipped(id, reason), true);
         }
 
-        _publisher.PublishRemoved(JobChangeKind.CronJob, cronJob.Id);
+        _publisher.PublishCronJobRemoved(cronJob.Id);
 
         return (
             new DashboardRowResult

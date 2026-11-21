@@ -66,6 +66,16 @@ internal sealed class JobsChangePublisher : IAsyncDisposable
         _publisher.Publish(JobsViews.Removed(JobsDashboardOptions.ModuleId, JobsViews.KindOf(kind), id));
     }
 
+    /// <summary>
+    /// Publishes that a cron job is gone together with every occurrence it stored, so open run lists drop that cron
+    /// job's rows without reading each one again.
+    /// </summary>
+    public void PublishCronJobRemoved(Guid id)
+    {
+        _publisher.Publish(JobsViews.Removed(JobsDashboardOptions.ModuleId, JobsViews.CronJobKind, id));
+        _publisher.Publish(JobsViews.Removed(JobsDashboardOptions.ModuleId, JobsViews.CronOccurrencesKind, id));
+    }
+
     /// <summary>Reads a row back now and publishes it, for a write this module made itself.</summary>
     public async Task PublishAsync(
         JobChangeKind kind,

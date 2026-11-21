@@ -158,7 +158,7 @@ public sealed class JobsModuleTimeJobCommandsTests : TestBase
         row.Reason.Should().Be("12 stored occurrences removed");
         (await node.Store.GetCronJobByIdAsync(cronJob.Id, AbortToken)).Should().BeNull();
         (await node.Store.GetAllCronJobOccurrencesAsync(x => x.CronJobId == cronJob.Id, AbortToken)).Should().BeEmpty();
-        node.Published.For(cronJob.Id).Should().ContainSingle();
+        node.Published.For(cronJob.Id).Should().ContainSingle(change => change.Target.Kind == JobsViews.CronJobKind);
     }
 
     [Fact]

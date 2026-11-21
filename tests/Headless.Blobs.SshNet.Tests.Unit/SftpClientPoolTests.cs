@@ -102,10 +102,43 @@ public sealed class SftpClientPoolTests : TestBase
     }
 
     [Fact]
+    public void should_serve_upload_streams_from_a_separate_pool()
+    {
+        // given
+        var options = Options.Create(_CreateValidOptions());
+        using var pool = new SftpClientPool(options, NullLogger<SftpClientPool>.Instance);
+
+        // when
+        var uploadStreams = pool.UploadStreams;
+
+        // then: separate from both the main and read-stream pools, with no further nesting
+        uploadStreams.Should().NotBeSameAs(pool);
+        uploadStreams.Should().NotBeSameAs(pool.ReadStreams);
+        uploadStreams.UploadStreams.Should().BeSameAs(uploadStreams);
+        uploadStreams.ReadStreams.Should().BeSameAs(uploadStreams);
+    }
+
+    [Fact]
+    public async Task should_dispose_the_upload_stream_pool_with_the_pool()
+    {
+        // given
+        var options = Options.Create(_CreateValidOptions());
+        var pool = new SftpClientPool(options, NullLogger<SftpClientPool>.Instance);
+        var uploadStreams = pool.UploadStreams;
+
+        // when
+        pool.Dispose();
+        var act = async () => await uploadStreams.AcquireAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
     public async Task should_offer_the_private_key_on_every_new_connection_when_the_key_is_a_stream()
     {
         // given: key auth against a port nothing listens on, so each acquire builds its credentials, then fails to
-        // connect; the main pool and the read-stream pool each open connections of their own
+        // connect; the main, read-stream, and upload-stream pools each open connections of their own
         using var rsa = RSA.Create(2048);
         var options = _CreateValidOptions();
         options.ConnectionString = "sftp://user@127.0.0.1:1";
@@ -116,11 +149,13 @@ public sealed class SftpClientPoolTests : TestBase
         var first = async () => await pool.AcquireAsync(AbortToken);
         var second = async () => await pool.AcquireAsync(AbortToken);
         var readStream = async () => await pool.ReadStreams.AcquireAsync(AbortToken);
+        var uploadStream = async () => await pool.UploadStreams.AcquireAsync(AbortToken);
 
         // then: every attempt reaches the network instead of failing on a key stream the first one consumed
         await first.Should().ThrowAsync<SocketException>();
         await second.Should().ThrowAsync<SocketException>();
         await readStream.Should().ThrowAsync<SocketException>();
+        await uploadStream.Should().ThrowAsync<SocketException>();
     }
 
     private static SshBlobStorageOptions _CreateValidOptions()

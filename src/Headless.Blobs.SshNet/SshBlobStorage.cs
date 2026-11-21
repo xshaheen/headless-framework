@@ -33,7 +33,8 @@ namespace Headless.Blobs.SshNet;
 /// SFTP supports no server-side pagination: <see cref="ListAsync"/> recursively enumerates, sorts by key, and encodes
 /// a lexicographic <i>start-after-key</i> continuation token. Full enumeration re-scans per page (an emulated tier,
 /// weaker stability than S3/Azure native tokens). Non-seekable upload streams are passed through to the SFTP write
-/// stream without buffering; seekable streams are rewound to position 0 first.
+/// stream without buffering; seekable streams are rewound to position 0 first. An upload whose source is not a
+/// <see cref="MemoryStream"/> takes its connection from <see cref="SftpClientPool.UploadStreams"/>.
 /// </para>
 /// </remarks>
 internal sealed partial class SshBlobStorage(
@@ -74,7 +75,11 @@ internal sealed partial class SshBlobStorage(
         // GetBlobInfoAsync uses to recover the blob's Created timestamp.
         var payload = BlobStorageHelpers.BuildEffectiveMetadata(metadata, timeProvider.GetUtcNow(), location.Path);
 
-        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        // A source that is not in memory is read while the client is held, at the sender's pace: a signed-URL request
+        // body arrives as fast as the client sends it, even when buffered and seekable. Those uploads take the upload
+        // pool, so a slow sender never holds a connection the store's deletes, listings, or info reads need.
+        var uploadPool = content is MemoryStream ? pool : pool.UploadStreams;
+        var client = await uploadPool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await _ReplaceBlobAsync(
@@ -107,7 +112,7 @@ internal sealed partial class SshBlobStorage(
         }
         finally
         {
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            await uploadPool.ReleaseAsync(client).ConfigureAwait(false);
         }
     }
 

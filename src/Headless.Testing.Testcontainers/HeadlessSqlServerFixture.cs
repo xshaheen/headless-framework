@@ -28,8 +28,8 @@ namespace Headless.Testing.Testcontainers;
 /// leaves nothing behind for the next one.
 /// </para>
 /// <para>
-/// Startup polls the TCP port and attempts a login for up to 60 seconds after the container
-/// log reports readiness, to guard against race conditions in slow CI environments.
+/// After the container log reports readiness, <see cref="PortCheck"/> logs in through the published port, for up to two
+/// minutes on a slow host, and proves the server that answers is this container's.
 /// </para>
 /// <para>
 /// xUnit calls <see cref="IAsyncLifetime.InitializeAsync"/> explicitly, and a subclass overrides
@@ -41,9 +41,7 @@ namespace Headless.Testing.Testcontainers;
 public class HeadlessSqlServerFixture : IAsyncLifetime
 {
     private const string _Password = "YourStrong@Passw0rd";
-    private static readonly TimeSpan _StartupTimeout = TimeSpan.FromSeconds(60);
-    private static readonly TimeSpan _StartupPollInterval = TimeSpan.FromMilliseconds(250);
-    private readonly TimeProvider _timeProvider = TimeProvider.System;
+    private const int _SqlServerPort = 1433;
 
     /// <summary>
     /// The environment variable that, when set, replaces the architecture-selected image. It lets an ARM64 host run
@@ -79,6 +77,18 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     /// <remarks>The image must log "SQL Server is now ready" and accept the <c>sa</c> password the fixture sets.</remarks>
     protected virtual string Image => _DefaultImage;
 
+    /// <summary>
+    /// Gets the check that proves the container's published port reaches this container's server, by its machine name.
+    /// Start a private container that a test stopped through its <see cref="PublishedPortCheck.StartAsync"/>, so a
+    /// restart that lands on another host listener's port moves on.
+    /// </summary>
+    public PublishedPortCheck PortCheck { get; } =
+        new(_SqlServerPort, PublishedPortProbes.SqlServerMachineName(_Password));
+
+    /// <summary>Gets the started container, for its host, mapped port, or command execution.</summary>
+    public IContainer Container =>
+        _container ?? throw new InvalidOperationException("The SQL Server fixture has not been initialized.");
+
     /// <summary>Gets the name of the database this fixture owns.</summary>
     public string DatabaseName => Ownership.OwnerId;
 
@@ -99,7 +109,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
 
         var builder = new SqlConnectionStringBuilder
         {
-            DataSource = $"{container.Hostname},{container.GetMappedPublicPort(1433)}",
+            DataSource = $"{container.Hostname},{container.GetMappedPublicPort(_SqlServerPort)}",
             InitialCatalog = database,
             UserID = "sa",
             Password = _Password,
@@ -126,21 +136,19 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Starts or attaches to the SQL Server container, polls until a login attempt succeeds or the startup timeout
-    /// (60 seconds) elapses, then creates the fixture's database.
+    /// Starts or attaches to the SQL Server container, waits until its own server accepts a login through the published
+    /// port, then creates the fixture's database.
     /// </summary>
-    /// <exception cref="TimeoutException">
-    /// Thrown when no login succeeds within the startup timeout.
+    /// <exception cref="InvalidOperationException">
+    /// The published port never reached this container's server: on any of three starts of a private container, or at
+    /// once for a shared one.
     /// </exception>
     protected virtual async ValueTask InitializeAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         _shared = SharedTestContainers.IsEnabled && ShareContainer;
         _container = await SharedTestContainers.StartAsync(_Build, cancellationToken).ConfigureAwait(false);
-        await ContainerHostPort
-            .EnsureReachableAsync(_container, 1433, allowRestart: !_shared, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        await _WaitUntilLoginSucceedsAsync().ConfigureAwait(false);
+        await PortCheck.VerifyAsync(_container, allowRestart: !_shared, cancellationToken).ConfigureAwait(false);
         _ownership = await SqlServerDatabaseOwnership
             .CreateAsync(AdminConnectionString, cancellationToken)
             .ConfigureAwait(false);
@@ -181,7 +189,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     {
         var image = Image;
         var builder = new ContainerBuilder(image)
-            .WithPortBinding(1433, assignRandomHostPort: true)
+            .WithPortBinding(_SqlServerPort, assignRandomHostPort: true)
             .WithEnvironment("ACCEPT_EULA", "Y")
             .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"));
@@ -195,37 +203,5 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         }
 
         return builder.Build();
-    }
-
-    private async Task _WaitUntilLoginSucceedsAsync()
-    {
-        var deadline = _timeProvider.GetUtcNow().Add(_StartupTimeout);
-        Exception? lastException = null;
-
-        while (_timeProvider.GetUtcNow() < deadline)
-        {
-            try
-            {
-                await using var connection = new SqlConnection(AdminConnectionString);
-                await connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
-
-                return;
-            }
-            catch (SqlException ex)
-            {
-                lastException = ex;
-                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (InvalidOperationException ex)
-            {
-                lastException = ex;
-                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-
-        throw new TimeoutException(
-            "SQL Server container did not accept logins before the startup timeout.",
-            lastException
-        );
     }
 }

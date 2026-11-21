@@ -29,6 +29,10 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.AzureServiceBus\Headless.Messaging.AzureServiceBus.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging\Headless.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Headless.Dashboard\Headless.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Encryption\Headless.Encryption.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Encryption.EntityFramework\Headless.Encryption.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Encryption.PostgreSql\Headless.Encryption.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Encryption.SqlServer\Headless.Encryption.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard.Consul\Headless.Messaging.Dashboard.Consul.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard.K8s\Headless.Messaging.Dashboard.K8s.csproj" />
@@ -59,6 +63,7 @@
     <None Include="..\..\docs\llms\messaging.md" Link="Docs\messaging.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\llms\jobs.md" Link="Docs\jobs.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\llms\dashboards.md" Link="Docs\dashboards.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\llms\encryption.md" Link="Docs\encryption.md" CopyToOutputDirectory="PreserveNewest" />
     <!-- Topic files of a split guide compile against the same prelude as its entry file. -->
     <None
       Include="..\..\docs\llms\messaging\*.md"

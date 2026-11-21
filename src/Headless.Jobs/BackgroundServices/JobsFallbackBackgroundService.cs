@@ -189,10 +189,13 @@ internal sealed class JobsFallbackBackgroundService(
             }
             catch (Exception exception)
             {
-                // Swallow unexpected exceptions so they don't bubble up
-                // and stop the host; wait a bit before retrying.
+                // Swallow unexpected exceptions so they don't bubble up and stop the host; wait a bit before retrying.
+                // The wait ends early without throwing when the loop token fires: a cancellation thrown from inside
+                // this catch would skip the arm above and fault ExecuteAsync, stopping the host on a membership loss.
                 logger.LogJobsFallbackTickFailed(exception, _fallbackJobPeriod);
-                await timeProvider.Delay(_fallbackJobPeriod, loopToken).ConfigureAwait(false);
+                await timeProvider
+                    .Delay(_fallbackJobPeriod, loopToken)
+                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
         }
 

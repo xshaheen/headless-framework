@@ -94,11 +94,11 @@ PdfPig and Open XML need a seekable stream. Given a non-seekable stream, such as
 
 ### Limits for untrusted uploads
 
-A .docx or .pptx file is a zip, and a PDF's Flate streams are compressed, so a small upload can inflate to gigabytes. Every limit below is fixed.
+A .docx or .pptx file is a zip, and a PDF's Flate and LZW streams are compressed, so a small upload can inflate to gigabytes. Every limit below is fixed.
 
 | Limit | Applies to | Exception |
 | --- | --- | --- |
 | 100 MiB buffered from a non-seekable stream, or a stated `contentLength` over 100 MiB | All providers | `InvalidDataException` |
-| 100 MiB inflated from any one Flate stream, checked before PdfPig inflates it | PDF | `InvalidDataException` |
+| 100 MiB decoded from any one Flate or LZW stream, checked before PdfPig decodes it | PDF | `InvalidDataException` |
 | 16 Mi characters in any one decompressed part | Word, PowerPoint | `System.Xml.XmlException` |
 | 16 Mi characters of extracted text in total | All providers | `InvalidDataException` |
