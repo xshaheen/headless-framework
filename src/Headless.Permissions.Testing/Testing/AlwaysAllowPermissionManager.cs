@@ -66,4 +66,33 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
     {
         return Task.CompletedTask;
     }
+
+    /// <summary>Reports every requested permission granted, under one version that never changes.</summary>
+    public Task<VersionedPermissionGrants> GetVersionedAsync(
+        IReadOnlyCollection<string> permissionNames,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var grants = permissionNames
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(name => name, _ => (bool?)true, StringComparer.Ordinal);
+
+        return Task.FromResult(new VersionedPermissionGrants(grants, _Version));
+    }
+
+    /// <summary>Accepts every save and stores nothing, like the other writes of this manager.</summary>
+    public Task SetVersionedAsync(
+        IReadOnlyDictionary<string, bool?> grants,
+        string providerName,
+        string providerKey,
+        string version,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return Task.CompletedTask;
+    }
+
+    private const string _Version = "always-allow";
 }

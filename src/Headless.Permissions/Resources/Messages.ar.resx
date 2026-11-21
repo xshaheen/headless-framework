@@ -32,4 +32,7 @@
   <data name="permissions:provider-not-defined-for-some" xml:space="preserve">
     <value>مقدم الصلاحيات '{0}' غير مدعوم في بعض الصلاحيات.</value>
   </data>
+  <data name="permissions:version-mismatch" xml:space="preserve">
+    <value>تغيّرت الصلاحيات بعد قراءتها. اقرأها مرة أخرى ثم أعد المحاولة.</value>
+  </data>
 </root>

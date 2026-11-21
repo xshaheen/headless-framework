@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Data;
 using System.Data.Common;
 using Headless.Checks;
 using Headless.MultiTenancy;
@@ -322,6 +323,59 @@ internal sealed class RelationalPermissionGrantRepository(
         }
 
         // Disposing an uncommitted transaction rolls it back, so a failing insert restores the deleted rows.
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SaveIfVersionAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string expectedVersion,
+        IReadOnlyCollection<PermissionGrantRecord> inserted,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNull(expectedVersion);
+
+        var records = _Materialize(inserted, cancellationToken);
+
+        await using var connection = _dialect.CreateConnection(options.ConnectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // Serializable, so the group read below holds until the commit: a concurrent insert of a name that was absent
+        // here fails one of the two transactions instead of letting both commit against the same version.
+        await using var transaction = await connection
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            .ConfigureAwait(false);
+
+        var (sql, bind) = _ByNames(names, providerName, providerKey);
+        var current = await _ReadAsync(connection, transaction, sql, bind, cancellationToken).ConfigureAwait(false);
+        var tenantId = services.GetService<ICurrentTenant>()?.Id;
+
+        if (
+            !string.Equals(
+                PermissionGrantVersion.Compute(providerName, providerKey, tenantId, names, current),
+                expectedVersion,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw new DBConcurrencyException("The permission grants changed after the version was read.");
+        }
+
+        // The delete runs first because a replacement reuses the deleted row's unique key.
+        if (deleted.Count > 0)
+        {
+            await _DeleteAsync(connection, transaction, deleted, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (records.Count > 0)
+        {
+            await _InsertAsync(connection, transaction, records, cancellationToken).ConfigureAwait(false);
+        }
+
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 

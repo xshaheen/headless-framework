@@ -36,4 +36,7 @@
   <data name="permissions:provider-not-defined" xml:space="preserve">
     <value>The permission '{0}' does not have a provider '{1}'.</value>
   </data>
+  <data name="permissions:version-mismatch" xml:space="preserve">
+    <value>The permissions changed after they were read. Read them again and retry.</value>
+  </data>
 </root>

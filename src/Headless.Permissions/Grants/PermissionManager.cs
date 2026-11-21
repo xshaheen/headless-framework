@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Checks;
 using Headless.Context;
 using Headless.Messaging;
@@ -143,6 +144,55 @@ public sealed class PermissionManager(
 
         var changedNames = definedPermissions.Select(x => x.Name).ToArray();
         await _PublishChangedAsync(changedNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<VersionedPermissionGrants> GetVersionedAsync(
+        IReadOnlyCollection<string> permissionNames,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(permissionNames);
+
+        var (provider, permissions) = await _ResolveAsync(permissionNames, providerName, cancellationToken)
+            .ConfigureAwait(false);
+
+        return await provider.GetVersionedAsync(permissions, providerKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task SetVersionedAsync(
+        IReadOnlyDictionary<string, bool?> grants,
+        string providerName,
+        string providerKey,
+        string version,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(grants);
+        Argument.IsNotNullOrWhiteSpace(version);
+
+        var (provider, permissions) = await _ResolveAsync([.. grants.Keys], providerName, cancellationToken)
+            .ConfigureAwait(false);
+
+        var writes = permissions.ConvertAll(permission => new KeyValuePair<PermissionDefinition, bool?>(
+            permission,
+            grants[permission.Name]
+        ));
+
+        try
+        {
+            await provider.SetVersionedAsync(writes, providerKey, version, cancellationToken).ConfigureAwait(false);
+        }
+        catch (DBConcurrencyException)
+        {
+            throw new ConflictException(errorsDescriptor.VersionMismatch(providerName));
+        }
+
+        await _PublishChangedAsync([.. grants.Keys], providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(

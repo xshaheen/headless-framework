@@ -9,6 +9,8 @@ namespace Headless.Permissions;
 /// PostgreSQL / SQL Server provider packages.
 /// </summary>
 /// <remarks>
+/// <see cref="SaveIfVersionAsync"/> defaults to throwing <see cref="NotSupportedException" />, so a versioned write
+/// through a repository that cannot check the version is refused, never silently unversioned.
 /// The enlisted members (<c>*EnlistedAsync</c>) run inside a caller's <see cref="IUnitOfWork" /> and default to throwing
 /// <see cref="NotSupportedException" />; an implementation that cannot join a unit leaves them, and
 /// <c>unit.Permissions</c> then refuses before any write.
@@ -106,6 +108,43 @@ public interface IPermissionGrantRepository
         IReadOnlyCollection<PermissionGrantRecord> deleted,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Deletes and inserts the given records in one transaction, but only while the group of
+    /// <paramref name="names"/> for the target in the current tenant still has <paramref name="expectedVersion"/>.
+    /// </summary>
+    /// <remarks>
+    /// Read the group's records of the current tenant inside the transaction, compute
+    /// <see cref="PermissionGrantVersion.Compute"/> over them, and throw <see cref="System.Data.DBConcurrencyException"/>
+    /// before writing anything when it differs. The transaction must also keep a concurrent writer from inserting one
+    /// of the absent names between that read and the commit (the built-in stores run it at
+    /// <see cref="System.Data.IsolationLevel.Serializable"/>). Delete before insert: a replacement reuses the deleted
+    /// record's unique key.
+    /// </remarks>
+    /// <param name="names">The permission names of the group the version covers.</param>
+    /// <param name="providerName">The grant provider type name.</param>
+    /// <param name="providerKey">The provider-specific subject key.</param>
+    /// <param name="expectedVersion">The version the caller read.</param>
+    /// <param name="inserted">The new records to insert.</param>
+    /// <param name="deleted">The existing records to delete.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="System.Data.DBConcurrencyException">The group's version is no longer <paramref name="expectedVersion"/>.</exception>
+    /// <exception cref="NotSupportedException">This storage cannot write a versioned group.</exception>
+    Task SaveIfVersionAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string expectedVersion,
+        IReadOnlyCollection<PermissionGrantRecord> inserted,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotSupportedException(
+            "The configured permission grant repository cannot write a versioned group. Use the EF Core, PostgreSQL, "
+                + "or SQL Server permissions storage, or implement SaveIfVersionAsync."
+        );
+    }
 
     /// <summary>
     /// Returns all grant records for a given provider/subject, read inside <paramref name="unitOfWork" />'s

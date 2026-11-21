@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Caching;
+using Headless.Checks;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -214,6 +216,84 @@ internal sealed class EfPermissionGrantRepository<TContext>(
             // an insert that reuses its unique key, so a failing insert rolls the delete back.
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        await _WriteCacheAsync(inserted, owned, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveIfVersionAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string expectedVersion,
+        IReadOnlyCollection<PermissionGrantRecord> inserted,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNull(expectedVersion);
+
+        var owned = _OwnedByCurrentTenant(deleted);
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+
+        // Through the execution strategy: a retrying strategy refuses a user-initiated transaction outside it. A retry
+        // re-reads the group, so a write that committed meanwhile surfaces as a version mismatch, not a duplicate.
+        await db
+            .Database.CreateExecutionStrategy()
+            .ExecuteAsync(
+                (Db: db, Names: names, ProviderName: providerName, ProviderKey: providerKey),
+                async (_, state, ct) =>
+                {
+                    state.Db.ChangeTracker.Clear();
+
+                    // Serializable, so the group read below holds until the commit: a concurrent insert of a name that
+                    // was absent here fails one of the two transactions instead of letting both commit.
+                    await using var transaction = await state
+                        .Db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct)
+                        .ConfigureAwait(false);
+
+                    var current = await _Grants(state.Db)
+                        .Where(s =>
+                            state.Names.Contains(s.Name)
+                            && s.ProviderName == state.ProviderName
+                            && s.ProviderKey == state.ProviderKey
+                        )
+                        .ToListAsync(ct)
+                        .ConfigureAwait(false);
+
+                    var version = PermissionGrantVersion.Compute(
+                        state.ProviderName,
+                        state.ProviderKey,
+                        currentTenant.Id,
+                        state.Names,
+                        current
+                    );
+
+                    if (!string.Equals(version, expectedVersion, StringComparison.Ordinal))
+                    {
+                        throw new DBConcurrencyException("The permission grants changed after the version was read.");
+                    }
+
+                    using (_BeginHostWrite([.. inserted, .. owned]))
+                    {
+                        var set = state.Db.Set<PermissionGrantRecord>();
+                        set.RemoveRange(owned);
+                        set.AddRange(inserted);
+
+                        // EF orders a delete before an insert that reuses its unique key.
+                        await state.Db.SaveChangesAsync(ct).ConfigureAwait(false);
+                    }
+
+                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+                    return true;
+                },
+                verifySucceeded: null,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         await _WriteCacheAsync(inserted, owned, cancellationToken).ConfigureAwait(false);
     }

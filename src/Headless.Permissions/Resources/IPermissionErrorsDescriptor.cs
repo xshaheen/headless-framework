@@ -26,6 +26,15 @@ public interface IPermissionErrorsDescriptor
     ErrorDescriptor PermissionsProviderNotFound(string providerName);
 
     ErrorDescriptor PermissionProviderNotDefined(string permissionName, string providerName);
+
+    /// <summary>
+    /// Returns the error for a versioned write whose grants changed after the caller read their version.
+    /// </summary>
+    /// <param name="providerName">The grant provider name the write targeted.</param>
+    /// <returns>An error with the code <c>permissions:version-mismatch</c>.</returns>
+    /// <remarks>A default member, so an existing implementation keeps compiling and returns the built-in message.</remarks>
+    ErrorDescriptor VersionMismatch(string providerName) =>
+        DefaultPermissionErrorsDescriptor.CreateVersionMismatch(providerName);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
@@ -107,6 +116,17 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
         );
 
         return error;
+    }
+
+    /// <inheritdoc/>
+    public ErrorDescriptor VersionMismatch(string providerName) => CreateVersionMismatch(providerName);
+
+    internal static ErrorDescriptor CreateVersionMismatch(string providerName)
+    {
+        return new ErrorDescriptor("permissions:version-mismatch", Messages.permissions_version_mismatch).WithParam(
+            "providerName",
+            providerName
+        );
     }
 
     public ErrorDescriptor PermissionProviderNotDefined(string permissionName, string providerName)

@@ -1,5 +1,6 @@
 using Headless;
 using Headless.Permissions;
+using Headless.Permissions.Resources;
 using Headless.Primitives;
 using Headless.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -430,6 +431,67 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
         );
 
         return builder;
+    }
+
+    [Fact]
+    public async Task should_refuse_a_versioned_role_save_with_version_mismatch_after_another_save()
+    {
+        // given two admins read the same role's group; the first grants one permission and prohibits the other
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
+        var errorsDescriptor = scope.ServiceProvider.GetRequiredService<IPermissionErrorsDescriptor>();
+        var first = _GroupDefinitions[0].Permissions[0].Name;
+        var second = _GroupDefinitions[0].Permissions[1].Name;
+        string[] names = [first, second];
+        var read = await permissionManager.GetVersionedAsync(
+            names,
+            RolePermissionGrantProvider.ProviderName,
+            "Role1",
+            AbortToken
+        );
+        await permissionManager.SetVersionedAsync(
+            new Dictionary<string, bool?>(StringComparer.Ordinal) { [first] = true, [second] = false },
+            RolePermissionGrantProvider.ProviderName,
+            "Role1",
+            read.Version,
+            AbortToken
+        );
+
+        // when the second saves from the version it read
+        var act = () =>
+            permissionManager.SetVersionedAsync(
+                new Dictionary<string, bool?>(StringComparer.Ordinal) { [first] = null, [second] = true },
+                RolePermissionGrantProvider.ProviderName,
+                "Role1",
+                read.Version,
+                AbortToken
+            );
+
+        // then only the first save landed, and the role's users see it
+        read.Grants.Should().BeEquivalentTo(new Dictionary<string, bool?> { [first] = null, [second] = null });
+        var exception = (await act.Should().ThrowAsync<ConflictException>()).Which;
+        exception
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(errorsDescriptor.VersionMismatch(RolePermissionGrantProvider.ProviderName));
+        var current = await permissionManager.GetVersionedAsync(
+            names,
+            RolePermissionGrantProvider.ProviderName,
+            "Role1",
+            AbortToken
+        );
+        current.Grants.Should().BeEquivalentTo(new Dictionary<string, bool?> { [first] = true, [second] = false });
+        current.Version.Should().NotBe(read.Version);
+        var user = new TestCurrentUser
+        {
+            IsAuthenticated = true,
+            UserId = new UserId("123"),
+            WritableRoles = { "Role1" },
+        };
+        (await permissionManager.GetAsync(first, user, cancellationToken: AbortToken)).IsGranted.Should().BeTrue();
     }
 
     [UsedImplicitly]
