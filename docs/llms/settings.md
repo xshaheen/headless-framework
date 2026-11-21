@@ -41,6 +41,7 @@ Define settings in an `ISettingDefinitionProvider`. Read with `ISettingManager.G
 - Name providers with the `SettingValueProviderNames` constants: `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User`. The default-value constant is `DefaultValue`, not `Default`.
 - To read application-wide policy, use `GetAllGlobalAsync(settingNames, fallback)` or `GetAllAsync(settingNames, providerName, providerKey, fallback)`. The name-only `GetAllAsync(settingNames)` walks the whole chain, so a Tenant or User value shadows the Global one and the caller gets its own value instead of the platform's.
 - To hold a Global policy in memory, register `AddSettingsSnapshot<T>(...)` and inject `ISettingsSnapshot<T>`. Do not hand-write a cache, a `SettingChangedMessage` consumer, a poller, and a revision. See [Settings snapshot](#settings-snapshot).
+- For an edit form that must not overwrite another admin's save, read with `GetVersionedAsync(names, providerName, providerKey)` and save with `SetVersionedAsync(values, providerName, providerKey, version)`. Do not compare values yourself and then call `SetAsync`: the check and the write are not atomic. See [Editing a group with optimistic concurrency](#editing-a-group-with-optimistic-concurrency).
 - An `ISettingManager` write commits on its own connection and does not join a unit of work the caller has open. To write inside the unit, call `unit.Settings.SetAsync(...)`. See [Writing settings inside a unit of work](#writing-settings-inside-a-unit-of-work).
 - For a secret, set `IsEncrypted = true` on the definition and register `AddHeadlessEncryption(...)`. Reading or writing an encrypted setting without it throws `InvalidOperationException`. See [Encrypted settings](#encrypted-settings).
 - Do not call `IDynamicSettingDefinitionStore.SaveAsync` to persist definitions. The `SettingDefinitions` seeder does that when the deployment runs `seed`. See [Definition Seeding](#definition-seeding).
@@ -185,6 +186,49 @@ await factory.RunAsync(db, async (unit, ct) =>
 - **Replay.** Inside an owned `RunAsync` block, the writes replay with the block. Inside an observed unit (a domain-event handler in the `HeadlessDbContext` save pipeline), the first write calls `IUnitOfWork.PreventRetry()`, because the pipeline's replay cannot restore rows written outside its change tracker.
 - **EF with a retrying execution strategy.** A context configured with `EnableRetryOnFailure` joins only from inside `RunAsync(db, …)`. From a raw ADO.NET unit it throws `InvalidOperationException` naming `RunAsync(db, …)`.
 - **Custom providers.** A custom `ISettingValueProvider` joins a unit by overriding `SetAllEnlistedAsync`, and a custom `ISettingValueRecordRepository` by overriding its `*EnlistedAsync` members. The defaults throw `NotSupportedException`. A custom read provider that reads the unit's database overrides `GetOrDefaultEnlistedAsync`. A host that replaces `ISettingManager` keeps the framework's enlisted path.
+
+### Editing a group with optimistic concurrency
+
+An edit form reads a group of settings for one scope, lets an admin change them, and saves them back. `GetVersionedAsync` returns the values and the group's version. `SetVersionedAsync` saves only while the group still has that version. Otherwise it throws `ConflictException` with the error code `setting:version_mismatch` and writes nothing. Over HTTP, the version is the `ETag`, and the save takes it in `If-Match`. The Headless API exception handler maps the `ConflictException` to 409.
+
+```csharp
+HashSet<string> branding = ["App.Theme", "App.LogoUrl"];
+
+app.MapGet("/tenants/{tenantId}/settings/branding", async (string tenantId, ISettingManager settings, HttpResponse response, CancellationToken ct) =>
+{
+    var group = await settings.GetVersionedAsync(branding, SettingValueProviderNames.Tenant, tenantId, cancellationToken: ct);
+    response.Headers.ETag = $"\"{group.Version}\"";
+
+    return Results.Ok(group.Values.ToDictionary(x => x.Name, x => x.Value));
+});
+
+app.MapPut("/tenants/{tenantId}/settings/branding", async (string tenantId, Dictionary<string, string?> body, HttpRequest request, ISettingManager settings, CancellationToken ct) =>
+{
+    var version = request.Headers.IfMatch.ToString().Trim('"');
+
+    if (version.Length == 0)
+    {
+        return Results.StatusCode(StatusCodes.Status428PreconditionRequired);
+    }
+
+    // Every name of the group, so an omitted name clears its value instead of failing the version check.
+    var values = branding.ToDictionary(name => name, name => body.GetValueOrDefault(name), StringComparer.Ordinal);
+    await settings.SetVersionedAsync(values, SettingValueProviderNames.Tenant, tenantId, version, cancellationToken: ct);
+
+    return Results.NoContent();
+});
+```
+
+**Verify:** in a test, call `GetVersionedAsync`, write one of the names with `SetForTenantAsync`, then call `SetVersionedAsync` with the version you read. It throws `ConflictException` whose `Errors[0].Code` is `setting:version_mismatch`, and `GetForTenantAsync` still returns the value the other write stored.
+
+- **The group.** The version covers the names you pass, in one provider scope (`providerName` and the key the provider resolves). Two forms over different names do not block each other. To lock a whole scope, pass every name the form shows.
+- **Same names on save.** Save exactly the names you read. Another name set has another version, so a save with fewer or more names throws `setting:version_mismatch`.
+- **What changes the version.** Any write of one of the group's values at that scope, through any `ISettingManager` member, `unit.Settings`, or the EF repository, including a write that stores the value it already held. A clear of a value nobody stored changes nothing.
+- **What does not.** Inherited values. With `fallback: true` (the default), a name the scope does not store shows the value the next provider supplies, attributed to that provider. A change to that inherited value leaves the version as it was.
+- **Read from storage.** `GetVersionedAsync` reads the scope's values from the database, not the cache, so the values and the version come from one read. Encrypted values come back decrypted.
+- **Atomicity.** The check and the write run in one serializable transaction. Of two saves from one version, exactly one succeeds, even when they set different names. A serialization failure that leaves the version unchanged is retried, up to three attempts.
+- **Not in a unit of work.** `unit.Settings` has no versioned write. A versioned save commits on its own connection.
+- **Supported stores.** The EF Core, PostgreSQL, and SQL Server storage support it. A custom `ISettingValueProvider` must implement `GetAllVersionedAsync` and `SetAllVersionedAsync`, and a custom `ISettingValueRecordRepository` must implement `SaveIfVersionAsync` and compute the version with `SettingValueVersion.Compute`. Their defaults throw `NotSupportedException`, so a versioned call never silently runs unversioned. More than one provider registered under the same name also throws `NotSupportedException`.
 
 ### Settings snapshot
 
@@ -460,7 +504,7 @@ builder.Services.AddHeadlessSettings(setup =>
 });
 ```
 
-Then add an EF Core migration for the settings tables and apply it as you apply every migration. This provider writes no DDL.
+Then add an EF Core migration for the settings tables and apply it as you apply every migration. This provider writes no DDL. An existing model gains the nullable `ConcurrencyStamp` column on the setting values table (`concurrency_stamp` on Npgsql), which [versioned writes](#editing-a-group-with-optimistic-concurrency) need, so add a migration after upgrading.
 
 **Verify:** `dotnet app.dll check` passes. Without `ConfigureHeadlessSettings(this)`, it fails with `InvalidOperationException`: "the registered DbContext … does not contain …. Call `modelBuilder.ConfigureHeadlessSettings(this)` in your `OnModelCreating`." A scoped or transient context factory fails with `InvalidServiceLifetimeException`.
 
@@ -529,8 +573,8 @@ Set schema and table names through `setup.ConfigureStorage(...)`.
 
 ### Design and runtime behavior
 
-- The tables and indexes are two schema steps, `Settings/1` (tables) and `Settings/2` (indexes), that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). Names are snake_case.
-- A host start only verifies the steps and fails fast when one is missing.
+- The tables and indexes are three schema steps, `Settings/1` (tables), `Settings/2` (indexes), and `Settings/3` (the value concurrency stamp column), that `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). Names are snake_case.
+- A host start only verifies the steps and fails fast when one is missing. After upgrading, run `resources provision` once before the new version starts, so it adds `Settings/3` to an existing database.
 - A direct call to this provider's value repository bypasses the value cache. Write through `ISettingManager` or `unit.Settings`.
 
 ---
@@ -585,8 +629,8 @@ Set schema and table names through `setup.ConfigureStorage(...)`.
 
 ### Design and runtime behavior
 
-- The tables and indexes are two schema steps, `Settings/1` (tables) and `Settings/2` (indexes), that `resources provision` applies. Names are PascalCase.
-- A host start only verifies the steps and fails fast when one is missing.
+- The tables and indexes are three schema steps, `Settings/1` (tables), `Settings/2` (indexes), and `Settings/3` (the value concurrency stamp column), that `resources provision` applies. Names are PascalCase.
+- A host start only verifies the steps and fails fast when one is missing. After upgrading, run `resources provision` once before the new version starts, so it adds `Settings/3` to an existing database.
 - SQL Server ignores trailing spaces when it compares keys. The store refuses such keys on every provider, so a value never resolves differently between PostgreSQL and SQL Server.
 - A direct call to this provider's value repository bypasses the value cache. Write through `ISettingManager` or `unit.Settings`.
 

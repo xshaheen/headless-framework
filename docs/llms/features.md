@@ -50,6 +50,7 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - To commit a feature value with your other writes, write on the unit you hold: `unit.Features.SetForTenantAsync(...)`. The injected `IFeatureManager` never joins a unit. See [Writing feature values inside a unit of work](#writing-feature-values-inside-a-unit-of-work).
 - `SetAsync` with `forceToSet: false` (the default) stores nothing when the value equals what the next lower provider supplies. Pass `forceToSet: true` to persist the value anyway. `GrantAsync` and `RevokeAsync` always force.
 - To write several features atomically, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>`. See [Writing values](#writing-values).
+- For an edit form that must not overwrite another admin's save, read with `GetVersionedAsync(names, providerName, providerKey)` and save with `SetVersionedAsync(values, providerName, providerKey, version)`. A stale save throws `ConflictException` with `features:version-mismatch`. See [Editing a group with optimistic concurrency](#editing-a-group-with-optimistic-concurrency).
 - `DeleteAsync(providerName, providerKey)` removes every value of one provider key, for example every override of a deleted tenant. It skips read-only providers.
 - `FeatureDefinition.Providers` limits which providers may hold a value. An empty list allows all. A write through another provider throws `ConflictException` with error code `features:provider-not-allowed`, and reads ignore a value another provider holds. A feature limited to `Edition` cannot be overridden by a tenant value.
 - Gate HTTP endpoints with `[RequiresFeature("Name")]`, `.WithMetadata(new RequiresFeatureAttribute("Name"))`, or `.RequireAuthorization(policy => policy.RequireFeatures("Name"))`. A disabled feature returns 403 (401 for an anonymous caller). `IFeatureManager.EnsureEnabledAsync` in application code throws `ConflictException` instead, returned as 409. See [Gating HTTP endpoints](#gating-http-endpoints).
@@ -187,6 +188,49 @@ public sealed class ReloadTenantFeatures(TenantFeatureCache cache) : IConsume<Fe
 - Atomicity holds per provider. When several registered providers share `providerName`, each writes the batch in its own transaction.
 - The stores open their own connection and transaction. An `IFeatureManager` write does not join a unit of work you have open, and rolling that unit back does not undo it. Use `unit.Features` for that.
 - When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries, up to three attempts. The last writer wins.
+
+### Editing a group with optimistic concurrency
+
+An edit form reads a group of features for one scope (an edition or a tenant), lets an admin change them, and saves them back. `GetVersionedAsync` returns the values and the group's version. `SetVersionedAsync` saves only while the group still has that version. Otherwise it throws `ConflictException` with the error code `features:version-mismatch` and writes nothing. Over HTTP, the version is the `ETag`, and the save takes it in `If-Match`. The Headless API exception handler maps the `ConflictException` to 409.
+
+```csharp
+HashSet<string> reporting = ["Reports", "Reports.MaxExports"];
+
+app.MapGet("/editions/{editionId}/features/reporting", async (string editionId, IFeatureManager features, HttpResponse response, CancellationToken ct) =>
+{
+    var group = await features.GetVersionedAsync(reporting, FeatureValueProviderNames.Edition, editionId, cancellationToken: ct);
+    response.Headers.ETag = $"\"{group.Version}\"";
+
+    return Results.Ok(group.Values.ToDictionary(x => x.Name, x => x.Value));
+});
+
+app.MapPut("/editions/{editionId}/features/reporting", async (string editionId, Dictionary<string, string?> body, HttpRequest request, IFeatureManager features, CancellationToken ct) =>
+{
+    var version = request.Headers.IfMatch.ToString().Trim('"');
+
+    if (version.Length == 0)
+    {
+        return Results.StatusCode(StatusCodes.Status428PreconditionRequired);
+    }
+
+    // Every name of the group, so an omitted name clears its value instead of failing the version check.
+    var values = reporting.ToDictionary(name => name, name => body.GetValueOrDefault(name), StringComparer.Ordinal);
+    await features.SetVersionedAsync(values, FeatureValueProviderNames.Edition, editionId, version, cancellationToken: ct);
+
+    return Results.NoContent();
+});
+```
+
+**Verify:** in a test, call `GetVersionedAsync`, write one of the names with `SetForEditionAsync`, then call `SetVersionedAsync` with the version you read. It throws `ConflictException` whose `Errors[0].Code` is `features:version-mismatch`, and the other write's value is still stored.
+
+- **The group.** The version covers the names you pass, in one provider scope (`providerName` and the key the provider resolves). Two forms over different names do not block each other.
+- **Same names on save.** Save exactly the names you read. Another name set has another version, so a save with fewer or more names throws `features:version-mismatch`.
+- **What changes the version.** Any write of one of the group's values at that scope, through any `IFeatureManager` member, `unit.Features`, or the EF repository, including a write that stores the value it already held.
+- **What does not.** Inherited values. With `fallback: true` (the default), a name the scope does not store shows the value the next provider supplies (for a tenant, its edition's value, resolved for that tenant), attributed to that provider. A change to that inherited value leaves the version as it was.
+- **Read from storage.** `GetVersionedAsync` reads the scope's values from the database, not the cache.
+- **Atomicity.** The check and the write run in one serializable transaction. Of two saves from one version, exactly one succeeds, even when they set different names. A serialization failure that leaves the version unchanged is retried, up to three attempts.
+- **Not in a unit of work.** `unit.Features` has no versioned write.
+- **Supported stores.** The EF Core, PostgreSQL, and SQL Server storage support it. A custom `IFeatureValueProvider` must implement `GetAllVersionedAsync` and `SetAllVersionedAsync`, and a custom `IFeatureValueRecordRepository` must implement `SaveIfVersionAsync` and compute the version with `FeatureValueVersion.Compute`. Their defaults throw `NotSupportedException`. More than one provider registered under the same name also throws `NotSupportedException`.
 
 ### Writing feature values inside a unit of work
 
@@ -540,7 +584,7 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
-Then add an EF migration for the feature tables. The EF provider writes no DDL.
+Then add an EF migration for the feature tables. The EF provider writes no DDL. An existing model gains the nullable `ConcurrencyStamp` column on the feature values table (`concurrency_stamp` on Npgsql), which [versioned writes](#editing-a-group-with-optimistic-concurrency) need, so add a migration after upgrading.
 
 **Verify:** the host starts. A context that does not map the feature entities fails the start with `InvalidOperationException`: "the registered DbContext ... does not contain ... Call `modelBuilder.ConfigureHeadlessFeatures(this)`".
 
@@ -611,8 +655,8 @@ Set schema and table names through `setup.ConfigureStorage(...)`.
 
 ### Runtime behavior
 
-- `resources provision` applies two schema steps through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts): `Features/1` (tables) and `Features/2` (indexes). Names are snake_case.
-- The host start only verifies the steps. See [Resource provisioning](utilities.md#resource-provisioning).
+- `resources provision` applies three schema steps through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts): `Features/1` (tables), `Features/2` (indexes), and `Features/3` (the value concurrency stamp column). Names are snake_case.
+- The host start only verifies the steps. After upgrading, run `resources provision` once before the new version starts, so it adds `Features/3` to an existing database. See [Resource provisioning](utilities.md#resource-provisioning).
 
 ---
 
@@ -668,5 +712,5 @@ Set schema and table names through `setup.ConfigureStorage(...)`.
 
 ### Runtime behavior
 
-- `resources provision` applies one schema step, `Features/1` (tables, indexes, and table types), through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). Names are PascalCase.
-- The host start only verifies the step. See [Resource provisioning](utilities.md#resource-provisioning).
+- `resources provision` applies two schema steps through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts): `Features/1` (tables, indexes, and table types) and `Features/2` (the value concurrency stamp column). Names are PascalCase.
+- The host start only verifies the steps. After upgrading, run `resources provision` once before the new version starts, so it adds `Features/2` to an existing database. See [Resource provisioning](utilities.md#resource-provisioning).
