@@ -68,10 +68,15 @@ public sealed class LogTextMasker
     }
 
     /// <summary>
-    /// Returns <paramref name="exception"/> itself when no message in its chain matched; otherwise a copy of the same
-    /// type whose own message and inner exceptions are masked, keeping its stack frames, or a
-    /// <see cref="RedactedException"/> when such a copy cannot be masked. The exception passed in is never changed.
+    /// Returns <paramref name="exception"/> itself when no message or <see cref="Exception.Data"/> value in its chain
+    /// matched; otherwise a copy of the same type whose own message, data values, and inner exceptions are masked,
+    /// keeping its stack frames, or a <see cref="RedactedException"/> when such a copy cannot be masked. The exception
+    /// passed in, and its <see cref="Exception.Data"/>, are never changed.
     /// </summary>
+    /// <remarks>
+    /// A data value is scanned the way <see cref="MaskValue"/> scans a value, so an id held as a <see cref="long"/> is
+    /// found. When one matches, the copy gets a new dictionary with the same keys and masked values.
+    /// </remarks>
     /// <param name="exception">The exception to mask.</param>
     /// <returns>The exception to hand to telemetry.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>

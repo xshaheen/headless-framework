@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections;
 using System.Runtime.CompilerServices;
 
 namespace Headless.Logging.Internal;
 
 /// <summary>
 /// Copies an exception and rewrites the copy's own message and inner exceptions, so providers receive the original type,
-/// captured stack frames, target site, and data with the masked text.
+/// captured stack frames, and target site with the masked text and data.
 /// </summary>
 /// <remarks>
 /// It reaches the runtime's private fields, which have kept their names across .NET releases but are not a contract. A
@@ -42,11 +43,45 @@ internal static class ExceptionCopier
     }
 
     /// <summary>
+    /// The exception's own <see cref="Exception.Data"/> container, read without creating it; <see langword="null"/> when
+    /// nothing has read or written <see cref="Exception.Data"/> yet.
+    /// </summary>
+    public static bool TryGetOwnData(Exception exception, out IDictionary? data)
+    {
+        data = null;
+
+        if (_unavailable)
+        {
+            return false;
+        }
+
+        try
+        {
+            data = _Data(exception);
+
+            return true;
+        }
+        catch (MissingFieldException)
+        {
+            _unavailable = true;
+
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Copies <paramref name="exception"/> with <paramref name="message"/> as its own message and
     /// <paramref name="inners"/> as its inner exceptions (every member of an <see cref="AggregateException"/>, otherwise
-    /// one or none). Returns <see langword="false"/>, and no copy, when the runtime's fields are not where expected.
+    /// one or none), and <paramref name="data"/> as its <see cref="Exception.Data"/> when not <see langword="null"/>.
+    /// Returns <see langword="false"/>, and no copy, when the runtime's fields are not where expected.
     /// </summary>
-    public static bool TryCopy(Exception exception, string? message, Exception[] inners, out Exception copy)
+    public static bool TryCopy(
+        Exception exception,
+        string? message,
+        Exception[] inners,
+        IDictionary? data,
+        out Exception copy
+    )
     {
         copy = exception;
 
@@ -61,6 +96,13 @@ internal static class ExceptionCopier
 
             _Message(clone) = message;
             _InnerException(clone) = inners.Length > 0 ? inners[0] : null;
+
+            if (data is not null)
+            {
+                // The memberwise clone shares the original's dictionary; the copy gets its own, so masking never
+                // writes into the exception the caller still holds.
+                _Data(clone) = data;
+            }
 
             if (clone is AggregateException aggregate)
             {
@@ -89,6 +131,9 @@ internal static class ExceptionCopier
 
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_innerException")]
     private static extern ref Exception? _InnerException(Exception exception);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_data")]
+    private static extern ref IDictionary? _Data(Exception exception);
 
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_innerExceptions")]
     private static extern ref Exception[] _AggregateInners(AggregateException exception);

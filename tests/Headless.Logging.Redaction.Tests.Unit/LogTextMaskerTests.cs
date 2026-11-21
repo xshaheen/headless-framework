@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections;
+using System.Reflection;
 using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +12,11 @@ namespace Tests;
 public sealed class LogTextMaskerTests : TestBase
 {
     private const string _NationalId = "29001011234567";
+
+    private static readonly FieldInfo _DataField = typeof(Exception).GetField(
+        "_data",
+        BindingFlags.NonPublic | BindingFlags.Instance
+    )!;
 
     [Fact]
     public void should_apply_a_pattern_whatever_log_scope_it_was_registered_with()
@@ -47,6 +54,77 @@ public sealed class LogTextMaskerTests : TestBase
         masker.MaskValue(42).Should().Be(42);
         masker.MaskValue(Guid.Empty).Should().Be(Guid.Empty);
         masker.MaskValue(null).Should().BeNull();
+    }
+
+    [Fact]
+    public void should_mask_a_numeric_data_value_without_changing_the_original()
+    {
+        // given: an id held as a long, with messages that match nothing
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new InvalidOperationException("lookup failed");
+        original.Data["Citizen"] = 29001011234567L;
+        original.Data["Order"] = 42;
+        original.Data["Tracking"] = Guid.Empty;
+        original.Data["Retried"] = true;
+
+        // when
+        var masked = masker.Mask(original);
+
+        // then: the long is masked; a short number, a GUID, and a boolean pass through with their own types
+        masked.Should().NotBeSameAs(original).And.BeOfType<InvalidOperationException>();
+        masked.Data["Citizen"].Should().Be("***");
+        masked.Data["Order"].Should().Be(42);
+        masked.Data["Tracking"].Should().Be(Guid.Empty);
+        masked.Data["Retried"].Should().Be(true);
+        original.Data["Citizen"].Should().Be(29001011234567L);
+    }
+
+    [Fact]
+    public void should_return_the_exception_itself_when_neither_messages_nor_data_match()
+    {
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new InvalidOperationException("lookup failed");
+        original.Data["Order"] = 42;
+        original.Data["Retried"] = true;
+
+        masker.Mask(original).Should().BeSameAs(original);
+    }
+
+    [Fact]
+    public void should_not_create_the_data_container_of_an_exception_that_has_none()
+    {
+        // given: an exception nothing has read Data from
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new InvalidOperationException("lookup failed", new FormatException("bad input"));
+
+        // when
+        var masked = masker.Mask(original);
+
+        // then: masking left both containers uncreated
+        masked.Should().BeSameAs(original);
+        _DataField.GetValue(original).Should().BeNull();
+        _DataField.GetValue(original.InnerException).Should().BeNull();
+    }
+
+    [Fact]
+    public void should_mask_data_held_by_a_type_that_overrides_data()
+    {
+        // given: a type that keeps its entries in a dictionary of its own
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new OwnDataException();
+        original.Data["Citizen"] = 29001011234567L;
+
+        // when
+        var masked = masker.Mask(original);
+
+        // then
+        masked.Should().NotBeSameAs(original);
+        masked.Data["Citizen"].Should().Be("***");
+        original.Data["Citizen"].Should().Be(29001011234567L);
     }
 
     [Fact]
@@ -105,5 +183,12 @@ public sealed class LogTextMaskerTests : TestBase
     private sealed class UpperCaseRedactor : ILogTextRedactor
     {
         public string Redact(string text) => text.ToUpperInvariant();
+    }
+
+    private sealed class OwnDataException() : Exception("lookup failed")
+    {
+        private readonly Hashtable _entries = [];
+
+        public override IDictionary Data => _entries;
     }
 }
