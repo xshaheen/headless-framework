@@ -159,9 +159,9 @@ internal static class ExceptionMasker
         type.GetProperty(
             nameof(Exception.Data),
             BindingFlags.Public | BindingFlags.Instance,
-            null,
+            binder: null,
             typeof(IDictionary),
             Type.EmptyTypes,
-            null
+            modifiers: null
         )?.GetMethod?.DeclaringType != typeof(Exception);
 }

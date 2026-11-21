@@ -98,7 +98,7 @@ public sealed class LogTextMaskerTests : TestBase
         // given: an exception nothing has read Data from
         using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
         var masker = provider.GetRequiredService<LogTextMasker>();
-        var original = new InvalidOperationException("lookup failed", new ArgumentException("bad input"));
+        var original = new InvalidOperationException("lookup failed", new FormatException("bad input"));
 
         // when
         var masked = masker.Mask(original);
@@ -187,7 +187,7 @@ public sealed class LogTextMaskerTests : TestBase
 
     private sealed class OwnDataException() : Exception("lookup failed")
     {
-        private readonly Hashtable _entries = new();
+        private readonly Hashtable _entries = [];
 
         public override IDictionary Data => _entries;
     }
