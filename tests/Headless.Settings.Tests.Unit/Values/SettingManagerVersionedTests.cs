@@ -52,7 +52,8 @@ public sealed class SettingManagerVersionedTests : TestBase
         // then
         var exception = (await act.Should().ThrowAsync<ConflictException>()).Which;
         exception.Errors.Should().ContainSingle().Which.Code.Should().Be("setting:version_mismatch");
-        await _bus.DidNotReceiveWithAnyArgs().PublishAsync<SettingChangedMessage>(default!, default, default);
+        await _bus.DidNotReceive()
+            .PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -96,7 +97,15 @@ public sealed class SettingManagerVersionedTests : TestBase
 
         // then
         await act.Should().ThrowExactlyAsync<NotSupportedException>();
-        await _store.DidNotReceiveWithAnyArgs().SetAllVersionedAsync(default!, default!, default, default!, default);
+        await _store
+            .DidNotReceive()
+            .SetAllVersionedAsync(
+                Arg.Any<IReadOnlyDictionary<string, string?>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
