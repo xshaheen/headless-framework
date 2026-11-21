@@ -230,8 +230,9 @@ public sealed class MessagingOptions
     /// Default is 10 seconds.
     /// </summary>
     /// <remarks>
-    /// The timeout is linked with host shutdown. Some broker clients do not fully honor cancellation
-    /// while publishing; this timeout is the framework-level bound for cooperative transports.
+    /// Host shutdown does not cancel a send already handed to the transport: this timeout alone bounds its confirm wait.
+    /// Some broker clients do not fully honor cancellation while publishing; this timeout is the framework-level bound
+    /// for cooperative transports.
     /// </remarks>
     public TimeSpan TransportPublishTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
