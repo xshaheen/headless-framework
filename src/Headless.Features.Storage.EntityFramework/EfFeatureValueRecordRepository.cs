@@ -186,6 +186,7 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
         for (var attempt = 1; ; attempt++)
         {
             var commitStarted = false;
+            string? resultVersion = null;
             // Return faults through the strategy, then classify outside it. In particular a lost commit reply must
             // never enter the strategy's replay loop or become an apparent version conflict on a second attempt.
             var outcome = await strategy
@@ -230,6 +231,7 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
                                 names,
                                 await query.ToListAsync(ct).ConfigureAwait(false)
                             );
+                            resultVersion = result;
                             commitStarted = true;
                             await transaction.CommitAsync(ct).ConfigureAwait(false);
                             return (Version: result, Error: (ExceptionDispatchInfo?)null);
@@ -247,37 +249,55 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
 
             if (outcome.Error is { } error)
             {
-                var fault = RelationalFaults.FindDatabaseException(error.SourceException);
-                var conflict =
-                    RelationalFaults.IsUniqueViolation(error.SourceException)
-                    || (
-                        fault is not null
-                        && (
-                            fault.SqlState
-                                is SqlErrorCodes.PostgreSql.SerializationFailure
-                                    or SqlErrorCodes.PostgreSql.DeadlockDetected
-                            || RelationalFaults
-                                .GetSqlServerErrorNumbers(fault)
-                                .Any(number =>
-                                    number
-                                        is SqlErrorCodes.SqlServer.DeadlockVictim
-                                            or SqlErrorCodes.SqlServer.SnapshotUpdateConflict
-                                )
-                            || (
-                                string.Equals(
-                                    fault.GetType().FullName,
-                                    "Microsoft.Data.Sqlite.SqliteException",
-                                    StringComparison.Ordinal
-                                ) && RelationalTransientFaults.IsTransient(fault, cancellationToken)
-                            )
-                        )
-                    );
-                if (!commitStarted && !cancellationToken.IsCancellationRequested && conflict && attempt < 3)
+                var conflict = RelationalFaults.IsConcurrencyConflict(error.SourceException);
+                if (!cancellationToken.IsCancellationRequested && (conflict || commitStarted))
                 {
-                    continue;
+                    string currentVersion;
+                    try
+                    {
+                        currentVersion = FeatureValueVersion.Compute(
+                            providerName,
+                            providerKey,
+                            names,
+                            await GetListAsync(names, providerName, providerKey, cancellationToken)
+                                .ConfigureAwait(false)
+                        );
+                    }
+#pragma warning disable CA1031 // Preserve the write failure if storage cannot resolve its outcome.
+                    catch (Exception)
+#pragma warning restore CA1031
+                    {
+                        error.Throw();
+                        throw;
+                    }
+
+                    if (conflict)
+                    {
+                        // A server conflict rejects the transaction even when commit reports it.
+                        if (!string.Equals(currentVersion, expectedVersion, StringComparison.Ordinal))
+                        {
+                            throw new DBConcurrencyException(
+                                "The feature values changed after the version was read.",
+                                error.SourceException
+                            );
+                        }
+
+                        if (attempt < 3)
+                        {
+                            continue;
+                        }
+                    }
+                    else if (string.Equals(currentVersion, resultVersion, StringComparison.Ordinal))
+                    {
+                        // Confirmed stored state resolves a lost reply without replaying the write.
+                        outcome = (currentVersion, null);
+                    }
                 }
 
-                error.Throw();
+                if (outcome.Error is not null)
+                {
+                    error.Throw();
+                }
             }
 
             try

@@ -215,7 +215,7 @@ app.MapPut("/editions/{editionId}/features/reporting", async (string editionId, 
 
     // Every name of the group, so an omitted name clears its value instead of failing the version check.
     var values = reporting.ToDictionary(name => name, name => body.GetValueOrDefault(name), StringComparer.Ordinal);
-    var savedVersion = await features.SetVersionedAsync(values, FeatureValueProviderNames.Edition, editionId, version, cancellationToken: ct);
+    var savedVersion = await features.SetVersionedAsync(values, FeatureValueProviderNames.Edition, editionId, version, forceToSet: true, cancellationToken: ct);
     response.Headers.ETag = $"\"{savedVersion}\"";
 
     return Results.NoContent();
@@ -227,9 +227,9 @@ app.MapPut("/editions/{editionId}/features/reporting", async (string editionId, 
 - **The group.** The version covers the names you pass, in one provider scope (`providerName` and the key the provider resolves). Two forms over different names do not block each other.
 - **Same names on save.** Save exactly the names you read. Another name set has another version, so a save with fewer or more names throws `g:feature_version_mismatch`.
 - **Stored representation.** The version covers the current local rows, not write history. An unchanged save writes nothing and returns the same token. An absent → set → cleared sequence can reuse its original token.
-- **Scope-local editing.** Use `fallback: false` as above. Inherited values are outside this validator. If you display them separately, do not submit them as local values or treat this token as their validator.
+- **Scope-local editing.** Use `fallback: false` on reads and `forceToSet: true` on saves as above. The save then preserves explicit local values even when they equal an inherited value. Inherited values are outside this validator. If you display them separately, do not submit them as local values or treat this token as their validator.
 - **Read from storage.** `GetVersionedAsync` reads the scope's values from the database, not the cache.
-- **Atomicity.** The check and the write run in one serializable transaction. Of two saves that change the same group from one version, at most one succeeds. Only serialization, deadlock, or unique-violation failures before commit are retried, up to three attempts. Once commit starts, a failure is not replayed or translated to a version conflict. A lost commit reply leaves the outcome unknown.
+- **Atomicity.** The check and the write run in one serializable transaction. Of two saves that change the same group from one version, at most one succeeds. A serialization, deadlock, or unique-violation failure, including one reported at commit, triggers a fresh storage read. A changed version produces a version conflict. An unchanged version permits another attempt, up to three attempts. A lost commit reply never triggers replay. If storage confirms the intended representation, the save returns its version. Otherwise, the original failure propagates.
 - **Returned version.** `SetVersionedAsync` returns the resulting token computed inside its transaction. Return that token as the PUT response's ETag, rather than issuing a later GET that could observe another writer. A cache-maintenance failure after a confirmed commit is logged and does not reject the save. Stale cache entries expire normally.
 - **Not in a unit of work.** `unit.Features` has no versioned write.
 - **Supported stores.** The EF Core, PostgreSQL, and SQL Server storage support it. A custom `IFeatureValueProvider` must implement `GetAllVersionedAsync` and `SetAllVersionedAsync`, and a custom `IFeatureValueRecordRepository` must implement `SaveIfVersionAsync` and compute the version with `FeatureValueVersion.Compute`. Their defaults throw `NotSupportedException`. More than one provider registered under the same name also throws `NotSupportedException`.

@@ -122,16 +122,57 @@ public sealed class RelationalFaultsTests : TestBase
         RelationalFaults.IsUniqueViolation(exception).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData("40001", true)]
+    [InlineData("40P01", true)]
+    [InlineData("23505", true)]
+    [InlineData("08006", false)]
+    [InlineData("23503", false)]
+    [InlineData(null, false)]
+    public void should_classify_known_conflicts_separately_from_uncertain_commit_failures(
+        string? sqlState,
+        bool expected
+    )
+    {
+        var exception = new InvalidOperationException("save failed", new FakeDbException(sqlState: sqlState));
+
+        RelationalFaults.IsConcurrencyConflict(exception).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(1205, true)]
+    [InlineData(3960, true)]
+    [InlineData(3961, true)]
+    [InlineData(2601, true)]
+    [InlineData(2627, true)]
+    [InlineData(-2, false)]
+    [InlineData(547, false)]
+    public void should_classify_sql_server_conflicts_in_every_reported_error(int number, bool expected)
+    {
+        var exception = new Microsoft.Data.SqlClient.SqlException(3621, furtherNumbers: [number]);
+
+        RelationalFaults.IsConcurrencyConflict(exception).Should().Be(expected);
+        RelationalFaults.IsConcurrencyConflict(new FakeDbException(number: number)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_not_classify_an_io_failure_as_a_known_conflict()
+    {
+        RelationalFaults.IsConcurrencyConflict(new IOException("lost commit reply")).Should().BeFalse();
+    }
+
     [Fact]
     public void should_reject_a_null_exception()
     {
         var find = () => RelationalFaults.FindDatabaseException(null!);
         var numbers = () => RelationalFaults.GetSqlServerErrorNumbers(null!);
         var unique = () => RelationalFaults.IsUniqueViolation(null!);
+        var conflict = () => RelationalFaults.IsConcurrencyConflict(null!);
 
         find.Should().Throw<ArgumentNullException>();
         numbers.Should().Throw<ArgumentNullException>();
         unique.Should().Throw<ArgumentNullException>();
+        conflict.Should().Throw<ArgumentNullException>();
     }
 
     private sealed class FakeDbException(string? sqlState = null, int number = 0, Exception? inner = null)

@@ -353,23 +353,72 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         _saveObserver.Contexts.Should().HaveCount(expectedAttempts);
     }
 
-    [Fact]
-    public async Task should_not_replay_a_lost_commit_reply_even_under_a_retrying_execution_strategy()
+    [Theory]
+    [InlineData(1, 2, true)]
+    [InlineData(3, 3, false)]
+    public async Task should_retry_a_commit_serialization_failure_on_a_fresh_context(
+        int failures,
+        int attempts,
+        bool succeeds
+    )
+    {
+        await using var owner = await _CreateOwnerAsync();
+        HashSet<string> names = ["App.Theme"];
+        var version = SettingValueVersion.Compute("Tenant", "t1", names, []);
+        _commitFault.ConflictsRemaining = failures;
+        var save = () =>
+            Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [_Value("App.Theme")], [], [], AbortToken);
+
+        if (succeeds)
+        {
+            var savedVersion = await save();
+            var rows = await Repository.GetListAsync(names, "Tenant", "t1", AbortToken);
+            rows.Should().ContainSingle();
+            savedVersion.Should().Be(SettingValueVersion.Compute("Tenant", "t1", names, rows));
+        }
+        else
+        {
+            await save.Should().ThrowExactlyAsync<CommitConflictException>();
+            (await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)).Should().BeEmpty();
+        }
+
+        _saveObserver.Saves.Should().Be(attempts);
+        _saveObserver.Contexts.Should().HaveCount(attempts);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_reconcile_a_lost_commit_reply_without_replay_even_under_a_retrying_execution_strategy(
+        bool committed
+    )
     {
         _useRetryStrategy = true;
         await using var owner = await _CreateOwnerAsync();
         HashSet<string> names = ["App.Theme"];
         var version = SettingValueVersion.Compute("Tenant", "t1", names, []);
         _commitFault.Armed = true;
+        _commitFault.FailBeforeCommit = !committed;
 
         var save = () =>
             Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [_Value("App.Theme")], [], [], AbortToken);
 
-        await save.Should().ThrowExactlyAsync<SqliteException>();
-        _commitFault.Commits.Should().Be(1);
+        if (committed)
+        {
+            var savedVersion = await save();
+            var rows = await Repository.GetListAsync(names, "Tenant", "t1", AbortToken);
+            rows.Should().ContainSingle();
+            savedVersion.Should().Be(SettingValueVersion.Compute("Tenant", "t1", names, rows));
+        }
+        else
+        {
+            (await save.Should().ThrowExactlyAsync<IOException>()).Which.Should().BeSameAs(_commitFault.Failure);
+            (await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)).Should().BeEmpty();
+            _cache.ReceivedCalls().Should().BeEmpty();
+        }
+
+        _commitFault.Commits.Should().Be(committed ? 1 : 0);
         _saveObserver.Saves.Should().Be(1);
-        (await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)).Should().ContainSingle();
-        _cache.ReceivedCalls().Should().BeEmpty();
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -400,7 +449,7 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
     private sealed class RetryStrategy(ExecutionStrategyDependencies dependencies)
         : ExecutionStrategy(dependencies, maxRetryCount: 3, maxRetryDelay: TimeSpan.Zero)
     {
-        protected override bool ShouldRetryOn(Exception exception) => exception is SqliteException;
+        protected override bool ShouldRetryOn(Exception exception) => exception is SqliteException or IOException;
     }
 
     private sealed class RetryStrategyFactory(ExecutionStrategyDependencies dependencies) : IExecutionStrategyFactory
@@ -408,10 +457,40 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         public IExecutionStrategy Create() => new RetryStrategy(dependencies);
     }
 
+    private sealed class CommitConflictException() : DbException("serialization rejected")
+    {
+        public override string SqlState => "40001";
+    }
+
     private sealed class CommitFault : DbTransactionInterceptor
     {
         public bool Armed { get; set; }
+        public bool FailBeforeCommit { get; set; }
+        public int ConflictsRemaining { get; set; }
+        public IOException Failure { get; } = new("lost commit reply");
         public int Commits { get; private set; }
+
+        public override ValueTask<InterceptionResult> TransactionCommittingAsync(
+            DbTransaction transaction,
+            TransactionEventData eventData,
+            InterceptionResult result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (ConflictsRemaining > 0)
+            {
+                ConflictsRemaining--;
+                throw new CommitConflictException();
+            }
+
+            if (Armed && FailBeforeCommit)
+            {
+                Armed = false;
+                throw Failure;
+            }
+
+            return ValueTask.FromResult(result);
+        }
 
         public override Task TransactionCommittedAsync(
             DbTransaction transaction,
@@ -423,7 +502,7 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
             if (Armed)
             {
                 Armed = false;
-                throw new SqliteException("lost commit reply", 5);
+                throw Failure;
             }
 
             return Task.CompletedTask;

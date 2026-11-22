@@ -45,6 +45,68 @@ public sealed class PermissionManagerTests : TestBase
         );
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_read_a_targets_version_and_return_the_saved_token_or_reject_a_stale_save(bool stale)
+    {
+        var permission = _CreatePermission("Orders.View");
+        _definitionManager.GetPermissionsAsync(AbortToken).Returns([permission]);
+        var provider = Substitute.For<IPermissionGrantProvider>();
+        provider.Name.Returns("Role");
+        _grantProviderManager.ValueProviders.Returns([provider]);
+        provider
+            .GetVersionedAsync(Arg.Any<IReadOnlyList<PermissionDefinition>>(), "admin", AbortToken)
+            .Returns(
+                new VersionedPermissionGrants(
+                    new Dictionary<string, bool?>(StringComparer.Ordinal) { ["Orders.View"] = true },
+                    "current"
+                )
+            );
+        _errorsDescriptor
+            .VersionMismatch("Role")
+            .Returns(new DefaultPermissionErrorsDescriptor().VersionMismatch("Role"));
+        var saveCall = provider.SetVersionedAsync(
+            Arg.Any<IReadOnlyList<KeyValuePair<PermissionDefinition, bool?>>>(),
+            "admin",
+            "current",
+            AbortToken
+        );
+        if (stale)
+        {
+            saveCall.ThrowsAsync(new System.Data.DBConcurrencyException("changed"));
+        }
+        else
+        {
+            saveCall.Returns("committed");
+        }
+
+        var read = await _sut.GetVersionedAsync(["Orders.View"], "Role", "admin", AbortToken);
+        read.Version.Should().Be("current");
+        read.Grants["Orders.View"].Should().BeTrue();
+        var save = () =>
+            _sut.SetVersionedAsync(
+                new Dictionary<string, bool?>(StringComparer.Ordinal) { ["Orders.View"] = false },
+                "Role",
+                "admin",
+                read.Version,
+                AbortToken
+            );
+        if (stale)
+        {
+            var exception = (await save.Should().ThrowExactlyAsync<ConflictException>()).Which;
+            exception.Errors.Should().ContainSingle().Which.Code.Should().Be("g:permission_version_mismatch");
+            await _bus.DidNotReceive()
+                .PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<PublishOptions>(), AbortToken);
+        }
+        else
+        {
+            (await save()).Should().Be("committed");
+            await _bus.Received(1)
+                .PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<PublishOptions>(), AbortToken);
+        }
+    }
+
     #region GetAsync - Single Permission
 
     [Fact]

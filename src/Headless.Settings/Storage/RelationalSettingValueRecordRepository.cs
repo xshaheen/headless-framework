@@ -231,6 +231,7 @@ internal sealed class RelationalSettingValueRecordRepository(
         for (var attempt = 1; ; attempt++)
         {
             var commitStarted = false;
+            string? resultVersion = null;
             try
             {
                 await using var connection = _dialect.CreateConnection(options.ConnectionString);
@@ -268,7 +269,7 @@ internal sealed class RelationalSettingValueRecordRepository(
                     )
                     .ConfigureAwait(false);
 
-                var result = SettingValueVersion.Compute(
+                resultVersion = SettingValueVersion.Compute(
                     providerName,
                     providerKey,
                     names,
@@ -276,20 +277,57 @@ internal sealed class RelationalSettingValueRecordRepository(
                 );
                 commitStarted = true;
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return result;
+                return resultVersion;
             }
+#pragma warning disable CA1031 // Reconcile the write after disposal without allowing an uncertain commit into the retry loop.
             catch (Exception exception)
-                when (!commitStarted
-                    && !cancellationToken.IsCancellationRequested
-                    && attempt < 3
-                    && _dialect.Classify(exception)
-                        is SqlErrorKind.SerializationConflict
-                            or SqlErrorKind.Deadlock
-                            or SqlErrorKind.UniqueViolation
+                when (!cancellationToken.IsCancellationRequested
+                    && (commitStarted || RelationalFaults.IsConcurrencyConflict(exception))
                 )
+#pragma warning restore CA1031
             {
-                // The transaction was disposed (rolled back) before retrying on a new connection. An indeterminate
-                // commit is deliberately outside this filter, even when its driver code looks transient.
+                var conflict = RelationalFaults.IsConcurrencyConflict(exception);
+                string currentVersion;
+                try
+                {
+                    currentVersion = SettingValueVersion.Compute(
+                        providerName,
+                        providerKey,
+                        names,
+                        await GetListAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false)
+                    );
+                }
+#pragma warning disable CA1031 // A failed reconciliation must preserve the original write failure.
+                catch (Exception)
+#pragma warning restore CA1031
+                {
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+                    throw;
+                }
+
+                if (conflict)
+                {
+                    // Server-reported conflicts reject the write even at commit. Disposal ended its transaction.
+                    if (!string.Equals(currentVersion, expectedVersion, StringComparison.Ordinal))
+                    {
+                        throw new DBConcurrencyException(
+                            "The setting values changed after the version was read.",
+                            exception
+                        );
+                    }
+
+                    if (attempt < 3)
+                    {
+                        continue;
+                    }
+                }
+                else if (string.Equals(currentVersion, resultVersion, StringComparison.Ordinal))
+                {
+                    // A lost reply is success only when storage confirms the representation we tried to commit.
+                    return currentVersion;
+                }
+
+                throw;
             }
         }
     }
