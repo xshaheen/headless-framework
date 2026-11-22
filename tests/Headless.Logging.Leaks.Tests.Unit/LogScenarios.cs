@@ -7,7 +7,7 @@ namespace Tests;
 
 /// <summary>One way application or framework code puts a sensitive value into a log entry.</summary>
 /// <param name="Id">The matrix row id, also the scenario's marker and value suffix.</param>
-/// <param name="Path">What the row exercises, as the ADR matrix names it.</param>
+/// <param name="Path">What the row exercises: the logging path and the kind of value, in words a reader of a failing cell can act on.</param>
 /// <param name="Sentinel">The sensitive value the scenario writes.</param>
 /// <param name="Native">Written through <see cref="Serilog.ILogger"/> instead of <see cref="ILogger"/>.</param>
 /// <param name="Write">Writes the entry.</param>

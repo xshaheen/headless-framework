@@ -208,7 +208,20 @@ internal static class HostLeakHost
             using var client = app.GetTestClient();
 
             await scenario.Send(client, cancellationToken);
-            await serverSpanEnded.Task.WaitAsync(cancellationToken);
+
+            try
+            {
+                // test-timeout: a request span that never ends is the wiring regression this suite exists to catch (instrumentation dropped, source unsampled); fail on the named cell instead of hanging until the module timeout.
+                await serverSpanEnded.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            }
+            catch (TimeoutException exception)
+            {
+                throw new InvalidOperationException(
+                    $"Scenario {scenario.Id} with redaction {redaction}: the request span never ended, so nothing was exported.",
+                    exception
+                );
+            }
+
             await app.StopAsync(cancellationToken);
         }
 
