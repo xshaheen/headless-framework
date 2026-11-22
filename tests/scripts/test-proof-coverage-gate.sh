@@ -163,8 +163,8 @@ fi
 # The PR template is the short shared one: these headings in this order, and nothing a body would carry from a
 # local machine, because the body is read by people who have only the repository.
 template="$repo_root/.github/PULL_REQUEST_TEMPLATE.md"
-if [[ "$(grep -E '^## ' "$template" | tr '\n' '|')" != '## Why|## What changed|## Review focus|## Test|' ]]; then
-  printf 'FAIL: the PR template headings are not Why, What changed, Review focus, Test\n' >&2
+if [[ "$(grep -E '^## ' "$template" | tr '\n' '|')" != '## 🎯 Why|## 🔧 What changed|## 🧭 Decisions|## 🚧 Left out|## 📸 Screenshots|## 🔌 Contract changes|## 🚀 Rollout|## 👀 Review focus|## 🧪 Test|' ]]; then
+  printf 'FAIL: the PR template headings are not the shared set in order\n' >&2
   exit 1
 fi
 if grep -qE -- 'make [a-z]|summary\.md|- \[ \]|<details' "$template"; then
