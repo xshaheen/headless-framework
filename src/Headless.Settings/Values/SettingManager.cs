@@ -406,10 +406,10 @@ public sealed class SettingManager(
 
     /// <inheritdoc/>
     public async Task<VersionedSettingValues> GetVersionedAsync(
-        HashSet<string> settingNames,
+        IReadOnlyCollection<string> settingNames,
         string providerName,
         string? providerKey = null,
-        bool fallback = true,
+        bool fallback = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -418,7 +418,8 @@ public sealed class SettingManager(
 
         var settings = new List<SettingDefinition>(settingNames.Count);
 
-        foreach (var settingName in settingNames)
+        // Ordinal, like the version: a duplicate in any other comparison is a different setting.
+        foreach (var settingName in settingNames.Distinct(StringComparer.Ordinal))
         {
             settings.Add(await _FindWritableAsync(settingName, providerName, cancellationToken).ConfigureAwait(false));
         }
@@ -698,8 +699,7 @@ public sealed class SettingManager(
 
         if (unitOfWork is null)
         {
-            await _PublishChangedAsync([.. values.Keys], providerName, providerKey, cancellationToken)
-                .ConfigureAwait(false);
+            await _PublishChangedAsync([.. values.Keys], providerName, providerKey).ConfigureAwait(false);
         }
         else
         {
@@ -815,8 +815,7 @@ public sealed class SettingManager(
             // holds without knowing what else this provider scope contained.
             var removedNames = settings.Select(x => x.Name).ToArray();
 
-            await _PublishChangedAsync(removedNames, providerName, providerKey, cancellationToken)
-                .ConfigureAwait(false);
+            await _PublishChangedAsync(removedNames, providerName, providerKey).ConfigureAwait(false);
         }
     }
 
@@ -861,8 +860,7 @@ public sealed class SettingManager(
         {
             using (currentTenant.Change(tenantId, tenantName))
             {
-                await _PublishChangedAsync(settingNames, providerName, providerKey, CancellationToken.None)
-                    .ConfigureAwait(false);
+                await _PublishChangedAsync(settingNames, providerName, providerKey).ConfigureAwait(false);
             }
         });
     }
@@ -882,12 +880,7 @@ public sealed class SettingManager(
     /// peer keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
     /// </para>
     /// </remarks>
-    private async Task _PublishChangedAsync(
-        string[] settingNames,
-        string providerName,
-        string? providerKey,
-        CancellationToken cancellationToken
-    )
+    private async Task _PublishChangedAsync(string[] settingNames, string providerName, string? providerKey)
     {
         if (bus is null || settingNames.Length == 0)
         {
@@ -904,9 +897,12 @@ public sealed class SettingManager(
 
         try
         {
-            await bus.PublishAsync(message, _ChangedPublishOptions, cancellationToken).ConfigureAwait(false);
+            // The change is committed, so a caller that stops waiting must not keep peers serving the old value.
+            await bus.PublishAsync(message, _ChangedPublishOptions, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+#pragma warning disable CA1031 // The commit is durable; a lost announcement is logged, and peers refresh on expiry.
+        catch (Exception ex)
+#pragma warning restore CA1031
         {
             _logger.LogFailedToPublishSettingChanged(ex, providerName, providerKey, settingNames.Length);
         }

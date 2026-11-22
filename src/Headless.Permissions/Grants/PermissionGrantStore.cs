@@ -316,7 +316,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await _SyncCacheAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync([name], providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task GrantAsync(
@@ -339,7 +339,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        await _SyncCacheAsync(distinctNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync(distinctNames, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -403,7 +403,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await _SyncCacheAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync([name], providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -426,7 +426,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        await _SyncCacheAsync(distinctNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync(distinctNames, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<string>> DeleteAsync(
@@ -448,7 +448,7 @@ public sealed class PermissionGrantStore(
 
         var names = grants.ConvertAll(x => x.Name);
 
-        await _SyncCacheAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync(names, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
 
         return names;
     }
@@ -537,7 +537,7 @@ public sealed class PermissionGrantStore(
 
         try
         {
-            await _SyncCacheAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+            await _SyncCacheAsync(names, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // The write committed; cache maintenance must not report a rejected save.
         catch (Exception exception)

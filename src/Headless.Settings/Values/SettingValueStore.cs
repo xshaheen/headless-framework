@@ -145,7 +145,15 @@ public sealed class SettingValueStore(
         }
 
         await SettingValueCacheInvalidation
-            .SyncAsync(cache, valueRepository, [name], providerName, providerKey, _cacheExpiration, cancellationToken)
+            .SyncAsync(
+                cache,
+                valueRepository,
+                [name],
+                providerName,
+                providerKey,
+                _cacheExpiration,
+                CancellationToken.None
+            )
             .ConfigureAwait(false);
     }
 
@@ -209,7 +217,7 @@ public sealed class SettingValueStore(
                     providerName,
                     providerKey,
                     _cacheExpiration,
-                    cancellationToken
+                    CancellationToken.None
                 )
                 .ConfigureAwait(false);
 
@@ -289,7 +297,15 @@ public sealed class SettingValueStore(
         await valueRepository.DeleteAsync(settings, cancellationToken).ConfigureAwait(false);
 
         await SettingValueCacheInvalidation
-            .SyncAsync(cache, valueRepository, [name], providerName, providerKey, _cacheExpiration, cancellationToken)
+            .SyncAsync(
+                cache,
+                valueRepository,
+                [name],
+                providerName,
+                providerKey,
+                _cacheExpiration,
+                CancellationToken.None
+            )
             .ConfigureAwait(false);
     }
 
@@ -375,7 +391,7 @@ public sealed class SettingValueStore(
                     providerName,
                     providerKey,
                     _cacheExpiration,
-                    cancellationToken
+                    CancellationToken.None
                 )
                 .ConfigureAwait(false);
         }

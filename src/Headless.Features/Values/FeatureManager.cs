@@ -308,10 +308,10 @@ public sealed class FeatureManager(
 
     /// <inheritdoc/>
     public async Task<VersionedFeatureValues> GetVersionedAsync(
-        HashSet<string> names,
+        IReadOnlyCollection<string> names,
         string providerName,
         string? providerKey = null,
-        bool fallback = true,
+        bool fallback = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -320,7 +320,8 @@ public sealed class FeatureManager(
 
         var features = new List<FeatureDefinition>(names.Count);
 
-        foreach (var name in names)
+        // Ordinal, like the version: a duplicate in any other comparison is a different feature.
+        foreach (var name in names.Distinct(StringComparer.Ordinal))
         {
             features.Add(await _FindWritableAsync(name, providerName, cancellationToken).ConfigureAwait(false));
         }
@@ -579,8 +580,7 @@ public sealed class FeatureManager(
 
         if (unitOfWork is null)
         {
-            await _PublishChangedAsync([.. values.Keys], providerName, providerKey, cancellationToken)
-                .ConfigureAwait(false);
+            await _PublishChangedAsync([.. values.Keys], providerName, providerKey).ConfigureAwait(false);
         }
         else
         {
@@ -740,8 +740,7 @@ public sealed class FeatureManager(
 
         if (removedNames.Count != 0)
         {
-            await _PublishChangedAsync([.. removedNames], providerName, providerKey, cancellationToken)
-                .ConfigureAwait(false);
+            await _PublishChangedAsync([.. removedNames], providerName, providerKey).ConfigureAwait(false);
         }
     }
 
@@ -799,8 +798,7 @@ public sealed class FeatureManager(
         {
             using (currentTenant.Change(tenantId, tenantName))
             {
-                await _PublishChangedAsync(featureNames, providerName, providerKey, CancellationToken.None)
-                    .ConfigureAwait(false);
+                await _PublishChangedAsync(featureNames, providerName, providerKey).ConfigureAwait(false);
             }
         });
     }
@@ -820,12 +818,7 @@ public sealed class FeatureManager(
     /// peer keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
     /// </para>
     /// </remarks>
-    private async Task _PublishChangedAsync(
-        string[] featureNames,
-        string providerName,
-        string? providerKey,
-        CancellationToken cancellationToken
-    )
+    private async Task _PublishChangedAsync(string[] featureNames, string providerName, string? providerKey)
     {
         if (bus is null || featureNames.Length == 0)
         {
@@ -842,9 +835,12 @@ public sealed class FeatureManager(
 
         try
         {
-            await bus.PublishAsync(message, _ChangedPublishOptions, cancellationToken).ConfigureAwait(false);
+            // The change is committed, so a caller that stops waiting must not keep peers serving the old value.
+            await bus.PublishAsync(message, _ChangedPublishOptions, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+#pragma warning disable CA1031 // The commit is durable; a lost announcement is logged, and peers refresh on expiry.
+        catch (Exception ex)
+#pragma warning restore CA1031
         {
             _logger.LogFailedToPublishFeatureChanged(ex, providerName, providerKey, featureNames.Length);
         }

@@ -311,7 +311,18 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         }
         else
         {
-            await save.Should().ThrowExactlyAsync<SqliteException>();
+            // A conflict that outlasts every attempt is reported as a version conflict, so the caller re-reads.
+            if (errorCode == 1)
+            {
+                await save.Should().ThrowExactlyAsync<SqliteException>();
+            }
+            else
+            {
+                (await save.Should().ThrowExactlyAsync<DBConcurrencyException>())
+                    .Which.InnerException.Should()
+                    .BeOfType<SqliteException>();
+            }
+
             (await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)).Should().BeEmpty();
         }
 
@@ -344,7 +355,9 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         }
         else
         {
-            await save.Should().ThrowExactlyAsync<CommitConflictException>();
+            (await save.Should().ThrowExactlyAsync<DBConcurrencyException>())
+                .Which.InnerException.Should()
+                .BeOfType<CommitConflictException>();
             (await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)).Should().BeEmpty();
         }
 

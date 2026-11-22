@@ -427,13 +427,9 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
                 cancellationToken: AbortToken
             );
 
-        // then the read showed the inherited defaults, and only the first save landed
-        var defaults = new FeatureValueProvider(DefaultValueFeatureValueProvider.ProviderName, Key: null);
+        // then the read showed only what the edition stores (nothing yet), and only the first save landed
         read.Values.Should()
-            .BeEquivalentTo([
-                new FeatureValue("Feature1", "false", defaults),
-                new FeatureValue("Feature2", "false", defaults),
-            ]);
+            .BeEquivalentTo([new FeatureValue("Feature1", Value: null), new FeatureValue("Feature2", Value: null)]);
         var exception = (await act.Should().ThrowAsync<ConflictException>()).Which;
         exception
             .Errors.Should()
@@ -454,7 +450,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
                     "true",
                     new FeatureValueProvider(EditionFeatureValueProvider.ProviderName, editionId)
                 ),
-                new FeatureValue("Feature2", "false", defaults),
+                new FeatureValue("Feature2", Value: null),
             ]);
         current.Version.Should().NotBe(read.Version);
     }

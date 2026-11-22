@@ -147,7 +147,10 @@ public interface IFeatureManager
     /// </param>
     /// <param name="fallback">
     /// When <see langword="true"/>, a feature that this scope does not store shows the value the next provider
-    /// supplies (for a tenant, its edition's value). The version never covers those inherited values.
+    /// supplies (for a tenant, its edition's value). The version never covers those inherited values, so a form that
+    /// saves an inherited value back unchanged stores it as an override, even after the inherited value changed,
+    /// without a version mismatch. Leave it <see langword="false"/> for an edit form, or send back only the values the
+    /// user changed.
     /// </param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns>
@@ -156,7 +159,7 @@ public interface IFeatureManager
     /// </returns>
     /// <remarks>
     /// The version represents the current stored rows, not write history. An unchanged save preserves it. A return to
-    /// the absent representation can reuse it. With fallback disabled it serves as a scope-local HTTP <c>ETag</c>.
+    /// the absent representation can reuse it. With fallback disabled, the default, it serves as a scope-local HTTP <c>ETag</c>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="names"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="names"/> is empty.</exception>
@@ -167,10 +170,10 @@ public interface IFeatureManager
     /// The provider's storage cannot version its values, or more than one provider is registered under the name.
     /// </exception>
     Task<VersionedFeatureValues> GetVersionedAsync(
-        HashSet<string> names,
+        IReadOnlyCollection<string> names,
         string providerName,
         string? providerKey = null,
-        bool fallback = true,
+        bool fallback = false,
         CancellationToken cancellationToken = default
     );
 

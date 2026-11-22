@@ -97,13 +97,21 @@ public sealed class PermissionManagerTests : TestBase
             var exception = (await save.Should().ThrowExactlyAsync<ConflictException>()).Which;
             exception.Errors.Should().ContainSingle().Which.Code.Should().Be("g:permission_version_mismatch");
             await _bus.DidNotReceive()
-                .PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<PublishOptions>(), AbortToken);
+                .PublishAsync(
+                    Arg.Any<PermissionGrantChangedMessage>(),
+                    Arg.Any<PublishOptions>(),
+                    Arg.Any<CancellationToken>()
+                );
         }
         else
         {
             (await save()).Should().Be("committed");
             await _bus.Received(1)
-                .PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<PublishOptions>(), AbortToken);
+                .PublishAsync(
+                    Arg.Any<PermissionGrantChangedMessage>(),
+                    Arg.Any<PublishOptions>(),
+                    CancellationToken.None
+                );
         }
     }
 
@@ -777,7 +785,7 @@ public sealed class PermissionManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_propagate_cancellation_raised_by_the_announcement()
+    public async Task should_complete_a_committed_save_when_the_caller_cancels_during_the_announcement()
     {
         // given
         const string permissionName = "Users.Create";
@@ -803,8 +811,10 @@ public sealed class PermissionManagerTests : TestBase
         // when
         var act = async () => await _sut.SetAsync(permissionName, providerName, "admin", true, cts.Token);
 
-        // then
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        // then the write is durable, so the announcement runs on its own token and its failure is only logged
+        await act.Should().NotThrowAsync();
+        await _bus.Received(1)
+            .PublishAsync(Arg.Any<PermissionGrantChangedMessage>(), Arg.Any<PublishOptions>(), CancellationToken.None);
     }
 
     #endregion

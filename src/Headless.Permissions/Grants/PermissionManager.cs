@@ -125,8 +125,7 @@ public sealed class PermissionManager(
             .ConfigureAwait(false);
 
         await provider.SetAsync(permission, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
-        await _PublishChangedAsync([permissionName], providerName, providerKey, cancellationToken)
-            .ConfigureAwait(false);
+        await _PublishChangedAsync([permissionName], providerName, providerKey).ConfigureAwait(false);
     }
 
     public async Task SetAsync(
@@ -143,7 +142,7 @@ public sealed class PermissionManager(
         await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
 
         var changedNames = definedPermissions.Select(x => x.Name).ToArray();
-        await _PublishChangedAsync(changedNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _PublishChangedAsync(changedNames, providerName, providerKey).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -195,8 +194,7 @@ public sealed class PermissionManager(
             throw new ConflictException(errorsDescriptor.VersionMismatch(providerName));
         }
 
-        await _PublishChangedAsync([.. grants.Keys], providerName, providerKey, cancellationToken)
-            .ConfigureAwait(false);
+        await _PublishChangedAsync([.. grants.Keys], providerName, providerKey).ConfigureAwait(false);
 
         return committedVersion;
     }
@@ -216,8 +214,7 @@ public sealed class PermissionManager(
 
         // Every removed name rather than a wildcard: a receiver should be able to match on the names it holds without
         // knowing what else this provider scope contained.
-        await _PublishChangedAsync([.. removedNames], providerName, providerKey, cancellationToken)
-            .ConfigureAwait(false);
+        await _PublishChangedAsync([.. removedNames], providerName, providerKey).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -382,8 +379,7 @@ public sealed class PermissionManager(
         {
             using (currentTenant.Change(tenantId, tenantName))
             {
-                await _PublishChangedAsync(permissionNames, providerName, providerKey, CancellationToken.None)
-                    .ConfigureAwait(false);
+                await _PublishChangedAsync(permissionNames, providerName, providerKey).ConfigureAwait(false);
             }
         });
     }
@@ -403,12 +399,7 @@ public sealed class PermissionManager(
     /// keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
     /// </para>
     /// </remarks>
-    private async Task _PublishChangedAsync(
-        string[] permissionNames,
-        string providerName,
-        string providerKey,
-        CancellationToken cancellationToken
-    )
+    private async Task _PublishChangedAsync(string[] permissionNames, string providerName, string providerKey)
     {
         if (bus is null || permissionNames.Length == 0)
         {
@@ -425,9 +416,12 @@ public sealed class PermissionManager(
 
         try
         {
-            await bus.PublishAsync(message, _ChangedPublishOptions, cancellationToken).ConfigureAwait(false);
+            // The change is committed, so a caller that stops waiting must not keep peers serving the old value.
+            await bus.PublishAsync(message, _ChangedPublishOptions, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+#pragma warning disable CA1031 // The commit is durable; a lost announcement is logged, and peers refresh on expiry.
+        catch (Exception ex)
+#pragma warning restore CA1031
         {
             _logger.LogFailedToPublishPermissionGrantChanged(ex, providerName, providerKey, permissionNames.Length);
         }

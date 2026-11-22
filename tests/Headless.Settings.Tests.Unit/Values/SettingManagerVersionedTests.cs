@@ -80,7 +80,8 @@ public sealed class SettingManagerVersionedTests : TestBase
             .PublishAsync(
                 Arg.Is<SettingChangedMessage>(x => x.SettingNames.SequenceEqual(new[] { "App.Theme" })),
                 Arg.Any<PublishOptions>(),
-                AbortToken
+                // Not the caller's token: a caller that stops waiting after the commit must not keep peers stale.
+                CancellationToken.None
             );
     }
 

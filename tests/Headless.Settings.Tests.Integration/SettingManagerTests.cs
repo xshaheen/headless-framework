@@ -374,6 +374,13 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
             ["Setting1", "Setting3", "Setting4"],
             TenantSettingValueProvider.ProviderName,
             tenantId,
+            fallback: true,
+            cancellationToken: AbortToken
+        );
+        var scopeOnly = await settingManager.GetVersionedAsync(
+            ["Setting1", "Setting3", "Setting4"],
+            TenantSettingValueProvider.ProviderName,
+            tenantId,
             cancellationToken: AbortToken
         );
 
@@ -391,6 +398,10 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
                 new SettingValue("Setting4", "Secret", tenant),
             ]);
         group.Version.Should().NotBeNullOrWhiteSpace();
+
+        // and by default the read stays in the tenant's scope, so an edit form never saves back an inherited value
+        scopeOnly.Values.Should().ContainSingle(x => x.Name == "Setting3").Which.Value.Should().BeNull();
+        scopeOnly.Version.Should().Be(group.Version);
     }
 
     [Fact]

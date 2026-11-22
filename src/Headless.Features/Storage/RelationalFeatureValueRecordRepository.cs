@@ -20,6 +20,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
     TimeProvider timeProvider
 ) : IFeatureValueRecordRepository
 {
+    private const string _VersionConflictMessage = "The feature values changed after the version was read.";
+
     // Written text is unbounded: a parameter sized to the column would silently truncate an over-long value, where the
     // column must reject it.
     private static readonly SqlColumnType _Written = SqlColumnType.Text(-1);
@@ -231,108 +233,67 @@ internal sealed class RelationalFeatureValueRecordRepository(
         Argument.IsNotNullOrEmpty(names);
         Argument.IsNotNull(expectedVersion);
 
-        for (var attempt = 1; ; attempt++)
-        {
-            var commitStarted = false;
-            string? resultVersion = null;
-            try
-            {
-                await using var connection = _dialect.CreateConnection(options.ConnectionString);
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-                // Serializable, so the group read below holds until the commit: a concurrent insert of a name that was absent
-                // here fails one of the two transactions instead of letting both commit against the same version.
-                await using var transaction = await connection
-                    .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
-                    .ConfigureAwait(false);
-
-                var (sql, bind) = _ByNames(names, providerName, providerKey);
-                var current = await _ReadAsync(connection, transaction, sql, bind, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (
-                    !string.Equals(
-                        FeatureValueVersion.Compute(providerName, providerKey, names, current),
-                        expectedVersion,
-                        StringComparison.Ordinal
-                    )
-                )
+        return await RelationalVersionedWrite
+            .ExecuteAsync(
+                async (attempt, _) =>
                 {
-                    throw new DBConcurrencyException("The feature values changed after the version was read.");
-                }
+                    await using var connection = _dialect.CreateConnection(options.ConnectionString);
+                    await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-                await _WriteAsync(
-                        connection,
-                        transaction,
-                        inserted,
-                        updated,
-                        deleted,
-                        requireUpdatedRows: true,
-                        cancellationToken
+                    // Serializable, so the group read below holds until the commit: a concurrent insert of a name that was absent
+                    // here fails one of the two transactions instead of letting both commit against the same version.
+                    await using var transaction = await connection
+                        .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var (sql, bind) = _ByNames(names, providerName, providerKey);
+                    var current = await _ReadAsync(connection, transaction, sql, bind, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (
+                        !string.Equals(
+                            FeatureValueVersion.Compute(providerName, providerKey, names, current),
+                            expectedVersion,
+                            StringComparison.Ordinal
+                        )
                     )
-                    .ConfigureAwait(false);
+                    {
+                        throw new DBConcurrencyException(_VersionConflictMessage);
+                    }
 
-                resultVersion = FeatureValueVersion.Compute(
-                    providerName,
-                    providerKey,
-                    names,
-                    await _ReadAsync(connection, transaction, sql, bind, cancellationToken).ConfigureAwait(false)
-                );
-                commitStarted = true;
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return resultVersion;
-            }
-#pragma warning disable CA1031 // Reconcile the write after disposal without allowing an uncertain commit into the retry loop.
-            catch (Exception exception)
-                when (!cancellationToken.IsCancellationRequested
-                    && (commitStarted || RelationalFaults.IsConcurrencyConflict(exception))
-                )
-#pragma warning restore CA1031
-            {
-                var conflict = RelationalFaults.IsConcurrencyConflict(exception);
-                string currentVersion;
-                try
-                {
-                    currentVersion = FeatureValueVersion.Compute(
+                    await _WriteAsync(
+                            connection,
+                            transaction,
+                            inserted,
+                            updated,
+                            deleted,
+                            requireUpdatedRows: true,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    var resultVersion = FeatureValueVersion.Compute(
                         providerName,
                         providerKey,
                         names,
-                        await GetListAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false)
+                        await _ReadAsync(connection, transaction, sql, bind, cancellationToken).ConfigureAwait(false)
                     );
-                }
-#pragma warning disable CA1031 // A failed reconciliation must preserve the original write failure.
-                catch (Exception)
-#pragma warning restore CA1031
-                {
-                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
-                    throw;
-                }
-
-                if (conflict)
-                {
-                    // Server-reported conflicts reject the write even at commit. Disposal ended its transaction.
-                    if (!string.Equals(currentVersion, expectedVersion, StringComparison.Ordinal))
-                    {
-                        throw new DBConcurrencyException(
-                            "The feature values changed after the version was read.",
-                            exception
-                        );
-                    }
-
-                    if (attempt < 3)
-                    {
-                        continue;
-                    }
-                }
-                else if (string.Equals(currentVersion, resultVersion, StringComparison.Ordinal))
-                {
-                    // A lost reply is success only when storage confirms the representation we tried to commit.
-                    return currentVersion;
-                }
-
-                throw;
-            }
-        }
+                    attempt.BeginCommit(resultVersion);
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return resultVersion;
+                },
+                async ct =>
+                    FeatureValueVersion.Compute(
+                        providerName,
+                        providerKey,
+                        names,
+                        await GetListAsync(names, providerName, providerKey, ct).ConfigureAwait(false)
+                    ),
+                expectedVersion,
+                _VersionConflictMessage,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

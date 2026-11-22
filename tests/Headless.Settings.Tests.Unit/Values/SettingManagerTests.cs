@@ -983,7 +983,7 @@ public sealed class SettingManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_propagate_cancellation_raised_by_the_announcement()
+    public async Task should_complete_a_committed_save_when_the_caller_cancels_during_the_announcement()
     {
         // given the caller cancelled while the publish was in flight
         const string settingName = "TestSetting";
@@ -1004,8 +1004,10 @@ public sealed class SettingManagerTests : TestBase
         var act = async () =>
             await _sut.SetAsync(settingName, "value", "Provider1", providerKey: null, cancellationToken: cts.Token);
 
-        // then a caller's cancellation is not a broker failure to swallow
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        // then the write is durable, so the announcement runs on its own token and its failure is only logged
+        await act.Should().NotThrowAsync();
+        await _bus.Received(1)
+            .PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), CancellationToken.None);
     }
 
     #endregion

@@ -260,7 +260,7 @@ public sealed class FeatureValueStoreTests : TestBase
         IReadOnlyList<FeatureDefinition> definitions = [new("FeatureA"), new("FeatureB")];
         _definitionManager.GetFeaturesAsync(AbortToken).Returns(definitions);
         _repository
-            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, Arg.Any<CancellationToken>())
             .Returns([new FeatureValueRecord(Guid.NewGuid(), "FeatureB", "db-b", providerName, providerKey)]);
 
         // when
@@ -339,7 +339,7 @@ public sealed class FeatureValueStoreTests : TestBase
         List<FeatureValueRecord> stored = [];
         _repository.InsertAsync(Arg.Do<FeatureValueRecord>(stored.Add), AbortToken).Returns(Task.CompletedTask);
         _repository
-            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, Arg.Any<CancellationToken>())
             .Returns(_ => stored);
 
         // when
@@ -368,7 +368,7 @@ public sealed class FeatureValueStoreTests : TestBase
 
         _repository.FindAsync(name, providerName, providerKey, AbortToken).Returns(existing);
         _repository
-            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, Arg.Any<CancellationToken>())
             .Returns(_ => [existing]);
 
         // when
@@ -396,7 +396,7 @@ public sealed class FeatureValueStoreTests : TestBase
         var existingB = new FeatureValueRecord(Guid.NewGuid(), "B", "old-b", providerName, providerKey);
         // the plan reads A and B; the read-back after the save sees A updated, B deleted, and C inserted
         _repository
-            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, Arg.Any<CancellationToken>())
             .Returns(
                 [existingA, existingB],
                 [
@@ -424,8 +424,12 @@ public sealed class FeatureValueStoreTests : TestBase
                 Arg.Is<HashSet<string>>(names => names.SetEquals(new[] { "A", "B", "C", "D" })),
                 providerName,
                 providerKey,
-                AbortToken
+                Arg.Any<CancellationToken>()
             );
+        // the read-back feeds the cache after the commit, so it ignores the caller's token
+        await _repository
+            .Received(1)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, CancellationToken.None);
         await _repository
             .DidNotReceive()
             .GetListAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
@@ -490,7 +494,7 @@ public sealed class FeatureValueStoreTests : TestBase
         const string providerKey = "tenant-1";
         var concurrent = new FeatureValueRecord(Guid.NewGuid(), "A", "theirs", providerName, providerKey);
         _repository
-            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, Arg.Any<CancellationToken>())
             .Returns([], [concurrent], [concurrent]);
         _guidGenerator.Create().Returns(Guid.NewGuid());
         var saves = new List<(int Inserted, int Updated)>();

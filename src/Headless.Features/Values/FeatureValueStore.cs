@@ -126,7 +126,7 @@ public sealed class FeatureValueStore(
         }
 
         await FeatureValueCacheInvalidation
-            .SyncAsync(cache, repository, [name], providerName, providerKey, cancellationToken)
+            .SyncAsync(cache, repository, [name], providerName, providerKey, CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -187,7 +187,7 @@ public sealed class FeatureValueStore(
             }
 
             await FeatureValueCacheInvalidation
-                .SyncAsync(cache, repository, names, providerName, providerKey, cancellationToken)
+                .SyncAsync(cache, repository, names, providerName, providerKey, CancellationToken.None)
                 .ConfigureAwait(false);
 
             return;
@@ -266,7 +266,7 @@ public sealed class FeatureValueStore(
         await repository.DeleteAsync(features, cancellationToken).ConfigureAwait(false);
 
         await FeatureValueCacheInvalidation
-            .SyncAsync(cache, repository, [name], providerName, providerKey, cancellationToken)
+            .SyncAsync(cache, repository, [name], providerName, providerKey, CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -345,7 +345,7 @@ public sealed class FeatureValueStore(
         try
         {
             await FeatureValueCacheInvalidation
-                .SyncAsync(cache, repository, names, providerName, providerKey, cancellationToken)
+                .SyncAsync(cache, repository, names, providerName, providerKey, CancellationToken.None)
                 .ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // The write committed; cache maintenance must not report a rejected save.

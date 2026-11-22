@@ -47,6 +47,8 @@ internal static class PermissionGrantCacheInvalidation
     /// the current tenant. A store write calls it after its commit instead of storing the status it wrote, so two
     /// writers whose cache writes land in the opposite order to their commits still leave the last committed status
     /// cached.
+    /// A write passes <see cref="CancellationToken.None"/>: its commit is durable, so a caller that stops waiting must
+    /// not leave the cache serving the value the write replaced until the entry expires.
     /// </summary>
     public static ValueTask SyncAsync(
         ICache<PermissionGrantCacheItem> cache,
