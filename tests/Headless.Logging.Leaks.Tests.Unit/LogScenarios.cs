@@ -115,6 +115,19 @@ internal static class LogScenarios
             h => LeakLog.LogProperties(h.Logger, new LeakCustomer(Pii.Email("m12"), "gold"))
         ),
         new(
+            "m13",
+            "Serilog LogContext.PushProperty(\"Email\") around an ILogger call (enrichment after the factory)",
+            Pii.Email("m13"),
+            Native: false,
+            h =>
+            {
+                using (LogContext.PushProperty("Email", Pii.Email("m13")))
+                {
+                    h.Logger.LogWarning("marker-m13");
+                }
+            }
+        ),
+        new(
             "n1",
             "native Serilog: {Email} hole (classified name)",
             Pii.Email("n1"),

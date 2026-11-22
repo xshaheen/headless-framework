@@ -72,7 +72,10 @@ internal static class SpanScenarios
             Pii.Email("b1"),
             (activity, carrier) =>
             {
-                var baggage = Baggage.Create().SetBaggage("user.email", Pii.Email("b1"));
+                var baggage = Baggage
+                    .Create()
+                    .SetBaggage("leak.marker", Pii.Marker("b1"))
+                    .SetBaggage("user.email", Pii.Email("b1"));
                 Propagators.DefaultTextMapPropagator.Inject(
                     new PropagationContext(activity.Context, baggage),
                     carrier,
@@ -86,6 +89,7 @@ internal static class SpanScenarios
             Pii.Email("b2"),
             (activity, carrier) =>
             {
+                activity.AddBaggage("leak.marker", Pii.Marker("b2"));
                 activity.AddBaggage("user.email", Pii.Email("b2"));
                 DistributedContextPropagator.Current.Inject(
                     activity,
@@ -153,6 +157,20 @@ internal static class SpanLeakHost
             activity.Should().NotBeNull("the tracer provider listens to the source");
             activity!.SetTag("leak.marker", Pii.Marker(scenario.Id));
             scenario.Write(activity, carrier);
+
+            // A scenario that does not propagate anything still makes the outgoing call it would make, so its
+            // propagation cell checks a carrier that holds the trace context and a harmless baggage entry.
+            if (carrier.Count == 0)
+            {
+                Propagators.DefaultTextMapPropagator.Inject(
+                    new PropagationContext(
+                        activity.Context,
+                        Baggage.Create().SetBaggage("leak.marker", Pii.Marker(scenario.Id))
+                    ),
+                    carrier,
+                    static (headers, key, value) => headers[key] = value
+                );
+            }
         }
 
         var propagation = string.Join('\n', carrier.Select(pair => pair.Key + ": " + pair.Value));

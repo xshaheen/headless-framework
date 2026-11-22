@@ -18,7 +18,10 @@ public sealed class SpanLeakTests : TestBase
         var exported = SpanLeakHost.Run(spanScenario, redaction);
 
         // then
-        exported.Contains(Sink.OtlpSpans, Pii.Marker(scenario)).Should().BeTrue("the span must be exported");
+        exported
+            .Contains(sink, Pii.Marker(scenario))
+            .Should()
+            .BeTrue("the span or carrier must reach the {0} sink", sink);
         exported
             .Contains(sink, spanScenario.Sentinel)
             .Should()
@@ -36,7 +39,10 @@ public sealed class SpanLeakTests : TestBase
         var exported = SpanLeakHost.Run(spanScenario, redaction);
 
         // then: the gap is still open; when a change closes it, move the cell to SpanKept
-        exported.Contains(Sink.OtlpSpans, Pii.Marker(scenario)).Should().BeTrue("the span must be exported");
+        exported
+            .Contains(sink, Pii.Marker(scenario))
+            .Should()
+            .BeTrue("the span or carrier must reach the {0} sink", sink);
         exported.Contains(sink, spanScenario.Sentinel).Should().BeTrue();
     }
 }
