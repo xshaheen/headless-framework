@@ -138,8 +138,8 @@ fi
 write_bundle bundle 0.9 1 1 0 0
 expect "no gate without --coverage-gate" 0 none
 
-# The PR template's Verification block is one Check | Result table the author extends, so the summary opens with that
-# table's header and verdict row, and carries no heading or collapsible of its own.
+# The author reads the summary as one Check | Result table, so it opens with that table's header and verdict row,
+# and carries no heading or collapsible of its own.
 # shellcheck disable=SC2016 # The backticks are literal Markdown, not command substitution.
 if [[ "$(head -2 bundle/summary.md)" != $'| Check | Result |\n| --- | --- |' ]] \
   || ! sed -n 3p bundle/summary.md | grep -qE -- '^\| `make verify-affected` \| \*\*PASS\*\* on .* · Tests: 0 passed, 0 failed, 0 skipped · Compiler diagnostics: 0 · Analyzer findings: 0 \|$' \
@@ -160,23 +160,14 @@ if [[ "$(grep -c '^| --- ' bundle/summary.md)" -ne 1 ]] || grep -qE '^(Compiler 
   cat bundle/summary.md >&2
   exit 1
 fi
-# Verification is one collapsible with sections inside; a nested <details> hides results behind a second click.
-verification=$(sed -n '/^<details><summary><h2>Verification<\/h2><\/summary>$/,/^<\/details>$/p' "$repo_root/.github/PULL_REQUEST_TEMPLATE.md")
-if [[ -z "$verification" ]]; then
-  printf 'FAIL: the PR template does not collapse Verification into one block\n' >&2
+# The PR template is the short shared one: these headings in this order, and nothing a body would carry from a
+# local machine, because the body is read by people who have only the repository.
+template="$repo_root/.github/PULL_REQUEST_TEMPLATE.md"
+if [[ "$(grep -E '^## ' "$template" | tr '\n' '|')" != '## Why|## What changed|## Review focus|## Test|' ]]; then
+  printf 'FAIL: the PR template headings are not Why, What changed, Review focus, Test\n' >&2
   exit 1
 fi
-if [[ "$(grep -c '<details' <<<"$verification")" -ne 1 ]]; then
-  printf 'FAIL: the PR template nests a collapsible inside Verification\n' >&2
-  exit 1
-fi
-# Verification is one table: the author condenses each gate run to a row and adds other checks as rows, never tables.
-if [[ "$(grep -c '^| --- ' <<<"$verification")" -ne 1 ]] || ! grep -qxF -- '| Check | Result |' <<<"$verification"; then
-  printf 'FAIL: the PR template Verification block is not one Check | Result table\n' >&2
-  exit 1
-fi
-# Each screenshot says what it proves, so a reviewer knows what to check in it.
-if ! grep -qE -- '^\| Screen \| .*\| Look at \|$' "$repo_root/.github/PULL_REQUEST_TEMPLATE.md"; then
-  printf 'FAIL: the PR template Screenshots table has no Look at column\n' >&2
+if grep -qE -- 'make [a-z]|summary\.md|- \[ \]|<details' "$template"; then
+  printf 'FAIL: the PR template names a local command, a gate file, a checkbox, or a collapsible\n' >&2
   exit 1
 fi

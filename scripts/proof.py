@@ -532,9 +532,9 @@ def cell(text: str) -> str:
 def render_markdown(summary: dict) -> str:
     """One `| Check | Result |` table, so the PR adds its own rows to it instead of starting another table.
 
-    The PR template's Verification block pastes this as it is and appends rows for the checks no stage runs (another
-    gate's rows, the regression, extra evidence), so it carries no heading or <details> of its own. The first row is
-    the target's verdict and totals; each stage follows it, and lists that would not fit a cell sit under the table.
+    The author reads it locally and states the result in the PR's Test section by behavior, never pasting it, so it
+    carries no heading or <details> of its own. The first row is the target's verdict and totals; each stage follows
+    it, and lists that would not fit a cell sit under the table.
     """
     tests = summary["tests"]
     gate = summary.get("coverage_gate")
