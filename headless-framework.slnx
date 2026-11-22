@@ -513,6 +513,7 @@
         <Project Path="src\Headless.Logging.Serilog\Headless.Logging.Serilog.csproj" />
     </Folder>
     <Folder Name="/Observability/Tests/">
+        <Project Path="tests\Headless.Logging.Leaks.Tests.Unit\Headless.Logging.Leaks.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Logging.Redaction.AspNetCore.Tests.Unit\Headless.Logging.Redaction.AspNetCore.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Logging.Redaction.Tests.Unit\Headless.Logging.Redaction.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Logging.Serilog.Tests.Unit\Headless.Logging.Serilog.Tests.Unit.csproj" />
