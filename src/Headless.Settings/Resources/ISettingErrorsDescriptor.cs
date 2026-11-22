@@ -50,7 +50,7 @@ public interface ISettingErrorsDescriptor
     /// Returns the error for a versioned write whose settings changed after the caller read their version.
     /// </summary>
     /// <param name="providerName">The provider name of the scope the write targeted.</param>
-    /// <returns>An error with the code <c>setting:version_mismatch</c>.</returns>
+    /// <returns>An error with the code <c>g:setting_version_mismatch</c>.</returns>
     ErrorDescriptor VersionMismatch(string providerName) =>
         DefaultSettingErrorsDescriptor.CreateVersionMismatch(providerName);
 }
@@ -141,7 +141,7 @@ public sealed class DefaultSettingErrorsDescriptor : ISettingErrorsDescriptor
 
     internal static ErrorDescriptor CreateVersionMismatch(string providerName)
     {
-        return new ErrorDescriptor("setting:version_mismatch", Messages.setting_version_mismatch).WithParam(
+        return new ErrorDescriptor("g:setting_version_mismatch", Messages.setting_version_mismatch).WithParam(
             "providerName",
             providerName
         );

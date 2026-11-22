@@ -65,16 +65,7 @@ public sealed class FeatureValueRecordConfigurationTests
             .GetProperties()
             .Select(p => p.GetColumnName(table))
             .Should()
-            .BeEquivalentTo(
-                "id",
-                "name",
-                "value",
-                "provider_name",
-                "provider_key",
-                "created_at",
-                "updated_at",
-                "concurrency_stamp"
-            );
+            .BeEquivalentTo("id", "name", "value", "provider_name", "provider_key", "created_at", "updated_at");
         entity.FindPrimaryKey()!.GetName().Should().Be("pk_feature_values");
         entity
             .GetIndexes()

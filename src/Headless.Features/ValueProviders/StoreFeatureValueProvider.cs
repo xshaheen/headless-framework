@@ -171,7 +171,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     }
 
     /// <inheritdoc/>
-    public virtual async Task SetAllVersionedAsync(
+    public virtual async Task<string> SetAllVersionedAsync(
         IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
         string? providerKey,
         string expectedVersion,
@@ -187,7 +187,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
 
         var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken).ConfigureAwait(false);
 
-        await Store
+        return await Store
             .SetAllVersionedAsync(valuesByName, Name, pk, expectedVersion, cancellationToken)
             .ConfigureAwait(false);
     }

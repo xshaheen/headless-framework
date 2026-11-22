@@ -54,6 +54,48 @@ public sealed class FeatureValueStoreTests : TestBase
         );
     }
 
+    [Fact]
+    public async Task should_plan_no_data_writes_for_an_unchanged_versioned_group()
+    {
+        var stored = new FeatureValueRecord(Guid.NewGuid(), "Theme", "Dark", "Tenant", "t1");
+        _repository.GetListAsync(Arg.Any<HashSet<string>>(), "Tenant", "t1", AbortToken).Returns([stored]);
+        var version = FeatureValueVersion.Compute("Tenant", "t1", ["Theme"], [stored]);
+        _repository
+            .SaveIfVersionAsync(
+                Arg.Any<HashSet<string>>(),
+                "Tenant",
+                "t1",
+                version,
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(rows => rows.Count == 0),
+                AbortToken
+            )
+            .Returns(version);
+
+        var result = await _sut.SetAllVersionedAsync(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["Theme"] = "Dark" },
+            "Tenant",
+            "t1",
+            version,
+            AbortToken
+        );
+
+        result.Should().Be(version);
+        await _repository
+            .Received(1)
+            .SaveIfVersionAsync(
+                Arg.Any<HashSet<string>>(),
+                "Tenant",
+                "t1",
+                version,
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<FeatureValueRecord>>(rows => rows.Count == 0),
+                AbortToken
+            );
+    }
+
     #region GetOrDefaultAsync
 
     [Fact]

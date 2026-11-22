@@ -20,6 +20,7 @@ public sealed class SettingManagerVersionedTests : TestBase
     private readonly ISettingValueProviderManager _providerManager = Substitute.For<ISettingValueProviderManager>();
     private readonly IBus _bus = Substitute.For<IBus>();
     private readonly SettingManager _sut;
+    private readonly ISettingEncryptionService _encryptionService = Substitute.For<ISettingEncryptionService>();
 
     public SettingManagerVersionedTests()
     {
@@ -29,7 +30,7 @@ public sealed class SettingManagerVersionedTests : TestBase
             _definitionManager,
             _store,
             _providerManager,
-            Substitute.For<ISettingEncryptionService>(),
+            _encryptionService,
             new DefaultSettingErrorsDescriptor(),
             Substitute.For<IHostIdentityAccessor>(),
             Substitute.For<ICurrentTenant>(),
@@ -51,7 +52,7 @@ public sealed class SettingManagerVersionedTests : TestBase
 
         // then
         var exception = (await act.Should().ThrowAsync<ConflictException>()).Which;
-        exception.Errors.Should().ContainSingle().Which.Code.Should().Be("setting:version_mismatch");
+        exception.Errors.Should().ContainSingle().Which.Code.Should().Be("g:setting_version_mismatch");
         await _bus.DidNotReceive()
             .PublishAsync(Arg.Any<SettingChangedMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
@@ -81,6 +82,56 @@ public sealed class SettingManagerVersionedTests : TestBase
                 Arg.Any<PublishOptions>(),
                 AbortToken
             );
+    }
+
+    [Theory]
+    [InlineData("dark", "existing-ciphertext")]
+    [InlineData("light", "new-ciphertext")]
+    public async Task should_reuse_ciphertext_only_when_the_plaintext_is_unchanged(
+        string requested,
+        string expectedCiphertext
+    )
+    {
+        var definition = new SettingDefinition("App.Theme", isEncrypted: true);
+        _definitionManager.FindAsync("App.Theme", AbortToken).Returns(definition);
+        _providerManager.Providers.Returns([new FakeStoreSettingValueProvider(_store)]);
+        _store
+            .GetAllVersionedAsync(Arg.Any<HashSet<string>>(), "Store", "t1", AbortToken)
+            .Returns(new VersionedSettingValues([new SettingValue("App.Theme", "existing-ciphertext")], "current"));
+        _encryptionService.DecryptAsync(definition, "existing-ciphertext", "Store", "t1", AbortToken).Returns("dark");
+        _encryptionService.EncryptAsync(definition, "light", "Store", "t1", AbortToken).Returns("new-ciphertext");
+        _store
+            .SetAllVersionedAsync(Arg.Any<IReadOnlyDictionary<string, string?>>(), "Store", "t1", "current", AbortToken)
+            .Returns("committed");
+
+        var result = await _sut.SetVersionedAsync(
+            _Values(requested),
+            "Store",
+            "t1",
+            "current",
+            cancellationToken: AbortToken
+        );
+
+        result.Should().Be("committed");
+        await _store
+            .Received(1)
+            .SetAllVersionedAsync(
+                Arg.Is<IReadOnlyDictionary<string, string?>>(values => values["App.Theme"] == expectedCiphertext),
+                "Store",
+                "t1",
+                "current",
+                AbortToken
+            );
+        if (string.Equals(requested, "dark", StringComparison.Ordinal))
+        {
+            await _encryptionService
+                .DidNotReceive()
+                .EncryptAsync(definition, Arg.Any<string?>(), "Store", "t1", AbortToken);
+        }
+        else
+        {
+            await _encryptionService.Received(1).EncryptAsync(definition, "light", "Store", "t1", AbortToken);
+        }
     }
 
     [Fact]

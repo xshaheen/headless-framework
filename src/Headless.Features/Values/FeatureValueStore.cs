@@ -121,7 +121,7 @@ public sealed class FeatureValueStore(
         }
         else
         {
-            featureValue.ChangeValue(value);
+            featureValue.Value = value;
             await repository.UpdateAsync(featureValue, cancellationToken).ConfigureAwait(false);
         }
 
@@ -225,9 +225,9 @@ public sealed class FeatureValueStore(
                     new FeatureValueRecord(guidGenerator.Create(), name, value, providerName, providerKey)
                 );
             }
-            else
+            else if (!string.Equals(existing.Value, value, StringComparison.Ordinal))
             {
-                existing.ChangeValue(value);
+                existing.Value = value;
                 changes.Updated.Add(existing);
             }
         }
@@ -304,7 +304,7 @@ public sealed class FeatureValueStore(
     }
 
     /// <inheritdoc/>
-    public async Task SetAllVersionedAsync(
+    public async Task<string> SetAllVersionedAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,
@@ -320,60 +320,42 @@ public sealed class FeatureValueStore(
 
         var names = values.Keys.ToHashSet(StringComparer.Ordinal);
 
-        for (var attempt = 1; ; attempt++)
+        var existingRecords = await repository
+            .GetListAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Checked here too, so a stale write fails before it opens a serializable transaction.
+        _EnsureVersion(FeatureValueVersion.Compute(providerName, providerKey, names, existingRecords));
+
+        var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
+
+        var committedVersion = await repository
+            .SaveIfVersionAsync(
+                names,
+                providerName,
+                providerKey,
+                expectedVersion,
+                changes.Inserted,
+                changes.Updated,
+                changes.Deleted,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        try
         {
-            var existingRecords = await repository
-                .GetListAsync(names, providerName, providerKey, cancellationToken)
-                .ConfigureAwait(false);
-
-            // Checked here too, so a stale write fails before it opens a serializable transaction.
-            _EnsureVersion(FeatureValueVersion.Compute(providerName, providerKey, names, existingRecords));
-
-            var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
-
-            try
-            {
-                await repository
-                    .SaveIfVersionAsync(
-                        names,
-                        providerName,
-                        providerKey,
-                        expectedVersion,
-                        changes.Inserted,
-                        changes.Updated,
-                        changes.Deleted,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (Exception exception)
-                when (exception is not DBConcurrencyException and not NotSupportedException
-                    && !cancellationToken.IsCancellationRequested
-                )
-            {
-                // A serialization failure, a deadlock victim, or a unique-key violation: the engine stopped this
-                // transaction because another one touched the group. Only the stored version says whether that
-                // writer committed a change; if it did not, the failure was spurious and the batch is tried again.
-                var currentRecords = await repository
-                    .GetListAsync(names, providerName, providerKey, cancellationToken)
-                    .ConfigureAwait(false);
-
-                _EnsureVersion(FeatureValueVersion.Compute(providerName, providerKey, names, currentRecords));
-
-                if (attempt < _MaxSaveAttempts)
-                {
-                    continue;
-                }
-
-                throw;
-            }
-
             await FeatureValueCacheInvalidation
                 .SyncAsync(cache, repository, names, providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false);
-
-            return;
         }
+#pragma warning disable CA1031 // The write committed; cache maintenance must not report a rejected save.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            logger.LogFailedToInvalidateFeatureCache(exception, names.Count);
+        }
+
+        return committedVersion;
 
         void _EnsureVersion(string currentVersion)
         {
@@ -839,7 +821,7 @@ public interface IFeatureValueStore
     /// <exception cref="ArgumentException"><paramref name="values"/> is empty.</exception>
     /// <exception cref="DBConcurrencyException">The group changed after <paramref name="expectedVersion"/> was read.</exception>
     /// <exception cref="NotSupportedException">This store or its repository cannot write a versioned group.</exception>
-    Task SetAllVersionedAsync(
+    Task<string> SetAllVersionedAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,

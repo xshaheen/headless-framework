@@ -183,9 +183,8 @@ public interface ISettingManager
     /// cache, and the group's version.
     /// </returns>
     /// <remarks>
-    /// The version changes when any setting of the group is saved at this scope, through any write member, even when
-    /// the save stores the value it already held. It is the same for every caller of the same names and scope, so it
-    /// serves as an HTTP <c>ETag</c>.
+    /// The version represents the current stored rows, not write history. An unchanged save preserves it. A return to
+    /// the absent representation can reuse it. With fallback disabled it serves as a scope-local HTTP <c>ETag</c>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="settingNames"/> is empty.</exception>
@@ -204,8 +203,8 @@ public interface ISettingManager
     );
 
     /// <summary>
-    /// Saves a group of settings read with <see cref="GetVersionedAsync"/>, unless any of them was saved at the same
-    /// scope after that read.
+    /// Saves a group of settings read with <see cref="GetVersionedAsync"/> only while its stored representation
+    /// still matches that version in the same scope.
     /// </summary>
     /// <param name="values">
     /// The new values keyed by setting name, for exactly the names the version was read for. A <see langword="null"/>
@@ -220,21 +219,21 @@ public interface ISettingManager
     /// </param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <remarks>
-    /// The check and the write run in one serializable transaction, so of two saves made from the same version exactly
-    /// one succeeds. A successful save writes every value in the batch, gives the group a new version, and announces
-    /// one <see cref="SettingChangedMessage"/>; a refused one writes nothing.
+    /// The check and the write run in one serializable transaction. Of two saves that change the same group from one
+    /// version, at most one succeeds. An unchanged save writes nothing and preserves the token. A successful save
+    /// announces one <see cref="SettingChangedMessage"/>. The returned token is computed inside the transaction.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="values"/> is empty, or <paramref name="version"/> is empty or white space.</exception>
     /// <exception cref="Headless.ConflictException">
-    /// The group changed after <paramref name="version"/> was read (error code <c>setting:version_mismatch</c>, also
+    /// The group changed after <paramref name="version"/> was read (error code <c>g:setting_version_mismatch</c>, also
     /// raised when the names differ from the ones read), or a setting is not defined or does not allow the provider, or
     /// the provider is not registered or is read-only.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// The provider's storage cannot version its values, or more than one provider is registered under the name.
     /// </exception>
-    Task SetVersionedAsync(
+    Task<string> SetVersionedAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,

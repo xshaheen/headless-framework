@@ -63,7 +63,7 @@ public sealed class EfFeatureValueRecordRepositoryNamedCacheTests : TestBase
 
         // when
         await repository.InsertAsync(record, AbortToken);
-        record.ChangeValue("false");
+        record.Value = "false";
         await repository.UpdateAsync(record, AbortToken);
         await repository.SaveAsync([], [record], [], AbortToken);
         await repository.DeleteAsync([record], AbortToken);

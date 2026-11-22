@@ -130,7 +130,7 @@ public interface IPermissionGrantRepository
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="System.Data.DBConcurrencyException">The group's version is no longer <paramref name="expectedVersion"/>.</exception>
     /// <exception cref="NotSupportedException">This storage cannot write a versioned group.</exception>
-    Task SaveIfVersionAsync(
+    Task<string> SaveIfVersionAsync(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,

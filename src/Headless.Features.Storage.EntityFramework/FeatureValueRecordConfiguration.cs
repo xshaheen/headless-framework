@@ -25,9 +25,6 @@ internal sealed class FeatureValueRecordConfiguration(FeaturesStorageOptions opt
         b.Property(x => x.Value).HasMaxLength(options.FeatureValuesValueMaxLength).IsRequired();
         b.Property(x => x.ProviderName).HasMaxLength(options.FeatureValuesProviderNameMaxLength).IsRequired();
         b.Property(x => x.ProviderKey).HasMaxLength(options.FeatureValuesProviderKeyMaxLength).IsRequired(false);
-        b.Property(x => x.ConcurrencyStamp)
-            .HasMaxLength(FeatureValueRecordConstants.ConcurrencyStampMaxLength)
-            .IsRequired(false);
 
         var providerKey = HeadlessStorageNaming.Apply(style, nameof(FeatureValueRecord.ProviderKey));
 

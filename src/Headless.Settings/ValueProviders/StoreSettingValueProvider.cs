@@ -146,7 +146,7 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
     }
 
     /// <inheritdoc/>
-    public Task SetAllVersionedAsync(
+    public Task<string> SetAllVersionedAsync(
         IReadOnlyList<KeyValuePair<SettingDefinition, string?>> values,
         string? providerKey,
         string expectedVersion,

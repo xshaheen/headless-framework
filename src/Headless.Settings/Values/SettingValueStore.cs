@@ -140,7 +140,7 @@ public sealed class SettingValueStore(
         }
         else
         {
-            settingValue.ChangeValue(value);
+            settingValue.Value = value;
             await valueRepository.UpdateAsync(settingValue, cancellationToken).ConfigureAwait(false);
         }
 
@@ -248,9 +248,9 @@ public sealed class SettingValueStore(
                     new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey)
                 );
             }
-            else
+            else if (!string.Equals(existing.Value, value, StringComparison.Ordinal))
             {
-                existing.ChangeValue(value);
+                existing.Value = value;
                 changes.Updated.Add(existing);
             }
         }
@@ -327,7 +327,7 @@ public sealed class SettingValueStore(
     }
 
     /// <inheritdoc/>
-    public async Task SetAllVersionedAsync(
+    public async Task<string> SetAllVersionedAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,
@@ -343,54 +343,30 @@ public sealed class SettingValueStore(
 
         var names = values.Keys.ToHashSet(StringComparer.Ordinal);
 
-        for (var attempt = 1; ; attempt++)
+        var existingRecords = await valueRepository
+            .GetListAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Checked here too, so a stale write fails before it opens a serializable transaction.
+        _EnsureVersion(SettingValueVersion.Compute(providerName, providerKey, names, existingRecords));
+
+        var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
+
+        var committedVersion = await valueRepository
+            .SaveIfVersionAsync(
+                names,
+                providerName,
+                providerKey,
+                expectedVersion,
+                changes.Inserted,
+                changes.Updated,
+                changes.Deleted,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        try
         {
-            var existingRecords = await valueRepository
-                .GetListAsync(names, providerName, providerKey, cancellationToken)
-                .ConfigureAwait(false);
-
-            // Checked here too, so a stale write fails before it opens a serializable transaction.
-            _EnsureVersion(SettingValueVersion.Compute(providerName, providerKey, names, existingRecords));
-
-            var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
-
-            try
-            {
-                await valueRepository
-                    .SaveIfVersionAsync(
-                        names,
-                        providerName,
-                        providerKey,
-                        expectedVersion,
-                        changes.Inserted,
-                        changes.Updated,
-                        changes.Deleted,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (Exception exception)
-                when (exception is not DBConcurrencyException and not NotSupportedException
-                    && !cancellationToken.IsCancellationRequested
-                )
-            {
-                // A serialization failure, a deadlock victim, or a unique-key violation: the engine stopped this
-                // transaction because another one touched the group. Only the stored version says whether that
-                // writer committed a change; if it did not, the failure was spurious and the batch is tried again.
-                var currentRecords = await valueRepository
-                    .GetListAsync(names, providerName, providerKey, cancellationToken)
-                    .ConfigureAwait(false);
-
-                _EnsureVersion(SettingValueVersion.Compute(providerName, providerKey, names, currentRecords));
-
-                if (attempt < _MaxSaveAttempts)
-                {
-                    continue;
-                }
-
-                throw;
-            }
-
             await SettingValueCacheInvalidation
                 .SyncAsync(
                     cache,
@@ -402,9 +378,15 @@ public sealed class SettingValueStore(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-
-            return;
         }
+#pragma warning disable CA1031 // The write committed; cache maintenance must not report a rejected save.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            logger.LogFailedToInvalidateSettingCache(exception, names.Count);
+        }
+
+        return committedVersion;
 
         void _EnsureVersion(string currentVersion)
         {
@@ -881,7 +863,7 @@ public interface ISettingValueStore
     /// <exception cref="ArgumentException"><paramref name="values"/> is empty.</exception>
     /// <exception cref="DBConcurrencyException">The group changed after <paramref name="expectedVersion"/> was read.</exception>
     /// <exception cref="NotSupportedException">This store or its repository cannot write a versioned group.</exception>
-    Task SetAllVersionedAsync(
+    Task<string> SetAllVersionedAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,

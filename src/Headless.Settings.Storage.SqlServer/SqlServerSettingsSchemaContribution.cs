@@ -13,7 +13,6 @@ internal static class SqlServerSettingsSchemaContribution
 {
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
-    public const string ConcurrencyStampStepVersion = "3";
 
     private static readonly RelationalSettingsTables _Defaults = new(
         SqlServerDialect.Instance,
@@ -80,15 +79,6 @@ internal static class SqlServerSettingsSchemaContribution
                 CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
             """;
 
-        // Nullable: a row written before this step has no stamp, and a versioned read hashes its id in place of one.
-        var concurrencyStampSql = string.Create(
-            CultureInfo.InvariantCulture,
-            $"""
-            IF COL_LENGTH(N'{valuesObject}', N'ConcurrencyStamp') IS NULL
-                ALTER TABLE {valuesTable} ADD [ConcurrencyStamp] nvarchar({SettingValueRecordConstants.ConcurrencyStampMaxLength}) NULL;
-            """
-        );
-
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Settings",
@@ -105,11 +95,6 @@ internal static class SqlServerSettingsSchemaContribution
                     IndexesStepVersion,
                     "Create the setting definition and value unique indexes.",
                     indexesSql
-                ),
-                new SchemaStep(
-                    ConcurrencyStampStepVersion,
-                    "Add the setting value concurrency stamp column.",
-                    concurrencyStampSql
                 ),
             ],
             hostStateTables: [definitionsName],

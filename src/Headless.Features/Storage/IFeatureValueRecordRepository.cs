@@ -118,8 +118,8 @@ public interface IFeatureValueRecordRepository
     /// Read the group's records inside the transaction, compute <see cref="FeatureValueVersion.Compute"/> over them, and
     /// throw <see cref="System.Data.DBConcurrencyException"/> before writing anything when it differs. The transaction
     /// must also keep a concurrent writer from inserting one of the absent names between that read and the commit
-    /// (the built-in stores run it at <see cref="System.Data.IsolationLevel.Serializable"/>). Every inserted and
-    /// updated record carries a new <see cref="FeatureValueRecord.ConcurrencyStamp"/>, which the write must store.
+    /// (the built-in stores run it at <see cref="System.Data.IsolationLevel.Serializable"/>). Compute the returned
+    /// version from the resulting rows inside that transaction. An unchanged save must issue no data writes.
     /// </remarks>
     /// <param name="names">The names of the group the version covers.</param>
     /// <param name="providerName">The name of the value provider.</param>
@@ -131,7 +131,7 @@ public interface IFeatureValueRecordRepository
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <exception cref="System.Data.DBConcurrencyException">The group's version is no longer <paramref name="expectedVersion"/>.</exception>
     /// <exception cref="NotSupportedException">This storage cannot write a versioned group.</exception>
-    Task SaveIfVersionAsync(
+    Task<string> SaveIfVersionAsync(
         HashSet<string> names,
         string providerName,
         string? providerKey,

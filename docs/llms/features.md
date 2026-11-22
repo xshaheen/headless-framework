@@ -50,12 +50,11 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - To commit a feature value with your other writes, write on the unit you hold: `unit.Features.SetForTenantAsync(...)`. The injected `IFeatureManager` never joins a unit. See [Writing feature values inside a unit of work](#writing-feature-values-inside-a-unit-of-work).
 - `SetAsync` with `forceToSet: false` (the default) stores nothing when the value equals what the next lower provider supplies. Pass `forceToSet: true` to persist the value anyway. `GrantAsync` and `RevokeAsync` always force.
 - To write several features atomically, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>`. See [Writing values](#writing-values).
-- For an edit form that must not overwrite another admin's save, read with `GetVersionedAsync(names, providerName, providerKey)` and save with `SetVersionedAsync(values, providerName, providerKey, version)`. A stale save throws `ConflictException` with `features:version-mismatch`. See [Editing a group with optimistic concurrency](#editing-a-group-with-optimistic-concurrency).
+- For an edit form that must not overwrite another admin's save, read with `GetVersionedAsync(names, providerName, providerKey)` and save with `SetVersionedAsync(values, providerName, providerKey, version)`. A stale save throws `ConflictException` with `g:feature_version_mismatch`. See [Editing a group with optimistic concurrency](#editing-a-group-with-optimistic-concurrency).
 - `DeleteAsync(providerName, providerKey)` removes every value of one provider key, for example every override of a deleted tenant. It skips read-only providers.
 - `FeatureDefinition.Providers` limits which providers may hold a value. An empty list allows all. A write through another provider throws `ConflictException` with error code `features:provider-not-allowed`, and reads ignore a value another provider holds. A feature limited to `Edition` cannot be overridden by a tenant value.
 - Gate HTTP endpoints with `[RequiresFeature("Name")]`, `.WithMetadata(new RequiresFeatureAttribute("Name"))`, or `.RequireAuthorization(policy => policy.RequireFeatures("Name"))`. A disabled feature returns 403 (401 for an anonymous caller). `IFeatureManager.EnsureEnabledAsync` in application code throws `ConflictException` instead, returned as 409. See [Gating HTTP endpoints](#gating-http-endpoints).
 - Never combine `[AllowAnonymous]` with a feature gate. `[AllowAnonymous]` skips all authorization, feature requirements included.
-- When you upgrade to the release that adds versioned writes, an existing database needs one change. On the PostgreSQL or SQL Server store, run `resources provision` so it applies the new schema step (`Features/3` on PostgreSQL, `Features/2` on SQL Server); the start fails until it does. On EF Core storage, add and apply the migration for the new `ConcurrencyStamp` column; without it, the first uncached read fails.
 - Keep feature names, provider names, and provider keys free of leading or trailing white space, NUL characters, and lone UTF-16 surrogates. Every read and write throws `ArgumentException` for such a key instead of trimming it, because SQL Server ignores trailing spaces when it compares keys and would merge `"acme "` with `"acme"`. Normalize keys at your own boundary.
 
 ## Core Concepts
@@ -192,20 +191,20 @@ public sealed class ReloadTenantFeatures(TenantFeatureCache cache) : IConsume<Fe
 
 ### Editing a group with optimistic concurrency
 
-An edit form reads a group of features for one scope (an edition or a tenant), lets an admin change them, and saves them back. `GetVersionedAsync` returns the values and the group's version. `SetVersionedAsync` saves only while the group still has that version. Otherwise it throws `ConflictException` with the error code `features:version-mismatch` and writes nothing. Over HTTP, the version is the `ETag`, and the save takes it in `If-Match`. The Headless API exception handler maps the `ConflictException` to 409.
+An edit form reads a group of features for one scope (an edition or a tenant), lets an admin change them, and saves them back. `GetVersionedAsync` returns the values and the group's version. `SetVersionedAsync` saves only while the group still has that version. Otherwise it throws `ConflictException` with the error code `g:feature_version_mismatch` and writes nothing. Over HTTP, the version is the `ETag`, and the save takes it in `If-Match`. The Headless API exception handler maps the `ConflictException` to 409.
 
 ```csharp
 HashSet<string> reporting = ["Reports", "Reports.MaxExports"];
 
 app.MapGet("/editions/{editionId}/features/reporting", async (string editionId, IFeatureManager features, HttpResponse response, CancellationToken ct) =>
 {
-    var group = await features.GetVersionedAsync(reporting, FeatureValueProviderNames.Edition, editionId, cancellationToken: ct);
+    var group = await features.GetVersionedAsync(reporting, FeatureValueProviderNames.Edition, editionId, fallback: false, cancellationToken: ct);
     response.Headers.ETag = $"\"{group.Version}\"";
 
     return Results.Ok(group.Values.ToDictionary(x => x.Name, x => x.Value));
 });
 
-app.MapPut("/editions/{editionId}/features/reporting", async (string editionId, Dictionary<string, string?> body, HttpRequest request, IFeatureManager features, CancellationToken ct) =>
+app.MapPut("/editions/{editionId}/features/reporting", async (string editionId, Dictionary<string, string?> body, HttpRequest request, HttpResponse response, IFeatureManager features, CancellationToken ct) =>
 {
     var version = request.Headers.IfMatch.ToString().Trim('"');
 
@@ -216,20 +215,22 @@ app.MapPut("/editions/{editionId}/features/reporting", async (string editionId, 
 
     // Every name of the group, so an omitted name clears its value instead of failing the version check.
     var values = reporting.ToDictionary(name => name, name => body.GetValueOrDefault(name), StringComparer.Ordinal);
-    await features.SetVersionedAsync(values, FeatureValueProviderNames.Edition, editionId, version, cancellationToken: ct);
+    var savedVersion = await features.SetVersionedAsync(values, FeatureValueProviderNames.Edition, editionId, version, cancellationToken: ct);
+    response.Headers.ETag = $"\"{savedVersion}\"";
 
     return Results.NoContent();
 });
 ```
 
-**Verify:** in a test, call `GetVersionedAsync`, write one of the names with `SetForEditionAsync`, then call `SetVersionedAsync` with the version you read. It throws `ConflictException` whose `Errors[0].Code` is `features:version-mismatch`, and the other write's value is still stored.
+**Verify:** in a test, call `GetVersionedAsync`, write one of the names with `SetForEditionAsync`, then call `SetVersionedAsync` with the version you read. It throws `ConflictException` whose `Errors[0].Code` is `g:feature_version_mismatch`, and the other write's value is still stored.
 
 - **The group.** The version covers the names you pass, in one provider scope (`providerName` and the key the provider resolves). Two forms over different names do not block each other.
-- **Same names on save.** Save exactly the names you read. Another name set has another version, so a save with fewer or more names throws `features:version-mismatch`.
-- **What changes the version.** Any write of one of the group's values at that scope, through any `IFeatureManager` member, `unit.Features`, or the EF repository, including a write that stores the value it already held.
-- **What does not.** Inherited values. With `fallback: true` (the default), a name the scope does not store shows the value the next provider supplies (for a tenant, its edition's value, resolved for that tenant), attributed to that provider. A change to that inherited value leaves the version as it was.
+- **Same names on save.** Save exactly the names you read. Another name set has another version, so a save with fewer or more names throws `g:feature_version_mismatch`.
+- **Stored representation.** The version covers the current local rows, not write history. An unchanged save writes nothing and returns the same token. An absent → set → cleared sequence can reuse its original token.
+- **Scope-local editing.** Use `fallback: false` as above. Inherited values are outside this validator. If you display them separately, do not submit them as local values or treat this token as their validator.
 - **Read from storage.** `GetVersionedAsync` reads the scope's values from the database, not the cache.
-- **Atomicity.** The check and the write run in one serializable transaction. Of two saves from one version, exactly one succeeds, even when they set different names. A serialization failure that leaves the version unchanged is retried, up to three attempts.
+- **Atomicity.** The check and the write run in one serializable transaction. Of two saves that change the same group from one version, at most one succeeds. Only serialization, deadlock, or unique-violation failures before commit are retried, up to three attempts. Once commit starts, a failure is not replayed or translated to a version conflict. A lost commit reply leaves the outcome unknown.
+- **Returned version.** `SetVersionedAsync` returns the resulting token computed inside its transaction. Return that token as the PUT response's ETag, rather than issuing a later GET that could observe another writer. A cache-maintenance failure after a confirmed commit is logged and does not reject the save. Stale cache entries expire normally.
 - **Not in a unit of work.** `unit.Features` has no versioned write.
 - **Supported stores.** The EF Core, PostgreSQL, and SQL Server storage support it. A custom `IFeatureValueProvider` must implement `GetAllVersionedAsync` and `SetAllVersionedAsync`, and a custom `IFeatureValueRecordRepository` must implement `SaveIfVersionAsync` and compute the version with `FeatureValueVersion.Compute`. Their defaults throw `NotSupportedException`. More than one provider registered under the same name also throws `NotSupportedException`.
 
@@ -585,9 +586,9 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
-Then add an EF migration for the feature tables. The EF provider writes no DDL. An existing model gains a nullable `ConcurrencyStamp` column (40 characters, `concurrency_stamp` on Npgsql) on the feature values table. Add and apply that migration before the upgraded version serves traffic: every features read and write selects the column, so without it the first call that misses the cache fails with a missing-column error, and the start does not detect it.
+Then add an EF migration for the feature tables. The EF provider writes no DDL.
 
-**Verify:** the host starts. A context that does not map the feature entities fails the start with `InvalidOperationException`: "the registered DbContext ... does not contain ... Call `modelBuilder.ConfigureHeadlessFeatures(this)`". After upgrading, a read that misses the cache fails with a missing-column error until the `ConcurrencyStamp` migration is applied.
+**Verify:** the host starts. A context that does not map the feature entities fails the start with `InvalidOperationException`: "the registered DbContext ... does not contain ... Call `modelBuilder.ConfigureHeadlessFeatures(this)`".
 
 ### Configuration
 
@@ -656,8 +657,8 @@ Set schema and table names through `setup.ConfigureStorage(...)`.
 
 ### Runtime behavior
 
-- `resources provision` applies three schema steps through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts): `Features/1` (tables), `Features/2` (indexes), and `Features/3` (the value concurrency stamp column). Names are snake_case.
-- The host start only verifies the steps. After upgrading, run `resources provision` once before the new version starts, so it adds `Features/3` to an existing database. See [Resource provisioning](utilities.md#resource-provisioning).
+- `resources provision` applies two schema steps through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts): `Features/1` (tables) and `Features/2` (indexes). Names are snake_case.
+- The host start only verifies the steps. See [Resource provisioning](utilities.md#resource-provisioning).
 
 ---
 
@@ -713,5 +714,5 @@ Set schema and table names through `setup.ConfigureStorage(...)`.
 
 ### Runtime behavior
 
-- `resources provision` applies two schema steps through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts): `Features/1` (tables, indexes, and table types) and `Features/2` (the value concurrency stamp column). Names are PascalCase.
-- The host start only verifies the steps. After upgrading, run `resources provision` once before the new version starts, so it adds `Features/2` to an existing database. See [Resource provisioning](utilities.md#resource-provisioning).
+- `resources provision` applies one schema step through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts): `Features/1` (tables, indexes, and table types). Names are PascalCase.
+- The host start only verifies the steps. See [Resource provisioning](utilities.md#resource-provisioning).

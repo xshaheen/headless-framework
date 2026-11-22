@@ -41,7 +41,6 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
         Value = Argument.IsNotNullOrWhiteSpace(value);
         ProviderName = Argument.IsNotNullOrWhiteSpace(providerName);
         ProviderKey = providerKey;
-        ConcurrencyStamp = NewConcurrencyStamp();
     }
 
     /// <summary>Creates a <see cref="FeatureValueRecord"/> from raw storage data, including audit timestamps.</summary>
@@ -52,9 +51,6 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
     /// <param name="providerKey">The provider-specific scoping key, or <see langword="null"/>.</param>
     /// <param name="createdAt">UTC timestamp when the record was first created.</param>
     /// <param name="updatedAt">UTC timestamp of the last update, or <see langword="null"/> if never updated.</param>
-    /// <param name="concurrencyStamp">
-    /// The stored stamp, or <see langword="null"/> for a row written before the store kept one.
-    /// </param>
     /// <returns>A fully-hydrated <see cref="FeatureValueRecord"/> with audit fields populated.</returns>
     public static FeatureValueRecord FromStorage(
         Guid id,
@@ -63,15 +59,13 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
         string providerName,
         string? providerKey,
         DateTimeOffset createdAt,
-        DateTimeOffset? updatedAt,
-        string? concurrencyStamp = null
+        DateTimeOffset? updatedAt
     )
     {
         return new FeatureValueRecord(id, name, value, providerName, providerKey)
         {
             CreatedAt = createdAt,
             UpdatedAt = updatedAt,
-            ConcurrencyStamp = concurrencyStamp,
         };
     }
 
@@ -79,19 +73,7 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
     public string Name { get; private init; }
 
     /// <summary>The stored value for the feature.</summary>
-    public string Value { get; private set; }
-
-    /// <summary>
-    /// Gets the token that changes on every write of this record, or <see langword="null"/> for a row written before
-    /// the store kept one. A versioned read hashes it into the group version, so any later save of the row, even one
-    /// that stores the same value, makes that version stale.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately not <see cref="IHasConcurrencyStamp"/>: that would make it an EF Core concurrency token on every
-    /// update, and the unversioned writes are last-writer-wins by contract. A versioned write checks the stamps of its
-    /// whole group inside one serializable transaction instead.
-    /// </remarks>
-    public string? ConcurrencyStamp { get; private set; }
+    public string Value { get; internal set; }
 
     /// <summary>The name of the value provider that owns this record (e.g. <c>Tenant</c>, <c>Edition</c>).</summary>
     public string ProviderName { get; private init; }
@@ -104,16 +86,6 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
 
     /// <summary>Gets the UTC timestamp of the last update, or <see langword="null"/> if the record has never been updated.</summary>
     public DateTimeOffset? UpdatedAt { get; private set; }
-
-    /// <summary>Replaces the value and draws a new <see cref="ConcurrencyStamp"/>.</summary>
-    internal void ChangeValue(string value)
-    {
-        Value = Argument.IsNotNullOrWhiteSpace(value);
-        ConcurrencyStamp = NewConcurrencyStamp();
-    }
-
-    /// <summary>Returns a new random stamp, 32 hexadecimal characters.</summary>
-    internal static string NewConcurrencyStamp() => Guid.NewGuid().ToString("N");
 
     /// <inheritdoc/>
     public override string ToString()

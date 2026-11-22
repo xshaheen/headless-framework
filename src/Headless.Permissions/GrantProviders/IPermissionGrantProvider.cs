@@ -112,7 +112,7 @@ public interface IPermissionGrantProvider
     /// <param name="cancellationToken">The abort token.</param>
     /// <exception cref="System.Data.DBConcurrencyException">The group changed after the version was read.</exception>
     /// <exception cref="NotSupportedException">This provider cannot version its grants.</exception>
-    Task SetVersionedAsync(
+    Task<string> SetVersionedAsync(
         IReadOnlyList<KeyValuePair<PermissionDefinition, bool?>> grants,
         string providerKey,
         string expectedVersion,

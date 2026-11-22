@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Data.Common;
 using Headless.Caching;
 using Headless.Hosting;
 using Headless.Permissions;
@@ -8,6 +9,8 @@ using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Grants;
@@ -28,6 +31,9 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
     private readonly ICache<PermissionGrantCacheItem> _cache = Substitute.For<ICache<PermissionGrantCacheItem>>();
     private readonly SqliteConnection _unitConnection;
     private readonly ServiceProvider _services;
+    private readonly SaveObserver _saveObserver = new();
+    private readonly CommitFault _commitFault = new();
+    private bool _useRetryStrategy;
 
     public EfPermissionGrantRepositoryUnitOfWorkTests()
     {
@@ -36,7 +42,14 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDbContextFactory<GrantsDbContext>(options => options.UseSqlite(connectionString));
+        services.AddDbContextFactory<GrantsDbContext>(options =>
+        {
+            options.UseSqlite(connectionString).AddInterceptors(_saveObserver, _commitFault);
+            if (_useRetryStrategy)
+            {
+                options.ReplaceService<IExecutionStrategyFactory, RetryStrategyFactory>();
+            }
+        });
         services.AddHeadlessPermissions(setup => setup.UseEntityFramework<GrantsDbContext>());
         services.AddSingleton(_cache);
         _services = services.BuildServiceProvider();
@@ -198,6 +211,168 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
         current.Should().ContainSingle().Which.IsGranted.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_return_the_committed_version_even_when_cache_maintenance_throws_a_concurrency_exception()
+    {
+        await using var owner = await _CreateOwnerAsync();
+        string[] names = ["Users.Create"];
+        var version = PermissionGrantVersion.Compute("Role", "admin", tenantId: null, names, []);
+        var stored = _Grant("Users.Create");
+        _cache
+            .When(x =>
+                x.UpsertAllAsync(
+                    Arg.Any<IDictionary<string, PermissionGrantCacheItem>>(),
+                    Arg.Any<TimeSpan?>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(_ => throw new DBConcurrencyException("cache unavailable after commit"));
+
+        var committedVersion = await Repository.SaveIfVersionAsync(
+            names,
+            "Role",
+            "admin",
+            version,
+            [stored],
+            [],
+            AbortToken
+        );
+
+        committedVersion
+            .Should()
+            .Be(
+                PermissionGrantVersion.Compute(
+                    "Role",
+                    "admin",
+                    tenantId: null,
+                    names,
+                    await Repository.GetListAsync(names, "Role", "admin", AbortToken)
+                )
+            );
+        committedVersion.Should().NotBe(version);
+        _saveObserver.Saves.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_write_nothing_for_an_unchanged_group_and_accept_the_original_absent_version_after_clear()
+    {
+        await using var owner = await _CreateOwnerAsync();
+        string[] names = ["Users.Create"];
+        var absentVersion = PermissionGrantVersion.Compute("Role", "admin", tenantId: null, names, []);
+        var stored = _Grant("Users.Create");
+        var addedVersion = await Repository.SaveIfVersionAsync(
+            names,
+            "Role",
+            "admin",
+            absentVersion,
+            [stored],
+            [],
+            AbortToken
+        );
+        _saveObserver.Saves = 0;
+
+        var unchangedVersion = await Repository.SaveIfVersionAsync(
+            names,
+            "Role",
+            "admin",
+            addedVersion,
+            [],
+            [],
+            AbortToken
+        );
+        unchangedVersion.Should().Be(addedVersion);
+        _saveObserver.Saves.Should().Be(0);
+
+        var clearedVersion = await Repository.SaveIfVersionAsync(
+            names,
+            "Role",
+            "admin",
+            unchangedVersion,
+            [],
+            [stored],
+            AbortToken
+        );
+        clearedVersion.Should().Be(absentVersion);
+        var restored = await Repository.SaveIfVersionAsync(
+            names,
+            "Role",
+            "admin",
+            absentVersion,
+            [stored],
+            [],
+            AbortToken
+        );
+        restored
+            .Should()
+            .Be(
+                PermissionGrantVersion.Compute(
+                    "Role",
+                    "admin",
+                    tenantId: null,
+                    names,
+                    await Repository.GetListAsync(names, "Role", "admin", AbortToken)
+                )
+            );
+    }
+
+    [Theory]
+    [InlineData(5, 5, 1, 2, true)]
+    [InlineData(19, 2067, 1, 2, true)]
+    [InlineData(1, 1, 1, 1, false)]
+    [InlineData(5, 5, 3, 3, false)]
+    public async Task should_retry_only_precommit_conflicts_on_fresh_contexts_with_a_bound(
+        int errorCode,
+        int extendedCode,
+        int failures,
+        int expectedAttempts,
+        bool succeeds
+    )
+    {
+        _useRetryStrategy = true;
+        await using var owner = await _CreateOwnerAsync();
+        string[] names = ["Users.Create"];
+        var version = PermissionGrantVersion.Compute("Role", "admin", tenantId: null, names, []);
+        _saveObserver.Failure = new SqliteException("injected database failure", errorCode, extendedCode);
+        _saveObserver.FailuresRemaining = failures;
+
+        var save = () =>
+            Repository.SaveIfVersionAsync(names, "Role", "admin", version, [_Grant("Users.Create")], [], AbortToken);
+        if (succeeds)
+        {
+            var committed = await save();
+            var rows = await Repository.GetListAsync(names, "Role", "admin", AbortToken);
+            committed.Should().Be(PermissionGrantVersion.Compute("Role", "admin", tenantId: null, names, rows));
+            rows.Should().ContainSingle();
+        }
+        else
+        {
+            await save.Should().ThrowExactlyAsync<SqliteException>();
+            (await Repository.GetListAsync(names, "Role", "admin", AbortToken)).Should().BeEmpty();
+        }
+
+        _saveObserver.Saves.Should().Be(expectedAttempts);
+        _saveObserver.Contexts.Should().HaveCount(expectedAttempts);
+    }
+
+    [Fact]
+    public async Task should_not_replay_a_lost_commit_reply_even_under_a_retrying_execution_strategy()
+    {
+        _useRetryStrategy = true;
+        await using var owner = await _CreateOwnerAsync();
+        string[] names = ["Users.Create"];
+        var version = PermissionGrantVersion.Compute("Role", "admin", tenantId: null, names, []);
+        _commitFault.Armed = true;
+
+        var save = () =>
+            Repository.SaveIfVersionAsync(names, "Role", "admin", version, [_Grant("Users.Create")], [], AbortToken);
+
+        await save.Should().ThrowExactlyAsync<SqliteException>();
+        _commitFault.Commits.Should().Be(1);
+        _saveObserver.Saves.Should().Be(1);
+        (await Repository.GetListAsync(names, "Role", "admin", AbortToken)).Should().ContainSingle();
+        _cache.ReceivedCalls().Should().BeEmpty();
+    }
+
     protected override async ValueTask DisposeAsyncCore()
     {
         await _services.DisposeAsync();
@@ -237,6 +412,69 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
             .Do(call => written.Add(call.Arg<IDictionary<string, PermissionGrantCacheItem>>()[key].IsGranted));
 
         return written;
+    }
+
+    // A retrying strategy would replay both injected faults if the repository let them escape its delegate.
+    private sealed class RetryStrategy(ExecutionStrategyDependencies dependencies)
+        : ExecutionStrategy(dependencies, maxRetryCount: 3, maxRetryDelay: TimeSpan.Zero)
+    {
+        protected override bool ShouldRetryOn(Exception exception) => exception is SqliteException;
+    }
+
+    private sealed class RetryStrategyFactory(ExecutionStrategyDependencies dependencies) : IExecutionStrategyFactory
+    {
+        public IExecutionStrategy Create() => new RetryStrategy(dependencies);
+    }
+
+    private sealed class CommitFault : DbTransactionInterceptor
+    {
+        public bool Armed { get; set; }
+        public int Commits { get; private set; }
+
+        public override Task TransactionCommittedAsync(
+            DbTransaction transaction,
+            TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Commits++;
+            if (Armed)
+            {
+                Armed = false;
+                throw new SqliteException("lost commit reply", 5);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SaveObserver : SaveChangesInterceptor
+    {
+        public int Saves { get; set; }
+        public Exception? Failure { get; set; }
+        public int FailuresRemaining { get; set; }
+        public HashSet<Guid> Contexts { get; } = [];
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Saves++;
+            if (eventData.Context is { } context)
+            {
+                Contexts.Add(context.ContextId.InstanceId);
+            }
+
+            if (FailuresRemaining > 0 && Failure is { } failure)
+            {
+                FailuresRemaining--;
+                throw failure;
+            }
+
+            return ValueTask.FromResult(result);
+        }
     }
 
     public sealed class GrantsDbContext(DbContextOptions<GrantsDbContext> options) : DbContext(options)

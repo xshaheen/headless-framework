@@ -45,7 +45,6 @@ public sealed class SettingValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
         Value = Argument.IsNotNullOrWhiteSpace(value);
         ProviderName = Argument.IsNotNullOrWhiteSpace(providerName);
         ProviderKey = providerKey;
-        ConcurrencyStamp = NewConcurrencyStamp();
     }
 
     /// <summary>
@@ -58,9 +57,6 @@ public sealed class SettingValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
     /// <param name="providerKey">Optional key scoping the value within the provider.</param>
     /// <param name="createdAt">UTC timestamp when the record was first created.</param>
     /// <param name="updatedAt">UTC timestamp of the last update, or <see langword="null"/> if never updated.</param>
-    /// <param name="concurrencyStamp">
-    /// The stored stamp, or <see langword="null"/> for a row written before the store kept one.
-    /// </param>
     /// <returns>A fully-hydrated <see cref="SettingValueRecord"/> with audit fields populated.</returns>
     public static SettingValueRecord FromStorage(
         Guid id,
@@ -69,35 +65,21 @@ public sealed class SettingValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
         string providerName,
         string? providerKey,
         DateTimeOffset createdAt,
-        DateTimeOffset? updatedAt,
-        string? concurrencyStamp = null
+        DateTimeOffset? updatedAt
     )
     {
         return new SettingValueRecord(id, name, value, providerName, providerKey)
         {
             CreatedAt = createdAt,
             UpdatedAt = updatedAt,
-            ConcurrencyStamp = concurrencyStamp,
         };
     }
 
     /// <summary>Gets the unique name of the setting.</summary>
     public string Name { get; private init; }
 
-    /// <summary>Gets the current value of the setting.</summary>
-    public string Value { get; private set; }
-
-    /// <summary>
-    /// Gets the token that changes on every write of this record, or <see langword="null"/> for a row written before
-    /// the store kept one. A versioned read hashes it into the group version, so any later save of the row, even one
-    /// that stores the same value, makes that version stale.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately not <see cref="IHasConcurrencyStamp"/>: that would make it an EF Core concurrency token on every
-    /// update, and the unversioned writes are last-writer-wins by contract. A versioned write checks the stamps of its
-    /// whole group inside one serializable transaction instead.
-    /// </remarks>
-    public string? ConcurrencyStamp { get; private set; }
+    /// <summary>Gets or sets the current value of the setting.</summary>
+    public string Value { get; internal set; }
 
     /// <summary>Gets the name of the value provider that owns this record.</summary>
     public string ProviderName { get; private init; }
@@ -110,16 +92,6 @@ public sealed class SettingValueRecord : AggregateRoot<Guid>, ICreateAudit, IUpd
 
     /// <summary>Gets the UTC timestamp of the last update, or <see langword="null"/> if the record has never been updated.</summary>
     public DateTimeOffset? UpdatedAt { get; private set; }
-
-    /// <summary>Replaces the value and draws a new <see cref="ConcurrencyStamp"/>.</summary>
-    internal void ChangeValue(string value)
-    {
-        Value = Argument.IsNotNullOrWhiteSpace(value);
-        ConcurrencyStamp = NewConcurrencyStamp();
-    }
-
-    /// <summary>Returns a new random stamp, 32 hexadecimal characters.</summary>
-    internal static string NewConcurrencyStamp() => Guid.NewGuid().ToString("N");
 
     /// <inheritdoc/>
     public override string ToString()

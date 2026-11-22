@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Data.Common;
 using Headless.Caching;
 using Headless.Features;
 using Headless.Hosting;
@@ -8,6 +9,8 @@ using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Storage;
@@ -25,6 +28,9 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
     private readonly ICache _cache = Substitute.For<ICache>();
     private readonly SqliteConnection _unitConnection;
     private readonly ServiceProvider _services;
+    private readonly SaveObserver _saveObserver = new();
+    private readonly CommitFault _commitFault = new();
+    private bool _useRetryStrategy;
 
     public EfFeatureValueRecordRepositoryUnitOfWorkTests()
     {
@@ -33,7 +39,14 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDbContextFactory<FeaturesDbContext>(options => options.UseSqlite(connectionString));
+        services.AddDbContextFactory<FeaturesDbContext>(options =>
+        {
+            options.UseSqlite(connectionString).AddInterceptors(_saveObserver, _commitFault);
+            if (_useRetryStrategy)
+            {
+                options.ReplaceService<IExecutionStrategyFactory, RetryStrategyFactory>();
+            }
+        });
         services.AddHeadlessFeatures(setup => setup.UseEntityFramework<FeaturesDbContext>());
         services.AddSingleton(_cache);
         _services = services.BuildServiceProvider();
@@ -85,7 +98,7 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         }
 
         // and a second unit updates it
-        value.ChangeValue("light");
+        value.Value = "light";
         await using (var unit = await Factory.BeginAsync(owner, AbortToken))
         {
             await Repository.SaveEnlistedAsync(unit, [], [value], [], AbortToken);
@@ -147,7 +160,7 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
             await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)
         );
         var added = _Value("Exports");
-        stored.ChangeValue("light");
+        stored.Value = "light";
 
         // when one save presents the version, and a second presents the same, now stale, one
         await Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [added], [stored], [], AbortToken);
@@ -158,6 +171,171 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         var current = await Repository.GetListAsync(names, "Tenant", "t1", AbortToken);
         current.Select(x => (x.Name, x.Value)).Should().BeEquivalentTo([("Reports", "light"), ("Exports", "dark")]);
         FeatureValueVersion.Compute("Tenant", "t1", names, current).Should().NotBe(version);
+    }
+
+    [Fact]
+    public async Task should_return_the_committed_version_even_when_cache_maintenance_throws_a_concurrency_exception()
+    {
+        await using var owner = await _CreateOwnerAsync();
+        HashSet<string> names = ["App.Theme"];
+        var version = FeatureValueVersion.Compute("Tenant", "t1", names, []);
+        var stored = _Value("App.Theme");
+        _cache
+            .When(x =>
+                x.UpsertAllAsync(
+                    Arg.Any<IDictionary<string, FeatureValueCacheItem>>(),
+                    Arg.Any<TimeSpan?>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(_ => throw new DBConcurrencyException("cache unavailable after commit"));
+
+        var committedVersion = await Repository.SaveIfVersionAsync(
+            names,
+            "Tenant",
+            "t1",
+            version,
+            [stored],
+            [],
+            [],
+            AbortToken
+        );
+
+        committedVersion
+            .Should()
+            .Be(
+                FeatureValueVersion.Compute(
+                    "Tenant",
+                    "t1",
+                    names,
+                    await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)
+                )
+            );
+        committedVersion.Should().NotBe(version);
+        _saveObserver.Saves.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_write_nothing_for_an_unchanged_group_and_accept_the_original_absent_version_after_clear()
+    {
+        await using var owner = await _CreateOwnerAsync();
+        HashSet<string> names = ["App.Theme"];
+        var absentVersion = FeatureValueVersion.Compute("Tenant", "t1", names, []);
+        var stored = _Value("App.Theme");
+        var addedVersion = await Repository.SaveIfVersionAsync(
+            names,
+            "Tenant",
+            "t1",
+            absentVersion,
+            [stored],
+            [],
+            [],
+            AbortToken
+        );
+        _saveObserver.Saves = 0;
+
+        var unchangedVersion = await Repository.SaveIfVersionAsync(
+            names,
+            "Tenant",
+            "t1",
+            addedVersion,
+            [],
+            [],
+            [],
+            AbortToken
+        );
+        unchangedVersion.Should().Be(addedVersion);
+        _saveObserver.Saves.Should().Be(0);
+
+        var clearedVersion = await Repository.SaveIfVersionAsync(
+            names,
+            "Tenant",
+            "t1",
+            unchangedVersion,
+            [],
+            [],
+            [stored],
+            AbortToken
+        );
+        clearedVersion.Should().Be(absentVersion);
+        var restored = await Repository.SaveIfVersionAsync(
+            names,
+            "Tenant",
+            "t1",
+            absentVersion,
+            [stored],
+            [],
+            [],
+            AbortToken
+        );
+        restored
+            .Should()
+            .Be(
+                FeatureValueVersion.Compute(
+                    "Tenant",
+                    "t1",
+                    names,
+                    await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)
+                )
+            );
+    }
+
+    [Theory]
+    [InlineData(5, 5, 1, 2, true)]
+    [InlineData(19, 2067, 1, 2, true)]
+    [InlineData(1, 1, 1, 1, false)]
+    [InlineData(5, 5, 3, 3, false)]
+    public async Task should_retry_only_precommit_conflicts_on_fresh_contexts_with_a_bound(
+        int errorCode,
+        int extendedCode,
+        int failures,
+        int expectedAttempts,
+        bool succeeds
+    )
+    {
+        _useRetryStrategy = true;
+        await using var owner = await _CreateOwnerAsync();
+        HashSet<string> names = ["App.Theme"];
+        var version = FeatureValueVersion.Compute("Tenant", "t1", names, []);
+        _saveObserver.Failure = new SqliteException("injected database failure", errorCode, extendedCode);
+        _saveObserver.FailuresRemaining = failures;
+
+        var save = () =>
+            Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [_Value("App.Theme")], [], [], AbortToken);
+        if (succeeds)
+        {
+            var committed = await save();
+            var rows = await Repository.GetListAsync(names, "Tenant", "t1", AbortToken);
+            committed.Should().Be(FeatureValueVersion.Compute("Tenant", "t1", names, rows));
+            rows.Should().ContainSingle();
+        }
+        else
+        {
+            await save.Should().ThrowExactlyAsync<SqliteException>();
+            (await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)).Should().BeEmpty();
+        }
+
+        _saveObserver.Saves.Should().Be(expectedAttempts);
+        _saveObserver.Contexts.Should().HaveCount(expectedAttempts);
+    }
+
+    [Fact]
+    public async Task should_not_replay_a_lost_commit_reply_even_under_a_retrying_execution_strategy()
+    {
+        _useRetryStrategy = true;
+        await using var owner = await _CreateOwnerAsync();
+        HashSet<string> names = ["App.Theme"];
+        var version = FeatureValueVersion.Compute("Tenant", "t1", names, []);
+        _commitFault.Armed = true;
+
+        var save = () =>
+            Repository.SaveIfVersionAsync(names, "Tenant", "t1", version, [_Value("App.Theme")], [], [], AbortToken);
+
+        await save.Should().ThrowExactlyAsync<SqliteException>();
+        _commitFault.Commits.Should().Be(1);
+        _saveObserver.Saves.Should().Be(1);
+        (await Repository.GetListAsync(names, "Tenant", "t1", AbortToken)).Should().ContainSingle();
+        _cache.ReceivedCalls().Should().BeEmpty();
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -182,6 +360,69 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
     private static FeatureValueRecord _Value(string name)
     {
         return new FeatureValueRecord(Guid.NewGuid(), name, "dark", "Tenant", "t1");
+    }
+
+    // A retrying strategy would replay both injected faults if the repository let them escape its delegate.
+    private sealed class RetryStrategy(ExecutionStrategyDependencies dependencies)
+        : ExecutionStrategy(dependencies, maxRetryCount: 3, maxRetryDelay: TimeSpan.Zero)
+    {
+        protected override bool ShouldRetryOn(Exception exception) => exception is SqliteException;
+    }
+
+    private sealed class RetryStrategyFactory(ExecutionStrategyDependencies dependencies) : IExecutionStrategyFactory
+    {
+        public IExecutionStrategy Create() => new RetryStrategy(dependencies);
+    }
+
+    private sealed class CommitFault : DbTransactionInterceptor
+    {
+        public bool Armed { get; set; }
+        public int Commits { get; private set; }
+
+        public override Task TransactionCommittedAsync(
+            DbTransaction transaction,
+            TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Commits++;
+            if (Armed)
+            {
+                Armed = false;
+                throw new SqliteException("lost commit reply", 5);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SaveObserver : SaveChangesInterceptor
+    {
+        public int Saves { get; set; }
+        public Exception? Failure { get; set; }
+        public int FailuresRemaining { get; set; }
+        public HashSet<Guid> Contexts { get; } = [];
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Saves++;
+            if (eventData.Context is { } context)
+            {
+                Contexts.Add(context.ContextId.InstanceId);
+            }
+
+            if (FailuresRemaining > 0 && Failure is { } failure)
+            {
+                FailuresRemaining--;
+                throw failure;
+            }
+
+            return ValueTask.FromResult(result);
+        }
     }
 
     public sealed class FeaturesDbContext(DbContextOptions<FeaturesDbContext> options) : DbContext(options)

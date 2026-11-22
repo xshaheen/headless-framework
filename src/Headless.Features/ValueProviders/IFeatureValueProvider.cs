@@ -127,7 +127,7 @@ public interface IFeatureValueProvider : IFeatureValueReadProvider
     /// <param name="cancellationToken">The abort token.</param>
     /// <exception cref="System.Data.DBConcurrencyException">The group changed after the version was read.</exception>
     /// <exception cref="NotSupportedException">This provider cannot version its values.</exception>
-    Task SetAllVersionedAsync(
+    Task<string> SetAllVersionedAsync(
         IReadOnlyList<KeyValuePair<FeatureDefinition, string?>> values,
         string? providerKey,
         string expectedVersion,

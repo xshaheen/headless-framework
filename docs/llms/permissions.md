@@ -47,7 +47,7 @@ Read a grant with `IPermissionManager.GetAsync` or `IsGrantedAsync`. Protect an 
 - A reason passed to `Fail(new AuthorizationFailureReason(...))` reaches the caller in the 403 `detail`. Keep internal detail out of it.
 - `SetAsync` throws `ConflictException` when the permission is undefined or disabled, when its `Providers` excludes `providerName`, or when no grant provider has that name. Catch it for user-facing validation.
 - A batch `SetAsync(IReadOnlyCollection<string>, ...)` is all-or-nothing: one invalid name rejects the whole batch.
-- For a role or user edit form that must not overwrite another admin's save, read with `GetVersionedAsync(names, providerName, providerKey)` and save with `SetVersionedAsync(grants, providerName, providerKey, version)`. A stale save throws `ConflictException` with `permissions:version-mismatch`. See [Editing grants with optimistic concurrency](#editing-grants-with-optimistic-concurrency).
+- For a role or user edit form that must not overwrite another admin's save, read with `GetVersionedAsync(names, providerName, providerKey)` and save with `SetVersionedAsync(grants, providerName, providerKey, version)`. A stale save throws `ConflictException` with `g:permission_version_mismatch`. See [Editing grants with optimistic concurrency](#editing-grants-with-optimistic-concurrency).
 - Do not call `IDynamicPermissionDefinitionStore.SaveAsync`. The `PermissionDefinitions` seeder saves definitions when the deployment runs `seed`. See [Definition Seeding](#definition-seeding).
 - Write grants only through `IPermissionManager`, `unit.Permissions`, or the EF `IPermissionGrantRepository`. Raw SQL, a direct `DbContext` write, or a direct call to the PostgreSQL or SQL Server repository leaves the grant cache stale for up to `GrantCacheExpiration` (5 hours).
 - Use the hybrid cache ([`UseHybrid`](caching/hybrid.md#headlesscachinghybrid)) in production. Every authorized request reads the grant cache. See [Grant Store and Caching](#grant-store-and-caching).
@@ -157,7 +157,7 @@ public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<Permis
 
 ### Editing grants with optimistic concurrency
 
-An edit form reads what a group of permissions holds for one role or user, lets an admin change it, and saves it back. `GetVersionedAsync` returns each permission's state for that target and the group's version. `SetVersionedAsync` saves only while the group still has that version. Otherwise it throws `ConflictException` with the error code `permissions:version-mismatch` and writes nothing. Over HTTP, the version is the `ETag`, and the save takes it in `If-Match`. The Headless API exception handler maps the `ConflictException` to 409.
+An edit form reads what a group of permissions holds for one role or user, lets an admin change it, and saves it back. `GetVersionedAsync` returns each permission's state for that target and the group's version. `SetVersionedAsync` saves only while the group still has that version. Otherwise it throws `ConflictException` with the error code `g:permission_version_mismatch` and writes nothing. Over HTTP, the version is the `ETag`, and the save takes it in `If-Match`. The Headless API exception handler maps the `ConflictException` to 409.
 
 Each state is a `bool?`: `true` grants, `false` explicitly prohibits, and `null` means the target holds no record. Saving `null` clears the target's record for that permission.
 
@@ -172,7 +172,7 @@ app.MapGet("/roles/{role}/permissions/orders", async (string role, IPermissionMa
     return Results.Ok(group.Grants);
 });
 
-app.MapPut("/roles/{role}/permissions/orders", async (string role, Dictionary<string, bool?> body, HttpRequest request, IPermissionManager permissions, CancellationToken ct) =>
+app.MapPut("/roles/{role}/permissions/orders", async (string role, Dictionary<string, bool?> body, HttpRequest request, HttpResponse response, IPermissionManager permissions, CancellationToken ct) =>
 {
     var version = request.Headers.IfMatch.ToString().Trim('"');
 
@@ -183,21 +183,23 @@ app.MapPut("/roles/{role}/permissions/orders", async (string role, Dictionary<st
 
     // Every name of the group, so an omitted name clears its record instead of failing the version check.
     var grants = orders.ToDictionary(name => name, name => body.GetValueOrDefault(name), StringComparer.Ordinal);
-    await permissions.SetVersionedAsync(grants, PermissionGrantProviderNames.Role, role, version, ct);
+    var savedVersion = await permissions.SetVersionedAsync(grants, PermissionGrantProviderNames.Role, role, version, ct);
+    response.Headers.ETag = $"\"{savedVersion}\"";
 
     return Results.NoContent();
 });
 ```
 
-**Verify:** in a test, call `GetVersionedAsync`, change one of the permissions with `GrantToRoleAsync` or `RevokeFromRoleAsync`, then call `SetVersionedAsync` with the version you read. It throws `ConflictException` whose `Errors[0].Code` is `permissions:version-mismatch`, and `GetVersionedAsync` returns the other write's state.
+**Verify:** in a test, call `GetVersionedAsync`, change one of the permissions with `GrantToRoleAsync` or `RevokeFromRoleAsync`, then call `SetVersionedAsync` with the version you read. It throws `ConflictException` whose `Errors[0].Code` is `g:permission_version_mismatch`, and `GetVersionedAsync` returns the other write's state.
 
 - **The group.** The version covers the names you pass, for one target (`providerName` and `providerKey`) in the current tenant. Two forms over different names do not block each other. A version read in one tenant never authorizes a save in another.
-- **Same names on save.** Save exactly the names you read. Another name set has another version, so a save with fewer or more names throws `permissions:version-mismatch`.
-- **What changes the version.** Any grant, prohibition, or clear of one of the group's permissions for that target, through any `IPermissionManager` member, `unit.Permissions`, or the EF repository. A write that leaves a permission in the state it already had stores nothing, so the version stays.
+- **Same names on save.** Save exactly the names you read. Another name set has another version, so a save with fewer or more names throws `g:permission_version_mismatch`.
+- **Stored representation.** The version covers the current local rows, not write history. An unchanged save writes nothing and returns the same token. An absent → grant → cleared sequence can reuse its original token.
 - **The target's own records.** The states are what the role or user itself holds, not a user's effective result across roles.
 - **Read from storage.** `GetVersionedAsync` reads the records from the database, not the grant cache.
-- **Atomicity.** The check and the write run in one serializable transaction. Of two saves from one version that change anything, exactly one succeeds, even when they change different permissions. A serialization failure that leaves the version unchanged is retried, up to three attempts.
+- **Atomicity.** The check and the write run in one serializable transaction. Of two saves that change the same group from one version, at most one succeeds. Only serialization, deadlock, or unique-violation failures before commit are retried, up to three attempts. Once commit starts, a failure is not replayed or translated to a version conflict. A lost commit reply leaves the outcome unknown.
 - **No schema change.** A grant record is never updated in place: a grant that becomes a prohibition is deleted and inserted again. The version hashes the record ids, so it needs no extra column.
+- **Returned version.** `SetVersionedAsync` returns the resulting token computed inside its transaction. Return that token as the PUT response's ETag, rather than issuing a later GET that could observe another writer. A cache-maintenance failure after a confirmed commit is logged and does not reject the save. Stale cache entries expire normally.
 - **Not in a unit of work.** `unit.Permissions` has no versioned write.
 - **Supported stores.** The EF Core, PostgreSQL, and SQL Server storage support it. A custom `IPermissionGrantProvider` must implement `GetVersionedAsync` and `SetVersionedAsync`, and a custom `IPermissionGrantRepository` must implement `SaveIfVersionAsync` and compute the version with `PermissionGrantVersion.Compute`. Their defaults throw `NotSupportedException`.
 

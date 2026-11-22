@@ -60,16 +60,20 @@ public static class PermissionGrantVersion
 
         var builder = new StringBuilder();
         builder
+            .Append(providerName.Length)
+            .Append(':')
             .Append(providerName)
             .Append('\n')
+            .Append(providerKey.Length)
+            .Append(':')
             .Append(providerKey)
             .Append('\n')
-            .Append(tenantId is null ? "\0" : "=" + tenantId)
+            .Append(tenantId is null ? "-" : tenantId.Length.ToString(CultureInfo.InvariantCulture) + ":" + tenantId)
             .Append('\n');
 
         foreach (var name in names.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
         {
-            builder.Append(name).Append('\t');
+            builder.Append(name.Length).Append(':').Append(name).Append('\t');
 
             if (tokensByName.TryGetValue(name, out var tokens))
             {

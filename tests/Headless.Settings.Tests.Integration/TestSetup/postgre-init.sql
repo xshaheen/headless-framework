@@ -45,7 +45,6 @@ BEGIN
         provider_key character varying(64),
         created_at timestamp with time zone NOT NULL,
         updated_at timestamp with time zone,
-        concurrency_stamp character varying(40),
         CONSTRAINT pk_setting_values PRIMARY KEY (id)
     );
     END IF;

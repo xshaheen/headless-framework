@@ -40,32 +40,40 @@ public static class FeatureValueVersion
         Argument.IsNotNull(names);
         Argument.IsNotNull(records);
 
-        var stampsByName = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var tokensByName = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
         foreach (var record in records)
         {
-            if (!stampsByName.TryGetValue(record.Name, out var stamps))
+            if (!tokensByName.TryGetValue(record.Name, out var tokens))
             {
-                stamps = [];
-                stampsByName[record.Name] = stamps;
+                tokens = [];
+                tokensByName[record.Name] = tokens;
             }
 
-            // A row written before the store kept stamps hashes its id instead. Its first update stores a stamp,
-            // which changes the hash as any other write does.
-            stamps.Add(record.ConcurrencyStamp ?? ("id:" + record.Id.ToString("N")));
+            tokens.Add(record.Id.ToString("N") + ":" + Convert.ToBase64String(Encoding.UTF8.GetBytes(record.Value)));
         }
 
         var builder = new StringBuilder();
-        builder.Append(providerName).Append('\n').Append(providerKey is null ? "\0" : "=" + providerKey).Append('\n');
+        builder
+            .Append(providerName.Length)
+            .Append(':')
+            .Append(providerName)
+            .Append('\n')
+            .Append(
+                providerKey is null
+                    ? "-"
+                    : providerKey.Length.ToString(CultureInfo.InvariantCulture) + ":" + providerKey
+            )
+            .Append('\n');
 
         foreach (var name in names.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
         {
-            builder.Append(name).Append('\t');
+            builder.Append(name.Length).Append(':').Append(name).Append('\t');
 
-            if (stampsByName.TryGetValue(name, out var stamps))
+            if (tokensByName.TryGetValue(name, out var tokens))
             {
-                stamps.Sort(StringComparer.Ordinal);
-                builder.AppendJoin(',', stamps);
+                tokens.Sort(StringComparer.Ordinal);
+                builder.AppendJoin(',', tokens);
             }
             else
             {

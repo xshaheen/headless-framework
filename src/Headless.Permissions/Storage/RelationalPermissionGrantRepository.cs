@@ -326,7 +326,7 @@ internal sealed class RelationalPermissionGrantRepository(
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task SaveIfVersionAsync(
+    public async Task<string> SaveIfVersionAsync(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
@@ -338,45 +338,74 @@ internal sealed class RelationalPermissionGrantRepository(
     {
         Argument.IsNotNullOrEmpty(names);
         Argument.IsNotNull(expectedVersion);
-
         var records = _Materialize(inserted, cancellationToken);
 
-        await using var connection = _dialect.CreateConnection(options.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        // Serializable, so the group read below holds until the commit: a concurrent insert of a name that was absent
-        // here fails one of the two transactions instead of letting both commit against the same version.
-        await using var transaction = await connection
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
-            .ConfigureAwait(false);
-
-        var (sql, bind) = _ByNames(names, providerName, providerKey);
-        var current = await _ReadAsync(connection, transaction, sql, bind, cancellationToken).ConfigureAwait(false);
-        var tenantId = services.GetService<ICurrentTenant>()?.Id;
-
-        if (
-            !string.Equals(
-                PermissionGrantVersion.Compute(providerName, providerKey, tenantId, names, current),
-                expectedVersion,
-                StringComparison.Ordinal
-            )
-        )
+        for (var attempt = 1; ; attempt++)
         {
-            throw new DBConcurrencyException("The permission grants changed after the version was read.");
-        }
+            var commitStarted = false;
+            try
+            {
+                await using var connection = _dialect.CreateConnection(options.ConnectionString);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        // The delete runs first because a replacement reuses the deleted row's unique key.
-        if (deleted.Count > 0)
-        {
-            await _DeleteAsync(connection, transaction, deleted, cancellationToken).ConfigureAwait(false);
-        }
+                // Serializable, so the group read below holds until the commit: a concurrent insert of a name that was absent
+                // here fails one of the two transactions instead of letting both commit against the same version.
+                await using var transaction = await connection
+                    .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                    .ConfigureAwait(false);
 
-        if (records.Count > 0)
-        {
-            await _InsertAsync(connection, transaction, records, cancellationToken).ConfigureAwait(false);
-        }
+                var (sql, bind) = _ByNames(names, providerName, providerKey);
+                var current = await _ReadAsync(connection, transaction, sql, bind, cancellationToken)
+                    .ConfigureAwait(false);
+                var tenantId = services.GetService<ICurrentTenant>()?.Id;
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                if (
+                    !string.Equals(
+                        PermissionGrantVersion.Compute(providerName, providerKey, tenantId, names, current),
+                        expectedVersion,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    throw new DBConcurrencyException("The permission grants changed after the version was read.");
+                }
+
+                // The delete runs first because a replacement reuses the deleted row's unique key.
+                if (deleted.Count > 0)
+                {
+                    await _DeleteAsync(connection, transaction, deleted, cancellationToken).ConfigureAwait(false);
+                }
+
+                if (records.Count > 0)
+                {
+                    await _InsertAsync(connection, transaction, records, cancellationToken).ConfigureAwait(false);
+                }
+
+                var result = PermissionGrantVersion.Compute(
+                    providerName,
+                    providerKey,
+                    tenantId,
+                    names,
+                    await _ReadAsync(connection, transaction, sql, bind, cancellationToken).ConfigureAwait(false)
+                );
+                commitStarted = true;
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return result;
+            }
+            catch (Exception exception)
+                when (!commitStarted
+                    && !cancellationToken.IsCancellationRequested
+                    && attempt < 3
+                    && _dialect.Classify(exception)
+                        is SqlErrorKind.SerializationConflict
+                            or SqlErrorKind.Deadlock
+                            or SqlErrorKind.UniqueViolation
+                )
+            {
+                // The transaction was disposed (rolled back) before retrying on a new connection. An indeterminate
+                // commit is deliberately outside this filter, even when its driver code looks transient.
+            }
+        }
     }
 
     private async Task _DeleteAsync(

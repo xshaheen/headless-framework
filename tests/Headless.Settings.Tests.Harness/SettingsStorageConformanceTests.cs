@@ -405,8 +405,6 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
                     ["settingdefinitions.description"] = 207,
                     ["settingdefinitions.defaultvalue"] = 208,
                     ["settingdefinitions.providers"] = 209,
-                    // not configurable: the stamp is always 32 characters
-                    ["settingvalues.concurrencystamp"] = SettingValueRecordConstants.ConcurrencyStampMaxLength,
                 }
             );
     }
@@ -462,14 +460,14 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
     [Fact]
     public async Task should_refuse_a_versioned_save_after_another_save_of_the_group()
     {
-        // given a group read with its version, then saved by someone else with the value it already held
+        // given a group read with its version, then changed by another writer
         await fixture.DropSchemaAsync(_Schema, AbortToken);
         using var host = fixture.CreateHost(_Schema);
         await host.StartAsync(AbortToken);
         var store = _CreateStore(host);
         await store.SetAllAsync(_Values(("Theme", "Dark"), ("Font", "Serif")), "Tenant", "t1", AbortToken);
         var read = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
-        await store.SetAllAsync(_Values(("Theme", "Dark")), "Tenant", "t1", AbortToken);
+        await store.SetAllAsync(_Values(("Theme", "Blue")), "Tenant", "t1", AbortToken);
 
         // when
         var act = () =>
@@ -484,7 +482,7 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         // then
         await act.Should().ThrowExactlyAsync<DBConcurrencyException>();
         var stored = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
-        stored.Values.Should().BeEquivalentTo([new SettingValue("Theme", "Dark"), new SettingValue("Font", "Serif")]);
+        stored.Values.Should().BeEquivalentTo([new SettingValue("Theme", "Blue"), new SettingValue("Font", "Serif")]);
         stored.Version.Should().NotBe(read.Version);
     }
 
@@ -527,7 +525,7 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         var read = await store.GetAllVersionedAsync(["Theme", "Font", "Locale"], "Tenant", "t1", AbortToken);
 
         // when the form changes one value, clears one, and adds one
-        await store.SetAllVersionedAsync(
+        var committedVersion = await store.SetAllVersionedAsync(
             _Values(("Theme", "Light"), ("Font", null), ("Locale", "ar")),
             "Tenant",
             "t1",
@@ -547,6 +545,7 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
                 new SettingValue("Locale", "ar"),
             ]);
         stored.Version.Should().NotBe(read.Version);
+        committedVersion.Should().Be(stored.Version);
         await replay.Should().ThrowExactlyAsync<DBConcurrencyException>();
     }
 
@@ -625,7 +624,51 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         // then
         await act.Should().ThrowExactlyAsync<DBConcurrencyException>();
         var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
-        stored.Should().ContainSingle().Which.ConcurrencyStamp.Should().Be(existing.ConcurrencyStamp);
+        stored.Should().ContainSingle().Which.Should().BeEquivalentTo(existing);
+    }
+
+    [Fact]
+    public async Task should_preserve_an_unchanged_version_and_accept_an_absent_set_cleared_version()
+    {
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host);
+        var absent = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+
+        var added = await store.SetAllVersionedAsync(
+            _Values(("Theme", "Dark"), ("Font", null)),
+            "Tenant",
+            "t1",
+            absent.Version,
+            AbortToken
+        );
+        var unchanged = await store.SetAllVersionedAsync(
+            _Values(("Theme", "Dark"), ("Font", null)),
+            "Tenant",
+            "t1",
+            added,
+            AbortToken
+        );
+        unchanged.Should().Be(added);
+        var cleared = await store.SetAllVersionedAsync(
+            _Values(("Theme", null), ("Font", null)),
+            "Tenant",
+            "t1",
+            unchanged,
+            AbortToken
+        );
+        cleared.Should().Be(absent.Version);
+
+        var restored = await store.SetAllVersionedAsync(
+            _Values(("Theme", "Dark"), ("Font", null)),
+            "Tenant",
+            "t1",
+            absent.Version,
+            AbortToken
+        );
+        var current = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+        restored.Should().Be(current.Version);
     }
 
     private async Task<bool> _TrySaveAsync(SettingValueStore store, Dictionary<string, string?> values, string version)

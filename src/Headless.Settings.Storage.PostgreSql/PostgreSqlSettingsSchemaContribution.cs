@@ -13,7 +13,6 @@ internal static class PostgreSqlSettingsSchemaContribution
 {
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
-    public const string ConcurrencyStampStepVersion = "3";
 
     private static readonly RelationalSettingsTables _Defaults = new(
         PostgreSqlDialect.Instance,
@@ -67,14 +66,6 @@ internal static class PostgreSqlSettingsSchemaContribution
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{valuesName}_name_provider_name_null_provider_key" ON {valuesTable} ("name", "provider_name") WHERE "provider_key" IS NULL;
             """;
 
-        // Nullable: a row written before this step has no stamp, and a versioned read hashes its id in place of one.
-        var concurrencyStampSql = string.Create(
-            CultureInfo.InvariantCulture,
-            $"""
-            ALTER TABLE {valuesTable} ADD COLUMN IF NOT EXISTS "concurrency_stamp" character varying({SettingValueRecordConstants.ConcurrencyStampMaxLength});
-            """
-        );
-
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Settings",
@@ -91,11 +82,6 @@ internal static class PostgreSqlSettingsSchemaContribution
                     IndexesStepVersion,
                     "Create the setting definition and value unique indexes.",
                     indexesSql
-                ),
-                new SchemaStep(
-                    ConcurrencyStampStepVersion,
-                    "Add the setting value concurrency stamp column.",
-                    concurrencyStampSql
                 ),
             ],
             hostStateTables: [definitionsName],

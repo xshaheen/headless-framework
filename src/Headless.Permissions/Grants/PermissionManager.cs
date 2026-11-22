@@ -163,7 +163,7 @@ public sealed class PermissionManager(
     }
 
     /// <inheritdoc/>
-    public async Task SetVersionedAsync(
+    public async Task<string> SetVersionedAsync(
         IReadOnlyDictionary<string, bool?> grants,
         string providerName,
         string providerKey,
@@ -182,9 +182,13 @@ public sealed class PermissionManager(
             grants[permission.Name]
         ));
 
+        string committedVersion;
+
         try
         {
-            await provider.SetVersionedAsync(writes, providerKey, version, cancellationToken).ConfigureAwait(false);
+            committedVersion = await provider
+                .SetVersionedAsync(writes, providerKey, version, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (DBConcurrencyException)
         {
@@ -193,6 +197,8 @@ public sealed class PermissionManager(
 
         await _PublishChangedAsync([.. grants.Keys], providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
+
+        return committedVersion;
     }
 
     public async Task DeleteAsync(

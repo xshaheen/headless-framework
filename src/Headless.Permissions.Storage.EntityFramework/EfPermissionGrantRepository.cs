@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Runtime.ExceptionServices;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.MultiTenancy;
@@ -221,7 +222,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
     }
 
     /// <inheritdoc/>
-    public async Task SaveIfVersionAsync(
+    public async Task<string> SaveIfVersionAsync(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
@@ -233,69 +234,128 @@ internal sealed class EfPermissionGrantRepository<TContext>(
     {
         Argument.IsNotNullOrEmpty(names);
         Argument.IsNotNull(expectedVersion);
-
         var owned = _OwnedByCurrentTenant(deleted);
+        await using var strategyContext = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var strategy = strategyContext.Database.CreateExecutionStrategy();
 
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        for (var attempt = 1; ; attempt++)
+        {
+            var commitStarted = false;
+            // Return faults through the strategy, then classify outside it. In particular a lost commit reply must
+            // never enter the strategy's replay loop or become an apparent version conflict on a second attempt.
+            var outcome = await strategy
+                .ExecuteAsync(
+                    async ct =>
+                    {
+                        try
+                        {
+                            await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+                            await using var transaction = await db
+                                .Database.BeginTransactionAsync(IsolationLevel.Serializable, ct)
+                                .ConfigureAwait(false);
+                            var query = _Grants(db)
+                                .Where(s =>
+                                    names.Contains(s.Name)
+                                    && s.ProviderName == providerName
+                                    && s.ProviderKey == providerKey
+                                );
+                            var current = await query.ToListAsync(ct).ConfigureAwait(false);
+                            var version = PermissionGrantVersion.Compute(
+                                providerName,
+                                providerKey,
+                                currentTenant.Id,
+                                names,
+                                current
+                            );
+                            if (!string.Equals(version, expectedVersion, StringComparison.Ordinal))
+                            {
+                                throw new DBConcurrencyException(
+                                    "The permission grants changed after the version was read."
+                                );
+                            }
 
-        // Through the execution strategy: a retrying strategy refuses a user-initiated transaction outside it. A retry
-        // re-reads the group, so a write that committed meanwhile surfaces as a version mismatch, not a duplicate.
-        await db
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                (Db: db, Names: names, ProviderName: providerName, ProviderKey: providerKey),
-                async (_, state, ct) =>
-                {
-                    state.Db.ChangeTracker.Clear();
+                            using (_BeginHostWrite([.. inserted, .. owned]))
+                            {
+                                var set = db.Set<PermissionGrantRecord>();
+                                set.RemoveRange(owned);
+                                set.AddRange(inserted);
+                                if (inserted.Count != 0 || owned.Count != 0)
+                                {
+                                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                                }
+                            }
 
-                    // Serializable, so the group read below holds until the commit: a concurrent insert of a name that
-                    // was absent here fails one of the two transactions instead of letting both commit.
-                    await using var transaction = await state
-                        .Db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct)
-                        .ConfigureAwait(false);
+                            // Read the resulting rows before commit, not through a later GET that could observe another save.
+                            var result = PermissionGrantVersion.Compute(
+                                providerName,
+                                providerKey,
+                                currentTenant.Id,
+                                names,
+                                await query.ToListAsync(ct).ConfigureAwait(false)
+                            );
+                            commitStarted = true;
+                            await transaction.CommitAsync(ct).ConfigureAwait(false);
+                            return (Version: result, Error: (ExceptionDispatchInfo?)null);
+                        }
+#pragma warning disable CA1031 // Preserve the original failure outside the execution strategy, where commit state is known.
+                        catch (Exception exception)
+#pragma warning restore CA1031
+                        {
+                            return (Version: string.Empty, Error: ExceptionDispatchInfo.Capture(exception));
+                        }
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-                    var current = await _Grants(state.Db)
-                        .Where(s =>
-                            state.Names.Contains(s.Name)
-                            && s.ProviderName == state.ProviderName
-                            && s.ProviderKey == state.ProviderKey
+            if (outcome.Error is { } error)
+            {
+                var fault = RelationalFaults.FindDatabaseException(error.SourceException);
+                var conflict =
+                    RelationalFaults.IsUniqueViolation(error.SourceException)
+                    || (
+                        fault is not null
+                        && (
+                            fault.SqlState
+                                is SqlErrorCodes.PostgreSql.SerializationFailure
+                                    or SqlErrorCodes.PostgreSql.DeadlockDetected
+                            || RelationalFaults
+                                .GetSqlServerErrorNumbers(fault)
+                                .Any(number =>
+                                    number
+                                        is SqlErrorCodes.SqlServer.DeadlockVictim
+                                            or SqlErrorCodes.SqlServer.SnapshotUpdateConflict
+                                )
+                            || (
+                                string.Equals(
+                                    fault.GetType().FullName,
+                                    "Microsoft.Data.Sqlite.SqliteException",
+                                    StringComparison.Ordinal
+                                ) && RelationalTransientFaults.IsTransient(fault, cancellationToken)
+                            )
                         )
-                        .ToListAsync(ct)
-                        .ConfigureAwait(false);
-
-                    var version = PermissionGrantVersion.Compute(
-                        state.ProviderName,
-                        state.ProviderKey,
-                        currentTenant.Id,
-                        state.Names,
-                        current
                     );
+                if (!commitStarted && !cancellationToken.IsCancellationRequested && conflict && attempt < 3)
+                {
+                    continue;
+                }
 
-                    if (!string.Equals(version, expectedVersion, StringComparison.Ordinal))
-                    {
-                        throw new DBConcurrencyException("The permission grants changed after the version was read.");
-                    }
+                error.Throw();
+            }
 
-                    using (_BeginHostWrite([.. inserted, .. owned]))
-                    {
-                        var set = state.Db.Set<PermissionGrantRecord>();
-                        set.RemoveRange(owned);
-                        set.AddRange(inserted);
+            try
+            {
+                await _WriteCacheAsync(inserted, owned, cancellationToken).ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // The write committed; a cache fault is logged and repaired by expiry, never replayed.
+            catch (Exception exception)
+#pragma warning restore CA1031
+            {
+                logger.LogFailedToInvalidateGrantCache(exception, names.Count);
+            }
 
-                        // EF orders a delete before an insert that reuses its unique key.
-                        await state.Db.SaveChangesAsync(ct).ConfigureAwait(false);
-                    }
-
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
-
-                    return true;
-                },
-                verifySucceeded: null,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        await _WriteCacheAsync(inserted, owned, cancellationToken).ConfigureAwait(false);
+            return outcome.Version;
+        }
     }
 
     public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(

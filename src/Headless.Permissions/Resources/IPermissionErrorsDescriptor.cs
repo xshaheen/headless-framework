@@ -31,7 +31,7 @@ public interface IPermissionErrorsDescriptor
     /// Returns the error for a versioned write whose grants changed after the caller read their version.
     /// </summary>
     /// <param name="providerName">The grant provider name the write targeted.</param>
-    /// <returns>An error with the code <c>permissions:version-mismatch</c>.</returns>
+    /// <returns>An error with the code <c>g:permission_version_mismatch</c>.</returns>
     /// <remarks>A default member, so an existing implementation keeps compiling and returns the built-in message.</remarks>
     ErrorDescriptor VersionMismatch(string providerName) =>
         DefaultPermissionErrorsDescriptor.CreateVersionMismatch(providerName);
@@ -123,7 +123,7 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
 
     internal static ErrorDescriptor CreateVersionMismatch(string providerName)
     {
-        return new ErrorDescriptor("permissions:version-mismatch", Messages.permissions_version_mismatch).WithParam(
+        return new ErrorDescriptor("g:permission_version_mismatch", Messages.permissions_version_mismatch).WithParam(
             "providerName",
             providerName
         );

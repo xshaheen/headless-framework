@@ -83,7 +83,7 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
     }
 
     /// <summary>Accepts every save and stores nothing, like the other writes of this manager.</summary>
-    public Task SetVersionedAsync(
+    public Task<string> SetVersionedAsync(
         IReadOnlyDictionary<string, bool?> grants,
         string providerName,
         string providerKey,
@@ -91,7 +91,7 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
         CancellationToken cancellationToken = default
     )
     {
-        return Task.CompletedTask;
+        return Task.FromResult(_Version);
     }
 
     private const string _Version = "always-allow";

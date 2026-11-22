@@ -90,7 +90,7 @@ public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantSt
     }
 
     /// <inheritdoc/>
-    public Task SetVersionedAsync(
+    public Task<string> SetVersionedAsync(
         IReadOnlyList<KeyValuePair<PermissionDefinition, bool?>> grants,
         string providerKey,
         string expectedVersion,

@@ -11,8 +11,8 @@ namespace Headless.Settings;
 /// <see langword="null"/> <see cref="SettingValue.Value"/> means no provider holds one.
 /// </param>
 /// <param name="Version">
-/// An opaque token that changes on every save of any setting in the group at this scope, even one that stores the
-/// same value. Use it as an HTTP entity tag.
+/// An opaque token of the current stored representation at this scope. An unchanged save preserves it, and returning
+/// to an absent representation can reuse it. Inherited values are not covered. Use it as a scope-local HTTP entity tag.
 /// </param>
 [PublicAPI]
 public sealed record VersionedSettingValues(IReadOnlyList<SettingValue> Values, string Version);

@@ -377,7 +377,7 @@ public sealed class FeatureManager(
     }
 
     /// <inheritdoc/>
-    public Task SetVersionedAsync(
+    public Task<string> SetVersionedAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,
@@ -498,7 +498,7 @@ public sealed class FeatureManager(
     /// run inside its transaction and the change is announced after it commits. With <paramref name="expectedVersion"/>,
     /// the one provider writes only while the group still has that version.
     /// </summary>
-    private async Task _SetCoreAsync(
+    private async Task<string> _SetCoreAsync(
         IUnitOfWork? unitOfWork,
         IReadOnlyDictionary<string, string?> values,
         string providerName,
@@ -513,7 +513,7 @@ public sealed class FeatureManager(
 
         if (values.Count == 0)
         {
-            return;
+            return string.Empty;
         }
 
         var writes = new List<KeyValuePair<FeatureDefinition, string?>>(values.Count);
@@ -548,13 +548,15 @@ public sealed class FeatureManager(
                 .ConfigureAwait(false);
         }
 
+        var committedVersion = string.Empty;
+
         foreach (var provider in writeProviders)
         {
             if (expectedVersion is not null)
             {
                 try
                 {
-                    await provider
+                    committedVersion = await provider
                         .SetAllVersionedAsync(writes, providerKey, expectedVersion, cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -584,6 +586,8 @@ public sealed class FeatureManager(
         {
             _PublishChangedAfterCommit(unitOfWork, [.. values.Keys], providerName, providerKey);
         }
+
+        return committedVersion;
     }
 
     /// <summary>

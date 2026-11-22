@@ -531,7 +531,7 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
         );
 
         // when the form keeps one grant, clears one, and prohibits one
-        await store.SetVersionedAsync(
+        var committedVersion = await store.SetVersionedAsync(
             _Grants(("Users.Create", true), ("Users.Delete", null), ("Users.Export", false)),
             "Role",
             "admin",
@@ -552,6 +552,7 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
             .Grants.Should()
             .BeEquivalentTo(_Grants(("Users.Create", true), ("Users.Delete", null), ("Users.Export", false)));
         stored.Version.Should().NotBe(read.Version);
+        committedVersion.Should().Be(stored.Version);
         await replay.Should().ThrowExactlyAsync<DBConcurrencyException>();
     }
 
@@ -606,6 +607,51 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
         results.Should().ContainSingle(saved => saved);
         var stored = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
         stored.Grants.Values.Count(x => x is not null).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_preserve_an_unchanged_version_and_accept_an_absent_set_cleared_version()
+    {
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        var tenant = new TestCurrentTenant("tenant-a");
+        using var host = _CreateTenantHost(tenant);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host, tenant);
+        var absent = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+
+        var added = await store.SetVersionedAsync(
+            _Grants(("Users.Create", true), ("Users.Delete", null)),
+            "Role",
+            "admin",
+            absent.Version,
+            AbortToken
+        );
+        var unchanged = await store.SetVersionedAsync(
+            _Grants(("Users.Create", true), ("Users.Delete", null)),
+            "Role",
+            "admin",
+            added,
+            AbortToken
+        );
+        unchanged.Should().Be(added);
+        var cleared = await store.SetVersionedAsync(
+            _Grants(("Users.Create", null), ("Users.Delete", null)),
+            "Role",
+            "admin",
+            unchanged,
+            AbortToken
+        );
+        cleared.Should().Be(absent.Version);
+
+        var restored = await store.SetVersionedAsync(
+            _Grants(("Users.Create", true), ("Users.Delete", null)),
+            "Role",
+            "admin",
+            absent.Version,
+            AbortToken
+        );
+        var current = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+        restored.Should().Be(current.Version);
     }
 
     private IHost _CreateTenantHost(TestCurrentTenant tenant)

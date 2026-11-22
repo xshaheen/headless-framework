@@ -37,7 +37,7 @@ public interface IFeatureErrorsDescriptor
     /// Returns the error for a versioned write whose features changed after the caller read their version.
     /// </summary>
     /// <param name="providerName">The provider name of the scope the write targeted.</param>
-    /// <returns>An error with the code <c>features:version-mismatch</c>.</returns>
+    /// <returns>An error with the code <c>g:feature_version_mismatch</c>.</returns>
     /// <remarks>A default member, so an existing implementation keeps compiling and returns the built-in message.</remarks>
     ErrorDescriptor VersionMismatch(string providerName) =>
         DefaultFeatureErrorsDescriptor.CreateVersionMismatch(providerName);
@@ -99,7 +99,7 @@ public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
 
     internal static ErrorDescriptor CreateVersionMismatch(string providerName)
     {
-        return new ErrorDescriptor("features:version-mismatch", FeatureMessages.features_version_mismatch).WithParam(
+        return new ErrorDescriptor("g:feature_version_mismatch", FeatureMessages.features_version_mismatch).WithParam(
             "providerName",
             providerName
         );

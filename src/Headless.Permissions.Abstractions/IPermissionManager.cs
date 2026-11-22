@@ -134,19 +134,19 @@ public interface IPermissionManager
     /// <param name="version">The <see cref="VersionedPermissionGrants.Version"/> the caller read.</param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <remarks>
-    /// The check and the write run in one serializable transaction, so of two saves made from the same version that
-    /// change anything, exactly one succeeds. A successful save announces one
-    /// <see cref="PermissionGrantChangedMessage"/>; a refused one writes nothing.
+    /// The check and the write run in one serializable transaction. Of two saves that change the same group from one
+    /// version, at most one succeeds. An unchanged save writes nothing and preserves the token. A successful save
+    /// announces one <see cref="PermissionGrantChangedMessage"/>. The returned token is computed inside the transaction.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="grants"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="grants"/> is empty, or <paramref name="version"/> is empty or white space.</exception>
     /// <exception cref="Headless.ConflictException">
-    /// The group changed after <paramref name="version"/> was read (error code <c>permissions:version-mismatch</c>,
+    /// The group changed after <paramref name="version"/> was read (error code <c>g:permission_version_mismatch</c>,
     /// also raised when the names differ from the ones read), or a permission is not defined, is disabled, or does not
     /// allow <paramref name="providerName"/>, or no grant provider with that name is registered.
     /// </exception>
     /// <exception cref="NotSupportedException">The provider's storage cannot version its grants.</exception>
-    Task SetVersionedAsync(
+    Task<string> SetVersionedAsync(
         IReadOnlyDictionary<string, bool?> grants,
         string providerName,
         string providerKey,

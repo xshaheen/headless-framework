@@ -453,9 +453,6 @@ public sealed class PermissionGrantStore(
         return names;
     }
 
-    /// <summary>How many times a versioned batch is tried when a failure leaves its version unchanged.</summary>
-    private const int _MaxVersionedSaveAttempts = 3;
-
     public async Task<VersionedPermissionGrants> GetVersionedAsync(
         IReadOnlyCollection<string> names,
         string providerName,
@@ -488,7 +485,7 @@ public sealed class PermissionGrantStore(
         );
     }
 
-    public async Task SetVersionedAsync(
+    public async Task<string> SetVersionedAsync(
         IReadOnlyDictionary<string, bool?> grants,
         string providerName,
         string providerKey,
@@ -502,92 +499,54 @@ public sealed class PermissionGrantStore(
         var names = _EnsureBatch([.. grants.Keys], providerName, providerKey);
         var tenantId = _WriteTenantId();
 
-        for (var attempt = 1; ; attempt++)
+        var existing = await repository
+            .GetListAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Checked here too, so a stale write fails before it opens a serializable transaction.
+        _EnsureVersion(existing);
+
+        var deleted = new List<PermissionGrantRecord>();
+        var inserted = new List<PermissionGrantRecord>();
+
+        foreach (var (name, isGranted) in grants)
         {
-            var existing = await repository
-                .GetListAsync(names, providerName, providerKey, cancellationToken)
-                .ConfigureAwait(false);
+            var record = existing.Find(x => string.Equals(x.Name, name, StringComparison.Ordinal));
 
-            // Checked here too, so a stale write fails before it opens a serializable transaction.
-            _EnsureVersion(existing);
-
-            var deleted = new List<PermissionGrantRecord>();
-            var inserted = new List<PermissionGrantRecord>();
-
-            foreach (var (name, isGranted) in grants)
+            if (record is not null && record.IsGranted == isGranted)
             {
-                var record = existing.Find(x => string.Equals(x.Name, name, StringComparison.Ordinal));
-
-                if (record is not null && record.IsGranted == isGranted)
-                {
-                    continue;
-                }
-
-                if (record is not null)
-                {
-                    deleted.Add(record);
-                }
-
-                if (isGranted is { } state)
-                {
-                    inserted.Add(
-                        new PermissionGrantRecord(
-                            guidGenerator.Create(),
-                            name,
-                            providerName,
-                            providerKey,
-                            state,
-                            tenantId
-                        )
-                    );
-                }
+                continue;
             }
 
-            if (inserted.Count == 0 && deleted.Count == 0)
+            if (record is not null)
             {
-                return;
+                deleted.Add(record);
             }
 
-            try
+            if (isGranted is { } state)
             {
-                await repository
-                    .SaveIfVersionAsync(
-                        names,
-                        providerName,
-                        providerKey,
-                        expectedVersion,
-                        inserted,
-                        deleted,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                inserted.Add(
+                    new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, state, tenantId)
+                );
             }
-            catch (Exception exception)
-                when (exception is not DBConcurrencyException and not NotSupportedException
-                    && !cancellationToken.IsCancellationRequested
-                )
-            {
-                // A serialization failure, a deadlock victim, or a unique-key violation: the engine stopped this
-                // transaction because another one touched the group. Only the stored version says whether that writer
-                // committed a change; if it did not, the failure was spurious and the batch is tried again.
-                var current = await repository
-                    .GetListAsync(names, providerName, providerKey, cancellationToken)
-                    .ConfigureAwait(false);
-
-                _EnsureVersion(current);
-
-                if (attempt < _MaxVersionedSaveAttempts)
-                {
-                    continue;
-                }
-
-                throw;
-            }
-
-            await _SyncCacheAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
-
-            return;
         }
+
+        var committedVersion = await repository
+            .SaveIfVersionAsync(names, providerName, providerKey, expectedVersion, inserted, deleted, cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            await _SyncCacheAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // The write committed; cache maintenance must not report a rejected save.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            logger.LogFailedToInvalidateGrantCache(exception, names.Count);
+        }
+
+        return committedVersion;
 
         void _EnsureVersion(List<PermissionGrantRecord> records)
         {
@@ -1260,7 +1219,7 @@ public interface IPermissionGrantStore
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="System.Data.DBConcurrencyException">The group changed after the version was read.</exception>
     /// <exception cref="NotSupportedException">This store or its repository cannot write a versioned group.</exception>
-    Task SetVersionedAsync(
+    Task<string> SetVersionedAsync(
         IReadOnlyDictionary<string, bool?> grants,
         string providerName,
         string providerKey,

@@ -480,7 +480,7 @@ public sealed class SettingManager(
     }
 
     /// <inheritdoc/>
-    public Task SetVersionedAsync(
+    public Task<string> SetVersionedAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,
         string? providerKey,
@@ -599,7 +599,7 @@ public sealed class SettingManager(
     /// its transaction and the change is announced after it commits. With <paramref name="expectedVersion"/>, the one
     /// provider writes only while the group still has that version.
     /// </summary>
-    private async Task _SetCoreAsync(
+    private async Task<string> _SetCoreAsync(
         IUnitOfWork? unitOfWork,
         IReadOnlyDictionary<string, string?> values,
         string providerName,
@@ -614,7 +614,7 @@ public sealed class SettingManager(
 
         if (values.Count == 0)
         {
-            return;
+            return string.Empty;
         }
 
         var requested = new List<KeyValuePair<SettingDefinition, string?>>(values.Count);
@@ -635,6 +635,18 @@ public sealed class SettingManager(
             writeProviders = [_VersionedProvider(providerName, writeProviders)];
         }
 
+        var currentEncrypted = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (expectedVersion is not null && requested.Exists(item => item.Key.IsEncrypted))
+        {
+            var stored = await writeProviders[0]
+                .GetAllVersionedAsync(requested.ConvertAll(item => item.Key), providerKey, cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var item in stored.Values)
+            {
+                currentEncrypted[item.Name] = item.Value;
+            }
+        }
+
         var writes = new List<KeyValuePair<SettingDefinition, string?>>(requested.Count);
 
         foreach (var (setting, value) in requested)
@@ -647,6 +659,7 @@ public sealed class SettingManager(
                     providers,
                     forceToSet,
                     unitOfWork,
+                    currentEncrypted.GetValueOrDefault(setting.Name),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -654,13 +667,15 @@ public sealed class SettingManager(
             writes.Add(new(setting, storedValue));
         }
 
+        var committedVersion = string.Empty;
+
         foreach (var provider in writeProviders)
         {
             if (expectedVersion is not null)
             {
                 try
                 {
-                    await provider
+                    committedVersion = await provider
                         .SetAllVersionedAsync(writes, providerKey, expectedVersion, cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -690,6 +705,8 @@ public sealed class SettingManager(
         {
             _PublishChangedAfterCommit(unitOfWork, [.. values.Keys], providerName, providerKey);
         }
+
+        return committedVersion;
     }
 
     /// <summary>
@@ -704,6 +721,7 @@ public sealed class SettingManager(
         List<ISettingValueReadProvider> providers,
         bool forceToSet,
         IUnitOfWork? unitOfWork,
+        string? existingCiphertext,
         CancellationToken cancellationToken
     )
     {
@@ -736,6 +754,17 @@ public sealed class SettingManager(
         // fresh nonce, so comparing ciphertext would never match.
         if (setting.IsEncrypted)
         {
+            if (existingCiphertext is not null)
+            {
+                var plaintext = await encryptionService
+                    .DecryptAsync(setting, existingCiphertext, providerName, providerKey, cancellationToken)
+                    .ConfigureAwait(false);
+                if (string.Equals(plaintext, value, StringComparison.Ordinal))
+                {
+                    return existingCiphertext;
+                }
+            }
+
             value = await encryptionService
                 .EncryptAsync(setting, value, providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false);
