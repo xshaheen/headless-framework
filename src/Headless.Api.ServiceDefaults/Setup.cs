@@ -8,6 +8,7 @@ using FluentValidation;
 using FluentValidation.Resources;
 using Headless.Api;
 using Headless.Api.Security;
+using Headless.Api.ServiceDefaults.Internal;
 using Headless.AuditLog;
 using Headless.Checks;
 using Headless.Context;
@@ -138,6 +139,11 @@ public static class SetupApi
                 _ => new StatusCodesRewriterCalledNotifier(startupState)
             );
             builder.Services.AddStartupValidator<HeadlessServiceDefaultsStartupValidator>();
+
+            // The Headless console profile and enrichment, with the request's user, account, correlation ID, client IP,
+            // and selected headers on every entry written inside a request.
+            builder.AddHeadlessLogging(options.Logging);
+            builder.Services.AddLogEnricher<RequestLogEnricher>();
 
             // Classified values are erased, and declared credential paths replaced, in every log, HTTP logging record,
             // and request span. A later AddHeadlessRedaction(setup => setup.UseHmac(...)) adds a key without undoing this.

@@ -509,6 +509,7 @@
           "Headless.Api": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Logging": "[1.0.0, )",
           "Headless.Logging.Redaction.AspNetCore": "[1.0.0, )",
           "Headless.OpenApi": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.15, )",
