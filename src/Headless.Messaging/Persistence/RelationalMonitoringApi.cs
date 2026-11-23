@@ -20,7 +20,7 @@ internal sealed class RelationalMonitoringApi(
     IOptions<MessagingOptions> messagingOptions,
     IMessageSerializer serializer,
     TimeProvider timeProvider,
-    bool holdsReceived = true
+    bool holdsReceived
 ) : IMonitoringApi
 {
     private const int _HourlyBuckets = 24;
@@ -565,7 +565,6 @@ internal sealed class RelationalMonitoringApi(
         Argument.IsNotNullOrEmpty(query.CorrelationId);
         Argument.IsInclusiveBetween(query.Limit, 1, int.MaxValue - 1);
 
-        // A column holds no id this long, so no row can match it.
         if (query.CorrelationId.Length > StoredCorrelation.MaxLength)
         {
             return new MessageTraceResult { Published = [], Received = [] };

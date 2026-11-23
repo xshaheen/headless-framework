@@ -54,7 +54,6 @@ internal static class RelationalMessageFilter
             where += ExactText(t.MessageId, "FilterMessageId");
         }
 
-        // An empty id matches every row, as the filter's contract says.
         var correlationId = string.IsNullOrEmpty(query.CorrelationId) ? null : query.CorrelationId;
 
         if (correlationId is not null)
