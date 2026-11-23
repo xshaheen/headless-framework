@@ -125,9 +125,9 @@ internal sealed class RedactingLoggerFactory(
             // A level nobody listens to costs nothing: no copy, no redactor call.
             if (
                 redactorProvider is not null
-                && inner.IsEnabled(logLevel)
                 && state is LoggerMessageState { ClassifiedTagsCount: > 0 } classified
                 && classified.RedactedTagArray.Length >= classified.ClassifiedTagsCount
+                && inner.IsEnabled(logLevel)
             )
             {
                 _LogClassified(logLevel, eventId, classified, exception, formatter, redactorProvider);
@@ -136,7 +136,10 @@ internal sealed class RedactingLoggerFactory(
             }
 
             if (
-                (propertyRedactors.Count > 0 || (projection is not null && LogStateShape<TState>.MayCarryObjects))
+                (
+                    propertyRedactors.Count > 0
+                    || (projection is not null && LogStateShape<TState>.MayCarryObjects && _MayHoldObject(state))
+                )
                 && state is IReadOnlyList<KeyValuePair<string, object?>> values
                 && inner.IsEnabled(logLevel)
                 && _TryRedactNames(values, out var named, out var rewrites)
@@ -160,6 +163,28 @@ internal sealed class RedactingLoggerFactory(
             }
 
             inner.Log(logLevel, eventId, state, exception, formatter);
+        }
+
+        // A generated message's values sit in an array, so an entry built from strings, numbers, and dates is ruled out
+        // without going through the list interface value by value; any other state is looked at in full.
+        private static bool _MayHoldObject<TState>(TState state)
+        {
+            if (state is not LoggerMessageState generated)
+            {
+                return true;
+            }
+
+            var tags = generated.TagArray;
+
+            for (var i = 0; i < generated.TagsCount; i++)
+            {
+                if (tags[i].Value is { } value && Type.GetTypeCode(value.GetType()) == TypeCode.Object)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // The generator's state is a thread-local instance it clears once Log returns, so everything a provider might

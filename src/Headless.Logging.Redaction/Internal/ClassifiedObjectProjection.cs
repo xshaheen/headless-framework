@@ -59,7 +59,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     {
         projection = null!;
 
-        if (value is null || !_Needs(value, 0))
+        // Most logged values are strings, numbers, dates, and enums: a type-code check rules them out without the
+        // shape lookup, which every entry would otherwise pay once per value.
+        if (value is null || Type.GetTypeCode(value.GetType()) != TypeCode.Object || !_Needs(value, 0))
         {
             return false;
         }
