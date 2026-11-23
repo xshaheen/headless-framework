@@ -504,6 +504,66 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
         );
     }
 
+    public virtual async Task an_operation_scope_for_a_correlation_id_never_reaches_a_run_with_a_different_case()
+    {
+        await _RunAsync(
+            "reads-correlation-scope",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var upperCron = await _SeedCronAsync(ct, correlationId: "C-42");
+                var lowerCron = await _SeedCronAsync(ct, correlationId: "c-42");
+                var upper = await _AddTimeJobAsync(store, JobStatus.Failed, at, ct, correlationId: "C-42");
+                var lower = await _AddTimeJobAsync(
+                    store,
+                    JobStatus.Failed,
+                    at.AddMinutes(1),
+                    ct,
+                    correlationId: "c-42"
+                );
+                var upperOccurrence = await _AddOccurrenceAsync(
+                    store,
+                    upperCron,
+                    JobStatus.Failed,
+                    at.AddMinutes(2),
+                    ct
+                );
+                var lowerOccurrence = await _AddOccurrenceAsync(
+                    store,
+                    lowerCron,
+                    JobStatus.Failed,
+                    at.AddMinutes(3),
+                    ct
+                );
+                var highWater = (await store.GetLatestChangeMarkerAsync(ct))!.Value;
+                var query = new JobRunQuery { CorrelationId = "c-42" };
+
+                foreach (var kind in new[] { JobOperationKind.Requeue, JobOperationKind.Delete })
+                {
+                    var scope = _Scope(kind, highWater) with { Query = query };
+
+                    var chunk = await store.ReadJobOperationScopeAsync(scope, after: null, chunkSize: 10, ct);
+                    var reach = await store.CountJobOperationScopeAsync(scope, cancellationToken: ct);
+
+                    chunk.Targets.Select(x => x.Id).Should().BeEquivalentTo([lower, lowerOccurrence], kind.ToString());
+                    reach.Should().Be(new JobRunCount(2, Capped: false), kind.ToString());
+                    chunk.Targets.Select(x => x.Id).Should().NotContain([upper, upperOccurrence], kind.ToString());
+                }
+
+                var timeScope = _Scope(JobOperationKind.Delete, highWater) with { Query = query };
+                var firstOnly = await store.ReadJobOperationScopeAsync(timeScope, after: null, chunkSize: 1, ct);
+                firstOnly.Targets.Should().ContainSingle().Which.Id.Should().Be(lower);
+
+                var buckets = await store.CountJobRunsByBucketAsync(query, [at.AddMinutes(-1), at.AddMinutes(10)], ct);
+                buckets
+                    .Should()
+                    .ContainSingle()
+                    .Which.Counts.Should()
+                    .BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Failed] = 2 });
+            }
+        );
+    }
+
     public virtual async Task a_correlation_read_lists_a_chain_oldest_first_with_each_causation_key()
     {
         await _RunAsync(

@@ -140,6 +140,12 @@ public sealed class SqlServerDashboardReadsTests(SqlServerJobsCoordinationFixtur
     }
 
     [Fact]
+    public override Task an_operation_scope_for_a_correlation_id_never_reaches_a_run_with_a_different_case()
+    {
+        return base.an_operation_scope_for_a_correlation_id_never_reaches_a_run_with_a_different_case();
+    }
+
+    [Fact]
     public override Task a_correlation_read_lists_a_chain_oldest_first_with_each_causation_key()
     {
         return base.a_correlation_read_lists_a_chain_oldest_first_with_each_causation_key();

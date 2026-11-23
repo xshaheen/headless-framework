@@ -26,4 +26,16 @@ public partial class PostgreSqlStorageTests
     [Fact]
     public override Task should_not_find_a_correlation_id_that_only_the_body_holds() =>
         base.should_not_find_a_correlation_id_that_only_the_body_holds();
+
+    [Fact]
+    public override Task should_not_trace_a_row_on_a_lane_the_store_does_not_recognize() =>
+        base.should_not_trace_a_row_on_a_lane_the_store_does_not_recognize();
+
+    [Fact]
+    public override Task should_report_a_trace_rows_status_and_due_time() =>
+        base.should_report_a_trace_rows_status_and_due_time();
+
+    [Fact]
+    public override Task should_set_the_correlation_columns_when_a_stored_row_is_redelivered() =>
+        base.should_set_the_correlation_columns_when_a_stored_row_is_redelivered();
 }

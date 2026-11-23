@@ -243,6 +243,26 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         Argument.IsNotNull(scope);
         Argument.IsPositive(maxCount);
 
+        if (scope.Query.CorrelationId is { } correlationId)
+        {
+            return await _ReadConfirmedTargetsAsync(kind, scope, correlationId, afterId, maxCount, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var targets = await _ReadTargetBatchAsync(kind, scope, afterId, maxCount, cancellationToken)
+            .ConfigureAwait(false);
+
+        return [.. targets.Select(static x => x.Target)];
+    }
+
+    private async Task<IReadOnlyList<ScopedTarget>> _ReadTargetBatchAsync(
+        JobRunKind kind,
+        JobOperationScope scope,
+        Guid? afterId,
+        int maxCount,
+        CancellationToken cancellationToken
+    )
+    {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -262,7 +282,13 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return await timeJobs
                 .OrderBy(x => x.Id)
                 .Take(maxCount)
-                .Select(x => new JobOperationTarget(JobRunKind.TimeJob, x.Id, x.ChangedAt))
+                .Select(x => new ScopedTarget
+                {
+                    Kind = JobRunKind.TimeJob,
+                    Id = x.Id,
+                    ChangedAt = x.ChangedAt,
+                    CorrelationId = x.CorrelationId,
+                })
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -277,9 +303,60 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         return await occurrences
             .OrderBy(x => x.Id)
             .Take(maxCount)
-            .Select(x => new JobOperationTarget(JobRunKind.CronJobOccurrence, x.Id, x.ChangedAt))
+            .Select(x => new ScopedTarget
+            {
+                Kind = JobRunKind.CronJobOccurrence,
+                Id = x.Id,
+                ChangedAt = x.ChangedAt,
+                CorrelationId = x.CorrelationId,
+            })
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    // The scope's correlation filter compares with ==, so a case-insensitive collation answers a superset, and an
+    // Operation applied to it would reach runs the operator never filtered to. Read by identifier until maxCount
+    // confirmed targets are held or the scope runs out.
+    private async Task<IReadOnlyList<JobOperationTarget>> _ReadConfirmedTargetsAsync(
+        JobRunKind kind,
+        JobOperationScope scope,
+        string correlationId,
+        Guid? afterId,
+        int maxCount,
+        CancellationToken cancellationToken
+    )
+    {
+        var batchSize = Math.Max(maxCount, _CorrelationBatchSize);
+        var confirmed = new List<JobOperationTarget>(Math.Min(maxCount, batchSize));
+        var position = afterId;
+
+        while (true)
+        {
+            var batch = await _ReadTargetBatchAsync(kind, scope, position, batchSize, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var row in batch)
+            {
+                if (!string.Equals(row.CorrelationId, correlationId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                confirmed.Add(row.Target);
+
+                if (confirmed.Count == maxCount)
+                {
+                    return confirmed;
+                }
+            }
+
+            if (batch.Count < batchSize)
+            {
+                return confirmed;
+            }
+
+            position = batch[^1].Id;
+        }
     }
 
     public async Task<int> CountJobOperationTargetsAsync(
@@ -290,6 +367,24 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     )
     {
         Argument.IsNotNull(scope);
+
+        if (scope.Query.CorrelationId is { } correlationId)
+        {
+            // The store's count would include rows its collation treats as equal, so confirmed targets are counted.
+            return limit <= 0
+                ? 0
+                : (
+                    await _ReadConfirmedTargetsAsync(
+                            kind,
+                            scope,
+                            correlationId,
+                            afterId: null,
+                            limit,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                ).Count;
+        }
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -852,6 +947,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         _TimeJobRuns(dbContext, query),
                         static x => x.ExecutionTime,
                         static x => x.Status,
+                        static x => x.CorrelationId,
+                        query.CorrelationId,
                         edges,
                         cancellationToken
                     )
@@ -860,6 +957,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         _OccurrenceRuns(dbContext, query),
                         static x => (DateTime?)x.ExecutionTime,
                         static x => x.Status,
+                        static x => x.CorrelationId,
+                        query.CorrelationId,
                         edges,
                         cancellationToken
                     )
@@ -928,6 +1027,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         IQueryable<TRow> rows,
         Expression<Func<TRow, DateTime?>> executionTime,
         Expression<Func<TRow, JobStatus>> status,
+        Expression<Func<TRow, string?>> correlationId,
+        string? exactCorrelationId,
         DateTime[] edges,
         CancellationToken cancellationToken
     )
@@ -953,26 +1054,64 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             );
         }
 
-        var bucketed = Expression.Lambda<Func<TRow, BucketedRun>>(
-            Expression.MemberInit(
-                Expression.New(typeof(BucketedRun)),
-                Expression.Bind(
-                    typeof(BucketedRun).GetProperty(
-                        nameof(BucketedRun.Bucket),
-                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
-                    )!,
-                    bucket
-                ),
-                Expression.Bind(
-                    typeof(BucketedRun).GetProperty(
-                        nameof(BucketedRun.Status),
-                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
-                    )!,
-                    _Rebind(status, row)
-                )
+        var bindings = new List<MemberBinding>
+        {
+            Expression.Bind(
+                typeof(BucketedRun).GetProperty(
+                    nameof(BucketedRun.Bucket),
+                    BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!,
+                bucket
             ),
+            Expression.Bind(
+                typeof(BucketedRun).GetProperty(
+                    nameof(BucketedRun.Status),
+                    BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!,
+                _Rebind(status, row)
+            ),
+        };
+
+        if (exactCorrelationId is not null)
+        {
+            bindings.Add(
+                Expression.Bind(
+                    typeof(BucketedRun).GetProperty(
+                        nameof(BucketedRun.CorrelationId),
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                    )!,
+                    _Rebind(correlationId, row)
+                )
+            );
+        }
+
+        var bucketed = Expression.Lambda<Func<TRow, BucketedRun>>(
+            Expression.MemberInit(Expression.New(typeof(BucketedRun)), bindings),
             row
         );
+
+        if (exactCorrelationId is not null)
+        {
+            // The correlation filter compares with ==, so a collation that ignores case answers a superset. Its runs
+            // are read with their correlation id and grouped here, after the ordinal confirmation.
+            var candidates = await rows.Where(inRange)
+                .Select(bucketed)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return
+            [
+                .. candidates
+                    .Where(x => string.Equals(x.CorrelationId, exactCorrelationId, StringComparison.Ordinal))
+                    .GroupBy(x => (x.Bucket, x.Status))
+                    .Select(group => new BucketCount
+                    {
+                        Bucket = group.Key.Bucket,
+                        Status = group.Key.Status,
+                        Count = group.Count(),
+                    }),
+            ];
+        }
 
         return await rows.Where(inRange)
             .Select(bucketed)
@@ -992,6 +1131,22 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         public int Bucket { get; init; }
 
         public JobStatus Status { get; init; }
+
+        // Read only when the query filters on a correlation id, so the store's superset can be confirmed in code.
+        public string? CorrelationId { get; init; }
+    }
+
+    private sealed class ScopedTarget
+    {
+        public JobRunKind Kind { get; init; }
+
+        public Guid Id { get; init; }
+
+        public DateTime ChangedAt { get; init; }
+
+        public string? CorrelationId { get; init; }
+
+        public JobOperationTarget Target => new(Kind, Id, ChangedAt);
     }
 
     private sealed class BucketCount

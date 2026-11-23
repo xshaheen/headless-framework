@@ -452,8 +452,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         IReadOnlyList<MessageTraceRow> read(IEnumerable<MemoryMessage> source, bool received) =>
             [
                 .. source
+                    // The relational read keeps only the two recognized lanes (IntentType IN (0, 1)); a row on another
+                    // lane surfaces through GetUnknownLaneMessagesAsync alone.
                     .Where(message =>
-                        string.Equals(
+                        InMemoryMessageFilter.IsRecognizedLane(message.Lane)
+                        && string.Equals(
                             StoredCorrelation.CorrelationId(message.Origin.Headers),
                             query.CorrelationId,
                             StringComparison.Ordinal

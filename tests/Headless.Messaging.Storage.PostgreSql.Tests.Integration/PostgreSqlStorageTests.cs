@@ -183,7 +183,8 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         bool published,
         short rawLane,
         DateTimeOffset nextRetryAt,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? correlationId = null
     )
     {
         _EnsureInitialized();
@@ -196,9 +197,9 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL, @ConsumerIdentityHash";
         var sql = $"""
             INSERT INTO headless.{tableName}
-                ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "lease_generation", "lease_state", "lease_expires_at", "lease_holder", "status_name", "message_id"{receivedColumns})
+                ("id", "version", "name", "content", "intent_type", "retries", "added", "expires_at", "next_retry_at", "lease_generation", "lease_state", "lease_expires_at", "lease_holder", "status_name", "message_id", "correlation_id"{receivedColumns})
             VALUES
-                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, 1, 1, @LeaseExpiresAt, 'stale-unsupported-lane-owner', 'Failed', @MessageId{receivedValues});
+                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, 1, 1, @LeaseExpiresAt, 'stale-unsupported-lane-owner', 'Failed', @MessageId, @CorrelationId{receivedValues});
             """;
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -215,6 +216,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
                     NextRetryAt = nextRetryAt,
                     LeaseExpiresAt = nextRetryAt,
                     MessageId = $"unsupported-lane-{id:N}",
+                    CorrelationId = correlationId,
                     ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
                         "v1",
                         $"unsupported-lane-{id:N}",

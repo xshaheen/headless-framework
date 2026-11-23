@@ -270,7 +270,7 @@ setup.UseSqlServer();
 - Every transaction it opens sets READ COMMITTED itself, so a pooled session left at a stricter level and `READ_COMMITTED_SNAPSHOT` on or off behave the same. Retry pickup, the delayed claim, and purges retry a transient fault (deadlock, lock timeout, dropped connection) raised before commit.
 - **Monitoring skips locked rows** (`READPAST`), so dashboard counts can dip briefly under load. PostgreSQL shows the last committed version instead.
 - **Inbox operations** that share an operation id serialize on an `sp_getapplock`; the wait is bounded by `MessagingOptions.CommandTimeout`, and a timed-out request can be retried with the same id.
-- **Schema steps.** `Messaging/1` (tables, constraints, indexes), `Messaging/2` (history indexes), and `Messaging/3` (correlation and causation columns, with a binary-collated correlation index on each table). The history-index builds run offline, block writes to that table until done, and are bounded by `SchemaRunnerOptions.CommandTimeout` (default 10 minutes). Peer replicas wait on the runner's lock.
+- **Schema steps.** `Messaging/1` (tables, constraints, indexes), `Messaging/2` (history indexes), and `Messaging/3` (correlation and causation columns, with a binary-collated correlation index on each table). The history-index builds of `Messaging/2` and the correlation-index builds of `Messaging/3` run offline, block writes to their table until done, and are bounded by `SchemaRunnerOptions.CommandTimeout` (default 10 minutes). Peer replicas wait on the runner's lock.
 - Supports `IMessageRevoker`.
 
 **Verify:** `resources provision` applies the steps, and the `messaging-storage-sqlserver-default` readiness check reports `Healthy`.
