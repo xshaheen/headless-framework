@@ -100,7 +100,7 @@ Package READMEs only route to these guides; they are not API reference.
 | Hash and verify secrets (PINs, API-key secrets, recovery codes, passwords outside Identity) | [Hashing](hashing.md) |
 | Find a primitive, result type, collection helper, concurrency helper, IO helper, or URL builder | [Extensions and Primitives](extensions.md) |
 | Serialize JSON or MessagePack behind `ISerializer` | [Serialization](serialization.md) |
-| Configure Serilog defaults | [Logging](logging.md) |
+| Configure host logging: console format, enrichment on every entry, levels, a startup crash logger | [Logging](logging.md#headlesslogging) |
 | Keep secrets and personal data out of logs (data classification, redactors) | [Logging](logging.md) |
 | Keep credential paths out of HTTP logging and spans, classify HTTP logging fields | [Logging](logging.md#headlessloggingredactionaspnetcore) |
 | Use hosting helpers, validators, health checks, the host manifest (`describe` command), the pre-start health check (`check` command), background warm-up behind readiness, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |

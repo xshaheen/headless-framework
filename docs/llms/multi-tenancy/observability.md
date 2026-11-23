@@ -24,7 +24,7 @@ With `AddHeadless()` (ServiceDefaults) and OpenTelemetry, logs and spans carry t
 
 A request, message, or job with no tenant gets no attribute. `ICurrentTenant.Change` writes no telemetry itself.
 
-Only ServiceDefaults adds the log and child-span enrichment. A host that builds its own OpenTelemetry pipeline still gets the request, messaging, and job span tags, but no log attribute and no tags on other spans. A logging provider other than OpenTelemetry (Serilog, console) gets no tenant attribute: add an enricher there that reads `ICurrentTenant.Id`.
+Only ServiceDefaults adds the log and child-span enrichment. A host that builds its own OpenTelemetry pipeline still gets the request, messaging, and job span tags, but no log attribute and no tags on other spans. A logging provider other than OpenTelemetry, such as the console, gets no tenant attribute: add an `ILogEnricher` (`services.AddLogEnricher<T>()`) that reads `ICurrentTenant.Id`.
 
 ### Names
 

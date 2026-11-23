@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api.Abstractions, Api, Api.ServiceDefaults, DataProtection.Blobs, Api.FluentValidation, Api.Identity, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, Api.UserAgent
+packages: Api.Abstractions, Api, Api.ServiceDefaults, DataProtection.Blobs, Api.FluentValidation, Api.Identity, Api.MinimalApi, Api.Mvc, Api.UserAgent
 ---
 
 # API & Web
@@ -29,7 +29,6 @@ Other packages:
 - `Headless.DataProtection.Blobs`: persists ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Identity`: ASP.NET Core Identity helpers: token providers, localized `auth:` and `user:` errors, `HeadlessLookupNormalizer`, and the `Basic` and `ApiKey` authentication schemes.
 - `Headless.Api.UserAgent`: the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
-- `Headless.Api.Logging.Serilog`: Serilog enrichment with per-request user, account, and correlation ID, plus client IP and selected request headers.
 - `Headless.Idempotency.ResponseReplay`: idempotency middleware that replays the captured HTTP response on identical retries. [idempotency.md § Headless.Idempotency.ResponseReplay](idempotency.md#headlessidempotencyresponsereplay) owns its setup.
 
 ## Agent Rules
@@ -54,7 +53,7 @@ Other packages:
 - For MVC, inherit from `ApiControllerBase` and call `ConfigureHeadlessMvc()`. Do not configure `MvcOptions` by hand for what it covers.
 - Use the `Headless.Api.FluentValidation` rules (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) instead of hand-written file or request-contract validation.
 - In a distributed or containerized deployment, persist Data Protection keys with `PersistKeysToBlobStorage()` and give the key container a name unique to the app and environment.
-- Call `UseHeadlessSerilogEnrichers()` after `UseAuthentication()`, so the enrichers can read the user.
+- Do not add middleware that pushes the user, account, correlation ID, client IP, or request headers into a log scope. `AddHeadless()` adds them to every entry written during a request. Classify a field by name with `ClassifyProperty` to redact it.
 
 ## Core Concepts
 
@@ -137,7 +136,6 @@ app.UseRequestTimeouts();
 app.UseHeadlessTenantCatalogResolution(); // only with catalog tenancy: after routing, before authentication
 app.UseAuthentication();
 app.UseRateLimiter();
-app.UseHeadlessSerilogEnrichers(); // after authentication, so the user is known
 app.UseHeadlessTenancy();
 app.UseAuthorization();
 app.UseHeadlessHttpIdempotency();
@@ -593,6 +591,7 @@ The one-line bootstrap for Headless APIs. It composes the `Headless.Api` primiti
 - `UseHeadless()`: applies the edge middleware in a fixed order. See [Standard middleware order](#standard-middleware-order).
 - `MapHeadlessEndpoints()`: maps `/health`, `/alive`, the OpenAPI JSON documents, and static assets.
 - `MapHeadlessHostManifest(pattern, authorizationPolicy)`: opt-in host manifest endpoint, behind authorization by default.
+- The Headless logging profile (`AddHeadlessLogging`, see [logging.md](logging.md#headlesslogging)), and request fields on every entry written during a request: `UserId`, `AccountId`, and `CorrelationId` from `IRequestContext`, read on each entry so fields set by authentication appear on later entries; and `ClientIp`, `UserAgent`, `XClientVersion`, and `ApiVersion`, read once per request. Header values are cut to `options.Logging.MaxHeaderLength` characters (default 512) and stripped of line breaks, ANSI escape sequences, and other control characters. A field with no value is left out.
 - OpenTelemetry logging, metrics, and tracing. Traces and meters subscribe to `Headless.*`, the application name (`IHostEnvironment.ApplicationName`), and every source and meter under it (`{ApplicationName}.*`). Name your `ActivitySource` and `Meter` like `MyApp.Api.Orders` and you need no `AddSource` call.
 - OpenAPI document registration and mapping, service discovery, HttpClient resilience, MVC and Minimal API JSON defaults, and ASP.NET Core source-generated input validation.
 
@@ -681,6 +680,7 @@ builder.AddHeadless(configureServices: options =>
     // Leave instr.RecordException off there: AddHeadless records a masked event itself, and the instrumentation's would be unmasked.
     //   options.OpenTelemetry.ConfigureAspNetCoreInstrumentation = instr => { instr.EnrichWithHttpRequest = (activity, request) => { }; };
 
+    options.Logging = new HeadlessLoggingOptions { ConsoleFormat = HeadlessConsoleFormat.Json, MaxHeaderLength = 256 };
     options.OpenApi.Enabled = true;
     options.HttpClient.UseServiceDiscovery = true;
     options.HttpClient.UseStandardResilienceHandler = true;
@@ -985,56 +985,6 @@ API keys are read from the configured header. Query-string keys are routed and a
   - A scheme under a canonical name (`ApiKey`, `Basic`, `Bearer`) is selected whatever its handler.
   - When several schemes of one kind match, the canonical name wins. Without it the provider picks none and the configured default scheme applies.
 - The Basic handler's ticket carries the name the scheme was registered under: `AddBasicSchema("partner-basic")` issues `partner-basic` tickets.
-
----
-
-## Headless.Api.Logging.Serilog
-
-Serilog enrichment for ASP.NET Core APIs.
-
-### API and behavior
-
-- `UseHeadlessSerilogEnrichers()`: middleware that pushes `UserId`, `AccountId`, and `CorrelationId` from `IRequestContext` into the Serilog `LogContext` for the request. Each property is pushed only when its value is not `null`.
-- `ApiSerilogFactory.CreateApiLogger(app)` and `ConfigureApiLoggerConfiguration(...)`: the `Headless.Logging.Serilog` reloadable logger plus enrichers for the client IP and the sanitized `User-Agent`, `X-Client-Version`, and `X-Api-Version` request headers. Each header value is cut to `SerilogOptions.MaxHeaderLength` characters and stripped of control characters and ANSI escape sequences.
-- `WithSanitizedRequestHeader(...)`: adds the same sanitized enrichment for another request header.
-
-The enrichers do not add a tenant ID. With HTTP tenancy configured, `Headless.Api.ServiceDefaults` adds `TenantId` to log records through OpenTelemetry. See [Service Options](#service-options).
-
-### Install
-
-```bash
-dotnet add package Headless.Api.Logging.Serilog
-```
-
-### Setup and use
-
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.AddHeadless(); // registers IRequestContext, which the enrichers read
-
-var app = builder.Build();
-
-app.UseHeadless();
-
-// After UseAuthentication() in a host that authenticates, so the enrichers can read the user
-app.UseHeadlessSerilogEnrichers();
-
-app.MapHeadlessEndpoints();
-app.Run();
-```
-
-**Verify:** a log event written inside an authenticated request carries the `UserId` property, and one written for a request with a correlation header carries `CorrelationId`.
-
-### Configuration
-
-Sinks, levels, and the base enrichers come from `Headless.Logging.Serilog`. See [logging.md](logging.md#headlessloggingserilog).
-
-### Runtime behavior
-
-- Adds one middleware to the request pipeline. It needs no service registration beyond `AddHeadless()`.
-
----
 
 ## Headless.Api.MinimalApi
 
