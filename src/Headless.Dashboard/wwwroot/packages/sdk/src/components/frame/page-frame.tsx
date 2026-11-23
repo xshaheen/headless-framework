@@ -14,7 +14,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
-import { useSearchParams } from 'react-router'
+import { useSearchParams } from '../../router/index.ts'
 import { below, remember, useBelow } from '../breakpoints.ts'
 import { useViewKeys } from '../keymap.tsx'
 

@@ -4,6 +4,7 @@
 
 import { useDashboard, type DashboardStateRole } from '@headless/dashboard-sdk'
 import type { CommandDefinition } from '@headless/dashboard-sdk/commands'
+import { maxCorrelationIdLength } from '@headless/dashboard-sdk/components'
 import { useDashboardApi, type CappedCount } from '@headless/dashboard-sdk/data'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
 import { useStreamEvent, useTopics } from '@headless/dashboard-sdk/stream'
@@ -94,6 +95,16 @@ export function looksLikeId(query: string) {
   return text.length >= 3 && text.length <= 256 && !/\s/.test(text)
 }
 
+/**
+ * Text that may be a correlation id worth tracing: one token of at most 200 characters. The offer comes after any
+ * object the text names, because a run id can be a correlation id too.
+ */
+export function looksLikeTraceId(query: string) {
+  const text = query.trim()
+
+  return text !== '' && text.length <= maxCorrelationIdLength && !/\s/.test(text)
+}
+
 /** What a lookup found: a failed request, or the matches with the names of the modules that did not answer. */
 export type Resolved = { failed: true } | { failed: false; objects: ResolvedObject[]; stale: string[] }
 
@@ -116,10 +127,11 @@ export function useResolve(query: string, enabled: boolean): Resolved | undefine
     const request = ++latest.current
     const timer = setTimeout(() => {
       api
+        // A POST, so the pasted text, which may be a customer's id, stays out of URLs and request logs.
         .request<{ modules: ModuleSection<ResolvedObject>[] }>({
-          method: 'GET',
+          method: 'POST',
           path: 'resolve',
-          query: { q: query.trim() },
+          body: { query: query.trim() },
         })
         .then(
           ({ modules }): Resolved => ({

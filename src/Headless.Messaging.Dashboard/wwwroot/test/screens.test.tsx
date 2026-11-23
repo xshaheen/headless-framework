@@ -285,6 +285,71 @@ describe('messaging detail panel', () => {
     expect(body.textContent).not.toContain('headless-corr-id')
   })
 
+  function withHeaders(row: { id: string }, headers: Record<string, string>) {
+    return (request: ApiRequest) =>
+      request.path === `messaging/messages/received/${row.id}` ? { row, headers, content: '{}' } : undefined
+  }
+
+  it('opens the trace of the open message on T, and links it from the correlation id', async () => {
+    const actor = user()
+    const row = message('received', 'Succeeded', { name: 'a.done' })
+    const view = open(
+      { received: [row], extra: withHeaders(row, { 'headless-corr-id': 'ord-7' }) },
+      { path: 'received' },
+    )
+
+    await actor.click(await screen.findByRole('row', { name: /a\.done/ }))
+    const correlation = await within(screen.getByRole('region', { name: `Message ${row.id}` })).findByRole('region', {
+      name: 'Correlation',
+    })
+    expect(within(correlation).getByRole('link', { name: 'Open trace' }).getAttribute('href')).toBe('/trace#ord-7')
+
+    await actor.keyboard('t')
+
+    await waitFor(() => expect(view.location().pathname).toBe('/trace'))
+    expect(view.location().hash).toBe('#ord-7')
+  })
+
+  it('disables T and Open trace on a message with no correlation id, saying why', async () => {
+    const actor = user()
+    const row = message('received', 'Succeeded', { name: 'a.done' })
+    const view = open({ received: [row], extra: withHeaders(row, { 'headless-msg-id': 'm-1' }) }, { path: 'received' })
+
+    await actor.click(await screen.findByRole('row', { name: /a\.done/ }))
+    const correlation = await within(screen.getByRole('region', { name: `Message ${row.id}` })).findByRole('region', {
+      name: 'Correlation',
+    })
+    const button = within(correlation).getByRole('button', { name: 'Open trace' })
+    const before = `${view.location().pathname}${view.location().search}`
+
+    await actor.keyboard('t')
+
+    expect(described(button)).toBe('No correlation id')
+    expect(`${view.location().pathname}${view.location().search}`).toBe(before)
+  })
+
+  it('disables Open trace on a received message whose foreign correlation id is 250 characters', async () => {
+    const actor = user()
+    const row = message('received', 'Succeeded', { name: 'a.done' })
+    const foreign = 'f'.repeat(250)
+    const view = open(
+      { received: [row], extra: withHeaders(row, { 'headless-corr-id': foreign }) },
+      { path: 'received' },
+    )
+
+    await actor.click(await screen.findByRole('row', { name: /a\.done/ }))
+    const correlation = await within(screen.getByRole('region', { name: `Message ${row.id}` })).findByRole('region', {
+      name: 'Correlation',
+    })
+    const before = `${view.location().pathname}${view.location().search}`
+
+    expect(described(within(correlation).getByRole('button', { name: 'Open trace' }))).toBe(
+      'Id longer than 200 characters',
+    )
+    await actor.keyboard('t')
+    expect(`${view.location().pathname}${view.location().search}`).toBe(before)
+  })
+
   it('names the transport a published row is sent through, and the default one when the row names none', async () => {
     const actor = user()
     const partner = message('published', 'Succeeded', { name: 'a.partner', lane: 'Bus', transport: 'partner' })

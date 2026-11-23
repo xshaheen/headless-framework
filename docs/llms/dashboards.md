@@ -124,7 +124,7 @@ app.MapPost("/account/sign-out", async (HttpContext context) =>
 | `WithHostAuthentication(configure?)` | | Host mode. `configure` sets a `DashboardHostAuthenticationOptions`; see [Host authentication options](#host-authentication-options) for its members. |
 | `WithBasicAuth(username, password)` / `WithApiKey(apiKey)` / `WithNoAuth()` | | The other modes. Exactly one mode call is required. |
 | `SetBasePath(path)` | `/headless` | The path under the host's `PathBase`. The root fails validation at startup. |
-| `SetTraceLinkTemplate(template)` | none | A link to the host's tracing tool with `{traceId}`. An object that carries a W3C trace id then offers Open trace. A template without `{traceId}` fails validation. |
+| `SetTraceLinkTemplate(template)` | none | A link to the host's tracing tool with `{traceId}`. An object that carries a W3C trace id then offers `Open in tracing tool`. A template without `{traceId}` fails validation. |
 | `ConfigureContentSecurityPolicy(configure)` | | Adds sources to the document's policy; see [Serving and Content Security Policy](#serving-and-content-security-policy). |
 | `Contributions(configure)` / `Contributions(IConfiguration)` | | Disables or reorders module contributions by id. |
 | `AddModule<TModule, TOptions>(id)` | | Adds a module. Module packages call it from their own `Add{Module}` extension. |

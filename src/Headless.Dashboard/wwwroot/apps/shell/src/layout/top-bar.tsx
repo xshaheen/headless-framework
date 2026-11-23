@@ -2,12 +2,21 @@
 // sit near their size budget.
 'use no memo'
 
-import { Announcer, Button, DensityControl, Kbd, LiveIndicator } from '@headless/dashboard-sdk/components'
+import { Announcer, Button, DensityControl, Kbd, LiveIndicator, traceAddress } from '@headless/dashboard-sdk/components'
+import { useNavigate } from '@headless/dashboard-sdk/router'
 import { TimeZoneField, useFormat, useLocale } from '@headless/dashboard-sdk/locale'
 import { useEffect, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { BootstrapProduct } from '../bootstrap.ts'
 import { useOpenObject, useShell } from '../shell-context.tsx'
-import { attentionTotal, useAttention, useCanOperate, useResolve, type ResolvedObject } from '../shell-data.ts'
+import {
+  attentionTotal,
+  looksLikeId,
+  looksLikeTraceId,
+  useAttention,
+  useCanOperate,
+  useResolve,
+  type ResolvedObject,
+} from '../shell-data.ts'
 import { AttentionPopover, attentionRole } from './attention-popover.tsx'
 import { Flyout, useBelow, useFlyout } from './flyout.tsx'
 import { ProductTabs } from './product-tabs.tsx'
@@ -43,23 +52,34 @@ function Clock() {
 }
 
 /**
- * Go to id: a pasted id is looked up in every module once typing settles, and the matches list below the field. Enter
- * opens the one match; with several it opens the palette on the same search.
+ * Go to id: a pasted id is looked up in every module once typing settles, and the matches list below the field, then
+ * `Open trace for <id>` when the text looks like an id. Enter opens the one match; with none it opens the trace; with
+ * several it opens the palette on the same search.
  */
 function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; onMany: (query: string) => void }) {
   const [query, setQuery] = useState('')
   const resolved = useResolve(query, true)
   const objects = resolved && !resolved.failed ? resolved.objects : undefined
   const openObject = useOpenObject()
+  const navigate = useNavigate()
+  const id = query.trim()
+  // Text too short to look up names no object, so its trace is offered at once; otherwise once the lookup answers,
+  // never in place of an object it found.
+  const isUnresolvable = !looksLikeId(id)
+  const canTrace = (objects !== undefined || isUnresolvable) && looksLikeTraceId(id)
 
   // Typing settles into a lookup whose matches appear below the field; a screen reader hears what came back and what
   // Enter does with it, since the list is not where its focus is.
   const outcome = !resolved
-    ? ''
+    ? canTrace
+      ? 'Press Enter to open the trace of this id.'
+      : ''
     : resolved.failed
       ? 'Lookup failed.'
       : resolved.objects.length === 0
-        ? 'No match.'
+        ? canTrace
+          ? 'No object has this id. Press Enter to open its trace.'
+          : 'No match.'
         : resolved.objects.length === 1
           ? `1 match: ${resolved.objects[0]!.title}. Press Enter to open it.`
           : `${resolved.objects.length} matches. Press Enter to list them.`
@@ -67,6 +87,11 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
   function open(object: ResolvedObject) {
     setQuery('')
     void openObject(object.target).catch(() => undefined)
+  }
+
+  function openTrace() {
+    setQuery('')
+    void navigate(traceAddress(id))
   }
 
   return (
@@ -87,8 +112,10 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
             if (event.key === 'Enter' && objects?.length === 1) {
               open(objects[0]!)
             } else if (event.key === 'Enter' && objects && objects.length > 1) {
-              onMany(query.trim())
+              onMany(id)
               setQuery('')
+            } else if (event.key === 'Enter' && (objects?.length === 0 || isUnresolvable) && canTrace) {
+              openTrace()
             } else if (event.key === 'Escape') {
               setQuery('')
               event.currentTarget.blur()
@@ -100,19 +127,19 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
         </span>
       </label>
       <Announcer message={outcome} />
-      {resolved ? (
+      {resolved || canTrace ? (
         <div
           className="absolute end-0 top-full mt-1 z-(--z-popover) flex w-(--popover-width) flex-col rounded-xl border bg-card p-1.5 whitespace-normal shadow-lg"
           role="region"
           aria-label="Matches"
         >
-          {resolved.failed ? (
+          {!resolved ? null : resolved.failed ? (
             <p className="hd-hint p-1.5">Lookup failed. Try again.</p>
-          ) : resolved.objects.length === 0 ? (
+          ) : resolved.objects.length === 0 && (resolved.stale.length > 0 || !canTrace) ? (
             <p className="hd-hint p-1.5">
               {resolved.stale.length > 0
                 ? `No match in the modules that answered (${resolved.stale.join(', ')} did not answer)`
-                : `No object with id ${query.trim()}`}
+                : `No object with id ${id}`}
             </p>
           ) : (
             resolved.objects.map((object) => (
@@ -126,6 +153,11 @@ function GoTo({ input, onMany }: { input: RefObject<HTMLInputElement | null>; on
               </Button>
             ))
           )}
+          {canTrace ? (
+            <Button variant="ghost" className="justify-start" onPress={openTrace}>
+              {`Open trace for ${id}`}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </div>

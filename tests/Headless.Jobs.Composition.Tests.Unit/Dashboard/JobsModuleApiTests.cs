@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using System.Text;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Testing.Tests;
@@ -640,6 +641,124 @@ public sealed class JobsModuleApiTests : TestBase
             .GetProperty("items")
             .ValueKind.Should()
             .Be(JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task should_list_the_runs_of_one_correlation_id_from_a_search_body_and_ignore_one_in_the_url()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var now = _time.GetUtcNow();
+        var traced = JobsModuleNode.FailedJob(now);
+        traced.CorrelationId = "ord-7";
+        var tracedIdle = JobsModuleNode.IdleJob(now);
+        tracedIdle.CorrelationId = "ord-7";
+        var other = JobsModuleNode.FailedJob(now);
+        other.CorrelationId = "ORD-7";
+        await _Store(app).AddTimeJobsAsync([traced, tracedIdle, other], AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+
+        // when
+        using var searched = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Api + "/runs/search",
+            new { correlationId = "ord-7", status = new[] { "Failed" } },
+            cookie,
+            AbortToken
+        );
+        var unfiltered = await _RunIdsAsync(client, cookie, "/runs?correlationId=ord-7");
+
+        // then: the body filters exactly, with the list's other filters; the URL parameter filters nothing
+        searched.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await JobsDashboardHttpHost.ReadAsync(searched, AbortToken);
+        body.GetProperty("items")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("id").GetGuid())
+            .Should()
+            .Equal(traced.Id);
+        body.GetProperty("count").GetInt32().Should().Be(1);
+        unfiltered.Should().BeEquivalentTo([traced.Id, tracedIdle.Id, other.Id]);
+    }
+
+    [Fact]
+    public async Task should_answer_400_for_a_runs_search_without_an_id_with_one_over_200_characters_or_not_json()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "viewer", AbortToken);
+        const string path = JobsDashboardHttpHost.Api + "/runs/search";
+
+        // when
+        using var missing = await JobsDashboardHttpHost.PostAsync(
+            client,
+            path,
+            new { status = new[] { "Failed" } },
+            cookie,
+            AbortToken
+        );
+        using var tooLong = await JobsDashboardHttpHost.PostAsync(
+            client,
+            path,
+            new { correlationId = new string('c', 201) },
+            cookie,
+            AbortToken
+        );
+        using var notJson = await JobsDashboardHttpHost.PostAsync(
+            client,
+            path,
+            new StringContent("correlationId=ord-7", Encoding.UTF8, "application/json"),
+            cookie,
+            AbortToken
+        );
+
+        // then
+        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(missing, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["correlationId"] = "required" });
+        tooLong.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(tooLong, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["correlationId"] = "invalid" });
+        notJson.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JobsDashboardHttpHost.RulesAsync(notJson, AbortToken))
+            .Should()
+            .Equal(new Dictionary<string, string>(StringComparer.Ordinal) { ["body"] = "json" });
+    }
+
+    [Fact]
+    public async Task should_record_a_correlation_scoped_operation_in_the_operator_log_with_the_id_redacted()
+    {
+        // given
+        await using var app = await JobsDashboardHttpHost.StartAsync(_time, _log, AbortToken);
+        var failed = JobsModuleNode.FailedJob(_time.GetUtcNow());
+        failed.CorrelationId = "ord-7";
+        await _Store(app).AddTimeJobsAsync([failed], AbortToken);
+        using var client = JobsDashboardHttpHost.Client(app);
+        var cookie = await JobsDashboardHttpHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var confirm = await JobsDashboardHttpHost.PostAsync(
+            client,
+            JobsDashboardHttpHost.Commands + "/jobs.requeue/confirm",
+            new
+            {
+                filter = new { correlationId = "ord-7", statuses = new[] { "Failed" } },
+                reason = "card service back",
+            },
+            cookie,
+            AbortToken
+        );
+
+        // then: the scope still counts the run, and the log keeps the filter without the id
+        confirm.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await JobsDashboardHttpHost.ReadAsync(confirm, AbortToken)).GetProperty("count").GetInt32().Should().Be(1);
+        var entry = _log.Entries.Should().ContainSingle().Subject;
+        entry.Scope.Should().NotBeNull();
+        entry.Scope.Should().NotContain("ord-7");
+        JsonDocument.Parse(entry.Scope!).RootElement.GetProperty("correlationId").GetString().Should().Be("(redacted)");
     }
 
     private static async Task<List<Guid>> _RunIdsAsync(HttpClient client, string cookie, string path)

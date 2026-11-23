@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   moduleSidebarEntries,
   readBootstrapState,
+  restoreFragment,
+  returnUrlOf,
   safeReturnUrl,
   sessionChannel,
   sessionMatches,
@@ -125,5 +127,51 @@ describe('bootstrap', () => {
 
     expect(sessionChannel(mona)).toBe('headless-dashboard:/headless:session')
     expect(sessionChannel(sami)).toBe(sessionChannel(mona))
+  })
+})
+
+describe('the fragment a return URL leaves out', () => {
+  function memoryStorage() {
+    const values = new Map<string, string>()
+
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => void values.set(key, value),
+      removeItem: (key: string) => void values.delete(key),
+    }
+  }
+
+  it('returns to the page without its fragment, and puts the fragment back once on that page only', () => {
+    const storage = memoryStorage()
+
+    expect(returnUrlOf('/headless', { pathname: '/headless/trace', search: '', hash: '#ord-7' }, storage)).toBe(
+      '/headless/trace',
+    )
+    expect(restoreFragment('/headless', { pathname: '/headless/jobs', search: '', hash: '' }, storage)).toBeUndefined()
+
+    returnUrlOf('/headless', { pathname: '/headless/trace', search: '', hash: '#ord-7' }, storage)
+    expect(restoreFragment('/headless', { pathname: '/headless/trace', search: '', hash: '' }, storage)).toBe(
+      '/headless/trace#ord-7',
+    )
+    expect(restoreFragment('/headless', { pathname: '/headless/trace', search: '', hash: '' }, storage)).toBeUndefined()
+  })
+
+  it('returns without the fragment when storage throws, as it does in a private window', () => {
+    const storage = {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+      setItem: () => {
+        throw new Error('blocked')
+      },
+      removeItem: () => {
+        throw new Error('blocked')
+      },
+    }
+
+    expect(returnUrlOf('/headless', { pathname: '/headless/trace', search: '', hash: '#ord-7' }, storage)).toBe(
+      '/headless/trace',
+    )
+    expect(restoreFragment('/headless', { pathname: '/headless/trace', search: '', hash: '' }, storage)).toBeUndefined()
   })
 })

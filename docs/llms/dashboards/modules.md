@@ -119,6 +119,8 @@ The answer is `{ modules, rows, hidden }`:
 - `rows` holds the tree depth first: `module`, `target`, `title`, `status`, `statusRole`, `at`, `timestampKind` (`ran`, `due`, or `added`), `node`, `depth`, and `tags`.
 - `hidden` counts the trace-capable modules the user may not view.
 
+The page's address is `{base}/trace#<id>`: the id rides in the fragment, which the browser never sends to the server. In a module view, link to it with `OpenTrace` (`@headless/dashboard-sdk/components`), which renders `Open trace`, or disabled with `No correlation id` or `Id longer than 200 characters`, and bind `T` with `useTraceKey(correlationId)`. Build any other link with `traceAddress(id)`, never by hand. A signed-out visit to a trace signs in and lands on the same trace, and the sign-in's `returnUrl` carries no fragment. Go to id and the palette offer `Open trace for <id>` after the objects a pasted text resolves to, for text of one token and at most 200 characters, and Go to id's Enter opens it when no object matches.
+
 **Verify:** `POST {base}/api/trace` for a correlation id your module stores returns its items under `rows`, with the module's section `stale: false`.
 
 ### Attention items

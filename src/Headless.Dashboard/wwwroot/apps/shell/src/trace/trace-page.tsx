@@ -7,6 +7,7 @@ import {
   CopyButton,
   EmptyState,
   Kbd,
+  maxCorrelationIdLength,
   Mono,
   PageHeader,
   QueryState,
@@ -21,9 +22,6 @@ import { Link, useLocation } from '@headless/dashboard-sdk/router'
 import { modulePath } from '../route-handles.ts'
 import { useOpenObject } from '../shell-context.tsx'
 import { useTrace, type Trace, type TraceSection } from '../shell-data.ts'
-
-/** The longest correlation id the server traces; a longer one is refused, so the page says why instead of asking. */
-const maxIdLength = 200
 
 /** The server's tag codes in words; a code the shell does not know shows as it came, never dropped. */
 const tagWords: Readonly<Record<string, string>> = {
@@ -194,8 +192,8 @@ export default function TracePage() {
       ) : isRefused ? (
         // Asking again cannot succeed, so there is no Retry.
         <EmptyState placement="page" title="This id cannot be traced">
-          {id.length > maxIdLength
-            ? `A correlation id is at most ${maxIdLength} characters; this one has ${id.length}.`
+          {id.length > maxCorrelationIdLength
+            ? `A correlation id is at most ${maxCorrelationIdLength} characters; this one has ${id.length}.`
             : 'The dashboard refused this correlation id.'}{' '}
           <GoToHint />
         </EmptyState>

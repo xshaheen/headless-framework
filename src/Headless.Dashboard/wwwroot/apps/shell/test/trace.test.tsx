@@ -1,3 +1,4 @@
+import { traceAddress } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, type ApiRequest } from '@headless/dashboard-sdk/data'
 import { axeViolations } from '@headless/dashboard-sdk/testing/axe'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -69,6 +70,15 @@ function sources() {
 }
 
 describe('trace page', () => {
+  it('reads back exactly the id a trace address was built from, even one holding # and %', async () => {
+    const id = 'ord#7 %41 c-42'
+    const shell = renderTrace(jobAndMessage, traceAddress(id))
+
+    await waitFor(() =>
+      expect(shell.requests.find((request) => request.path === 'trace')?.body).toEqual({ correlationId: id }),
+    )
+  })
+
   it('posts the fragment’s id in the body, never the URL, and draws every module’s rows in one tree', async () => {
     const shell = renderTrace(jobAndMessage)
 

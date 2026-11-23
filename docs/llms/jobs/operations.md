@@ -269,5 +269,5 @@ app.Run();
 - **Operations.** Requeue, Cancel, and Delete over a filter run in chunks. Requeue and Delete write a row only while it is unchanged since you confirmed, so no row is written twice.
 - **Nodes.** The Nodes view lists each live node from `Headless.Coordination` membership and the functions its run filter claims; without membership it shows this host. A function no live node claims becomes a Needs-you item.
 - **Cron "Run now"** stamps the on-demand occurrence with the store's clock and links the run to the request's trace.
-- **Traces.** A run with a stored W3C trace parent offers `Open trace`. Use the dashboard for triage and OpenTelemetry for trace-level diagnostics.
+- **Traces.** A run with a correlation id offers `Open trace`, the dashboard's page of every job and message that carries it. A run with a stored W3C trace parent also offers `Open in tracing tool` when the host set `SetTraceLinkTemplate`. Use the dashboard for triage and OpenTelemetry for trace-level diagnostics.
 - **AOT.** The dashboard is not AOT-compatible.

@@ -86,14 +86,16 @@ internal sealed class JobsCronJobBodyValidator : AbstractValidator<JobsCronJobBo
     }
 }
 
-/// <summary>The query of <c>GET runs</c>, as the Runs list sends it.</summary>
+/// <summary>
+/// The query of <c>GET runs</c>, as the Runs list sends it. It takes no correlation id: a list filtered by one is read
+/// through <see cref="JobsRunSearchBody"/>, so the id never sits in a URL.
+/// </summary>
 /// <param name="After">The cursor of the page before; without one the list reads its first page and counts.</param>
 internal sealed record JobsRunListQuery(
     string? Kind,
     string[]? Function,
     string[]? Status,
     Guid? CronJobId,
-    string? CorrelationId,
     string? Fingerprint,
     DateTime? From,
     DateTime? Before,
@@ -168,6 +170,75 @@ internal sealed class JobsRunListQueryValidator : AbstractValidator<JobsRunListQ
             .Must(static after => string.IsNullOrEmpty(after) || JobRunCursor.TryParse(after, out _))
             .WithErrorCode(DashboardValidation.FormatRule)
             .WithMessage("after is not a cursor this list returned.");
+    }
+}
+
+/// <summary>
+/// The body of <c>POST runs/search</c>: the runs of one correlation id, with the list's other filters. The id travels
+/// only here, never in a URL, because a URL reaches request logs.
+/// </summary>
+internal sealed record JobsRunSearchBody
+{
+    public string? CorrelationId { get; init; }
+
+    public string? Kind { get; init; }
+
+    public string[]? Function { get; init; }
+
+    public string[]? Status { get; init; }
+
+    public Guid? CronJobId { get; init; }
+
+    public string? Fingerprint { get; init; }
+
+    public DateTime? From { get; init; }
+
+    public DateTime? Before { get; init; }
+
+    public bool? Actionable { get; init; }
+
+    public string? Search { get; init; }
+
+    public string? Sort { get; init; }
+
+    public string? Direction { get; init; }
+
+    public int? Limit { get; init; }
+
+    public string? After { get; init; }
+
+    /// <summary>The list query the search narrows, without its correlation id.</summary>
+    public JobsRunListQuery ToListQuery() =>
+        new(
+            Kind,
+            Function,
+            Status,
+            CronJobId,
+            Fingerprint,
+            From,
+            Before,
+            Actionable,
+            Search,
+            Sort,
+            Direction,
+            Limit,
+            After
+        );
+}
+
+/// <summary>Refuses a correlation search with no id, or one longer than any id a run stores.</summary>
+internal sealed class JobsRunSearchBodyValidator : AbstractValidator<JobsRunSearchBody>
+{
+    // The messages name the field, never the id: a validation problem is served and may be logged.
+    public JobsRunSearchBodyValidator()
+    {
+        RuleFor(static body => body.CorrelationId)
+            .NotEmpty()
+            .WithErrorCode(DashboardValidation.RequiredRule)
+            .WithMessage("A search needs a correlationId.")
+            .MaximumLength(JobContract.CorrelationIdMaxLength)
+            .WithErrorCode(DashboardValidation.InvalidRule)
+            .WithMessage($"correlationId takes at most {JobContract.CorrelationIdMaxLength} characters.");
     }
 }
 

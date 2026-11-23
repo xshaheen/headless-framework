@@ -8,6 +8,8 @@ import { ShellApp, withSessionEnd } from './app.tsx'
 import {
   isSignedIn,
   readBootstrapState,
+  restoreFragment,
+  returnUrlOf,
   safeReturnUrl,
   sessionChannel,
   settleSession,
@@ -27,8 +29,9 @@ function sessionStorageOrUndefined() {
   }
 }
 
-function currentUrl() {
-  return `${location.pathname}${location.search}${location.hash}`
+/** Where sign-in returns to: this page, its fragment kept in this tab rather than sent in the return URL. */
+function currentUrl(state: BootstrapState) {
+  return returnUrlOf(state.basePath, location, sessionStorageOrUndefined())
 }
 
 function isSignInPath(state: BootstrapState) {
@@ -38,7 +41,7 @@ function isSignInPath(state: BootstrapState) {
 async function renderSignIn(state: BootstrapState, root: HTMLElement) {
   if (!isSignInPath(state)) {
     // A deep link opened while signed out: the sign-in page returns the operator to it.
-    history.replaceState(null, '', signInUrl(state.basePath, { returnUrl: currentUrl() }))
+    history.replaceState(null, '', signInUrl(state.basePath, { returnUrl: currentUrl(state) }))
   }
 
   const { SignInPage } = await import('./views/sign-in.tsx')
@@ -62,11 +65,18 @@ async function renderShell(state: BootstrapState, root: HTMLElement) {
     history.replaceState(null, '', safeReturnUrl(state.basePath, returnUrl))
   }
 
+  // Back from sign-in: the fragment the return URL left out, such as the id a trace link carried, goes back on.
+  const restored = restoreFragment(state.basePath, location, sessionStorageOrUndefined())
+
+  if (restored) {
+    history.replaceState(null, '', restored)
+  }
+
   const toSignIn = (signInState: 'signed-out' | 'session-ended') =>
     location.assign(
       signInUrl(state.basePath, {
         state: signInState,
-        returnUrl: signInState === 'session-ended' ? currentUrl() : undefined,
+        returnUrl: signInState === 'session-ended' ? currentUrl(state) : undefined,
       }),
     )
 

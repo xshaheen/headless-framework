@@ -340,13 +340,25 @@ export function server({
     }
 
     if (request.method === 'GET' && request.path === 'jobs/runs') {
+      // The server reads no correlation id from the URL, so a stray one filters nothing.
       const items = runs.filter(
         (row) =>
           (!query.status || row.status === query.status) &&
           (!query.fingerprint || row.failureFingerprint === query.fingerprint) &&
           (!query.function || row.function === query.function) &&
-          (!query.correlationId || row.correlationId === query.correlationId) &&
           (!query.cronJobId || row.cronJobId === query.cronJobId),
+      )
+
+      return { items, count: items.length, countCapped: false }
+    }
+
+    if (request.method === 'POST' && request.path === 'jobs/runs/search') {
+      const body = request.body as { correlationId: string; status?: string[]; function?: string[] }
+      const items = runs.filter(
+        (row) =>
+          row.correlationId === body.correlationId &&
+          (!body.status || body.status.includes(row.status)) &&
+          (!body.function || body.function.includes(row.function)),
       )
 
       return { items, count: items.length, countCapped: false }
