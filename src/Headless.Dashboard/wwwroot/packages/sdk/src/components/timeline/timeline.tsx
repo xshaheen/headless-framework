@@ -162,7 +162,19 @@ function TreeTimeline({ label, events, selectedId, onSelect }: TimelineProps) {
     }
   }
 
-  useLayoutEffect(measure, [])
+  // A window that grows, or a phone that turns, shows more rows without a scroll; jsdom has no observer.
+  useLayoutEffect(() => {
+    measure()
+
+    if (typeof ResizeObserver === 'undefined' || !scroller.current) {
+      return undefined
+    }
+
+    const observer = new ResizeObserver(measure)
+    observer.observe(scroller.current)
+
+    return () => observer.disconnect()
+  }, [])
 
   useLayoutEffect(() => {
     if (pendingFocus.current) {

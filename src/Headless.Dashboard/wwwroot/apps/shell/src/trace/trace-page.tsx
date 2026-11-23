@@ -168,16 +168,14 @@ export default function TracePage() {
       <PageHeader
         title="Trace"
         actions={
-          id ? (
+          id && !isRefused ? (
             <>
               {trace.dataUpdatedAt ? (
                 <span className="hd-hint">
                   as of <Timestamp value={new Date(trace.dataUpdatedAt).toISOString()} />
                 </span>
               ) : null}
-              <Button onPress={refresh} isDisabled={isRefused}>
-                Refresh
-              </Button>
+              <Button onPress={refresh}>Refresh</Button>
             </>
           ) : undefined
         }
