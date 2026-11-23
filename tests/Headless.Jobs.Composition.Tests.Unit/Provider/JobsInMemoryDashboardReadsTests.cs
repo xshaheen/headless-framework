@@ -517,6 +517,110 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_only_runs_whose_correlation_id_matches_character_for_character()
+    {
+        // given
+        var store = _Create();
+        var upperCron = await _AddCronJobAsync(store, "report.build", correlationId: "C-42");
+        var lowerCron = await _AddCronJobAsync(store, "report.build", correlationId: "c-42");
+        var upper = await _AddTimeJobAsync(store, JobStatus.Succeeded, _Base, correlationId: "C-42");
+        var lower = await _AddTimeJobAsync(store, JobStatus.Succeeded, _Base.AddMinutes(1), correlationId: "c-42");
+        await _AddTimeJobAsync(store, JobStatus.Succeeded, _Base.AddMinutes(2), correlationId: "c-42 ");
+        var upperOccurrence = await _AddOccurrenceAsync(store, upperCron, JobStatus.Succeeded, _Base.AddMinutes(3));
+        var lowerOccurrence = await _AddOccurrenceAsync(store, lowerCron, JobStatus.Succeeded, _Base.AddMinutes(4));
+
+        // when
+        var lowerRead = await _Store(store).ReadJobRunsByCorrelationAsync("c-42", 10, AbortToken);
+        var upperRead = await _Store(store).ReadJobRunsByCorrelationAsync("C-42", 10, AbortToken);
+
+        // then
+        lowerRead.Select(x => x.Id).Should().Equal(lower, lowerOccurrence);
+        upperRead.Select(x => x.Id).Should().Equal(upper, upperOccurrence);
+    }
+
+    [Fact]
+    public async Task should_list_a_chain_of_one_correlation_oldest_first_with_each_causation_key()
+    {
+        // given
+        var store = _Create();
+        var root = await _AddTimeJobAsync(store, JobStatus.Succeeded, _Base, correlationId: "chain-1");
+        var child = await _AddTimeJobAsync(
+            store,
+            JobStatus.Succeeded,
+            _Base.AddMinutes(1),
+            correlationId: "chain-1",
+            causationId: root.ToString("D")
+        );
+        var grandchild = await _AddTimeJobAsync(
+            store,
+            JobStatus.Failed,
+            _Base.AddMinutes(2),
+            correlationId: "chain-1",
+            causationId: child.ToString("D")
+        );
+
+        // when
+        var runs = await _Store(store).ReadJobRunsByCorrelationAsync("chain-1", 10, AbortToken);
+
+        // then
+        runs.Select(x => x.Id).Should().Equal(root, child, grandchild);
+        runs.Select(x => x.CausationId).Should().Equal(null, root.ToString("D"), child.ToString("D"));
+    }
+
+    [Fact]
+    public async Task should_return_an_occurrence_that_has_not_run_with_its_due_time()
+    {
+        // given
+        var store = _Create();
+        var cron = await _AddCronJobAsync(store, "report.build", correlationId: "nightly-1");
+        var due = _Base.AddHours(2);
+        var occurrence = await _AddOccurrenceAsync(store, cron, JobStatus.Idle, due);
+
+        // when
+        var run = (await _Store(store).ReadJobRunsByCorrelationAsync("nightly-1", 10, AbortToken))
+            .Should()
+            .ContainSingle()
+            .Subject;
+
+        // then
+        run.Id.Should().Be(occurrence);
+        run.Kind.Should().Be(JobRunKind.CronJobOccurrence);
+        run.Status.Should().Be(JobStatus.Idle);
+        run.ExecutionTime.Should().Be(due);
+        run.ExecutedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_fill_the_limit_from_matching_runs_when_case_variants_are_interleaved()
+    {
+        // given
+        var store = _Create();
+        var matching = new List<Guid>();
+
+        for (var index = 0; index < 1000; index++)
+        {
+            var variant = index % 5 < 2;
+            var id = await _AddTimeJobAsync(
+                store,
+                JobStatus.Succeeded,
+                _Base.AddMinutes(index),
+                correlationId: variant ? "LOAD-1" : "load-1"
+            );
+
+            if (!variant)
+            {
+                matching.Add(id);
+            }
+        }
+
+        // when
+        var runs = await _Store(store).ReadJobRunsByCorrelationAsync("load-1", 501, AbortToken);
+
+        // then
+        runs.Select(x => x.Id).Should().Equal(matching.Take(501));
+    }
+
+    [Fact]
     public async Task should_report_per_function_stats_across_both_kinds()
     {
         // given
@@ -819,11 +923,13 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
         string? fingerprint = null,
         DateTimeOffset? executedAt = null,
         DateTimeOffset? createdAt = null,
-        string? correlationId = null
+        string? correlationId = null,
+        string? causationId = null
     )
     {
         var job = _TimeJob(status, executionTime, function, fingerprint, executedAt, createdAt);
         job.CorrelationId = correlationId;
+        job.CausationId = causationId;
         await store.AddTimeJobsAsync([job], AbortToken);
 
         return job.Id;
@@ -858,13 +964,15 @@ public sealed class JobsInMemoryDashboardReadsTests : TestBase
         JobsInMemoryPersistenceProvider<TimeJobEntity, CronJobEntity> store,
         string function,
         int retries = 0,
-        int[]? retryIntervals = null
+        int[]? retryIntervals = null,
+        string? correlationId = null
     )
     {
         var cron = new CronJobEntity
         {
             Id = Guid.NewGuid(),
             Function = function,
+            CorrelationId = correlationId,
             Retries = retries,
             RetryIntervals = retryIntervals,
             Expression = "0 0 * * * *",

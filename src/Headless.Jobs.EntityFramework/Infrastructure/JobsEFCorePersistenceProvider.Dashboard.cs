@@ -18,6 +18,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private const int _CorrelationBatchSize = 100;
+
     private static readonly MethodInfo _GuidCompareTo = typeof(Guid).GetMethod(nameof(Guid.CompareTo), [typeof(Guid)])!;
 
     private static readonly MethodInfo _StringCompare = typeof(string).GetMethod(
@@ -25,6 +27,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         [typeof(string), typeof(string)]
     )!;
 
+    // The correlation filter compares with ==, so a column collation that ignores case or trailing spaces answers a
+    // superset. The consumer's model owns the collation, so the superset is confirmed ordinally here, and the read
+    // pages until it holds maxCount confirmed rows or the table runs out.
     public async Task<IReadOnlyList<JobRunSummary>> ReadJobRunRowsAsync(
         JobRunKind kind,
         JobRunQuery query,
@@ -36,6 +41,52 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         Argument.IsNotNull(query);
         Argument.IsPositive(maxCount);
 
+        if (query.CorrelationId is not { } correlationId)
+        {
+            return await _ReadJobRunBatchAsync(kind, query, after, maxCount, cancellationToken).ConfigureAwait(false);
+        }
+
+        var batchSize = Math.Max(maxCount, _CorrelationBatchSize);
+        var confirmed = new List<JobRunSummary>(maxCount);
+        var position = after;
+
+        while (true)
+        {
+            var batch = await _ReadJobRunBatchAsync(kind, query, position, batchSize, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var run in batch)
+            {
+                if (!string.Equals(run.CorrelationId, correlationId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                confirmed.Add(run);
+
+                if (confirmed.Count == maxCount)
+                {
+                    return confirmed;
+                }
+            }
+
+            if (batch.Count < batchSize)
+            {
+                return confirmed;
+            }
+
+            position = JobRunPosition.Of(batch[^1]);
+        }
+    }
+
+    private async Task<IReadOnlyList<JobRunSummary>> _ReadJobRunBatchAsync(
+        JobRunKind kind,
+        JobRunQuery query,
+        JobRunPosition? after,
+        int maxCount,
+        CancellationToken cancellationToken
+    )
+    {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -78,6 +129,16 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     )
     {
         Argument.IsNotNull(query);
+
+        if (query.CorrelationId is not null)
+        {
+            // The store's count would include rows its collation treats as equal, so confirmed rows are counted.
+            return limit <= 0
+                ? 0
+                : (
+                    await ReadJobRunRowsAsync(kind, query, after: null, limit, cancellationToken).ConfigureAwait(false)
+                ).Count;
+        }
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)

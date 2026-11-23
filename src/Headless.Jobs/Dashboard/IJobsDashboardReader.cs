@@ -41,6 +41,15 @@ internal interface IJobsDashboardReader
 
     Task<JobRunCount> CountRunsAsync(JobRunQuery query, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Returns at most <paramref name="limit"/> runs that carry the correlation id, oldest first, matched ordinally.
+    /// </summary>
+    Task<IReadOnlyList<JobCorrelatedRun>> ReadRunsByCorrelationAsync(
+        string correlationId,
+        int limit,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>Returns the run, a time job or a cron occurrence, or <see langword="null"/> when none has the id.</summary>
     Task<JobRunSummary?> GetRunAsync(Guid id, CancellationToken cancellationToken);
 
