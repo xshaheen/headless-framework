@@ -113,7 +113,6 @@ public sealed class SubscribeInvokerTests : TestBase
         consumed.TransportAddress.Should().Be("headless.bus.test.messageName");
         consumed.MessageName.Should().Be("test.messageName");
         consumed.Headers.Should().NotBeNull();
-        // Work the handler starts outside Messaging joins the message, caused by this subscriber's received row.
         InvokerTestConsumer
             .LastCausalScope.Should()
             .Be(new CausalContext(correlationId.ToString(), mediumMessage.StorageId.ToString("D")));

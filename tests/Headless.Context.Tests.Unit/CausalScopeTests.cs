@@ -24,6 +24,18 @@ public sealed class CausalScopeTests
     }
 
     [Fact]
+    public void should_restore_the_outer_scope_when_a_nested_scope_closes()
+    {
+        using var outer = CausalScope.Begin("order-7", "run-1");
+
+        var inner = CausalScope.Begin("order-8", "delivery-2");
+        CausalScope.Current.Should().Be(new CausalContext("order-8", "delivery-2"));
+        inner.Dispose();
+
+        CausalScope.Current.Should().Be(new CausalContext("order-7", "run-1"));
+    }
+
+    [Fact]
     public async Task should_restore_the_outer_scope_when_the_inner_one_closes_after_an_await()
     {
         using var outer = CausalScope.Begin("order-7", "run-1");

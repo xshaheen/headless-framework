@@ -330,7 +330,6 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         await handler.ExecuteTaskAsync(job, isDue: false, cancellationToken: AbortToken);
 
         var runId = job.JobId.ToString("D");
-        // A run with no stored correlation is its own root, as it is for the jobs it schedules.
         observed.Should().Be(new CausalContext(storedCorrelation ?? runId, runId));
         CausalScope.Current.Should().BeNull();
     }
