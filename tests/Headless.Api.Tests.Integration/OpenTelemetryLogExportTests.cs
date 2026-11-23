@@ -12,34 +12,34 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
-using Serilog;
 using Tests.Helpers;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace Tests;
 
 /// <summary>
-/// A host that logs through Serilog the way <c>docs/llms/logging.md</c> wires it, next to the service-defaults
-/// OpenTelemetry pipeline, still hands every <see cref="ILogger"/> record to the OpenTelemetry log exporter.
+/// An <c>AddHeadless</c> host, with its native logging profile and the service-defaults OpenTelemetry pipeline, hands
+/// every <see cref="ILogger"/> record to the OpenTelemetry log exporter once, redacted.
 /// </summary>
-public sealed partial class SerilogOpenTelemetryLogTests : TestBase
+public sealed partial class OpenTelemetryLogExportTests : TestBase
 {
-    private const string _LogMessage = "Serilog to OpenTelemetry probe";
+    private const string _LogMessage = "OpenTelemetry export probe";
 
     [Fact]
-    public async Task should_export_log_written_under_serilog_to_open_telemetry()
+    public async Task should_export_a_log_written_under_add_headless_to_open_telemetry_once()
     {
         // given
         var logs = new CapturedItems<CapturedLog>();
         await using var app = await _CreateAppAsync(logs);
-        var logger = app.Services.GetRequiredService<ILogger<SerilogOpenTelemetryLogTests>>();
+        var logger = app.Services.GetRequiredService<ILogger<OpenTelemetryLogExportTests>>();
 
         // when
         LogProbe(logger, 42);
 
-        // then
+        // then: the processor runs inline, so every copy the pipeline exports has arrived when the call returns
         var record = await _WaitForLogAsync(logs);
         record.Attributes.Should().ContainSingle(a => a.Key == "OrderId").Which.Value.Should().Be(42);
+        logs.Count(log => log.Message?.StartsWith(_LogMessage, StringComparison.Ordinal) == true).Should().Be(1);
     }
 
     [Fact]
@@ -54,36 +54,33 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
                     redaction.SetRedactor<StarRedactor>(new DataClassificationSet(_Personal))
                 )
         );
-        var logger = app.Services.GetRequiredService<ILogger<SerilogOpenTelemetryLogTests>>();
+        var logger = app.Services.GetRequiredService<ILogger<OpenTelemetryLogExportTests>>();
 
         // when
 #pragma warning disable CA1848, CA1873 // The probe needs a destructured {@Customer} hole, which [LoggerMessage] cannot express.
         logger.LogInformation(_LogMessage + " for {@Customer}", new Customer("Alice", "Gold"));
 #pragma warning restore CA1848, CA1873
 
-        // then
+        // then: logging keeps the capture's "@" in the attribute name
         var record = await _WaitForLogAsync(logs);
-        var attribute = record.Attributes.Should().ContainSingle(a => a.Key == "Customer").Subject;
-        var customer = attribute.Value?.ToString();
-        customer.Should().Contain(StarRedactor.Output).And.Contain("Gold").And.NotContain("Alice");
+        var attribute = record.Attributes.Should().ContainSingle(a => a.Key == "@Customer").Subject;
+        attribute.Value.Should().Be($"Customer {{ Name = {StarRedactor.Output}, Tier = Gold }}");
+        record.Message.Should().NotContain("Alice");
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task should_export_classified_logger_message_parameter_redacted_under_serilog(bool serilogFirst)
+    [Fact]
+    public async Task should_export_a_classified_logger_message_parameter_redacted()
     {
-        // given: AddHeadlessSerilog wraps its own factory, so it works before or after AddHeadless
+        // given
         var logs = new CapturedItems<CapturedLog>();
         await using var app = await _CreateAppAsync(
             logs,
             services =>
                 services.AddRedaction(redaction =>
                     redaction.SetRedactor<StarRedactor>(new DataClassificationSet(_Personal))
-                ),
-            serilogFirst
+                )
         );
-        var logger = app.Services.GetRequiredService<ILogger<SerilogOpenTelemetryLogTests>>();
+        var logger = app.Services.GetRequiredService<ILogger<OpenTelemetryLogExportTests>>();
 
         // when
         LogClassifiedProbe(logger, "alice@example.com", 42);
@@ -99,8 +96,7 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
 
     private async Task<WebApplication> _CreateAppAsync(
         CapturedItems<CapturedLog> logs,
-        Action<IServiceCollection> configureServices,
-        bool serilogFirst = false
+        Action<IServiceCollection> configureServices
     )
     {
         var builder = WebApplication.CreateBuilder(
@@ -108,14 +104,8 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
 
-        // The documented setup: Serilog owns the console, so the default providers go before AddHeadless adds
-        // the OpenTelemetry provider, and AddHeadlessSerilog hands every event on to that provider.
+        // AddHeadless adds its own console; the default providers would print every entry twice.
         builder.Logging.ClearProviders();
-
-        if (serilogFirst)
-        {
-            _AddSerilog(builder);
-        }
 
         builder.AddHeadless(configureServices: options =>
         {
@@ -130,20 +120,11 @@ public sealed partial class SerilogOpenTelemetryLogTests : TestBase
 
         configureServices(builder.Services);
 
-        if (!serilogFirst)
-        {
-            _AddSerilog(builder);
-        }
-
         var app = builder.Build();
         await app.StartAsync(AbortToken);
 
         return app;
     }
-
-    // Files off so the test leaves nothing on disk.
-    private static void _AddSerilog(WebApplicationBuilder builder) =>
-        builder.AddHeadlessSerilog(new SerilogOptions { WriteToFiles = false });
 
     private static Task<CapturedLog> _WaitForLogAsync(CapturedItems<CapturedLog> logs) =>
         logs.WaitForAsync(log => log.Message?.StartsWith(_LogMessage, StringComparison.Ordinal) == true);

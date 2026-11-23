@@ -28,8 +28,7 @@ internal sealed partial class RequestLogEnricher(IHttpContextAccessor contextAcc
     internal const string CorrelationId = "CorrelationId";
     internal const string ClientIp = "ClientIp";
 
-    // Property names keep the shape the Serilog API profile used (header name without dashes), so existing queries on
-    // them keep working.
+    // Property names are the header name without dashes, so they are valid identifiers in every log query language.
     private static readonly (string Header, string Property)[] _Headers =
     [
         (HttpHeaderNames.UserAgent, "UserAgent"),

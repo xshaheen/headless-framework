@@ -8,13 +8,13 @@ namespace Headless.Logging;
 
 /// <summary>
 /// Applies every registered <see cref="ILogTextRedactor"/> to text and exceptions that reach telemetry outside the
-/// logger factory, so a span, a Serilog-native event, or an error-tracker hook masks the same shapes the logs do.
+/// logger factory, so a span or an error-tracker hook masks the same shapes the logs do.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <c>AddHeadlessRedaction</c> registers it as a singleton. The framework uses it for exceptions recorded on spans, for
-/// span status descriptions and exception tags, and for events written through Serilog's own <c>ILogger</c>. Resolve
-/// it to mask a channel the framework does not write itself, such as an error tracker's before-send hook.
+/// span status descriptions and string tags. Resolve it to mask a channel the framework does not write itself, such as
+/// an error tracker's before-send hook.
 /// </para>
 /// <para>
 /// Every redactor applies, whatever <see cref="LogTextRedactionScope"/> it was registered with: a scope limits which

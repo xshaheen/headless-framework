@@ -3,7 +3,6 @@ Headless.Api
 Headless.Api.Abstractions
 Headless.Api.FluentValidation
 Headless.Api.Identity
-Headless.Api.Logging.Serilog
 Headless.Api.MinimalApi
 Headless.Api.Mvc
 Headless.Api.ServiceDefaults
@@ -124,7 +123,6 @@ Headless.Jobs.SourceGenerator
 Headless.Logging
 Headless.Logging.Redaction
 Headless.Logging.Redaction.AspNetCore
-Headless.Logging.Serilog
 Headless.Media.Indexing
 Headless.Media.Indexing.Abstractions
 Headless.Mediator

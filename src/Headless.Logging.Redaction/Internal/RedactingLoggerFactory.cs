@@ -18,8 +18,8 @@ namespace Headless.Logging.Internal;
 /// <para>
 /// It does two things. A <c>[LoggerMessage]</c> parameter that carries a data classification is redacted through the
 /// <see cref="IRedactorProvider"/> and handed to providers as an ordinary value. Microsoft's <c>EnableRedaction</c> does
-/// that only when Microsoft's own factory is in charge; under Serilog's factory the parameter was dropped and the text
-/// kept a literal <c>{Name}</c> hole. And a path an <see cref="ILogPathRedactor"/> recognizes is replaced in ASP.NET
+/// that only when Microsoft's own factory is in charge; under another library's factory the parameter is dropped and
+/// the text keeps a literal <c>{Name}</c> hole. And a path an <see cref="ILogPathRedactor"/> recognizes is replaced in ASP.NET
 /// Core's request scope and request lines, which the hosting layer writes before any middleware runs; the request lines'
 /// query values are replaced too.
 /// </para>

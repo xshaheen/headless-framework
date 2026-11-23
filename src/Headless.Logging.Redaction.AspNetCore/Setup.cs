@@ -31,9 +31,9 @@ public static class SetupLoggingRedactionAspNetCore
         /// logging record, and the server span's <c>url.path</c>, <c>http.target</c>, and <c>url.full</c> tags.
         /// </summary>
         /// <remarks>
-        /// Idempotent, and safe to call from libraries. Like <c>AddHeadlessRedaction</c>, it wraps the logger factories
-        /// registered so far; <c>AddHeadlessSerilog</c> wraps its own. Spans other than the request span, such as an outgoing call to a
-        /// credential URL, need <c>AddHeadlessLogPathRedaction</c> on the tracer provider.
+        /// Idempotent, and safe to call from libraries. Like <c>AddHeadlessRedaction</c>, it wraps the logger factory
+        /// registered so far. Spans other than the request span, such as an outgoing call to a credential URL, need
+        /// <c>AddHeadlessLogPathRedaction</c> on the tracer provider.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
         public IServiceCollection AddHeadlessRequestLogRedaction()

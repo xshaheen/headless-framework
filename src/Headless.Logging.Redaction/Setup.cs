@@ -31,12 +31,18 @@ public static class SetupLoggingRedaction
         /// </para>
         /// <para>
         /// The registered logger factory is wrapped, so a classified <c>[LoggerMessage]</c> parameter is redacted under
-        /// Serilog's factory too, credential paths an <see cref="ILogPathRedactor"/> recognizes are replaced in ASP.NET
-        /// Core's request scope and request lines, and text patterns from
+        /// any factory, a logged object's classified members are redacted, credential paths an
+        /// <see cref="ILogPathRedactor"/> recognizes and query values are replaced in ASP.NET Core's request scope and
+        /// request lines, and text patterns from
         /// <see cref="HeadlessRedactionSetupBuilder.MaskText(string, string, Action{LogTextRedactionScope})"/> are
-        /// masked, in a logged exception's messages too. A logger factory registered later replaces the wrapped one: <c>AddHeadlessSerilog</c> from
-        /// <c>Headless.Logging.Serilog</c> wraps its own, and after a plain <c>UseSerilog</c> call this method again.
-        /// The host logs a warning at startup when the factory in charge is not wrapped.
+        /// masked, in a logged exception's messages too. A logger factory registered later replaces the wrapped one:
+        /// call this method again after it. The host logs a warning at startup when the factory in charge is not
+        /// wrapped.
+        /// </para>
+        /// <para>
+        /// Every name classified with <see cref="HeadlessRedactionSetupBuilder.ClassifyProperty"/> is also dropped from
+        /// the baggage the runtime propagator injects into outgoing <c>HttpClient</c> calls, process-wide and from this
+        /// call on: a handler built earlier keeps the unfiltered propagator.
         /// </para>
         /// <para>
         /// Safe to call from an app and from libraries, in any order: each call adds only what its own

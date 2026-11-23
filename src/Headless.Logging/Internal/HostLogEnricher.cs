@@ -8,8 +8,7 @@ namespace Headless.Logging.Internal;
 
 /// <summary>Adds the machine name, process name, and the entry assembly's commit to every entry.</summary>
 /// <remarks>
-/// These are the host facts Microsoft's process and application enrichers do not add. Names keep the Headless shape the
-/// Serilog profile used, so existing queries on them keep working.
+/// These are the host facts Microsoft's process and application enrichers do not add.
 /// </remarks>
 internal sealed class HostLogEnricher : IStaticLogEnricher
 {

@@ -7,7 +7,6 @@ wall-clock 1 tests/Headless.Api.Composition.Tests.Unit/Abstractions/ProblemDetai
 wall-clock 1 tests/Headless.Api.Composition.Tests.Unit/Abstractions/ProblemDetailsLocalizationTests.cs
 wall-clock 1 tests/Headless.Api.Composition.Tests.Unit/HeadlessApiExceptionHandlerTests.cs
 wall-clock 6 tests/Headless.Api.Composition.Tests.Unit/Identity/TokenProviders/TotpRfc6238GeneratorTests.cs
-wall-clock 1 tests/Headless.Api.Logging.Serilog.Tests.Unit/Enrichers/SanitizedHeaderEnricherTests.cs
 wall-clock 1 tests/Headless.Api.Mvc.Tests.Unit/Filters/BlockInEnvironmentAttributeTests.cs
 wall-clock 1 tests/Headless.Api.Mvc.Tests.Unit/Filters/NoTrailingSlashAttributeTests.cs
 wall-clock 1 tests/Headless.Api.Mvc.Tests.Unit/Filters/RequireEnvironmentAttributeTests.cs

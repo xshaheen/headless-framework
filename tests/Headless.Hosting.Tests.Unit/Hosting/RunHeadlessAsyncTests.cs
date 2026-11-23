@@ -6,7 +6,6 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Serilog;
 
 namespace Tests.Hosting;
 
@@ -138,22 +137,13 @@ public sealed class RunHeadlessAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task should_keep_headless_serilog_console_output_off_stdout_while_describing()
+    public async Task should_keep_headless_logging_console_output_off_stdout_while_describing()
     {
         // when
         var run = await HostConsoleRun.DescribeAsync(
             builder =>
             {
-                builder.Services.AddSerilog(
-                    (sp, configuration) =>
-                        configuration.ConfigureReloadableLoggerConfiguration(
-                            sp,
-                            builder.Configuration,
-                            builder.Environment,
-                            new SerilogOptions { WriteToFiles = false }
-                        ),
-                    preserveStaticLogger: true
-                );
+                builder.AddHeadlessLogging(new HeadlessLoggingOptions { ConsoleFormat = HeadlessConsoleFormat.Json });
                 builder.Services.AddStubSection(new StubSection("jobs"));
                 builder.Services.AddStartupValidator(sp => new LoggingValidator(
                     sp.GetRequiredService<ILogger<LoggingValidator>>()

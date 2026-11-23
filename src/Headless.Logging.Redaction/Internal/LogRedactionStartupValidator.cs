@@ -9,7 +9,7 @@ namespace Headless.Logging.Internal;
 
 /// <summary>
 /// Warns once at startup when log redaction is registered but the logger factory in charge is not wrapped, because a
-/// factory registered later (for example Serilog's <c>UseSerilog</c>) replaced the wrapped one.
+/// factory registered later (for example a third-party logging library's) replaced the wrapped one.
 /// </summary>
 /// <remarks>
 /// It reads one registration and writes nothing. It warns instead of failing the start: the host can still serve

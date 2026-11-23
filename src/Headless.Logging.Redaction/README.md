@@ -4,7 +4,7 @@ A data-classification taxonomy and default redactors that keep secrets and perso
 
 ## Why use this package
 
-Masking by hand in each log call, enricher, or `ToString()` override drifts apart and misses channels. This package lets an app mark what a value is once (`[SecretData]`, `[PrivateData]`, `[IdentifierData]`) and decide in one place how each kind is redacted: secrets erased, and personal data and identifiers turned into stable HMAC pseudonyms so logs stay searchable without carrying the values. The classifications are Microsoft.Extensions.Compliance ones, so Microsoft's redaction-aware logging and HTTP logging, and the Headless Serilog policy, all apply the same rules.
+Masking by hand in each log call, enricher, or `ToString()` override drifts apart and misses channels. This package lets an app mark what a value is once (`[SecretData]`, `[PrivateData]`, `[IdentifierData]`) and decide in one place how each kind is redacted: secrets erased, and personal data and identifiers turned into stable HMAC pseudonyms so logs stay searchable without carrying the values. The classifications are Microsoft.Extensions.Compliance ones, so Microsoft's redaction-aware logging and HTTP logging apply the same rules.
 
 ## Install
 

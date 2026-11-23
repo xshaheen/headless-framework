@@ -15,8 +15,8 @@ namespace Headless.Blobs;
 /// </summary>
 /// <remarks>
 /// <c>UseSignedUrlEndpoint</c> registers it as a singleton and applies it to HTTP logging, request activities, and
-/// ASP.NET Core's hosting request logs. Resolve it to redact a path the framework does not log itself, such as the
-/// <c>RequestPath</c> property of Serilog request logging (<c>UseSerilogRequestLogging</c>).
+/// ASP.NET Core's hosting request logs. Resolve it to redact a path the framework does not log itself, such as one a
+/// third-party request-logging middleware writes.
 /// </remarks>
 [PublicAPI]
 public sealed class BlobSignedUrlPathRedactor : ILogPathRedactor

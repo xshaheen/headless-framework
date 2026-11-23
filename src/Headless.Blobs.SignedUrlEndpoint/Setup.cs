@@ -32,9 +32,9 @@ public static class SetupBlobSignedUrl
         /// request activity's <c>url.path</c>, <c>http.target</c>, and <c>url.full</c> tags, and in ASP.NET Core's own
         /// request scope (<c>RequestPath</c>) and its "Request starting" and "Request finished" lines. The hosting logs
         /// are rewritten by the shared log redaction wrapper (<c>AddHeadlessRedaction</c>, which this call
-        /// registers) around the registered <see cref="ILoggerFactory"/>. <c>AddHeadlessSerilog</c> wraps Serilog's
-        /// factory itself; a plain <c>UseSerilog</c> after this call replaces the wrapper, and the host logs a warning at
-        /// startup: call <c>AddHeadlessRedaction()</c> again after it.
+        /// registers) around the registered <see cref="ILoggerFactory"/>. A logger factory registered after this call
+        /// replaces the wrapper, and the host logs a warning at startup: call <c>AddHeadlessRedaction()</c> again after
+        /// it.
         /// </para>
         /// </remarks>
         public HeadlessBlobsSetupBuilder UseSignedUrlEndpoint(Action<BlobSignedUrlOptions> setupAction)

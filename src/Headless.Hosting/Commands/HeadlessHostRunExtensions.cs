@@ -218,7 +218,7 @@ public static class HeadlessHostRunExtensions
         var stdout = Console.Out;
         var stderr = Console.Error;
 
-        // Console sinks that look the writer up on each write, such as Serilog's, follow this swap. The Microsoft
+        // Console sinks that look the writer up on each write follow this swap. The Microsoft
         // console logger captured stdout when the host was built, so it is moved by its error threshold instead.
         Console.SetOut(stderr);
 

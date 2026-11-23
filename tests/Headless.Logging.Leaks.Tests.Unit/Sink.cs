@@ -7,14 +7,14 @@ public enum Sink
 {
     /// <summary>
     /// The console a production host writes: Microsoft's JSON console formatter for a Microsoft.Extensions.Logging
-    /// pipeline, Serilog's compact JSON formatter for a Serilog one. The formatter's output is captured, not stdout.
+    /// pipeline, Serilog's compact JSON formatter for a Serilog sink. The formatter's output is captured, not stdout.
     /// </summary>
     Console,
 
-    /// <summary>Serilog's text console in Development, rendered with the Headless output template.</summary>
+    /// <summary>A Serilog sink's text console, rendered from a message template.</summary>
     ConsoleText,
 
-    /// <summary>The Headless Serilog profile's level files (<c>warning-.log</c> and siblings).</summary>
+    /// <summary>A Serilog sink's rolling file.</summary>
     File,
 
     /// <summary>OTLP log export.</summary>
