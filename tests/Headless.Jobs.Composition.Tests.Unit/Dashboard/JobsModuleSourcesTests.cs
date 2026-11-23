@@ -369,6 +369,135 @@ public sealed class JobsModuleSourcesTests : TestBase
     }
 
     [Fact]
+    public async Task should_trace_a_run_and_its_chain_child_with_the_child_caused_by_the_run()
+    {
+        // given: a chain scheduled through the manager, which stamps the child's causation itself
+        await using var node = JobsModuleNode.Create(_time);
+        var child = JobsModuleNode.IdleJob(_time.GetUtcNow());
+        child.ExecutionTime = null;
+        var parent = JobsModuleNode.IdleJob(_time.GetUtcNow());
+        parent.ExecutionTime = _time.GetUtcNow().UtcDateTime.AddHours(1);
+        parent.CorrelationId = "ord-7";
+        parent.Children = [child];
+        var added = await node
+            .Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>()
+            .AddAsync(parent, AbortToken);
+
+        // when
+        var answer = await node.Module.GetTraceAsync(
+            new DashboardTraceRequest { CorrelationId = "ord-7", User = _User },
+            AbortToken
+        );
+
+        // then
+        var parentId = added.Id.ToString();
+        var childId = added.Children.Single().Id.ToString();
+        answer.Items.Select(item => item.StorageId).Should().Equal(parentId, childId);
+        var root = answer.Items[0];
+        root.Target.Should()
+            .Be(
+                new ObjectRef
+                {
+                    Module = "jobs",
+                    Kind = "run",
+                    Id = parentId,
+                }
+            );
+        root.Key.Should().Be(new DashboardTraceKey { Kind = DashboardTraceKeyKind.Run, Value = parentId });
+        root.Causation.Should().BeNull();
+        root.Title.Should().Be(JobsModuleNode.Charge);
+        root.CorrelationId.Should().Be("ord-7");
+        answer
+            .Items[1]
+            .Causation.Should()
+            .Be(new DashboardTraceKey { Kind = DashboardTraceKeyKind.Run, Value = parentId });
+        answer.Limited.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_stamp_an_idle_run_with_its_due_time_and_a_finished_run_with_when_it_ran()
+    {
+        // given
+        await using var node = JobsModuleNode.Create(_time);
+        var now = _time.GetUtcNow();
+        var idle = JobsModuleNode.IdleJob(now);
+        idle.CorrelationId = "ord-7";
+        var failed = JobsModuleNode.FailedJob(now);
+        failed.CorrelationId = "ord-7";
+        await node.Store.AddTimeJobsAsync([idle, failed], AbortToken);
+
+        // when
+        var answer = await node.Module.GetTraceAsync(
+            new DashboardTraceRequest { CorrelationId = "ord-7", User = _User },
+            AbortToken
+        );
+
+        // then
+        var due = answer.Items.Should().ContainSingle(item => item.StorageId == idle.Id.ToString()).Subject;
+        due.TimestampKind.Should().Be(DashboardTraceTimestampKind.Due);
+        due.At.Should().Be(now.AddMinutes(-1));
+        due.Status.Should().Be("Idle");
+        due.StatusRole.Should().Be("sched");
+        var ran = answer.Items.Should().ContainSingle(item => item.StorageId == failed.Id.ToString()).Subject;
+        ran.TimestampKind.Should().Be(DashboardTraceTimestampKind.Ran);
+        ran.At.Should().Be(now.AddMinutes(-5));
+        ran.StatusRole.Should().Be("fail");
+    }
+
+    [Fact]
+    public async Task should_stop_at_the_trace_limit_and_say_more_runs_carry_the_id()
+    {
+        // given: one run more than the default limit of 500
+        await using var node = JobsModuleNode.Create(_time);
+        var now = _time.GetUtcNow();
+        var jobs = Enumerable
+            .Range(0, 501)
+            .Select(i =>
+            {
+                var job = JobsModuleNode.IdleJob(now);
+                job.ExecutionTime = now.UtcDateTime.AddSeconds(i);
+                job.CorrelationId = "ord-7";
+                return job;
+            })
+            .ToArray();
+        await node.Store.AddTimeJobsAsync(jobs, AbortToken);
+
+        // when
+        var answer = await node.Module.GetTraceAsync(
+            new DashboardTraceRequest { CorrelationId = "ord-7", User = _User },
+            AbortToken
+        );
+
+        // then: the oldest 500 come back, and the link opens the runs list filtered by the id
+        answer.Items.Should().HaveCount(500);
+        answer.Items.Select(item => item.StorageId).Should().Equal(jobs.Take(500).Select(job => job.Id.ToString()));
+        answer.Limited.Should().BeTrue();
+        answer.ListLink!.Path.Should().Be("runs");
+        answer.ListLink.State!.Value.GetProperty("correlationId").GetString().Should().Be("ord-7");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10_001)]
+    public void should_refuse_a_trace_limit_outside_1_to_10000(int traceLimit)
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessJobs(jobs => jobs.DisableBackgroundServices().AddModule<DashboardTestJobs>());
+        services.AddHeadlessDashboard(dashboard =>
+            dashboard.WithNoAuth().AddJobs(options => options.TraceLimit = traceLimit)
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<JobsDashboardOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>().WithMessage("*TraceLimit must be between 1 and 10000*");
+    }
+
+    [Fact]
     public async Task should_dispose_the_change_publisher_twice_without_throwing_after_its_reader_started()
     {
         // given

@@ -33,6 +33,7 @@ app.MapHeadlessDashboard();
 | `ViewPolicy`, `OperatePolicy` | the shell's | As for every module. |
 | `ChangeOverlapWindow` | 5 s | How far back each change read reads again. Make it longer than the Jobs store's slowest single write. |
 | `ChangePageSize` | 200 | The most changed rows one change read returns, 1 to 1000. |
+| `TraceLimit` | 500 | The most runs the trace page lists for one correlation id, oldest first, 1 to 10,000. When more runs carry the id, the page shows `500+` and links to the runs list filtered by it. |
 
 `AddJobs(Action<JobsDashboardOptions>)`, `AddJobs(Action<JobsDashboardOptions, IServiceProvider>)`, and `AddJobs(IConfiguration)` configure them.
 
