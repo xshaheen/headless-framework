@@ -175,9 +175,30 @@ public sealed partial class LogRedactionTests : TestBase
     }
 
     [Fact]
+    public void should_wrap_the_later_factory_when_redaction_is_registered_again()
+    {
+        // given: another logger factory registered after AddHeadlessRedaction, then AddHeadlessRedaction again
+        using var sink = new CapturingProvider();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessRedaction();
+        services.AddSingleton<ILoggerFactory>(_ => new LoggerFactory([sink]));
+        services.AddHeadlessRedaction();
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        LogOrderPlaced(provider.GetRequiredService<ILoggerFactory>().CreateLogger("App"), "alice@example.com", 3);
+
+        // then: the redacting factory is the one resolved, and it writes through the later factory's provider
+        provider.GetRequiredService<ILoggerFactory>().GetType().Name.Should().Be("RedactingLoggerFactory");
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().NotContain("alice@example.com");
+    }
+
+    [Fact]
     public async Task should_warn_at_startup_when_a_later_logger_factory_replaces_the_redacting_one()
     {
-        // given: the factory is replaced after AddHeadlessRedaction, as a plain UseSerilog would
+        // given: another logger factory is registered after AddHeadlessRedaction
         using var sink = new CapturingProvider();
         var services = new ServiceCollection();
         services.AddLogging();
@@ -192,7 +213,7 @@ public sealed partial class LogRedactionTests : TestBase
         sink.Entries.Should()
             .ContainSingle(e => e.EventName == "LogRedactionFactoryReplaced")
             .Which.Text.Should()
-            .Contain("AddHeadlessSerilog");
+            .Contain("Call AddHeadlessRedaction again after that logger factory registration");
     }
 
     [Fact]

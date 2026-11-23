@@ -508,11 +508,13 @@
         <Project Path="tests\Headless.MultiTenancy.Tests.Unit\Headless.MultiTenancy.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Observability/">
+        <Project Path="src\Headless.Logging\Headless.Logging.csproj" />
         <Project Path="src\Headless.Logging.Redaction\Headless.Logging.Redaction.csproj" />
         <Project Path="src\Headless.Logging.Redaction.AspNetCore\Headless.Logging.Redaction.AspNetCore.csproj" />
         <Project Path="src\Headless.Logging.Serilog\Headless.Logging.Serilog.csproj" />
     </Folder>
     <Folder Name="/Observability/Tests/">
+        <Project Path="tests\Headless.Logging.Tests.Unit\Headless.Logging.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Logging.Leaks.Tests.Unit\Headless.Logging.Leaks.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Logging.Redaction.AspNetCore.Tests.Unit\Headless.Logging.Redaction.AspNetCore.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Logging.Redaction.Tests.Unit\Headless.Logging.Redaction.Tests.Unit.csproj" />

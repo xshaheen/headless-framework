@@ -64,19 +64,13 @@ public static class SetupLoggingRedaction
                 }
             });
 
-            // Every ILoggerFactory registration is wrapped, so the last one, the one the container resolves, always is.
-            services.TryDecorateWith<ILoggerFactory>(
-                (inner, provider) =>
-                    inner is RedactingLoggerFactory
-                        ? inner
-                        : new RedactingLoggerFactory(
-                            inner,
-                            provider.GetService<IRedactorProvider>(),
-                            [.. provider.GetServices<ILogPathRedactor>()],
-                            LogTextRedactorRegistration.All(provider),
-                            LogPropertyClassification.Resolve(provider, provider.GetService<IRedactorProvider>())
-                        )
-            );
+            // One map of classified property names per container, shared by the logger factory, enrichers, span tags,
+            // and baggage, so a name is redacted the same way on every channel.
+            services.TryAddSingleton(static provider => new LogPropertyRedactors(
+                LogPropertyClassification.Resolve(provider, provider.GetService<IRedactorProvider>())
+            ));
+
+            RedactingLoggerFactoryRegistration.Register(services);
 
             services.AddStartupValidator<LogRedactionStartupValidator>();
 

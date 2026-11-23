@@ -91,7 +91,9 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Telemetry" Version="10.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Telemetry.Abstractions" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.ObjectPool" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.11.0" />
@@ -206,7 +208,6 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Testing.Extensions.GitHubActionsReport" Version="2.5.3" />
     <PackageVersion Include="NameGenerator" Version="2.0.4" />
     <!-- Test-only: the bundled libvips binaries (LGPL-3.0-or-later). Headless.Imaging.NetVips references only the MIT

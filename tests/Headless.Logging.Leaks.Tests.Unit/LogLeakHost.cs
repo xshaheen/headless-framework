@@ -49,6 +49,12 @@ public enum LogPipeline
     /// provider. With redaction on, Serilog also gets the classification destructuring policy.
     /// </summary>
     MelOtelSerilogSink,
+
+    /// <summary>
+    /// <c>AddHeadlessLogging</c>: Microsoft.Extensions.Logging with the Headless console profile and enrichment, and the
+    /// OpenTelemetry provider. With redaction on it adds the recommended classification and text pattern.
+    /// </summary>
+    HeadlessLogging,
 }
 
 /// <summary>Whether the pipeline runs the documented Headless redaction.</summary>
@@ -127,6 +133,12 @@ internal sealed class LogLeakHost : IDisposable
             );
         });
 
+        if (pipeline is LogPipeline.HeadlessLogging)
+        {
+            builder.AddHeadlessLogging(new HeadlessLoggingOptions { ConsoleFormat = HeadlessConsoleFormat.Json });
+            _CaptureJsonConsole(builder, console);
+        }
+
         if (pipeline is LogPipeline.MelOtel or LogPipeline.MelOtelMicrosoftRedaction)
         {
             _AddJsonConsoleCapture(builder, console);
@@ -171,7 +183,10 @@ internal sealed class LogLeakHost : IDisposable
             });
         }
 
-        if (pipeline is LogPipeline.MelOtel or LogPipeline.MelOtelSerilogSink && redaction == Redaction.On)
+        if (
+            pipeline is LogPipeline.MelOtel or LogPipeline.MelOtelSerilogSink or LogPipeline.HeadlessLogging
+            && redaction == Redaction.On
+        )
         {
             _AddHeadlessRedaction(builder.Services);
         }
@@ -282,7 +297,11 @@ internal sealed class LogLeakHost : IDisposable
     private static void _AddJsonConsoleCapture(HostApplicationBuilder builder, TextWriter writer)
     {
         builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
+        _CaptureJsonConsole(builder, writer);
+    }
 
+    private static void _CaptureJsonConsole(HostApplicationBuilder builder, TextWriter writer)
+    {
         // Keep the formatter, drop the provider that would print to the process-wide stdout.
         var console = builder.Services.Where(d => d.ImplementationType == typeof(ConsoleLoggerProvider)).ToList();
 
