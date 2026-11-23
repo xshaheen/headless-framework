@@ -122,6 +122,7 @@ internal sealed class LogLeakHost : IDisposable
         if (pipeline is LogPipeline.HeadlessLogging)
         {
             builder.AddHeadlessLogging(new HeadlessLoggingOptions { ConsoleFormat = HeadlessConsoleFormat.Json });
+            builder.Services.AddLogEnricher<LeakEnricher>();
             _CaptureJsonConsole(builder, console);
         }
 

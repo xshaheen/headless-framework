@@ -13,6 +13,8 @@ internal static class LeakMatrix
     public static TheoryData<string, LogPipeline, Redaction, Sink> LogKept =>
         new()
         {
+            { "e1", LogPipeline.HeadlessLogging, Redaction.On, Sink.Console },
+            { "e1", LogPipeline.HeadlessLogging, Redaction.On, Sink.OtlpLogs },
             { "m1", LogPipeline.MelOtel, Redaction.On, Sink.Console },
             { "m1", LogPipeline.MelOtel, Redaction.On, Sink.OtlpLogs },
             { "m1", LogPipeline.HeadlessLogging, Redaction.On, Sink.Console },
@@ -119,6 +121,8 @@ internal static class LeakMatrix
     public static TheoryData<string, LogPipeline, Redaction, Sink> LogLeaks =>
         new()
         {
+            { "e1", LogPipeline.HeadlessLogging, Redaction.Off, Sink.Console },
+            { "e1", LogPipeline.HeadlessLogging, Redaction.Off, Sink.OtlpLogs },
             { "m1", LogPipeline.MelOtel, Redaction.Off, Sink.Console },
             { "m1", LogPipeline.MelOtel, Redaction.Off, Sink.OtlpLogs },
             { "m1", LogPipeline.MelOtelMicrosoftRedaction, Redaction.On, Sink.Console },
@@ -301,6 +305,7 @@ internal static class LeakMatrix
             { "h5", Redaction.Off, Sink.OtlpLogs },
             { "h5", Redaction.On, Sink.OtlpLogs },
             { "h5", Redaction.On, Sink.OtlpSpans },
+            { "h6", Redaction.On, Sink.OtlpLogs },
         };
 
     /// <summary>Cells where the raw value reaches the sink.</summary>
@@ -313,5 +318,8 @@ internal static class LeakMatrix
             { "h1", Redaction.On, Sink.OtlpSpans },
             { "h2", Redaction.Off, Sink.OtlpLogs },
             { "h5", Redaction.Off, Sink.OtlpSpans },
+            { "h6", Redaction.Off, Sink.OtlpLogs },
+            { "h6", Redaction.Off, Sink.OtlpSpans },
+            { "h6", Redaction.On, Sink.OtlpSpans },
         };
 }

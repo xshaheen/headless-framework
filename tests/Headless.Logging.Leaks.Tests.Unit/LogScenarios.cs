@@ -114,6 +114,18 @@ internal static class LogScenarios
                 }
             }
         ),
+        new(
+            "e1",
+            "a consumer ILogEnricher adding an Email tag (classified name) under AddHeadlessLogging",
+            Pii.Email("e1"),
+            h =>
+            {
+                using (LeakEnricher.Add("Email", Pii.Email("e1")))
+                {
+                    h.Logger.LogWarning("marker-e1");
+                }
+            }
+        ),
     }.ToDictionary(s => s.Id, StringComparer.Ordinal);
 }
 #pragma warning restore CA1848, CA2254
