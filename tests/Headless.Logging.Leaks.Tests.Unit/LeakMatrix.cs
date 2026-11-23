@@ -395,8 +395,10 @@ internal static class LeakMatrix
         {
             { "b1", Redaction.Off, Sink.OtlpSpans },
             { "b1", Redaction.On, Sink.OtlpSpans },
+            { "b1", Redaction.On, Sink.Propagation },
             { "b2", Redaction.Off, Sink.OtlpSpans },
             { "b2", Redaction.On, Sink.OtlpSpans },
+            { "b2", Redaction.On, Sink.Propagation },
             { "s1", Redaction.Off, Sink.Propagation },
             { "s1", Redaction.On, Sink.OtlpSpans },
             { "s1", Redaction.On, Sink.Propagation },
@@ -420,9 +422,7 @@ internal static class LeakMatrix
         new()
         {
             { "b1", Redaction.Off, Sink.Propagation },
-            { "b1", Redaction.On, Sink.Propagation },
             { "b2", Redaction.Off, Sink.Propagation },
-            { "b2", Redaction.On, Sink.Propagation },
             { "s1", Redaction.Off, Sink.OtlpSpans },
             { "s2", Redaction.Off, Sink.OtlpSpans },
             { "s3", Redaction.Off, Sink.OtlpSpans },

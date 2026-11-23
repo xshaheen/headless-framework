@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Logging.Internal;
 using Microsoft.AspNetCore.Diagnostics.Logging;
@@ -8,6 +9,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
 using OpenTelemetry.Trace;
 
 namespace Headless.Logging;
@@ -130,7 +132,9 @@ public static class SetupLoggingRedactionAspNetCore
         /// </para>
         /// <para>
         /// <c>AddHeadless</c> adds this processor to the tracer it configures. A tracer you build yourself, such as a
-        /// worker's, needs this call in its own <c>WithTracing</c>.
+        /// worker's, needs this call in its own <c>WithTracing</c>. Building the tracer also makes OpenTelemetry's
+        /// default propagator drop classified baggage keys from outgoing calls and messages; a propagator assigned with
+        /// <c>Sdk.SetDefaultTextMapPropagator</c> after that is not filtered, and the host warns on its next start.
         /// </para>
         /// <para>
         /// An exception event (<c>Activity.AddException</c>, or an instrumentation's <c>RecordException</c> option)
@@ -144,10 +148,18 @@ public static class SetupLoggingRedactionAspNetCore
         {
             Argument.IsNotNull(builder);
 
-            return builder.AddProcessor(static provider => new TextRedactionActivityProcessor(
-                provider.GetService<LogTextMasker>(),
-                provider.GetService<LogPropertyRedactors>() ?? LogPropertyRedactors.Empty
-            ));
+            return builder.AddProcessor(static provider =>
+            {
+                // The SDK's static constructor assigns the default propagator; running it first keeps it from replacing
+                // the baggage filter on a later first use.
+                RuntimeHelpers.RunClassConstructor(typeof(Sdk).TypeHandle);
+                ClassifiedBaggageKeys.InstallTextMap(Sdk.SetDefaultTextMapPropagator);
+
+                return new TextRedactionActivityProcessor(
+                    provider.GetService<LogTextMasker>(),
+                    provider.GetService<LogPropertyRedactors>() ?? LogPropertyRedactors.Empty
+                );
+            });
         }
     }
 }

@@ -74,6 +74,17 @@ public static class SetupLoggingRedaction
 
             services.AddStartupValidator<LogRedactionStartupValidator>();
 
+            // Baggage leaves the process through static propagators, and an HttpClient handler copies the runtime one
+            // when it is built, so the classified names join the process-wide filter now, before any host starts.
+            ClassifiedBaggageKeys.Add(
+                services
+                    .Where(static d => d.ServiceType == typeof(LogPropertyClassification) && !d.IsKeyedService)
+                    .Select(static d => d.ImplementationInstance)
+                    .OfType<LogPropertyClassification>()
+                    .Select(static c => c.Name)
+            );
+            services.AddStartupValidator<PropagatorStartupValidator>();
+
             // One masker for every channel outside the logger factory, built from the same redactors the logs use.
             services.TryAddSingleton(static provider => new LogTextMasker([
                 .. LogTextRedactorRegistration.All(provider).Select(static registration => registration.Redactor),
