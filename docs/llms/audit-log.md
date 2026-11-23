@@ -56,7 +56,7 @@ Inject `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TC
 
 ### What gets captured
 
-- **Actor.** `UserId`, `AccountId`, and `TenantId` from `ICurrentUser` and `ICurrentTenant`. `CorrelationId` from `ICorrelationIdProvider`, by default the W3C trace ID. `IpAddress` and `UserAgent` from the request, else from `IAuditClientInfoProvider`, else `null`.
+- **Actor.** `UserId`, `AccountId`, and `TenantId` from `ICurrentUser` and `ICurrentTenant`. `CorrelationId` from `ICorrelationIdProvider`: by default the business correlation ID inside a job run or a message consume, else the W3C trace ID. `IpAddress` and `UserAgent` from the request, else from `IAuditClientInfoProvider`, else `null`.
 - **Entity.** `EntityType` is the full CLR type name. `EntityId` is a plain string for a single-column key and a JSON array for a composite key.
 - **Change data.** `OldValues` and `NewValues` as `Dictionary<string, object?>`, and `ChangedFields` as `List<string>`.
 - **Outcome.** `Success` and an optional `ErrorCode`.

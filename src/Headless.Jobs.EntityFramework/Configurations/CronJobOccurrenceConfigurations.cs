@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Context;
 using Headless.EntityFramework;
 using Headless.Hosting;
 using Headless.Jobs.Internal;
@@ -121,7 +122,7 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "Function", "Id"));
 
         // The dashboard's Trace view lists every run of one correlation id.
-        builder.Property(x => x.CorrelationId).HasMaxLength(JobContract.CorrelationIdMaxLength);
+        builder.Property(x => x.CorrelationId).HasMaxLength(CausalScope.IdMaxLength);
         builder
             .HasIndex("CorrelationId")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, "CorrelationId"));
