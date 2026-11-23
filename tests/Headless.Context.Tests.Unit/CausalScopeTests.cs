@@ -76,27 +76,57 @@ public sealed class CausalScopeTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("  ")]
-    public void should_open_nothing_when_the_correlation_id_is_blank(string? correlationId)
+    public void should_hide_the_outer_scope_when_the_correlation_id_is_blank(string? correlationId)
     {
         using var outer = CausalScope.Begin("order-7", "run-1");
 
-        using (CausalScope.Begin(correlationId, "run-2"))
+        using (CausalScope.Begin(correlationId, "delivery-2"))
         {
-            CausalScope.Current.Should().Be(new CausalContext("order-7", "run-1"));
+            // The inner work is not the outer scope's, so it must not borrow that correlation.
+            CausalScope.Current.Should().BeNull();
         }
 
         CausalScope.Current.Should().Be(new CausalContext("order-7", "run-1"));
     }
 
     [Fact]
-    public void should_open_nothing_when_the_correlation_id_is_longer_than_the_limit()
+    public void should_hide_the_outer_scope_when_the_correlation_id_is_longer_than_the_limit()
     {
         using var outer = CausalScope.Begin("order-7", "run-1");
 
-        using (CausalScope.Begin(new string('c', CausalScope.IdMaxLength + 1), "run-2"))
+        using (CausalScope.Begin(new string('c', CausalScope.IdMaxLength + 1), "delivery-2"))
         {
-            CausalScope.Current.Should().Be(new CausalContext("order-7", "run-1"));
+            CausalScope.Current.Should().BeNull();
         }
+
+        CausalScope.Current.Should().Be(new CausalContext("order-7", "run-1"));
+    }
+
+    [Fact]
+    public void should_refuse_to_close_a_scope_out_of_order()
+    {
+        var outer = CausalScope.Begin("order-7", "run-1");
+        var inner = CausalScope.Begin("order-8", "delivery-2");
+
+        var closeOuterFirst = outer.Dispose;
+
+        closeOuterFirst.Should().Throw<InvalidOperationException>();
+        CausalScope.Current.Should().Be(new CausalContext("order-8", "delivery-2"));
+        inner.Dispose();
+        outer.Dispose();
+        CausalScope.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_ignore_a_second_dispose()
+    {
+        using var outer = CausalScope.Begin("order-7", "run-1");
+        var inner = CausalScope.Begin("order-8", "delivery-2");
+
+        inner.Dispose();
+        inner.Dispose();
+
+        CausalScope.Current.Should().Be(new CausalContext("order-7", "run-1"));
     }
 
     [Fact]

@@ -23,20 +23,21 @@ public static class CausalScope
     /// </summary>
     public const int IdMaxLength = 200;
 
-    private static readonly AsyncLocal<CausalContext?> _Current = new();
+    private static readonly AsyncLocal<Scope?> _Current = new();
 
     /// <summary>Gets the innermost open scope, or <see langword="null"/> outside every scope.</summary>
-    public static CausalContext? Current => _Current.Value;
+    public static CausalContext? Current => _Current.Value?.Context;
 
     /// <summary>
     /// Opens a scope for the work of one object. Disposing it restores the scope that was current before.
     /// </summary>
     /// <param name="correlationId">
-    /// The business correlation of the work. A blank id, or one longer than <see cref="IdMaxLength"/>, opens nothing,
-    /// so the inner work takes its own correlation instead of failing on an id it cannot store.
+    /// The business correlation of the work. A blank id, or one longer than <see cref="IdMaxLength"/>, opens a scope
+    /// with no correlation: <see cref="Current"/> is <see langword="null"/> inside it, so the inner work takes its own
+    /// correlation instead of failing on an id it cannot store, and never inherits an outer scope that is not its own.
     /// </param>
     /// <param name="causationId">The id of the object whose work runs inside the scope.</param>
-    /// <returns>A handle that closes the scope.</returns>
+    /// <returns>A handle that closes the scope. Dispose handles in the reverse order they were opened.</returns>
     /// <exception cref="ArgumentException"><paramref name="causationId"/> is blank.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="causationId"/> is longer than <see cref="IdMaxLength"/>.
@@ -46,25 +47,40 @@ public static class CausalScope
         Argument.IsNotNullOrWhiteSpace(causationId);
         Argument.HasMaxLength(causationId, IdMaxLength);
 
-        if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > IdMaxLength)
+        var context =
+            string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > IdMaxLength
+                ? null
+                : new CausalContext(correlationId, causationId);
+
+        var scope = new Scope(context, _Current.Value);
+        _Current.Value = scope;
+        return scope;
+    }
+
+    private sealed class Scope(CausalContext? context, Scope? parent) : IDisposable
+    {
+        private bool _disposed;
+
+        public CausalContext? Context { get; } = context;
+
+#pragma warning disable CA1065 // Strict LIFO rejection prevents silently restoring the wrong business lineage.
+        public void Dispose()
         {
-            return NoScope.Instance;
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (!ReferenceEquals(_Current.Value, this))
+            {
+                throw new InvalidOperationException(
+                    "Causal scopes must be disposed in reverse order of opening, in the async flow that opened them."
+                );
+            }
+
+            _disposed = true;
+            _Current.Value = parent;
         }
-
-        var previous = _Current.Value;
-        _Current.Value = new CausalContext(correlationId, causationId);
-        return new Scope(previous);
-    }
-
-    private sealed class Scope(CausalContext? previous) : IDisposable
-    {
-        public void Dispose() => _Current.Value = previous;
-    }
-
-    private sealed class NoScope : IDisposable
-    {
-        public static readonly NoScope Instance = new();
-
-        public void Dispose() { }
+#pragma warning restore CA1065
     }
 }

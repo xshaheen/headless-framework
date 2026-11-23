@@ -782,7 +782,7 @@ Then run `dotnet app.dll resources provision` (or `deploy`) in the deployment. S
 - `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, `IReadAuditLog<TContext>`, `IAuditLogRetention<TContext>`, and `IAuditLogPartitions<TContext>` are singletons.
 - The retention deletes oldest-first on its own connection, after turning on `headless.audit_log_purge` for its transaction. With `PurgeAuthority.Owner` it makes one call to `{table}_purge`.
 - With `Partitioning.Monthly`, `resources provision` also runs the `AuditLogPartitions` resource.
-- If missing, it registers `TimeProvider.System`, null `ICurrentTenant` and `ICurrentUser` fallbacks, and a trace-id `ICorrelationIdProvider`. `AddHeadless()` replaces the tenant and user fallbacks with the HTTP implementations in either call order.
+- If missing, it registers `TimeProvider.System`, null `ICurrentTenant` and `ICurrentUser` fallbacks, and `ActivityCorrelationIdProvider` as `ICorrelationIdProvider`. `AddHeadless()` replaces the tenant and user fallbacks with the HTTP implementations in either call order.
 
 ---
 
@@ -853,4 +853,4 @@ Then run `dotnet app.dll resources provision` (or `deploy`) in the deployment. S
 
 - `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, `IReadAuditLog<TContext>`, and `IAuditLogRetention<TContext>` are singletons.
 - The retention deletes oldest-first on its own connection, between setting and clearing the `headless.audit_log_purge` session context key.
-- If missing, it registers `TimeProvider.System`, null `ICurrentTenant` and `ICurrentUser` fallbacks, and a trace-id `ICorrelationIdProvider`. `AddHeadless()` replaces the tenant and user fallbacks with the HTTP implementations in either call order.
+- If missing, it registers `TimeProvider.System`, null `ICurrentTenant` and `ICurrentUser` fallbacks, and `ActivityCorrelationIdProvider` as `ICorrelationIdProvider`. `AddHeadless()` replaces the tenant and user fallbacks with the HTTP implementations in either call order.

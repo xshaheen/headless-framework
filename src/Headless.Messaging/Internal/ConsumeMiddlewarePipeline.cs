@@ -81,10 +81,12 @@ internal sealed class ConsumeMiddlewarePipeline(
         consumeContext.IsResponder = descriptor.IsResponder;
         var previousConsumeContext = consumeContextAccessor?.Current;
         // Work the handler starts outside Messaging, such as a scheduled job, a domain event, or an audit row, joins
-        // the consumed message's correlation, caused by this subscriber's received row.
+        // the consumed message's correlation, caused by this subscriber's received row. An every-instance delivery
+        // stores no received row, so its cause is the message itself.
+        var storageId = context.MediumMessage.StorageId;
         var causalScope = CausalScope.Begin(
             consumeContext.CorrelationId,
-            context.MediumMessage.StorageId.ToString("D")
+            storageId == Guid.Empty ? consumeContext.MessageId : storageId.ToString("D")
         );
 
         try
