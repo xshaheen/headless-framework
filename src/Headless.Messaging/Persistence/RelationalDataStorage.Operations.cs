@@ -698,13 +698,13 @@ internal sealed partial class RelationalDataStorage
             )
         );
         var insertChild = $"""
-            INSERT INTO {_receivedTable}({_t.Id},{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.StatusName},{_t.MessageId},{_t.ExceptionInfo},{_t.IsInboxRecord},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.LifecycleId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.IsCurrentGeneration},{_t.ReplayParentIncarnationId},{_t.ReplayOperationId},{_t.TerminalAt},{_t.EffectiveExpiresAt},{_t.IsHeld},{_t.HeldAt},{_t.HeldBy},{_t.HoldReason},{_t.HoldOperationId},{_t.InboxKeyHash},{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{_t.ChangedAt})
+            INSERT INTO {_receivedTable}({_t.Id},{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},{_t.Retries},{_t.InlineAttempts},{_t.Added},{_t.ExpiresAt},{_t.NextRetryAt},{_t.StatusName},{_t.MessageId},{_t.ExceptionInfo},{_t.IsInboxRecord},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},{_t.Generation},{_t.GenerationIncarnationId},{_t.LifecycleId},{_t.AttemptId},{_t.IsInboxOrphaned},{_t.IsCurrentGeneration},{_t.ReplayParentIncarnationId},{_t.ReplayOperationId},{_t.TerminalAt},{_t.EffectiveExpiresAt},{_t.IsHeld},{_t.HeldAt},{_t.HeldBy},{_t.HoldReason},{_t.HoldOperationId},{_t.InboxKeyHash},{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{_t.CorrelationId},{_t.CausationId},{_t.ChangedAt})
             SELECT @ChildStorageId,{_t.Version},{_t.Name},{_t.Content},{_t.IntentType},0,0,@Instant,NULL,{_dialect.ShiftByDuration(
                 "@Instant",
                 "Grace"
             )},'{nameof(
                 StatusName.Scheduled
-            )}',{_t.MessageId},NULL,{_t.True},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},@ChildGeneration,@ChildIncarnationId,{_t.LifecycleId},NULL,{_t.False},{_t.True},{_t.GenerationIncarnationId},@OperationId,NULL,NULL,{_t.False},NULL,NULL,NULL,NULL,@InboxKeyHash,{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{SqlDialectTokens.Now}
+            )}',{_t.MessageId},NULL,{_t.True},{_t.TenantPresent},{_t.TenantId},{_t.ContractIdentity},{_t.ContractVersion},{_t.ConsumerIdentity},@ChildGeneration,@ChildIncarnationId,{_t.LifecycleId},NULL,{_t.False},{_t.True},{_t.GenerationIncarnationId},@OperationId,NULL,NULL,{_t.False},NULL,NULL,NULL,NULL,@InboxKeyHash,{_t.InboxRetentionSeconds},{_t.ConsumerKeyHash},{_t.CorrelationId},{_t.CausationId},{SqlDialectTokens.Now}
             FROM {_receivedTable} WHERE {_t.GenerationIncarnationId}=@ParentIncarnationId;
             """;
 

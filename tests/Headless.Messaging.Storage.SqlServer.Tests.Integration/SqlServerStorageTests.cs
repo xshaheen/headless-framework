@@ -453,7 +453,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
         receiptColumnCount.Should().Be(9);
-        steps.Should().Equal("1", "2");
+        steps.Should().Equal("1", "2", "3");
     }
 
     [Fact]

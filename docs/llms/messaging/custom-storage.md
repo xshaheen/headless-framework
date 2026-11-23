@@ -81,6 +81,13 @@ services.AddMessagingProviderCapabilities(
   - Reset `Retries` and `InlineAttempts` to zero, clear `ExpiresAt`, revoke any lease, and set `NextRetryAt` from the store's clock.
   - Decide each row on its own under its row lock. Leave every other row, including a missing one, unchanged.
 - **`IMonitoringApi.GetBacklogAsync`** has no default implementation. Return the pending outbox and inbox counts and the oldest pending age, measured on the store's clock ([Outbox and inbox backlog](observability.md#outbox-and-inbox-backlog) defines pending). `MediumMessage.StatusName` carries the stored status on monitoring reads.
+- **`IMonitoringApi.GetCorrelatedMessagesAsync`** has a default that throws `NotSupportedException` naming the provider, so a store written before it still compiles. The dashboard trace lists such a store as unavailable. Implement it to return, for one correlation id, the oldest `Limit + 1` published rows and the oldest `Limit + 1` received rows (every generation, not only the current one), each ordered by time added, then storage id. Keep these rules:
+  - Match the id exactly and by ordinal comparison. `C-42`, `c-42` and `c-42 ` are three ids, so compare in code even where the database's `=` ignores case or trailing spaces.
+  - Store the correlation and causation ids in columns of their own at publish and receive, and write null for a value over 200 characters instead of cutting it short. A receive never fails for it.
+  - Copy both values onto a row created from another row, such as a replay's child generation.
+  - Return an empty received list when the store holds no received table.
+  - Fill `MessageTraceRow`: a published row is identified by `MessageId`, a received generation by `StorageId`; `CausationId` is the stored causation id; `DueAt` is the publish time of a delayed or queued published row, else the next retry time.
+  - `MessageListQuery.CorrelationId` follows the same match rule.
 - **`GetScheduledDeliveryOperationsApi()` and `GetPublishedOperationsApi()`** throw `NotSupportedException` naming the provider by default. Implement them to support the audited operator actions in [Operator APIs](operations.md#operator-apis).
 
 ## Optional capabilities

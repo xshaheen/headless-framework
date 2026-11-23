@@ -505,7 +505,7 @@ public partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Dat
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
         receiptColumnCount.Should().Be(9);
-        steps.Should().Equal("1", "2", "3");
+        steps.Should().Equal("1", "2", "3", "4");
     }
 
     [Fact]

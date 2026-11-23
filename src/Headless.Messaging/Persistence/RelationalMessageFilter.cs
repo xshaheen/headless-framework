@@ -20,15 +20,10 @@ internal static class RelationalMessageFilter
         $"{t.StatusName} IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND {t.NextRetryAt} IS NULL";
 
     /// <summary>Returns the predicate and the binder of <paramref name="query"/>'s filters.</summary>
-    /// <remarks>
-    /// <paramref name="jsonOptions"/> are the options the stored envelopes were written with, which a correlation id
-    /// filter matches the header's text against.
-    /// </remarks>
     public static (string Where, Action<DbCommand> Bind) Build(
         MessagingTables t,
         ISqlDialect dialect,
-        MessageListQuery query,
-        JsonSerializerOptions jsonOptions
+        MessageListQuery query
     )
     {
         var received = query.MessageType == MessageType.Subscribe;
@@ -57,6 +52,14 @@ internal static class RelationalMessageFilter
         if (query.MessageId is not null)
         {
             where += ExactText(t.MessageId, "FilterMessageId");
+        }
+
+        // An empty id matches every row, as the filter's contract says.
+        var correlationId = string.IsNullOrEmpty(query.CorrelationId) ? null : query.CorrelationId;
+
+        if (correlationId is not null)
+        {
+            where += ExactText(t.CorrelationId, "FilterCorrelation");
         }
 
         if (query.FailureFingerprint is not null)
@@ -93,18 +96,10 @@ internal static class RelationalMessageFilter
         }
 
         var content = string.IsNullOrEmpty(query.Content) ? null : query.Content;
-        var correlation = string.IsNullOrEmpty(query.CorrelationId)
-            ? null
-            : StoredEnvelopeHeader.Text(jsonOptions, Headers.CorrelationId, query.CorrelationId);
 
         if (content is not null)
         {
             where += $" AND {dialect.LikeIgnoringCase(t.Content, "FilterContent")}";
-        }
-
-        if (correlation is not null)
-        {
-            where += $" AND {dialect.LikeIgnoringCase(t.Content, "FilterCorrelation")}";
         }
 
         void bind(DbCommand command)
@@ -126,6 +121,13 @@ internal static class RelationalMessageFilter
 
             BindExactText(dialect, command, "FilterName", query.Name, SqlColumnType.Text(_TextMaxLength));
             BindExactText(dialect, command, "FilterMessageId", query.MessageId, SqlColumnType.KeyText(_TextMaxLength));
+            BindExactText(
+                dialect,
+                command,
+                "FilterCorrelation",
+                correlationId,
+                SqlColumnType.KeyText(StoredCorrelation.MaxLength)
+            );
             BindExactText(
                 dialect,
                 command,
@@ -152,16 +154,6 @@ internal static class RelationalMessageFilter
                     "FilterContent",
                     SqlColumnType.Text(-1),
                     SqlLikePattern.Contains(content)
-                );
-            }
-
-            if (correlation is not null)
-            {
-                dialect.AddParameter(
-                    command,
-                    "FilterCorrelation",
-                    SqlColumnType.Text(-1),
-                    SqlLikePattern.Contains(correlation)
                 );
             }
 

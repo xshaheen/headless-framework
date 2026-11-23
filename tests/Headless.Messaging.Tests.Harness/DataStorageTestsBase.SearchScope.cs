@@ -34,7 +34,7 @@ public abstract partial class DataStorageTestsBase
             HighWaterMark = (await storage.GetLatestMessageChangeMarkerAsync(AbortToken))!.Value,
         };
         var byContent = scope with { Query = scope.Query with { Content = "ord-991" } };
-        var byCorrelation = scope with { Query = scope.Query with { CorrelationId = "C-42" } };
+        var byCorrelation = scope with { Query = scope.Query with { CorrelationId = "c-42" } };
 
         // when: each search scopes the Operation, read one row per chunk
         var contentCount = await published.CountOperationScopeAsync(byContent, cancellationToken: AbortToken);

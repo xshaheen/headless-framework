@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Fencing;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 using Headless.Primitives;
 
 namespace Headless.Messaging.Storage.InMemory;
@@ -435,6 +436,55 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         var page = rows.Count > pageSize ? rows.GetRange(0, pageSize) : rows;
         return ValueTask.FromResult(
             new MessageListPage { Items = page, Next = rows.Count > pageSize ? MessageListPosition.Of(page[^1]) : null }
+        );
+    }
+
+    public ValueTask<MessageTraceResult> GetCorrelatedMessagesAsync(
+        MessageTraceQuery query,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsNotNullOrEmpty(query.CorrelationId);
+        Argument.IsInclusiveBetween(query.Limit, 1, int.MaxValue - 1);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IReadOnlyList<MessageTraceRow> read(IEnumerable<MemoryMessage> source, bool received) =>
+            [
+                .. source
+                    .Where(message =>
+                        string.Equals(
+                            StoredCorrelation.CorrelationId(message.Origin.Headers),
+                            query.CorrelationId,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .OrderBy(static message => message.Added)
+                    .ThenBy(static message => message.StorageId)
+                    .Take(query.Limit + 1)
+                    .Select(message => new MessageTraceRow
+                    {
+                        StorageId = message.StorageId,
+                        MessageId = message.Origin.Id,
+                        Name = message.Name,
+                        CausationId = StoredCorrelation.CausationId(message.Origin.Headers),
+                        Added = message.Added,
+                        Status = message.StatusName,
+                        DueAt = MessageTraceRows.DueAt(
+                            received,
+                            message.StatusName,
+                            message.ExpiresAt,
+                            message.NextRetryAt
+                        ),
+                    }),
+            ];
+
+        return ValueTask.FromResult(
+            new MessageTraceResult
+            {
+                Published = read(storage.PublishedMessages.Values, received: false),
+                Received = read(storage.ReceivedMessages.Values, received: true),
+            }
         );
     }
 

@@ -109,6 +109,7 @@ services.AddHeadlessMessaging(setup =>
 - **Validation.** The registered storage checks the value at startup against its dialect's identifier rules (63 characters on PostgreSQL, 128 on SQL Server). An invalid schema fails startup with `OptionsValidationException`.
 - **Configuration binding.** `setup.ConfigureStorage(builder.Configuration.GetSection("Headless:Messaging:Storage"))` binds it. Pass the section, not the root. Provider `Use...(IConfiguration)` overloads never bind the schema. Both `ConfigureStorage` overloads apply in call order, so the last wins.
 - **EF storages** take no schema of their own; pair them with `ConfigureStorage` when the tables are not in `headless`.
+- **Upgrade before the new build starts.** A build that adds a schema step fails its host start, naming the step, until `resources provision` (or `deploy`) applies it. Run it before the new build starts. The correlation step adds `correlation_id` and `causation_id` columns, and an index on the correlation id, to the published and received tables. A row stored before the step has null columns, so the correlation id search and `IMonitoringApi.GetCorrelatedMessagesAsync` do not find it.
 - **Create the tables at deploy time** with `resources provision` (or `deploy`), or with the script from `SchemaRunner.ExportScript`. A host start only verifies them and fails when a step is missing. A development or test host calls `AddDeployStepsOnStartup()`. See [sql.md § Schema runner](../sql.md#schema-runner-apply-verify-and-deploy-time-scripts). A process that never starts the host (a console tool calling `IBootstrapper.BootstrapAsync`) applies the steps itself: `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()`.
 
 Table names are fixed inside the schema:
@@ -228,7 +229,7 @@ setup.UsePostgreSql();
 
 ### Schema steps
 
-- `Messaging/1` creates the tables, constraints, and key indexes. `Messaging/2` creates retry-pickup, owner, and history indexes. `Messaging/3` installs `pg_trgm` and the trigram indexes for dashboard content search.
+- `Messaging/1` creates the tables, constraints, and key indexes. `Messaging/2` creates retry-pickup, owner, and history indexes. `Messaging/3` installs `pg_trgm` and the trigram indexes for dashboard content search. `Messaging/4` adds the correlation and causation columns and the correlation indexes.
 - Indexes are built with plain `CREATE INDEX`, which blocks writes to a large existing table until it finishes. `SchemaRunnerOptions.CommandTimeout` (default 10 minutes) bounds each statement.
 - **`pg_trgm` on managed PostgreSQL** (AWS RDS, Azure, Neon, Supabase): the app role usually cannot `CREATE EXTENSION`. The step then warns, skips the trigram indexes, and still records itself, so only dashboard content search is slow. Installing `pg_trgm` later does not add the indexes: have the DBA install the extension before the first start, or create the two trigram indexes by hand.
 - A recorded step is never re-applied. A database created by an earlier pre-release build needs recreating, with its `headless_schema_history` rows.
@@ -269,7 +270,7 @@ setup.UseSqlServer();
 - Every transaction it opens sets READ COMMITTED itself, so a pooled session left at a stricter level and `READ_COMMITTED_SNAPSHOT` on or off behave the same. Retry pickup, the delayed claim, and purges retry a transient fault (deadlock, lock timeout, dropped connection) raised before commit.
 - **Monitoring skips locked rows** (`READPAST`), so dashboard counts can dip briefly under load. PostgreSQL shows the last committed version instead.
 - **Inbox operations** that share an operation id serialize on an `sp_getapplock`; the wait is bounded by `MessagingOptions.CommandTimeout`, and a timed-out request can be retried with the same id.
-- **Schema steps.** `Messaging/1` (tables, constraints, indexes) and `Messaging/2` (history indexes). The history-index builds run offline, block writes to that table until done, and are bounded by `SchemaRunnerOptions.CommandTimeout` (default 10 minutes). Peer replicas wait on the runner's lock.
+- **Schema steps.** `Messaging/1` (tables, constraints, indexes), `Messaging/2` (history indexes), and `Messaging/3` (correlation and causation columns, with a binary-collated correlation index on each table). The history-index builds run offline, block writes to that table until done, and are bounded by `SchemaRunnerOptions.CommandTimeout` (default 10 minutes). Peer replicas wait on the runner's lock.
 - Supports `IMessageRevoker`.
 
 **Verify:** `resources provision` applies the steps, and the `messaging-storage-sqlserver-default` readiness check reports `Healthy`.

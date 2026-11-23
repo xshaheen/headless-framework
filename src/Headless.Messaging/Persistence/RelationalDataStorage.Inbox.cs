@@ -79,6 +79,18 @@ internal sealed partial class RelationalDataStorage
                                     retentionSeconds
                                 );
                                 _dialect.AddParameter(command, "SequenceKey", _SequenceKeyType, message.SequenceKey);
+                                _dialect.AddParameter(
+                                    command,
+                                    "CorrelationId",
+                                    _CorrelationType,
+                                    StoredCorrelation.CorrelationId(message.Origin.Headers)
+                                );
+                                _dialect.AddParameter(
+                                    command,
+                                    "CausationId",
+                                    _CorrelationType,
+                                    StoredCorrelation.CausationId(message.Origin.Headers)
+                                );
                             },
                             async (reader, token) =>
                                 await reader.ReadAsync(token).ConfigureAwait(false) && reader.GetBoolean(0)
@@ -158,6 +170,8 @@ internal sealed partial class RelationalDataStorage
                     _t.InboxRetentionSeconds,
                     _t.ConsumerKeyHash,
                     _t.SequenceKey,
+                    _t.CorrelationId,
+                    _t.CausationId,
                     _t.ChangedAt,
                 ],
                 [
@@ -189,6 +203,8 @@ internal sealed partial class RelationalDataStorage
                     "@InboxRetentionSeconds",
                     "@ConsumerKeyHash",
                     "@SequenceKey",
+                    "@CorrelationId",
+                    "@CausationId",
                     SqlDialectTokens.Now,
                 ],
                 _InboxGenerationColumns(),
