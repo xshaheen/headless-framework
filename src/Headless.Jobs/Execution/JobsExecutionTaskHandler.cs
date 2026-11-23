@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Headless.Context;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
@@ -864,6 +865,14 @@ internal sealed class JobsExecutionTaskHandler
                             {
                                 jobFunctionContext.SetServiceScope(scope);
                                 using var causalScope = JobCausalContext.Enter(jobFunctionContext);
+                                // The shared scope lets Messaging, domain events, and audit rows written by the job
+                                // join its correlation. A run with no stored correlation is its own root, as it is
+                                // for the jobs it schedules.
+                                var runId = jobFunctionContext.Id.ToString("D");
+                                using var sharedCausalScope = CausalScope.Begin(
+                                    jobFunctionContext.CorrelationId ?? runId,
+                                    runId
+                                );
                                 if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
                                 {
                                     Task terminal(CancellationToken token) =>

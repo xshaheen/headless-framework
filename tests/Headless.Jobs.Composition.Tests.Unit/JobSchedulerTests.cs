@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Reflection;
+using Headless.Context;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
@@ -19,6 +20,112 @@ public sealed class JobSchedulerTests : TestBase
         bool hasParent,
         string? parentCorrelation
     )
+    {
+        await using var provider = _LineageProvider();
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var parent = new JobContext
+        {
+            Id = Guid.NewGuid(),
+            FunctionName = "parent",
+            CorrelationId = parentCorrelation,
+        };
+        using var trace = new Activity("unrelated-diagnostic-trace");
+        trace.Start();
+        using var causalScope = hasParent ? JobCausalContext.Enter(parent) : null;
+
+        var id = await scheduler.EnqueueAsync(new SampleRequest("invoice"), cancellationToken: AbortToken);
+        var stored = await persistence.GetTimeJobByIdAsync(id, AbortToken);
+
+        stored.Should().NotBeNull();
+        stored.ContractVersion.Should().Be("v2");
+        stored.CorrelationId.Should().Be(hasParent ? parentCorrelation ?? parent.Id.ToString("D") : id.ToString("D"));
+        stored.CausationId.Should().Be(hasParent ? parent.Id.ToString("D") : null);
+        stored.CorrelationId.Should().NotBe(trace.TraceId.ToString());
+    }
+
+    [Fact]
+    public async Task should_take_lineage_from_the_causal_scope_of_a_consumed_message()
+    {
+        // given a schedule inside a consumer, where only the shared causal scope is open
+        await using var provider = _LineageProvider();
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        using var scope = CausalScope.Begin("order-7", "received-row");
+
+        // when
+        var id = await scheduler.EnqueueAsync(new SampleRequest("invoice"), cancellationToken: AbortToken);
+
+        // then
+        var stored = await persistence.GetTimeJobByIdAsync(id, AbortToken);
+        stored!.CorrelationId.Should().Be("order-7");
+        stored.CausationId.Should().Be("received-row");
+    }
+
+    [Fact]
+    public async Task should_prefer_the_running_job_over_the_causal_scope()
+    {
+        // given
+        await using var provider = _LineageProvider();
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        var parent = new JobContext
+        {
+            Id = Guid.NewGuid(),
+            FunctionName = "parent",
+            CorrelationId = "job-root",
+        };
+        using var scope = CausalScope.Begin("order-7", "received-row");
+        using var jobScope = JobCausalContext.Enter(parent);
+
+        // when
+        var id = await scheduler.EnqueueAsync(new SampleRequest("invoice"), cancellationToken: AbortToken);
+
+        // then
+        var stored = await persistence.GetTimeJobByIdAsync(id, AbortToken);
+        stored!.CorrelationId.Should().Be("job-root");
+        stored.CausationId.Should().Be(parent.Id.ToString("D"));
+    }
+
+    [Fact]
+    public async Task should_save_a_job_with_its_own_correlation_when_the_consumed_correlation_is_too_long()
+    {
+        // given a consumer of a foreign message whose correlation id is past the limit, so no scope opened
+        await using var provider = _LineageProvider();
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        using var scope = CausalScope.Begin(new string('c', 250), "received-row");
+
+        // when
+        var id = await scheduler.EnqueueAsync(new SampleRequest("invoice"), cancellationToken: AbortToken);
+
+        // then
+        var stored = await persistence.GetTimeJobByIdAsync(id, AbortToken);
+        stored!.CorrelationId.Should().Be(id.ToString("D"));
+        stored.CausationId.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_refuse_an_explicit_lineage_id_longer_than_the_limit(bool correlation)
+    {
+        // given
+        await using var provider = _LineageProvider();
+        var scheduler = provider.GetRequiredService<IJobScheduler>();
+        var tooLong = new string('c', CausalScope.IdMaxLength + 1);
+        var options = correlation
+            ? new JobOptions { CorrelationId = tooLong }
+            : new JobOptions { CausationId = tooLong };
+
+        // when
+        var act = () => scheduler.EnqueueAsync(new SampleRequest("invoice"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    private static ServiceProvider _LineageProvider()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -47,27 +154,7 @@ public sealed class JobSchedulerTests : TestBase
                 [new KeyValuePair<string, JobFunctionDescriptor>("lineage", descriptor)]
             )
         );
-        await using var provider = services.BuildServiceProvider();
-        var scheduler = provider.GetRequiredService<IJobScheduler>();
-        var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
-        var parent = new JobContext
-        {
-            Id = Guid.NewGuid(),
-            FunctionName = "parent",
-            CorrelationId = parentCorrelation,
-        };
-        using var trace = new Activity("unrelated-diagnostic-trace");
-        trace.Start();
-        using var causalScope = hasParent ? JobCausalContext.Enter(parent) : null;
-
-        var id = await scheduler.EnqueueAsync(new SampleRequest("invoice"), cancellationToken: AbortToken);
-        var stored = await persistence.GetTimeJobByIdAsync(id, AbortToken);
-
-        stored.Should().NotBeNull();
-        stored.ContractVersion.Should().Be("v2");
-        stored.CorrelationId.Should().Be(hasParent ? parentCorrelation ?? parent.Id.ToString("D") : id.ToString("D"));
-        stored.CausationId.Should().Be(hasParent ? parent.Id.ToString("D") : null);
-        stored.CorrelationId.Should().NotBe(trace.TraceId.ToString());
+        return services.BuildServiceProvider();
     }
 
     private static readonly JobFunctionDescriptor _TypedDescriptor = new(

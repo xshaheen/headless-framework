@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
   </ItemGroup>
 </Project>

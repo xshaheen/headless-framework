@@ -2,6 +2,7 @@
 
 using System.Runtime.InteropServices;
 using Headless.Checks;
+using Headless.Context;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Internal;
 using Headless.MultiTenancy;
@@ -1427,12 +1428,27 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         entity.UpdatedAt = now;
         JobContract.ValidateName(entity.Function);
         JobContract.ValidateVersion(entity.ContractVersion);
+        _ValidateLineageId(entity.CorrelationId, nameof(entity.CorrelationId));
+        _ValidateLineageId(entity.CausationId, nameof(entity.CausationId));
+
+        // A job scheduled by a running job inherits that run; otherwise one scheduled while a message is consumed
+        // inherits the received message through the shared causal scope.
         var parent = JobCausalContext.Current;
+        var ambient = parent is null ? CausalScope.Current : null;
         entity.CorrelationId ??=
             parent?.CorrelationId
             ?? parent?.Id.ToString("D")
+            ?? ambient?.CorrelationId
             ?? (entity is CronJobEntity ? null : entity.Id.ToString("D"));
-        entity.CausationId ??= parent?.Id.ToString("D");
+        entity.CausationId ??= parent?.Id.ToString("D") ?? ambient?.CausationId;
+    }
+
+    private static void _ValidateLineageId(string? value, string paramName)
+    {
+        if (value is not null)
+        {
+            Argument.HasMaxLength(value, CausalScope.IdMaxLength, paramName: paramName);
+        }
     }
 
     // Propagate the middleware-resolved root tenant onto chain descendants before persistence. The schedule

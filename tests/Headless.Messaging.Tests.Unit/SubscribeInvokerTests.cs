@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
+using Headless.Context;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
@@ -112,6 +113,11 @@ public sealed class SubscribeInvokerTests : TestBase
         consumed.TransportAddress.Should().Be("headless.bus.test.messageName");
         consumed.MessageName.Should().Be("test.messageName");
         consumed.Headers.Should().NotBeNull();
+        // Work the handler starts outside Messaging joins the message, caused by this subscriber's received row.
+        InvokerTestConsumer
+            .LastCausalScope.Should()
+            .Be(new CausalContext(correlationId.ToString(), mediumMessage.StorageId.ToString("D")));
+        CausalScope.Current.Should().BeNull();
     }
 
     [Fact]
@@ -377,6 +383,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var consumed = InvokerTestConsumer.LastConsumed;
         consumed.Should().NotBeNull();
         consumed.CorrelationId.Should().BeNull();
+        InvokerTestConsumer.LastCausalScope.Should().BeNull();
     }
 
     [Fact]
@@ -899,9 +906,12 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
 {
     public static ConsumeContext<InvokerTestMessage>? LastConsumed { get; private set; }
 
+    public static CausalContext? LastCausalScope { get; private set; }
+
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         LastConsumed = context;
+        LastCausalScope = CausalScope.Current;
         return ValueTask.CompletedTask;
     }
 }

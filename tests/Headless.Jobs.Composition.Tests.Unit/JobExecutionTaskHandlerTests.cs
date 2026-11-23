@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless;
+using Headless.Context;
 using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Jobs;
@@ -310,6 +311,28 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         parentCompleted.Should().BeTrue();
         deferredObservedParentCompletion.Should().BeTrue();
         activityNames.Should().OnlyContain(name => name == "job.execute.timejob");
+    }
+
+    [Theory]
+    [InlineData("order-7")]
+    [InlineData(null)]
+    public async Task should_open_the_causal_scope_of_the_run_around_the_job_body(string? storedCorrelation)
+    {
+        var manager = _HealthyManager();
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var handler = _Handler(serviceProvider, manager);
+        CausalContext? observed = null;
+        var job = _Node("publishes", () => observed = CausalScope.Current);
+        job.CorrelationId = storedCorrelation;
+
+        await handler.ExecuteTaskAsync(job, isDue: false, cancellationToken: AbortToken);
+
+        var runId = job.JobId.ToString("D");
+        // A run with no stored correlation is its own root, as it is for the jobs it schedules.
+        observed.Should().Be(new CausalContext(storedCorrelation ?? runId, runId));
+        CausalScope.Current.Should().BeNull();
     }
 
     [Fact]
