@@ -123,7 +123,10 @@ internal sealed class AmazonSqsConsumerClient(
                 foreach (var topic in messageNames)
                 {
                     queueUrls.Add(
-                        await _ResolveQueueUrlAsync(AwsPhysicalAddress.QueueDestination(topic), cancellationToken)
+                        await _ResolveQueueUrlAsync(
+                                AwsPhysicalAddress.QueueDestination(_amazonSqsOptions.HostPrefix, topic),
+                                cancellationToken
+                            )
                             .ConfigureAwait(false)
                     );
                 }
@@ -195,7 +198,7 @@ internal sealed class AmazonSqsConsumerClient(
                 // the topics instead of failing on the stale ARN forever.
                 foreach (var name in names)
                 {
-                    _topicArns.Forget(AwsPhysicalAddress.BusTopic(name));
+                    _topicArns.Forget(AwsPhysicalAddress.BusTopic(_amazonSqsOptions.HostPrefix, name));
                 }
 
                 throw;
@@ -1182,7 +1185,7 @@ internal sealed class AmazonSqsConsumerClient(
                 if (lane == MessageLane.Bus && string.IsNullOrWhiteSpace(_queueUrl))
                 {
                     _queueUrl = await _ResolveQueueUrlAsync(
-                            AwsPhysicalAddress.BusSubscriptionQueue(subscriptionName),
+                            AwsPhysicalAddress.BusSubscriptionQueue(_amazonSqsOptions.HostPrefix, subscriptionName),
                             cancellationToken
                         )
                         .ConfigureAwait(false);
@@ -1301,7 +1304,9 @@ internal sealed class AmazonSqsConsumerClient(
     // queue was resolved with. On the Queue lane the subscription name is the message name.
     private FrozenDictionary<string, string> _BuildQueueArrivalNames(ImmutableArray<string> queueUrls)
     {
-        var expectedQueueName = AwsPhysicalAddress.QueueDestination(subscriptionName).NormalizeForSqsQueueName();
+        var expectedQueueName = AwsPhysicalAddress
+            .QueueDestination(_amazonSqsOptions.HostPrefix, subscriptionName)
+            .NormalizeForSqsQueueName();
         var arrivalNames = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var queueUrl in queueUrls)
@@ -1354,7 +1359,11 @@ internal sealed class AmazonSqsConsumerClient(
         foreach (var messageName in messageNames)
         {
             var topicArn = await _topicArns
-                .GetOrCreateAsync(_snsClient!, AwsPhysicalAddress.BusTopic(messageName), cancellationToken)
+                .GetOrCreateAsync(
+                    _snsClient!,
+                    AwsPhysicalAddress.BusTopic(_amazonSqsOptions.HostPrefix, messageName),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             topicArns.Add(topicArn);

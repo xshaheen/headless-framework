@@ -101,7 +101,9 @@ internal sealed class RedisConsumerClient(
         Argument.IsNotNull(messageNames);
 
         var names = messageNames.ToArray();
-        var arr = names.Select(messageName => RedisPhysicalAddress.ForLane(lane, messageName)).ToArray();
+        var arr = names
+            .Select(messageName => RedisPhysicalAddress.ForLane(options.Value.HostPrefix, lane, messageName))
+            .ToArray();
         var arrivalNames = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var i = 0; i < names.Length; i++)
         {

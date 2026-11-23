@@ -6,6 +6,13 @@ using Headless.Messaging.Transport;
 namespace Headless.Messaging.Aws;
 
 /// <summary>Single authority for lane-qualified SNS topics and SQS queues.</summary>
+/// <remarks>
+/// With a host isolation prefix (<c>Headless:Prefix</c>) every topic and queue starts with <c>{prefix}_</c>, so
+/// environments that share one account and region never share either. A prefix holds no <c>_</c>, so it ends at the
+/// first underscore and two different prefixes never produce one name. The prefix counts toward each name's length
+/// limit, and a name it pushes past the limit falls back to the readable-prefix-and-hash form, as a long name does
+/// without one. An empty prefix leaves every name exactly as it is without one.
+/// </remarks>
 internal static class AwsPhysicalAddress
 {
     private const string _BusQueuePrefix = "bus-";
@@ -13,42 +20,60 @@ internal static class AwsPhysicalAddress
     private const int _SqsQueueNameMaxLength = 80;
 
     // SQS queue names allow letters, digits, '-', and '_', and the ".fifo" suffix counts toward the 80-character limit.
-    private static readonly BusNameRules _BusQueueRules = new(
-        maxLength: _SqsQueueNameMaxLength - _BusQueuePrefix.Length,
-        isAllowed: static c => c is '-' or '_'
+    private static readonly BusNameRules _BusQueueRules = _BusRules(_SqsQueueNameMaxLength - _BusQueuePrefix.Length);
+
+    private static readonly BusNameRules _BusFifoQueueRules = _BusRules(
+        _SqsQueueNameMaxLength - _BusQueuePrefix.Length - _FifoSuffix.Length
     );
 
-    private static readonly BusNameRules _BusFifoQueueRules = new(
-        maxLength: _SqsQueueNameMaxLength - _BusQueuePrefix.Length - _FifoSuffix.Length,
-        isAllowed: static c => c is '-' or '_'
-    );
-
-    public static string BusTopic(string logicalName)
+    public static string BusTopic(string hostPrefix, string logicalName)
     {
-        return _Qualify("bus", logicalName, maxLength: 256);
+        return _Qualify(hostPrefix, "bus", logicalName, maxLength: 256);
     }
 
     /// <summary>Returns the SQS queue a Bus consumer identity subscribes to the topics of its messages through.</summary>
     /// <remarks>
     /// An identity ending in <c>.fifo</c> gets a FIFO queue, which is the only kind a FIFO topic delivers to.
     /// </remarks>
-    public static string BusSubscriptionQueue(string identity)
+    public static string BusSubscriptionQueue(string hostPrefix, string identity)
     {
+        Argument.IsNotNull(hostPrefix);
         Argument.IsNotNullOrWhiteSpace(identity);
 
+        if (hostPrefix.Length == 0)
+        {
+            return identity.IsAwsFifoName()
+                ? _BusQueuePrefix
+                    + BusNameBuilder.Build(identity[..^_FifoSuffix.Length], _BusFifoQueueRules)
+                    + _FifoSuffix
+                : _BusQueuePrefix + BusNameBuilder.Build(identity, _BusQueueRules);
+        }
+
+        // The ".fifo" suffix stays last, where SQS requires it.
+        var queuePrefix = $"{hostPrefix}_{_BusQueuePrefix}";
         return identity.IsAwsFifoName()
-            ? _BusQueuePrefix + BusNameBuilder.Build(identity[..^_FifoSuffix.Length], _BusFifoQueueRules) + _FifoSuffix
-            : _BusQueuePrefix + BusNameBuilder.Build(identity, _BusQueueRules);
+            ? queuePrefix
+                + BusNameBuilder.Build(
+                    identity[..^_FifoSuffix.Length],
+                    _BusRules(_SqsQueueNameMaxLength - queuePrefix.Length - _FifoSuffix.Length)
+                )
+                + _FifoSuffix
+            : queuePrefix + BusNameBuilder.Build(identity, _BusRules(_SqsQueueNameMaxLength - queuePrefix.Length));
     }
 
-    public static string QueueDestination(string logicalName)
+    public static string QueueDestination(string hostPrefix, string logicalName)
     {
-        return _Qualify("queue", logicalName, maxLength: 80);
+        return _Qualify(hostPrefix, "queue", logicalName, maxLength: 80);
     }
 
-    private static string _Qualify(string lane, string value, int maxLength)
+    private static BusNameRules _BusRules(int maxLength) => new(maxLength, isAllowed: static c => c is '-' or '_');
+
+    private static string _Qualify(string hostPrefix, string laneName, string value, int maxLength)
     {
+        Argument.IsNotNull(hostPrefix);
         Argument.IsNotNullOrWhiteSpace(value);
+
+        var lane = hostPrefix.Length == 0 ? laneName : $"{hostPrefix}_{laneName}";
 
         var isFifo = value.IsAwsFifoName();
         var core = isFifo ? value[..^_FifoSuffix.Length] : value;

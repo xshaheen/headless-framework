@@ -194,20 +194,20 @@ public sealed class NatsConsumerClientTests : TestBase
     [Fact]
     public void should_name_one_bus_durable_per_consumer_identity()
     {
-        NatsPhysicalAddress.BusDurable("payments").Should().Be("bus_payments");
+        NatsPhysicalAddress.BusDurable("", "payments").Should().Be("bus_payments");
     }
 
     [Fact]
     public void should_build_valid_stable_bus_durable_name_when_consumer_identity_contains_dots()
     {
-        var name = NatsPhysicalAddress.BusDurable("billing.invoice-projection");
+        var name = NatsPhysicalAddress.BusDurable("", "billing.invoice-projection");
 
         name.Should().StartWith("bus_billing-invoice-projection-");
         name.Should().HaveLength("bus_billing-invoice-projection-".Length + 12);
         name.IndexOfAny([' ', '.', '*', '>', '/', '\\']).Should().Be(-1);
-        NatsPhysicalAddress.BusDurable("billing.invoice-projection").Should().Be(name);
+        NatsPhysicalAddress.BusDurable("", "billing.invoice-projection").Should().Be(name);
         NatsPhysicalAddress
-            .BusDurable("billing-invoice-projection")
+            .BusDurable("", "billing-invoice-projection")
             .Should()
             .NotBe(name, "a dotted and a dashed identity must not share one durable consumer");
     }
@@ -215,7 +215,7 @@ public sealed class NatsConsumerClientTests : TestBase
     [Fact]
     public void should_bound_bus_durable_name_to_nats_limit_when_identity_is_long()
     {
-        var name = NatsPhysicalAddress.BusDurable("billing." + new string('a', 260));
+        var name = NatsPhysicalAddress.BusDurable("", "billing." + new string('a', 260));
 
         name.Should().HaveLength(255);
         name.Should().StartWith("bus_billing-aaa");
@@ -226,11 +226,11 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         // The hand-off finds the durables earlier releases created by these names, so they must not change.
         NatsPhysicalAddress
-            .LegacyBusDurable("payments", "orders.created")
+            .LegacyBusDurable("", "payments", "orders.created")
             .Should()
             .StartWith("bus-payments-orders-created-");
         NatsPhysicalAddress
-            .LegacyBusDurable("billing." + new string('a', 190), "orders." + new string('x', 60))
+            .LegacyBusDurable("", "billing." + new string('a', 190), "orders." + new string('x', 60))
             .Should()
             .HaveLength(255);
     }
@@ -242,25 +242,28 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         // The hand-off deletes the legacy names, so another identity's durable must never carry one of them.
         NatsPhysicalAddress
-            .BusDurable($"{identity}-{message}")
+            .BusDurable("", $"{identity}-{message}")
             .Should()
-            .NotBe(NatsPhysicalAddress.LegacyBusDurable(identity, message));
+            .NotBe(NatsPhysicalAddress.LegacyBusDurable("", identity, message));
     }
 
     [Fact]
     public void should_share_destination_for_queue_intent_when_build_durable_name()
     {
-        NatsPhysicalAddress.QueueDurable("orders.created").Should().StartWith("queue-orders_created_");
+        NatsPhysicalAddress.QueueDurable("", "orders.created").Should().StartWith("queue-orders_created_");
     }
 
     [Fact]
     public void should_disambiguate_stream_and_durable_names_changed_by_normalization()
     {
         NatsPhysicalAddress
-            .Stream(MessageLane.Bus, "orders.created")
+            .Stream("", MessageLane.Bus, "orders.created")
             .Should()
-            .NotBe(NatsPhysicalAddress.Stream(MessageLane.Bus, "orders_created"));
-        NatsPhysicalAddress.BusDurable("sales.east").Should().NotBe(NatsPhysicalAddress.BusDurable("sales_east"));
+            .NotBe(NatsPhysicalAddress.Stream("", MessageLane.Bus, "orders_created"));
+        NatsPhysicalAddress
+            .BusDurable("", "sales.east")
+            .Should()
+            .NotBe(NatsPhysicalAddress.BusDurable("", "sales_east"));
     }
 
     [Fact]
@@ -275,13 +278,13 @@ public sealed class NatsConsumerClientTests : TestBase
 
         // then
         var binding = orders.Should().ContainSingle().Subject;
-        binding.Durable.Should().Be(NatsPhysicalAddress.BusDurable("billing.projection"));
+        binding.Durable.Should().Be(NatsPhysicalAddress.BusDurable("", "billing.projection"));
         binding.Filters.Should().Equal("headless.bus.orders.created", "headless.bus.orders.updated");
         binding
             .LegacyDurables.Should()
             .Equal(
-                NatsPhysicalAddress.LegacyBusDurable("billing.projection", "orders.created"),
-                NatsPhysicalAddress.LegacyBusDurable("billing.projection", "orders.updated")
+                NatsPhysicalAddress.LegacyBusDurable("", "billing.projection", "orders.created"),
+                NatsPhysicalAddress.LegacyBusDurable("", "billing.projection", "orders.updated")
             );
         payments.Should().ContainSingle().Which.Durable.Should().Be(binding.Durable);
     }
@@ -306,12 +309,12 @@ public sealed class NatsConsumerClientTests : TestBase
             .Should()
             .BeEquivalentTo([
                 new NatsDurableBinding(
-                    NatsPhysicalAddress.QueueDurable("orders.created"),
+                    NatsPhysicalAddress.QueueDurable("", "orders.created"),
                     ["headless.queue.orders.created"],
                     []
                 ),
                 new NatsDurableBinding(
-                    NatsPhysicalAddress.QueueDurable("orders.updated"),
+                    NatsPhysicalAddress.QueueDurable("", "orders.updated"),
                     ["headless.queue.orders.updated"],
                     []
                 ),

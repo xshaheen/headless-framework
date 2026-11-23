@@ -4,15 +4,50 @@ using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.RabbitMq;
 
+/// <summary>The names the RabbitMQ transport derives: exchanges, routing keys, and queues.</summary>
+/// <remarks>
+/// The base exchange and every queue take the host's isolation prefix (<c>Headless:Prefix</c>) in front, joined with
+/// <c>.</c>, which a prefix never contains, so environments that share one virtual host never share an exchange or a
+/// queue. Lane and dead-letter exchanges and dead-letter queues derive from those names and carry the prefix with them;
+/// routing keys are scoped by their exchange and stay as they are. An empty prefix leaves every name exactly as it is
+/// without one.
+/// </remarks>
 internal static class RabbitMqPhysicalAddress
 {
     private const string _BusQueuePrefix = "bus.";
 
-    // RabbitMQ accepts queue names up to 255 bytes; the framework keeps them to the characters RabbitMqValidation allows.
-    private static readonly BusNameRules _BusQueueRules = new(
-        maxLength: 255 - _BusQueuePrefix.Length,
-        isAllowed: static c => c is '.' or '-' or '_'
-    );
+    // RabbitMQ accepts queue and exchange names up to 255 bytes.
+    private const int _MaxNameLength = 255;
+
+    // The longest suffix a name derived from the base exchange adds: the Queue lane's dead-letter exchange.
+    private const int _LongestExchangeSuffix = 6 + 4; // ".queue" + ".dlx"
+
+    // The framework keeps queue names to the characters RabbitMqValidation allows.
+    private static readonly BusNameRules _BusQueueRules = _BusRules(hostPrefixLength: 0);
+
+    /// <summary>
+    /// Returns the base exchange this host publishes and binds through: the configured one, with the host prefix in
+    /// front when one is set.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The prefix makes an exchange derived from it longer than RabbitMQ allows.</exception>
+    public static string BaseExchange(string hostPrefix, string configuredExchange)
+    {
+        if (hostPrefix.Length == 0)
+        {
+            return configuredExchange;
+        }
+
+        var exchange = $"{hostPrefix}.{configuredExchange}";
+        if (exchange.Length + _LongestExchangeSuffix > _MaxNameLength)
+        {
+            throw new InvalidOperationException(
+                $"The RabbitMQ exchange '{configuredExchange}' with the host prefix '{hostPrefix}' (Headless:Prefix) "
+                    + $"derives exchange names longer than {_MaxNameLength} characters. Shorten ExchangeName or the prefix."
+            );
+        }
+
+        return exchange;
+    }
 
     public static string Exchange(string baseExchange, MessageLane lane)
     {
@@ -40,17 +75,54 @@ internal static class RabbitMqPhysicalAddress
     /// Returns the queue a consumer reads: one per consumer identity on the Bus lane, and one per message name on the
     /// Queue lane.
     /// </summary>
-    public static string Queue(MessageLane lane, string subscriptionName, string logicalName)
+    /// <exception cref="InvalidOperationException">
+    /// The host prefix makes a Queue-lane queue or its dead-letter queue longer than RabbitMQ allows.
+    /// </exception>
+    public static string Queue(string hostPrefix, MessageLane lane, string subscriptionName, string logicalName)
     {
-        var queue = lane switch
+        if (hostPrefix.Length == 0)
         {
-            MessageLane.Bus => _BusQueuePrefix + BusNameBuilder.Build(subscriptionName, _BusQueueRules),
-            MessageLane.Queue => $"queue.{logicalName}",
+            var queue = lane switch
+            {
+                MessageLane.Bus => _BusQueuePrefix + BusNameBuilder.Build(subscriptionName, _BusQueueRules),
+                MessageLane.Queue => $"queue.{logicalName}",
+                _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
+            };
+            RabbitMqValidation.ValidateQueueName(queue);
+            return queue;
+        }
+
+        // A Bus queue is named by the identity's hash past the length limit, so it always fits; a Queue-lane queue is
+        // the message name publishers and consumers agree on, so one the prefix pushes past the limit fails startup
+        // rather than being renamed into something another environment could share.
+        var prefixed = lane switch
+        {
+            MessageLane.Bus => $"{hostPrefix}.{_BusQueuePrefix}"
+                + BusNameBuilder.Build(subscriptionName, _BusRules(hostPrefix.Length + 1)),
+            MessageLane.Queue => $"{hostPrefix}.queue.{logicalName}",
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
         };
-        RabbitMqValidation.ValidateQueueName(queue);
-        return queue;
+
+        if (
+            lane is MessageLane.Queue
+            && prefixed.Length + RabbitMqQueueTopology.DeadLetterQueueSuffix.Length > _MaxNameLength
+        )
+        {
+            throw new InvalidOperationException(
+                $"The RabbitMQ queue for message '{logicalName}' with the host prefix '{hostPrefix}' (Headless:Prefix) "
+                    + $"is longer than {_MaxNameLength} characters with its dead-letter queue. Shorten the message name or the prefix."
+            );
+        }
+
+        RabbitMqValidation.ValidateQueueName(prefixed);
+        return prefixed;
     }
+
+    private static BusNameRules _BusRules(int hostPrefixLength) =>
+        new(
+            maxLength: _MaxNameLength - _BusQueuePrefix.Length - hostPrefixLength,
+            isAllowed: static c => c is '.' or '-' or '_'
+        );
 
     private static string _Lane(MessageLane lane) =>
         lane switch

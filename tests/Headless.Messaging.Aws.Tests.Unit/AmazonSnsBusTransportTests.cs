@@ -392,7 +392,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
         await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
-        var expectedTopicName = AwsPhysicalAddress.BusTopic("order.created.fifo");
+        var expectedTopicName = AwsPhysicalAddress.BusTopic("", "order.created.fifo");
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
@@ -579,7 +579,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
         await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
-        var expectedTopicName = AwsPhysicalAddress.BusTopic("my.topic:name");
+        var expectedTopicName = AwsPhysicalAddress.BusTopic("", "my.topic:name");
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient

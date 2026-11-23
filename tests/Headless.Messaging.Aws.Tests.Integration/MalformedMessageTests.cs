@@ -24,7 +24,7 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
         await using var session = await fixture.CreateConformanceSessionAsync(AbortToken);
         using var sqsClient = _CreateSqsClient();
         var queueUrl = (
-            await sqsClient.GetQueueUrlAsync(AwsPhysicalAddress.QueueDestination(session.Destination), AbortToken)
+            await sqsClient.GetQueueUrlAsync(AwsPhysicalAddress.QueueDestination("", session.Destination), AbortToken)
         ).QueueUrl;
         await session.StartAsync(cancellationToken: AbortToken);
 
@@ -250,7 +250,7 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
     private async Task<string> _CreateQueueAsync(string queueName)
     {
         using var sqsClient = _CreateSqsClient();
-        var response = await sqsClient.CreateQueueAsync(AwsPhysicalAddress.BusSubscriptionQueue(queueName));
+        var response = await sqsClient.CreateQueueAsync(AwsPhysicalAddress.BusSubscriptionQueue("", queueName));
         return response.QueueUrl;
     }
 

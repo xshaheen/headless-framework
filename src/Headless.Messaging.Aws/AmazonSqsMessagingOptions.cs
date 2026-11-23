@@ -20,6 +20,12 @@ public sealed class AmazonSqsMessagingOptions
     public required RegionEndpoint Region { get; set; }
 
     /// <summary>
+    /// The host isolation prefix (<c>Headless:Prefix</c>) every topic and queue starts with, or empty for none. Set after
+    /// every configuration step, never by the application.
+    /// </summary>
+    internal string HostPrefix { get; set; } = "";
+
+    /// <summary>
     /// Explicit AWS credentials to use instead of the SDK credential chain.
     /// Leave <see langword="null"/> to rely on the standard credential resolution order
     /// (environment variables, credentials file, IAM roles).

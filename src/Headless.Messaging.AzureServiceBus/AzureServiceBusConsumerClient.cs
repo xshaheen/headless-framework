@@ -121,8 +121,9 @@ internal sealed class AzureServiceBusConsumerClient(
 
             foreach (var messageName in names)
             {
-                CheckValidQueueName(messageName);
-                await _EnsureQueueProcessorAsync(messageName, cancellationToken).ConfigureAwait(false);
+                var queueName = AzureServiceBusPhysicalAddress.Queue(_asbOptions.HostPrefix, messageName);
+                CheckValidQueueName(queueName);
+                await _EnsureQueueProcessorAsync(queueName, cancellationToken).ConfigureAwait(false);
             }
 
             return;
@@ -1073,7 +1074,11 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private string? _ResolveArrivalName(ServiceBusReceivedMessage message, string entityPath)
     {
-        var address = lane == MessageLane.Queue ? entityPath : message.Subject;
+        // A Queue-lane queue carries the host prefix in front of its message name; a Bus subject is the message name.
+        var address =
+            lane == MessageLane.Queue
+                ? AzureServiceBusPhysicalAddress.QueueMessageName(_asbOptions.HostPrefix, entityPath)
+                : message.Subject;
 
         return address is not null && Volatile.Read(ref _arrivalNames).Contains(address) ? address : null;
     }

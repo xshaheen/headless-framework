@@ -66,6 +66,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         // given
         await fixture.EnsureOperatorStreamAsync();
         var requestFilter = NatsPhysicalAddress.Subject(
+            "",
             MessageLane.Queue,
             $"{NatsFixture.OperatorMessageNamePrefix}.>"
         );

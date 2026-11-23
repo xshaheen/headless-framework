@@ -46,7 +46,7 @@ internal sealed class NatsTransport(
 
             var external = _externalSubjects.Find(lane, message.Name);
             subject = external is null
-                ? ResolveSubject(message, lane, logger)
+                ? ResolveSubject(message, lane, logger, streamProvisioner.HostPrefix)
                 : ResolveExternalSubject(message, external);
 
             // A publish-only host creates the stream itself rather than waiting for a consumer host to have started.
@@ -114,7 +114,7 @@ internal sealed class NatsTransport(
             // or late acknowledgement ends the same way, so the message cannot claim the stream is gone.
             return _FailNoStream(
                 message.Name,
-                subject ?? NatsPhysicalAddress.Subject(lane, message.Name),
+                subject ?? NatsPhysicalAddress.Subject(streamProvisioner.HostPrefix, lane, message.Name),
                 "got no acknowledgement: no stream captures the subject, or the acknowledgement was lost or late",
                 ex,
                 streamMissingConfirmed: false
@@ -238,7 +238,8 @@ internal sealed class NatsTransport(
     internal static string ResolveSubject(
         TransportMessage message,
         MessageLane lane = MessageLane.Bus,
-        ILogger? logger = null
+        ILogger? logger = null,
+        string hostPrefix = ""
     )
     {
         if (
@@ -246,17 +247,17 @@ internal sealed class NatsTransport(
             || string.IsNullOrWhiteSpace(shard)
         )
         {
-            return NatsPhysicalAddress.Subject(lane, message.Name);
+            return NatsPhysicalAddress.Subject(hostPrefix, lane, message.Name);
         }
 
         try
         {
-            return NatsPhysicalAddress.Subject(lane, $"{message.Name}.{NatsSubjectShard.Validate(shard)}");
+            return NatsPhysicalAddress.Subject(hostPrefix, lane, $"{message.Name}.{NatsSubjectShard.Validate(shard)}");
         }
         catch (InvalidOperationException ex)
         {
             logger?.LogInvalidSubjectShard(shard, ex.Message);
-            return NatsPhysicalAddress.Subject(lane, message.Name);
+            return NatsPhysicalAddress.Subject(hostPrefix, lane, message.Name);
         }
     }
 }

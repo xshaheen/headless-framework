@@ -252,6 +252,22 @@ public sealed class NatsExternalSubjectTests : TestBase
     }
 
     [Fact]
+    public void should_reserve_the_prefixed_subject_root_of_a_prefixed_host()
+    {
+        // given - a host prefixed 'wt1' derives its subjects under 'wt1.headless.', so a filter there would collide
+        var streams = new NatsStreamCatalog().Own(_Stream, s => s.Subjects("wt1.>"));
+        MessageMetadata[] routes = [_Route(_Name, MessageLane.Queue, n => n.ExternalSubject("wt1.headless.queue.x"))];
+
+        // when
+        var prefixed = () => NatsExternalSubjects.Create(routes, streams, "wt1");
+        var unprefixed = () => NatsExternalSubjects.Create(routes, streams);
+
+        // then - only the host that derives subjects there refuses it
+        prefixed.Should().Throw<InvalidOperationException>().WithMessage("*wt1.headless.>*");
+        unprefixed.Should().NotThrow();
+    }
+
+    [Fact]
     public void should_fail_startup_when_no_declared_stream_covers_the_filter()
     {
         // given: a stream that covers part of the filter's subjects is not enough
@@ -495,7 +511,7 @@ public sealed class NatsExternalSubjectTests : TestBase
             .Should()
             .ContainSingle()
             .Which.Durable.Should()
-            .Be(NatsPhysicalAddress.QueueDurable(_Name));
+            .Be(NatsPhysicalAddress.QueueDurable("", _Name));
     }
 
     [Fact]

@@ -32,7 +32,7 @@ setup.UseRedis(options => options.Configuration = ConfigurationOptions.Parse("lo
 
 ### Names and topology
 
-- Stream keys are `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`.
+- Stream keys are `headless:messaging:bus:{logical-name}` and `headless:messaging:queue:{logical-name}`. With `Headless:Prefix` set to `wt1` they start with `wt1:`, and the consumer groups and wake channels on them follow; see [host prefix](transports.md#host-prefix).
 - **Bus:** the consumer group on each Bus stream is named after the consumer identity, so each identity gets one copy and its replicas compete inside the group.
 - **Queue:** the consumer group on the Queue stream is named after the message, so each message has one copy and its replicas compete.
 - **Wire format:** a stream entry has two fields, `headers` (a JSON object) and `body` (the raw bytes).

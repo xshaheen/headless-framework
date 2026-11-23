@@ -32,7 +32,7 @@ internal sealed class RedisTransport(
         {
             await redis
                 .PublishAsync(
-                    RedisPhysicalAddress.QueueStream(message.Name),
+                    RedisPhysicalAddress.QueueStream(_options.HostPrefix, message.Name),
                     message.AsStreamEntries(),
                     cancellationToken
                 )

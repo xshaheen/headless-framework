@@ -191,7 +191,7 @@ public sealed class RedisRecoveryRetentionTests(RedisMessagingFixture fixture) :
         // given: two full internal nodes of ten-minute-old entries, past the every-instance age but far inside
         // StreamMaxAge, on a Bus stream read either by an every-instance consumer alone or by a consumer group
         var destination = $"signal-{Guid.NewGuid():N}";
-        var stream = RedisPhysicalAddress.BusStream(destination);
+        var stream = RedisPhysicalAddress.BusStream("", destination);
         var database = (await fixture.GetAdminConnectionAsync()).GetDatabase();
         var tenMinutesAgo = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeMilliseconds();
         for (var i = 1; i <= 200; i++)
@@ -301,7 +301,7 @@ public sealed class RedisRecoveryRetentionTests(RedisMessagingFixture fixture) :
     private static (string Destination, string Stream) _NewQueue()
     {
         var destination = $"recovery-{Guid.NewGuid():N}";
-        return (destination, RedisPhysicalAddress.QueueStream(destination));
+        return (destination, RedisPhysicalAddress.QueueStream("", destination));
     }
 
     private static TransportMessage _Message(

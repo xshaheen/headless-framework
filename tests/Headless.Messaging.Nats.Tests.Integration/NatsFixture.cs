@@ -398,7 +398,7 @@ public sealed class NatsFixture : HeadlessNatsFixture
         // after the session, so the sessions of one scenario share a stream and never touch another scenario's.
         if (!destination.StartsWith(streamName + ".", StringComparison.Ordinal))
         {
-            var subject = NatsPhysicalAddress.Subject(lane, destination);
+            var subject = NatsPhysicalAddress.Subject("", lane, destination);
             natsOptions.Streams.Own(streamName, stream => stream.Subjects(subject, subject + ".>"));
         }
 

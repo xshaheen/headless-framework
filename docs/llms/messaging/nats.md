@@ -54,6 +54,7 @@ setup.UseNats(options => options.UseConnection(sp => sp.GetRequiredService<NATS.
 ### Subjects, streams, and durables
 
 - **Subjects.** Bus publishes to `headless.bus.{logical-name}`. Queue publishes to `headless.queue.{logical-name}`. Every name includes `MessagingOptions.MessageNamePrefix` when set.
+- **Host prefix.** With `Headless:Prefix` set to `wt1`, subjects start with `wt1.`, derived and `Own` streams with `wt1_`, and durables with `wt1_`; `Bind` streams and external subjects keep their names. See [host prefix](transports.md#host-prefix).
 - **Durables.** A Bus consumer identity has one `bus_{consumer-identity}` durable on each stream it reads, filtering on the subjects of every message it consumes there. Filtering on more than one subject needs NATS server 2.10 or later; an older server fails the consumer's start instead of delivering the whole stream. A Queue message has one shared `queue-{logical-name}` durable.
 - **Which stream holds a message.** The stream declared in `NatsMessagingOptions.Streams` whose subjects cover the message's subject. Otherwise a derived stream `headless-{lane}-{key}`, where the key is the message name's first dot-separated segment. A derived stream carries the wildcard `headless.{lane}.{key}.>`, plus the bare `headless.{lane}.{key}` only for a message named exactly the key, so every host asks for the same subjects. Consumer filters stay exact per message.
 - **Retention.** Derived Bus streams are interest-retained. Derived Queue streams are work-queue-retained. `StreamOptions` may tune storage, replicas, and limits but cannot replace provider-owned names, subjects, or retention.
@@ -88,7 +89,7 @@ The comparison covers only fields the provider or your `StreamOptions` callback 
 - A publish no stream answers (`NatsJSPublishNoResponseException`, or an acknowledgement with `seq=0`) fails and makes the next publish ensure again, which recovers a stream deleted while the host ran. A lost or late acknowledgement can also cause the no-response exception, and its message names both causes.
 - A `StreamCreateTimeout` (default 30 s) that expires during a publish-time ensure fails that publish with `PublisherSentFailedException`. Only your own cancellation propagates as `OperationCanceledException`.
 - On an interest-retained Bus stream with no consumer yet, a publish is discarded. The first ensure that finds no consumer logs one warning per stream (EventId 17, `NatsInterestStreamWithoutConsumer`). Start Bus consumers before publishers, or send a message that must wait for its consumer on the Queue lane.
-- To keep environments apart on one NATS server, give each its own NATS account.
+- To keep environments apart on one NATS server, give each its own `Headless:Prefix` (see [host prefix](transports.md#host-prefix)) or its own NATS account. Only an account separates credentials.
 
 ### Shards
 

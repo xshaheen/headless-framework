@@ -28,6 +28,12 @@ public sealed class KafkaMessagingOptions
     public Dictionary<string, string> MainConfig { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// The host isolation prefix (<c>Headless:Prefix</c>) every topic and consumer group starts with, or empty for none.
+    /// Set after every configuration step, never by the application.
+    /// </summary>
+    internal string HostPrefix { get; set; } = "";
+
+    /// <summary>
     /// The <c>bootstrap.servers</c> value — a comma-separated list of broker <c>host</c> or
     /// <c>host:port</c> addresses used to establish the initial connection to the cluster.
     /// </summary>

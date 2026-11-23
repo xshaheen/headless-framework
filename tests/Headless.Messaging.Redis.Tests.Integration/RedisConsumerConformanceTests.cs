@@ -132,7 +132,7 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         // given
         var destination = $"every-{Guid.NewGuid():N}";
         var identity = $"group-{Guid.NewGuid():N}";
-        var stream = RedisPhysicalAddress.BusStream(destination);
+        var stream = RedisPhysicalAddress.BusStream("", destination);
         await using var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
         var database = connection.GetDatabase();
 
@@ -270,7 +270,7 @@ public sealed class RedisConsumerConformanceTests(RedisMessagingFixture fixture)
         await session.StartAsync(cancellationToken: AbortToken);
         await using var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
         var database = connection.GetDatabase();
-        var stream = RedisPhysicalAddress.QueueStream(destination);
+        var stream = RedisPhysicalAddress.QueueStream("", destination);
         var message = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {

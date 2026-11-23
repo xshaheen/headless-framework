@@ -2,6 +2,7 @@
 
 using Amazon;
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Messaging.Aws;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
@@ -127,6 +128,11 @@ public static class SetupMessagingAws
             );
 
             configureOptions(services);
+
+            // Environments that share one account and region keep their topics and queues apart.
+            services.ApplyHeadlessPrefix<AmazonSqsMessagingOptions>(
+                static (options, prefix) => options.HostPrefix = prefix
+            );
             services.AddSingleton<IBusTransport, AmazonSnsBusTransport>();
             services.AddSingleton<IQueueTransport, AmazonSqsQueueTransport>();
             services.AddSingleton<SnsTopicArnCache>();

@@ -32,7 +32,7 @@ internal sealed class RedisBusTransport(
         {
             await redis
                 .PublishAsync(
-                    RedisPhysicalAddress.BusStream(message.Name),
+                    RedisPhysicalAddress.BusStream(_options.HostPrefix, message.Name),
                     message.AsStreamEntries(),
                     cancellationToken
                 )

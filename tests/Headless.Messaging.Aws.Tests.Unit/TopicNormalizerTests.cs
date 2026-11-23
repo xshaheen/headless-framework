@@ -9,8 +9,8 @@ public sealed class TopicNormalizerTests
     [Fact]
     public void should_lane_qualify_bus_topic_and_queue_destination()
     {
-        AwsPhysicalAddress.BusTopic("orders-created").Should().Be("bus-orders-created");
-        AwsPhysicalAddress.QueueDestination("orders-created").Should().Be("queue-orders-created");
+        AwsPhysicalAddress.BusTopic("", "orders-created").Should().Be("bus-orders-created");
+        AwsPhysicalAddress.QueueDestination("", "orders-created").Should().Be("queue-orders-created");
     }
 
     [Theory]
@@ -18,22 +18,25 @@ public sealed class TopicNormalizerTests
     [InlineData("orders:created", "orders_created")]
     public void should_disambiguate_bus_and_queue_names_changed_by_normalization(string first, string second)
     {
-        AwsPhysicalAddress.BusTopic(first).Should().NotBe(AwsPhysicalAddress.BusTopic(second));
-        AwsPhysicalAddress.QueueDestination(first).Should().NotBe(AwsPhysicalAddress.QueueDestination(second));
-        AwsPhysicalAddress.BusSubscriptionQueue(first).Should().NotBe(AwsPhysicalAddress.BusSubscriptionQueue(second));
+        AwsPhysicalAddress.BusTopic("", first).Should().NotBe(AwsPhysicalAddress.BusTopic("", second));
+        AwsPhysicalAddress.QueueDestination("", first).Should().NotBe(AwsPhysicalAddress.QueueDestination("", second));
+        AwsPhysicalAddress
+            .BusSubscriptionQueue("", first)
+            .Should()
+            .NotBe(AwsPhysicalAddress.BusSubscriptionQueue("", second));
     }
 
     [Fact]
     public void should_name_bus_subscription_queue_after_consumer_identity()
     {
-        AwsPhysicalAddress.BusSubscriptionQueue("billing").Should().Be("bus-billing");
-        AwsPhysicalAddress.BusSubscriptionQueue("shipping").Should().Be("bus-shipping");
+        AwsPhysicalAddress.BusSubscriptionQueue("", "billing").Should().Be("bus-billing");
+        AwsPhysicalAddress.BusSubscriptionQueue("", "shipping").Should().Be("bus-shipping");
     }
 
     [Fact]
     public void should_build_valid_sqs_name_when_consumer_identity_contains_dots()
     {
-        var name = AwsPhysicalAddress.BusSubscriptionQueue("billing.invoice-projection");
+        var name = AwsPhysicalAddress.BusSubscriptionQueue("", "billing.invoice-projection");
 
         name.Should().MatchRegex("^bus-billing-invoice-projection-[0-9a-f]{12}$");
     }
@@ -43,13 +46,13 @@ public sealed class TopicNormalizerTests
     {
         var identity = "billing." + new string('a', 107) + ".fifo";
 
-        var name = AwsPhysicalAddress.BusSubscriptionQueue(identity);
+        var name = AwsPhysicalAddress.BusSubscriptionQueue("", identity);
 
         identity.Should().HaveLength(120);
         name.Should().HaveLength(80);
         name.Should().EndWith(".fifo");
         name[..^".fifo".Length].Should().MatchRegex("^bus-[A-Za-z0-9_-]+$");
-        AwsPhysicalAddress.BusSubscriptionQueue(identity).Should().Be(name);
+        AwsPhysicalAddress.BusSubscriptionQueue("", identity).Should().Be(name);
     }
 
     [Fact]
@@ -58,12 +61,12 @@ public sealed class TopicNormalizerTests
         var logicalName = new string('a', 180);
         var identity = new string('b', 180);
 
-        var first = AwsPhysicalAddress.BusSubscriptionQueue(identity);
-        var second = AwsPhysicalAddress.BusSubscriptionQueue(identity);
+        var first = AwsPhysicalAddress.BusSubscriptionQueue("", identity);
+        var second = AwsPhysicalAddress.BusSubscriptionQueue("", identity);
 
         first.Should().Be(second);
         first.Should().HaveLength(80);
-        AwsPhysicalAddress.BusTopic(logicalName).Length.Should().BeLessThanOrEqualTo(256);
+        AwsPhysicalAddress.BusTopic("", logicalName).Length.Should().BeLessThanOrEqualTo(256);
     }
 
     [Fact]

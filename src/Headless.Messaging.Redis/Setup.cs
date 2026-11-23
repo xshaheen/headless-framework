@@ -2,6 +2,7 @@
 
 using System.Net;
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
@@ -147,6 +148,11 @@ public static class SetupMessagingRedis
                 >()
             );
             _configureOptions(services);
+
+            // Environments that share one Redis server keep their streams, and so their consumer groups, apart.
+            services.ApplyHeadlessPrefix<RedisMessagingOptions>(
+                static (options, prefix) => options.HostPrefix = prefix
+            );
         }
     }
 

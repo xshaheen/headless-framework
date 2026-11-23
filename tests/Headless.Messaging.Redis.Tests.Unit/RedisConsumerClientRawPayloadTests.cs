@@ -19,8 +19,8 @@ public sealed class RedisConsumerClientRawPayloadTests : TestBase
     private const long _StoredAtMs = 1_791_547_200_000;
     private const string _EntryId = "1791547200000-3";
 
-    private static readonly string _RawStream = RedisPhysicalAddress.QueueStream(_RawName);
-    private static readonly string _StrictStream = RedisPhysicalAddress.QueueStream(_StrictName);
+    private static readonly string _RawStream = RedisPhysicalAddress.QueueStream("", _RawName);
+    private static readonly string _StrictStream = RedisPhysicalAddress.QueueStream("", _StrictName);
 
     private readonly IRedisStreamManager _streams = Substitute.For<IRedisStreamManager>();
 
@@ -34,9 +34,9 @@ public sealed class RedisConsumerClientRawPayloadTests : TestBase
         await client.SubscribeAsync([_RawName], AbortToken);
 
         // then
-        client.ArrivalName(RedisPhysicalAddress.BusStream(_RawName)).Should().Be(_RawName);
-        client.ArrivalName(RedisPhysicalAddress.QueueStream(_RawName)).Should().BeNull();
-        client.ArrivalName(RedisPhysicalAddress.BusStream("runs.other")).Should().BeNull();
+        client.ArrivalName(RedisPhysicalAddress.BusStream("", _RawName)).Should().Be(_RawName);
+        client.ArrivalName(RedisPhysicalAddress.QueueStream("", _RawName)).Should().BeNull();
+        client.ArrivalName(RedisPhysicalAddress.BusStream("", "runs.other")).Should().BeNull();
     }
 
     [Fact]

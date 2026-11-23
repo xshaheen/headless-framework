@@ -56,7 +56,7 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
                 async (expectedId, token) =>
                 {
                     queueUrl ??= (
-                        await client.GetQueueUrlAsync(AwsPhysicalAddress.QueueDestination(destination), token)
+                        await client.GetQueueUrlAsync(AwsPhysicalAddress.QueueDestination("", destination), token)
                     ).QueueUrl;
                     var response = await client.ReceiveMessageAsync(
                         new ReceiveMessageRequest(queueUrl)
@@ -119,7 +119,7 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
         {
             await topology.SubscribeAsync(topics, cancellationToken);
             queueUrl = (
-                await client.GetQueueUrlAsync(AwsPhysicalAddress.BusSubscriptionQueue(group), cancellationToken)
+                await client.GetQueueUrlAsync(AwsPhysicalAddress.BusSubscriptionQueue("", group), cancellationToken)
             ).QueueUrl;
             await TransportRoutingAffinityConformance.AssertPublisherPathsAsync(
                 ConfigureRoutingAffinityTransport,
@@ -161,7 +161,7 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
             foreach (var name in topics)
             {
                 var topic = await sns.CreateTopicAsync(
-                    AwsPhysicalAddress.BusTopic(name).ToSnsCreateTopicRequest(),
+                    AwsPhysicalAddress.BusTopic("", name).ToSnsCreateTopicRequest(),
                     CancellationToken.None
                 );
                 await sns.DeleteTopicAsync(topic.TopicArn, CancellationToken.None);

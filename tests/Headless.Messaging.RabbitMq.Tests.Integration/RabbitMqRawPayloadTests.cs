@@ -120,7 +120,7 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
                 name,
                 RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue),
                 RabbitMqPhysicalAddress.RoutingKey(MessageLane.Queue, name),
-                RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name)
+                RabbitMqPhysicalAddress.Queue("", MessageLane.Queue, name, name)
             );
             await _WaitForConsumerAsync(host.QueueName);
             return host;

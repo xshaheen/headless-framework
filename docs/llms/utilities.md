@@ -287,7 +287,7 @@ The host's deploy verbs, health checks, startup validation, seeders, resource pr
 | Capability | Entry point | Section |
 | --- | --- | --- |
 | Host verbs for deploy and verification | `RunHeadlessAsync(args)` | [Host verbs](#host-verbs) |
-| Environments that share one Redis | `Headless:Prefix`, `ConfigureHeadlessPrefix` | [Isolation prefix](#isolation-prefix) |
+| Environments that share one Redis or message broker | `Headless:Prefix`, `ConfigureHeadlessPrefix` | [Isolation prefix](#isolation-prefix) |
 | Readiness checks for dependencies | `AddHeadlessHealthCheck`, `ConfigureHeadlessHealthCheck`, `RemoveHealthChecks` | [Health checks](#health-checks) |
 | Pre-rollout dependency check | the `check` verb | [Health check command](#health-check-command) |
 | What the host registered, without starting it | the `describe` verb | [Host manifest](#host-manifest) |
@@ -350,7 +350,7 @@ return await app.RunHeadlessAsync(args);
 
 ### Isolation prefix
 
-Give each host its own prefix when several environments share one Redis, such as worktrees, preview stacks, or sandboxes. Set it once, with no code:
+Give each host its own prefix when several environments share one Redis or one message broker, such as worktrees, preview stacks, or sandboxes. Set it once, with no code:
 
 ```json
 { "Headless": { "Prefix": "wt1" } }
@@ -360,8 +360,8 @@ You can also set the environment variable `Headless__Prefix=wt1`, or call `servi
 
 - **Shape.** Empty (the default), or 1 to 20 lowercase letters, digits, and `-`, not starting or ending with `-`. Any other value fails the start with `OptionsValidationException` naming `Headless:Prefix`. The allowed characters include no store separator (`:`, `.`, `_`, `/`) and no pattern character, so a prefix cannot reach another environment's names or widen a pattern delete.
 - **Position.** The prefix goes in front of each feature's own key prefix, joined with `:`. A lock on `orders` uses `wt1:distributed-lock:orders`, and a cache with `KeyPrefix = "app:"` writes `wt1:app:{key}`. An empty prefix leaves every name unchanged.
-- **What it isolates.** Redis and in-memory cache keys and the Redis hybrid invalidation channel ([Caching](caching.md)); mutex, semaphore, and reader-writer lock resources and the Redis lock release channel ([Distributed Locks](distributed-locks.md)); Redis coordination keys ([Coordination](coordination.md)). Features that write through `ICache` or `IDistributedLock` inherit it: idempotency, rate limiting, the cache-factory lock, TUS file locks, tenant-scoped caching, Features, Settings, Permissions, and Jobs.
-- **What it does not isolate.** Database-backed locks (PostgreSQL advisory locks and SQL Server app locks, including the static `SqlServerDistributedLock` helpers), relational coordination (separated by cluster name), relational storage tables, and blob containers, `Headless.Blobs.Redis` included. Environments that share one Redis must give that blob provider distinct container names. Use a separate database, schema, or bucket for the rest.
+- **What it isolates.** Redis and in-memory cache keys and the Redis hybrid invalidation channel ([Caching](caching.md)); mutex, semaphore, and reader-writer lock resources and the Redis lock release channel ([Distributed Locks](distributed-locks.md)); Redis coordination keys ([Coordination](coordination.md)). Features that write through `ICache` or `IDistributedLock` inherit it: idempotency, rate limiting, the cache-factory lock, TUS file locks, tenant-scoped caching, Features, Settings, Permissions, and Jobs. Messaging transports put it in front of every broker name they derive: NATS subjects, streams, and durables; Redis stream keys; RabbitMQ exchanges and queues; Kafka topics and consumer groups; AWS topics and queues; Azure Service Bus topics and queues ([Host prefix](messaging/transports.md#host-prefix)). Messaging retry locks inherit it through `IDistributedLock`. InMemory messaging is per process and ignores it.
+- **What it does not isolate.** Messaging storage (outbox and inbox tables), message names, and dashboards; hosts that share a messaging storage database are one environment and need the same prefix. Database-backed locks (PostgreSQL advisory locks and SQL Server app locks, including the static `SqlServerDistributedLock` helpers), relational coordination (separated by cluster name), relational storage tables, and blob containers, `Headless.Blobs.Redis` included. Environments that share one Redis must give that blob provider distinct container names. Use a separate database, schema, or bucket for the rest.
 - **One prefix per shared relational store.** Hosts that share one Jobs or other relational store are one environment. Give them the same prefix, or distinct `CoordinationOptions.ClusterName` values. Otherwise a host treats the other prefix's live nodes as dead and reclaims their in-flight rows. For the same reason, adding or changing the prefix on a running fleet that shares such a store needs a full stop and restart, not a rolling deploy.
 - **Redis lock keys.** Lock storage hex-encodes the resource inside a hash tag, so a lock key does not start with the prefix and `SCAN wt1:*` does not find it. Cache and coordination keys do start with it.
 - **Not a security boundary.** The prefix separates names. Credentials still decide who can reach a store.

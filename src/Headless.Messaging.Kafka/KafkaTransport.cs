@@ -45,7 +45,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaProdu
 
             var result = await producer
                 .ProduceAsync(
-                    message.Name,
+                    KafkaPhysicalAddress.Topic(producerProvider.HostPrefix, message.Name),
                     new Message<string, byte[]>
                     {
                         Headers = headers,

@@ -80,6 +80,12 @@ public sealed class RabbitMqMessagingOptions
     public int ChannelPoolSize { get; set; } = DefaultChannelPoolSize;
 
     /// <summary>
+    /// The host isolation prefix (<c>Headless:Prefix</c>) the base exchange and every queue start with, or empty for
+    /// none. Set after every configuration step, never by the application.
+    /// </summary>
+    internal string HostPrefix { get; set; } = "";
+
+    /// <summary>
     /// The TCP port to connect on. Use <c>-1</c> (default) to let the client choose the default
     /// AMQP port (5672) or the TLS port when TLS is configured.
     /// </summary>

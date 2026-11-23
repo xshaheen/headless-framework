@@ -19,6 +19,9 @@ internal interface IKafkaProducerProvider
     /// <summary>Gets the formatted broker addresses the producer connects to.</summary>
     string ServersAddress { get; }
 
+    /// <summary>Gets the host isolation prefix (<c>Headless:Prefix</c>) every topic starts with, or empty for none.</summary>
+    string HostPrefix { get; }
+
     /// <summary>Returns the shared producer, building it on first use.</summary>
     /// <exception cref="ObjectDisposedException">The provider has been disposed.</exception>
     IProducer<string, byte[]> GetProducer();
@@ -64,6 +67,8 @@ internal sealed class KafkaProducerProvider : IKafkaProducerProvider, IDisposabl
     }
 
     public string ServersAddress { get; }
+
+    public string HostPrefix => _options.HostPrefix;
 
     public IProducer<string, byte[]> GetProducer()
     {

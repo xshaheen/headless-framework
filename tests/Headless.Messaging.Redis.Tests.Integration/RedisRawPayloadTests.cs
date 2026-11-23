@@ -24,7 +24,7 @@ public sealed class RedisRawPayloadTests(RedisMessagingFixture fixture) : TestBa
     {
         // given
         var name = $"raw-{Guid.NewGuid():N}";
-        var stream = RedisPhysicalAddress.QueueStream(name);
+        var stream = RedisPhysicalAddress.QueueStream("", name);
         var database = (await fixture.GetAdminConnectionAsync()).GetDatabase();
         await using var provider = await _StartHostAsync(name);
         var recorder = provider.GetRequiredService<RawProbeRecorder>();

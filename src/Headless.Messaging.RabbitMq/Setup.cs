@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
@@ -187,6 +188,11 @@ public static class SetupMessagingRabbitMq
         );
     }
 
+    // Environments that share one virtual host keep their exchanges and queues apart. The prefix applies to every
+    // options instance, default and named, through one registration.
+    private static void _ApplyHostPrefix(IServiceCollection services) =>
+        services.ApplyHeadlessPrefix<RabbitMqMessagingOptions>(static (options, prefix) => options.HostPrefix = prefix);
+
     private static MessagingProviderCapabilities _Capabilities(bool supportsRequestReply) =>
         MessagingProviderCapabilities.Transport(
             "RabbitMQ",
@@ -215,6 +221,7 @@ public static class SetupMessagingRabbitMq
             services.AddSingleton(new MessageQueueMarkerService("RabbitMQ"));
             services.AddMessagingProviderCapabilities(_Capabilities(supportsRequestReply: true));
             configureOptions(services);
+            _ApplyHostPrefix(services);
             services.AddSingleton<IBusTransport>(sp => new RabbitMqTransport(
                 sp.GetRequiredService<ILogger<RabbitMqTransport>>(),
                 sp.GetRequiredService<IConnectionChannelPool>(),
@@ -256,6 +263,7 @@ public static class SetupMessagingRabbitMq
             // A named transport opens no reply channel: request/reply runs on the default transport.
             services.AddMessagingProviderCapabilities(name, _Capabilities(supportsRequestReply: false));
             configureOptions(services, _optionsName);
+            _ApplyHostPrefix(services);
 
             services.AddKeyedSingleton<IConnectionChannelPool>(
                 name,

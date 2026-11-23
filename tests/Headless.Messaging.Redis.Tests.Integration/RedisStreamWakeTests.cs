@@ -81,7 +81,7 @@ public sealed class RedisStreamWakeTests(RedisMessagingFixture fixture) : TestBa
     {
         // given
         var destination = $"wake-{Guid.NewGuid():N}";
-        var channel = RedisPhysicalAddress.WakeChannel(RedisPhysicalAddress.QueueStream(destination));
+        var channel = RedisPhysicalAddress.WakeChannel(RedisPhysicalAddress.QueueStream("", destination));
         var session = await fixture.CreateSessionAsync(
             MessageLane.Queue,
             destination,
@@ -120,7 +120,7 @@ public sealed class RedisStreamWakeTests(RedisMessagingFixture fixture) : TestBa
     {
         // given
         var destination = $"wake-{Guid.NewGuid():N}";
-        var channel = RedisPhysicalAddress.WakeChannel(RedisPhysicalAddress.QueueStream(destination));
+        var channel = RedisPhysicalAddress.WakeChannel(RedisPhysicalAddress.QueueStream("", destination));
         await using var session = await fixture.CreateSessionAsync(
             MessageLane.Queue,
             destination,

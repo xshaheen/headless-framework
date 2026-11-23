@@ -258,13 +258,17 @@ internal sealed class NatsConsumerClient(
             names,
             ResolveShardedMessageNames(names),
             _LaneMessageNames(),
-            names.Select(ExternalBinding).OfType<NatsExternalBinding>()
+            names.Select(ExternalBinding).OfType<NatsExternalBinding>(),
+            _natsOptions.HostPrefix
         );
 
         return ValueTask.CompletedTask;
     }
 
     /// <summary>Returns the external subject binding of a message on this client's lane, if it has one.</summary>
+    /// <summary>The host isolation prefix this client's subjects and durables carry, or empty for none.</summary>
+    internal string HostPrefix => _natsOptions.HostPrefix;
+
     internal NatsExternalBinding? ExternalBinding(string messageName) => _externalSubjects.Find(lane, messageName);
 
     // Tests build the client without a container; such a client binds no external subject.
@@ -442,7 +446,7 @@ internal sealed class NatsConsumerClient(
 
         foreach (var logicalSubject in BuildConsumerSubjects(derived, ResolveShardedMessageNames(derived)))
         {
-            filters.Add((logicalSubject, NatsPhysicalAddress.Subject(lane, logicalSubject)));
+            filters.Add((logicalSubject, NatsPhysicalAddress.Subject(_natsOptions.HostPrefix, lane, logicalSubject)));
         }
 
         return filters;
@@ -463,11 +467,13 @@ internal sealed class NatsConsumerClient(
             return
             [
                 new NatsDurableBinding(
-                    NatsPhysicalAddress.BusDurable(name),
+                    NatsPhysicalAddress.BusDurable(_natsOptions.HostPrefix, name),
                     NatsDurableBinder.MergeFilters(filters.Select(filter => filter.Subject)),
                     [
                         .. filters
-                            .Select(filter => NatsPhysicalAddress.LegacyBusDurable(name, filter.DurableKey))
+                            .Select(filter =>
+                                NatsPhysicalAddress.LegacyBusDurable(_natsOptions.HostPrefix, name, filter.DurableKey)
+                            )
                             .Distinct(StringComparer.Ordinal),
                     ]
                 ),
@@ -477,7 +483,7 @@ internal sealed class NatsConsumerClient(
         return
         [
             .. filters.Select(filter => new NatsDurableBinding(
-                NatsPhysicalAddress.QueueDurable(filter.DurableKey),
+                NatsPhysicalAddress.QueueDurable(_natsOptions.HostPrefix, filter.DurableKey),
                 [filter.Subject],
                 []
             )),

@@ -349,6 +349,7 @@ builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
 - `messaging.publish-retry-bus-{version}`, `messaging.publish-retry-queue-{version}`, `messaging.receive-retry-bus-{version}`, `messaging.receive-retry-queue-{version}`.
 - `messaging.publish-retry-{lane}-{version}-outbox-{key}` for an [additional outbox](storage.md#additional-outboxes), where `{key}` is a 16-hex-digit hash of the outbox's provider, data source, and database.
 - `{version}` is `MessagingOptions.Version`. Two services that share one lock store must set distinct `Version` values, or matching loops collide and starve each other.
+- The names carry no `Headless:Prefix` of their own. A Redis or in-memory lock from `Headless.DistributedLocks` already starts its key with the prefix ([Isolation prefix](../utilities.md#isolation-prefix)), so environments with different prefixes do not need distinct `Version` values on such a store. A PostgreSQL or SQL Server lock is not prefixed; there, environments that share the database still need distinct `Version` values.
 - Every retry lock is try-once (no wait), leased for that loop's current polling interval, and auto-extended. Contention skips only that loop's cycle. Releasing one sends no lock-release broadcast.
 - When a held retry lock's lease is lost (EventId 79), no new pickup starts under it. A dispatch already in flight is not canceled: its own row lease still governs it.
 

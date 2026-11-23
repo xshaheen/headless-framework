@@ -105,6 +105,24 @@ public sealed class NatsStreamCatalog
         return this;
     }
 
+    // Declarations are validated as written; the prefix rewrites them afterwards, uniformly, so no two of them can come
+    // to overlap and none moves into a reserved subject space.
+    internal void ApplyHostPrefix(string hostPrefix)
+    {
+        for (var i = 0; i < _streams.Count; i++)
+        {
+            var spec = _streams[i];
+            _streams[i] = spec with
+            {
+                Name = spec.Owned ? NatsPhysicalAddress.OwnedDeclaredStream(hostPrefix, spec.Name) : spec.Name,
+                Subjects =
+                [
+                    .. spec.Subjects.Select(subject => NatsPhysicalAddress.DeclaredSubject(hostPrefix, subject)),
+                ],
+            };
+        }
+    }
+
     private void _ValidateName(string name)
     {
         Argument.IsNotNullOrWhiteSpace(name);

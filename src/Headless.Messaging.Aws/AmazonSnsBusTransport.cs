@@ -52,7 +52,7 @@ internal sealed class AmazonSnsBusTransport(
             var affinityKey = message.Name.IsAwsFifoName() ? AwsRoutingAffinity.Mapping.ResolveKey(message) : null;
             await _FetchExistingTopicArns(cancellationToken).ConfigureAwait(false);
 
-            var normalizeForAws = AwsPhysicalAddress.BusTopic(message.Name);
+            var normalizeForAws = AwsPhysicalAddress.BusTopic(sqsOptionsAccessor.Value.HostPrefix, message.Name);
             var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws, cancellationToken)
                 .ConfigureAwait(false);
 

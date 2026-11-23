@@ -136,14 +136,23 @@ public static class SetupMessagingNats
 
             configureOptions(services);
 
+            // Environments that share one NATS server keep their subjects, streams, and durables apart.
+            services.ApplyHeadlessPrefix<NatsMessagingOptions>(
+                static (options, prefix) => options.ApplyHostPrefix(prefix)
+            );
+
             // Validated when first resolved. The stream warm-up, a processing server, depends on it, so the bootstrapper
             // resolves it before any processor starts and an invalid external subject fails startup before broker I/O.
             services.AddSingleton(sp =>
-                NatsExternalSubjects.Create(
+            {
+                var options = sp.GetRequiredService<IOptions<NatsMessagingOptions>>().Value;
+
+                return NatsExternalSubjects.Create(
                     sp.GetService<IMessageMetadataRegistry>()?.GetAll() ?? [],
-                    sp.GetRequiredService<IOptions<NatsMessagingOptions>>().Value.Streams
-                )
-            );
+                    options.Streams,
+                    options.HostPrefix
+                );
+            });
 
             // Built explicitly so the back-off measures real time rather than a registered TimeProvider.
             services.AddSingleton(sp => new NatsStreamProvisioner(

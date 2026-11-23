@@ -306,7 +306,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSqsQueueTransport>>();
         await using var transport = new AmazonSqsQueueTransport(logger, _CreateOptions());
-        var expectedQueueName = AwsPhysicalAddress.QueueDestination("order.created");
+        var expectedQueueName = AwsPhysicalAddress.QueueDestination("", "order.created");
 
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
@@ -346,7 +346,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSqsQueueTransport>>();
         await using var transport = new AmazonSqsQueueTransport(logger, _CreateOptions());
-        var expectedQueueName = AwsPhysicalAddress.QueueDestination("order.created.fifo");
+        var expectedQueueName = AwsPhysicalAddress.QueueDestination("", "order.created.fifo");
 
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
