@@ -2,7 +2,7 @@
 // sit near their size budget.
 'use no memo'
 
-import { useDashboard } from '@headless/dashboard-sdk'
+import { useDashboard, type DashboardStateRole } from '@headless/dashboard-sdk'
 import type { CommandDefinition } from '@headless/dashboard-sdk/commands'
 import { useDashboardApi, type CappedCount } from '@headless/dashboard-sdk/data'
 import { useQuery, useQueryClient } from '@headless/dashboard-sdk/query'
@@ -141,6 +141,76 @@ export function useResolve(query: string, enabled: boolean): Resolved | undefine
   }, [api, asked, query])
 
   return asked && found?.query === query ? found : undefined
+}
+
+const stateRoles = ['sched', 'enq', 'proc', 'ok', 'fail', 'off'] as const
+
+/** One module's part of a trace: its state, how many rows it gave, and the list that holds the rest when limited. */
+export interface TraceSection {
+  id: string
+  displayName: string
+  stale: boolean
+  /** The sources, such as stores or nodes, that did not answer. */
+  unavailable?: string[]
+  /** More objects carry the id than the module's limit let it return. */
+  limited: boolean
+  count: number
+  /** The module's own list, a path inside the module, opened with `state` as history state. */
+  list?: { path: string; state?: unknown } | null
+}
+
+/** One row of the trace tree, in the server's depth-first order. */
+export interface TraceRow {
+  module: string
+  target: ObjectRef
+  title: string
+  status?: string | null
+  statusRole?: DashboardStateRole | null
+  at: string
+  timestampKind: 'ran' | 'due' | 'added'
+  node?: string | null
+  depth: number
+  tags: string[]
+}
+
+export interface Trace {
+  modules: TraceSection[]
+  rows: TraceRow[]
+  /** How many trace-capable modules the user may not view. */
+  hidden: number
+}
+
+function isStateRole(value: unknown): value is DashboardStateRole {
+  return stateRoles.includes(value as DashboardStateRole)
+}
+
+/** The trace as the page draws it: a status role the shell does not know reads as none, and a missing depth as a root. */
+function readTrace(answer: Trace): Trace {
+  return {
+    modules: answer.modules ?? [],
+    hidden: typeof answer.hidden === 'number' ? answer.hidden : 0,
+    rows: (answer.rows ?? []).map((row) => ({
+      ...row,
+      statusRole: isStateRole(row.statusRole) ? row.statusRole : null,
+      depth: typeof row.depth === 'number' && row.depth >= 0 ? row.depth : 0,
+      tags: Array.isArray(row.tags) ? row.tags : [],
+    })),
+  }
+}
+
+/**
+ * Every object that carries `correlationId`, from every module the user may view, as one tree. The id travels in the
+ * body, never the URL, so it stays out of server and proxy logs. Nothing is asked for an empty id.
+ */
+export function useTrace(correlationId: string) {
+  const api = useDashboardApi()
+
+  return useQuery({
+    queryKey: ['shell', 'trace', correlationId],
+    enabled: correlationId !== '',
+    queryFn: async () =>
+      readTrace(await api.request<Trace>({ method: 'POST', path: 'trace', body: { correlationId } })),
+  })
 }
 
 /** How rarely the sidebar's counts refetch on live changes: a busy module would otherwise recount on every run. */
