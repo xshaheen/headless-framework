@@ -129,6 +129,87 @@ public sealed partial class LogRedactionTests : TestBase
     }
 
     [Fact]
+    public void should_replace_each_query_value_in_the_request_lines_and_keep_the_names()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static _ => { });
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(_HostingCategory);
+
+        // when
+        logger.Log(
+            LogLevel.Information,
+            default,
+            new LogValues(("Path", "/search"), ("QueryString", "?email=jane@x.test&page=2&flag")),
+            exception: null,
+            (_, _) => "Request starting GET http://localhost/search?email=jane@x.test&page=2&flag - -"
+        );
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Request starting GET http://localhost/search?email=Redacted&page=Redacted&flag - -");
+        entry
+            .Properties.Should()
+            .Contain(new KeyValuePair<string, object?>("QueryString", "?email=Redacted&page=Redacted&flag"))
+            .And.Contain(new KeyValuePair<string, object?>("Path", "/search"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?flag")]
+    public void should_leave_a_query_without_values_untouched(string query)
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static _ => { });
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(_HostingCategory);
+        var values = new LogValues(("Path", "/search"), ("QueryString", query));
+
+        // when
+        logger.Log(
+            LogLevel.Information,
+            default,
+            values,
+            exception: null,
+            (_, _) => "Request starting /search" + query
+        );
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Request starting /search" + query);
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("QueryString", query));
+    }
+
+    [Fact]
+    public void should_redact_both_a_declared_credential_path_and_the_query_in_one_request_line()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            services => services.AddSingleton<ILogPathRedactor>(new PrefixPathRedactor("/files"))
+        );
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(_HostingCategory);
+
+        // when
+        logger.Log(
+            LogLevel.Information,
+            default,
+            new LogValues(("Path", "/files/secret-token"), ("QueryString", "?sig=abc")),
+            exception: null,
+            (_, _) => "Request finished GET /files/secret-token?sig=abc - 200"
+        );
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Request finished GET /files/***?sig=Redacted - 200");
+        entry
+            .Properties.Should()
+            .Contain(new KeyValuePair<string, object?>("Path", "/files/***"))
+            .And.Contain(new KeyValuePair<string, object?>("QueryString", "?sig=Redacted"));
+    }
+
+    [Fact]
     public void should_leave_other_categories_and_other_paths_untouched()
     {
         // given

@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text;
 using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.Logging;
 
@@ -19,7 +20,8 @@ namespace Headless.Logging.Internal;
 /// <see cref="IRedactorProvider"/> and handed to providers as an ordinary value. Microsoft's <c>EnableRedaction</c> does
 /// that only when Microsoft's own factory is in charge; under Serilog's factory the parameter was dropped and the text
 /// kept a literal <c>{Name}</c> hole. And a path an <see cref="ILogPathRedactor"/> recognizes is replaced in ASP.NET
-/// Core's request scope and request lines, which the hosting layer writes before any middleware runs.
+/// Core's request scope and request lines, which the hosting layer writes before any middleware runs; the request lines'
+/// query values are replaced too.
 /// </para>
 /// <para>
 /// A property whose name an app classified (<c>ClassifyProperty</c>) is redacted the same way, by name, in every entry
@@ -58,17 +60,16 @@ internal sealed class RedactingLoggerFactory(
             logger = new TextScrubbingLogger(logger, applicable);
         }
 
-        var redactsPaths =
-            pathRedactors.Length > 0
-            && string.Equals(categoryName, HostingDiagnosticsCategory, StringComparison.Ordinal);
+        var hosting = string.Equals(categoryName, HostingDiagnosticsCategory, StringComparison.Ordinal);
 
         // A logger with nothing to redact is returned as is, so the wrapper costs nothing on those categories.
-        return redactorProvider is null && !redactsPaths
+        return redactorProvider is null && !hosting
             ? logger
             : new RedactingLogger(
                 logger,
                 redactorProvider,
-                redactsPaths ? pathRedactors : [],
+                hosting ? pathRedactors : [],
+                hosting,
                 propertyRedactors,
                 _projection
             );
@@ -82,6 +83,7 @@ internal sealed class RedactingLoggerFactory(
         ILogger inner,
         IRedactorProvider? redactorProvider,
         ILogPathRedactor[] pathRedactors,
+        bool redactsQuery,
         FrozenDictionary<string, Redactor> propertyRedactors,
         ClassifiedObjectProjection? projection
     ) : ILogger
@@ -92,6 +94,8 @@ internal sealed class RedactingLoggerFactory(
         // The request scope names the path RequestPath; the request lines name it Path, beside a separate PathBase.
         private const string _ScopePathKey = "RequestPath";
         private const string _LinePathKey = "Path";
+        private const string _LineQueryKey = "QueryString";
+        private const string _RedactedQueryValue = "Redacted";
 
         public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
 
@@ -100,12 +104,12 @@ internal sealed class RedactingLoggerFactory(
         {
             if (_TryRedactNamedScope(state, out var named))
             {
-                return _TryRedactPath(named, _ScopePathKey, out var namedPath)
+                return _TryRedactRequest(named, _ScopePathKey, query: false, out var namedPath)
                     ? inner.BeginScope(namedPath)
                     : inner.BeginScope(named);
             }
 
-            return _TryRedactPath(state, _ScopePathKey, out var redacted)
+            return _TryRedactRequest(state, _ScopePathKey, query: false, out var redacted)
                 ? inner.BeginScope(redacted)
                 : inner.BeginScope(state);
         }
@@ -143,10 +147,11 @@ internal sealed class RedactingLoggerFactory(
                 return;
             }
 
-            if (_TryRedactPath(state, _LinePathKey, out var redacted))
+            if (_TryRedactRequest(state, _LinePathKey, redactsQuery, out var redacted))
             {
                 // The message is rendered from the original state once, then rewritten, so the line keeps whatever
-                // shape the hosting layer gives it; the state's own values carry the redacted path for structured sinks.
+                // shape the hosting layer gives it; the state's own values carry the redacted path and query for
+                // structured sinks.
                 var message = redacted.Rewrite(formatter(state, exception));
 
                 inner.Log(logLevel, eventId, redacted, exception, (_, _) => message);
@@ -212,8 +217,8 @@ internal sealed class RedactingLoggerFactory(
         {
             var named = new RedactedState(values, message);
 
-            // ASP.NET Core's request line can carry both a classified name and a credential path.
-            if (_TryRedactPath(named, _LinePathKey, out var pathRedacted))
+            // ASP.NET Core's request line can carry a classified name beside a credential path and a query.
+            if (_TryRedactRequest(named, _LinePathKey, redactsQuery, out var pathRedacted))
             {
                 var rewritten = pathRedacted.Rewrite(message);
                 inner.Log(logLevel, eventId, pathRedacted, exception, (_, _) => rewritten);
@@ -389,43 +394,105 @@ internal sealed class RedactingLoggerFactory(
             return message;
         }
 
-        private bool _TryRedactPath<TState>(TState state, string pathKey, out PathRedactedState redacted)
+        // The request lines carry the path a path redactor recognizes and the raw query, whose values are as likely to
+        // hold a token or an e-mail as the path; the request scope carries the path only.
+        private bool _TryRedactRequest<TState>(
+            TState state,
+            string pathKey,
+            bool query,
+            out RequestRedactedState redacted
+        )
         {
             redacted = null!;
 
-            if (pathRedactors.Length == 0 || state is not IReadOnlyList<KeyValuePair<string, object?>> values)
+            if (
+                (pathRedactors.Length == 0 && !query)
+                || state is not IReadOnlyList<KeyValuePair<string, object?>> values
+            )
             {
                 return false;
             }
+
+            List<(int Index, string Raw, string Redacted)>? changes = null;
 
             for (var i = 0; i < values.Count; i++)
             {
                 var (key, value) = values[i];
 
-                if (
-                    !string.Equals(key, pathKey, StringComparison.Ordinal)
-                    || value is not string raw
-                    || raw.Length == 0
-                    || raw[0] != '/'
-                )
+                if (value is not string { Length: > 1 } raw)
                 {
                     continue;
                 }
 
-                foreach (var pathRedactor in pathRedactors)
+                if (raw[0] == '/' && string.Equals(key, pathKey, StringComparison.Ordinal))
                 {
-                    if (pathRedactor.TryRedact(raw, out var path))
+                    foreach (var pathRedactor in pathRedactors)
                     {
-                        redacted = new PathRedactedState(values, i, raw, path, state.ToString());
+                        if (pathRedactor.TryRedact(raw, out var path))
+                        {
+                            (changes ??= []).Add((i, raw, path));
 
-                        return true;
+                            break;
+                        }
                     }
                 }
+                else if (
+                    query
+                    && raw[0] == '?'
+                    && string.Equals(key, _LineQueryKey, StringComparison.Ordinal)
+                    && _RedactQuery(raw) is var redactedQuery
+                    && !ReferenceEquals(redactedQuery, raw)
+                )
+                {
+                    (changes ??= []).Add((i, raw, redactedQuery));
+                }
+            }
 
+            if (changes is null)
+            {
                 return false;
             }
 
-            return false;
+            redacted = new RequestRedactedState(values, changes, state.ToString());
+
+            return true;
+        }
+
+        // Keeps each parameter's name, which says what the request did, and replaces its value: "?a=1&b" becomes
+        // "?a=Redacted&b". Returns the same instance when no parameter has a value.
+        private static string _RedactQuery(string query)
+        {
+            if (!query.Contains('=', StringComparison.Ordinal))
+            {
+                return query;
+            }
+
+            var builder = new StringBuilder(query.Length).Append('?');
+            var first = true;
+
+            foreach (var range in query.AsSpan(1).Split('&'))
+            {
+                var parameter = query.AsSpan(1)[range];
+
+                if (!first)
+                {
+                    builder.Append('&');
+                }
+
+                first = false;
+                var equals = parameter.IndexOf('=');
+
+                if (equals < 0 || equals == parameter.Length - 1)
+                {
+                    builder.Append(parameter);
+                }
+                else
+                {
+                    builder.Append(parameter[..(equals + 1)]).Append(_RedactedQueryValue);
+                }
+            }
+
+            return builder.ToString();
         }
     }
 
@@ -445,31 +512,30 @@ internal sealed class RedactingLoggerFactory(
         public override string ToString() => text;
     }
 
-    /// <summary>A copy of a log state with its path value redacted, rendering as the original text with the path replaced.</summary>
-    private sealed class PathRedactedState : IReadOnlyList<KeyValuePair<string, object?>>
+    /// <summary>
+    /// A copy of a log state with its path or query values redacted, rendering as the original text with each raw value
+    /// replaced.
+    /// </summary>
+    private sealed class RequestRedactedState : IReadOnlyList<KeyValuePair<string, object?>>
     {
         private readonly KeyValuePair<string, object?>[] _values;
-        private readonly string _raw;
-        private readonly string _redacted;
+        private readonly List<(int Index, string Raw, string Redacted)> _changes;
         private readonly string? _text;
 
-        public PathRedactedState(
+        public RequestRedactedState(
             IReadOnlyList<KeyValuePair<string, object?>> values,
-            int pathIndex,
-            string raw,
-            string redacted,
+            List<(int Index, string Raw, string Redacted)> changes,
             string? text
         )
         {
-            _values = new KeyValuePair<string, object?>[values.Count];
+            _values = [.. values];
 
-            for (var i = 0; i < values.Count; i++)
+            foreach (var (index, _, redacted) in changes)
             {
-                _values[i] = i == pathIndex ? new(values[i].Key, redacted) : values[i];
+                _values[index] = new(_values[index].Key, redacted);
             }
 
-            _raw = raw;
-            _redacted = redacted;
+            _changes = changes;
             _text = text is null ? null : Rewrite(text);
         }
 
@@ -477,7 +543,15 @@ internal sealed class RedactingLoggerFactory(
 
         public KeyValuePair<string, object?> this[int index] => _values[index];
 
-        public string Rewrite(string text) => text.Replace(_raw, _redacted, StringComparison.Ordinal);
+        public string Rewrite(string text)
+        {
+            foreach (var (_, raw, redacted) in _changes)
+            {
+                text = text.Replace(raw, redacted, StringComparison.Ordinal);
+            }
+
+            return text;
+        }
 
         public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() =>
             ((IEnumerable<KeyValuePair<string, object?>>)_values).GetEnumerator();

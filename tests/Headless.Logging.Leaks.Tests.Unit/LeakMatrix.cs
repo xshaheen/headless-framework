@@ -440,6 +440,7 @@ internal static class LeakMatrix
             { "h1b", Redaction.On, Sink.OtlpLogs },
             { "h1b", Redaction.On, Sink.OtlpSpans },
             { "h2", Redaction.Off, Sink.OtlpSpans },
+            { "h2", Redaction.On, Sink.OtlpLogs },
             { "h2", Redaction.On, Sink.OtlpSpans },
             { "h3", Redaction.Off, Sink.OtlpLogs },
             { "h3", Redaction.Off, Sink.OtlpSpans },
@@ -463,7 +464,6 @@ internal static class LeakMatrix
             { "h1", Redaction.On, Sink.OtlpLogs },
             { "h1", Redaction.On, Sink.OtlpSpans },
             { "h2", Redaction.Off, Sink.OtlpLogs },
-            { "h2", Redaction.On, Sink.OtlpLogs },
             { "h5", Redaction.Off, Sink.OtlpSpans },
         };
 }
