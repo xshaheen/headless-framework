@@ -37,7 +37,7 @@ import {
   useNewRows,
 } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
-import { useSearchParams } from '@headless/dashboard-sdk/router'
+import { useLocation, useSearchParams } from '@headless/dashboard-sdk/router'
 import { DateRangeField, timeRangePresets, useListRange, useTimeRangeSearch } from '@headless/dashboard-sdk/date-range'
 import {
   DataTable,
@@ -74,6 +74,7 @@ import {
   messageMatches,
   messagesNoun,
   noSearch,
+  searchFromState,
   operationScope,
   parseFailureGroup,
   readFilter,
@@ -153,7 +154,9 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
   // never reaches the URL, and a reload starts without it.
   const [timeRange, setTimeRange] = useTimeRangeSearch({ presets: timeRangePresets })
   const range = useListRange(timeRange)
-  const [search, setSearch] = useState<MessageSearch>(noSearch)
+  // The trace page's list link opens this view with the correlation id in history state, never in the URL.
+  const locationState: unknown = useLocation().state
+  const [search, setSearch] = useState<MessageSearch>(() => searchFromState(locationState))
   const [sort, setSort] = useState<ListSort>()
   // Bumped to empty the search boxes, which keep their own text.
   const [searchReset, setSearchReset] = useState(0)

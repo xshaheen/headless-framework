@@ -162,6 +162,22 @@ describe('messaging list search', () => {
     expect(searches(view.requests)[0]?.body).not.toHaveProperty('content')
     expect(view.location().search).not.toContain('c-42')
   })
+
+  it('opens already searching for the correlation id the trace page carried in history state', async () => {
+    const view = open(
+      {
+        published: [message('published', 'Succeeded')],
+        extra: (request) =>
+          request.method === 'POST' && request.path === 'messaging/published/search'
+            ? { items: [], count: 0, countCapped: false, nextCursor: null, unavailable: [], incomplete: false }
+            : undefined,
+      },
+      { path: 'published', state: { correlationId: 'c-42' } },
+    )
+
+    await waitFor(() => expect(searches(view.requests)[0]?.body).toMatchObject({ correlationId: 'c-42' }))
+    expect(view.location().search).not.toContain('c-42')
+  })
 })
 
 describe('messaging list filters and columns', () => {
