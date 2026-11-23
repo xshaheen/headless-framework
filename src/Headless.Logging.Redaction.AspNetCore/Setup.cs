@@ -118,14 +118,19 @@ public static class SetupLoggingRedactionAspNetCore
         }
 
         /// <summary>
-        /// Adds a processor that masks, with the app's text redactors, the failure text of every span when it ends: the
-        /// status description and the <c>exception.message</c> and <c>exception.stacktrace</c> tags.
+        /// Adds a processor that redacts every span when it ends: each tag whose name is classified with
+        /// <c>ClassifyProperty</c>, and the text of every string tag and the status description through the app's text
+        /// redactors.
         /// </summary>
         /// <remarks>
         /// <para>
-        /// The redactors are the ones <c>AddHeadlessRedaction(setup =&gt; setup.MaskText(…))</c> registers, through
-        /// <see cref="LogTextMasker"/>; without them the processor does nothing. Every redactor applies, whatever its
-        /// log scope.
+        /// The names and redactors are the ones <c>AddHeadlessRedaction(setup =&gt; setup.ClassifyProperty(…).MaskText(…))</c>
+        /// registers; without them the processor does nothing. Every text redactor applies, whatever its log scope. A
+        /// classified name is redacted whatever its value's type; a text pattern applies to string values only.
+        /// </para>
+        /// <para>
+        /// <c>AddHeadless</c> adds this processor to the tracer it configures. A tracer you build yourself, such as a
+        /// worker's, needs this call in its own <c>WithTracing</c>.
         /// </para>
         /// <para>
         /// An exception event (<c>Activity.AddException</c>, or an instrumentation's <c>RecordException</c> option)
@@ -140,7 +145,8 @@ public static class SetupLoggingRedactionAspNetCore
             Argument.IsNotNull(builder);
 
             return builder.AddProcessor(static provider => new TextRedactionActivityProcessor(
-                provider.GetService<LogTextMasker>()
+                provider.GetService<LogTextMasker>(),
+                provider.GetService<LogPropertyRedactors>() ?? LogPropertyRedactors.Empty
             ));
         }
     }

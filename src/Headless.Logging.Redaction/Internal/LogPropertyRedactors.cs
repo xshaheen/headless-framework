@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections;
 using System.Collections.Frozen;
+using System.Globalization;
 using Microsoft.Extensions.Compliance.Redaction;
 
 namespace Headless.Logging.Internal;
@@ -21,4 +23,25 @@ internal sealed class LogPropertyRedactors(FrozenDictionary<string, Redactor> re
         string name,
         [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out Redactor? redactor
     ) => Redactors.TryGetValue(name, out redactor);
+
+    /// <summary>
+    /// Redacts a value found under a classified name: a collection element by element, anything else through its
+    /// invariant text, so the result is a string or a string array whatever the value's type.
+    /// </summary>
+    public static object Redact(Redactor redactor, object value)
+    {
+        if (value is IEnumerable items and not string)
+        {
+            List<string> redacted = [];
+
+            foreach (var item in items)
+            {
+                redacted.Add(item is null ? "(null)" : redactor.Redact(item));
+            }
+
+            return redacted.ToArray();
+        }
+
+        return redactor.Redact(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
+    }
 }

@@ -13,6 +13,8 @@
   <ItemGroup>
     <!-- Serilog's own logger redacts classified property names with the same resolution the logger factory uses. -->
     <InternalsVisibleTo Include="Headless.Logging.Serilog" />
+    <!-- Span tags are redacted by the same classified property names as log properties. -->
+    <InternalsVisibleTo Include="Headless.Logging.Redaction.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />

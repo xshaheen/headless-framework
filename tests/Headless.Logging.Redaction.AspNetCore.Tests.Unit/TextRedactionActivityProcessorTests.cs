@@ -94,7 +94,56 @@ public sealed class TextRedactionActivityProcessorTests : TestBase
             .And.Contain(nameof(should_record_an_exception_event_from_the_masked_copy));
     }
 
-    private static Activity _Record(Action<Activity> act, bool maskText)
+    [Fact]
+    public void should_erase_a_tag_whose_name_is_classified_whatever_its_value_type()
+    {
+        // when: a tracer built without AddHeadless that adds the processor itself
+        var span = _Record(
+            activity =>
+            {
+                activity.SetTag("enduser.email", "jane@example.test");
+                activity.SetTag("ENDUSER.ID", 42);
+                activity.SetTag("app.recipients", new[] { "a@example.test", "b@example.test" });
+                activity.SetTag("app.tier", "gold");
+            },
+            maskText: false,
+            static setup =>
+                setup
+                    .ClassifyProperty("enduser.email", HeadlessDataClassifications.Private)
+                    .ClassifyProperty("enduser.id", HeadlessDataClassifications.Identifier)
+                    .ClassifyProperty("app.recipients", HeadlessDataClassifications.Private)
+        );
+
+        // then: the name matches ignoring case, a collection is redacted element by element, the rest is kept
+        span.GetTagItem("enduser.email").Should().Be(string.Empty);
+        span.GetTagItem("ENDUSER.ID").Should().Be(string.Empty);
+        span.GetTagItem("app.recipients").Should().BeEquivalentTo(new[] { string.Empty, string.Empty });
+        span.GetTagItem("app.tier").Should().Be("gold");
+    }
+
+    [Fact]
+    public void should_mask_a_known_shape_in_any_string_tag_and_keep_a_numeric_tag_typed()
+    {
+        // when
+        var span = _Record(
+            activity =>
+            {
+                activity.SetTag("app.national_id", _NationalId);
+                activity.SetTag("http.response.status_code", 200);
+            },
+            maskText: true
+        );
+
+        // then
+        span.GetTagItem("app.national_id").Should().Be("***");
+        span.GetTagItem("http.response.status_code").Should().Be(200);
+    }
+
+    private static Activity _Record(
+        Action<Activity> act,
+        bool maskText,
+        Action<HeadlessRedactionSetupBuilder>? configure = null
+    )
     {
         var spans = new List<Activity>();
 
@@ -107,6 +156,8 @@ public sealed class TextRedactionActivityProcessorTests : TestBase
                         {
                             setup.MaskText(@"\b\d{14}\b");
                         }
+
+                        configure?.Invoke(setup);
                     })
                 )
                 .AddSource(_SourceName)

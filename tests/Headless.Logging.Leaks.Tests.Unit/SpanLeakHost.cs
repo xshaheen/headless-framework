@@ -123,7 +123,13 @@ internal static class SpanLeakHost
 
         if (redaction == Redaction.On)
         {
-            builder.Services.AddHeadlessRedaction(setup => setup.MaskText(Pii.NationalIdPattern));
+            // The app classifies the user tags it sets, the way it classifies a log property name.
+            builder.Services.AddHeadlessRedaction(setup =>
+                setup
+                    .MaskText(Pii.NationalIdPattern)
+                    .ClassifyProperty("enduser.email", HeadlessDataClassifications.Private)
+                    .ClassifyProperty("user.email", HeadlessDataClassifications.Private)
+            );
         }
 
         builder

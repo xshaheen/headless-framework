@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections;
-using System.Globalization;
 using Microsoft.Extensions.Diagnostics.Enrichment;
 
 namespace Headless.Logging.Internal;
@@ -57,20 +55,6 @@ internal sealed class NameClassifyingTagCollector : IEnrichmentTagCollector
             return;
         }
 
-        if (tagValue is IEnumerable items and not string)
-        {
-            List<string> redacted = [];
-
-            foreach (var item in items)
-            {
-                redacted.Add(item is null ? "(null)" : redactor.Redact(item));
-            }
-
-            Inner.Add(tagName, redacted.ToArray());
-
-            return;
-        }
-
-        Inner.Add(tagName, redactor.Redact(Convert.ToString(tagValue, CultureInfo.InvariantCulture) ?? string.Empty));
+        Inner.Add(tagName, LogPropertyRedactors.Redact(redactor, tagValue));
     }
 }
