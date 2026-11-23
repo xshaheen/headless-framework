@@ -43,6 +43,8 @@ internal static class SettingValueCacheInvalidation
     /// Brings the entries of <paramref name="names"/> under one provider scope to what the repository holds now. A store
     /// write calls it after its commit instead of storing the value it wrote, so two writers whose cache writes land in
     /// the opposite order to their commits still leave the last committed value cached.
+    /// A write passes <see cref="CancellationToken.None"/>: its commit is durable, so a caller that stops waiting must
+    /// not leave the cache serving the value the write replaced until the entry expires.
     /// </summary>
     public static ValueTask SyncAsync(
         ICache<SettingValueCacheItem> cache,

@@ -20,4 +20,7 @@
   <data name="features:provider-not-allowed" xml:space="preserve">
     <value>الميزة {0} لا تسمح للمزوّد {1}.</value>
   </data>
+  <data name="features:version-mismatch" xml:space="preserve">
+    <value>تغيّرت الميزات بعد قراءتها. اقرأها مرة أخرى ثم أعد المحاولة.</value>
+  </data>
 </root>

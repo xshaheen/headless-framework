@@ -1,5 +1,6 @@
 using Headless;
 using Headless.Features;
+using Headless.Features.Resources;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
@@ -389,6 +390,69 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
         {
             context.AddGroup("Group2").AddChild(new() { Name = "Feature2", DefaultValue = "Value2" });
         }
+    }
+
+    [Fact]
+    public async Task should_read_a_versioned_group_and_refuse_a_save_from_a_stale_version()
+    {
+        // given two admins read the same edition group, which stores nothing yet
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<TwoFeaturesDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
+        var errorsDescriptor = scope.ServiceProvider.GetRequiredService<IFeatureErrorsDescriptor>();
+        const string editionId = "AnyEditionId";
+        HashSet<string> names = ["Feature1", "Feature2"];
+        var read = await featureManager.GetVersionedAsync(
+            names,
+            EditionFeatureValueProvider.ProviderName,
+            editionId,
+            cancellationToken: AbortToken
+        );
+
+        // when the first saves, then the second saves from the same version
+        await featureManager.SetVersionedAsync(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["Feature1"] = "true", ["Feature2"] = null },
+            EditionFeatureValueProvider.ProviderName,
+            editionId,
+            read.Version,
+            cancellationToken: AbortToken
+        );
+        var act = () =>
+            featureManager.SetVersionedAsync(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Feature1"] = null, ["Feature2"] = "true" },
+                EditionFeatureValueProvider.ProviderName,
+                editionId,
+                read.Version,
+                cancellationToken: AbortToken
+            );
+
+        // then the read showed only what the edition stores (nothing yet), and only the first save landed
+        read.Values.Should()
+            .BeEquivalentTo([new FeatureValue("Feature1", Value: null), new FeatureValue("Feature2", Value: null)]);
+        var exception = (await act.Should().ThrowAsync<ConflictException>()).Which;
+        exception
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(errorsDescriptor.VersionMismatch(EditionFeatureValueProvider.ProviderName));
+        var current = await featureManager.GetVersionedAsync(
+            names,
+            EditionFeatureValueProvider.ProviderName,
+            editionId,
+            cancellationToken: AbortToken
+        );
+        current
+            .Values.Should()
+            .BeEquivalentTo([
+                new FeatureValue(
+                    "Feature1",
+                    "true",
+                    new FeatureValueProvider(EditionFeatureValueProvider.ProviderName, editionId)
+                ),
+                new FeatureValue("Feature2", Value: null),
+            ]);
+        current.Version.Should().NotBe(read.Version);
     }
 
     [UsedImplicitly]

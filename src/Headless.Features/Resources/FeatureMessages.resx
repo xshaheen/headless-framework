@@ -27,4 +27,7 @@
   <data name="features:provider-not-allowed" xml:space="preserve">
     <value>Feature {0} does not allow the {1} provider.</value>
   </data>
+  <data name="features:version-mismatch" xml:space="preserve">
+    <value>The features changed after they were read. Read them again and retry.</value>
+  </data>
 </root>

@@ -62,6 +62,9 @@ public static class SqlErrorCodes
         /// <summary>Snapshot isolation transaction aborted due to an update conflict.</summary>
         public const int SnapshotUpdateConflict = 3960;
 
+        /// <summary>Snapshot isolation transaction aborted because concurrent DDL changed an accessed object.</summary>
+        public const int SnapshotMetadataConflict = 3961;
+
         /// <summary>The current transaction cannot be committed and cannot support operations that write to the log.</summary>
         public const int UncommittableTransaction = 3930;
     }

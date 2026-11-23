@@ -357,6 +357,114 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     }
 
     [UsedImplicitly]
+    [Fact]
+    public async Task should_read_a_versioned_group_with_stored_decrypted_and_inherited_values()
+    {
+        // given
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
+        var tenantId = Guid.NewGuid().ToString();
+        await settingManager.SetForTenantAsync(tenantId, "Setting1", "Stored", cancellationToken: AbortToken);
+        await settingManager.SetForTenantAsync(tenantId, "Setting4", "Secret", cancellationToken: AbortToken);
+
+        // when
+        var group = await settingManager.GetVersionedAsync(
+            ["Setting1", "Setting3", "Setting4"],
+            TenantSettingValueProvider.ProviderName,
+            tenantId,
+            fallback: true,
+            cancellationToken: AbortToken
+        );
+        var scopeOnly = await settingManager.GetVersionedAsync(
+            ["Setting1", "Setting3", "Setting4"],
+            TenantSettingValueProvider.ProviderName,
+            tenantId,
+            cancellationToken: AbortToken
+        );
+
+        // then the stored values come back decrypted, and the inherited one shows what the tenant inherits
+        var tenant = new SettingValueProvider(TenantSettingValueProvider.ProviderName, tenantId);
+        group
+            .Values.Should()
+            .BeEquivalentTo([
+                new SettingValue("Setting1", "Stored", tenant),
+                new SettingValue(
+                    "Setting3",
+                    "Value3",
+                    new SettingValueProvider(DefaultValueSettingValueProvider.ProviderName, Key: null)
+                ),
+                new SettingValue("Setting4", "Secret", tenant),
+            ]);
+        group.Version.Should().NotBeNullOrWhiteSpace();
+
+        // and by default the read stays in the tenant's scope, so an edit form never saves back an inherited value
+        scopeOnly.Values.Should().ContainSingle(x => x.Name == "Setting3").Which.Value.Should().BeNull();
+        scopeOnly.Version.Should().Be(group.Version);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_versioned_save_with_version_mismatch_after_another_save()
+    {
+        // given two admins read the same tenant group; the first saves
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
+        var errorsDescriptor = scope.ServiceProvider.GetRequiredService<ISettingErrorsDescriptor>();
+        var tenantId = Guid.NewGuid().ToString();
+        HashSet<string> names = ["Setting1", "Setting2"];
+        var read = await settingManager.GetVersionedAsync(
+            names,
+            TenantSettingValueProvider.ProviderName,
+            tenantId,
+            cancellationToken: AbortToken
+        );
+        await settingManager.SetVersionedAsync(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["Setting1"] = "First", ["Setting2"] = null },
+            TenantSettingValueProvider.ProviderName,
+            tenantId,
+            read.Version,
+            cancellationToken: AbortToken
+        );
+
+        // when the second saves from the version it read
+        var act = () =>
+            settingManager.SetVersionedAsync(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["Setting1"] = "Second",
+                    ["Setting2"] = "Second",
+                },
+                TenantSettingValueProvider.ProviderName,
+                tenantId,
+                read.Version,
+                cancellationToken: AbortToken
+            );
+
+        // then
+        var exception = (await act.Should().ThrowAsync<ConflictException>()).Which;
+        exception
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(errorsDescriptor.VersionMismatch(TenantSettingValueProvider.ProviderName));
+        var current = await settingManager.GetVersionedAsync(
+            names,
+            TenantSettingValueProvider.ProviderName,
+            tenantId,
+            fallback: false,
+            cancellationToken: AbortToken
+        );
+        current
+            .Values.Single(x => string.Equals(x.Name, "Setting1", StringComparison.Ordinal))
+            .Value.Should()
+            .Be("First");
+        current.Values.Single(x => string.Equals(x.Name, "Setting2", StringComparison.Ordinal)).Value.Should().BeNull();
+        current.Version.Should().NotBe(read.Version);
+    }
+
     private sealed class SettingsDefinitionProvider : ISettingDefinitionProvider
     {
         public void Define(ISettingDefinitionContext context)

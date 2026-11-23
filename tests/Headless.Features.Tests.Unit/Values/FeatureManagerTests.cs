@@ -44,6 +44,68 @@ public sealed class FeatureManagerTests : TestBase
         );
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_read_a_scope_local_version_and_return_the_saved_token_or_reject_a_stale_save(bool stale)
+    {
+        var definition = new FeatureDefinition("Reports");
+        _definitionManager.FindAsync("Reports", AbortToken).Returns(definition);
+        _provider
+            .GetAllVersionedAsync(Arg.Any<IReadOnlyList<FeatureDefinition>>(), "t1", AbortToken)
+            .Returns(new VersionedFeatureValues([new FeatureValue("Reports", "true")], "current"));
+        var saveCall = _provider.SetAllVersionedAsync(
+            Arg.Any<IReadOnlyList<KeyValuePair<FeatureDefinition, string?>>>(),
+            "t1",
+            "current",
+            AbortToken
+        );
+        if (stale)
+        {
+            saveCall.ThrowsAsync(new System.Data.DBConcurrencyException("changed"));
+        }
+        else
+        {
+            saveCall.Returns("committed");
+        }
+
+        var read = await _sut.GetVersionedAsync(
+            ["Reports"],
+            "Provider1",
+            "t1",
+            fallback: false,
+            cancellationToken: AbortToken
+        );
+        read.Version.Should().Be("current");
+        read.Values.Should().ContainSingle().Which.Value.Should().Be("true");
+        var save = () =>
+            _sut.SetVersionedAsync(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Reports"] = "false" },
+                "Provider1",
+                "t1",
+                read.Version,
+                forceToSet: true,
+                cancellationToken: AbortToken
+            );
+        if (stale)
+        {
+            var exception = (await save.Should().ThrowExactlyAsync<ConflictException>()).Which;
+            exception.Errors.Should().ContainSingle().Which.Code.Should().Be("g:feature_version_mismatch");
+            await _bus.DidNotReceive()
+                .PublishAsync(
+                    Arg.Any<FeatureChangedMessage>(),
+                    Arg.Any<PublishOptions>(),
+                    Arg.Any<CancellationToken>()
+                );
+        }
+        else
+        {
+            (await save()).Should().Be("committed");
+            await _bus.Received(1)
+                .PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<PublishOptions>(), CancellationToken.None);
+        }
+    }
+
     [Fact]
     public async Task should_resolve_requested_features_through_the_provider_chain_when_batch_read()
     {
@@ -344,7 +406,7 @@ public sealed class FeatureManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_propagate_cancellation_raised_by_the_announcement()
+    public async Task should_complete_a_committed_save_when_the_caller_cancels_during_the_announcement()
     {
         // given
         const string featureName = "TestFeature";
@@ -370,8 +432,10 @@ public sealed class FeatureManagerTests : TestBase
                 cancellationToken: cts.Token
             );
 
-        // then a caller's cancellation is not a broker failure to swallow
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        // then the write is durable, so the announcement runs on its own token and its failure is only logged
+        await act.Should().NotThrowAsync();
+        await _bus.Received(1)
+            .PublishAsync(Arg.Any<FeatureChangedMessage>(), Arg.Any<PublishOptions>(), CancellationToken.None);
     }
 
     [Fact]

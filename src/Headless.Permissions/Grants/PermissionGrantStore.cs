@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.MultiTenancy;
@@ -315,7 +316,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await _SyncCacheAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync([name], providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task GrantAsync(
@@ -338,7 +339,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        await _SyncCacheAsync(distinctNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync(distinctNames, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -402,7 +403,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await _SyncCacheAsync([name], providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync([name], providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -425,7 +426,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        await _SyncCacheAsync(distinctNames, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync(distinctNames, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<string>> DeleteAsync(
@@ -447,9 +448,115 @@ public sealed class PermissionGrantStore(
 
         var names = grants.ConvertAll(x => x.Name);
 
-        await _SyncCacheAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        await _SyncCacheAsync(names, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
 
         return names;
+    }
+
+    public async Task<VersionedPermissionGrants> GetVersionedAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var distinctNames = _EnsureBatch(names, providerName, providerKey);
+
+        // Not through the cache: the grants and the version must come from one read.
+        var records = await repository
+            .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        var grants = new Dictionary<string, bool?>(distinctNames.Count, StringComparer.Ordinal);
+
+        foreach (var name in distinctNames)
+        {
+            grants[name] = null;
+        }
+
+        foreach (var record in records)
+        {
+            grants[record.Name] = record.IsGranted;
+        }
+
+        return new VersionedPermissionGrants(
+            grants,
+            PermissionGrantVersion.Compute(providerName, providerKey, currentTenant.Id, distinctNames, records)
+        );
+    }
+
+    public async Task<string> SetVersionedAsync(
+        IReadOnlyDictionary<string, bool?> grants,
+        string providerName,
+        string providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(grants);
+        Argument.IsNotNull(expectedVersion);
+
+        var names = _EnsureBatch([.. grants.Keys], providerName, providerKey);
+        var tenantId = _WriteTenantId();
+
+        var existing = await repository
+            .GetListAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Checked here too, so a stale write fails before it opens a serializable transaction.
+        _EnsureVersion(existing);
+
+        var deleted = new List<PermissionGrantRecord>();
+        var inserted = new List<PermissionGrantRecord>();
+
+        foreach (var (name, isGranted) in grants)
+        {
+            var record = existing.Find(x => string.Equals(x.Name, name, StringComparison.Ordinal));
+
+            if (record is not null && record.IsGranted == isGranted)
+            {
+                continue;
+            }
+
+            if (record is not null)
+            {
+                deleted.Add(record);
+            }
+
+            if (isGranted is { } state)
+            {
+                inserted.Add(
+                    new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, state, tenantId)
+                );
+            }
+        }
+
+        var committedVersion = await repository
+            .SaveIfVersionAsync(names, providerName, providerKey, expectedVersion, inserted, deleted, cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            await _SyncCacheAsync(names, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // The write committed; cache maintenance must not report a rejected save.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            logger.LogFailedToInvalidateGrantCache(exception, names.Count);
+        }
+
+        return committedVersion;
+
+        void _EnsureVersion(List<PermissionGrantRecord> records)
+        {
+            var version = PermissionGrantVersion.Compute(providerName, providerKey, tenantId, names, records);
+
+            if (!string.Equals(version, expectedVersion, StringComparison.Ordinal))
+            {
+                throw new DBConcurrencyException("The permission grants changed after the version was read.");
+            }
+        }
     }
 
     public async Task GrantEnlistedAsync(
@@ -1080,6 +1187,50 @@ public interface IPermissionGrantStore
     }
 
     /// <summary>
+    /// Reads the records of <paramref name="names"/> for the target in the current tenant straight from the
+    /// repository, with the group's version.
+    /// </summary>
+    /// <param name="names">Must not be empty.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider target.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>One entry per distinct name, and the version <see cref="PermissionGrantVersion.Compute"/> gives the records.</returns>
+    /// <exception cref="NotSupportedException">This store cannot read a versioned group.</exception>
+    Task<VersionedPermissionGrants> GetVersionedAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    /// <summary>
+    /// Brings every named permission to the given state (<see langword="true"/> grant, <see langword="false"/>
+    /// prohibit, <see langword="null"/> remove the record), but only while the group still has
+    /// <paramref name="expectedVersion"/>. A failure that leaves the version unchanged, such as a spurious
+    /// serialization failure, is tried again, up to three attempts.
+    /// </summary>
+    /// <param name="grants">The states keyed by permission name; the same names the version was read for.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider target.</param>
+    /// <param name="expectedVersion">The version <see cref="GetVersionedAsync"/> returned.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="System.Data.DBConcurrencyException">The group changed after the version was read.</exception>
+    /// <exception cref="NotSupportedException">This store or its repository cannot write a versioned group.</exception>
+    Task<string> SetVersionedAsync(
+        IReadOnlyDictionary<string, bool?> grants,
+        string providerName,
+        string providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    /// <summary>
     /// Batch grant inside <paramref name="unitOfWork" />'s transaction: the same writes as
     /// <see cref="GrantAsync(IReadOnlyCollection{string}, string, string, CancellationToken)"/>, with the cache
     /// updated after the unit commits instead of at write time.
@@ -1149,6 +1300,13 @@ public interface IPermissionGrantStore
     private static NotSupportedException _NotEnlistable()
     {
         return new NotSupportedException("The configured permission grant store cannot run inside a unit of work.");
+    }
+
+    private static NotSupportedException _NotVersioned()
+    {
+        return new NotSupportedException(
+            "The configured permission grant store cannot read or write a versioned group."
+        );
     }
 }
 

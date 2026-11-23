@@ -57,6 +57,48 @@ public sealed class SettingValueStoreTests : TestBase
         );
     }
 
+    [Fact]
+    public async Task should_plan_no_data_writes_for_an_unchanged_versioned_group()
+    {
+        var stored = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Tenant", "t1");
+        _repository.GetListAsync(Arg.Any<HashSet<string>>(), "Tenant", "t1", AbortToken).Returns([stored]);
+        var version = SettingValueVersion.Compute("Tenant", "t1", ["Theme"], [stored]);
+        _repository
+            .SaveIfVersionAsync(
+                Arg.Any<HashSet<string>>(),
+                "Tenant",
+                "t1",
+                version,
+                Arg.Is<IReadOnlyCollection<SettingValueRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<SettingValueRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<SettingValueRecord>>(rows => rows.Count == 0),
+                AbortToken
+            )
+            .Returns(version);
+
+        var result = await _sut.SetAllVersionedAsync(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["Theme"] = "Dark" },
+            "Tenant",
+            "t1",
+            version,
+            AbortToken
+        );
+
+        result.Should().Be(version);
+        await _repository
+            .Received(1)
+            .SaveIfVersionAsync(
+                Arg.Any<HashSet<string>>(),
+                "Tenant",
+                "t1",
+                version,
+                Arg.Is<IReadOnlyCollection<SettingValueRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<SettingValueRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<SettingValueRecord>>(rows => rows.Count == 0),
+                AbortToken
+            );
+    }
+
     #region GetOrDefaultAsync
 
     [Fact]
@@ -195,7 +237,7 @@ public sealed class SettingValueStoreTests : TestBase
         var existingB = new SettingValueRecord(Guid.NewGuid(), "B", "old-b", providerName, providerKey);
         // the plan reads A and B; the read-back after the save sees A updated, B deleted, and C inserted
         _repository
-            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, Arg.Any<CancellationToken>())
             .Returns(
                 [existingA, existingB],
                 [
@@ -222,8 +264,12 @@ public sealed class SettingValueStoreTests : TestBase
                 Arg.Is<HashSet<string>>(names => names.SetEquals(new[] { "A", "B", "C", "D" })),
                 providerName,
                 providerKey,
-                AbortToken
+                Arg.Any<CancellationToken>()
             );
+        // the read-back feeds the cache after the commit, so it ignores the caller's token
+        await _repository
+            .Received(1)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, CancellationToken.None);
         await _repository
             .Received(1)
             .SaveAsync(
@@ -285,7 +331,7 @@ public sealed class SettingValueStoreTests : TestBase
         const string providerKey = "tenant-1";
         var concurrent = new SettingValueRecord(Guid.NewGuid(), "A", "theirs", providerName, providerKey);
         _repository
-            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, AbortToken)
+            .GetListAsync(Arg.Any<HashSet<string>>(), providerName, providerKey, Arg.Any<CancellationToken>())
             .Returns([], [concurrent], [concurrent]);
         _guidGenerator.Create().Returns(Guid.NewGuid());
         var saves = new List<(int Inserted, int Updated)>();

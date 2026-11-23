@@ -12,6 +12,47 @@ namespace Tests.Grants;
 
 public sealed class PermissionGrantStoreTests : TestBase
 {
+    [Fact]
+    public async Task should_plan_no_data_writes_for_an_unchanged_versioned_group()
+    {
+        _currentTenant.Id.Returns((string?)null);
+        var stored = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: true);
+        _repository.GetListAsync(Arg.Any<IReadOnlyCollection<string>>(), "Role", "admin", AbortToken).Returns([stored]);
+        var version = PermissionGrantVersion.Compute("Role", "admin", tenantId: null, ["Users.Create"], [stored]);
+        _repository
+            .SaveIfVersionAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                "Role",
+                "admin",
+                version,
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(rows => rows.Count == 0),
+                AbortToken
+            )
+            .Returns(version);
+
+        var result = await _sut.SetVersionedAsync(
+            new Dictionary<string, bool?>(StringComparer.Ordinal) { ["Users.Create"] = true },
+            "Role",
+            "admin",
+            version,
+            AbortToken
+        );
+
+        result.Should().Be(version);
+        await _repository
+            .Received(1)
+            .SaveIfVersionAsync(
+                Arg.Any<IReadOnlyCollection<string>>(),
+                "Role",
+                "admin",
+                version,
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(rows => rows.Count == 0),
+                Arg.Is<IReadOnlyCollection<PermissionGrantRecord>>(rows => rows.Count == 0),
+                AbortToken
+            );
+    }
+
     private const string _ProviderName = "Role";
     private const string _ProviderKey = "admin";
 

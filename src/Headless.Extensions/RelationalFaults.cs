@@ -110,6 +110,61 @@ public static class RelationalFaults
         return FindDatabaseException(exception) is { } databaseException && _IsUniqueViolation(databaseException);
     }
 
+    /// <summary>
+    /// Recognizes serialization failures, deadlock victims, and unique-key violations that can be retried after
+    /// disposing the failed transaction. Includes SQLite busy and locked results, but not connection failures or timeouts.
+    /// </summary>
+    /// <remarks>
+    /// A PostgreSQL or SQL Server conflict remains a rejected write when reported by commit. Re-read the protected
+    /// representation before replaying it. A false result does not establish whether a commit succeeded.
+    /// </remarks>
+    /// <param name="exception">The failure as thrown, including an EF wrapper.</param>
+    /// <returns>Whether the failure is a known concurrency conflict, rather than an uncertain commit reply.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsConcurrencyConflict(Exception exception)
+    {
+        Argument.IsNotNull(exception);
+        var fault = FindDatabaseException(exception);
+        if (fault is null)
+        {
+            return false;
+        }
+
+        if (
+            _IsUniqueViolation(fault)
+            || fault.SqlState
+                is SqlErrorCodes.PostgreSql.SerializationFailure
+                    or SqlErrorCodes.PostgreSql.DeadlockDetected
+        )
+        {
+            return true;
+        }
+
+        if (
+            GetSqlServerErrorNumbers(fault)
+                .Any(number =>
+                    number
+                        is SqlErrorCodes.SqlServer.DeadlockVictim
+                            or SqlErrorCodes.SqlServer.SnapshotUpdateConflict
+                            or SqlErrorCodes.SqlServer.SnapshotMetadataConflict
+                )
+        )
+        {
+            return true;
+        }
+
+        if (string.Equals(fault.GetType().FullName, _SqliteExceptionTypeName, StringComparison.Ordinal))
+        {
+            var property = _SqliteExtendedErrorCodeProperties.GetOrAdd(
+                fault.GetType(),
+                static type => type.GetProperty("SqliteExtendedErrorCode", BindingFlags.Public | BindingFlags.Instance)
+            );
+            return property?.GetValue(fault) is int code && (code & 0xff) is 5 or 6;
+        }
+
+        return false;
+    }
+
     private static bool _IsUniqueViolation(DbException exception)
     {
         if (string.Equals(exception.SqlState, SqlErrorCodes.PostgreSql.UniqueViolation, StringComparison.Ordinal))

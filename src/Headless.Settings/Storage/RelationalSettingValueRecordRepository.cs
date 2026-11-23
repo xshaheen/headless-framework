@@ -20,6 +20,8 @@ internal sealed class RelationalSettingValueRecordRepository(
     TimeProvider timeProvider
 ) : ISettingValueRecordRepository
 {
+    private const string _VersionConflictMessage = "The setting values changed after the version was read.";
+
     // Written text is unbounded: a parameter sized to the column would silently truncate an over-long value, where the
     // column must reject it.
     private static readonly SqlColumnType _Written = SqlColumnType.Text(-1);
@@ -211,6 +213,84 @@ internal sealed class RelationalSettingValueRecordRepository(
     )
     {
         return _SaveAsync(inserted, updated, deleted, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<string> SaveIfVersionAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        string expectedVersion,
+        IReadOnlyCollection<SettingValueRecord> inserted,
+        IReadOnlyCollection<SettingValueRecord> updated,
+        IReadOnlyCollection<SettingValueRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNull(expectedVersion);
+
+        return await RelationalVersionedWrite
+            .ExecuteAsync(
+                async (attempt, _) =>
+                {
+                    await using var connection = _dialect.CreateConnection(options.ConnectionString);
+                    await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+                    // Serializable, so the group read below holds until the commit: a concurrent insert of a name that was absent
+                    // here fails one of the two transactions instead of letting both commit against the same version.
+                    await using var transaction = await connection
+                        .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var (sql, bind) = _ByNames(names, providerName, providerKey);
+                    var current = await _ReadAsync(connection, transaction, sql, bind, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (
+                        !string.Equals(
+                            SettingValueVersion.Compute(providerName, providerKey, names, current),
+                            expectedVersion,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        throw new DBConcurrencyException(_VersionConflictMessage);
+                    }
+
+                    await _WriteAsync(
+                            connection,
+                            transaction,
+                            inserted,
+                            updated,
+                            deleted,
+                            requireUpdatedRows: true,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    var resultVersion = SettingValueVersion.Compute(
+                        providerName,
+                        providerKey,
+                        names,
+                        await _ReadAsync(connection, transaction, sql, bind, cancellationToken).ConfigureAwait(false)
+                    );
+                    attempt.BeginCommit(resultVersion);
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return resultVersion;
+                },
+                async ct =>
+                    SettingValueVersion.Compute(
+                        providerName,
+                        providerKey,
+                        names,
+                        await GetListAsync(names, providerName, providerKey, ct).ConfigureAwait(false)
+                    ),
+                expectedVersion,
+                _VersionConflictMessage,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

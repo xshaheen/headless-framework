@@ -1,6 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
+using System.Runtime.ExceptionServices;
 using Headless.Caching;
+using Headless.Checks;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -55,6 +58,8 @@ internal sealed class EfPermissionGrantRepository<TContext>(
 ) : IPermissionGrantRepository
     where TContext : DbContext
 {
+    private const string _VersionConflictMessage = "The permission grants changed after the version was read.";
+
     private const string _Owner = "the EF Core permissions storage";
     private const string _Operation = "permission grant";
 
@@ -142,7 +147,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await _WriteAsync(db, [permissionGrant], remove: false, cancellationToken).ConfigureAwait(false);
-        await _WriteCacheAsync([permissionGrant], [], cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([permissionGrant], []).ConfigureAwait(false);
     }
 
     public async Task InsertManyAsync(
@@ -155,7 +160,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await _WriteAsync(db, grants, remove: false, cancellationToken).ConfigureAwait(false);
-        await _WriteCacheAsync(grants, [], cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync(grants, []).ConfigureAwait(false);
     }
 
     /// <summary>Deletes the grant record when it belongs to the current tenant; another tenant's record is left alone.</summary>
@@ -182,7 +187,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         await _WriteAsync(db, owned, remove: true, cancellationToken).ConfigureAwait(false);
-        await _WriteCacheAsync([], owned, cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync([], owned).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -215,7 +220,125 @@ internal sealed class EfPermissionGrantRepository<TContext>(
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await _WriteCacheAsync(inserted, owned, cancellationToken).ConfigureAwait(false);
+        await _WriteCacheAsync(inserted, owned).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<string> SaveIfVersionAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string expectedVersion,
+        IReadOnlyCollection<PermissionGrantRecord> inserted,
+        IReadOnlyCollection<PermissionGrantRecord> deleted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNull(expectedVersion);
+        var owned = _OwnedByCurrentTenant(deleted);
+        await using var strategyContext = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var strategy = strategyContext.Database.CreateExecutionStrategy();
+
+        var committedVersion = await RelationalVersionedWrite
+            .ExecuteAsync(
+                async (attempt, token) =>
+                {
+                    // The strategy returns every fault as a value, so it never replays an attempt whose commit reply
+                    // was lost; the shared write settles that outcome instead.
+                    var outcome = await strategy
+                        .ExecuteAsync(
+                            async ct =>
+                            {
+                                try
+                                {
+                                    await using var db = await dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+                                    await using var transaction = await db
+                                        .Database.BeginTransactionAsync(IsolationLevel.Serializable, ct)
+                                        .ConfigureAwait(false);
+                                    var query = _Grants(db)
+                                        .Where(s =>
+                                            names.Contains(s.Name)
+                                            && s.ProviderName == providerName
+                                            && s.ProviderKey == providerKey
+                                        );
+                                    var current = await query.ToListAsync(ct).ConfigureAwait(false);
+                                    var version = PermissionGrantVersion.Compute(
+                                        providerName,
+                                        providerKey,
+                                        currentTenant.Id,
+                                        names,
+                                        current
+                                    );
+                                    if (!string.Equals(version, expectedVersion, StringComparison.Ordinal))
+                                    {
+                                        throw new DBConcurrencyException(_VersionConflictMessage);
+                                    }
+
+                                    using (_BeginHostWrite([.. inserted, .. owned]))
+                                    {
+                                        var set = db.Set<PermissionGrantRecord>();
+                                        set.RemoveRange(owned);
+                                        set.AddRange(inserted);
+                                        if (inserted.Count != 0 || owned.Count != 0)
+                                        {
+                                            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                                        }
+                                    }
+
+                                    // Read the resulting rows before commit, not through a later GET that could observe another save.
+                                    var result = PermissionGrantVersion.Compute(
+                                        providerName,
+                                        providerKey,
+                                        currentTenant.Id,
+                                        names,
+                                        await query.ToListAsync(ct).ConfigureAwait(false)
+                                    );
+                                    attempt.BeginCommit(result);
+                                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                                    return (Version: result, Error: (ExceptionDispatchInfo?)null);
+                                }
+#pragma warning disable CA1031 // Returned to the shared write, which settles or rethrows it outside the strategy.
+                                catch (Exception exception)
+#pragma warning restore CA1031
+                                {
+                                    return (Version: string.Empty, Error: ExceptionDispatchInfo.Capture(exception));
+                                }
+                            },
+                            token
+                        )
+                        .ConfigureAwait(false);
+
+                    outcome.Error?.Throw();
+
+                    return outcome.Version;
+                },
+                async ct =>
+                    PermissionGrantVersion.Compute(
+                        providerName,
+                        providerKey,
+                        currentTenant.Id,
+                        names,
+                        await GetListAsync(names, providerName, providerKey, ct).ConfigureAwait(false)
+                    ),
+                expectedVersion,
+                _VersionConflictMessage,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        try
+        {
+            await _WriteCacheAsync(inserted, owned).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // The write committed; a cache fault is logged and repaired by expiry, never replayed.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            logger.LogFailedToInvalidateGrantCache(exception, names.Count);
+        }
+
+        return committedVersion;
     }
 
     public Task<List<PermissionGrantRecord>> GetListEnlistedAsync(
@@ -344,17 +467,20 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         );
     }
 
+    /// <summary>
+    /// Writes the committed rows to the cache. It ignores the caller's token: the write is already durable, and a caller
+    /// that stops waiting must not leave the cache serving the value it replaced.
+    /// </summary>
     private async Task _WriteCacheAsync(
         IReadOnlyCollection<PermissionGrantRecord> written,
-        IReadOnlyCollection<PermissionGrantRecord> deleted,
-        CancellationToken cancellationToken
+        IReadOnlyCollection<PermissionGrantRecord> deleted
     )
     {
         await cache
             .UpsertAllAsync(
                 PermissionGrantCacheInvalidation.WrittenItems(written, deleted),
                 _cacheExpiration,
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
     }

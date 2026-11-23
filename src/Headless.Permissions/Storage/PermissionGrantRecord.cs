@@ -48,6 +48,10 @@ public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant, I
     /// Indicates whether this record represents a grant (true) or explicit denial (false).
     /// Absence of record = undefined, record with IsGranted=false = explicit deny (AWS IAM-style).
     /// </summary>
+    /// <remarks>
+    /// Never changed in place: turning a grant into a denial deletes this record and inserts a new one. The group
+    /// version (<see cref="PermissionGrantVersion"/>) hashes record ids and relies on that.
+    /// </remarks>
     public bool IsGranted { get; private init; }
 
     /// <summary>Gets the UTC timestamp when this grant record was first created.</summary>

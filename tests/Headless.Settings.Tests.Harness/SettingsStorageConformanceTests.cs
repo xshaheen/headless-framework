@@ -457,6 +457,253 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
             .BeAssignableTo(fixture.ProviderExceptionType);
     }
 
+    [Fact]
+    public async Task should_refuse_a_versioned_save_after_another_save_of_the_group()
+    {
+        // given a group read with its version, then changed by another writer
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host);
+        await store.SetAllAsync(_Values(("Theme", "Dark"), ("Font", "Serif")), "Tenant", "t1", AbortToken);
+        var read = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+        await store.SetAllAsync(_Values(("Theme", "Blue")), "Tenant", "t1", AbortToken);
+
+        // when
+        var act = () =>
+            store.SetAllVersionedAsync(
+                _Values(("Theme", "Light"), ("Font", "Sans")),
+                "Tenant",
+                "t1",
+                read.Version,
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowExactlyAsync<DBConcurrencyException>();
+        var stored = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+        stored.Values.Should().BeEquivalentTo([new SettingValue("Theme", "Blue"), new SettingValue("Font", "Serif")]);
+        stored.Version.Should().NotBe(read.Version);
+    }
+
+    [Fact]
+    public async Task should_refuse_a_versioned_save_after_another_writer_stored_an_absent_name()
+    {
+        // given a group with nothing stored, then one of its names stored by someone else
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host);
+        var read = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+        await store.SetAllAsync(_Values(("Font", "Serif")), "Tenant", "t1", AbortToken);
+
+        // when the stale form saves the other name and leaves this one empty
+        var act = () =>
+            store.SetAllVersionedAsync(
+                _Values(("Theme", "Dark"), ("Font", null)),
+                "Tenant",
+                "t1",
+                read.Version,
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowExactlyAsync<DBConcurrencyException>();
+        var stored = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+        stored.Values.Should().BeEquivalentTo([new SettingValue("Theme", null), new SettingValue("Font", "Serif")]);
+    }
+
+    [Fact]
+    public async Task should_save_a_current_versioned_group_and_give_it_a_new_version()
+    {
+        // given
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host);
+        await store.SetAllAsync(_Values(("Theme", "Dark"), ("Font", "Serif")), "Tenant", "t1", AbortToken);
+        var read = await store.GetAllVersionedAsync(["Theme", "Font", "Locale"], "Tenant", "t1", AbortToken);
+
+        // when the form changes one value, clears one, and adds one
+        var committedVersion = await store.SetAllVersionedAsync(
+            _Values(("Theme", "Light"), ("Font", null), ("Locale", "ar")),
+            "Tenant",
+            "t1",
+            read.Version,
+            AbortToken
+        );
+        var replay = () =>
+            store.SetAllVersionedAsync(_Values(("Theme", "Dark")), "Tenant", "t1", read.Version, AbortToken);
+
+        // then
+        var stored = await store.GetAllVersionedAsync(["Theme", "Font", "Locale"], "Tenant", "t1", AbortToken);
+        stored
+            .Values.Should()
+            .BeEquivalentTo([
+                new SettingValue("Theme", "Light"),
+                new SettingValue("Font", null),
+                new SettingValue("Locale", "ar"),
+            ]);
+        stored.Version.Should().NotBe(read.Version);
+        committedVersion.Should().Be(stored.Version);
+        await replay.Should().ThrowExactlyAsync<DBConcurrencyException>();
+    }
+
+    [Fact]
+    public async Task should_give_each_scope_and_name_set_its_own_version_when_nothing_is_stored()
+    {
+        // given
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host);
+
+        // when
+        var tenant1 = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+        var tenant1Again = await store.GetAllVersionedAsync(["Font", "Theme"], "Tenant", "t1", AbortToken);
+        var tenant2 = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t2", AbortToken);
+        var subset = await store.GetAllVersionedAsync(["Theme"], "Tenant", "t1", AbortToken);
+        var subsetSave = () =>
+            store.SetAllVersionedAsync(_Values(("Theme", "Dark")), "Tenant", "t1", tenant1.Version, AbortToken);
+
+        // then a version read for one scope or name set never authorizes a save of another
+        tenant1Again.Version.Should().Be(tenant1.Version);
+        new[] { tenant1.Version, tenant2.Version, subset.Version }.Should().OnlyHaveUniqueItems();
+        await subsetSave.Should().ThrowExactlyAsync<DBConcurrencyException>();
+    }
+
+    [Fact]
+    public async Task should_let_exactly_one_of_two_saves_from_the_same_version_succeed()
+    {
+        // given two forms read the same empty group; each sets a different name and leaves the other empty, a pair
+        // of writes that touch no common row
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host);
+        var read = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+
+        // when both save at once
+        var results = await Task.WhenAll(
+            _TrySaveAsync(store, _Values(("Theme", "Dark"), ("Font", null)), read.Version),
+            _TrySaveAsync(store, _Values(("Theme", null), ("Font", "Serif")), read.Version)
+        );
+
+        // then
+        results.Should().ContainSingle(saved => saved);
+        var stored = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+        stored.Values.Count(x => x.Value is not null).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_write_nothing_when_the_repository_sees_a_stale_version()
+    {
+        // given
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+        var existing = new SettingValueRecord(Guid.NewGuid(), "Font", "Serif", "Tenant", "t1");
+        await repository.InsertAsync(existing, AbortToken);
+        var staleVersion = SettingValueVersion.Compute("Tenant", "t1", ["Theme", "Font"], []);
+        var added = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Tenant", "t1");
+
+        // when
+        var act = () =>
+            repository.SaveIfVersionAsync(
+                ["Theme", "Font"],
+                "Tenant",
+                "t1",
+                staleVersion,
+                [added],
+                [],
+                [existing],
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowExactlyAsync<DBConcurrencyException>();
+        var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
+        stored.Should().ContainSingle().Which.Should().BeEquivalentTo(existing);
+    }
+
+    [Fact]
+    public async Task should_preserve_an_unchanged_version_and_accept_an_absent_set_cleared_version()
+    {
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host);
+        var absent = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+
+        var added = await store.SetAllVersionedAsync(
+            _Values(("Theme", "Dark"), ("Font", null)),
+            "Tenant",
+            "t1",
+            absent.Version,
+            AbortToken
+        );
+        var unchanged = await store.SetAllVersionedAsync(
+            _Values(("Theme", "Dark"), ("Font", null)),
+            "Tenant",
+            "t1",
+            added,
+            AbortToken
+        );
+        unchanged.Should().Be(added);
+        var cleared = await store.SetAllVersionedAsync(
+            _Values(("Theme", null), ("Font", null)),
+            "Tenant",
+            "t1",
+            unchanged,
+            AbortToken
+        );
+        cleared.Should().Be(absent.Version);
+
+        var restored = await store.SetAllVersionedAsync(
+            _Values(("Theme", "Dark"), ("Font", null)),
+            "Tenant",
+            "t1",
+            absent.Version,
+            AbortToken
+        );
+        var current = await store.GetAllVersionedAsync(["Theme", "Font"], "Tenant", "t1", AbortToken);
+        restored.Should().Be(current.Version);
+    }
+
+    private async Task<bool> _TrySaveAsync(SettingValueStore store, Dictionary<string, string?> values, string version)
+    {
+        try
+        {
+            await store.SetAllVersionedAsync(values, "Tenant", "t1", version, AbortToken);
+
+            return true;
+        }
+        catch (DBConcurrencyException)
+        {
+            return false;
+        }
+    }
+
+    private static SettingValueStore _CreateStore(IHost host)
+    {
+        // The storage-only host does not register the definition manager's dependencies, and versioned reads and
+        // writes never consult definitions.
+        return new SettingValueStore(
+            host.Services.GetRequiredService<ISettingValueRecordRepository>(),
+            Substitute.For<ISettingDefinitionManager>(),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            host.Services.GetRequiredService<ICache<SettingValueCacheItem>>(),
+            Options.Create(new SettingManagementOptions()),
+            NullLogger<SettingValueStore>.Instance
+        );
+    }
+
+    private static Dictionary<string, string?> _Values(params (string Name, string? Value)[] values)
+    {
+        return values.ToDictionary(x => x.Name, x => x.Value, StringComparer.Ordinal);
+    }
+
     // INFORMATION_SCHEMA reads the same on both databases. Keys are lower-cased with underscores removed, so one
     // expectation reads on either naming style.
     private async Task<Dictionary<string, int>> _ReadColumnLengthsAsync(string schema)

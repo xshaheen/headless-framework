@@ -78,4 +78,32 @@ public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantSt
             ? grantStore.GrantEnlistedAsync(unitOfWork, names, Name, providerKey, cancellationToken)
             : grantStore.RevokeEnlistedAsync(unitOfWork, names, Name, providerKey, cancellationToken);
     }
+
+    /// <inheritdoc/>
+    public Task<VersionedPermissionGrants> GetVersionedAsync(
+        IReadOnlyCollection<PermissionDefinition> permissions,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return grantStore.GetVersionedAsync([.. permissions.Select(x => x.Name)], Name, providerKey, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<string> SetVersionedAsync(
+        IReadOnlyList<KeyValuePair<PermissionDefinition, bool?>> grants,
+        string providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var grantsByName = new Dictionary<string, bool?>(grants.Count, StringComparer.Ordinal);
+
+        foreach (var (permission, isGranted) in grants)
+        {
+            grantsByName[permission.Name] = isGranted;
+        }
+
+        return grantStore.SetVersionedAsync(grantsByName, Name, providerKey, expectedVersion, cancellationToken);
+    }
 }

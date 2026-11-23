@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless;
 using Headless.Caching;
 using Headless.Hosting;
@@ -11,6 +12,7 @@ using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -481,6 +483,219 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
     }
 
     // Keys are lower-cased with underscores removed, so one expectation reads on either naming style.
+    [Fact]
+    public async Task should_refuse_a_versioned_save_after_another_writer_changed_the_group()
+    {
+        // given a role's group read with its version, then one permission prohibited by someone else
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        var tenant = new TestCurrentTenant("tenant-a");
+        using var host = _CreateTenantHost(tenant);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host, tenant);
+        await store.GrantAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+        var read = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+        await store.RevokeAsync("Users.Delete", "Role", "admin", AbortToken);
+
+        // when the stale form clears the first permission
+        var act = () =>
+            store.SetVersionedAsync(
+                _Grants(("Users.Create", null), ("Users.Delete", true)),
+                "Role",
+                "admin",
+                read.Version,
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowExactlyAsync<DBConcurrencyException>();
+        var stored = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+        stored.Grants.Should().BeEquivalentTo(_Grants(("Users.Create", true), ("Users.Delete", false)));
+        stored.Version.Should().NotBe(read.Version);
+    }
+
+    [Fact]
+    public async Task should_save_a_current_versioned_group_and_give_it_a_new_version()
+    {
+        // given
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        var tenant = new TestCurrentTenant("tenant-a");
+        using var host = _CreateTenantHost(tenant);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host, tenant);
+        await store.GrantAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+        var read = await store.GetVersionedAsync(
+            ["Users.Create", "Users.Delete", "Users.Export"],
+            "Role",
+            "admin",
+            AbortToken
+        );
+
+        // when the form keeps one grant, clears one, and prohibits one
+        var committedVersion = await store.SetVersionedAsync(
+            _Grants(("Users.Create", true), ("Users.Delete", null), ("Users.Export", false)),
+            "Role",
+            "admin",
+            read.Version,
+            AbortToken
+        );
+        var replay = () =>
+            store.SetVersionedAsync(_Grants(("Users.Create", false)), "Role", "admin", read.Version, AbortToken);
+
+        // then
+        var stored = await store.GetVersionedAsync(
+            ["Users.Create", "Users.Delete", "Users.Export"],
+            "Role",
+            "admin",
+            AbortToken
+        );
+        stored
+            .Grants.Should()
+            .BeEquivalentTo(_Grants(("Users.Create", true), ("Users.Delete", null), ("Users.Export", false)));
+        stored.Version.Should().NotBe(read.Version);
+        committedVersion.Should().Be(stored.Version);
+        await replay.Should().ThrowExactlyAsync<DBConcurrencyException>();
+    }
+
+    [Fact]
+    public async Task should_give_each_target_and_tenant_its_own_version_when_nothing_is_stored()
+    {
+        // given
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        var tenant = new TestCurrentTenant("tenant-a");
+        using var host = _CreateTenantHost(tenant);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host, tenant);
+
+        // when
+        var admin = await store.GetVersionedAsync(["Users.Create"], "Role", "admin", AbortToken);
+        var editor = await store.GetVersionedAsync(["Users.Create"], "Role", "editor", AbortToken);
+        VersionedPermissionGrants otherTenant;
+
+        using (tenant.Change("tenant-b"))
+        {
+            otherTenant = await store.GetVersionedAsync(["Users.Create"], "Role", "admin", AbortToken);
+        }
+
+        // then a version read for one tenant never authorizes a save in another
+        new[] { admin.Version, editor.Version, otherTenant.Version }
+            .Should()
+            .OnlyHaveUniqueItems();
+        var crossTenantSave = () =>
+            store.SetVersionedAsync(_Grants(("Users.Create", true)), "Role", "admin", otherTenant.Version, AbortToken);
+        await crossTenantSave.Should().ThrowExactlyAsync<DBConcurrencyException>();
+    }
+
+    [Fact]
+    public async Task should_let_exactly_one_of_two_saves_from_the_same_version_succeed()
+    {
+        // given two forms read the same empty group; each grants a different permission, a pair of writes that touch
+        // no common row
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        var tenant = new TestCurrentTenant("tenant-a");
+        using var host = _CreateTenantHost(tenant);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host, tenant);
+        var read = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+
+        // when both save at once
+        var results = await Task.WhenAll(
+            _TrySaveAsync(store, _Grants(("Users.Create", true), ("Users.Delete", null)), read.Version),
+            _TrySaveAsync(store, _Grants(("Users.Create", null), ("Users.Delete", true)), read.Version)
+        );
+
+        // then
+        results.Should().ContainSingle(saved => saved);
+        var stored = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+        stored.Grants.Values.Count(x => x is not null).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_preserve_an_unchanged_version_and_accept_an_absent_set_cleared_version()
+    {
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        var tenant = new TestCurrentTenant("tenant-a");
+        using var host = _CreateTenantHost(tenant);
+        await host.StartAsync(AbortToken);
+        var store = _CreateStore(host, tenant);
+        var absent = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+
+        var added = await store.SetVersionedAsync(
+            _Grants(("Users.Create", true), ("Users.Delete", null)),
+            "Role",
+            "admin",
+            absent.Version,
+            AbortToken
+        );
+        var unchanged = await store.SetVersionedAsync(
+            _Grants(("Users.Create", true), ("Users.Delete", null)),
+            "Role",
+            "admin",
+            added,
+            AbortToken
+        );
+        unchanged.Should().Be(added);
+        var cleared = await store.SetVersionedAsync(
+            _Grants(("Users.Create", null), ("Users.Delete", null)),
+            "Role",
+            "admin",
+            unchanged,
+            AbortToken
+        );
+        cleared.Should().Be(absent.Version);
+
+        var restored = await store.SetVersionedAsync(
+            _Grants(("Users.Create", true), ("Users.Delete", null)),
+            "Role",
+            "admin",
+            absent.Version,
+            AbortToken
+        );
+        var current = await store.GetVersionedAsync(["Users.Create", "Users.Delete"], "Role", "admin", AbortToken);
+        restored.Should().Be(current.Version);
+    }
+
+    private IHost _CreateTenantHost(TestCurrentTenant tenant)
+    {
+        return fixture.CreateHost(
+            _Schema,
+            configureServices: services => services.AddSingleton<ICurrentTenant>(tenant)
+        );
+    }
+
+    private static PermissionGrantStore _CreateStore(IHost host, ICurrentTenant tenant)
+    {
+        // The storage-only host does not register the definition manager's dependencies, and versioned reads and
+        // writes never consult definitions.
+        return new PermissionGrantStore(
+            Substitute.For<IPermissionDefinitionManager>(),
+            host.Services.GetRequiredService<IPermissionGrantRepository>(),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
+            host.Services.GetRequiredService<ICache<PermissionGrantCacheItem>>(),
+            tenant,
+            Options.Create(new PermissionManagementOptions()),
+            NullLogger<PermissionGrantStore>.Instance
+        );
+    }
+
+    private async Task<bool> _TrySaveAsync(PermissionGrantStore store, Dictionary<string, bool?> grants, string version)
+    {
+        try
+        {
+            await store.SetVersionedAsync(grants, "Role", "admin", version, AbortToken);
+
+            return true;
+        }
+        catch (DBConcurrencyException)
+        {
+            return false;
+        }
+    }
+
+    private static Dictionary<string, bool?> _Grants(params (string Name, bool? IsGranted)[] grants)
+    {
+        return grants.ToDictionary(x => x.Name, x => x.IsGranted, StringComparer.Ordinal);
+    }
+
     private async Task<Dictionary<string, int>> _ReadColumnLengthsAsync()
     {
         await using var connection = fixture.CreateConnection(fixture.ConnectionString);

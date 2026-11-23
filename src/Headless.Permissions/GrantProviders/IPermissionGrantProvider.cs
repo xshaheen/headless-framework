@@ -83,4 +83,50 @@ public interface IPermissionGrantProvider
                 + "IPermissionManager, or implement SetEnlistedAsync."
         );
     }
+
+    /// <summary>
+    /// Reads the grants this provider stores for <paramref name="permissions"/> under <paramref name="providerKey"/>,
+    /// with the version of that group.
+    /// </summary>
+    /// <param name="permissions">The permission definitions of the group.</param>
+    /// <param name="providerKey">The provider target, for example a role name.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>One entry per permission and the version.</returns>
+    /// <exception cref="NotSupportedException">This provider cannot version its grants.</exception>
+    Task<VersionedPermissionGrants> GetVersionedAsync(
+        IReadOnlyCollection<PermissionDefinition> permissions,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    /// <summary>
+    /// Brings each permission to its state (<see langword="true"/> grant, <see langword="false"/> prohibit,
+    /// <see langword="null"/> clear), but only while the group still has <paramref name="expectedVersion"/>.
+    /// </summary>
+    /// <param name="grants">The definitions and their states; the same group the version was read for.</param>
+    /// <param name="providerKey">The provider target, for example a role name.</param>
+    /// <param name="expectedVersion">The version <see cref="GetVersionedAsync"/> returned.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <exception cref="System.Data.DBConcurrencyException">The group changed after the version was read.</exception>
+    /// <exception cref="NotSupportedException">This provider cannot version its grants.</exception>
+    Task<string> SetVersionedAsync(
+        IReadOnlyList<KeyValuePair<PermissionDefinition, bool?>> grants,
+        string providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    private NotSupportedException _NotVersioned()
+    {
+        return new NotSupportedException(
+            $"The permission grant provider '{Name}' cannot read or write a versioned group. Derive it from "
+                + "StorePermissionGrantProvider, or implement GetVersionedAsync and SetVersionedAsync."
+        );
+    }
 }

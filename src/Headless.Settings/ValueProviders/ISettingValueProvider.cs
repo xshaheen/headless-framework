@@ -81,6 +81,52 @@ public interface ISettingValueProvider : ISettingValueReadProvider
                 + "ISettingManager, or implement SetAllEnlistedAsync."
         );
     }
+
+    /// <summary>
+    /// Reads the values this provider stores for <paramref name="settings"/> under <paramref name="providerKey"/>, with
+    /// the version of that group.
+    /// </summary>
+    /// <param name="settings">The setting definitions of the group.</param>
+    /// <param name="providerKey">Optional scoping key (e.g. tenant or user identifier).</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>One entry per setting, holding the stored value or <see langword="null"/>, and the version.</returns>
+    /// <exception cref="NotSupportedException">This provider cannot version its values.</exception>
+    Task<VersionedSettingValues> GetAllVersionedAsync(
+        IReadOnlyList<SettingDefinition> settings,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    /// <summary>
+    /// Persists <paramref name="values"/> like <see cref="SetAllAsync"/>, but only while their group still has
+    /// <paramref name="expectedVersion"/>.
+    /// </summary>
+    /// <param name="values">The setting definitions and the values to store; the same group the version was read for.</param>
+    /// <param name="providerKey">Optional scoping key (e.g. tenant or user identifier).</param>
+    /// <param name="expectedVersion">The version <see cref="GetAllVersionedAsync"/> returned.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <exception cref="System.Data.DBConcurrencyException">The group changed after the version was read.</exception>
+    /// <exception cref="NotSupportedException">This provider cannot version its values.</exception>
+    Task<string> SetAllVersionedAsync(
+        IReadOnlyList<KeyValuePair<SettingDefinition, string?>> values,
+        string? providerKey,
+        string expectedVersion,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw _NotVersioned();
+    }
+
+    private NotSupportedException _NotVersioned()
+    {
+        return new NotSupportedException(
+            $"The setting value provider '{Name}' cannot read or write a versioned group. Derive it from "
+                + "StoreSettingValueProvider, or implement GetAllVersionedAsync and SetAllVersionedAsync."
+        );
+    }
 }
 
 /// <summary>Read-only contract for a named source of setting values (e.g. database, configuration, defaults).</summary>

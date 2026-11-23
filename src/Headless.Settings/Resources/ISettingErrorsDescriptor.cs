@@ -45,6 +45,14 @@ public interface ISettingErrorsDescriptor
     /// <remarks>A default member, so an existing implementation keeps compiling and returns the built-in message.</remarks>
     ErrorDescriptor ProviderNotAllowed(string settingName, string providerName) =>
         DefaultSettingErrorsDescriptor.CreateProviderNotAllowed(settingName, providerName);
+
+    /// <summary>
+    /// Returns the error for a versioned write whose settings changed after the caller read their version.
+    /// </summary>
+    /// <param name="providerName">The provider name of the scope the write targeted.</param>
+    /// <returns>An error with the code <c>g:setting_version_mismatch</c>.</returns>
+    ErrorDescriptor VersionMismatch(string providerName) =>
+        DefaultSettingErrorsDescriptor.CreateVersionMismatch(providerName);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
@@ -126,6 +134,17 @@ public sealed class DefaultSettingErrorsDescriptor : ISettingErrorsDescriptor
         return new ErrorDescriptor("setting:provider_not_allowed", description)
             .WithParam("settingName", settingName)
             .WithParam("providerName", providerName);
+    }
+
+    /// <inheritdoc/>
+    public ErrorDescriptor VersionMismatch(string providerName) => CreateVersionMismatch(providerName);
+
+    internal static ErrorDescriptor CreateVersionMismatch(string providerName)
+    {
+        return new ErrorDescriptor("g:setting_version_mismatch", Messages.setting_version_mismatch).WithParam(
+            "providerName",
+            providerName
+        );
     }
 
     /// <inheritdoc/>
