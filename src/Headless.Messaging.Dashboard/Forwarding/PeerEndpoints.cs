@@ -12,7 +12,7 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// The endpoints another node calls at <c>{base}/api/messaging/peer</c>: this node's own Needs you, id lookup,
-/// payloads, command availability, change feed, sidebar counts, Overview, the sequential intake locks it holds, a
+/// correlation trace, payloads, command availability, change feed, sidebar counts, Overview, the sequential intake locks it holds, a
 /// ping, and the scope and chunks of an Operation over this node's rows.
 /// </summary>
 /// <remarks>
@@ -53,6 +53,9 @@ internal static class PeerEndpoints
                         await module.LocalSources.ResolveAsync(q ?? string.Empty, token).ConfigureAwait(false)
                 )
         );
+        // A POST only so the correlation id stays out of the URL; it reads, so a view-only node admits it.
+        peer.MapPost("/trace", Task<IResult> (HttpContext context) => _TraceAsync(context, module))
+            .WithMetadata(MessagingReadEndpoint.Instance);
         peer.MapGet(
             "/payload",
             (HttpContext context, string? kind, string? id) => _PayloadAsync(context, module, kind, id)
@@ -152,6 +155,61 @@ internal static class PeerEndpoints
             .ConfigureAwait(false);
 
         return payload is null ? Results.NotFound() : Results.Json(payload, MessagingForwarding.JsonOptions);
+    }
+
+    private static async Task<IResult> _TraceAsync(HttpContext context, MessagingModule module)
+    {
+        if (!_IsPeerCall(context))
+        {
+            return Results.NotFound();
+        }
+
+        PeerTraceBody? body;
+
+        try
+        {
+            body = await JsonSerializer
+                .DeserializeAsync<PeerTraceBody>(
+                    context.Request.Body,
+                    MessagingForwarding.JsonOptions,
+                    context.RequestAborted
+                )
+                .ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            body = null;
+        }
+
+        // The messages name the fields, never the id: a validation problem is served and may be logged.
+        if (
+            body?.CorrelationId
+            is not { Length: > 0 and <= MessagingSearchRequestValidator.MaxCorrelationIdLength } correlationId
+        )
+        {
+            return DashboardValidation.Problem(
+                "correlationId",
+                string.IsNullOrEmpty(body?.CorrelationId)
+                    ? DashboardValidation.RequiredRule
+                    : DashboardValidation.MaxLengthRule,
+                "Send a correlation id of at most 200 characters."
+            );
+        }
+
+        if (body.Limit is not { } limit || limit is < 1 or > MessagingDashboardOptionsValidator.MaxTraceLimit)
+        {
+            return DashboardValidation.Problem(
+                "limit",
+                DashboardValidation.InvalidRule,
+                "Send a limit between 1 and 10000."
+            );
+        }
+
+        var part = await module
+            .LocalSources.GetTraceAsync(correlationId, limit, context.RequestAborted)
+            .ConfigureAwait(false);
+
+        return Results.Json(part, MessagingForwarding.JsonOptions);
     }
 
     private static Task<IResult> _IntakeHoldAsync(

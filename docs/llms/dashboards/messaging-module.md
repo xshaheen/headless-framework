@@ -43,6 +43,7 @@ app.MapHeadlessDashboard();
 | `ChangePageSize` | 200 | The most changed rows one change read returns per store, 1 to 1000. |
 | `StoreTimeout` | 1.5 s | How long a read that covers several stores waits for one of them before naming it unavailable. Keep it below the shell's `AggregationTimeout`. |
 | `SearchTimeout` | 10 s | How long a content or correlation id search waits for one store. A store that has not answered by then is cancelled and the search answers `incomplete: true` with what the other stores found. Greater than 0 and under 30 seconds, the time a node waits for a search it relays. |
+| `TraceLimit` | 500 | The most published messages, received generations, and scheduled deliveries the trace page lists for one correlation id, over every store and node together, oldest first. Past it the page shows the count as `N+` and links the published list searched by the id. 1 to 10,000. |
 | `Forwarding.Key` | `null` | The key every node of the deployment shares, at least 32 characters. It never leaves the node: each forwarded call is signed with it (see [Key mode](#key-mode-signed-calls)). Setting it, or `Forwarding.Policy`, turns forwarding on; see [Forwarding to other nodes](#forwarding-to-other-nodes). |
 | `Forwarding.PreviousKey` | `null` | The key being rotated out. A node admits calls signed with it as well as with `Key`, and never signs with it. At least 32 characters, different from `Key`, and only with `Key` set. |
 | `Forwarding.MaxClockSkew` | `00:01:00` | How far a signed call's timestamp may be from this node's clock, either way. Greater than 0 and at most 10 minutes. |
@@ -86,6 +87,18 @@ One item per failure fingerprint of the failures that ended for good: per consum
 ## Lookup and payload
 
 The palette accepts a full object id, a bare storage id, or a message id. A storage id or a message id is looked up in every store, and each match is listed with its store in its title; a message id matches byte for byte, trailing spaces included, on every provider. An id naming another node finds nothing on this node. A payload is the row's stored envelope as JSON.
+
+## Trace
+
+The shell's trace page (`POST {base}/api/trace`) lists the module's rows that carry one correlation id: each published message, each received generation, and each scheduled delivery, from every store and, with forwarding on, every node discovery lists. Each store and each node is read at once with the oldest `TraceLimit` plus one rows, bounded by `StoreTimeout`. The answer keeps the oldest `TraceLimit` by added time and sets `limited` when more existed. Nodes that share a store return the same rows, and each row is listed once, labelled with the first node that returned it.
+
+- **Placement.** A published message is keyed by its message id. A received generation is keyed by its own row and placed under the message it delivers. A message's causation names the message it was published from when a row of that message is on the trace, and otherwise a job run.
+- **Times.** A row waiting to be sent or retried shows its due time, such as a delayed publish's delivery time. Any other row shows when it was added.
+- **List link.** The answer links the `published` list with `{ "correlationId": "<id>" }` as history state, so the id never sits in a URL.
+- **Unavailable sources.** A store that fails or runs out of time is named by its store name. A store whose monitoring API does not implement `IMonitoringApi.GetCorrelatedMessagesAsync` is named `{store} (correlation lookup not supported)`. A node that does not answer within `StoreTimeout` is named by its state, such as `Node orders-api is not answering`, and a store another node could not read is named `{store} on node {node}`. The other sources' rows still come back.
+- **Forwarding.** A node asks each peer with a `POST` whose body carries the id and the limit, never a URL, at view access. A trace call another node forwarded reads only the receiving node's stores. A peer reads its own stores within its own `StoreTimeout`, so a peer with one slow store can miss the caller's `StoreTimeout` and show as not answering.
+
+**Verify:** `POST {base}/api/trace` with `{ "correlationId": "<id>" }` answers a `messaging` section with `stale: false` and one row per message of that id.
 
 ## API
 

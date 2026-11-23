@@ -425,6 +425,40 @@ internal sealed class MessagingForwarding(
         return [.. local, .. answers.SelectMany(static answer => answer)];
     }
 
+    /// <summary>
+    /// Asks every peer for the rows of <paramref name="correlationId"/>, each peer's read bounded by
+    /// <see cref="MessagingDashboardOptions.StoreTimeout"/>, and returns each peer's part in discovery order. A peer
+    /// that does not answer in time, or at all, is named in its part's unavailable sources.
+    /// </summary>
+    /// <remarks>
+    /// The id travels in the body of a <c>POST</c>, never in the URL, at view access and without the operator, and a
+    /// call that is itself forwarded asks no peer.
+    /// </remarks>
+    public async Task<IReadOnlyList<MessagingTracePart>> GetTraceAsync(
+        string correlationId,
+        int limit,
+        ClaimsPrincipal? user,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!IsEnabled || IsForwarded(user))
+        {
+            return [];
+        }
+
+        var peers = await directory.GetPeersAsync(cancellationToken).ConfigureAwait(false);
+
+        if (peers.Count == 0)
+        {
+            return [];
+        }
+
+        var body = JsonSerializer.SerializeToUtf8Bytes(new PeerTraceBody(correlationId, limit), JsonOptions);
+
+        return await Task.WhenAll(peers.Select(peer => _TraceOnPeerAsync(peer, body, cancellationToken)))
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Drops the id lookup answers reused for <paramref name="node"/>, because its rows changed.</summary>
     public void ForgetResolved(string node)
     {
@@ -554,6 +588,50 @@ internal sealed class MessagingForwarding(
         }
 
         return answer;
+    }
+
+    private async Task<MessagingTracePart> _TraceOnPeerAsync(
+        MessagingPeer peer,
+        byte[] body,
+        CancellationToken cancellationToken
+    )
+    {
+        // A POST waits as long as a write by default; a trace read waits only as long as a store read does, so one slow
+        // peer is named unavailable before the shell marks the whole module stale.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(options.StoreTimeout);
+        ForwardResponse response;
+
+        try
+        {
+            response = await client
+                .SendAsync(peer, HttpMethod.Post, "/peer/trace", user: null, operate: false, body, deadline.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return MessagingTracePart.Unavailable(PeerState.NotAnswering.Describe(peer.Name));
+        }
+
+        if (!response.IsSuccess)
+        {
+            return MessagingTracePart.Unavailable(
+                response.Answered
+                    ? $"Node {peer.Name} answered {response.Status.ToString(CultureInfo.InvariantCulture)}"
+                    : response.State.Describe(peer.Name)
+            );
+        }
+
+        if (JsonSerializer.Deserialize<MessagingTracePart>(response.Body, JsonOptions) is not { } part)
+        {
+            return MessagingTracePart.Unavailable(PeerState.NotAnswering.Describe(peer.Name));
+        }
+
+        // A store the peer could not read is that peer's store, which may share its name with one of this node's.
+        return part with
+        {
+            UnavailableSources = [.. part.UnavailableSources.Select(source => $"{source} on node {peer.Name}")],
+        };
     }
 
     private ResolveEntry _NewResolveEntry(MessagingPeer peer, string query, DateTimeOffset now)
