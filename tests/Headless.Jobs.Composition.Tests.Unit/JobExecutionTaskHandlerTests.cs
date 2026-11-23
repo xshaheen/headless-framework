@@ -335,6 +335,44 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_the_causal_scope_open_while_the_job_service_scope_disposes()
+    {
+        var manager = _HealthyManager();
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        services.AddScoped<DisposeTimeCausalProbe>();
+        await using var serviceProvider = services.BuildServiceProvider();
+        var handler = _Handler(serviceProvider, manager);
+        DisposeTimeCausalProbe? probe = null;
+        var job = _Job(
+            "flushes-on-dispose",
+            RunCondition.OnSuccess,
+            (provider, _, _) =>
+            {
+                probe = provider.GetRequiredService<DisposeTimeCausalProbe>();
+                return Task.CompletedTask;
+            }
+        );
+        job.CorrelationId = "order-7";
+
+        await handler.ExecuteTaskAsync(job, isDue: false, cancellationToken: AbortToken);
+
+        // A unit of work that flushes on dispose writes there, so that write must still carry the job's correlation.
+        probe!.ObservedOnDispose.Should().Be(new CausalContext("order-7", job.JobId.ToString("D")));
+    }
+
+    private sealed class DisposeTimeCausalProbe : IAsyncDisposable
+    {
+        public CausalContext? ObservedOnDispose { get; private set; }
+
+        public ValueTask DisposeAsync()
+        {
+            ObservedOnDispose = CausalScope.Current;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    [Fact]
     public async Task executes_a_linear_five_deep_chain_in_order()
     {
         // In-memory executor half: the in-process recursion runs every descendant of a five-node chain in
