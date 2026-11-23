@@ -30,7 +30,8 @@ public sealed partial class HeadlessDashboardSetupBuilder
         // The shell's own pages share the route space with module ids.
         "needs-you",
         "sign-in",
-        "shell"
+        "shell",
+        "trace"
     );
 
     private readonly List<Action<DashboardContentSecurityPolicy>> _contentSecurityPolicyActions = [];

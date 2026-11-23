@@ -10,10 +10,12 @@ namespace Headless.Dashboard;
 
 /// <summary>
 /// The endpoints that gather one answer from every module: <c>GET api/needs-you</c>, <c>GET api/overview</c>,
-/// <c>GET api/resolve?q=</c> (a pasted id), <c>GET api/related?module=&amp;kind=&amp;id=</c> (one object's related
-/// objects), and <c>GET api/counts?product=</c> (one product's sidebar counts). Each lists only the modules the user
-/// may view; a module that times out or fails answers <c>stale: true</c> in its place, and a module that answers without
-/// some of its sources names them in <c>unavailable</c>.
+/// <c>POST api/resolve</c> (a pasted id), <c>POST api/trace</c> (one correlation id's tree),
+/// <c>GET api/related?module=&amp;kind=&amp;id=</c> (one object's related objects), and <c>GET api/counts?product=</c>
+/// (one product's sidebar counts). Each lists only the modules the user may view; a module that times out or fails
+/// answers <c>stale: true</c> in its place, and a module that answers without some of its sources names them in
+/// <c>unavailable</c>. A pasted id and a correlation id travel in a JSON body, never the URL, so no request log or
+/// proxy records them.
 /// </summary>
 internal static class AggregationEndpoints
 {
@@ -22,6 +24,9 @@ internal static class AggregationEndpoints
 
     /// <summary>The longest pasted id the resolver accepts; ids are short, and the query reaches every module.</summary>
     private const int _MaxQueryLength = 256;
+
+    /// <summary>The longest correlation id the framework writes, and so the longest one a trace can find.</summary>
+    private const int _MaxCorrelationIdLength = 200;
 
     /// <summary>The Overview draws at most this many figures per module.</summary>
     private const int _MaxFigures = 3;
@@ -40,8 +45,20 @@ internal static class AggregationEndpoints
             .RequireDashboardShellAccess(moduleId: null)
             .ExcludeFromDescription();
         dashboard
-            .MapGet("/api/resolve", _Handler(_ResolveAsync))
+            .MapPost("/api/resolve", _Handler(_ResolveAsync))
             .RequireDashboardShellAccess(moduleId: null)
+            .RequireDashboardRequestIntegrity()
+            .ExcludeFromDescription();
+        // The id moved into the body; a GET would otherwise fall through to the API catch-all's 404, which reads as a
+        // missing endpoint rather than a moved one.
+        dashboard
+            .MapGet("/api/resolve", static (HttpContext context) => _MethodNotAllowed(context))
+            .RequireDashboardShellAccess(moduleId: null)
+            .ExcludeFromDescription();
+        dashboard
+            .MapPost("/api/trace", _Handler(_GetTraceAsync))
+            .RequireDashboardShellAccess(moduleId: null)
+            .RequireDashboardRequestIntegrity()
             .ExcludeFromDescription();
         dashboard
             .MapGet("/api/related", _Handler(_GetRelatedAsync))
@@ -128,7 +145,8 @@ internal static class AggregationEndpoints
 
     private static async Task<IResult> _ResolveAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        var query = context.Request.Query["q"].ToString().Trim();
+        var body = await _ReadBodyAsync<ResolveRequestBody>(context, cancellationToken).ConfigureAwait(false);
+        var query = body?.Query?.Trim() ?? "";
 
         if (query.Length is 0 or > _MaxQueryLength)
         {
@@ -156,6 +174,130 @@ internal static class AggregationEndpoints
         );
 
         return Results.Json(new ModulesResponse<ObjectResponse>([.. modules]), ShellJson.Web);
+    }
+
+    /// <summary>
+    /// Asks every trace-capable module the user may view for the objects that carry one correlation id, and answers
+    /// with them as one tree, each module's state, and how many trace-capable modules the user may not view.
+    /// </summary>
+    private static async Task<IResult> _GetTraceAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        var body = await _ReadBodyAsync<TraceRequestBody>(context, cancellationToken).ConfigureAwait(false);
+
+        // Never trimmed: ids match ordinally, so "c-42 " is another id than "c-42".
+        if (body?.CorrelationId is not { Length: > 0 and <= _MaxCorrelationIdLength } correlationId)
+        {
+            return Results.BadRequest();
+        }
+
+        var manifest = context.RequestServices.GetRequiredService<DashboardManifestProvider>().Manifest;
+        var access = await _AccessAsync(context).ConfigureAwait(false);
+        var request = new DashboardTraceRequest { CorrelationId = correlationId, User = context.User };
+        var answers = await _FanOut(context)
+            .CallAsync<IDashboardTraceSource, DashboardTraceAnswer>(
+                access,
+                "trace",
+                (source, token) => source.GetTraceAsync(request, token),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var hidden = manifest.Modules.Count(module =>
+            module is { IsRefused: false, Module: IDashboardTraceSource } && !access.MayView(module.Id)
+        );
+
+        var entries = new List<TraceEntry>();
+        var sections = new List<TraceSection>(answers.Count);
+
+        foreach (var answer in answers)
+        {
+            if (answer is not { Stale: false, Result: { } result })
+            {
+                sections.Add(
+                    new TraceSection(
+                        answer.Module.Id,
+                        answer.Module.DisplayName,
+                        answer.Stale,
+                        Unavailable: null,
+                        Limited: false,
+                        Count: 0,
+                        List: null
+                    )
+                );
+
+                continue;
+            }
+
+            var before = entries.Count;
+            entries.AddRange(result.Items.Select(item => new TraceEntry(answer.Module.Id, item)));
+            sections.Add(
+                new TraceSection(
+                    answer.Module.Id,
+                    answer.Module.DisplayName,
+                    Stale: false,
+                    _Unavailable(result.UnavailableSources),
+                    result.Limited,
+                    entries.Count - before,
+                    result.ListLink is { } link ? new TraceListResponse(link.Path, link.State) : null
+                )
+            );
+        }
+
+        var rows = TraceTreeBuilder.Build(entries).Select(static row => _ToTraceRow(row)).ToArray();
+
+        return Results.Json(new TraceResponse(sections, rows, hidden), ShellJson.Web);
+    }
+
+    private static TraceRowResponse _ToTraceRow(TraceRow row)
+    {
+        var item = row.Item;
+
+        return new TraceRowResponse(
+            row.ModuleId,
+            item.Target,
+            item.Title,
+            item.Status,
+            item.StatusRole,
+            item.At,
+            item.TimestampKind switch
+            {
+                DashboardTraceTimestampKind.Due => "due",
+                DashboardTraceTimestampKind.Added => "added",
+                _ => "ran",
+            },
+            item.Node,
+            row.Depth,
+            row.Tags
+        );
+    }
+
+    // A body the client did not send as JSON, or that does not parse, is refused like an empty one instead of failing
+    // the request; a cross-site form cannot send JSON, so this also keeps form posts out.
+    private static async Task<TBody?> _ReadBodyAsync<TBody>(HttpContext context, CancellationToken cancellationToken)
+        where TBody : class
+    {
+        if (!context.Request.HasJsonContentType())
+        {
+            return null;
+        }
+
+        try
+        {
+            return await context
+                .Request.ReadFromJsonAsync<TBody>(ShellJson.Web, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static IResult _MethodNotAllowed(HttpContext context)
+    {
+        context.Response.Headers.Allow = HttpMethods.Post;
+
+        return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
     }
 
     private static async Task<IResult> _GetRelatedAsync(HttpContext context, CancellationToken cancellationToken)
@@ -489,6 +631,49 @@ internal static class AggregationEndpoints
     {
         return context.RequestServices.GetRequiredService<IOptions<HeadlessDashboardOptions>>().Value.TraceLinkTemplate;
     }
+
+    private sealed record ResolveRequestBody(string? Query);
+
+    private sealed record TraceRequestBody(string? CorrelationId);
+
+    /// <summary>
+    /// A trace: each module's part, the tree's rows depth first, and how many trace-capable modules the user may not
+    /// view, which the page states without naming them.
+    /// </summary>
+    private sealed record TraceResponse(
+        IReadOnlyList<TraceSection> Modules,
+        IReadOnlyList<TraceRowResponse> Rows,
+        int Hidden
+    );
+
+    /// <summary>
+    /// One module's part of a trace: <c>stale</c> when it failed, <c>unavailable</c> naming the sources that did not
+    /// answer, <c>limited</c> when it stopped at its limit, and the list that shows the rest.
+    /// </summary>
+    private sealed record TraceSection(
+        string Id,
+        string DisplayName,
+        bool Stale,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Unavailable,
+        bool Limited,
+        int Count,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TraceListResponse? List
+    );
+
+    private sealed record TraceListResponse(string Path, JsonElement? State);
+
+    private sealed record TraceRowResponse(
+        string Module,
+        ObjectRef Target,
+        string Title,
+        string? Status,
+        string? StatusRole,
+        DateTimeOffset At,
+        string TimestampKind,
+        string? Node,
+        int Depth,
+        IReadOnlyList<string> Tags
+    );
 
     private sealed record ModulesResponse<TItem>(IReadOnlyList<ModuleSection<TItem>> Modules);
 

@@ -22,6 +22,7 @@ internal abstract class FakeModule(string id)
         IDashboardOverviewSource,
         IDashboardCountSource,
         IDashboardObjectResolver,
+        IDashboardTraceSource,
         IDashboardRelatedSource,
         IDashboardPayloadSource,
         IDashboardPayloadFormatter,
@@ -73,6 +74,9 @@ internal abstract class FakeModule(string id)
 
     public Func<string, Task<IReadOnlyList<DashboardObject>>> Resolve { get; set; } =
         static _ => Task.FromResult<IReadOnlyList<DashboardObject>>([]);
+
+    public Func<DashboardTraceRequest, CancellationToken, Task<DashboardTraceAnswer>> Trace { get; set; } =
+        static (_, _) => Task.FromResult(new DashboardTraceAnswer { Items = [] });
 
     public Func<ObjectRef, Task<IReadOnlyList<DashboardRelatedGroup>>> Related { get; set; } =
         static _ => Task.FromResult<IReadOnlyList<DashboardRelatedGroup>>([]);
@@ -133,6 +137,11 @@ internal abstract class FakeModule(string id)
         DashboardResolveRequest request,
         CancellationToken cancellationToken
     ) => Resolve(request.Query);
+
+    public Task<DashboardTraceAnswer> GetTraceAsync(
+        DashboardTraceRequest request,
+        CancellationToken cancellationToken
+    ) => Trace(request, cancellationToken);
 
     public Task<IReadOnlyList<DashboardRelatedGroup>> GetRelatedAsync(
         DashboardRelatedRequest request,

@@ -243,9 +243,10 @@ public sealed class ForwardingResolveTests : TestBase
 
     private async Task<List<string>> _ResolveAsync(HttpClient client, string cookie, string query)
     {
-        using var response = await MessagingCommandHost.GetAsync(
+        using var response = await MessagingCommandHost.PostAsync(
             client,
-            "/headless/api/resolve?q=" + Uri.EscapeDataString(query),
+            "/headless/api/resolve",
+            new { query },
             cookie,
             AbortToken
         );

@@ -13,7 +13,7 @@ A module is one feature's data and UI under the shell. `Headless.Jobs.Dashboard`
 
 | Member | Description |
 | --- | --- |
-| `Id` | The module's URL segment, API group (`{base}/api/{id}`), and stream topic prefix. It must equal the id it was registered under: a lower-case kebab token. `api`, `auth`, `m`, `needs-you`, `sign-in`, and `shell` are reserved. |
+| `Id` | The module's URL segment, API group (`{base}/api/{id}`), and stream topic prefix. It must equal the id it was registered under: a lower-case kebab token. `api`, `auth`, `m`, `needs-you`, `sign-in`, `shell`, and `trace` are reserved. |
 | `DisplayName` | The name the shell shows. |
 | `Assets` | A `DashboardModuleAssets` whose `Files` provider is rooted at the module's front-end build, with `manifest.json` at the root. Use a provider over resources embedded in the module's assembly. |
 | `MapEndpoints(endpoints)` | Maps the module's own API on `endpoints.Routes`, at `{base}/api/{id}`, behind the module's view policy. Wrap each state-changing endpoint in `endpoints.RequireOperate(...)` to require the operate policy too. The shell does not add it, so an unwrapped write is open to every viewer. Every state-changing request needs `X-Requested-With`. The `commands` segment belongs to the shell. |
@@ -79,7 +79,8 @@ Everything beyond `IDashboardModule` is an optional capability interface on the 
 | `IDashboardAttentionSource` | The Attention popover and each product tab's dot: the items that need an operator, grouped by `GroupKey`. Called when the shell loads and whenever the module's attention changes, so keep it to one cheap query. |
 | `IDashboardOverviewSource` | `GET {base}/api/overview`, which a product dashboard reads: up to three `DashboardFigure`s per module, each with its comparison, and, through the default member `GetScheduleAsync`, the module's `DashboardScheduleTrack`s on the Overview's schedule strip. A comparison whose `Value` is `null` means the earlier period has nothing to compare; the shell shows its `Label` alone, so make the label say why (`no runs finished in the previous 24 h`). |
 | `IDashboardCountSource` | The counts beside sidebar entries: a `DashboardCount` (`Count`, `Capped`) per `countKey` the module's sidebar declares. `GET {base}/api/counts?product=` asks every module of one product and answers `{ product, counts: { key: { count, capped } }, stale }`; when two modules answer one key, the first registered wins. The shell refetches on live changes, so keep each count to one cheap, capped query. |
-| `IDashboardObjectResolver` | The palette's pasted-id lookup (`GET {base}/api/resolve?q=`, at most 256 characters). Answer with an exact-id lookup, never a text search. |
+| `IDashboardObjectResolver` | The palette's pasted-id lookup (`POST {base}/api/resolve` with `{ "query": "<id>" }`, trimmed, at most 256 characters). Answer with an exact-id lookup, never a text search. A `GET` answers `405`. |
+| `IDashboardTraceSource` | The trace page: every object that carries one correlation id, drawn as one tree across modules; see [Traces](#traces). Match the id exactly and ordinally through an index, return at most the module's own limit of items oldest first, and set `Limited` when more existed. |
 | `IDashboardRelatedSource` | Related objects of any module's object, drawn as labelled groups (`GET {base}/api/related?module=&kind=&id=`). `GroupIds` declares every group id up front, because each is a contribution the host can disable or reorder. |
 | `IDashboardPayloadSource` | One object's payload (`GET {base}/api/payload?module=&kind=&id=`). |
 | `IDashboardPayloadFormatter` | Redacts and formats payloads of its `ObjectKinds` on the server, in responses and stream events, before they reach the browser. Without one, JSON goes out as it is. Keep it free of I/O. |
@@ -93,11 +94,32 @@ The interfaces grow by new capability interfaces and default interface members. 
 
 ### Aggregated reads
 
-Attention, Overview, lookup, related objects, and counts call every module in parallel, list only the modules the user may view, and wait at most `AggregationTimeout` for each. A module that times out or throws answers `stale: true` in its place.
+Attention, Overview, lookup, traces, related objects, and counts call every module in parallel, list only the modules the user may view, and wait at most `AggregationTimeout` for each. A module that times out or throws answers `stale: true` in its place.
 
 A module that reads several stores or nodes never throws for one of them. It answers with what the others returned and names the sources that did not answer: `DashboardCount.UnavailableSources`, or, through the default members `GetAttentionAnswerAsync` and `GetOverviewAnswerAsync`, `DashboardAttentionAnswer.UnavailableSources` and `DashboardOverviewAnswer.UnavailableSources`. The shell sends them as `unavailable` beside the count or the module section, leaves the field out when every source answered, and keeps `stale` for a whole module that failed. The sidebar shows a partial count as `48,120+`, with the sources in its accessible name: `48,120+ · outbox-2 unavailable`. A module that never overrides the default members answers as before.
 
 Counts stop at 10,000 and report `capped: true`. `api/counts` answers `400` without `product`, `404` for a product no registered module joins, and `403` when the user may view none of the product's modules.
+
+### Traces
+
+`POST {base}/api/trace` with `{ "correlationId": "<id>" }` asks every `IDashboardTraceSource` the user may view for `GetTraceAsync`. The id is never trimmed, so `c-42` and `c-42 ` are two ids. An empty id, one over 200 characters, or a body that is not JSON answers `400`. The id travels only in the body, and the shell never writes it to a log at Information level.
+
+Each `DashboardTraceItem` carries its own causal `Key` and the `Causation` key it stored, each a `DashboardTraceKey` of kind `Run` (a job run id), `Message` (a published message id), or `Delivery` (a received generation's storage id). Give a received generation `DeliversMessageId`. Give every item a `Store` and `StorageId`: the shell lists an item once when two nodes that share a store return it. The shell places each item by these rules:
+
+- A received generation sits under the published message it delivers, not under its `Causation`, which names the publisher's parent.
+- Any other item sits under the item whose `Key` equals its `Causation`, of the same kind.
+- A `Message` causation sits under that message's received generation when exactly one is on the page. Otherwise it sits under the published message, tagged `consumer-not-recorded`.
+- An item whose cause is not on the page is a root tagged `parent-not-on-page`. The tag never names a hidden module.
+- A cycle breaks at the first repeated item, which becomes a root tagged `cycle`.
+- Roots and siblings sort by `At`. A child stamped before its parent stays under it, tagged `clock-skew`.
+
+The answer is `{ modules, rows, hidden }`:
+
+- `modules` holds one section per module: `id`, `displayName`, `stale`, `unavailable` (from `DashboardTraceAnswer.UnavailableSources`, left out when every source answered), `limited`, `count`, and `list` (`{ path, state }` from `ListLink`: the module's own list, opened with `state` as history state so the id stays out of the URL).
+- `rows` holds the tree depth first: `module`, `target`, `title`, `status`, `statusRole`, `at`, `timestampKind` (`ran`, `due`, or `added`), `node`, `depth`, and `tags`.
+- `hidden` counts the trace-capable modules the user may not view.
+
+**Verify:** `POST {base}/api/trace` for a correlation id your module stores returns its items under `rows`, with the module's section `stale: false`.
 
 ### Attention items
 
