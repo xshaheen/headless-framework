@@ -497,9 +497,22 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                     cancellationToken: ct
                 );
 
+                var buckets = await store.CountJobRunBucketRowsAsync(
+                    JobRunKind.TimeJob,
+                    new JobRunQuery { CorrelationId = "c-42" },
+                    [at.AddMinutes(-1), at.AddMinutes(10)],
+                    ct
+                );
+
                 lowerRead.Select(x => x.Id).Should().Equal(lower, lowerOccurrence);
                 upperRead.Select(x => x.Id).Should().Equal(upper, upperOccurrence);
                 count.Count.Should().Be(2);
+                // The runs chart counts only the exact id, though the store groups C-42 and c-42 alike.
+                buckets
+                    .Should()
+                    .ContainSingle()
+                    .Which.Counts.Should()
+                    .Equal(new Dictionary<JobStatus, int> { [JobStatus.Succeeded] = 1 });
             }
         );
     }
