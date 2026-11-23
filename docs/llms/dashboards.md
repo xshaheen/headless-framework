@@ -134,7 +134,7 @@ app.MapPost("/account/sign-out", async (HttpContext context) =>
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `AggregationTimeout` | 2 seconds | How long attention, Overview, id lookup, and related objects wait for each module. A module that has not answered, or that throws, shows as `Stale` while the others' answers are served. Must be positive. |
+| `AggregationTimeout` | 2 seconds | How long attention, Overview, id lookup, traces, and related objects wait for each module. A module that has not answered, or that throws, shows as `Stale` while the others' answers are served. Must be positive. |
 | `ChangePollInterval` | 2 seconds | How often each node reads every module's changes while the node has a live stream open. Must be positive. |
 | `HeartbeatInterval` | 2 seconds | How often an open stream sends `heartbeat`. The page marks a stream `Stale` after 5 seconds without an event, so it must be under 5 seconds. |
 
@@ -154,6 +154,20 @@ builder.Services.AddHeadlessDashboard(dashboard =>
 
 builder.Services.Configure<HeadlessDashboardOptions>(options => options.AggregationTimeout = TimeSpan.FromSeconds(3));
 ```
+
+### Trace page
+
+`{base}/trace#<id>` shows every object that carries one correlation id, from every module that serves traces and the user may view, as one tree ordered by time: a job run, the message it published, each subscriber's received generation under that message, and a job a consumer scheduled under that generation. Open it with `Open trace` or `T` on a run or a message, or paste an id into Go to id and pick `Open trace for <id>`. Select a row to open its object.
+
+- **The id stays out of URLs.** It rides in the fragment, which the browser never sends, and the page asks `POST {base}/api/trace` with the id in the body. A module list the page links to receives the id as history state, never as a query string. The id is matched exactly: `c-42` and `c-42 ` are two ids.
+- **Limits.** Each module lists at most its own `TraceLimit` objects, oldest first: the Jobs module's [`JobsDashboardOptions.TraceLimit`](dashboards/jobs-module.md#register-the-module) and the Messaging module's [`MessagingDashboardOptions.TraceLimit`](dashboards/messaging-module.md#register-the-module), each 500 by default and 1 to 10,000. Past the limit the module's count reads `N+`, such as `500+`, and links to its own list filtered by the id.
+- **`Stale`.** A module that did not answer within `AggregationTimeout`, or that failed, reads `Stale: it did not answer in time.` with Retry. The other modules' rows still show. A Messaging store or node that did not answer is named beside the module's count, `<source> did not answer`.
+- **`N module(s) hidden by your permissions`.** Modules that serve traces but that the user may not view are counted, never named, and their objects are left out.
+- **Tags.** `parent not on this page`: the object's cause is outside this trace, past a limit, or in a hidden module. `consumer not recorded`: a message published from a consumed message whose subscriber row is not on the page, or not the only one, sits under the published message instead. `clock skew`: the object is stamped before its parent and stays under it. `cycle`: a repeated cause, broken at the first repeat.
+
+Correlation flows on its own: a message a running job publishes takes the run's correlation id, and a job a consumer schedules takes the message's. Pass an explicit id only to join work Headless did not start. The [Modules](dashboards/modules.md#traces) topic covers serving traces from your own module.
+
+**Verify:** `POST {base}/api/trace` with `{ "correlationId": "<id>" }` answers one section per module that serves traces with `stale: false`, and the page at `{base}/trace#<id>` shows the job run, its message, and each subscriber's generation under it.
 
 ### Shell sign-in and sessions
 

@@ -85,6 +85,8 @@ public static class SandboxScenarios
             "Six Queue-lane messages for sandbox.carrier-quotes, which handles one every 30 s: rows that wait for a permit past the dispatch grace while other consumers' retries still run on time.",
         ["message-publish-failed"] =
             "One message published with a delivery deadline that has passed by the time it is sent: a published row that failed for good.",
+        ["trace"] =
+            "Time job that publishes a message to sandbox.invoices and sandbox.fulfilment, which schedules a follow-up job: one correlation id, the run's id, opens all of it on the trace page.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -171,6 +173,11 @@ public static class SandboxScenarios
                         cancellationToken
                     )
                 ),
+            ],
+            // The run's own id is its correlation id; the message, both generations, and the follow-up job inherit it.
+            "trace" =>
+            [
+                _Id(await jobs.EnqueueAsync(new TraceCheckoutArgs(OrderId: 9501), _NoRetries, cancellationToken)),
             ],
             "all" => await _RunAllAsync(services, cancellationToken),
             _ => throw new KeyNotFoundException(

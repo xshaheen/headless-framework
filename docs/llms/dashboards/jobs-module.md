@@ -33,7 +33,7 @@ app.MapHeadlessDashboard();
 | `ViewPolicy`, `OperatePolicy` | the shell's | As for every module. |
 | `ChangeOverlapWindow` | 5 s | How far back each change read reads again. Make it longer than the Jobs store's slowest single write. |
 | `ChangePageSize` | 200 | The most changed rows one change read returns, 1 to 1000. |
-| `TraceLimit` | 500 | The most runs the trace page lists for one correlation id, oldest first, 1 to 10,000. When more runs carry the id, the page shows `500+` and links to the runs list filtered by it. |
+| `TraceLimit` | 500 | The most runs the trace page lists for one correlation id, oldest first, 1 to 10,000. When more runs carry the id, the page shows the count as `N+` (`500+` by default) and links the runs list filtered by it. |
 
 `AddJobs(Action<JobsDashboardOptions>)`, `AddJobs(Action<JobsDashboardOptions, IServiceProvider>)`, and `AddJobs(IConfiguration)` configure them.
 
@@ -67,6 +67,16 @@ One item per function and failure fingerprint (`3 failed runs of billing.charge`
 ## Related and payload
 
 A run relates to the other runs with its correlation id (`jobs.same-correlation`), its chain (`jobs.chain`), and its cron job (`jobs.cron-job`); a run with a stored W3C trace parent carries its trace id, so the run offers `Open in tracing tool` when the host set `SetTraceLinkTemplate`. Its payload is its stored request as JSON, or `Unsupported contract version N` when this host registers another version. A run and an attempt carry their exception as `exceptionType`, `exceptionMessage`, and `exceptionStack`: the module reads the JSON the executor stores (the outer exception's type and message, then its frames and every inner exception as a `Type: message` line with its own frames, up to five inner exceptions) into the three, and a reason the store wrote itself, such as `Lease lapsed while running!`, arrives as the message with no type or stack.
+
+## Trace
+
+The shell's trace page (`POST {base}/api/trace`) lists the module's runs that carry one correlation id, time jobs and cron occurrences, oldest first, at most `TraceLimit` of them, and sets `limited` when more existed.
+
+- **Placement.** A run is keyed by its run id. A run's causation names its parent run when that run is on the trace, and otherwise the received message whose consumer scheduled it, so a job a consumer scheduled sits under that subscriber's generation.
+- **Times.** A run that has started shows when it ran. Any other run shows when it is due, and a chain step still waiting on its parent sorts last.
+- **List link.** The answer links the `runs` list with `{ "correlationId": "<id>" }` as history state, so the id never sits in a URL.
+
+**Verify:** `POST {base}/api/trace` with `{ "correlationId": "<run id>" }` for a root time job answers a `jobs` section with `stale: false` and that run's row.
 
 ## API
 

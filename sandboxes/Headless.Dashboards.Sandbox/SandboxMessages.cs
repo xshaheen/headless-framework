@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Reliability;
 
@@ -145,6 +146,36 @@ public sealed class SandboxQuoteRequestedConsumer : IConsume<SandboxQuoteRequest
     }
 }
 
+/// <summary>The message <see cref="TraceCheckoutJob"/> publishes, consumed by two subscribers.</summary>
+/// <param name="OrderId">The order checked out, visible in the message content.</param>
+public sealed record SandboxCheckoutCompleted(int OrderId);
+
+/// <summary>Consumes <see cref="SandboxCheckoutCompleted"/> and does nothing: one of the two received generations.</summary>
+[BusConsumer(SandboxConsumerIds.Invoices)]
+public sealed class SandboxInvoiceConsumer : IConsume<SandboxCheckoutCompleted>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<SandboxCheckoutCompleted> context, CancellationToken cancellationToken)
+    {
+        return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Consumes <see cref="SandboxCheckoutCompleted"/> and schedules a <see cref="TraceFollowUpJob"/> with no correlation
+/// id: the job takes the message's correlation id and this subscriber's received row as its cause.
+/// </summary>
+[BusConsumer(SandboxConsumerIds.Fulfilment)]
+public sealed class SandboxFulfilmentConsumer(IJobScheduler jobs) : IConsume<SandboxCheckoutCompleted>
+{
+    public async ValueTask ConsumeAsync(
+        ConsumeContext<SandboxCheckoutCompleted> context,
+        CancellationToken cancellationToken
+    )
+    {
+        await jobs.EnqueueAsync(new TraceFollowUpArgs(context.Message.OrderId), cancellationToken);
+    }
+}
+
 /// <summary>The stable consumer identities the host tunes and the scenarios name.</summary>
 public static class SandboxConsumerIds
 {
@@ -153,4 +184,6 @@ public static class SandboxConsumerIds
     public const string Payments = "sandbox.payments";
     public const string StockCounts = "sandbox.stock-counts";
     public const string CarrierQuotes = "sandbox.carrier-quotes";
+    public const string Invoices = "sandbox.invoices";
+    public const string Fulfilment = "sandbox.fulfilment";
 }
