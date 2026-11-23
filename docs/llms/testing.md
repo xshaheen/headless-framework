@@ -408,6 +408,7 @@ Other types:
 - xUnit calls each fixture through `IAsyncLifetime`. A subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then seed its database) and `protected virtual ValueTask DisposeAsyncCore()`.
 - The Redis, NATS, Kafka, Azurite, LocalStack, and MinIO fixtures take `protected override TBuilder Configure()`.
 - The SQL Server, PostgreSQL, and RabbitMQ fixtures fix their server configuration so one server serves every fixture. They expose `ConnectionString` for the fixture's own database or virtual host. The PostgreSQL and RabbitMQ fixtures accept `ConfigureContainer(builder)` only together with `ShareContainer => false`.
+- To clone the PostgreSQL fixture's database from a migrated and seeded template instead of provisioning it per fixture, override `TemplateKey` and `ProvisionTemplateAsync`. See [Template databases](#template-databases).
 - Every fixture takes `protected override string Image`, defaulting to its `TestImages` pin. Override it for a server with extensions, such as PostGIS. The image must keep the official entrypoint the fixture drives: for PostgreSQL, `-c` settings and `POSTGRES_USER`/`POSTGRES_PASSWORD` (as `postgis/postgis` does); for RabbitMQ, `rabbitmqctl`; for SQL Server, the "SQL Server is now ready" log line and the `sa` password. For the shared fixtures, the image is part of the shared container's name, so a fixture on another image gets a server of its own.
 
 ### Logical isolation
@@ -416,6 +417,38 @@ Other types:
 - `HeadlessRabbitMqFixture` creates a virtual host per fixture. Pass `VirtualHost` to the client options and `-p` to any `rabbitmqctl` command.
 - For a second database, take its name from `DerivedDatabaseName("suffix")` and create it with `CreateDatabaseAsync`, so it carries the owner's id and is cleaned up with it.
 - A fixture drops its own databases or virtual host on dispose. Every fixture start also drops those left by a dead test process: a database whose owner's session lock (`sp_getapplock`, `pg_try_advisory_lock`) is free, and a RabbitMQ virtual host with no connection that is at least two minutes old.
+
+### Template databases
+
+A `HeadlessPostgreSqlFixture` subclass can start from a provisioned database instead of an empty one. Use it when every fixture runs the same migrations and seeders: the server builds one template per key, and each fixture's database is a clone of it, which costs about as much as creating an empty database however large the schema is.
+
+```csharp
+public sealed class AppPostgreSqlFixture : HeadlessPostgreSqlFixture
+{
+    // Deterministic builds give the assembly a new ModuleVersionId whenever its code changes, so a new
+    // migration or seeder change builds a new template.
+    protected override string TemplateKey =>
+        typeof(AppDbContext).Assembly.ManifestModule.ModuleVersionId.ToString();
+
+    protected override async Task ProvisionTemplateAsync(string connectionString, CancellationToken cancellationToken)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connectionString).Options;
+        await using var db = new AppDbContext(options);
+        await db.Database.MigrateAsync(cancellationToken);
+        await AppSeeder.SeedAsync(db, cancellationToken);
+    }
+}
+```
+
+- `TemplateKey` defaults to `null`, which keeps the empty database. Return a key that changes whenever what `ProvisionTemplateAsync` builds changes. A stale key clones a stale schema. The framework version is already part of the template's identity, so a Headless upgrade needs no key change.
+- Build the schema from the `connectionString` argument. `ConnectionString` and `DatabaseName` are not set while `ProvisionTemplateAsync` runs.
+- The clone is a byte-for-byte copy. Do not store anything that must differ per fixture or that names the database.
+- One fixture builds the template, under a server-wide lock, while fixtures in other processes and checkouts wait for it. Every later fixture start skips the build. When the build throws, the template is discarded and the next fixture start builds it again.
+- The fixture ends every session left in the template after `ProvisionTemplateAsync` returns, so pooled connections need no cleanup.
+- Templates are named `hftpl_` plus a hash of the key. The dead-owner sweep never drops them. A server keeps at most eight: each new build drops the oldest beyond that, so an evicted key costs one rebuild on its next start.
+- `HeadlessSqlServerFixture` has no template option, because SQL Server has no template databases. Its fixtures provision their own database.
+
+**Verify:** the first fixture start runs `ProvisionTemplateAsync` once. Later starts with the same key do not call it, and `SELECT datname FROM pg_database WHERE datistemplate` lists the `hftpl_` template.
 
 ### Shared containers
 

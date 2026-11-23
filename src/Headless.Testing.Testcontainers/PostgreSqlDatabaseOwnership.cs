@@ -28,8 +28,24 @@ internal sealed class PostgreSqlDatabaseOwnership : IAsyncDisposable
     /// <summary>Sweeps the databases of dead owners, takes a new owner's lock, and creates its database.</summary>
     /// <param name="adminConnectionString">A superuser connection string to the <c>postgres</c> database.</param>
     /// <param name="cancellationToken">Cancels the setup.</param>
+    public static Task<PostgreSqlDatabaseOwnership> CreateAsync(
+        string adminConnectionString,
+        CancellationToken cancellationToken
+    )
+    {
+        return CreateAsync(adminConnectionString, template: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sweeps the databases of dead owners, takes a new owner's lock, and creates its database, as a clone of
+    /// <paramref name="template"/> when one is given.
+    /// </summary>
+    /// <param name="adminConnectionString">A superuser connection string to the <c>postgres</c> database.</param>
+    /// <param name="template">A ready template from <see cref="PostgreSqlTemplateDatabase"/>, or null for an empty database.</param>
+    /// <param name="cancellationToken">Cancels the setup.</param>
     public static async Task<PostgreSqlDatabaseOwnership> CreateAsync(
         string adminConnectionString,
+        string? template,
         CancellationToken cancellationToken
     )
     {
@@ -51,7 +67,15 @@ internal sealed class PostgreSqlDatabaseOwnership : IAsyncDisposable
 
             var ownership = new PostgreSqlDatabaseOwnership(unpooled, ownerId, lockConnection);
             await ownership._SweepDeadOwnersAsync(cancellationToken).ConfigureAwait(false);
-            await ownership.CreateDatabaseAsync(ownerId, cancellationToken).ConfigureAwait(false);
+
+            if (template is null)
+            {
+                await ownership.CreateDatabaseAsync(ownerId, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await ownership._CloneAsync(template, cancellationToken).ConfigureAwait(false);
+            }
 
             return ownership;
         }
@@ -90,6 +114,16 @@ internal sealed class PostgreSqlDatabaseOwnership : IAsyncDisposable
         {
             await create.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private async Task _CloneAsync(string template, CancellationToken cancellationToken)
+    {
+        var connection = new NpgsqlConnection(_adminConnectionString);
+        await using var _ = connection.ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await PostgreSqlTemplateDatabase
+            .CloneAsync(connection, OwnerId, template, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>Drops every database of this owner, then releases its lock.</summary>

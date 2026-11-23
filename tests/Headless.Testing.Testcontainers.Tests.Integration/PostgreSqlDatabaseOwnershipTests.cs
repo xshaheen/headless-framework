@@ -26,6 +26,19 @@ public sealed class PostgreSqlDatabaseOwnershipTests(PostgreSqlOwnershipFixture 
     }
 
     [Fact]
+    public async Task should_create_an_empty_database_when_the_fixture_sets_no_template_key()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema');",
+            connection
+        );
+
+        (await command.ExecuteScalarAsync(AbortToken)).Should().Be(0L);
+    }
+
+    [Fact]
     public async Task should_drop_every_owned_database_on_dispose_and_keep_the_others()
     {
         var other = await PostgreSqlDatabaseOwnership.CreateAsync(fixture.AdminConnectionString, AbortToken);
