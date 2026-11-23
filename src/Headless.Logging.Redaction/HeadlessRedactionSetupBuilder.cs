@@ -106,7 +106,8 @@ public sealed class HeadlessRedactionSetupBuilder
     /// <para>
     /// A value printed with a format that changes its text, such as <c>{Amount:N2}</c>, is redacted in the property but
     /// can keep its formatted text in the message: classify such a value, or add a <c>MaskText</c> pattern. Members of a
-    /// destructured <c>{@Value}</c> are not matched by name: classify them.
+    /// logged object are not matched by name: mark each member with its classification attribute, which redacts it
+    /// wherever the object is logged.
     /// </para>
     /// </remarks>
     /// <param name="name">The property name as it appears in message templates, for example <c>"Email"</c>.</param>

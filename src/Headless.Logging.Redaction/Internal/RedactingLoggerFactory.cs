@@ -40,6 +40,11 @@ internal sealed class RedactingLoggerFactory(
     /// <summary>The category ASP.NET Core's hosting layer opens the request scope and writes the request lines under.</summary>
     internal const string HostingDiagnosticsCategory = "Microsoft.AspNetCore.Hosting.Diagnostics";
 
+    // Built once: the projection caches each type's shape for every logger the factory creates.
+    private readonly ClassifiedObjectProjection? _projection = redactorProvider is null
+        ? null
+        : new ClassifiedObjectProjection(redactorProvider);
+
     public ILogger CreateLogger(string categoryName)
     {
         var logger = inner.CreateLogger(categoryName);
@@ -60,7 +65,13 @@ internal sealed class RedactingLoggerFactory(
         // A logger with nothing to redact is returned as is, so the wrapper costs nothing on those categories.
         return redactorProvider is null && !redactsPaths
             ? logger
-            : new RedactingLogger(logger, redactorProvider, redactsPaths ? pathRedactors : [], propertyRedactors);
+            : new RedactingLogger(
+                logger,
+                redactorProvider,
+                redactsPaths ? pathRedactors : [],
+                propertyRedactors,
+                _projection
+            );
     }
 
     public void AddProvider(ILoggerProvider provider) => inner.AddProvider(provider);
@@ -71,7 +82,8 @@ internal sealed class RedactingLoggerFactory(
         ILogger inner,
         IRedactorProvider? redactorProvider,
         ILogPathRedactor[] pathRedactors,
-        FrozenDictionary<string, Redactor> propertyRedactors
+        FrozenDictionary<string, Redactor> propertyRedactors,
+        ClassifiedObjectProjection? projection
     ) : ILogger
     {
         // Logging renders a null value in a collection as this text.
@@ -120,7 +132,7 @@ internal sealed class RedactingLoggerFactory(
             }
 
             if (
-                propertyRedactors.Count > 0
+                (propertyRedactors.Count > 0 || (projection is not null && LogStateShape<TState>.MayCarryObjects))
                 && state is IReadOnlyList<KeyValuePair<string, object?>> values
                 && inner.IsEnabled(logLevel)
                 && _TryRedactNames(values, out var named, out var rewrites)
@@ -161,7 +173,7 @@ internal sealed class RedactingLoggerFactory(
             List<(string Raw, string Redacted)>? rewrites = null;
 
             // A plain parameter whose name the app classified is redacted here too, so one entry is never half done.
-            for (var i = 0; i < state.TagsCount && propertyRedactors.Count > 0; i++)
+            for (var i = 0; i < state.TagsCount && (propertyRedactors.Count > 0 || projection is not null); i++)
             {
                 if (_TryRedactNamed(values[i], out var namedValue, out var rewrite))
                 {
@@ -218,7 +230,7 @@ internal sealed class RedactingLoggerFactory(
         {
             redacted = null;
 
-            if (propertyRedactors.Count == 0)
+            if (propertyRedactors.Count == 0 && (projection is null || !LogStateShape<TState>.MayCarryObjects))
             {
                 return false;
             }
@@ -277,8 +289,26 @@ internal sealed class RedactingLoggerFactory(
             named = pair;
             rewrite = default;
 
-            if (pair.Value is null || !propertyRedactors.TryGetValue(pair.Key, out var redactor))
+            if (pair.Value is null)
             {
+                return false;
+            }
+
+            if (!propertyRedactors.TryGetValue(pair.Key, out var redactor))
+            {
+                // An object whose members are classified is replaced by its redacted form; `{@Name}` keeps the `@`
+                // in the key, which lets a record's members show as the capture asked.
+                if (
+                    projection is not null
+                    && projection.TryProject(pair.Value, pair.Key.StartsWith('@'), out var projected)
+                )
+                {
+                    named = new(pair.Key, projected);
+                    rewrite = (_RenderLikeLogging(pair.Value), projected);
+
+                    return true;
+                }
+
                 return false;
             }
 
@@ -308,6 +338,26 @@ internal sealed class RedactingLoggerFactory(
             rewrite = (Convert.ToString(pair.Value, CultureInfo.InvariantCulture) ?? string.Empty, redactedValue);
 
             return true;
+        }
+
+        // Logging renders a collection element by element and anything else through ToString, with the invariant culture.
+        private static string _RenderLikeLogging(object value)
+        {
+            if (value is IEnumerable items and not string)
+            {
+                List<string> rendered = [];
+
+                foreach (var item in items)
+                {
+                    rendered.Add(
+                        item is null ? _NullText : Convert.ToString(item, CultureInfo.InvariantCulture) ?? string.Empty
+                    );
+                }
+
+                return string.Join(", ", rendered);
+            }
+
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
         }
 
         private static void _AddRewrite(
