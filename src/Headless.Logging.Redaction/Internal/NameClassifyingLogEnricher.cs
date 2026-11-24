@@ -13,8 +13,22 @@ namespace Headless.Logging.Internal;
 /// </remarks>
 internal sealed class NameClassifyingLogEnricher(ILogEnricher inner, LogPropertyRedactors redactors) : ILogEnricher
 {
-    public void Enrich(IEnrichmentTagCollector collector) =>
-        inner.Enrich(NameClassifyingTagCollector.Rent(collector, redactors));
+    public void Enrich(IEnrichmentTagCollector collector)
+    {
+        var classifying = NameClassifyingTagCollector.Rent(collector, redactors);
+
+        try
+        {
+            inner.Enrich(classifying);
+        }
+        finally
+        {
+            // The collector outlives the call on its thread, so it lets go of this host's objects; otherwise a
+            // disposed host's provider collector and redactors stay reachable until the thread enriches again.
+            classifying.Inner = null!;
+            classifying.Redactors = null!;
+        }
+    }
 }
 
 /// <inheritdoc cref="NameClassifyingLogEnricher"/>

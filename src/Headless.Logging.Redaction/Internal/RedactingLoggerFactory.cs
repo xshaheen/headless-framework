@@ -88,9 +88,6 @@ internal sealed class RedactingLoggerFactory(
         ClassifiedObjectProjection? projection
     ) : ILogger
     {
-        // Logging renders a null value in a collection as this text.
-        private const string _NullText = "(null)";
-
         // The request scope names the path RequestPath; the request lines name it Path, beside a separate PathBase.
         private const string _ScopePathKey = "RequestPath";
         private const string _LinePathKey = "Path";
@@ -319,7 +316,7 @@ internal sealed class RedactingLoggerFactory(
         private bool _TryRedactNames(
             IReadOnlyList<KeyValuePair<string, object?>> values,
             [NotNullWhen(true)] out KeyValuePair<string, object?>[]? named,
-            out List<(string Raw, string Redacted)>? rewrites
+            out List<(object Raw, string Redacted)>? rewrites
         )
         {
             named = null;
@@ -341,7 +338,7 @@ internal sealed class RedactingLoggerFactory(
         private bool _TryRedactNamed(
             KeyValuePair<string, object?> pair,
             out KeyValuePair<string, object?> named,
-            out (string Raw, string Redacted) rewrite
+            out (object Raw, string Redacted) rewrite
         )
         {
             named = pair;
@@ -362,7 +359,9 @@ internal sealed class RedactingLoggerFactory(
                 )
                 {
                     named = new(pair.Key, projected);
-                    rewrite = (_RenderLikeLogging(pair.Value), projected);
+                    // The raw text is rendered only if the fallback rewrite needs it: a projected sequence was already
+                    // read once, and a one-shot or lazy source must not be read again.
+                    rewrite = (pair.Value, projected);
 
                     return true;
                 }
@@ -370,30 +369,14 @@ internal sealed class RedactingLoggerFactory(
                 return false;
             }
 
-            if (pair.Value is IEnumerable items and not string)
-            {
-                // Rendered the way logging renders a collection, element by element, so the text and each element
-                // carry the same redacted values.
-                List<string> raw = [];
-                List<string> redactedItems = [];
-
-                foreach (var item in items)
-                {
-                    raw.Add(
-                        item is null ? _NullText : Convert.ToString(item, CultureInfo.InvariantCulture) ?? string.Empty
-                    );
-                    redactedItems.Add(item is null ? _NullText : redactor.Redact(item));
-                }
-
-                named = new(pair.Key, redactedItems.ToArray());
-                rewrite = (string.Join(", ", raw), string.Join(", ", redactedItems));
-
-                return true;
-            }
-
-            var redactedValue = redactor.Redact(pair.Value);
+            // The same redaction the enrichers and span tags use, so every channel yields one pseudonym per value. The
+            // raw text is what logging rendered, which takes even a buffer element by element.
+            var redactedValue = LogPropertyRedactors.Redact(redactor, pair.Value);
             named = new(pair.Key, redactedValue);
-            rewrite = (Convert.ToString(pair.Value, CultureInfo.InvariantCulture) ?? string.Empty, redactedValue);
+            rewrite = (
+                pair.Value,
+                redactedValue is string[] redactedItems ? string.Join(", ", redactedItems) : (string)redactedValue
+            );
 
             return true;
         }
@@ -418,7 +401,7 @@ internal sealed class RedactingLoggerFactory(
             Exception? exception,
             Func<TState, Exception?, string> formatter,
             KeyValuePair<string, object?>[] named,
-            List<(string Raw, string Redacted)>? rewrites
+            List<(object Raw, string Redacted)>? rewrites
         )
         {
             // The generated formatter reads each value back from TagArray, whose slots the state's list exposes one for
@@ -525,7 +508,7 @@ internal sealed class RedactingLoggerFactory(
                 // format item, so a format such as `{Birthday:yyyy-MM-dd}` still applies to a value left as is.
                 args[h] = values[h].Value switch
                 {
-                    null => _NullText,
+                    null => LogPropertyRedactors.NullText,
                     IEnumerable items and not string => _RenderLikeLogging(items),
                     var value => value,
                 };
@@ -554,7 +537,9 @@ internal sealed class RedactingLoggerFactory(
                 foreach (var item in items)
                 {
                     rendered.Add(
-                        item is null ? _NullText : Convert.ToString(item, CultureInfo.InvariantCulture) ?? string.Empty
+                        item is null
+                            ? LogPropertyRedactors.NullText
+                            : Convert.ToString(item, CultureInfo.InvariantCulture) ?? string.Empty
                     );
                 }
 
@@ -565,12 +550,12 @@ internal sealed class RedactingLoggerFactory(
         }
 
         private static void _AddRewrite(
-            ref List<(string Raw, string Redacted)>? rewrites,
-            (string Raw, string Redacted) rewrite
+            ref List<(object Raw, string Redacted)>? rewrites,
+            (object Raw, string Redacted) rewrite
         )
         {
             // An empty raw text has nothing to find in the message, and string.Replace rejects it.
-            if (rewrite.Raw.Length > 0)
+            if (rewrite.Raw is not string { Length: 0 })
             {
                 (rewrites ??= []).Add(rewrite);
             }
@@ -578,7 +563,7 @@ internal sealed class RedactingLoggerFactory(
 
         // The message is rendered once from the raw values, then each raw value is replaced, the way a credential path
         // is: logging renders a hole with the invariant culture, which is the text replaced here.
-        private static string _Rewrite(string message, List<(string Raw, string Redacted)>? rewrites)
+        private static string _Rewrite(string message, List<(object Raw, string Redacted)>? rewrites)
         {
             if (rewrites is null)
             {
@@ -587,7 +572,12 @@ internal sealed class RedactingLoggerFactory(
 
             foreach (var (raw, redacted) in rewrites)
             {
-                message = message.Replace(raw, redacted, StringComparison.Ordinal);
+                var text = raw as string ?? _RenderLikeLogging(raw);
+
+                if (text.Length > 0)
+                {
+                    message = message.Replace(text, redacted, StringComparison.Ordinal);
+                }
             }
 
             return message;
@@ -643,7 +633,9 @@ internal sealed class RedactingLoggerFactory(
                     && !ReferenceEquals(redactedQuery, raw)
                 )
                 {
-                    (changes ??= []).Add((i, raw, redactedQuery));
+                    // The query goes first: its raw text can hold the path's text (`?next=/files/secret`), so
+                    // replacing the path first would change the query text and its own replacement would then miss.
+                    (changes ??= []).Insert(0, (i, raw, redactedQuery));
                 }
             }
 
@@ -657,17 +649,14 @@ internal sealed class RedactingLoggerFactory(
             return true;
         }
 
-        // Keeps each parameter's name, which says what the request did, and replaces its value: "?a=1&b" becomes
-        // "?a=Redacted&b". Returns the same instance when no parameter has a value.
+        // Keeps each parameter's name, which says what the request did, and replaces its value: "?a=1&b=" becomes
+        // "?a=Redacted&b=". A parameter with no '=' is replaced whole, because a token can be passed bare
+        // ("?sk_live_abc"): "?a=1&flag" becomes "?a=Redacted&Redacted". Returns the same instance when nothing changed.
         private static string _RedactQuery(string query)
         {
-            if (!query.Contains('=', StringComparison.Ordinal))
-            {
-                return query;
-            }
-
             var builder = new StringBuilder(query.Length).Append('?');
             var first = true;
+            var changed = false;
 
             foreach (var range in query.AsSpan(1).Split('&'))
             {
@@ -681,17 +670,23 @@ internal sealed class RedactingLoggerFactory(
                 first = false;
                 var equals = parameter.IndexOf('=');
 
-                if (equals < 0 || equals == parameter.Length - 1)
+                if (parameter.IsEmpty || equals == parameter.Length - 1)
                 {
                     builder.Append(parameter);
+                }
+                else if (equals < 0)
+                {
+                    builder.Append(_RedactedQueryValue);
+                    changed = true;
                 }
                 else
                 {
                     builder.Append(parameter[..(equals + 1)]).Append(_RedactedQueryValue);
+                    changed = true;
                 }
             }
 
-            return builder.ToString();
+            return changed ? builder.ToString() : query;
         }
     }
 

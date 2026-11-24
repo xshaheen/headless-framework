@@ -221,7 +221,8 @@ Classification:
 
 Logged objects:
 
-- **An object with a classified member is replaced before any provider sees it**, whether it is logged as `{@Value}`, `{Value}`, a scope value, or a `[LoggerMessage]` parameter declared as a base type, and when the classified member sits in a nested object, a collection, or a member declared as `object` or an interface.
+- **An object with a classified member is replaced before any provider sees it**, whether it is logged as `{@Value}`, `{Value}`, a scope value, the scope itself (`BeginScope(customer)`), or a `[LoggerMessage]` parameter declared as a base type, and when the classified member sits in a nested object, a collection, or a member declared as `object` or an interface. A classified property, public field, or positional record parameter (`record Customer([PrivateData] string Email)`) all count.
+- **The walk is bounded and fails closed.** It reads at most 100 elements of a sequence (the rest print as `...`) and 8 levels of nesting (a deeper object prints as its type name), visits each instance once (a back-reference prints as its type name), and reads a sequence once, so a lazy query or a one-shot sequence is not run twice. A sequence or graph cut this way reaches providers as text, not as the instance.
 - **A record, or a value captured as `{@Value}`, prints its members:** `Customer { Email = , Tier = gold }`. Any other type prints its type name, which is what the default `ToString()` prints.
 - **A type classified as a whole** (`[PrivateData]` on the class) prints as one redacted value.
 - **An object with no classified member reaches providers as the same instance.** Its shape is cached per type, so it costs one lookup after the first time. A throwing getter prints a message naming the exception type and does not fail the log call.
@@ -231,7 +232,7 @@ Logger factory:
 
 - **A later logger factory replaces the wrapper.** After any factory registered after `AddHeadlessRedaction`, such as a third-party logging library's, call `AddHeadlessRedaction()` again. Until then the host logs `LogRedactionFactoryReplaced` (Warning) at startup.
 - **Raw classified values never reach a provider.** A level no provider listens to costs nothing.
-- **Only ASP.NET Core's hosting category is rewritten for the request.** Its request scope (`RequestPath`) and request lines (`Path`) get a declared credential path redacted. Each query value in the request lines (`QueryString`) becomes `Redacted`, keeping the parameter names: `?email=Redacted&page=Redacted`. A logger with nothing to redact is returned unwrapped.
+- **Only ASP.NET Core's hosting category is rewritten for the request.** Its request scope (`RequestPath`) and request lines (`Path`) get a declared credential path redacted. Each query value in the request lines (`QueryString`) becomes `Redacted`, keeping the parameter names: `?email=Redacted&page=Redacted`. A parameter with no `=`, such as a bare token, becomes `Redacted` whole. A logger with nothing to redact is returned unwrapped.
 
 Text masking:
 

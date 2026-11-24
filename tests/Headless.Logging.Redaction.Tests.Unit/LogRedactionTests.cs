@@ -145,25 +145,43 @@ public sealed partial class LogRedactionTests : TestBase
             (_, _) => "Request starting GET http://localhost/search?email=jane@x.test&page=2&flag - -"
         );
 
-        // then
+        // then: a parameter with no value is replaced whole, since a token can be passed bare
         var entry = sink.Entries.Should().ContainSingle().Subject;
-        entry.Text.Should().Be("Request starting GET http://localhost/search?email=Redacted&page=Redacted&flag - -");
+        entry
+            .Text.Should()
+            .Be("Request starting GET http://localhost/search?email=Redacted&page=Redacted&Redacted - -");
         entry
             .Properties.Should()
-            .Contain(new KeyValuePair<string, object?>("QueryString", "?email=Redacted&page=Redacted&flag"))
+            .Contain(new KeyValuePair<string, object?>("QueryString", "?email=Redacted&page=Redacted&Redacted"))
             .And.Contain(new KeyValuePair<string, object?>("Path", "/search"));
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("?flag")]
-    public void should_leave_a_query_without_values_untouched(string query)
+    [Fact]
+    public void should_leave_an_empty_query_untouched()
     {
         // given
         using var sink = new CapturingProvider();
         using var provider = _Build(sink, static _ => { });
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(_HostingCategory);
-        var values = new LogValues(("Path", "/search"), ("QueryString", query));
+        var values = new LogValues(("Path", "/search"), ("QueryString", string.Empty));
+
+        // when
+        logger.Log(LogLevel.Information, default, values, exception: null, (_, _) => "Request starting /search");
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Request starting /search");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("QueryString", string.Empty));
+    }
+
+    [Fact]
+    public void should_replace_a_bare_query_parameter_whole()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static _ => { });
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(_HostingCategory);
+        var values = new LogValues(("Path", "/search"), ("QueryString", "?sk_live_abc123"));
 
         // when
         logger.Log(
@@ -171,13 +189,13 @@ public sealed partial class LogRedactionTests : TestBase
             default,
             values,
             exception: null,
-            (_, _) => "Request starting /search" + query
+            (_, _) => "Request starting /search?sk_live_abc123"
         );
 
         // then
         var entry = sink.Entries.Should().ContainSingle().Subject;
-        entry.Text.Should().Be("Request starting /search" + query);
-        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("QueryString", query));
+        entry.Text.Should().Be("Request starting /search?Redacted");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("QueryString", "?Redacted"));
     }
 
     [Fact]
@@ -207,6 +225,39 @@ public sealed partial class LogRedactionTests : TestBase
             .Properties.Should()
             .Contain(new KeyValuePair<string, object?>("Path", "/files/***"))
             .And.Contain(new KeyValuePair<string, object?>("QueryString", "?sig=Redacted"));
+    }
+
+    [Fact]
+    public void should_redact_every_query_value_when_one_of_them_holds_the_credential_path()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            services => services.AddSingleton<ILogPathRedactor>(new PrefixPathRedactor("/files"))
+        );
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(_HostingCategory);
+
+        // when: the query repeats the path, so a path replacement made first would hide the query from its own
+        logger.Log(
+            LogLevel.Information,
+            default,
+            new LogValues(
+                ("Path", "/files/secret-token"),
+                ("QueryString", "?next=/files/secret-token&email=jane@x.test")
+            ),
+            exception: null,
+            (_, _) => "Request starting GET /files/secret-token?next=/files/secret-token&email=jane@x.test"
+        );
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Request starting GET /files/***?next=Redacted&email=Redacted");
+        entry.Text.Should().NotContain("jane@x.test").And.NotContain("secret-token");
+        entry
+            .Properties.Should()
+            .Contain(new KeyValuePair<string, object?>("Path", "/files/***"))
+            .And.Contain(new KeyValuePair<string, object?>("QueryString", "?next=Redacted&email=Redacted"));
     }
 
     [Fact]
@@ -406,6 +457,25 @@ public sealed partial class LogRedactionTests : TestBase
             .Properties.Single(p => string.Equals(p.Key, "Email", StringComparison.Ordinal))
             .Value.Should()
             .BeEquivalentTo(new[] { "*****", "(null)", "*****" });
+    }
+
+    [Fact]
+    public void should_redact_a_name_classified_buffer_as_one_value()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivate("Token")));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+#pragma warning disable CA1848, CA1873 // The test logs through the extension method on purpose: it is the call no attribute reaches.
+        logger.LogInformation("Key {Token}", new byte[] { 1, 2, 3 });
+#pragma warning restore CA1848, CA1873
+
+        // then: one token for the whole buffer, not one per byte
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Key *****");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("Token", "*****"));
     }
 
     [Fact]
