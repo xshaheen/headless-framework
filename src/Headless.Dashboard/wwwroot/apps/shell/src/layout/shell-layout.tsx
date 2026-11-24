@@ -33,6 +33,8 @@ export function ShellLayout() {
   const goTo = useRef<HTMLInputElement>(null)
   const canvas = useRef<HTMLElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
+  // Whether a link in the phone's menu started the navigation still loading.
+  const leftByMenu = useRef(false)
   const attention = useFlyout()
   const product = productOf(state, pathname)
   const entry = product ? currentEntry(product, location) : undefined
@@ -89,14 +91,23 @@ export function ShellLayout() {
 
   // A control that took the operator elsewhere, such as a sidebar link in the phone's menu or a panel's Open in its own
   // page, may leave with the old view; focus it dropped to the body lands on the canvas instead. Focus still on a
-  // control, such as a filter that changed the search, stays where it is.
+  // control, such as a filter that changed the search, stays where it is. A view loads its chunk before the route
+  // changes, and the closed menu hands focus back to Menu a frame after its link is pressed, so a slow load finds focus
+  // on Menu rather than on the body: that focus moves on too.
   useEffect(() => {
     const at = `${pathname}${location.search}`
 
-    if (at !== seen.current && (!document.activeElement || document.activeElement === document.body)) {
+    if (at === seen.current) {
+      return
+    }
+
+    const focused = document.activeElement
+
+    if (!focused || focused === document.body || (leftByMenu.current && focused === menuButton.current)) {
       canvas.current?.focus({ preventScroll: true })
     }
 
+    leftByMenu.current = false
     seen.current = at
   }, [pathname, location.search])
 
@@ -108,6 +119,8 @@ export function ShellLayout() {
   // The sheet traps focus and hands it back to Menu on close; focus starts on the first entry, not on the sheet itself.
   useEffect(() => {
     if (menuOpen) {
+      // A link pressed in an earlier opening that led nowhere new no longer owns where focus goes.
+      leftByMenu.current = false
       document.getElementById('hd-sidebar')?.querySelector<HTMLElement>('a[href], [tabindex="0"]')?.focus()
     }
   }, [menuOpen])
@@ -146,7 +159,13 @@ export function ShellLayout() {
       {/* On a phone the sidebar is a modal sheet: a scrim over the view, Esc and the scrim close it. */}
       {product && phone ? (
         <Sheet isOpen={menuOpen} onOpenChange={setMenuOpen} label={`${product.label} menu`}>
-          <ProductSidebar product={product} onNavigate={() => setMenuOpen(false)} />
+          <ProductSidebar
+            product={product}
+            onNavigate={() => {
+              leftByMenu.current = true
+              setMenuOpen(false)
+            }}
+          />
         </Sheet>
       ) : null}
       <div className="flex min-h-0 min-w-0 flex-col">
