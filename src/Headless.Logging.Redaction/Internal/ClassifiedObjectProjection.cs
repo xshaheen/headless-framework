@@ -36,6 +36,11 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 {
     private const int _MaxDepth = 8;
 
+    // A sequence is read this far and no further, so one log call never walks an unbounded or huge collection.
+    private const int _MaxElements = 100;
+
+    private const string _Truncated = "...";
+
     // Reflection metadata does not depend on the redactor provider, so it is shared across instances.
     private static readonly ConcurrentDictionary<Type, TypeShape> _Shapes = new();
 
@@ -61,17 +66,43 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         // Most logged values are strings, numbers, dates, and enums: a type-code check rules them out without the
         // shape lookup, which every entry would otherwise pay once per value.
-        if (value is null || Type.GetTypeCode(value.GetType()) != TypeCode.Object || !_Needs(value, 0))
+        if (value is null || Type.GetTypeCode(value.GetType()) != TypeCode.Object)
         {
             return false;
         }
 
-        projection = _Project(value, captured, 0);
+        // A safe type is decided before any walk state is allocated, so the common case stays allocation-free.
+        var shape = _GetShape(value.GetType());
+
+        if (shape.Kind == ShapeKind.Safe || !_Needs(value, 0, _NewSeen(), projecting: null))
+        {
+            return false;
+        }
+
+        projection = _Project(value, captured, 0, _NewInstanceSet());
 
         return true;
     }
 
-    private static bool _Needs(object value, int depth)
+    // Reference equality: a record's own Equals and GetHashCode walk its members, and on a cyclic graph never return.
+    private static HashSet<object> _NewInstanceSet() => new(ReferenceEqualityComparer.Instance);
+
+    private static Dictionary<object, int> _NewSeen() => new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Whether <paramref name="value"/> reaches a classified member.</summary>
+    /// <param name="value">The value to look at.</param>
+    /// <param name="depth">How far below the logged value it sits.</param>
+    /// <param name="seen">
+    /// The instances this walk already looked at, with the shallowest depth each was met at. One met again no shallower
+    /// adds nothing: the walk stops at the first classified member, so a finished visit found none, and an unfinished
+    /// one is still being looked at higher up. One met shallower is walked again, because the depth cap cut the first
+    /// visit shorter.
+    /// </param>
+    /// <param name="projecting">
+    /// The instances being projected around this value. One of them reached again does need projection here: printing
+    /// this value raw would print that instance raw.
+    /// </param>
+    private static bool _Needs(object value, int depth, Dictionary<object, int> seen, HashSet<object>? projecting)
     {
         if (depth > _MaxDepth)
         {
@@ -86,16 +117,39 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 return false;
             case ShapeKind.TypeClassified:
                 return true;
-            case ShapeKind.Sequence:
-                foreach (var item in (IEnumerable)value)
+        }
+
+        if (projecting?.Contains(value) == true)
+        {
+            return true;
+        }
+
+        if (seen.TryGetValue(value, out var seenAt) && seenAt <= depth)
+        {
+            return false;
+        }
+
+        seen[value] = depth;
+
+        if (shape.Kind == ShapeKind.Sequence)
+        {
+            var read = 0;
+
+            foreach (var item in (IEnumerable)value)
+            {
+                // Elements past the cap are not read, so they may hold a classified member: project and truncate.
+                if (read++ == _MaxElements)
                 {
-                    if (item is not null && _Needs(item, depth + 1))
-                    {
-                        return true;
-                    }
+                    return true;
                 }
 
-                return false;
+                if (item is not null && _Needs(item, depth + 1, seen, projecting))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         foreach (var member in shape.Members)
@@ -105,9 +159,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 return true;
             }
 
-            if (!member.StaticallySafe && _TryGet(member.Property, value, out var nested) && nested is not null)
+            if (!member.StaticallySafe && _TryGet(member.Member, value, out var nested) && nested is not null)
             {
-                if (_Needs(nested, depth + 1))
+                if (_Needs(nested, depth + 1, seen, projecting))
                 {
                     return true;
                 }
@@ -117,7 +171,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         return false;
     }
 
-    private string _Project(object value, bool captured, int depth)
+    private string _Project(object value, bool captured, int depth, HashSet<object> projecting)
     {
         var shape = _GetShape(value.GetType());
 
@@ -126,13 +180,40 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return _RedactScalar(redactorProvider.GetRedactor(shape.TypeClassifications!), value);
         }
 
+        projecting.Add(value);
+
+        try
+        {
+            return _ProjectComposite(value, shape, captured, depth, projecting);
+        }
+        finally
+        {
+            projecting.Remove(value);
+        }
+    }
+
+    private string _ProjectComposite(
+        object value,
+        TypeShape shape,
+        bool captured,
+        int depth,
+        HashSet<object> projecting
+    )
+    {
         if (shape.Kind == ShapeKind.Sequence)
         {
             var items = new List<string>();
 
             foreach (var item in (IEnumerable)value)
             {
-                items.Add(item is null ? "(null)" : _Format(item, captured, depth + 1));
+                if (items.Count == _MaxElements)
+                {
+                    items.Add(_Truncated);
+
+                    break;
+                }
+
+                items.Add(item is null ? "(null)" : _Format(item, captured, depth + 1, projecting));
             }
 
             return string.Join(", ", items);
@@ -154,9 +235,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             }
 
             first = false;
-            builder.Append(member.Property.Name).Append(" = ");
+            builder.Append(member.Member.Name).Append(" = ");
 
-            if (!_TryGet(member.Property, value, out var memberValue))
+            if (!_TryGet(member.Member, value, out var memberValue))
             {
                 builder.Append(memberValue);
                 continue;
@@ -170,18 +251,24 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             builder.Append(
                 member.Classifications is { } classifications
                     ? _RedactMember(memberValue, classifications)
-                    : _Format(memberValue, captured, depth + 1)
+                    : _Format(memberValue, captured, depth + 1, projecting)
             );
         }
 
         return builder.Append(" }").ToString();
     }
 
-    private string _Format(object value, bool captured, int depth)
+    private string _Format(object value, bool captured, int depth, HashSet<object> projecting)
     {
-        if (depth <= _MaxDepth && _Needs(value, depth))
+        // An instance met again inside its own projection is a cycle; its type name ends it.
+        if (projecting.Contains(value))
         {
-            return _Project(value, captured, depth);
+            return value.GetType().ToString();
+        }
+
+        if (depth <= _MaxDepth && _Needs(value, depth, _NewSeen(), projecting))
+        {
+            return _Project(value, captured, depth, projecting);
         }
 
         return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
@@ -197,6 +284,13 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
             foreach (var item in sequence)
             {
+                if (items.Count == _MaxElements)
+                {
+                    items.Add(_Truncated);
+
+                    break;
+                }
+
                 items.Add(item is null ? "(null)" : _RedactScalar(redactor, item));
             }
 
@@ -219,11 +313,11 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         };
 
     // A throwing getter becomes a value naming the exception type, so one bad member does not fail the log call.
-    private static bool _TryGet(PropertyInfo property, object instance, out object? value)
+    private static bool _TryGet(MemberInfo member, object instance, out object? value)
     {
         try
         {
-            value = property.GetValue(instance);
+            value = member is FieldInfo field ? field.GetValue(instance) : ((PropertyInfo)member).GetValue(instance);
 
             return true;
         }
@@ -260,6 +354,25 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return new TypeShape(ShapeKind.TypeClassified, typeClassifications, [], IsRecord: false);
         }
 
+        // Marked before any edge is followed, so a type reached again through its own element or member type ends the
+        // walk instead of recursing; only the call that marked it unmarks it.
+        var marked = inProgress.Add(type);
+
+        try
+        {
+            return _CreateComposite(type, inProgress);
+        }
+        finally
+        {
+            if (marked)
+            {
+                inProgress.Remove(type);
+            }
+        }
+    }
+
+    private static TypeShape _CreateComposite(Type type, HashSet<Type> inProgress)
+    {
         if (typeof(IEnumerable).IsAssignableFrom(type))
         {
             var element = _ElementType(type);
@@ -270,48 +383,61 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 : new TypeShape(ShapeKind.Sequence, TypeClassifications: null, [], IsRecord: false);
         }
 
-        inProgress.Add(type);
         var members = new List<MemberShape>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var allSafe = true;
 
-        var properties = type.GetProperties(
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy
-        );
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy;
+        IEnumerable<MemberInfo> candidates = [.. type.GetProperties(flags), .. type.GetFields(flags)];
 
-        // Most-derived first so a property hidden with `new` appears once, as the derived declaration.
-        foreach (var property in properties.OrderByDescending(p => _InheritanceDepth(p.DeclaringType)))
+        // Most-derived first so a member hidden with `new` appears once, as the derived declaration. The sort is
+        // stable, so within one type properties come before fields.
+        foreach (var member in candidates.OrderByDescending(m => _InheritanceDepth(m.DeclaringType)))
         {
-            if (
-                property.GetMethod is not { IsPublic: true }
-                || property.GetIndexParameters().Length != 0
-                || !seen.Add(property.Name)
-                || _IsRecordContract(property)
-            )
+            if (!_IsDataMember(member) || !seen.Add(member.Name))
             {
                 continue;
             }
 
-            var classifications = _ReadClassifications(property);
-            var memberSafe = classifications is null && _IsStaticallySafeDeclared(property.PropertyType, inProgress);
-            allSafe &= memberSafe;
-            members.Add(new MemberShape(property, classifications, memberSafe));
-        }
+            var classifications = member is PropertyInfo property
+                ? _ReadPropertyClassifications(property, type)
+                : _ReadClassifications(member);
 
-        inProgress.Remove(type);
+            var memberSafe = classifications is null && _IsStaticallySafeDeclared(_MemberType(member), inProgress);
+            allSafe &= memberSafe;
+            members.Add(new MemberShape(member, classifications, memberSafe));
+        }
 
         if (allSafe)
         {
             return TypeShape.Safe;
         }
 
+        // Base members first, as a record prints them. Reflection keeps no order between a type's fields and its
+        // properties, so a type that interleaves them prints its properties first.
         return new TypeShape(
             ShapeKind.Members,
             TypeClassifications: null,
-            [.. members.OrderBy(m => _InheritanceDepth(m.Property.DeclaringType))],
+            [.. members.OrderBy(m => _InheritanceDepth(m.Member.DeclaringType))],
             _IsRecord(type)
         );
     }
+
+    private static bool _IsDataMember(MemberInfo member)
+    {
+        if (member is PropertyInfo property)
+        {
+            return property.GetMethod is { IsPublic: true }
+                && property.GetIndexParameters().Length == 0
+                && !_IsRecordContract(property);
+        }
+
+        // Backing fields are never public, but a compiler-generated field is not data the type declared.
+        return !member.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false) && !member.Name.StartsWith('<');
+    }
+
+    private static Type _MemberType(MemberInfo member) =>
+        member is FieldInfo field ? field.FieldType : ((PropertyInfo)member).PropertyType;
 
     // A declared member type is safe without looking at values only when no value it can hold carries a classification:
     // scalars, and sealed types (value types included) whose own members are safe the same way.
@@ -324,23 +450,30 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return true;
         }
 
-        if (type.IsArray)
-        {
-            return _IsStaticallySafeDeclared(type.GetElementType()!, inProgress);
-        }
-
-        if (!type.IsValueType && !type.IsSealed)
-        {
-            // A generic collection of safe elements is safe whatever the collection class.
-            return typeof(IEnumerable).IsAssignableFrom(type)
-                && _ElementType(type) is { } element
-                && _IsStaticallySafeDeclared(element, inProgress);
-        }
-
         // A type already being shaped higher up refers to itself; its values are checked at log time.
         if (inProgress.Contains(type))
         {
             return false;
+        }
+
+        if (type.IsArray || (!type.IsValueType && !type.IsSealed))
+        {
+            // A generic collection of safe elements is safe whatever the collection class.
+            if ((!type.IsArray && !typeof(IEnumerable).IsAssignableFrom(type)) || _ElementType(type) is not { } element)
+            {
+                return false;
+            }
+
+            inProgress.Add(type);
+
+            try
+            {
+                return _IsStaticallySafeDeclared(element, inProgress);
+            }
+            finally
+            {
+                inProgress.Remove(type);
+            }
         }
 
         var shape = _Shapes.TryGetValue(type, out var known) ? known : _CreateShape(type, inProgress);
@@ -394,10 +527,63 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     private static DataClassificationSet? _ReadClassifications(MemberInfo member)
     {
         List<DataClassification>? classifications = null;
+        _Collect(
+            Attribute.GetCustomAttributes(member, typeof(DataClassificationAttribute), inherit: true),
+            ref classifications
+        );
 
-        foreach (
-            var attribute in Attribute.GetCustomAttributes(member, typeof(DataClassificationAttribute), inherit: true)
-        )
+        return classifications is null ? null : new DataClassificationSet(classifications);
+    }
+
+    // An untargeted attribute on a positional record or primary-constructor parameter lands on the parameter only, yet
+    // the same-named property prints that value, so the parameter's classification is the property's too.
+    private static DataClassificationSet? _ReadPropertyClassifications(PropertyInfo property, Type shapedType)
+    {
+        List<DataClassification>? classifications = null;
+        _Collect(
+            Attribute.GetCustomAttributes(property, typeof(DataClassificationAttribute), inherit: true),
+            ref classifications
+        );
+        _CollectParameters(shapedType, property, ref classifications);
+
+        if (property.DeclaringType is { } declaring && declaring != shapedType)
+        {
+            _CollectParameters(declaring, property, ref classifications);
+        }
+
+        return classifications is null ? null : new DataClassificationSet(classifications);
+    }
+
+    private static void _CollectParameters(
+        Type type,
+        PropertyInfo property,
+        ref List<DataClassification>? classifications
+    )
+    {
+        // An abstract record's primary constructor is protected, so non-public constructors count too.
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+        foreach (var constructor in type.GetConstructors(flags))
+        {
+            foreach (var parameter in constructor.GetParameters())
+            {
+                if (
+                    parameter.ParameterType == property.PropertyType
+                    && string.Equals(parameter.Name, property.Name, StringComparison.Ordinal)
+                )
+                {
+                    _Collect(
+                        Attribute.GetCustomAttributes(parameter, typeof(DataClassificationAttribute), inherit: true),
+                        ref classifications
+                    );
+                }
+            }
+        }
+    }
+
+    private static void _Collect(Attribute[] attributes, ref List<DataClassification>? classifications)
+    {
+        foreach (var attribute in attributes)
         {
             var classification = ((DataClassificationAttribute)attribute).Classification;
 
@@ -406,8 +592,6 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 (classifications ??= []).Add(classification);
             }
         }
-
-        return classifications is null ? null : new DataClassificationSet(classifications);
     }
 
     private static int _InheritanceDepth(Type? type)
@@ -440,11 +624,8 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         public static readonly TypeShape Safe = new(ShapeKind.Safe, TypeClassifications: null, [], IsRecord: false);
     }
 
-    private sealed record MemberShape(
-        PropertyInfo Property,
-        DataClassificationSet? Classifications,
-        bool StaticallySafe
-    );
+    // A public property or a public instance field.
+    private sealed record MemberShape(MemberInfo Member, DataClassificationSet? Classifications, bool StaticallySafe);
 }
 
 /// <summary>

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections;
 using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Compliance.Classification;
@@ -220,6 +221,117 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         sink.Entries.Should().ContainSingle().Which.Properties["@Customer"].Should().BeSameAs(customer);
     }
 
+    [Fact]
+    public void should_log_a_collection_type_that_enumerates_itself_without_overflowing_the_stack()
+    {
+        // given: a type whose element type is itself, plain and with a classified member
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var plain = new PlainNode([new PlainNode([])]);
+        var classified = new ClassifiedNode(_Email, [new ClassifiedNode(_Email, [])]);
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Node}", plain);
+        _Logger(provider).LogInformation("Saw {@Node}", classified);
+        _Logger(provider).LogInformation("Saw {Tokens}", (object)Array.Empty<Token>());
+        _Logger(provider).LogInformation("Saw {@Holder}", new TokenHolder(Root: null));
+
+        // then
+        sink.Entries.Should().HaveCount(4);
+        sink.Entries.Should().AllSatisfy(e => e.Text.Should().NotContain(_Email));
+    }
+
+    [Fact]
+    public void should_redact_a_positional_record_parameter_classified_without_a_property_target()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+
+        // when
+        _Logger(provider).LogInformation("Saw {@P}", new Positional(_Email, "gold"));
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Saw Positional { Email = *****, Tier = gold }");
+    }
+
+    [Fact]
+    public void should_redact_a_classified_public_field_of_a_record()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+
+        // when
+        _Logger(provider).LogInformation("Saw {@X}", new FieldHolder("gold") { Email = _Email });
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().NotContain(_Email);
+        entry.Text.Should().Be("Saw FieldHolder { Tier = gold, Email = ***** }");
+    }
+
+    [Fact]
+    public void should_log_a_parent_with_hundreds_of_children_pointing_back_once()
+    {
+        // given: every child points back to its parent, so the graph is a cycle with a wide fan-out
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var parent = new TreeNode { Email = _Email };
+
+        for (var i = 0; i < 300; i++)
+        {
+            parent.Children.Add(new TreeNode { Email = _Email, Parent = parent });
+        }
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Tree}", parent);
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().NotContain(_Email);
+        entry.Text.Should().StartWith("Saw TreeNode { Email = *****, Parent = , Children = TreeNode { Email = *****");
+        entry.Text.Should().EndWith(", ... }");
+    }
+
+    [Fact]
+    public void should_log_an_unclassified_cycle_with_hundreds_of_children_once()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var parent = new PlainTreeNode();
+
+        for (var i = 0; i < 300; i++)
+        {
+            parent.Children.Add(new PlainTreeNode { Parent = parent });
+        }
+
+        // when
+        _Logger(provider).LogInformation("Saw {Tree}", parent);
+
+        // then
+        sink.Entries.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void should_project_a_child_that_reaches_classified_data_only_through_its_parent()
+    {
+        // given: the kid holds no classified member of its own; printing it raw would print the family raw
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var family = new Family { Email = _Email };
+        family.Kids.Add(new Kid { Owner = family });
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Family}", family);
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be($"Saw Family {{ Email = *****, Kids = Kid {{ Owner = {typeof(Family)} }} }}");
+    }
+
     // The generator rejects a parameter whose declared type has a classified member (LOGGEN035), so the case that
     // reaches run time is a derived value passed through an unclassified base type.
     [LoggerMessage(1, LogLevel.Information, "Signup {Email} as {Party}")]
@@ -273,6 +385,71 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         public required string Email { get; init; }
 
         public string Broken => throw new InvalidOperationException("boom");
+    }
+
+    private sealed record Positional([PrivateData] string Email, string Tier);
+
+    private sealed record FieldHolder(string Tier)
+    {
+        [PrivateData]
+        public required string Email;
+    }
+
+    private sealed class PlainNode(List<PlainNode> children) : IEnumerable<PlainNode>
+    {
+        public IEnumerator<PlainNode> GetEnumerator() => children.GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed class ClassifiedNode(string email, List<ClassifiedNode> children) : IEnumerable<ClassifiedNode>
+    {
+        [PrivateData]
+        public string Email { get; } = email;
+
+        public IEnumerator<ClassifiedNode> GetEnumerator() => children.GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    // Shaped like a JSON token: an abstract type that enumerates values of its own type.
+    private abstract class Token : IEnumerable<Token>
+    {
+        public abstract IEnumerator<Token> GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed record TokenHolder(Token? Root);
+
+    private sealed class TreeNode
+    {
+        [PrivateData]
+        public required string Email { get; init; }
+
+        public TreeNode? Parent { get; init; }
+
+        public List<TreeNode> Children { get; } = [];
+    }
+
+    private sealed class PlainTreeNode
+    {
+        public PlainTreeNode? Parent { get; init; }
+
+        public List<PlainTreeNode> Children { get; } = [];
+    }
+
+    private sealed class Family
+    {
+        [PrivateData]
+        public required string Email { get; init; }
+
+        public List<Kid> Kids { get; } = [];
+    }
+
+    private sealed class Kid
+    {
+        public required Family Owner { get; init; }
     }
 
     private sealed class StarRedactor : Redactor
