@@ -2,37 +2,34 @@
 
 using Headless.Checks;
 
-namespace Headless.Messaging.Transport;
+namespace Headless;
 
 /// <summary>
-/// Sanitizes values originating from message broker wire data (transport headers, message
-/// metadata) before they are interpolated into structured log parameters. This is the only
-/// layer in the framework where untrusted external strings enter log output — publisher
-/// paths, configuration, and storage operations log trusted application data and do not
-/// need sanitization.
+/// Sanitizes an untrusted string, such as a request header or a message broker's wire data, before it becomes a log
+/// property or part of an exception message.
 /// <para>
-/// Strips control characters (which enable log-line forging in text-based log sinks),
-/// Unicode line/paragraph separators U+2028/U+2029 (which cause line-splitting in
-/// structured log sinks), lone surrogates U+D800–U+DFFF (invalid UTF-16 that can corrupt
-/// log output), and Unicode bidi overrides U+202A–U+202E / U+2066–U+2069 (which can
-/// visually reorder text in log viewers to hide malicious content).
+/// Strips control characters (which enable log-line forging in text sinks), the Unicode line and paragraph
+/// separators U+2028 and U+2029 (which split lines in structured sinks), every UTF-16 surrogate code unit
+/// U+D800–U+DFFF (which removes lone surrogates and also every character outside the Basic Multilingual Plane, such
+/// as emoji), and the Unicode bidi overrides and isolates U+202A–U+202E and U+2066–U+2069 (which visually reorder
+/// text in log viewers to hide content).
 /// </para>
 /// <para>
-/// A transport passes every broker-supplied value it logs or puts in an exception message through
-/// <see cref="Sanitize"/>.
+/// Only the ESC character of an ANSI escape sequence is stripped; the printable rest of the sequence stays as inert
+/// text.
 /// </para>
 /// </summary>
+[PublicAPI]
 public static class LogSanitizer
 {
     /// <summary>
-    /// Sanitizes a string value to prevent log injection.
-    /// Strips control characters, Unicode line/paragraph separators (U+2028, U+2029),
-    /// lone surrogates (U+D800-U+DFFF), and Unicode bidi overrides (U+202A-U+202E, U+2066-U+2069).
-    /// Optionally truncates to <paramref name="maxLength"/> characters (appending "..." when truncated).
-    /// Returns null if input is null.
+    /// Strips the characters listed on <see cref="LogSanitizer"/>. A value longer than <paramref name="maxLength"/>
+    /// before stripping is cut and ends in a "..." suffix that counts toward <paramref name="maxLength"/>, even when
+    /// stripping alone would have made it fit; with a <paramref name="maxLength"/> of 3 or less it becomes "..." alone.
+    /// A value that needs neither step is returned as the same instance.
     /// </summary>
-    /// <param name="value">The broker-supplied value.</param>
-    /// <param name="maxLength">The longest result before the truncation suffix; unlimited when omitted.</param>
+    /// <param name="value">The untrusted value.</param>
+    /// <param name="maxLength">The longest result, the truncation suffix included; unlimited when omitted.</param>
     /// <returns>The sanitized value, or <see langword="null"/> when <paramref name="value"/> is.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxLength"/> is negative.</exception>
     [return: NotNullIfNotNull(nameof(value))]

@@ -4,7 +4,6 @@ using System.Globalization;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Retry;

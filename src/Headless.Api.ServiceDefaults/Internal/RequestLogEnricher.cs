@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Buffers;
-using System.Text.RegularExpressions;
 using Headless.Api;
 using Headless.Http;
 using Headless.Logging;
@@ -16,11 +14,14 @@ namespace Headless.Api.ServiceDefaults.Internal;
 /// written inside that request, on every provider.
 /// </summary>
 /// <remarks>
-/// The client IP and headers do not change during a request, so they are read and sanitized once and cached on the
-/// request. The user and account are read on each entry, because authentication runs after the first entries of a
-/// request are written. Values pass through the classified property names like any enrichment value.
+/// The headers do not change during a request, so they are read and sanitized once and cached on the request. The
+/// user, account, correlation ID, and client IP are read on each entry: authentication sets the user after the first
+/// entries of a request are written, and the forwarded-headers middleware rewrites the remote address after the
+/// "Request starting" entry. The correlation ID and headers are client-supplied, so they pass through
+/// <see cref="LogSanitizer"/> and are cut to <see cref="HeadlessLoggingOptions.MaxHeaderLength"/> characters. Values
+/// pass through the classified property names like any enrichment value.
 /// </remarks>
-internal sealed partial class RequestLogEnricher(IHttpContextAccessor contextAccessor, HeadlessLoggingOptions options)
+internal sealed class RequestLogEnricher(IHttpContextAccessor contextAccessor, HeadlessLoggingOptions options)
     : ILogEnricher
 {
     internal const string UserId = "UserId";
@@ -29,7 +30,7 @@ internal sealed partial class RequestLogEnricher(IHttpContextAccessor contextAcc
     internal const string ClientIp = "ClientIp";
 
     // Property names are the header name without dashes, so they are valid identifiers in every log query language.
-    private static readonly (string Header, string Property)[] _Headers =
+    private static readonly (string Header, string Property)[] _LoggedHeaders =
     [
         (HttpHeaderNames.UserAgent, "UserAgent"),
         (HttpHeaderNames.ClientVersion, "XClientVersion"),
@@ -59,70 +60,53 @@ internal sealed partial class RequestLogEnricher(IHttpContextAccessor contextAcc
                 collector.Add(AccountId, accountId.ToString());
             }
 
-            if (requestContext.CorrelationId is { } correlationId)
+            if (requestContext.CorrelationId is { Length: > 0 } correlationId)
             {
-                collector.Add(CorrelationId, correlationId);
+                collector.Add(CorrelationId, _Sanitize(correlationId));
+            }
+
+            if (requestContext.WebClient.IpAddress is { Length: > 0 } ip)
+            {
+                collector.Add(ClientIp, ip);
             }
         }
 
-        foreach (var (name, value) in _Stable(context, requestContext))
+        foreach (var (name, value) in _Headers(context))
         {
             collector.Add(name, value);
         }
     }
 
-    private KeyValuePair<string, string>[] _Stable(HttpContext context, IRequestContext? requestContext)
+    private KeyValuePair<string, string>[] _Headers(HttpContext context)
     {
         if (context.Items.TryGetValue(_CacheKey, out var cached) && cached is KeyValuePair<string, string>[] values)
         {
             return values;
         }
 
-        List<KeyValuePair<string, string>> stable = [];
+        List<KeyValuePair<string, string>> headers = [];
 
-        if (requestContext?.WebClient.IpAddress is { Length: > 0 } ip)
-        {
-            stable.Add(new(ClientIp, ip));
-        }
-
-        foreach (var (header, property) in _Headers)
+        foreach (var (header, property) in _LoggedHeaders)
         {
             if (context.Request.Headers.TryGetValue(header, out var raw) && raw.ToString() is { Length: > 0 } text)
             {
-                stable.Add(new(property, Sanitize(text, options.MaxHeaderLength)));
+                headers.Add(new(property, _Sanitize(text)));
             }
         }
 
-        var result = stable.ToArray();
+        var result = headers.ToArray();
         context.Items[_CacheKey] = result;
 
         return result;
     }
 
-    /// <summary>Strips line breaks, ANSI escape sequences, and other control characters, then truncates.</summary>
-    internal static string Sanitize(string value, int maxLength)
+    private string _Sanitize(string value)
     {
-        // Every removal is anchored on a character in [0x00-0x1F] other than tab: line breaks, the ESC that starts an
-        // ANSI sequence, and the rest of the control range. A value with none of them is returned as is.
-        if (!value.AsSpan().ContainsAny(_StrippedCharacters))
-        {
-            return value.Length > maxLength ? value[..maxLength] : value;
-        }
-
-        var sanitized = value.Replace("\r", "", StringComparison.Ordinal).Replace("\n", "", StringComparison.Ordinal);
-        sanitized = _AnsiEscapeRegex.Replace(sanitized, "");
-        sanitized = _ControlCharRegex.Replace(sanitized, "");
+        // Sanitize first, then cut with no suffix: LogSanitizer's own limit appends "...", which would make a field
+        // longer than a MaxHeaderLength below 3. It strips every surrogate, so the cut cannot split a pair.
+        var sanitized = LogSanitizer.Sanitize(value);
+        var maxLength = options.MaxHeaderLength;
 
         return sanitized.Length > maxLength ? sanitized[..maxLength] : sanitized;
     }
-
-    private static readonly SearchValues<char> _StrippedCharacters = SearchValues.Create([
-        .. Enumerable.Range(0, 0x20).Where(static c => c != '\t').Select(static c => (char)c),
-    ]);
-
-    [GeneratedRegex(@"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07", RegexOptions.None, 100)]
-    private static partial Regex _AnsiEscapeRegex { get; }
-
-    [GeneratedRegex(@"[\x00-\x08\x0b\x0c\x0e-\x1f]", RegexOptions.None, 100)]
-    private static partial Regex _ControlCharRegex { get; }
 }

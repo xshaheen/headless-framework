@@ -98,16 +98,47 @@ public sealed class RequestLogEnricherTests : TestBase
     }
 
     [Fact]
-    public void should_strip_line_breaks_and_escape_sequences_from_a_header()
+    public void should_strip_line_breaks_escape_characters_and_unicode_separators_from_a_header()
     {
         // given
-        var context = _Context(headers: new() { ["User-Agent"] = "agent\r\nInjected: yes\u001b[31m" });
+        var context = _Context(headers: new() { ["User-Agent"] = "agent\r\nInjected: yes\u001b[31m\u2028\u202eend" });
 
         // when
         var tags = _Enrich(context);
 
+        // then: the ESC that activates an ANSI sequence goes, and its printable rest stays as inert text
+        tags["UserAgent"].Should().Be("agentInjected: yes[31mend");
+    }
+
+    [Fact]
+    public void should_sanitize_and_truncate_the_correlation_id()
+    {
+        // given
+        var context = _Context(correlationId: "corr\r\nInjected: yes" + new string('a', 2000));
+
+        // when
+        var tags = _Enrich(context, new HeadlessLoggingOptions { MaxHeaderLength = 64 });
+
         // then
-        tags["UserAgent"].Should().Be("agentInjected: yes");
+        var correlationId = (string)tags["CorrelationId"];
+        correlationId.Should().HaveLength(64).And.StartWith("corrInjected: yes").And.NotContainAny("\r", "\n");
+    }
+
+    [Fact]
+    public void should_read_the_client_ip_on_each_entry_so_forwarded_headers_later_in_the_request_show()
+    {
+        // given: the first entry is written before the forwarded-headers middleware rewrites the remote address
+        var webClient = Substitute.For<IWebClientInfoProvider>();
+        webClient.IpAddress.Returns("10.0.0.1");
+        var context = _Context(webClient: webClient);
+        _Enrich(context)["ClientIp"].Should().Be("10.0.0.1");
+
+        // when
+        webClient.IpAddress.Returns("203.0.113.7");
+        var tags = _Enrich(context);
+
+        // then
+        tags["ClientIp"].Should().Be("203.0.113.7");
     }
 
     [Fact]
@@ -185,7 +216,8 @@ public sealed class RequestLogEnricherTests : TestBase
         string? correlationId = null,
         string? ip = null,
         Dictionary<string, string>? headers = null,
-        ICurrentUser? user = null
+        ICurrentUser? user = null,
+        IWebClientInfoProvider? webClient = null
     )
     {
         if (user is null)
@@ -195,8 +227,11 @@ public sealed class RequestLogEnricherTests : TestBase
             user.AccountId.Returns(accountId is null ? null : new AccountId(accountId));
         }
 
-        var webClient = Substitute.For<IWebClientInfoProvider>();
-        webClient.IpAddress.Returns(ip);
+        if (webClient is null)
+        {
+            webClient = Substitute.For<IWebClientInfoProvider>();
+            webClient.IpAddress.Returns(ip);
+        }
 
         var requestContext = Substitute.For<IRequestContext>();
         requestContext.User.Returns(user);

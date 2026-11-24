@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Internal;
-using Headless.Messaging.Transport;
+using Headless;
 
-namespace Tests;
+namespace Tests.Text;
 
 public sealed class LogSanitizerTests
 {
