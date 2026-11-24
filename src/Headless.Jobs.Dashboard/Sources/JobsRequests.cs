@@ -229,6 +229,9 @@ internal sealed record JobsRunSearchBody
 /// <summary>Refuses a correlation search with no id, or one longer than any id a run stores.</summary>
 internal sealed class JobsRunSearchBodyValidator : AbstractValidator<JobsRunSearchBody>
 {
+    // The one correlation-id limit every store applies; a longer id is never stored, so it can never match.
+    private const int _CorrelationIdMaxLength = 200;
+
     // The messages name the field, never the id: a validation problem is served and may be logged.
     public JobsRunSearchBodyValidator()
     {
@@ -236,9 +239,9 @@ internal sealed class JobsRunSearchBodyValidator : AbstractValidator<JobsRunSear
             .NotEmpty()
             .WithErrorCode(DashboardValidation.RequiredRule)
             .WithMessage("A search needs a correlationId.")
-            .MaximumLength(JobContract.CorrelationIdMaxLength)
+            .MaximumLength(_CorrelationIdMaxLength)
             .WithErrorCode(DashboardValidation.InvalidRule)
-            .WithMessage($"correlationId takes at most {JobContract.CorrelationIdMaxLength} characters.");
+            .WithMessage($"correlationId takes at most {_CorrelationIdMaxLength} characters.");
     }
 }
 

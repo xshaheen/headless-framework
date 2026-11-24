@@ -394,8 +394,13 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardReader reader, 
 
     private DashboardTraceItem _ToTraceItem(JobCorrelatedRun run, string correlationId, HashSet<Guid> runIds)
     {
+        // A run is stamped by when its execution window opened, not by ExecutedAt, which the store writes when the run
+        // ends: the messages and jobs it started come before its end, and would otherwise all read as clock skew.
         var (at, kind) = run.ExecutedAt is { } executedAt
-            ? (executedAt, DashboardTraceTimestampKind.Ran)
+            ? (
+                run.ExecutionTime is { } executionTime ? new DateTimeOffset(executionTime, TimeSpan.Zero) : executedAt,
+                DashboardTraceTimestampKind.Ran
+            )
             // A chain member waiting on its parent has no due time yet; it sorts after every scheduled run, as the
             // store's own read orders it.
             : (

@@ -415,7 +415,7 @@ public sealed class JobsModuleSourcesTests : TestBase
     }
 
     [Fact]
-    public async Task should_stamp_an_idle_run_with_its_due_time_and_a_finished_run_with_when_it_ran()
+    public async Task should_stamp_an_idle_run_with_its_due_time_and_a_finished_run_with_when_its_window_opened()
     {
         // given
         await using var node = JobsModuleNode.Create(_time);
@@ -440,7 +440,8 @@ public sealed class JobsModuleSourcesTests : TestBase
         due.StatusRole.Should().Be("sched");
         var ran = answer.Items.Should().ContainSingle(item => item.StorageId == failed.Id.ToString()).Subject;
         ran.TimestampKind.Should().Be(DashboardTraceTimestampKind.Ran);
-        ran.At.Should().Be(now.AddMinutes(-5));
+        // Its window opened at the due time; ExecutedAt (five minutes later) is when it ended.
+        ran.At.Should().Be(now.AddMinutes(-10));
         ran.StatusRole.Should().Be("fail");
     }
 
