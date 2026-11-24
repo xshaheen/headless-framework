@@ -131,14 +131,16 @@ public abstract partial class DataStorageTestsBase : TestBase
 
     /// <summary>
     /// Seeds one eligible retry row with an unsupported raw lane value through the provider's
-    /// authoritative storage representation. Providers without a raw-row seam return <see langword="null"/>.
+    /// authoritative storage representation, carrying <paramref name="correlationId"/> when one is given. Providers
+    /// without a raw-row seam return <see langword="null"/>.
     /// </summary>
     protected virtual Task<Guid?> SeedUnsupportedLaneRetryRowAsync(
         IDataStorage storage,
         bool published,
         short rawLane,
         DateTimeOffset nextRetryAt,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? correlationId = null
     )
     {
         return Task.FromResult<Guid?>(null);

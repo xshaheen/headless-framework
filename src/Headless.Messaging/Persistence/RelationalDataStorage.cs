@@ -66,6 +66,9 @@ internal sealed partial class RelationalDataStorage
 
     private static readonly SqlColumnType _IdentityType = SqlColumnType.KeyText(_NameMaxLength);
 
+    // Binary comparison, so a lookup tells C-42, c-42 and c-42<space> apart.
+    private static readonly SqlColumnType _CorrelationType = SqlColumnType.KeyText(StoredCorrelation.MaxLength);
+
     // A sequence key is a lowercase hex SHA-256, so its width is fixed and its comparison ordinal.
     private static readonly SqlColumnType _SequenceKeyType = SqlColumnType.KeyText(64);
     private static readonly SqlColumnType _StatusType = SqlColumnType.Text(_StatusMaxLength);
@@ -309,7 +312,7 @@ internal sealed partial class RelationalDataStorage
 
     public IMonitoringApi GetMonitoringApi()
     {
-        return new RelationalMonitoringApi(_storage, _t, _messagingOptions, _serializer, _timeProvider);
+        return new RelationalMonitoringApi(_storage, _t, _messagingOptions, _serializer, _timeProvider, _holdsReceived);
     }
 
     public IInboxOperationsApi GetInboxOperationsApi() => this;

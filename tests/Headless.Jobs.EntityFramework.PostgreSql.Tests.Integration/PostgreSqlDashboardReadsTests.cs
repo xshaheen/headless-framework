@@ -132,4 +132,40 @@ public sealed class PostgreSqlDashboardReadsTests(PostgreSqlJobsCoordinationFixt
     {
         return base.should_read_every_last_run_in_one_query_when_several_cron_jobs_ran();
     }
+
+    [Fact]
+    public override Task a_correlation_read_returns_only_runs_whose_id_matches_character_for_character()
+    {
+        return base.a_correlation_read_returns_only_runs_whose_id_matches_character_for_character();
+    }
+
+    [Fact]
+    public override Task an_operation_scope_for_a_correlation_id_never_reaches_a_run_with_a_different_case()
+    {
+        return base.an_operation_scope_for_a_correlation_id_never_reaches_a_run_with_a_different_case();
+    }
+
+    [Fact]
+    public override Task a_correlation_read_lists_a_chain_oldest_first_with_each_causation_key()
+    {
+        return base.a_correlation_read_lists_a_chain_oldest_first_with_each_causation_key();
+    }
+
+    [Fact]
+    public override Task a_correlation_read_returns_an_occurrence_that_has_not_run_with_its_due_time()
+    {
+        return base.a_correlation_read_returns_an_occurrence_that_has_not_run_with_its_due_time();
+    }
+
+    [Fact]
+    public override Task a_correlation_read_fills_its_limit_from_confirmed_runs_when_case_variants_crowd_the_store_matches()
+    {
+        return base.a_correlation_read_fills_its_limit_from_confirmed_runs_when_case_variants_crowd_the_store_matches();
+    }
+
+    [Fact]
+    public override Task a_correlation_read_filters_on_the_correlation_id_column_in_the_store()
+    {
+        return base.a_correlation_read_filters_on_the_correlation_id_column_in_the_store();
+    }
 }

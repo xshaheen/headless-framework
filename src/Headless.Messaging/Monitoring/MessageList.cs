@@ -88,15 +88,14 @@ public sealed record MessageListQuery
     public string? Content { get; init; }
 
     /// <summary>
-    /// Gets the correlation id (<see cref="Headers.CorrelationId"/>) every row read must carry, compared exactly on
-    /// the value without regard to case. <see langword="null"/> or empty matches every row.
+    /// Gets the correlation id (<see cref="Headers.CorrelationId"/>) every row read must carry, compared exactly and
+    /// ordinally: <c>C-42</c>, <c>c-42</c> and <c>c-42 </c> are three different ids. <see langword="null"/> or empty
+    /// matches every row.
     /// </summary>
     /// <remarks>
-    /// No column stores the correlation id, so a relational store finds it in the stored envelope: it matches the
-    /// header written as the configured <see cref="MessagingOptions.JsonSerializerOptions"/> write it, which no body
-    /// text can imitate unless the body holds an object with a property of the header's exact name. Like
-    /// <see cref="Content"/>, the match reads every row the other filters leave, and a store whose envelope a
-    /// replaced <see cref="IMessageSerializer"/> writes in another format finds nothing.
+    /// A store keeps the id in a column of its own, indexed, so the match seeks instead of reading every row. It keeps
+    /// an id of at most 200 characters: a row whose id was longer, and a row written before the store kept the column,
+    /// is never found by this filter.
     /// </remarks>
     public string? CorrelationId { get; init; }
 

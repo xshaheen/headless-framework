@@ -16,6 +16,10 @@ internal static class SqlServerMessagingSchemaContribution
     public const string OutboxFeature = "MessagingOutbox";
     public const string TablesStepVersion = "1";
     public const string HistoryIndexesStepVersion = "2";
+    public const string CorrelationStepVersion = "3";
+
+    // The additional outbox's own history has one step before this, so its step is the second.
+    public const string OutboxCorrelationStepVersion = "2";
 
     /// <summary>Creates the contribution of the primary storage: the inbox, its history, and the published table.</summary>
     public static SchemaContribution Create(SqlServerOptions options, MessagingStorageOptions storageOptions)
@@ -40,6 +44,11 @@ internal static class SqlServerMessagingSchemaContribution
                     HistoryIndexesStepVersion,
                     "Create the inbox receipt and audit history-selection indexes.",
                     _HistoryIndexesSql(schema)
+                ),
+                new SchemaStep(
+                    CorrelationStepVersion,
+                    "Add the correlation and causation id columns to the published and received tables, with an index on the correlation id of each.",
+                    _CorrelationSql(schema, inbox: true)
                 ),
             ],
             // Creation order: the audit table references the receipts table, so the reverse drops it first.
@@ -79,6 +88,11 @@ internal static class SqlServerMessagingSchemaContribution
                     TablesStepVersion,
                     "Create the published table with its indexes.",
                     _PublishedTableSql(schema, options.LeaseHolderMaxLength)
+                ),
+                new SchemaStep(
+                    OutboxCorrelationStepVersion,
+                    "Add the correlation and causation id columns to the published table, with an index on the correlation id.",
+                    _CorrelationSql(schema, inbox: false)
                 ),
             ],
             exportOnly: exportOnly,
@@ -409,6 +423,38 @@ internal static class SqlServerMessagingSchemaContribution
 
             """
         );
+    }
+
+    private static string _CorrelationSql(string schema, bool inbox)
+    {
+        var received = _Table(schema, "MessagingReceived");
+        var published = _Table(schema, "MessagingPublished");
+
+        // Binary collation makes = ordinal on the column, and nvarchar keeps a trailing space significant to LIKE,
+        // which the exact-text match relies on. Each statement runs through EXEC, so the batch compiles before the
+        // column it names exists.
+        var publishedSql = $"""
+            IF COL_LENGTH(N'{published}',N'CorrelationId') IS NULL
+                EXEC(N'ALTER TABLE {published} ADD [CorrelationId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL, [CausationId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL');
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MessagingPublished_Correlation' AND object_id = OBJECT_ID(N'{published}'))
+                EXEC(N'CREATE NONCLUSTERED INDEX [IX_MessagingPublished_Correlation] ON {published} ([CorrelationId] ASC,[Added] ASC,[Id] ASC)');
+
+            """;
+
+        if (!inbox)
+        {
+            return publishedSql;
+        }
+
+        return publishedSql
+            + $"""
+                IF COL_LENGTH(N'{received}',N'CorrelationId') IS NULL
+                    EXEC(N'ALTER TABLE {received} ADD [CorrelationId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL, [CausationId] [nvarchar](200) COLLATE Latin1_General_100_BIN2 NULL');
+
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_MessagingReceived_Correlation' AND object_id = OBJECT_ID(N'{received}'))
+                    EXEC(N'CREATE NONCLUSTERED INDEX [IX_MessagingReceived_Correlation] ON {received} ([CorrelationId] ASC,[Added] ASC,[Id] ASC)');
+                """;
     }
 
     private static string _HistoryIndexesSql(string schema)

@@ -211,6 +211,36 @@ public sealed record JobRunSummary
     public bool CancelRequested { get; init; }
 }
 
+/// <summary>One run that carries a correlation id, as the correlation read returns it.</summary>
+/// <remarks>This record grows by <see langword="init"/> members.</remarks>
+[PublicAPI]
+public sealed record JobCorrelatedRun
+{
+    /// <summary>Gets the run's kind.</summary>
+    public required JobRunKind Kind { get; init; }
+
+    /// <summary>Gets the run's identifier, the key a child run's <see cref="CausationId"/> may name.</summary>
+    public required Guid Id { get; init; }
+
+    /// <summary>Gets the job function the run invokes.</summary>
+    public required string Function { get; init; }
+
+    /// <summary>Gets the run's status.</summary>
+    public required JobStatus Status { get; init; }
+
+    /// <summary>
+    /// Gets when the run is due (UTC), or <see langword="null"/> for a chain member waiting on its parent. A run that
+    /// has not run yet is placed by this time.
+    /// </summary>
+    public DateTime? ExecutionTime { get; init; }
+
+    /// <summary>Gets when the run's last execution ended, or <see langword="null"/> when it has not run.</summary>
+    public DateTimeOffset? ExecutedAt { get; init; }
+
+    /// <summary>Gets the causation id the run was created with: the key of the message or run that caused it.</summary>
+    public string? CausationId { get; init; }
+}
+
 /// <summary>
 /// The keyset position of one run in a run read: the values it sorts on, then its identifier. A read uses the value
 /// of its query's <see cref="JobRunQuery.SortBy"/> and the identifier, and ignores the others.

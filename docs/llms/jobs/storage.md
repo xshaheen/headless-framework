@@ -149,6 +149,7 @@ Every executable row stores its own `(Function, ContractVersion, Request bytes)`
 
 - `Function` holds 1 to 200 UTF-16 code units and `ContractVersion` 1 to 100. Both compare ordinally and case-sensitively. Edge whitespace, control characters, and invalid surrogates are rejected without trimming. Embedded spaces are allowed.
 - PostgreSQL maps `varchar(200)` and `varchar(100)` with `COLLATE "C"`. SQL Server maps `nvarchar(200)` and `nvarchar(100)` with `COLLATE Latin1_General_100_BIN2`.
+- `CorrelationId` and `CausationId` use your model's column collation, so a case-insensitive collation such as SQL Server's default treats `C-42` and `c-42` alike in the database. The dashboard's correlation read and the runs-list correlation filter still return only runs whose id matches character for character. The `CorrelationId` index serves the lookup.
 - `JobContract.InitialVersion` (`"1"`) is a CLR default, not a database default. Every writer must supply a version.
 - EF converters validate normal writes. Raw SQL and custom writers must apply the same validation. Constructing a `JobFunctionDescriptor` validates a name and version without registering it.
 
