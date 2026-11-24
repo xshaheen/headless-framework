@@ -17,6 +17,9 @@ namespace Headless.Logging.Internal;
 internal sealed class BaggageFilteringTextMapPropagator(TextMapPropagator inner, Func<FrozenSet<string>> keys)
     : TextMapPropagator
 {
+    // BaggagePropagator.BaggageHeaderName, which OpenTelemetry keeps internal.
+    private const string _BaggageHeaderName = "baggage";
+
     public TextMapPropagator Inner { get; } = inner;
 
     public override ISet<string>? Fields => Inner.Fields;
@@ -52,6 +55,13 @@ internal sealed class BaggageFilteringTextMapPropagator(TextMapPropagator inner,
             carrier,
             setter
         );
+
+        // BaggagePropagator writes nothing for empty baggage, so a carrier the baggage was first extracted from (such as
+        // forwarded message headers) would still hold the classified entries. Overwrite the field it would have written.
+        if (dropped && kept is null)
+        {
+            setter(carrier, _BaggageHeaderName, string.Empty);
+        }
     }
 
     public override PropagationContext Extract<T>(

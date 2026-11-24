@@ -95,6 +95,28 @@ public sealed class BaggageFilteringTests : TestBase
     }
 
     [Fact]
+    public void should_clear_classified_baggage_left_in_a_carrier_reused_from_extraction()
+    {
+        // given: messaging injects into the same headers it extracted the baggage from
+        Sdk.SetDefaultTextMapPropagator(_SdkDefault);
+        using var provider = _Classify(_key);
+        _BuildTracer();
+        using var activity = _StartWithBaggage();
+        var carrier = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["baggage"] = $"{_key}=jane" };
+
+        // when
+        Propagators.DefaultTextMapPropagator.Inject(
+            new PropagationContext(activity.Context, Baggage.Create().SetBaggage(_key, "jane")),
+            carrier,
+            static (headers, name, value) => headers[name] = value
+        );
+
+        // then
+        carrier.Should().ContainKey("traceparent");
+        carrier["baggage"].Should().BeEmpty();
+    }
+
+    [Fact]
     public void should_extract_incoming_baggage_unchanged()
     {
         // given
