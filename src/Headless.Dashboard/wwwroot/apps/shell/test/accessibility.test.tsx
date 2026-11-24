@@ -269,8 +269,9 @@ describe('shell accessibility', () => {
     })
     const { router } = renderRunPage('/jobs/runs', loaded)
     await screen.findByRole('heading', { name: 'Module jobs runs view' })
-    // A route that names no page of its own keeps the sidebar entry's name.
-    expect(document.title).toBe('Runs · Jobs · Dashboard')
+    // A route that names no page of its own keeps the sidebar entry's name. The shell sets the title in an effect that
+    // can run after the heading is in the DOM, so the title is awaited rather than read once.
+    await waitFor(() => expect(document.title).toBe('Runs · Jobs · Dashboard'))
 
     await act(() => router.navigate('/jobs/runs/run_7'))
     await screen.findByRole('heading', { name: 'Loading the run' })
@@ -287,7 +288,7 @@ describe('shell accessibility', () => {
     // Back on the list, the run page's name goes with it and the list's is said.
     await act(() => router.navigate('/jobs/runs'))
     await screen.findByRole('heading', { name: 'Module jobs runs view' })
-    expect(document.title).toBe('Runs · Jobs · Dashboard')
-    expect(announced('Runs · Jobs · Dashboard')).toBe(true)
+    await waitFor(() => expect(document.title).toBe('Runs · Jobs · Dashboard'))
+    await waitFor(() => expect(announced('Runs · Jobs · Dashboard')).toBe(true))
   })
 })

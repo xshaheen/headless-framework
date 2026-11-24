@@ -118,7 +118,6 @@ public sealed class InMemoryCacheTests : TestBase
     private static async Task _SettleStartupSweepAsync(InMemoryCache cache)
     {
         await cache.UpsertAsync("startup-sweep", 0, TimeSpan.FromMinutes(5), AbortToken);
-        await cache.RemoveAsync("startup-sweep", AbortToken);
 
         var running = typeof(InMemoryCache).GetField(
             "_maintenanceRunning",
@@ -133,6 +132,11 @@ public sealed class InMemoryCacheTests : TestBase
         }
 
         ((int)running.GetValue(cache)!).Should().Be(0, "the startup sweep must finish before the test writes");
+
+        // Removed only after the sweep ends: the sweep resyncs the item counter from the dictionary, and a resync that
+        // lands between this removal's delete and its decrement leaves the counter one low, so a later write past
+        // MaxItems would not compact until the next sweep.
+        await cache.RemoveAsync("startup-sweep", AbortToken);
     }
 
     private static object _GetMemory(InMemoryCache cache)
