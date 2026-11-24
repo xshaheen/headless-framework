@@ -40,9 +40,6 @@ internal sealed class MessagingForwarding(
     // Lookup text is the caller's, so the reused answers are bounded: past this many, expired ones are dropped.
     private const int _MaxResolveEntries = 1_024;
 
-    // The node round trip a peer trace call allows beyond the peer's own per-store bound.
-    private static readonly TimeSpan _PeerTraceMargin = TimeSpan.FromSeconds(1);
-
     private readonly ConcurrentDictionary<string, (DashboardAttentionAnswer Answer, DateTimeOffset At)> _attention =
         new(StringComparer.Ordinal);
 
@@ -599,11 +596,11 @@ internal sealed class MessagingForwarding(
         CancellationToken cancellationToken
     )
     {
-        // A POST waits as long as a write by default; a trace read waits only a second past a store read. The peer
-        // bounds each of its own stores by the same StoreTimeout and then answers with what it read, so the margin lets
-        // that partial answer arrive instead of dropping the peer's healthy rows.
+        // A POST waits as long as a write by default; a trace read waits only as long as a store read. StoreTimeout is
+        // validated below the shell's AggregationTimeout, so a hung peer is named "not answering" while this node's own
+        // rows still reach the page. A longer wait would let one hung peer mark the whole module stale.
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(options.StoreTimeout + _PeerTraceMargin);
+        deadline.CancelAfter(options.StoreTimeout);
         ForwardResponse response;
 
         try

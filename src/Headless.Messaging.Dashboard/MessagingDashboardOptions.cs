@@ -55,9 +55,8 @@ public sealed class MessagingDashboardOptions : DashboardModuleOptions
     /// <summary>
     /// Gets or sets the most messages the trace page lists for one correlation id: published messages, received
     /// generations, and scheduled deliveries together, over every store and node, oldest first. Defaults to 500; past it,
-    /// the page shows the count as <c>N+</c> and links the published list searched by the id. Each store read is bounded
-    /// by <see cref="StoreTimeout"/>, and each node read by <see cref="StoreTimeout"/> plus one second, so a node's own
-    /// store bound ends first and its partial answer arrives. Between 1 and 10,000.
+    /// the page shows the count as <c>N+</c> and links the published list searched by the id. Each store and node read is
+    /// bounded by <see cref="StoreTimeout"/>. Between 1 and 10,000.
     /// </summary>
     public int TraceLimit { get; set; } = 500;
 
