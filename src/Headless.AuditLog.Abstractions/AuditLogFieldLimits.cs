@@ -14,7 +14,7 @@ internal static class AuditLogFieldLimits
     public const int TenantId = 128;
     public const int IpAddress = 45;
     public const int UserAgent = 512;
-    public const int CorrelationId = 128;
+    public const int CorrelationId = 200;
     public const int Action = 256;
     public const int EntityType = 512;
     public const int EntityId = 256;
