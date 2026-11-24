@@ -188,7 +188,7 @@ Query denials with `new AuditLogQuery { TenantId = tenantId, Action = "authoriza
 
 ### Field length limits
 
-Every provider truncates string fields to the column limit before it writes, with no error: `Action` 256, `EntityType` 512, `EntityId` 256, `UserId`, `AccountId`, `TenantId`, and `CorrelationId` 128, `UserAgent` 512, `IpAddress` 45.
+Every provider truncates string fields to the column limit before it writes, with no error: `Action` 256, `EntityType` 512, `EntityId` 256, `UserId`, `AccountId`, and `TenantId` 128, `CorrelationId` 200, `UserAgent` 512, `IpAddress` 45.
 
 ### Retention and append-only storage
 
@@ -329,6 +329,17 @@ Raw storage contributes the table, its indexes, and, when enabled, the append-on
 - `JsonColumnType`, `CreatedAtColumnType`, `Partitioning`, and `MinimumRetention` shape the DDL. Changing one after `resources provision` fails startup with a checksum mismatch.
 - A configured `TableName` is part of the step's history id, so a second table gets its own steps.
 - When a migration tool owns the schema, run `resources provision` anyway. Every step is idempotent, so it only records history for objects that already exist.
+
+| Step | PostgreSQL | SQL Server |
+| --- | --- | --- |
+| `1` | Create the table. | Create the table. |
+| `2` | Create the read indexes. | Create the read indexes. |
+| `3` | Append-only trigger, when `AppendOnly` is on. | Append-only trigger, when `AppendOnly` is on. |
+| `4` | Owner purge function, when `PurgeAuthority` is `Owner`. | Widen `CorrelationId` to 200 characters. It drops `IX_{table}_Correlation`, widens the column, and recreates the index with the same name and columns. |
+| `5` | Partition functions, when `Partitioning` is `Monthly`. | |
+| `6` | Widen `correlation_id` to 200 characters. A catalog-only change that reaches every partition. | |
+
+**Upgrade from a release with a 128-character `CorrelationId`:** run `resources provision` (or `deploy`) before the new build starts. It applies only the widening step (`6` on PostgreSQL, `4` on SQL Server). A new host started first fails with `ResourceProvisioningException`: `Steps 6 of AuditLog are not applied` (`4` on SQL Server), naming `resources provision`. A configured `TableName` joins the feature id in that message. Hosts of the earlier build keep starting after the step runs, because they report the new history row as unknown, never as a failure. On SQL Server the step rebuilds the correlation index, so run it in a quiet window on a large table.
 
 ## Choosing a Provider
 
@@ -548,6 +559,8 @@ modelBuilder.Entity<AuditLogEntry>().HasKey(e => e.Id);
 ```
 
 Then add a migration that creates the audit table, as for any entity.
+
+`ConfigureHeadlessAuditLog` maps `CorrelationId` with a 200-character limit. When your existing audit table has the earlier 128-character column, run `dotnet ef migrations add WidenAuditLogCorrelationId` and apply it before the new build writes. The scaffolded `AlterColumn` widens the column. On SQL Server, check that the generated SQL drops the `IX_{table}_Correlation` index before the `AlterColumn` and recreates it after, because SQL Server refuses to alter a column an index keys on. Until the migration runs, a correlation id longer than 128 characters fails the save.
 
 **Verify:** `dotnet app.dll check` fails with a message naming `modelBuilder.ConfigureHeadlessAuditLog(this)` when the call is missing. In an integration test, save a change to an audited entity and assert that `IReadAuditLog<AppDbContext>.QueryAsync(new AuditLogQuery { Action = "entity.updated" })` returns the entry, with sensitive values as `"***"`.
 

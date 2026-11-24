@@ -18,6 +18,9 @@ internal static class SqlServerAuditLogSchemaContribution
     public const string TableStepVersion = "1";
     public const string IndexesStepVersion = "2";
     public const string AppendOnlyStepVersion = "3";
+    public const string CorrelationWidthStepVersion = "4";
+
+    private const string _CorrelationIndexColumns = "[CorrelationId] ASC, [CreatedAt] ASC, [Id] ASC";
 
     public static SchemaContribution Create(
         SqlServerAuditLogOptions providerOptions,
@@ -31,7 +34,10 @@ internal static class SqlServerAuditLogSchemaContribution
         var primaryKey = HeadlessStorageNaming.PrimaryKeyName(StorageNamingStyle.PascalCase, tableName);
         var jsonColumnType = auditLogTable.JsonColumnType;
         var createdAtColumnType = _CreatedAtColumnType(storageOptions);
+        var correlationIndex = _IndexName(tableName, AuditLogStorageNames.Correlation);
 
+        // The table step shipped with a 128-character correlation column; the checksum pins that text, so a later
+        // step widens the column instead.
         var tableSql = $"""
             IF OBJECT_ID(N'{objectName}', N'U') IS NULL
                 CREATE TABLE {table} (
@@ -42,7 +48,7 @@ internal static class SqlServerAuditLogSchemaContribution
                     [TenantId] nvarchar({AuditLogFieldLimits.TenantId}) NULL,
                     [IpAddress] nvarchar({AuditLogFieldLimits.IpAddress}) NULL,
                     [UserAgent] nvarchar({AuditLogFieldLimits.UserAgent}) NULL,
-                    [CorrelationId] nvarchar({AuditLogFieldLimits.CorrelationId}) NULL,
+                    [CorrelationId] nvarchar(128) NULL,
                     [Action] nvarchar({AuditLogFieldLimits.Action}) NOT NULL,
                     [ChangeType] int NULL,
                     [EntityType] nvarchar({AuditLogFieldLimits.EntityType}) NULL,
@@ -91,13 +97,25 @@ internal static class SqlServerAuditLogSchemaContribution
                 objectName,
                 "[TenantId] ASC, [AccountId] ASC, [CreatedAt] ASC, [Id] ASC"
             ),
-            _IndexStatement(
-                _IndexName(tableName, AuditLogStorageNames.Correlation),
-                table,
-                objectName,
-                "[CorrelationId] ASC, [CreatedAt] ASC, [Id] ASC"
-            )
+            _IndexStatement(correlationIndex, table, objectName, _CorrelationIndexColumns)
         );
+
+        // SQL Server refuses to alter a column an index keys on, so the step drops the correlation index, widens the
+        // column, and recreates the index under the same name. max_length counts bytes (two per nvarchar character),
+        // and -1 is nvarchar(max), so the guard never narrows a wider column.
+        var correlationWidthSql = $"""
+            IF EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'{objectName}') AND name = N'CorrelationId'
+                    AND max_length <> -1 AND max_length < {AuditLogFieldLimits.CorrelationId * 2}
+            )
+            BEGIN
+                IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'{correlationIndex}' AND object_id = OBJECT_ID(N'{objectName}'))
+                    DROP INDEX [{correlationIndex}] ON {table};
+                ALTER TABLE {table} ALTER COLUMN [CorrelationId] nvarchar({AuditLogFieldLimits.CorrelationId}) NULL;
+            END
+            {_IndexStatement(correlationIndex, table, objectName, _CorrelationIndexColumns)}
+            """;
 
         List<SchemaStep> steps =
         [
@@ -115,6 +133,8 @@ internal static class SqlServerAuditLogSchemaContribution
                 )
             );
         }
+
+        steps.Add(new(CorrelationWidthStepVersion, "Widen the audit log correlation id column.", correlationWidthSql));
 
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
