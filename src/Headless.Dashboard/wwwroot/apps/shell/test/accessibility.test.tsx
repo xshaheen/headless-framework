@@ -237,10 +237,35 @@ describe('shell accessibility', () => {
     await user.click(within(screen.getByRole('navigation', { name: 'Jobs' })).getByRole('link', { name: 'Settings' }))
 
     await screen.findByRole('heading', { name: 'Module jobs settings view' })
-    expect(document.activeElement).toBe(screen.getByRole('main'))
+    // The shell moves focus in an effect that can run after the new view's heading is in the page.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('main')))
     // The sheet hands focus back to Menu a frame after it closes, unless focus has moved on, as it has here.
     await new Promise((resolve) => requestAnimationFrame(resolve))
     expect(document.activeElement).toBe(screen.getByRole('main'))
+  })
+
+  it('lands focus on the new view even when the view loads after the menu gave focus back to Menu', async () => {
+    atWidth(400)
+    const user = userEvent.setup()
+    const modules = [moduleManifest('jobs')]
+    const files = moduleFiles(modules)
+    const settings = chunkUrl('jobs', 'settings')
+    const view = files[settings]
+    let release = () => undefined as void
+    // A view's chunk comes over the network, so the route changes some frames after the click; by then the closed
+    // sheet has handed focus back to Menu.
+    files[settings] = new Promise((resolve) => {
+      release = () => resolve(view)
+    })
+    renderShell(shellState(modules), { path: '/jobs/runs', files, api: emptyAggregates })
+
+    await user.click(await screen.findByRole('button', { name: 'Menu' }))
+    await user.click(within(screen.getByRole('navigation', { name: 'Jobs' })).getByRole('link', { name: 'Settings' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Menu' })))
+    act(() => release())
+
+    await screen.findByRole('heading', { name: 'Module jobs settings view' })
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('main')))
   })
 
   it('draws a focus ring on the palette search field, which axe cannot see', async () => {
