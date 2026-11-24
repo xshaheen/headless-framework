@@ -30,7 +30,8 @@ public sealed partial class HeadlessDashboardSetupBuilder
         // The shell's own pages share the route space with module ids.
         "needs-you",
         "sign-in",
-        "shell"
+        "shell",
+        "trace"
     );
 
     private readonly List<Action<DashboardContentSecurityPolicy>> _contentSecurityPolicyActions = [];
@@ -173,7 +174,7 @@ public sealed partial class HeadlessDashboardSetupBuilder
     }
 
     /// <summary>
-    /// Sets the link to the host's tracing tool, so an object that carries a W3C trace id offers <c>Open trace</c>.
+    /// Sets the link to the host's tracing tool, so an object that carries a W3C trace id offers <c>Open in tracing tool</c>.
     /// </summary>
     /// <param name="template">The link, with <c>{traceId}</c> where the trace id goes.</param>
     /// <returns>The same builder for chaining.</returns>
@@ -242,8 +243,8 @@ public sealed partial class HeadlessDashboardSetupBuilder
     /// <typeparam name="TOptions">The module's options, carrying its view and operate policies.</typeparam>
     /// <param name="id">
     /// The module's id, equal to <see cref="IDashboardModule.Id"/>: a lower-case kebab token such as <c>jobs</c>, used
-    /// as a URL segment, so <c>api</c>, <c>auth</c>, <c>m</c>, <c>needs-you</c>, <c>sign-in</c>, and <c>shell</c> are
-    /// reserved.
+    /// as a URL segment, so <c>api</c>, <c>auth</c>, <c>m</c>, <c>needs-you</c>, <c>sign-in</c>, <c>shell</c>, and
+    /// <c>trace</c> are reserved.
     /// </param>
     /// <returns>The same builder for chaining.</returns>
     /// <exception cref="ArgumentException">

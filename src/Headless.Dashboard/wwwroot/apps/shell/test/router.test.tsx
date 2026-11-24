@@ -10,7 +10,7 @@ import {
   shellState,
   twentyModules,
 } from './fixtures/modules.tsx'
-import { renderShell } from './harness.tsx'
+import { emptyAggregates, renderShell } from './harness.tsx'
 
 describe('router', () => {
   it('builds every route of a 20-module dashboard without importing module code it does not show', async () => {
@@ -97,5 +97,18 @@ describe('router', () => {
     const notices = await screen.findAllByText(/Dashboard updated/)
     expect(notices.length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Reload' }).length).toBeGreaterThan(0)
+  })
+
+  it('opens /trace as a shell page, off every product, without importing any module code', async () => {
+    const modules = [moduleManifest('jobs')]
+    const shell = renderShell(shellState(modules), {
+      path: '/trace#ord-7',
+      files: moduleFiles(modules),
+      api: (request) => (request.path === 'trace' ? { modules: [], rows: [], hidden: 0 } : emptyAggregates(request)),
+    })
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Trace' })).toBeTruthy()
+    expect(screen.queryByRole('navigation', { name: 'Jobs' })).toBeNull()
+    expect(shell.imported).toEqual([])
   })
 })

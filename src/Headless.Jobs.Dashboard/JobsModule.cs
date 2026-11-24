@@ -7,7 +7,7 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// The Jobs dashboard module: runs, cron jobs, functions, and nodes of the host's Jobs store, with Needs you,
-/// Overview figures and strip tracks, sidebar counts per run status, id lookup, related runs, payloads, live changes
+/// Overview figures and strip tracks, sidebar counts per run status, id lookup, related runs, traces, payloads, live changes
 /// from every node, commands, and Operations.
 /// </summary>
 /// <remarks>
@@ -24,6 +24,7 @@ internal sealed class JobsModule
         IDashboardCountSource,
         IDashboardObjectResolver,
         IDashboardRelatedSource,
+        IDashboardTraceSource,
         IDashboardPayloadSource,
         IDashboardChangeSource,
         IDashboardCommandSource,
@@ -35,6 +36,7 @@ internal sealed class JobsModule
     private readonly JobsCommands _commands;
     private readonly JobsModuleApi _api;
     private readonly JobsCreateEndpoints _create;
+    private readonly int _traceLimit;
 
     public JobsModule(
         IJobsDashboardReader reader,
@@ -58,6 +60,7 @@ internal sealed class JobsModule
         _commands = new JobsCommands(Id, reader, writer, publisher, timeProvider);
         _api = new JobsModuleApi(reader, notifier, timeProvider);
         _create = new JobsCreateEndpoints(reader, writer, timeProvider);
+        _traceLimit = options.TraceLimit;
         GroupIds = [_sources.SameCorrelationGroupId, _sources.ChainGroupId, _sources.CronJobGroupId];
     }
 
@@ -129,6 +132,13 @@ internal sealed class JobsModule
         Argument.IsNotNull(request);
 
         return _sources.GetRelatedAsync(request.Target, cancellationToken);
+    }
+
+    public Task<DashboardTraceAnswer> GetTraceAsync(DashboardTraceRequest request, CancellationToken cancellationToken)
+    {
+        Argument.IsNotNull(request);
+
+        return _sources.GetTraceAsync(request.CorrelationId, _traceLimit, cancellationToken);
     }
 
     public Task<DashboardPayload?> GetPayloadAsync(DashboardPayloadRequest request, CancellationToken cancellationToken)

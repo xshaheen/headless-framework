@@ -21,6 +21,7 @@ namespace Tests.Module;
 public sealed class MessagingModuleSourcesTests : TestBase
 {
     private const string _Outbox = "billing";
+    private const string _TraceId = "order-7f3a";
 
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 8, 12, 0, 0, TimeSpan.Zero));
     private readonly MessagingMetricsEventListener _metrics = new();
@@ -321,6 +322,175 @@ public sealed class MessagingModuleSourcesTests : TestBase
         await again.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task should_map_a_published_message_and_its_two_generations_to_three_items_with_their_causation_keys()
+    {
+        // given: a message a job run published, delivered to two consumers
+        await using var services = _MainStore(out var primary);
+        var runId = Guid.NewGuid().ToString("D");
+        var published = await primary.StoreMessageAsync(
+            MessagingRows.Name,
+            _Correlated("m-1", causationId: runId),
+            cancellationToken: AbortToken
+        );
+        await primary.ChangePublishStateAsync(published, StatusName.Succeeded, cancellationToken: AbortToken);
+        var first = await primary.StoreReceivedMessageAsync(
+            MessagingRows.Name,
+            "billing.charge",
+            _Correlated("m-1", causationId: runId),
+            AbortToken
+        );
+        var second = await primary.StoreReceivedMessageAsync(
+            MessagingRows.Name,
+            "billing.audit",
+            _Correlated("m-1", causationId: runId),
+            AbortToken
+        );
+        var module = _Module(primary);
+
+        // when
+        var answer = await module.GetTraceAsync(_TraceRequest(), AbortToken);
+
+        // then
+        answer.Items.Should().HaveCount(3);
+        answer.Limited.Should().BeFalse();
+        answer.UnavailableSources.Should().BeEmpty();
+        var message = answer
+            .Items.Should()
+            .ContainSingle(item => string.Equals(item.Target.Kind, "published", StringComparison.Ordinal))
+            .Subject;
+        message.Target.Id.Should().Be($"node-a~primary~{published.StorageId:D}");
+        message.Key.Should().Be(new DashboardTraceKey { Kind = DashboardTraceKeyKind.Message, Value = "m-1" });
+        message.Causation.Should().Be(new DashboardTraceKey { Kind = DashboardTraceKeyKind.Run, Value = runId });
+        message.DeliversMessageId.Should().BeNull();
+        message.Status.Should().Be("Succeeded");
+        message.StatusRole.Should().Be("ok");
+        message.CorrelationId.Should().Be(_TraceId);
+        message.Node.Should().Be("node-a");
+        var generations = answer
+            .Items.Where(item => string.Equals(item.Target.Kind, "received", StringComparison.Ordinal))
+            .ToList();
+        generations
+            .Select(item => item.Key)
+            .Should()
+            .BeEquivalentTo([
+                new DashboardTraceKey { Kind = DashboardTraceKeyKind.Delivery, Value = first.StorageId.ToString("D") },
+                new DashboardTraceKey { Kind = DashboardTraceKeyKind.Delivery, Value = second.StorageId.ToString("D") },
+            ]);
+        generations.Should().OnlyContain(item => item.DeliversMessageId == "m-1");
+        generations
+            .Should()
+            .OnlyContain(item =>
+                item.Causation == new DashboardTraceKey { Kind = DashboardTraceKeyKind.Run, Value = runId }
+            );
+        answer.ListLink!.Path.Should().Be("published");
+        answer.ListLink.State!.Value.GetProperty("correlationId").GetString().Should().Be(_TraceId);
+    }
+
+    [Fact]
+    public async Task should_key_a_message_published_inside_a_consumer_to_the_message_it_consumed()
+    {
+        // given: m-2 was published by a consumer of m-1, which this store holds only as a received generation
+        await using var services = _MainStore(out var primary);
+        await primary.StoreReceivedMessageAsync(
+            MessagingRows.Name,
+            MessagingRows.Consumer,
+            _Correlated("m-1", causationId: null),
+            AbortToken
+        );
+        await primary.StoreMessageAsync(
+            MessagingRows.Name,
+            _Correlated("m-2", causationId: "m-1"),
+            cancellationToken: AbortToken
+        );
+        var module = _Module(primary);
+
+        // when
+        var answer = await module.GetTraceAsync(_TraceRequest(), AbortToken);
+
+        // then
+        answer
+            .Items.Single(item => string.Equals(item.Target.Kind, "published", StringComparison.Ordinal))
+            .Causation.Should()
+            .Be(new DashboardTraceKey { Kind = DashboardTraceKeyKind.Message, Value = "m-1" });
+    }
+
+    [Fact]
+    public async Task should_show_a_pending_scheduled_delivery_with_its_due_time()
+    {
+        // given
+        await using var services = _MainStore(out var primary);
+        var dueAt = _time.GetUtcNow().AddHours(3);
+        var scheduled = await primary.StoreScheduledMessageAsync(
+            MessagingRows.Name,
+            _Correlated("m-later", causationId: null),
+            dueAt,
+            cancellationToken: AbortToken
+        );
+        var module = _Module(primary);
+
+        // when
+        var answer = await module.GetTraceAsync(_TraceRequest(), AbortToken);
+
+        // then
+        var item = answer.Items.Should().ContainSingle().Subject;
+        item.Target.Id.Should().Be($"node-a~primary~{scheduled.StorageId:D}");
+        item.Status.Should().Be("Delayed");
+        item.StatusRole.Should().Be("sched");
+        item.TimestampKind.Should().Be(DashboardTraceTimestampKind.Due);
+        item.At.Should().Be(dueAt);
+    }
+
+    [Fact]
+    public async Task should_list_the_oldest_500_items_and_set_limited_when_two_stores_each_return_400_rows()
+    {
+        // given: the main store holds the even minutes and the outbox the odd ones
+        var start = _time.GetUtcNow();
+        var primary = _TraceStore(Enumerable.Range(0, 400).Select(i => _Row(start.AddMinutes(i * 2))));
+        var outbox = _TraceStore(Enumerable.Range(0, 400).Select(i => _Row(start.AddMinutes((i * 2) + 1))));
+        var module = _Module(primary, outbox);
+
+        // when
+        var answer = await module.GetTraceAsync(_TraceRequest(), AbortToken);
+
+        // then
+        answer.Items.Should().HaveCount(500);
+        answer.Limited.Should().BeTrue();
+        answer
+            .Items.Should()
+            .Equal(Enumerable.Range(0, 500).Select(i => start.AddMinutes(i)), (item, at) => item.At == at);
+    }
+
+    [Fact]
+    public async Task should_name_a_custom_store_without_the_lookup_unavailable_as_not_supported()
+    {
+        // given: the outbox's monitoring API keeps the lookup's default, which throws NotSupportedException
+        await using var services = _MainStore(out var primary);
+        await primary.StoreMessageAsync(
+            MessagingRows.Name,
+            _Correlated("m-1", causationId: null),
+            cancellationToken: AbortToken
+        );
+        var outbox = Substitute.For<IDataStorage>();
+        var monitoring = Substitute.For<IMonitoringApi>();
+        monitoring
+            .GetCorrelatedMessagesAsync(Arg.Any<MessageTraceQuery>(), Arg.Any<CancellationToken>())
+            .Throws(
+                new NotSupportedException(
+                    "The monitoring API does not support reading the messages of a correlation id."
+                )
+            );
+        outbox.GetMonitoringApi().Returns(monitoring);
+        var module = _Module(primary, outbox);
+
+        // when
+        var answer = await module.GetTraceAsync(_TraceRequest(), AbortToken);
+
+        // then
+        answer.UnavailableSources.Should().Equal($"{_Outbox} (correlation lookup not supported)");
+        answer.Items.Should().ContainSingle().Which.Key.Value.Should().Be("m-1");
+    }
+
     // Completes a wait when the matching change is published, instead of polling the list of what was published.
     private sealed class NotifyingEventPublisher : IDashboardEventPublisher
     {
@@ -427,4 +597,59 @@ public sealed class MessagingModuleSourcesTests : TestBase
     }
 
     private static DashboardCountsRequest _CountsRequest() => new() { User = new() };
+
+    private static DashboardTraceRequest _TraceRequest() => new() { CorrelationId = _TraceId, User = new() };
+
+    private MessagingModule _Module(IDataStorage primary)
+    {
+        return new MessagingModule(
+            _Stores(primary),
+            _metrics,
+            new MessagingDashboardOptions { NodeName = "node-a" },
+            new ServiceCollection().BuildServiceProvider()
+        );
+    }
+
+    private static MediumMessage _Correlated(string messageId, string? causationId)
+    {
+        var message = MessagingRows.Medium(messageId);
+        message.Origin.Headers[Headers.CorrelationId] = _TraceId;
+
+        if (causationId is not null)
+        {
+            message.Origin.Headers[Headers.CausationId] = causationId;
+        }
+
+        return message;
+    }
+
+    private static MessageTraceRow _Row(DateTimeOffset added) =>
+        new()
+        {
+            StorageId = Guid.NewGuid(),
+            MessageId = Guid.NewGuid().ToString("D"),
+            Name = MessagingRows.Name,
+            Added = added,
+            Status = StatusName.Succeeded,
+        };
+
+    // A store that answers the trace lookup as a real one does: its oldest limit + 1 rows.
+    private static IDataStorage _TraceStore(IEnumerable<MessageTraceRow> published)
+    {
+        var rows = published.ToList();
+        var storage = Substitute.For<IDataStorage>();
+        var monitoring = Substitute.For<IMonitoringApi>();
+        monitoring
+            .GetCorrelatedMessagesAsync(Arg.Any<MessageTraceQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call => new ValueTask<MessageTraceResult>(
+                new MessageTraceResult
+                {
+                    Published = [.. rows.Take(call.Arg<MessageTraceQuery>().Limit + 1)],
+                    Received = [],
+                }
+            ));
+        storage.GetMonitoringApi().Returns(monitoring);
+
+        return storage;
+    }
 }

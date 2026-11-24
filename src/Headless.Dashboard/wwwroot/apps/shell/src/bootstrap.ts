@@ -437,6 +437,69 @@ function safely<T>(action: () => T): T | undefined {
   }
 }
 
+/** The parts of the page's address a return URL is built from. */
+export interface PageAddress {
+  pathname: string
+  search: string
+  hash: string
+}
+
+type FragmentStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
+
+function fragmentKey(basePath: string) {
+  return `headless-dashboard:return-fragment:${basePath}`
+}
+
+/**
+ * The URL the sign-in page returns to, without the page's fragment. A fragment can hold a correlation id
+ * (`/trace#ord-7`), and a return URL travels to the server in a query string, so the fragment waits in this tab's
+ * session storage instead, for `restoreFragment` to put back once the page it belongs to opens again.
+ */
+export function returnUrlOf(basePath: string, address: PageAddress, storage?: FragmentStorage) {
+  const path = `${address.pathname}${address.search}`
+
+  if (address.hash && address.hash !== '#') {
+    safely(() => storage?.setItem(fragmentKey(basePath), JSON.stringify({ path, hash: address.hash })))
+  }
+
+  return path
+}
+
+/**
+ * The page's URL with the fragment `returnUrlOf` kept back, when this is the page it was kept for and the address has
+ * no fragment of its own; `undefined` otherwise. The kept fragment is used once.
+ */
+export function restoreFragment(basePath: string, address: PageAddress, storage?: FragmentStorage) {
+  const key = fragmentKey(basePath)
+  const text = safely(() => storage?.getItem(key))
+
+  if (!text) {
+    return undefined
+  }
+
+  safely(() => storage?.removeItem(key))
+
+  let kept: unknown
+
+  try {
+    kept = JSON.parse(text)
+  } catch {
+    return undefined
+  }
+
+  const path = `${address.pathname}${address.search}`
+
+  return typeof kept === 'object' &&
+    kept !== null &&
+    'path' in kept &&
+    'hash' in kept &&
+    kept.path === path &&
+    typeof kept.hash === 'string' &&
+    !address.hash
+    ? `${path}${kept.hash}`
+    : undefined
+}
+
 /** The states the sign-in page explains, carried in its `state` query parameter. */
 export type SignInState = 'signed-out' | 'session-ended' | 'forbidden'
 

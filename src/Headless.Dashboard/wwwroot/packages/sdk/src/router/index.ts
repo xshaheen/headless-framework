@@ -19,6 +19,15 @@ export {
   useParams,
   useResolvedPath,
   useRouteError,
-  useSearchParams,
 } from 'react-router'
-export type { LinkProps, NavLinkProps, NavigateFunction, Params, RouteObject, To } from 'react-router'
+export { useSearchParams } from './search-params.ts'
+export type {
+  LinkProps,
+  Location,
+  NavLinkProps,
+  NavigateFunction,
+  Params,
+  RouteObject,
+  SetURLSearchParams,
+  To,
+} from 'react-router'

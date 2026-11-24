@@ -127,11 +127,14 @@ describe('shell keyboard', () => {
     expect(document.activeElement).toBe(field)
 
     await user.paste('job_7f2b')
+    const matches = await screen.findByRole('region', { name: 'Matches' })
+    await within(matches).findByRole('button', { name: 'billing.charge' })
+    // A run id can also be a correlation id: the run comes first, and Enter opens it.
     expect(
-      await within(await screen.findByRole('region', { name: 'Matches' })).findByRole('button', {
-        name: 'billing.charge',
-      }),
-    ).toBeTruthy()
+      within(matches)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['billing.charge', 'Open trace for job_7f2b'])
 
     await user.keyboard('{Enter}')
 
@@ -142,14 +145,91 @@ describe('shell keyboard', () => {
     )
   })
 
-  it('says no object has a pasted id that matches nothing', async () => {
+  it('offers the trace of a pasted id that names no object, and opens it on Enter', async () => {
     const user = userEvent.setup()
-    renderShell(shellState([]))
+    const shell = renderShell(shellState([]), {
+      api: (request) => (request.path === 'trace' ? { modules: [], hidden: 0, rows: [] } : emptyAggregates(request)),
+    })
 
     await user.keyboard('/')
-    await user.paste('nope-123')
+    await user.paste('ord-7')
 
-    expect(await screen.findByText('No object with id nope-123')).toBeTruthy()
+    const matches = await screen.findByRole('region', { name: 'Matches' })
+    expect(await within(matches).findByRole('button', { name: 'Open trace for ord-7' })).toBeTruthy()
+    expect(screen.queryByText(/No object with id/)).toBeNull()
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/trace'))
+    expect(shell.router.state.location.hash).toBe('#ord-7')
+  })
+
+  it('offers the trace of an id too short to look up, and opens it on Enter', async () => {
+    const user = userEvent.setup()
+    const shell = renderShell(shellState([]), {
+      api: (request) => (request.path === 'trace' ? { modules: [], hidden: 0, rows: [] } : emptyAggregates(request)),
+    })
+
+    await user.keyboard('/')
+    await user.paste('a7')
+
+    expect(await screen.findByRole('button', { name: 'Open trace for a7' })).toBeTruthy()
+    expect(shell.requests.some((request) => request.path === 'resolve')).toBe(false)
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(shell.router.state.location.hash).toBe('#a7'))
+  })
+
+  it('says no object has a pasted text that cannot be a correlation id', async () => {
+    const user = userEvent.setup()
+    const shell = renderShell(shellState([]))
+    const long = `x${'y'.repeat(200)}`
+
+    await user.keyboard('/')
+    await user.paste(long)
+
+    expect(await screen.findByText(`No object with id ${long}`)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Open trace for/ })).toBeNull()
+    await user.keyboard('{Enter}')
+    expect(shell.router.state.location.pathname).not.toBe('/trace')
+  })
+
+  it('opens the palette on a pasted id two objects share, with its trace offered last', async () => {
+    const user = userEvent.setup()
+    const modules = [moduleManifest('jobs', { displayName: 'Jobs' })]
+    renderShell(shellState(modules), {
+      path: '/jobs/settings',
+      files: moduleFiles(modules),
+      api: (request) =>
+        request.path === 'resolve'
+          ? {
+              modules: [
+                {
+                  id: 'jobs',
+                  displayName: 'Jobs',
+                  stale: false,
+                  items: [
+                    { target: { module: 'jobs', kind: 'run', id: 'job_7f2b' }, title: 'billing.charge' },
+                    { target: { module: 'jobs', kind: 'cron-job', id: 'job_7f2b' }, title: 'billing.nightly' },
+                  ],
+                },
+              ],
+            }
+          : emptyAggregates(request),
+    })
+
+    await screen.findByRole('heading', { name: 'Jobs settings view' })
+    await user.keyboard('/')
+    await user.paste('job_7f2b')
+    await within(await screen.findByRole('region', { name: 'Matches' })).findByRole('button', {
+      name: 'billing.nightly',
+    })
+    await user.keyboard('{Enter}')
+
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' })
+    await within(palette).findByRole('menuitem', { name: /Open trace for job_7f2b/ })
+    expect(within(palette).getAllByRole('menuitem').at(-1)?.textContent).toContain('Open trace for job_7f2b')
+    expect(within(palette).getAllByRole('menuitem')[0]?.textContent).toContain('billing.charge')
   })
 
   it('says a lookup failed, rather than that nothing has the id, when the request fails', async () => {

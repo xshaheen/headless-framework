@@ -53,6 +53,14 @@ public sealed class MessagingDashboardOptions : DashboardModuleOptions
     public TimeSpan SearchTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
+    /// Gets or sets the most messages the trace page lists for one correlation id: published messages, received
+    /// generations, and scheduled deliveries together, over every store and node, oldest first. Defaults to 500; past it,
+    /// the page shows the count as <c>N+</c> and links the published list searched by the id. Each store and node read is
+    /// bounded by <see cref="StoreTimeout"/>. Between 1 and 10,000.
+    /// </summary>
+    public int TraceLimit { get; set; } = 500;
+
+    /// <summary>
     /// Gets or sets how this node calls the other Messaging nodes discovery lists, and how it admits their calls.
     /// Forwarding is off until a key or a policy is set.
     /// </summary>
@@ -69,6 +77,9 @@ public sealed class MessagingDashboardOptions : DashboardModuleOptions
 
 internal sealed class MessagingDashboardOptionsValidator : AbstractValidator<MessagingDashboardOptions>
 {
+    /// <summary>The highest <see cref="MessagingDashboardOptions.TraceLimit"/>, which a forwarded trace read also keeps to.</summary>
+    internal const int MaxTraceLimit = 10_000;
+
     public MessagingDashboardOptionsValidator()
     {
         // A white-space policy name passes the shell's "empty means inherit" check but names no host policy, so
@@ -103,6 +114,10 @@ internal sealed class MessagingDashboardOptionsValidator : AbstractValidator<Mes
             .GreaterThan(TimeSpan.Zero)
             .LessThan(ForwardingClient.WriteTimeout)
             .WithMessage("SearchTimeout must be positive and under 30 seconds.");
+
+        RuleFor(x => x.TraceLimit)
+            .InclusiveBetween(1, MaxTraceLimit)
+            .WithMessage("TraceLimit must be between 1 and 10000.");
 
         RuleFor(x => x.Forwarding).NotNull().SetValidator(new MessagingForwardingOptionsValidator());
 

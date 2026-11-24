@@ -488,23 +488,104 @@ describe('jobs runs list', () => {
     })
   })
 
-  it('opens the runs list filtered by the open run’s correlation id on T', async () => {
+  it('offers Open trace and the host tracing tool on a run with a correlation id, and opens the trace on T', async () => {
     const actor = user()
-    const first = run('Succeeded', { function: 'orders.place', correlationId: 'corr-7f2' })
-    const related = run('Failed', { function: 'billing.charge', correlationId: 'corr-7f2' })
-    const other = run('Succeeded', { function: 'mail.send', correlationId: 'corr-other' })
-    const view = list({ runs: [first, related, other] })
+    const traced = run('Succeeded', { function: 'orders.place', correlationId: 'ord-7', traceId: 'abc123' })
+    const view = list({ runs: [traced] }, '', { traceLinkTemplate: 'https://traces.example/{traceId}' })
 
     await actor.click(await screen.findByRole('row', { name: /orders\.place/ }))
+
+    expect(within(panel(traced.id)).getByRole('link', { name: 'Open trace' }).getAttribute('href')).toBe('/trace#ord-7')
+    expect(within(panel(traced.id)).getByRole('link', { name: 'Open in tracing tool' }).getAttribute('href')).toBe(
+      'https://traces.example/abc123',
+    )
+
     await actor.keyboard('t')
 
-    await waitFor(() => expect(screen.queryByRole('row', { name: /mail\.send/ })).toBeNull())
-    expect(screen.getByRole('row', { name: /billing\.charge/ })).toBeTruthy()
-    expect(view.location().pathname).toBe('/jobs/runs')
-    expect(view.requests.filter((request) => request.path === 'jobs/runs').at(-1)?.query?.correlationId).toBe(
-      'corr-7f2',
+    await waitFor(() => expect(view.location().pathname).toBe('/trace'))
+    expect(view.location().hash).toBe('#ord-7')
+  })
+
+  it('disables Open trace and T on a run with no correlation id, saying why', async () => {
+    const actor = user()
+    const untraced = run('Succeeded', { function: 'orders.place' })
+    const view = list({ runs: [untraced] })
+
+    await actor.click(await screen.findByRole('row', { name: /orders\.place/ }))
+    const button = within(panel(untraced.id)).getByRole('button', { name: 'Open trace' })
+    const before = `${view.location().pathname}${view.location().search}`
+
+    await actor.keyboard('t')
+
+    expect(button.getAttribute('aria-disabled') ?? button.getAttribute('disabled')).not.toBeNull()
+    expect(described(button)).toBe('No correlation id')
+    expect(`${view.location().pathname}${view.location().search}`).toBe(before)
+  })
+
+  it('filters by a correlation id from history state through a search body, across Back and Forward', async () => {
+    const actor = user()
+    const first = run('Succeeded', { function: 'orders.place', correlationId: 'ord-7' })
+    const related = run('Failed', { function: 'billing.charge', correlationId: 'ord-7' })
+    const other = run('Succeeded', { function: 'mail.send', correlationId: 'ord-8' })
+    const view = list({ runs: [first, related, other] }, '', { state: { correlationId: 'ord-7' } })
+
+    await screen.findByRole('row', { name: /orders\.place/ })
+    expect(screen.queryByRole('row', { name: /mail\.send/ })).toBeNull()
+    expect(screen.getByText('ord-7', { selector: 'b' })).toBeTruthy()
+
+    // Opening a row writes the URL; the filter stays with it.
+    await actor.click(screen.getByRole('row', { name: /billing\.charge/ }))
+    await waitFor(() => expect(view.location().search).toContain('open='))
+    expect(screen.queryByRole('row', { name: /mail\.send/ })).toBeNull()
+
+    await act(() => view.navigate('cron-jobs'))
+    await act(() => view.go(-1))
+    await screen.findByRole('row', { name: /orders\.place/ })
+    expect(screen.queryByRole('row', { name: /mail\.send/ })).toBeNull()
+    await act(() => view.go(1))
+    await act(() => view.go(-1))
+    await screen.findByRole('row', { name: /orders\.place/ })
+    expect(screen.queryByRole('row', { name: /mail\.send/ })).toBeNull()
+
+    const searches = view.requests.filter((request) => request.path === 'jobs/runs/search')
+    expect(searches.length).toBeGreaterThan(0)
+    expect(searches.every((request) => request.method === 'POST')).toBe(true)
+    expect(searches.at(-1)?.body).toMatchObject({ correlationId: 'ord-7' })
+    // No request's path or query carries the id.
+    for (const request of view.requests) {
+      expect(`${request.path} ${JSON.stringify(request.query ?? {})}`).not.toContain('ord-7')
+    }
+    expect(view.location().search).not.toContain('ord-7')
+  })
+
+  it('opens unfiltered from an old link that put the correlation id in the URL', async () => {
+    const other = run('Succeeded', { function: 'mail.send', correlationId: 'ord-8' })
+    list(
+      { runs: [run('Succeeded', { function: 'orders.place', correlationId: 'ord-7' }), other] },
+      '?correlationId=ord-7',
     )
-    expect(screen.getByText('corr-7f2', { selector: 'b' })).toBeTruthy()
+
+    expect(await screen.findByRole('row', { name: /mail\.send/ })).toBeTruthy()
+  })
+
+  it('clears the correlation filter with its chip, and the list reads every run again', async () => {
+    const actor = user()
+    const view = list(
+      {
+        runs: [
+          run('Succeeded', { function: 'orders.place', correlationId: 'ord-7' }),
+          run('Succeeded', { function: 'mail.send', correlationId: 'ord-8' }),
+        ],
+      },
+      '',
+      { state: { correlationId: 'ord-7' } },
+    )
+
+    await screen.findByRole('row', { name: /orders\.place/ })
+    await actor.click(screen.getByRole('button', { name: 'Clear correlation filter' }))
+
+    expect(await screen.findByRole('row', { name: /mail\.send/ })).toBeTruthy()
+    expect(view.location().state).toBeNull()
   })
 
   it('creates a chain with a failure branch, submits the tree, and opens the new chain', async () => {

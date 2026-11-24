@@ -47,6 +47,7 @@ public sealed class SetupDashboardTests : TestBase
     [Theory]
     [InlineData("api")]
     [InlineData("needs-you")]
+    [InlineData("trace")]
     public void should_throw_as_reserved_when_a_module_id_names_a_shell_path(string id)
     {
         var services = new ServiceCollection();

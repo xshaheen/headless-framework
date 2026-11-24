@@ -2,13 +2,18 @@
 // sit near their size budget.
 'use no memo'
 
-import { CommandPalette, useSelectionCommands, type PaletteItem } from '@headless/dashboard-sdk/components'
+import {
+  CommandPalette,
+  traceAddress,
+  useSelectionCommands,
+  type PaletteItem,
+} from '@headless/dashboard-sdk/components'
 import { useNavigate } from '@headless/dashboard-sdk/router'
 import { useState, type FormEvent } from 'react'
 import { moduleSidebarEntries, type BootstrapState } from '../bootstrap.ts'
 import { modulePath, productHome } from '../route-handles.ts'
 import { useOpenObject, useShell } from '../shell-context.tsx'
-import { useResolve } from '../shell-data.ts'
+import { looksLikeId, looksLikeTraceId, useResolve } from '../shell-data.ts'
 
 /** The palette's static items: Attention, each product, every module's sidebar entries, and every client command the user may run. */
 function staticItems(
@@ -131,10 +136,25 @@ export function ShellPalette({ isOpen, onOpenChange, initialQuery = '', onOpenAt
     kind: 'Selection',
     onAction: command.run,
   }))
+  // Offered once the lookup answers, last, so an object the text names always comes first. It is not a match: any
+  // text that looks like an id may be a correlation id, and the trace page says when nothing carries it.
+  const id = query.trim()
+  const trace: PaletteItem[] =
+    (resolved || !looksLikeId(id)) && looksLikeTraceId(id)
+      ? [
+          {
+            id: 'shell.trace',
+            label: `Open trace for ${id}`,
+            kind: 'Trace',
+            onAction: () => void navigate(traceAddress(id)),
+          },
+        ]
+      : []
   const items = [
     ...objects,
     ...selection,
     ...staticItems(state, (to) => void navigate(to), runCommand, onOpenAttention),
+    ...trace,
   ]
 
   function onInput(event: FormEvent<HTMLDivElement>) {

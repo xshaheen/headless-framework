@@ -49,7 +49,7 @@ public sealed record DashboardObject
 
     /// <summary>
     /// Gets the W3C trace id the object carries, or <see langword="null"/>. When set, the shell offers
-    /// <c>Open trace</c> through the host's trace link template.
+    /// <c>Open in tracing tool</c> through the host's trace link template.
     /// </summary>
     public string? TraceId { get; init; }
 }

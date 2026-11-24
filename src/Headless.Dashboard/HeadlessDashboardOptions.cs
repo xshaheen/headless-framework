@@ -29,7 +29,7 @@ public sealed class HeadlessDashboardOptions
     /// <summary>
     /// Gets or sets the link to the host's tracing tool, with <c>{traceId}</c> where the W3C trace id goes, such as
     /// <c>https://apm.example/trace/{traceId}</c>. When <see langword="null"/> or empty, the dashboard offers no
-    /// <c>Open trace</c> link.
+    /// <c>Open in tracing tool</c> link.
     /// </summary>
     public string? TraceLinkTemplate { get; set; }
 
