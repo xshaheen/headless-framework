@@ -122,6 +122,32 @@ public sealed class TextRedactionActivityProcessorTests : TestBase
     }
 
     [Fact]
+    public void should_erase_every_occurrence_of_a_classified_tag_added_more_than_once()
+    {
+        // when: AddTag keeps both values under one key, where SetTag would only replace the first
+        var span = _Record(
+            activity =>
+            {
+                activity.AddTag("app.tier", "gold");
+                activity.AddTag("enduser.email", "a@example.test");
+                activity.AddTag("enduser.email", "b@example.test");
+            },
+            maskText: false,
+            static setup => setup.ClassifyProperty("enduser.email", HeadlessDataClassifications.Private)
+        );
+
+        // then: the exporter sees no raw value under the key, and the other tag is kept
+        span.TagObjects.Where(t => string.Equals(t.Key, "enduser.email", StringComparison.Ordinal))
+            .Select(t => t.Value)
+            .Should()
+            .Equal(string.Empty, string.Empty);
+        span.TagObjects.Select(t => t.Value as string)
+            .Should()
+            .NotContain(value => value != null && value.Contains('@'));
+        span.GetTagItem("app.tier").Should().Be("gold");
+    }
+
+    [Fact]
     public void should_mask_a_known_shape_in_any_string_tag_and_keep_a_numeric_tag_typed()
     {
         // when
