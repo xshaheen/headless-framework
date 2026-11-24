@@ -1,13 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.InMemory;
 
 /// <summary>
 /// The in-memory form of a <see cref="MessageListQuery"/>'s filters, shared by the list, the capped count, and an
 /// Operation's scope read. Text compares ordinally, as the relational stores compare it byte for byte, except the
-/// content and correlation id searches, which ignore case as the relational stores' <c>LIKE</c> does.
+/// content search, which ignores case as the relational stores' <c>LIKE</c> does. A correlation id is ordinal too, and
+/// a row whose id is too long for the relational stores' column is as unfindable here as there.
 /// </summary>
 internal static class InMemoryMessageFilter
 {
@@ -46,9 +48,10 @@ internal static class InMemoryMessageFilter
             )
             && (
                 string.IsNullOrEmpty(query.CorrelationId)
-                || (
-                    message.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
-                    && string.Equals(correlationId, query.CorrelationId, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    StoredCorrelation.CorrelationId(message.Origin.Headers),
+                    query.CorrelationId,
+                    StringComparison.Ordinal
                 )
             );
     }

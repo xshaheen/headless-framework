@@ -87,6 +87,8 @@ internal sealed class MessagingTables
         MessageId = column("MessageId");
         ExceptionInfo = column("ExceptionInfo");
         FailureFingerprint = column("FailureFingerprint");
+        CorrelationId = column("CorrelationId");
+        CausationId = column("CausationId");
         Transport = column("Transport");
         IsInboxRecord = column("IsInboxRecord");
         TenantPresent = column("TenantPresent");
@@ -225,6 +227,10 @@ internal sealed class MessagingTables
     public string ExceptionInfo { get; }
 
     public string FailureFingerprint { get; }
+
+    public string CorrelationId { get; }
+
+    public string CausationId { get; }
 
     /// <summary>The published table's named transport, null for the default transport.</summary>
     public string Transport { get; }

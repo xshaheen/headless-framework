@@ -147,6 +147,57 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     }
 
     /// <summary>
+    /// Returns at most <paramref name="limit"/> runs, time jobs and cron occurrences together, that carry
+    /// <paramref name="correlationId"/>, oldest first.
+    /// </summary>
+    /// <param name="correlationId">The correlation id every run must carry, compared ordinally.</param>
+    /// <param name="limit">The most runs to return; a caller that must know whether more exist asks for one extra.</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>The runs, ordered by <see cref="JobCorrelatedRun.ExecutionTime"/>, a run without one last.</returns>
+    /// <remarks>
+    /// A store whose text comparison is not ordinal, such as a case-insensitive column collation, still returns only
+    /// runs whose correlation id equals <paramref name="correlationId"/> character for character, and fills the limit from the
+    /// matches rather than from the rows the store considers equal. Default method built on
+    /// <see cref="ListJobRunsAsync"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="correlationId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="correlationId"/> is empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is not positive.</exception>
+    /// <exception cref="NotSupportedException">The provider does not support dashboard reads.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IReadOnlyList<JobCorrelatedRun>> ReadJobRunsByCorrelationAsync(
+        string correlationId,
+        int limit,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNullOrEmpty(correlationId);
+        Argument.IsPositive(limit);
+
+        var page = await ListJobRunsAsync(
+                new JobRunQuery { CorrelationId = correlationId },
+                after: null,
+                pageSize: limit,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return
+        [
+            .. page.Runs.Select(static run => new JobCorrelatedRun
+            {
+                Kind = run.Kind,
+                Id = run.Id,
+                Function = run.Function,
+                Status = run.Status,
+                ExecutionTime = run.ExecutionTime,
+                ExecutedAt = run.ExecutedAt,
+                CausationId = run.CausationId,
+            }),
+        ];
+    }
+
+    /// <summary>
     /// Counts the runs of one table that <paramref name="query"/> matches, stopping at <paramref name="limit"/>.
     /// </summary>
     /// <param name="kind">The table to count.</param>

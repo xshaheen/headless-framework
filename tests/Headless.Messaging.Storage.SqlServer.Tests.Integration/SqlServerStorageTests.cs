@@ -179,7 +179,8 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         bool published,
         short rawLane,
         DateTimeOffset nextRetryAt,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? correlationId = null
     )
     {
         _EnsureInitialized();
@@ -190,9 +191,9 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         var receivedValues = published ? string.Empty : ", 'unsupported-lane-consumer', NULL, @ConsumerIdentityHash";
         var sql = $"""
             INSERT INTO headless.{tableName}
-                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LeaseGeneration, LeaseState, LeaseExpiresAt, LeaseHolder, StatusName, MessageId{receivedColumns})
+                (Id, Version, Name, Content, IntentType, Retries, Added, ExpiresAt, NextRetryAt, LeaseGeneration, LeaseState, LeaseExpiresAt, LeaseHolder, StatusName, MessageId, CorrelationId{receivedColumns})
             VALUES
-                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, 1, 1, @LeaseExpiresAt, 'stale-unsupported-lane-owner', 'Failed', @MessageId{receivedValues});
+                (@Id, 'v1', 'unsupported-lane', @Content, @IntentType, 0, @Added, NULL, @NextRetryAt, 1, 1, @LeaseExpiresAt, 'stale-unsupported-lane-owner', 'Failed', @MessageId, @CorrelationId{receivedValues});
             """;
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
@@ -209,6 +210,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
                     NextRetryAt = nextRetryAt,
                     LeaseExpiresAt = nextRetryAt,
                     MessageId = $"unsupported-lane-{id:N}",
+                    CorrelationId = correlationId,
                     ConsumerIdentityHash = RelationalDataStorage.CreateConsumerIdentityHash(
                         "v1",
                         $"unsupported-lane-{id:N}",
@@ -453,7 +455,7 @@ public partial class SqlServerStorageTests(SqlServerTestFixture fixture) : DataS
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
         receiptColumnCount.Should().Be(9);
-        steps.Should().Equal("1", "2");
+        steps.Should().Equal("1", "2", "3");
     }
 
     [Fact]

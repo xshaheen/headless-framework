@@ -153,7 +153,7 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                     .Range(0, JobRunCount.DefaultCap + 1)
                     .Select(index => _TimeJob(JobStatus.Succeeded, at.AddSeconds(index)))
                     .ToArray();
-                await store.AddTimeJobsAsync(jobs, ct);
+                await store.AddTimeJobsAsync([.. jobs], ct);
                 await _AddTimeJobAsync(store, JobStatus.Failed, at, ct, function: "other.job");
 
                 var all = await store.CountJobRunsAsync(new JobRunQuery(), cancellationToken: ct);
@@ -454,6 +454,258 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
                 (await store.GetJobRunAsync(Guid.NewGuid(), ct)).Should().BeNull();
             }
         );
+    }
+
+    public virtual async Task a_correlation_read_returns_only_runs_whose_id_matches_character_for_character()
+    {
+        await _RunAsync(
+            "reads-correlation-case",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                // An occurrence takes its correlation id from its cron job when it is created.
+                var upperCron = await _SeedCronAsync(ct, correlationId: "C-42");
+                var lowerCron = await _SeedCronAsync(ct, correlationId: "c-42");
+                var upper = await _AddTimeJobAsync(store, JobStatus.Succeeded, at, ct, correlationId: "C-42");
+                var lower = await _AddTimeJobAsync(
+                    store,
+                    JobStatus.Succeeded,
+                    at.AddMinutes(1),
+                    ct,
+                    correlationId: "c-42"
+                );
+                await _AddTimeJobAsync(store, JobStatus.Succeeded, at.AddMinutes(2), ct, correlationId: "c-42 ");
+                var upperOccurrence = await _AddOccurrenceAsync(
+                    store,
+                    upperCron,
+                    JobStatus.Succeeded,
+                    at.AddMinutes(3),
+                    ct
+                );
+                var lowerOccurrence = await _AddOccurrenceAsync(
+                    store,
+                    lowerCron,
+                    JobStatus.Succeeded,
+                    at.AddMinutes(4),
+                    ct
+                );
+
+                var lowerRead = await store.ReadJobRunsByCorrelationAsync("c-42", 10, ct);
+                var upperRead = await store.ReadJobRunsByCorrelationAsync("C-42", 10, ct);
+                var count = await store.CountJobRunsAsync(
+                    new JobRunQuery { CorrelationId = "c-42" },
+                    cancellationToken: ct
+                );
+
+                var buckets = await store.CountJobRunBucketRowsAsync(
+                    JobRunKind.TimeJob,
+                    new JobRunQuery { CorrelationId = "c-42" },
+                    [at.AddMinutes(-1), at.AddMinutes(10)],
+                    ct
+                );
+
+                lowerRead.Select(x => x.Id).Should().Equal(lower, lowerOccurrence);
+                upperRead.Select(x => x.Id).Should().Equal(upper, upperOccurrence);
+                count.Count.Should().Be(2);
+                // The runs chart counts only the exact id, though the store groups C-42 and c-42 alike.
+                buckets
+                    .Should()
+                    .ContainSingle()
+                    .Which.Counts.Should()
+                    .Equal(new Dictionary<JobStatus, int> { [JobStatus.Succeeded] = 1 });
+            }
+        );
+    }
+
+    public virtual async Task an_operation_scope_for_a_correlation_id_never_reaches_a_run_with_a_different_case()
+    {
+        await _RunAsync(
+            "reads-correlation-scope",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var upperCron = await _SeedCronAsync(ct, correlationId: "C-42");
+                var lowerCron = await _SeedCronAsync(ct, correlationId: "c-42");
+                var upper = await _AddTimeJobAsync(store, JobStatus.Failed, at, ct, correlationId: "C-42");
+                var lower = await _AddTimeJobAsync(
+                    store,
+                    JobStatus.Failed,
+                    at.AddMinutes(1),
+                    ct,
+                    correlationId: "c-42"
+                );
+                var upperOccurrence = await _AddOccurrenceAsync(
+                    store,
+                    upperCron,
+                    JobStatus.Failed,
+                    at.AddMinutes(2),
+                    ct
+                );
+                var lowerOccurrence = await _AddOccurrenceAsync(
+                    store,
+                    lowerCron,
+                    JobStatus.Failed,
+                    at.AddMinutes(3),
+                    ct
+                );
+                var highWater = (await store.GetLatestChangeMarkerAsync(ct))!.Value;
+                var query = new JobRunQuery { CorrelationId = "c-42" };
+
+                foreach (var kind in new[] { JobOperationKind.Requeue, JobOperationKind.Delete })
+                {
+                    var scope = _Scope(kind, highWater) with { Query = query };
+
+                    var chunk = await store.ReadJobOperationScopeAsync(scope, after: null, chunkSize: 10, ct);
+                    var reach = await store.CountJobOperationScopeAsync(scope, cancellationToken: ct);
+
+                    chunk.Targets.Select(x => x.Id).Should().BeEquivalentTo([lower, lowerOccurrence], kind.ToString());
+                    reach.Should().Be(new JobRunCount(2, Capped: false), kind.ToString());
+                    chunk.Targets.Select(x => x.Id).Should().NotContain([upper, upperOccurrence], kind.ToString());
+                }
+
+                var timeScope = _Scope(JobOperationKind.Delete, highWater) with { Query = query };
+                var firstOnly = await store.ReadJobOperationScopeAsync(timeScope, after: null, chunkSize: 1, ct);
+                firstOnly.Targets.Should().ContainSingle().Which.Id.Should().Be(lower);
+
+                var buckets = await store.CountJobRunsByBucketAsync(query, [at.AddMinutes(-1), at.AddMinutes(10)], ct);
+                buckets
+                    .Should()
+                    .ContainSingle()
+                    .Which.Counts.Should()
+                    .BeEquivalentTo(new Dictionary<JobStatus, int> { [JobStatus.Failed] = 2 });
+            }
+        );
+    }
+
+    public virtual async Task a_correlation_read_lists_a_chain_oldest_first_with_each_causation_key()
+    {
+        await _RunAsync(
+            "reads-correlation-chain",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-60);
+                var root = await _AddTimeJobAsync(store, JobStatus.Succeeded, at, ct, correlationId: "chain-1");
+                var child = await _AddTimeJobAsync(
+                    store,
+                    JobStatus.Succeeded,
+                    at.AddMinutes(1),
+                    ct,
+                    correlationId: "chain-1",
+                    causationId: root.ToString("D")
+                );
+                var grandchild = await _AddTimeJobAsync(
+                    store,
+                    JobStatus.Failed,
+                    at.AddMinutes(2),
+                    ct,
+                    correlationId: "chain-1",
+                    causationId: child.ToString("D")
+                );
+
+                var runs = await store.ReadJobRunsByCorrelationAsync("chain-1", 10, ct);
+
+                runs.Select(x => x.Id).Should().Equal(root, child, grandchild);
+                runs.Select(x => x.CausationId).Should().Equal(null, root.ToString("D"), child.ToString("D"));
+                runs.Should().OnlyContain(x => x.Kind == JobRunKind.TimeJob);
+            }
+        );
+    }
+
+    public virtual async Task a_correlation_read_returns_an_occurrence_that_has_not_run_with_its_due_time()
+    {
+        await _RunAsync(
+            "reads-correlation-due",
+            async (store, _, ct) =>
+            {
+                var due = _Minute(30);
+                var cron = await _SeedCronAsync(ct, correlationId: "nightly-1");
+                var occurrence = await _AddOccurrenceAsync(store, cron, JobStatus.Idle, due, ct);
+
+                var run = (await store.ReadJobRunsByCorrelationAsync("nightly-1", 10, ct))
+                    .Should()
+                    .ContainSingle()
+                    .Subject;
+
+                run.Id.Should().Be(occurrence);
+                run.Kind.Should().Be(JobRunKind.CronJobOccurrence);
+                run.Function.Should().Be(_CronFunction);
+                run.Status.Should().Be(JobStatus.Idle);
+                run.ExecutionTime.Should().Be(due);
+                run.ExecutedAt.Should().BeNull();
+            }
+        );
+    }
+
+    public virtual async Task a_correlation_read_fills_its_limit_from_confirmed_runs_when_case_variants_crowd_the_store_matches()
+    {
+        await _RunAsync(
+            "reads-correlation-limit",
+            async (store, _, ct) =>
+            {
+                var at = _Minute(-2000);
+                var jobs = new List<TimeJobEntity>(1000);
+                var matching = new List<Guid>(600);
+
+                // Two of every five rows are case variants the store may match too, spread through the whole range so
+                // a single page of the store's matches cannot hold the answer.
+                for (var index = 0; index < 1000; index++)
+                {
+                    var job = _TimeJob(JobStatus.Succeeded, at.AddMinutes(index));
+                    var variant = index % 5 < 2;
+                    job.CorrelationId = variant ? "LOAD-1" : "load-1";
+                    jobs.Add(job);
+
+                    if (!variant)
+                    {
+                        matching.Add(job.Id);
+                    }
+                }
+
+                (await store.AddTimeJobsAsync([.. jobs], ct)).Should().Be(1000);
+
+                var runs = await store.ReadJobRunsByCorrelationAsync("load-1", 501, ct);
+
+                runs.Should().HaveCount(501);
+                runs.Select(x => x.Id).Should().Equal(matching.Take(501), "the read is oldest first");
+                (await store.ReadJobRunsByCorrelationAsync("load-1", 5000, ct)).Should().HaveCount(600);
+            }
+        );
+    }
+
+    public virtual async Task a_correlation_read_filters_on_the_correlation_id_column_in_the_store()
+    {
+        var ct = AbortToken;
+        var capture = new DashboardSqlCapture();
+        await fixture.ResetDatabaseAsync(ct);
+        using var host = fixture.BuildInterceptedHost("reads-correlation-sql", capture);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            await _AddTimeJobAsync(store, JobStatus.Succeeded, _Minute(-60), ct, correlationId: "indexed-1");
+
+            capture.Clear();
+            await store.ReadJobRunsByCorrelationAsync("indexed-1", 10, ct);
+
+            foreach (var table in new[] { "TimeJobs", "CronJobOccurrences" })
+            {
+                var statement = capture
+                    .Statements.Should()
+                    .ContainSingle(sql => sql.Contains(fixture.JobsTable(table), StringComparison.Ordinal))
+                    .Subject;
+                // PostgreSQL names the column correlation_id, SQL Server CorrelationId.
+                var where = statement[statement.IndexOf("WHERE", StringComparison.Ordinal)..]
+                    .Replace("_", "", StringComparison.Ordinal);
+
+                where.Should().ContainEquivalentOf("CorrelationId", "the filter seeks the CorrelationId index");
+            }
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
     }
 
     public virtual async Task per_function_stats_count_both_kinds()
@@ -839,11 +1091,13 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
         string function = _Function,
         string? fingerprint = null,
         DateTimeOffset? executedAt = null,
-        string? correlationId = null
+        string? correlationId = null,
+        string? causationId = null
     )
     {
         var job = _TimeJob(status, executionTime, function, fingerprint, executedAt);
         job.CorrelationId = correlationId;
+        job.CausationId = causationId;
         (await store.AddTimeJobsAsync([job], cancellationToken)).Should().Be(1);
 
         return job.Id;
@@ -873,7 +1127,11 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
         };
     }
 
-    private async Task<Guid> _SeedCronAsync(CancellationToken cancellationToken, string function = _CronFunction)
+    private async Task<Guid> _SeedCronAsync(
+        CancellationToken cancellationToken,
+        string function = _CronFunction,
+        string? correlationId = null
+    )
     {
         var id = Guid.NewGuid();
         await fixture.SeedCronJobAsync(
@@ -885,6 +1143,11 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
             reconciledThroughOffsetSeconds: -3600,
             nextDueOffsetSeconds: 3600
         );
+
+        if (correlationId is not null)
+        {
+            await _SetCronCorrelationAsync(id, correlationId, cancellationToken);
+        }
 
         return id;
     }
@@ -926,6 +1189,23 @@ public abstract class JobsDashboardReadsConformanceTests<TFixture>(TFixture fixt
             ExecutionTime = DateTime.UtcNow.AddHours(1),
             Request = [1, 2, 3],
         };
+
+    private async Task _SetCronCorrelationAsync(
+        Guid cronJobId,
+        string correlationId,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = fixture.Sql(
+            $"UPDATE {fixture.QualifiedCronJobsTable} SET \"CorrelationId\" = @correlationId WHERE \"Id\" = @id;"
+        );
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@correlationId", correlationId);
+        JobsCoordinationFixtureExtensions.AddParameter(command, "@id", cronJobId);
+        (await command.ExecuteNonQueryAsync(cancellationToken)).Should().Be(1);
+    }
 
     private async Task _SetCronRetriesAsync(Guid cronJobId, int retries, CancellationToken cancellationToken)
     {
