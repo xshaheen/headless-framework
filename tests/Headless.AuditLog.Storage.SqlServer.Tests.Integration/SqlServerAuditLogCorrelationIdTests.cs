@@ -80,12 +80,15 @@ public sealed class SqlServerAuditLogCorrelationIdTests(SqlServerAuditLogFixture
                 );
         }
 
-        var page = await scope
-            .ServiceProvider.GetRequiredService<IReadAuditLog<object>>()
-            .QueryAsync(new() { CorrelationId = stored }, cancellationToken: AbortToken);
+        var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
+        var byStored = await reader.QueryAsync(new() { CorrelationId = stored }, cancellationToken: AbortToken);
+        // A query by the id as the caller had it finds the row only when it fit the column: a longer id is compared
+        // whole, so it never matches the row that stores its cut prefix.
+        var byFull = await reader.QueryAsync(new() { CorrelationId = correlationId }, cancellationToken: AbortToken);
 
         // then
-        page.Items.Should().ContainSingle().Which.CorrelationId.Should().Be(stored);
+        byStored.Items.Should().ContainSingle().Which.CorrelationId.Should().Be(stored);
+        byFull.Items.Should().HaveCount(length > 200 ? 0 : 1);
     }
 
     [Theory]
@@ -145,12 +148,15 @@ public sealed class SqlServerAuditLogCorrelationIdTests(SqlServerAuditLogFixture
             }
         }
 
-        var page = await services
-            .GetRequiredService<IReadAuditLog<CorrelationAuditDbContext>>()
-            .QueryAsync(new() { CorrelationId = stored }, cancellationToken: AbortToken);
+        var reader = services.GetRequiredService<IReadAuditLog<CorrelationAuditDbContext>>();
+        var byStored = await reader.QueryAsync(new() { CorrelationId = stored }, cancellationToken: AbortToken);
+        // A query by the id as the caller had it finds the row only when it fit the column: a longer id is compared
+        // whole, so it never matches the row that stores its cut prefix.
+        var byFull = await reader.QueryAsync(new() { CorrelationId = correlationId }, cancellationToken: AbortToken);
 
         // then
-        page.Items.Should().ContainSingle().Which.CorrelationId.Should().Be(stored);
+        byStored.Items.Should().ContainSingle().Which.CorrelationId.Should().Be(stored);
+        byFull.Items.Should().HaveCount(length > 200 ? 0 : 1);
     }
 
     private ServiceProvider _CreateEfServices(string correlationId)
