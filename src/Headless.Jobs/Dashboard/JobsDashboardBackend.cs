@@ -79,6 +79,15 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
         return Store.CountJobRunsAsync(query, cancellationToken: cancellationToken);
     }
 
+    public Task<IReadOnlyList<JobCorrelatedRun>> ReadRunsByCorrelationAsync(
+        string correlationId,
+        int limit,
+        CancellationToken cancellationToken
+    )
+    {
+        return Store.ReadJobRunsByCorrelationAsync(correlationId, limit, cancellationToken);
+    }
+
     public Task<JobRunSummary?> GetRunAsync(Guid id, CancellationToken cancellationToken)
     {
         return Store.GetJobRunAsync(id, cancellationToken);

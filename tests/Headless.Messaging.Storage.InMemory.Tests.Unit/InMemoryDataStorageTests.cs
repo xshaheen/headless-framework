@@ -122,13 +122,19 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         bool published,
         short rawLane,
         DateTimeOffset nextRetryAt,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string? correlationId = null
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
         var inMemoryStorage = storage.Should().BeOfType<InMemoryDataStorage>().Subject;
         var id = Guid.NewGuid();
         var origin = CreateMessage($"unsupported-lane-{id:N}");
+        if (correlationId is not null)
+        {
+            origin.Headers[Headers.CorrelationId] = correlationId;
+        }
+
         var raw = new MemoryMessage
         {
             StorageId = id,

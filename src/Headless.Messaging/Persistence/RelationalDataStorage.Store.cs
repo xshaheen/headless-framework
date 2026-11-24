@@ -93,6 +93,8 @@ internal sealed partial class RelationalDataStorage
                     _t.StatusName,
                     _t.MessageId,
                     _t.Transport,
+                    _t.CorrelationId,
+                    _t.CausationId,
                     _t.ChangedAt,
                 ],
                 [
@@ -109,6 +111,8 @@ internal sealed partial class RelationalDataStorage
                     $"CASE WHEN @ExpiresAt IS NULL THEN '{nameof(StatusName.Scheduled)}' WHEN @ExpiresAt <= {_dialect.ShiftByDuration(SqlDialectTokens.Now, "QueueWindow")} THEN '{nameof(StatusName.Queued)}' ELSE '{nameof(StatusName.Delayed)}' END",
                     "@MessageId",
                     "@Transport",
+                    "@CorrelationId",
+                    "@CausationId",
                     SqlDialectTokens.Now,
                 ],
                 [_t.Added, _t.NextRetryAt]
@@ -230,6 +234,18 @@ internal sealed partial class RelationalDataStorage
         _dialect.AddDuration(command, "QueueWindow", TimeSpan.FromMinutes(1));
         _dialect.AddParameter(command, "MessageId", _MessageIdType, stored.Origin.Id);
         _dialect.AddParameter(command, "Transport", _TransportType, stored.TransportName);
+        _dialect.AddParameter(
+            command,
+            "CorrelationId",
+            _CorrelationType,
+            StoredCorrelation.CorrelationId(stored.Origin.Headers)
+        );
+        _dialect.AddParameter(
+            command,
+            "CausationId",
+            _CorrelationType,
+            StoredCorrelation.CausationId(stored.Origin.Headers)
+        );
     }
 
     private static async Task<(DateTimeOffset Added, DateTimeOffset? NextRetryAt)> _ReadStoredPublishedAsync(
@@ -309,7 +325,11 @@ internal sealed partial class RelationalDataStorage
             DueAfter: null,
             // Written terminal, so it never holds its key.
             SequenceKey: null
-        );
+        )
+        {
+            CorrelationId = StoredCorrelation.CorrelationId(message.Origin.Headers),
+            CausationId = StoredCorrelation.CausationId(message.Origin.Headers),
+        };
 
         var stored = await _StoreReceivedAsync("messaging.store_received_exception_message", row, cancellationToken)
             .ConfigureAwait(false);
@@ -365,6 +385,8 @@ internal sealed partial class RelationalDataStorage
         )
         {
             Delivery = true,
+            CorrelationId = StoredCorrelation.CorrelationId(message.Origin.Headers),
+            CausationId = StoredCorrelation.CausationId(message.Origin.Headers),
         };
 
         // Adopt the authoritative persisted row: a redelivery that rewrites an existing row keeps that row's id and
@@ -438,6 +460,12 @@ internal sealed partial class RelationalDataStorage
         /// rewrites only a due row and keeps its failure history.
         /// </summary>
         public bool Delivery { get; init; }
+
+        /// <summary>The correlation id of the message the row holds, or <see langword="null"/> when it has none the store keeps.</summary>
+        public string? CorrelationId { get; init; }
+
+        /// <summary>The causation id of the message the row holds, or <see langword="null"/> when it has none the store keeps.</summary>
+        public string? CausationId { get; init; }
     }
 
     /// <summary>
@@ -475,6 +503,8 @@ internal sealed partial class RelationalDataStorage
                     _t.FailureFingerprint,
                     _t.ConsumerKeyHash,
                     _t.SequenceKey,
+                    _t.CorrelationId,
+                    _t.CausationId,
                     _t.ChangedAt,
                 ],
                 [
@@ -495,6 +525,8 @@ internal sealed partial class RelationalDataStorage
                     "@FailureFingerprint",
                     "@ConsumerKeyHash",
                     "@SequenceKey",
+                    "@CorrelationId",
+                    "@CausationId",
                     SqlDialectTokens.Now,
                 ],
                 [_t.Id, _t.Added, _t.NextRetryAt, _t.Retries, _t.InlineAttempts],
@@ -508,10 +540,11 @@ internal sealed partial class RelationalDataStorage
         var rewriteCondition = delivery
             ? $"{nonInbox} AND {_terminalGuard} AND {unleased} AND ({_t.NextRetryAt} IS NULL OR {_t.NextRetryAt} <= {SqlDialectTokens.Now})"
             : $"{nonInbox} AND {_terminalGuard} AND {unleased}";
-        // The redelivery runs the row as the attempt after its last one, so the status and failure history stay.
+        // The redelivery runs the row as the attempt after its last one, so the status and failure history stay. The
+        // correlation columns follow the redelivered envelope, so a row stored before they existed becomes findable.
         var rewriteSet = delivery
-            ? $"{_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.SequenceKey}=@SequenceKey, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}"
-            : $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_t.SequenceKey}=@SequenceKey, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}";
+            ? $"{_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.SequenceKey}=@SequenceKey, {_t.CorrelationId}=@CorrelationId, {_t.CausationId}=@CausationId, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}"
+            : $"{_t.StatusName}=@StatusName, {_t.ExpiresAt}={expiresAt}, {_t.NextRetryAt}={nextRetryAt}, {_t.Content}=@Content, {_t.ExceptionInfo}=@ExceptionInfo, {_t.FailureFingerprint}=@FailureFingerprint, {_t.SequenceKey}=@SequenceKey, {_t.CorrelationId}=@CorrelationId, {_t.CausationId}=@CausationId, {_RevokeAnyLeaseAssignments()}, {_t.StampChange}";
         var rewriteSql = _dialect.Render(
             new SqlFencedTransition(
                 _receivedTable,
@@ -578,6 +611,8 @@ internal sealed partial class RelationalDataStorage
             _dialect.AddParameter(command, "ExceptionInfo", _ContentType, row.ExceptionInfo);
             _dialect.AddParameter(command, "FailureFingerprint", _FingerprintType, row.FailureFingerprint);
             _dialect.AddParameter(command, "SequenceKey", _SequenceKeyType, row.SequenceKey);
+            _dialect.AddParameter(command, "CorrelationId", _CorrelationType, row.CorrelationId);
+            _dialect.AddParameter(command, "CausationId", _CorrelationType, row.CausationId);
 
             if (row.ExpiresAfter is { } expiresAfter)
             {

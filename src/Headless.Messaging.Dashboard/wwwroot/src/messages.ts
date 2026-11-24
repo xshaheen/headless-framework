@@ -265,7 +265,7 @@ interface MessageListAnswer {
 export interface MessageSearch {
   /** Text in the stored headers or body, as a literal substring, without regard to case. */
   content: string
-  /** The correlation id header, exactly, without regard to case. */
+  /** The correlation id, exactly and ordinally. */
   correlationId: string
 }
 

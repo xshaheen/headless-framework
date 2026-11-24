@@ -55,7 +55,7 @@ internal sealed record MessagingListRequest(
 /// </summary>
 /// <remarks>
 /// <c>content</c> matches the stored envelope, headers and body, as a literal substring without regard to case;
-/// <c>correlationId</c> matches the correlation id header exactly, without regard to case. Set either or both.
+/// <c>correlationId</c> matches the correlation id exactly and by ordinal comparison, so <c>C-42</c> and <c>c-42</c> are different ids. Set either or both.
 /// </remarks>
 internal sealed record MessagingSearchRequest
 {

@@ -19,7 +19,8 @@ internal sealed class RelationalMonitoringApi(
     MessagingTables tables,
     IOptions<MessagingOptions> messagingOptions,
     IMessageSerializer serializer,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    bool holdsReceived
 ) : IMonitoringApi
 {
     private const int _HourlyBuckets = 24;
@@ -451,7 +452,7 @@ internal sealed class RelationalMonitoringApi(
 
         var received = query.MessageType == MessageType.Subscribe;
         var table = received ? _receivedTable : _publishedTable;
-        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query, _messagingOptions.JsonSerializerOptions);
+        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query);
         var byName = query.SortBy == MessageListSortKey.Name;
         var keyColumn = byName ? _t.Name : _t.Added;
         var direction = query.Descending ? "DESC" : "ASC";
@@ -555,6 +556,105 @@ internal sealed class RelationalMonitoringApi(
     }
 
     /// <inheritdoc />
+    public async ValueTask<MessageTraceResult> GetCorrelatedMessagesAsync(
+        MessageTraceQuery query,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(query);
+        Argument.IsNotNullOrEmpty(query.CorrelationId);
+        Argument.IsInclusiveBetween(query.Limit, 1, int.MaxValue - 1);
+
+        if (query.CorrelationId.Length > StoredCorrelation.MaxLength)
+        {
+            return new MessageTraceResult { Published = [], Received = [] };
+        }
+
+        await using var connection = _storage.CreateConnection();
+        var published = await _ReadTraceAsync(connection, received: false, query, cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyList<MessageTraceRow> receivedRows = holdsReceived
+            ? await _ReadTraceAsync(connection, received: true, query, cancellationToken).ConfigureAwait(false)
+            : [];
+
+        return new MessageTraceResult { Published = published, Received = receivedRows };
+    }
+
+    private async Task<IReadOnlyList<MessageTraceRow>> _ReadTraceAsync(
+        DbConnection connection,
+        bool received,
+        MessageTraceQuery query,
+        CancellationToken cancellationToken
+    )
+    {
+        // The exact-text predicate keeps the match ordinal where the engine's own equality pads trailing spaces, so
+        // the limit reads only rows that match and a padded variant cannot crowd an exact one out of it. Every row is
+        // still confirmed in code below.
+        var where =
+            $"{_t.IntentType} IN (0, 1)" + RelationalMessageFilter.ExactText(_t.CorrelationId, "TraceCorrelation");
+        var table = received ? _receivedTable : _publishedTable;
+        var sql = $"""
+            SELECT {_t.Id},{_t.MessageId},{_t.Name},{_t.CausationId},{_t.CorrelationId},{_t.Added},{_t.StatusName},{_t.ExpiresAt},{_t.NextRetryAt}
+            FROM {table}
+            WHERE {where}
+            ORDER BY {_t.Added} ASC,{_t.Id} ASC
+            {_dialect.Limit("Limit")};
+            """;
+
+        return await RelationalCommand
+            .ExecuteReaderAsync(
+                connection,
+                transaction: null,
+                sql,
+                CommandTimeoutSeconds,
+                command =>
+                {
+                    RelationalMessageFilter.BindExactText(
+                        _dialect,
+                        command,
+                        "TraceCorrelation",
+                        query.CorrelationId,
+                        SqlColumnType.KeyText(StoredCorrelation.MaxLength)
+                    );
+                    _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, query.Limit + 1);
+                },
+                async (reader, token) =>
+                {
+                    var rows = new List<MessageTraceRow>();
+
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        if (!string.Equals(reader.GetString(4), query.CorrelationId, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        var status = Enum.Parse<StatusName>(reader.GetString(6));
+                        var expiresAt = await _InstantAsync(reader, 7, token).ConfigureAwait(false);
+                        var nextRetryAt = await _InstantAsync(reader, 8, token).ConfigureAwait(false);
+
+                        rows.Add(
+                            new MessageTraceRow
+                            {
+                                StorageId = reader.GetGuid(0),
+                                MessageId = reader.GetString(1),
+                                Name = reader.GetString(2),
+                                CausationId = await _StringAsync(reader, 3, token).ConfigureAwait(false),
+                                Added = await reader.GetFieldValueAsync<DateTimeOffset>(5, token).ConfigureAwait(false),
+                                Status = status,
+                                DueAt = MessageTraceRows.DueAt(received, status, expiresAt, nextRetryAt),
+                            }
+                        );
+                    }
+
+                    return (IReadOnlyList<MessageTraceRow>)rows;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<MessageCount> CountMessagesAsync(
         MessageListQuery query,
         int cap = MessageCount.DefaultCap,
@@ -565,7 +665,7 @@ internal sealed class RelationalMonitoringApi(
         Argument.IsPositive(cap);
 
         var table = query.MessageType == MessageType.Subscribe ? _receivedTable : _publishedTable;
-        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query, _messagingOptions.JsonSerializerOptions);
+        var (where, bind) = RelationalMessageFilter.Build(_t, _dialect, query);
 
         await using var connection = _storage.CreateConnection();
         var matched = await CountCappedAsync(

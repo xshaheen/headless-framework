@@ -153,6 +153,30 @@ public interface IMonitoringApi
     );
 
     /// <summary>
+    /// Returns the rows of one correlation id: the oldest <see cref="MessageTraceQuery.Limit"/> plus one published
+    /// rows and the oldest <see cref="MessageTraceQuery.Limit"/> plus one received rows, every generation included.
+    /// </summary>
+    /// <param name="query">The correlation id and the limit.</param>
+    /// <param name="cancellationToken">A token to cancel the query.</param>
+    /// <returns>The rows, oldest first.</returns>
+    /// <remarks>
+    /// The match is exact and ordinal. A store keeps a correlation id of at most 200 characters, so a row whose id was
+    /// longer is never found. The default implementation throws, so a custom store that predates the lookup keeps
+    /// compiling; a store that supports it returns its rows without reading every envelope.
+    /// </remarks>
+    /// <exception cref="NotSupportedException">The store does not implement the correlation lookup.</exception>
+    ValueTask<MessageTraceResult> GetCorrelatedMessagesAsync(
+        MessageTraceQuery query,
+        CancellationToken cancellationToken
+    )
+    {
+        throw new NotSupportedException(
+            $"The monitoring API {GetType().Name} does not support reading the messages of a correlation id. "
+                + $"Implement {nameof(IMonitoringApi)}.{nameof(GetCorrelatedMessagesAsync)}."
+        );
+    }
+
+    /// <summary>
     /// Returns the total number of published message rows in a failed state.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the query.</param>

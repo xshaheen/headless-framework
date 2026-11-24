@@ -17,6 +17,7 @@ internal static class PostgreSqlMessagingSchemaContribution
     public const string TablesStepVersion = "1";
     public const string PickupIndexesStepVersion = "2";
     public const string ContentSearchStepVersion = "3";
+    public const string CorrelationStepVersion = "4";
 
     /// <summary>Creates the contribution of the primary storage: the inbox, its history, and the published table.</summary>
     public static SchemaContribution Create(PostgreSqlOptions options, MessagingStorageOptions storageOptions)
@@ -88,6 +89,13 @@ internal static class PostgreSqlMessagingSchemaContribution
                     ContentSearchStepVersion,
                     "Ensure pg_trgm when permitted and create the dashboard content trigram indexes when it is installed.",
                     _ContentSearchSql(schema, inbox)
+                ),
+                new SchemaStep(
+                    CorrelationStepVersion,
+                    inbox
+                        ? "Add the correlation and causation id columns to the published and received tables, with an index on the correlation id of each."
+                        : "Add the correlation and causation id columns to the published table, with an index on the correlation id.",
+                    _CorrelationSql(schema, inbox)
                 ),
             ],
             exportOnly: exportOnly,
@@ -439,6 +447,33 @@ internal static class PostgreSqlMessagingSchemaContribution
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_receipts_created" ON "{schema}"."{_ReceiptsTable}" ("created_at","operation_id");
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_type_created" ON "{schema}"."{_AuditTable}" ("operation_type","created_at");
                 CREATE INDEX IF NOT EXISTS "idx_messaging_inbox_audit_operation" ON "{schema}"."{_AuditTable}" ("operation_id");
+                """;
+    }
+
+    private static string _CorrelationSql(string schema, bool inbox)
+    {
+        var received = _Table(schema, "MessagingReceived");
+        var published = _Table(schema, "MessagingPublished");
+
+        // The columns are binary-collated like the other key columns, so equality is ordinal. The index ends in the
+        // (added, id) order the trace and the list read, so a lookup returns its oldest rows without a sort.
+        var publishedSql = $"""
+            ALTER TABLE {published} ADD COLUMN IF NOT EXISTS "correlation_id" VARCHAR(200) COLLATE "C" NULL;
+            ALTER TABLE {published} ADD COLUMN IF NOT EXISTS "causation_id" VARCHAR(200) COLLATE "C" NULL;
+            CREATE INDEX IF NOT EXISTS "idx_messaging_published_correlation" ON {published} ("correlation_id","added","id");
+
+            """;
+
+        if (!inbox)
+        {
+            return publishedSql;
+        }
+
+        return publishedSql
+            + $"""
+                ALTER TABLE {received} ADD COLUMN IF NOT EXISTS "correlation_id" VARCHAR(200) COLLATE "C" NULL;
+                ALTER TABLE {received} ADD COLUMN IF NOT EXISTS "causation_id" VARCHAR(200) COLLATE "C" NULL;
+                CREATE INDEX IF NOT EXISTS "idx_messaging_received_correlation" ON {received} ("correlation_id","added","id");
                 """;
     }
 
