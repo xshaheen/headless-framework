@@ -86,7 +86,12 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         var reads = new SequenceReads();
 
-        if (!_Needs(value, 0, _NewInstanceSet(), projecting: null, reads))
+        // A sequence that is not a collection was enumerated by the check: the provider printing it again would run a
+        // lazy query twice, and a one-shot sequence would give it nothing or throw. Print the elements already read.
+        if (
+            !_Needs(value, 0, _NewInstanceSet(), projecting: null, reads)
+            && (shape.Kind != ShapeKind.Sequence || value is ICollection)
+        )
         {
             return false;
         }

@@ -375,6 +375,60 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     [Fact]
+    public void should_print_a_one_shot_sequence_of_unclassified_values_from_one_read()
+    {
+        // given: elements typed as object must be read to prove them safe, and the sequence gives them only once
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        List<object> values = [42, "gold"];
+        var once = values.AsEnumerableOnce();
+
+        // when
+        _Logger(provider).LogInformation("Batch {Values}", once);
+
+        // then
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Batch 42, gold");
+    }
+
+    [Fact]
+    public void should_run_a_lazy_query_of_unclassified_values_once()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var evaluations = 0;
+        object[] source = [1, "two"];
+        var values = source.Select(value =>
+        {
+            evaluations++;
+
+            return value;
+        });
+
+        // when
+        _Logger(provider).LogInformation("Batch {Values}", values);
+
+        // then
+        evaluations.Should().Be(source.Length);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Batch 1, two");
+    }
+
+    [Fact]
+    public void should_pass_a_collection_of_unclassified_values_through_as_the_same_instance()
+    {
+        // given: a collection can be read again, so the provider keeps the original value
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        List<object> values = [42, "gold"];
+
+        // when
+        _Logger(provider).LogInformation("Batch {Values}", values);
+
+        // then
+        sink.Entries.Should().ContainSingle().Which.Properties["Values"].Should().BeSameAs(values);
+    }
+
+    [Fact]
     public void should_run_a_logged_lazy_query_once()
     {
         // given
