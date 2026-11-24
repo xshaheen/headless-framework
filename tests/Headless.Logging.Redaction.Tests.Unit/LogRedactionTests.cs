@@ -450,6 +450,123 @@ public sealed partial class LogRedactionTests : TestBase
         empty.Should().Throw<ArgumentException>();
     }
 
+    [Fact]
+    public void should_project_an_object_passed_as_the_scope_itself()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivateEmail));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when: the record is the scope, not a value inside a key/value scope
+        using (logger.BeginScope(new Customer("alice@example.com", "gold")))
+        {
+#pragma warning disable CA1848 // The test logs through the extension method on purpose: it is the call no attribute reaches.
+            logger.LogInformation("Inside");
+#pragma warning restore CA1848
+        }
+
+        // then: the provider receives the redacted text, never the record that prints the raw member
+        var scope = sink.ScopeObjects.Should().ContainSingle().Which.Should().BeOfType<string>().Subject;
+        scope.Should().Contain("*****").And.NotContain("alice@example.com");
+    }
+
+    [Theory]
+    [InlineData("Sent to {@Email}", "@Email")]
+    [InlineData("Sent to {$Email}", "$Email")]
+    public void should_redact_a_classified_name_written_with_a_capture_sigil(string template, string key)
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivateEmail));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+#pragma warning disable CA1848, CA1873, CA2254 // The template varies by case on purpose, through the call no attribute reaches.
+        logger.LogInformation(template, "alice@example.com");
+#pragma warning restore CA1848, CA1873, CA2254
+
+        // then: the name matches without the sigil, and the emitted key keeps it
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Sent to *****");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>(key, "*****"));
+        entry.Properties.Select(p => p.Value?.ToString()).Should().NotContain("alice@example.com");
+    }
+
+    [Fact]
+    public void should_redact_a_classified_value_whose_hole_has_a_format()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivate("Birthday")));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when: the format renders the raw value differently from its plain text form
+#pragma warning disable CA1848, CA1873 // The test logs through the extension method on purpose: it is the call no attribute reaches.
+        logger.LogInformation("Born {Birthday:yyyy-MM-dd}", new DateTime(1990, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+#pragma warning restore CA1848, CA1873
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Born *****").And.NotContain("1990-01-02");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("Birthday", "*****"));
+    }
+
+    [Fact]
+    public void should_keep_literal_text_that_contains_a_short_classified_value()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivate("Age")));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when: the raw value "17" also occurs inside the template's literal "2017"
+#pragma warning disable CA1848, CA1873 // The test logs through the extension method on purpose: it is the call no attribute reaches.
+        logger.LogInformation("Member since 2017, age {Age}", 17);
+#pragma warning restore CA1848, CA1873
+
+        // then: only the hole is redacted
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Member since 2017, age *****");
+    }
+
+    [Fact]
+    public void should_render_a_generated_message_from_the_name_classified_values()
+    {
+        // given: a generated message with no classified parameter, so only the names classify its values
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static services =>
+                services.AddHeadlessRedaction(static setup =>
+                {
+                    _StarPrivate("Birthday")(setup);
+                    setup.ClassifyProperty("Age", HeadlessDataClassifications.Private);
+                })
+        );
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        LogMemberBorn(logger, new DateTime(1990, 1, 2, 0, 0, 0, DateTimeKind.Utc), 17);
+
+        // then: the hole's format no longer hides the raw value, and the literal "2017" stays
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Born *****, member since 2017, age *****");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("Age", "*****"));
+    }
+
+    [LoggerMessage(2, LogLevel.Information, "Born {Birthday:yyyy-MM-dd}, member since 2017, age {Age}")]
+    private static partial void LogMemberBorn(ILogger logger, DateTime birthday, int age);
+
+    public sealed record Customer([property: PrivateData] string Email, string Tier);
+
+    private static Action<HeadlessRedactionSetupBuilder> _StarPrivate(string name) =>
+        setup =>
+            setup
+                .ConfigureRedaction(static redaction =>
+                    redaction.SetRedactor<StarRedactor>(new DataClassificationSet(HeadlessDataClassifications.Private))
+                )
+                .ClassifyProperty(name, HeadlessDataClassifications.Private);
+
     private static void _StarPrivateEmail(HeadlessRedactionSetupBuilder setup) =>
         setup
             .ConfigureRedaction(static redaction =>
@@ -538,6 +655,9 @@ public sealed partial class LogRedactionTests : TestBase
 
         public List<IReadOnlyList<KeyValuePair<string, object?>>> Scopes { get; } = [];
 
+        // A scope that is not a key/value list, kept as the provider received it.
+        public List<object?> ScopeObjects { get; } = [];
+
         public ILogger CreateLogger(string categoryName) => new Logger(this);
 
         public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopes = scopeProvider;
@@ -565,14 +685,18 @@ public sealed partial class LogRedactionTests : TestBase
                     : [];
 
                 owner._scopes?.ForEachScope(
-                    static (scope, scopes) =>
+                    static (scope, owner) =>
                     {
                         if (scope is IEnumerable<KeyValuePair<string, object?>> values)
                         {
-                            scopes.Add([.. values]);
+                            owner.Scopes.Add([.. values]);
+                        }
+                        else
+                        {
+                            owner.ScopeObjects.Add(scope);
                         }
                     },
-                    owner.Scopes
+                    owner
                 );
 
                 owner.Entries.Add(new Entry(eventId.Name, formatter(state, exception), properties));

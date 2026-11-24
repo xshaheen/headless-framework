@@ -97,6 +97,14 @@ internal sealed class RedactingLoggerFactory(
         private const string _LineQueryKey = "QueryString";
         private const string _RedactedQueryValue = "Redacted";
 
+        // Logging's own key for a message's template; its formatted states carry it after the hole values.
+        private const string _OriginalFormatKey = "{OriginalFormat}";
+
+        // `{@Name}` and `{$Name}` keep the sigil in the key, so a classified name is looked up without it; the span
+        // lookup avoids a substring per value. The table ignores case, which supports it; the empty table may not.
+        private readonly FrozenDictionary<string, Redactor>.AlternateLookup<ReadOnlySpan<char>> _sigilFreeLookup =
+            propertyRedactors.TryGetAlternateLookup<ReadOnlySpan<char>>(out var lookup) ? lookup : default;
+
         public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
 
         public IDisposable? BeginScope<TState>(TState state)
@@ -107,6 +115,19 @@ internal sealed class RedactingLoggerFactory(
                 return _TryRedactRequest(named, _ScopePathKey, query: false, out var namedPath)
                     ? inner.BeginScope(namedPath)
                     : inner.BeginScope(named);
+            }
+
+            // An object passed as the scope itself is printed through ToString, so one with a classified member is
+            // replaced by its redacted form, the way a `{Value}` hole is.
+            if (
+                projection is not null
+                && LogStateShape<TState>.MayCarryObjects
+                && state
+                    is not (IEnumerable<KeyValuePair<string, object?>> or IEnumerable<KeyValuePair<string, string>>)
+                && projection.TryProject(state, captured: false, out var text)
+            )
+            {
+                return inner.BeginScope(text);
             }
 
             return _TryRedactRequest(state, _ScopePathKey, query: false, out var redacted)
@@ -145,7 +166,8 @@ internal sealed class RedactingLoggerFactory(
                 && _TryRedactNames(values, out var named, out var rewrites)
             )
             {
-                _LogNamed(logLevel, eventId, named, _Rewrite(formatter(state, exception), rewrites), exception);
+                var message = _RenderNamed(state, exception, formatter, named, rewrites);
+                _LogNamed(logLevel, eventId, named, message, exception);
 
                 return;
             }
@@ -200,15 +222,16 @@ internal sealed class RedactingLoggerFactory(
         {
             var values = new KeyValuePair<string, object?>[state.TagsCount + state.ClassifiedTagsCount];
             Array.Copy(state.TagArray, values, state.TagsCount);
-            List<(string Raw, string Redacted)>? rewrites = null;
 
             // A plain parameter whose name the app classified is redacted here too, so one entry is never half done.
+            // The generated formatter reads each plain value from TagArray, so the redacted value goes back there and
+            // the text is rendered from it rather than patched afterwards.
             for (var i = 0; i < state.TagsCount && (propertyRedactors.Count > 0 || projection is not null); i++)
             {
-                if (_TryRedactNamed(values[i], out var namedValue, out var rewrite))
+                if (_TryRedactNamed(values[i], out var namedValue, out _))
                 {
                     values[i] = namedValue;
-                    _AddRewrite(ref rewrites, rewrite);
+                    state.TagArray[i] = namedValue;
                 }
             }
 
@@ -225,7 +248,7 @@ internal sealed class RedactingLoggerFactory(
                 values[state.TagsCount + i] = new(tag.Name, redactedValue);
             }
 
-            var message = _Rewrite(formatter((TState)(object)state, exception), rewrites);
+            var message = formatter((TState)(object)state, exception);
 
 #pragma warning disable CA1873 // False positive: Log checks inner.IsEnabled before calling this method.
             inner.Log(logLevel, eventId, new RedactedState(values, message), exception, static (s, _) => s.ToString());
@@ -282,7 +305,12 @@ internal sealed class RedactingLoggerFactory(
                 return false;
             }
 
-            redacted = new RedactedState(named, _Rewrite(state?.ToString() ?? string.Empty, rewrites));
+            redacted = new RedactedState(
+                named,
+                _TryRenderTemplate(named, out var rendered)
+                    ? rendered
+                    : _Rewrite(state?.ToString() ?? string.Empty, rewrites)
+            );
 
             return true;
         }
@@ -324,7 +352,7 @@ internal sealed class RedactingLoggerFactory(
                 return false;
             }
 
-            if (!propertyRedactors.TryGetValue(pair.Key, out var redactor))
+            if (!_TryGetPropertyRedactor(pair.Key, out var redactor))
             {
                 // An object whose members are classified is replaced by its redacted form; `{@Name}` keeps the `@`
                 // in the key, which lets a record's members show as the capture asked.
@@ -368,6 +396,152 @@ internal sealed class RedactingLoggerFactory(
             rewrite = (Convert.ToString(pair.Value, CultureInfo.InvariantCulture) ?? string.Empty, redactedValue);
 
             return true;
+        }
+
+        private bool _TryGetPropertyRedactor(string key, [NotNullWhen(true)] out Redactor? redactor)
+        {
+            if (key.Length > 1 && key[0] is '@' or '$')
+            {
+                return _sigilFreeLookup.Dictionary is not null
+                    ? _sigilFreeLookup.TryGetValue(key.AsSpan(1), out redactor)
+                    : propertyRedactors.TryGetValue(key[1..], out redactor);
+            }
+
+            return propertyRedactors.TryGetValue(key, out redactor);
+        }
+
+        // Renders the text from the redacted values, so a hole's alignment and format never decide whether the raw
+        // value survives in the text, and a short value never matches unrelated text. Rewriting the raw rendering is
+        // the fallback for a state that carries no template the holes can be matched to.
+        private static string _RenderNamed<TState>(
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter,
+            KeyValuePair<string, object?>[] named,
+            List<(string Raw, string Redacted)>? rewrites
+        )
+        {
+            // The generated formatter reads each value back from TagArray, whose slots the state's list exposes one for
+            // one, so the redacted copy goes there; the generator clears the state once Log returns.
+            if (state is LoggerMessageState generated && generated.ClassifiedTagsCount == 0)
+            {
+                Array.Copy(named, generated.TagArray, generated.TagsCount);
+
+                return formatter(state, exception);
+            }
+
+            return _TryRenderTemplate(named, out var rendered)
+                ? rendered
+                : _Rewrite(formatter(state, exception), rewrites);
+        }
+
+        // Logging's formatted states list the hole values in template order, then the template under
+        // "{OriginalFormat}". The template is rendered the way logging renders it: each hole becomes a composite-format
+        // item that keeps its alignment and format, formatted with the invariant culture. Returns false, and the
+        // caller falls back, when the holes do not line up with the values by position and name.
+        private static bool _TryRenderTemplate(
+            KeyValuePair<string, object?>[] values,
+            [NotNullWhen(true)] out string? rendered
+        )
+        {
+            rendered = null;
+            var holeCount = values.Length - 1;
+
+            if (
+                holeCount < 0
+                || values[holeCount].Value is not string template
+                || !string.Equals(values[holeCount].Key, _OriginalFormatKey, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+
+            var composite = new StringBuilder(template.Length + (holeCount * 2));
+            var hole = 0;
+
+            for (var i = 0; i < template.Length; i++)
+            {
+                var c = template[i];
+
+                if (c is '{' or '}' && i + 1 < template.Length && template[i + 1] == c)
+                {
+                    // An escaped brace keeps its escape, which composite formatting reads the same way.
+                    composite.Append(c).Append(c);
+                    i++;
+
+                    continue;
+                }
+
+                if (c == '}')
+                {
+                    return false;
+                }
+
+                if (c != '{')
+                {
+                    composite.Append(c);
+
+                    continue;
+                }
+
+                var close = template.IndexOf('}', i + 1);
+
+                if (close < 0 || hole >= holeCount)
+                {
+                    return false;
+                }
+
+                var body = template.AsSpan(i + 1, close - i - 1);
+                var delimiter = body.IndexOfAny(',', ':');
+                var name = delimiter < 0 ? body : body[..delimiter];
+
+                if (!name.SequenceEqual(values[hole].Key))
+                {
+                    return false;
+                }
+
+                composite.Append('{').Append(hole.ToString(CultureInfo.InvariantCulture));
+
+                if (delimiter >= 0)
+                {
+                    composite.Append(body[delimiter..]);
+                }
+
+                composite.Append('}');
+                hole++;
+                i = close;
+            }
+
+            if (hole != holeCount)
+            {
+                return false;
+            }
+
+            var args = new object?[holeCount];
+
+            for (var h = 0; h < holeCount; h++)
+            {
+                // Logging renders a null as "(null)" and a collection element by element; anything else goes to the
+                // format item, so a format such as `{Birthday:yyyy-MM-dd}` still applies to a value left as is.
+                args[h] = values[h].Value switch
+                {
+                    null => _NullText,
+                    IEnumerable items and not string => _RenderLikeLogging(items),
+                    var value => value,
+                };
+            }
+
+            try
+            {
+                rendered = string.Format(CultureInfo.InvariantCulture, composite.ToString(), args);
+
+                return true;
+            }
+            catch (FormatException)
+            {
+                // A format the value's own formatter rejects: the raw rendering, rewritten, is the best left.
+                return false;
+            }
         }
 
         // Logging renders a collection element by element and anything else through ToString, with the invariant culture.
