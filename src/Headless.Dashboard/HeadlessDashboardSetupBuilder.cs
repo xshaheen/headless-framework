@@ -174,7 +174,7 @@ public sealed partial class HeadlessDashboardSetupBuilder
     }
 
     /// <summary>
-    /// Sets the link to the host's tracing tool, so an object that carries a W3C trace id offers <c>Open trace</c>.
+    /// Sets the link to the host's tracing tool, so an object that carries a W3C trace id offers <c>Open in tracing tool</c>.
     /// </summary>
     /// <param name="template">The link, with <c>{traceId}</c> where the trace id goes.</param>
     /// <returns>The same builder for chaining.</returns>
