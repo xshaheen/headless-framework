@@ -31,6 +31,11 @@ namespace Headless.Logging.Internal;
 /// lookup afterwards. A member declared as <see cref="object"/>, an interface, or a type that can be derived from is checked by
 /// the value it holds, because that value can be a classified type.
 /// </para>
+/// <para>
+/// The walk stops below a fixed depth and fails closed there: a value it does not reach is printed as its type name,
+/// unless its type alone shows it is safe. A sequence is read once per log call, so a lazy query runs once and a
+/// one-shot sequence is not enumerated twice.
+/// </para>
 /// </remarks>
 internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvider)
 {
@@ -74,12 +79,19 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         // A safe type is decided before any walk state is allocated, so the common case stays allocation-free.
         var shape = _GetShape(value.GetType());
 
-        if (shape.Kind == ShapeKind.Safe || !_Needs(value, 0, _NewSeen(), projecting: null))
+        if (shape.Kind == ShapeKind.Safe)
         {
             return false;
         }
 
-        projection = _Project(value, captured, 0, _NewInstanceSet());
+        var reads = new SequenceReads();
+
+        if (!_Needs(value, 0, _NewInstanceSet(), projecting: null, reads))
+        {
+            return false;
+        }
+
+        projection = _Project(value, captured, 0, _NewInstanceSet(), reads);
 
         return true;
     }
@@ -87,28 +99,27 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     // Reference equality: a record's own Equals and GetHashCode walk its members, and on a cyclic graph never return.
     private static HashSet<object> _NewInstanceSet() => new(ReferenceEqualityComparer.Instance);
 
-    private static Dictionary<object, int> _NewSeen() => new(ReferenceEqualityComparer.Instance);
-
     /// <summary>Whether <paramref name="value"/> reaches a classified member.</summary>
     /// <param name="value">The value to look at.</param>
     /// <param name="depth">How far below the logged value it sits.</param>
     /// <param name="seen">
-    /// The instances this walk already looked at, with the shallowest depth each was met at. One met again no shallower
-    /// adds nothing: the walk stops at the first classified member, so a finished visit found none, and an unfinished
-    /// one is still being looked at higher up. One met shallower is walked again, because the depth cap cut the first
-    /// visit shorter.
+    /// The instances this walk already looked at. One met again adds nothing: the walk stops at the first classified
+    /// member or the depth cap, so a finished visit found neither, and an unfinished one is still being looked at
+    /// higher up.
     /// </param>
     /// <param name="projecting">
     /// The instances being projected around this value. One of them reached again does need projection here: printing
     /// this value raw would print that instance raw.
     /// </param>
-    private static bool _Needs(object value, int depth, Dictionary<object, int> seen, HashSet<object>? projecting)
+    /// <param name="reads">The elements of each sequence this log call already read.</param>
+    private static bool _Needs(
+        object value,
+        int depth,
+        HashSet<object> seen,
+        HashSet<object>? projecting,
+        SequenceReads reads
+    )
     {
-        if (depth > _MaxDepth)
-        {
-            return false;
-        }
-
         var shape = _GetShape(value.GetType());
 
         switch (shape.Kind)
@@ -119,31 +130,35 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 return true;
         }
 
+        // Below the cap nothing is looked at, so a value its type does not prove safe may hold a classified member.
+        if (depth > _MaxDepth)
+        {
+            return true;
+        }
+
         if (projecting?.Contains(value) == true)
         {
             return true;
         }
 
-        if (seen.TryGetValue(value, out var seenAt) && seenAt <= depth)
+        if (!seen.Add(value))
         {
             return false;
         }
 
-        seen[value] = depth;
-
         if (shape.Kind == ShapeKind.Sequence)
         {
-            var read = 0;
+            var items = reads.Read((IEnumerable)value);
 
-            foreach (var item in (IEnumerable)value)
+            // Elements past the cap are not read, so they may hold a classified member: project and truncate.
+            if (items.Count > _MaxElements)
             {
-                // Elements past the cap are not read, so they may hold a classified member: project and truncate.
-                if (read++ == _MaxElements)
-                {
-                    return true;
-                }
+                return true;
+            }
 
-                if (item is not null && _Needs(item, depth + 1, seen, projecting))
+            foreach (var item in items)
+            {
+                if (item is not null && _Needs(item, depth + 1, seen, projecting, reads))
                 {
                     return true;
                 }
@@ -161,7 +176,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
             if (!member.StaticallySafe && _TryGet(member.Member, value, out var nested) && nested is not null)
             {
-                if (_Needs(nested, depth + 1, seen, projecting))
+                if (_Needs(nested, depth + 1, seen, projecting, reads))
                 {
                     return true;
                 }
@@ -171,7 +186,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         return false;
     }
 
-    private string _Project(object value, bool captured, int depth, HashSet<object> projecting)
+    private string _Project(object value, bool captured, int depth, HashSet<object> projecting, SequenceReads reads)
     {
         var shape = _GetShape(value.GetType());
 
@@ -184,7 +199,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         try
         {
-            return _ProjectComposite(value, shape, captured, depth, projecting);
+            return _ProjectComposite(value, shape, captured, depth, projecting, reads);
         }
         finally
         {
@@ -197,24 +212,16 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         TypeShape shape,
         bool captured,
         int depth,
-        HashSet<object> projecting
+        HashSet<object> projecting,
+        SequenceReads reads
     )
     {
         if (shape.Kind == ShapeKind.Sequence)
         {
-            var items = new List<string>();
-
-            foreach (var item in (IEnumerable)value)
-            {
-                if (items.Count == _MaxElements)
-                {
-                    items.Add(_Truncated);
-
-                    break;
-                }
-
-                items.Add(item is null ? "(null)" : _Format(item, captured, depth + 1, projecting));
-            }
+            var items = _Render(
+                reads.Read((IEnumerable)value),
+                item => _Format(item, captured, depth + 1, projecting, reads)
+            );
 
             return string.Join(", ", items);
         }
@@ -250,15 +257,15 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
             builder.Append(
                 member.Classifications is { } classifications
-                    ? _RedactMember(memberValue, classifications)
-                    : _Format(memberValue, captured, depth + 1, projecting)
+                    ? _RedactMember(memberValue, classifications, reads)
+                    : _Format(memberValue, captured, depth + 1, projecting, reads)
             );
         }
 
         return builder.Append(" }").ToString();
     }
 
-    private string _Format(object value, bool captured, int depth, HashSet<object> projecting)
+    private string _Format(object value, bool captured, int depth, HashSet<object> projecting, SequenceReads reads)
     {
         // An instance met again inside its own projection is a cycle; its type name ends it.
         if (projecting.Contains(value))
@@ -266,38 +273,47 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return value.GetType().ToString();
         }
 
-        if (depth <= _MaxDepth && _Needs(value, depth, _NewSeen(), projecting))
+        if (!_Needs(value, depth, _NewInstanceSet(), projecting, reads))
         {
-            return _Project(value, captured, depth, projecting);
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
         }
 
-        return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+        // Below the depth cap a value is not walked: a classified type is still redacted whole, and anything else
+        // prints as its type name, never through a ToString that could print a classified member.
+        return depth > _MaxDepth && _GetShape(value.GetType()).Kind != ShapeKind.TypeClassified
+            ? value.GetType().ToString()
+            : _Project(value, captured, depth, projecting, reads);
     }
 
-    private string _RedactMember(object value, DataClassificationSet classifications)
+    private string _RedactMember(object value, DataClassificationSet classifications, SequenceReads reads)
     {
         var redactor = redactorProvider.GetRedactor(classifications);
 
         if (value is IEnumerable sequence && !_IsSingleValue(value))
         {
-            var items = new List<string>();
-
-            foreach (var item in sequence)
-            {
-                if (items.Count == _MaxElements)
-                {
-                    items.Add(_Truncated);
-
-                    break;
-                }
-
-                items.Add(item is null ? "(null)" : _RedactScalar(redactor, item));
-            }
-
-            return "[" + string.Join(", ", items) + "]";
+            return "[" + string.Join(", ", _Render(reads.Read(sequence), item => _RedactScalar(redactor, item))) + "]";
         }
 
         return _RedactScalar(redactor, value);
+    }
+
+    // At most the element cap, then a marker when the sequence held more.
+    private static List<string> _Render(List<object?> items, Func<object, string> format)
+    {
+        var count = Math.Min(items.Count, _MaxElements);
+        var rendered = new List<string>(count + 1);
+
+        for (var i = 0; i < count; i++)
+        {
+            rendered.Add(items[i] is { } item ? format(item) : "(null)");
+        }
+
+        if (items.Count > _MaxElements)
+        {
+            rendered.Add(_Truncated);
+        }
+
+        return rendered;
     }
 
     // A string or buffer is one value; redacting it element by element would give each character its own token.
@@ -626,6 +642,41 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
     // A public property or a public instance field.
     private sealed record MemberShape(MemberInfo Member, DataClassificationSet? Classifications, bool StaticallySafe);
+
+    // The elements each sequence gave during one log call, so detection and rendering read the same elements and a
+    // lazy query or a one-shot sequence is enumerated once. A logged sequence whose element type is safe is passed
+    // through without being read.
+    private sealed class SequenceReads
+    {
+        private Dictionary<object, List<object?>>? _reads;
+
+        public List<object?> Read(IEnumerable sequence)
+        {
+            _reads ??= new Dictionary<object, List<object?>>(ReferenceEqualityComparer.Instance);
+
+            if (_reads.TryGetValue(sequence, out var items))
+            {
+                return items;
+            }
+
+            items = [];
+
+            foreach (var item in sequence)
+            {
+                items.Add(item);
+
+                // One element past the cap is enough to know the sequence was cut.
+                if (items.Count > _MaxElements)
+                {
+                    break;
+                }
+            }
+
+            _reads[sequence] = items;
+
+            return items;
+        }
+    }
 }
 
 /// <summary>

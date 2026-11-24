@@ -2,6 +2,7 @@
 
 using System.Collections;
 using Headless.Logging;
+using Headless.Logging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Compliance.Classification;
 using Microsoft.Extensions.Compliance.Redaction;
@@ -332,6 +333,110 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         entry.Text.Should().Be($"Saw Family {{ Email = *****, Kids = Kid {{ Owner = {typeof(Family)} }} }}");
     }
 
+    [Fact]
+    public void should_not_print_a_classified_member_nested_below_the_depth_cap_raw()
+    {
+        // given: a classified member further down than the walk looks
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var chain = new Link(Next: null, Leaf: new Customer(_Email, "gold"));
+
+        for (var i = 0; i < 10; i++)
+        {
+            chain = new Link(chain, Leaf: null);
+        }
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Chain}", chain);
+
+        // then: the level the walk does not reach prints as its type name
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().NotContain(_Email).And.Contain(typeof(Link).ToString());
+        entry.Properties["@Chain"].Should().BeOfType<string>().Which.Should().NotContain(_Email);
+    }
+
+    [Fact]
+    public void should_redact_a_one_shot_sequence_without_enumerating_it_twice()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        List<Customer> list = [new(_Email, "gold"), new("bob@example.test", "silver")];
+        var customers = list.AsEnumerableOnce();
+
+        // when
+        _Logger(provider).LogInformation("Batch {Customers}", customers);
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry
+            .Text.Should()
+            .Be("Batch Customer { Email = *****, Tier = gold }, Customer { Email = *****, Tier = silver }");
+    }
+
+    [Fact]
+    public void should_run_a_logged_lazy_query_once()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var evaluations = 0;
+        Customer[] source = [new(_Email, "gold"), new("bob@example.test", "silver")];
+        var customers = source.Select(customer =>
+        {
+            evaluations++;
+
+            return customer;
+        });
+
+        // when
+        _Logger(provider).LogInformation("Batch {Customers}", customers);
+
+        // then
+        evaluations.Should().Be(source.Length);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().NotContain("example.test");
+    }
+
+    [Fact]
+    public void should_read_a_sequence_once_for_both_detection_and_projection()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var projection = new ClassifiedObjectProjection(provider.GetRequiredService<IRedactorProvider>());
+        var evaluations = 0;
+        Customer[] source = [new(_Email, "gold"), new("bob@example.test", "silver")];
+        var customers = source.Select(customer =>
+        {
+            evaluations++;
+
+            return customer;
+        });
+
+        // when
+        var projected = projection.TryProject(customers, captured: false, out var text);
+
+        // then
+        projected.Should().BeTrue();
+        text.Should().Be("Customer { Email = *****, Tier = gold }, Customer { Email = *****, Tier = silver }");
+        evaluations.Should().Be(source.Length);
+    }
+
+    [Fact]
+    public void should_pass_a_sequence_of_safe_elements_through_as_the_same_instance()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        List<Order> orders = [new(1, "open"), new(2, "closed")];
+
+        // when
+        _Logger(provider).LogInformation("Placed {Orders}", orders);
+
+        // then
+        sink.Entries.Should().ContainSingle().Which.Properties["Orders"].Should().BeSameAs(orders);
+    }
+
     // The generator rejects a parameter whose declared type has a classified member (LOGGEN035), so the case that
     // reaches run time is a derived value passed through an unclassified base type.
     [LoggerMessage(1, LogLevel.Information, "Signup {Email} as {Party}")]
@@ -421,6 +526,8 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     private sealed record TokenHolder(Token? Root);
+
+    private sealed record Link(Link? Next, Customer? Leaf);
 
     private sealed class TreeNode
     {
