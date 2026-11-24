@@ -6,5 +6,6 @@ export default defineConfig({
     include: ['test/**/*.test.{ts,tsx}'],
     environment: 'jsdom',
     setupFiles: ['test/setup.ts'],
+    sequence: { hooks: 'list' },
   },
 })

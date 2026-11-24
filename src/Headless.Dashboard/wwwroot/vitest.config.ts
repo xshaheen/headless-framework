@@ -16,6 +16,7 @@ export default defineConfig({
           include: ['packages/sdk/test/**/*.test.{ts,tsx}'],
           environment: 'jsdom',
           setupFiles: ['packages/sdk/test/setup.ts'],
+          sequence: { hooks: 'list' },
         },
       },
       {
@@ -24,6 +25,7 @@ export default defineConfig({
           include: ['apps/shell/test/**/*.test.{ts,tsx}'],
           environment: 'jsdom',
           setupFiles: ['apps/shell/test/setup.ts'],
+          sequence: { hooks: 'list' },
         },
       },
     ],
