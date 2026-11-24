@@ -1,7 +1,7 @@
 import { render, type RenderResult } from '@testing-library/react'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ComponentType } from 'react'
-import { createMemoryRouter, RouterProvider } from 'react-router'
+import { createMemoryRouter, parsePath, RouterProvider, type Location } from 'react-router'
 import { OperationHost } from '../commands/operations.tsx'
 import { ToastRegion } from '../components/live.tsx'
 import { DashboardProvider, ModuleScope, type DashboardSession, type ModulePermission } from '../context.tsx'
@@ -24,7 +24,11 @@ export interface RenderModuleOptions {
   api?: ApiHandler
   /** The route path inside the module to open, such as `runs/42`; the module's home by default. */
   path?: string
+  /** The history state the first route opens with, as a link that hands a view its filter would pass it. */
+  state?: unknown
   basePath?: string
+  /** The host's tracing-tool link, with `{traceId}` where the W3C trace id goes. */
+  traceLinkTemplate?: string
   /** How long an Operation waits between chunks. */
   chunkDelayMs?: number
 }
@@ -36,10 +40,12 @@ export interface RenderModuleResult extends RenderResult {
   api: DashboardApi
   /** Every API call the module made, in order. */
   requests: ApiRequest[]
-  /** Opens another route of the module, such as `runs/42`. */
-  navigate: (path: string) => Promise<void>
-  /** The URL the module shows now, as the browser's address bar would: its path and search. */
-  location: () => { pathname: string; search: string }
+  /** Opens another route of the module, such as `runs/42`, with the history state a link would hand it. */
+  navigate: (path: string, options?: { state?: unknown }) => Promise<void>
+  /** Moves through the history, as the browser's Back (`-1`) and Forward (`1`) do. */
+  go: (delta: number) => Promise<void>
+  /** Where the module is now: its path, search, and fragment, as the address bar shows them, and the history state. */
+  location: () => Location
 }
 
 /**
@@ -77,7 +83,10 @@ export function renderModule(definition: ModuleDefinition, options: RenderModule
       return { Component: view.default as ComponentType }
     },
   }))
-  const router = createMemoryRouter(routes, { initialEntries: [`/${definition.id}/${options.path ?? ''}`] })
+  // The shell's trace page, empty here, so a module's link or key that opens a trace lands on a route.
+  const router = createMemoryRouter([...routes, { path: '/trace', Component: () => null }], {
+    initialEntries: [{ ...parsePath(`/${definition.id}/${options.path ?? ''}`), state: options.state }],
+  })
 
   const result = render(
     <DashboardProvider
@@ -89,6 +98,7 @@ export function renderModule(definition: ModuleDefinition, options: RenderModule
         permissions: { [definition.id]: permission },
         stream,
         api,
+        traceLinkTemplate: options.traceLinkTemplate,
       }}
     >
       <StaleFeed />
@@ -107,7 +117,8 @@ export function renderModule(definition: ModuleDefinition, options: RenderModule
     client,
     api,
     requests,
-    navigate: (path) => router.navigate(`/${definition.id}/${path}`),
+    navigate: (path, navigateOptions) => router.navigate(`/${definition.id}/${path}`, navigateOptions),
+    go: (delta) => router.navigate(delta),
     location: () => router.state.location,
   }
 }

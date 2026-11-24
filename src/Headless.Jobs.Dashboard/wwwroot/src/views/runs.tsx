@@ -35,7 +35,7 @@ import {
 } from '@headless/dashboard-sdk/data'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { useQueryClient } from '@headless/dashboard-sdk/query'
-import { useSearchParams } from '@headless/dashboard-sdk/router'
+import { useLocation, useSearchParams } from '@headless/dashboard-sdk/router'
 import {
   DateRangeField,
   timeRangePresets,
@@ -113,7 +113,8 @@ export default function RunsView() {
   const client = useQueryClient()
   const { start } = useOperations()
   const [params, setParams] = useSearchParams()
-  const filter = readFilter(params)
+  // A correlation id rides in history state, never the URL; every other control that writes the URL keeps it.
+  const filter = readFilter(params, useLocation().state)
   // The whole view is in the URL, so a link or a reload shows the same runs. A preset range is kept by name and worked
   // out when the view opens, so a shared `Last 24 h` link stays relative. The search reads function names, ids, business
   // keys, and descriptions, never a payload, so it may sit in a link.
@@ -163,7 +164,8 @@ export default function RunsView() {
   const status = filter.status
   const state = status ? states[status] : undefined
 
-  function update(change: (next: URLSearchParams) => void) {
+  /** Writes the URL; `state`, when given, replaces the history state that carries the correlation id. */
+  function update(change: (next: URLSearchParams) => void, state?: { correlationId: string } | null) {
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
@@ -171,20 +173,30 @@ export default function RunsView() {
 
         return next
       },
-      { replace: true },
+      state === undefined ? { replace: true } : { replace: true, state },
     )
   }
 
   function setFilter(name: keyof RunFilter, value: string, also?: Partial<RunFilter>) {
-    update((next) => {
-      for (const [key, set] of Object.entries({ [name]: value, ...also })) {
-        if (set) {
-          next.set(key, set)
-        } else {
-          next.delete(key)
+    const changes: Partial<RunFilter> = { [name]: value, ...also }
+    const correlationId = changes.correlationId
+
+    update(
+      (next) => {
+        for (const [key, set] of Object.entries(changes)) {
+          if (key === 'correlationId') {
+            continue
+          }
+
+          if (set) {
+            next.set(key, set)
+          } else {
+            next.delete(key)
+          }
         }
-      }
-    })
+      },
+      correlationId === undefined ? undefined : correlationId ? { correlationId } : null,
+    )
   }
 
   function searchFor(text: string) {
@@ -208,7 +220,7 @@ export default function RunsView() {
       for (const name of [...filterNames.filter((name) => name !== 'status'), 'q', 'range', 'from', 'to']) {
         next.delete(name)
       }
-    })
+    }, null)
   }
 
   function openCreate(kind: CreateKind) {

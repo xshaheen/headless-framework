@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Headless.Dashboard;
 using Headless.Testing.Tests;
@@ -175,7 +176,7 @@ public sealed class AggregationEndpointTests : TestBase
         await using var app = await _StartAsync();
         using var client = app.GetTestClient();
 
-        using var response = await client.GetAsync("/dash/api/resolve?q=%20run-42%20", AbortToken);
+        using var response = await _PostAsync(client, "/dash/api/resolve", new { query = " run-42 " });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var modules = (await _ReadAsync(response)).GetProperty("modules");
@@ -192,7 +193,7 @@ public sealed class AggregationEndpointTests : TestBase
         await using var app = await _StartAsync();
         using var client = app.GetTestClient();
 
-        using var response = await client.GetAsync("/dash/api/resolve?q=%20", AbortToken);
+        using var response = await _PostAsync(client, "/dash/api/resolve", new { query = " " });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -305,7 +306,7 @@ public sealed class AggregationEndpointTests : TestBase
         );
         using var client = app.GetTestClient();
 
-        using var response = await client.GetAsync("/dash/api/resolve?q=run-42", AbortToken);
+        using var response = await _PostAsync(client, "/dash/api/resolve", new { query = "run-42" });
 
         var item = (await _ReadAsync(response)).GetProperty("modules")[0].GetProperty("items")[0];
         item.GetProperty("traceId").GetString().Should().Be(_TraceId);
@@ -321,7 +322,7 @@ public sealed class AggregationEndpointTests : TestBase
         await using var app = await _StartAsync();
         using var client = app.GetTestClient();
 
-        using var response = await client.GetAsync("/dash/api/resolve?q=run-42", AbortToken);
+        using var response = await _PostAsync(client, "/dash/api/resolve", new { query = "run-42" });
 
         var item = (await _ReadAsync(response)).GetProperty("modules")[0].GetProperty("items")[0];
         item.GetProperty("traceUrl").ValueKind.Should().Be(JsonValueKind.Null);
@@ -561,12 +562,14 @@ public sealed class AggregationEndpointTests : TestBase
     }
 
     [Theory]
-    [InlineData("/dash/api/needs-you")]
-    [InlineData("/dash/api/overview")]
-    [InlineData("/dash/api/resolve?q=run-42")]
-    [InlineData("/dash/api/related?module=diag-a&kind=run&id=run-42")]
-    [InlineData("/dash/api/payload?module=diag-a&kind=run&id=run-42")]
+    [InlineData("GET", "/dash/api/needs-you")]
+    [InlineData("GET", "/dash/api/overview")]
+    [InlineData("POST", "/dash/api/resolve")]
+    [InlineData("POST", "/dash/api/trace")]
+    [InlineData("GET", "/dash/api/related?module=diag-a&kind=run&id=run-42")]
+    [InlineData("GET", "/dash/api/payload?module=diag-a&kind=run&id=run-42")]
     public async Task should_answer_401_and_call_no_module_when_a_request_has_no_session_under_basic_authentication(
+        string method,
         string path
     )
     {
@@ -583,10 +586,28 @@ public sealed class AggregationEndpointTests : TestBase
                 new DashboardPayload { Content = "secret", ContentType = "text/plain" }
             );
         };
+        _diagA.Resolve = _ =>
+        {
+            called = true;
+            return Task.FromResult<IReadOnlyList<DashboardObject>>([]);
+        };
+        _diagA.Trace = (_, _) =>
+        {
+            called = true;
+            return Task.FromResult(new DashboardTraceAnswer { Items = [] });
+        };
         await using var app = await _StartAsync(auth: dashboard => dashboard.WithBasicAuth("operator", "s3cret-pass"));
         using var client = _HttpsClient(app);
 
-        using var response = await client.GetAsync(path, AbortToken);
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+        if (string.Equals(method, "POST", StringComparison.Ordinal))
+        {
+            request.Content = JsonContent.Create(new { query = "run-42", correlationId = "ord-7" });
+            request.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        }
+
+        using var response = await client.SendAsync(request, AbortToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         called.Should().BeFalse();
@@ -777,6 +798,317 @@ public sealed class AggregationEndpointTests : TestBase
         _Count((await _ReadAsync(viewer)).GetProperty("counts"), "Failed").Should().Be((4, false));
     }
 
+    [Fact]
+    public async Task should_answer_a_trace_with_both_modules_items_in_one_tree_and_each_modules_section()
+    {
+        string? askedFor = null;
+        _diagA.Trace = (request, _) =>
+        {
+            askedFor = request.CorrelationId;
+            return _TraceAnswer(_TraceRun("run-1", at: 0));
+        };
+        _diagB.Trace = (_, _) =>
+            _TraceAnswer(
+                new DashboardTraceAnswer
+                {
+                    Items = [_TracePublished("msg-1", at: 1, causedByRun: "run-1")],
+                    Limited = true,
+                    ListLink = new DashboardTraceListLink
+                    {
+                        Path = "published",
+                        State = JsonSerializer.SerializeToElement(new { correlationId = "ord-7 " }),
+                    },
+                }
+            );
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await _PostAsync(client, "/dash/api/trace", new { correlationId = "ord-7 " });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        askedFor.Should().Be("ord-7 ", "a correlation id is matched exactly, so it is never trimmed");
+        var body = await _ReadAsync(response);
+        body.GetProperty("hidden").GetInt32().Should().Be(0);
+        _TraceShape(body).Should().Equal(("diag-a", "run-1", 0), ("diag-b", "msg-1", 1));
+        var child = body.GetProperty("rows")[1];
+        child.GetProperty("timestampKind").GetString().Should().Be("added");
+        child.GetProperty("tags").GetArrayLength().Should().Be(0);
+        body.GetProperty("rows")[0].GetProperty("timestampKind").GetString().Should().Be("ran");
+        var diagA = _ModuleSection(body, "diag-a");
+        diagA.GetProperty("limited").GetBoolean().Should().BeFalse();
+        diagA.GetProperty("count").GetInt32().Should().Be(1);
+        diagA.TryGetProperty("list", out _).Should().BeFalse();
+        var diagB = _ModuleSection(body, "diag-b");
+        diagB.GetProperty("stale").GetBoolean().Should().BeFalse();
+        diagB.GetProperty("limited").GetBoolean().Should().BeTrue();
+        diagB.GetProperty("list").GetProperty("path").GetString().Should().Be("published");
+        diagB.GetProperty("list").GetProperty("state").GetProperty("correlationId").GetString().Should().Be("ord-7 ");
+    }
+
+    [Fact]
+    public async Task should_answer_a_trace_with_the_fast_modules_items_and_the_slow_module_stale_when_the_timeout_passes()
+    {
+        var slowCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _diagA.Trace = (_, _) => _TraceAnswer(_TraceRun("run-1", at: 0));
+        _diagB.Trace = async (_, cancellationToken) =>
+        {
+            slowCalled.SetResult();
+            await new TaskCompletionSource().Task.WaitAsync(cancellationToken);
+            return new DashboardTraceAnswer { Items = [] };
+        };
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+#pragma warning disable CA2025 // False positive: the test awaits the response below, before the client is disposed.
+        var pending = _PostAsync(client, "/dash/api/trace", new { correlationId = "ord-7" });
+#pragma warning restore CA2025
+        await slowCalled.Task.WaitAsync(AbortToken);
+        _time.Advance(TimeSpan.FromSeconds(2));
+        using var response = await pending;
+
+        var body = await _ReadAsync(response);
+        _ModuleSection(body, "diag-b").GetProperty("stale").GetBoolean().Should().BeTrue();
+        _ModuleSection(body, "diag-a").GetProperty("stale").GetBoolean().Should().BeFalse();
+        _TraceShape(body).Should().Equal(("diag-a", "run-1", 0));
+    }
+
+    [Fact]
+    public async Task should_count_a_trace_module_the_user_may_not_view_as_hidden_without_calling_or_naming_it()
+    {
+        var hiddenCalled = false;
+        // The run was caused by a message only the hidden module holds.
+        _diagA.Trace = (_, _) => _TraceAnswer(_TraceRun("run-1", at: 0) with { Causation = _MessageKey("msg-1") });
+        _diagB.Trace = (_, _) =>
+        {
+            hiddenCalled = true;
+            return _TraceAnswer(_TracePublished("msg-1", at: 0, causedByRun: null));
+        };
+
+        await using var app = await _StartAsync(
+            services: services => services.Configure<DiagBModuleOptions>(o => o.ViewPolicy = _DiagBViewers),
+            hostAuthentication: true
+        );
+        using var client = _HttpsClient(app);
+
+        using var response = await _GetSignedInAsync(
+            client,
+            "/dash/api/trace",
+            roles: "",
+            postBody: new { correlationId = "ord-7" }
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        hiddenCalled.Should().BeFalse();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        json.Should().NotContain("diag-b");
+        using var document = JsonDocument.Parse(json);
+        var body = document.RootElement;
+        body.GetProperty("hidden").GetInt32().Should().Be(1);
+        body.GetProperty("modules")
+            .EnumerateArray()
+            .Select(m => m.GetProperty("id").GetString())
+            .Should()
+            .Equal("diag-a");
+        _Strings(body.GetProperty("rows")[0].GetProperty("tags")).Should().Equal("parent-not-on-page");
+    }
+
+    [Fact]
+    public async Task should_answer_a_trace_whose_items_cause_each_other_with_the_cycle_broken_and_tagged()
+    {
+        _diagA.Trace = (_, _) =>
+            _TraceAnswer(
+                _TraceRun("run-a", at: 0) with
+                {
+                    Causation = _RunKey("run-b"),
+                },
+                _TraceRun("run-b", at: 1) with
+                {
+                    Causation = _RunKey("run-a"),
+                }
+            );
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await _PostAsync(client, "/dash/api/trace", new { correlationId = "ord-7" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await _ReadAsync(response);
+        _TraceShape(body).Should().Equal(("diag-a", "run-a", 0), ("diag-a", "run-b", 1));
+        _Strings(body.GetProperty("rows")[0].GetProperty("tags")).Should().Equal("cycle");
+    }
+
+    [Theory]
+    [InlineData("""{"correlationId":""}""")]
+    [InlineData("{}")]
+    [InlineData("{\"correlationId\":\"" + _Id201 + "\"}")]
+    [InlineData("""{"correlationId":""")]
+    public async Task should_refuse_a_trace_whose_correlation_id_is_empty_too_long_or_unreadable(string json)
+    {
+        var called = false;
+        _diagA.Trace = (_, _) =>
+        {
+            called = true;
+            return _TraceAnswer();
+        };
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/dash/api/trace")
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        using var response = await client.SendAsync(request, AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        called.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_answer_a_trace_for_a_correlation_id_of_exactly_200_characters()
+    {
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await _PostAsync(client, "/dash/api/trace", new { correlationId = _Id201[..200] });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task should_answer_405_to_a_get_of_the_old_resolve_query_route()
+    {
+        var called = false;
+        _diagA.Resolve = _ =>
+        {
+            called = true;
+            return Task.FromResult<IReadOnlyList<DashboardObject>>([]);
+        };
+
+        await using var app = await _StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/dash/api/resolve?q=run-42", AbortToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().Equal("POST");
+        called.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_never_write_the_correlation_id_to_a_log_at_information_level_or_above()
+    {
+        const string correlationId = "ord-secret-7731";
+        using var capture = new CapturingLoggerProvider();
+        _diagA.Trace = (_, _) => _TraceAnswer(_TraceRun("run-1", at: 0));
+        // A failing module logs a warning; that path must leave the id out too.
+        _diagB.Trace = (_, _) => throw new InvalidOperationException("store is down");
+
+        await using var app = await _StartAsync(services: services => services.AddSingleton<ILoggerProvider>(capture));
+        using var client = app.GetTestClient();
+
+        using var response = await _PostAsync(client, "/dash/api/trace", new { correlationId });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var records = capture.Records;
+        // Information entries reach the capture, so the check below is not vacuous.
+        records
+            .Should()
+            .Contain(r =>
+                r.Level == LogLevel.Information
+                && r.Category.StartsWith("Microsoft.AspNetCore.Hosting", StringComparison.Ordinal)
+                && r.Message.Contains("/dash/api/trace", StringComparison.Ordinal)
+            );
+        records
+            .Should()
+            .Contain(r => r.Level == LogLevel.Warning && r.Message.Contains("diag-b", StringComparison.Ordinal));
+        records
+            .Where(static r => r.Level >= LogLevel.Information)
+            .Should()
+            .NotContain(r => r.Message.Contains(correlationId, StringComparison.Ordinal));
+    }
+
+    private const string _Id201 =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    private static IEnumerable<(string Module, string Id, int Depth)> _TraceShape(JsonElement body) =>
+        body.GetProperty("rows")
+            .EnumerateArray()
+            .Select(static row =>
+                (
+                    row.GetProperty("module").GetString()!,
+                    row.GetProperty("target").GetProperty("id").GetString()!,
+                    row.GetProperty("depth").GetInt32()
+                )
+            );
+
+    private static Task<DashboardTraceAnswer> _TraceAnswer(params DashboardTraceItem[] items) =>
+        Task.FromResult(new DashboardTraceAnswer { Items = items });
+
+    private static Task<DashboardTraceAnswer> _TraceAnswer(DashboardTraceAnswer answer) => Task.FromResult(answer);
+
+    private static DashboardTraceKey _RunKey(string id) => new() { Kind = DashboardTraceKeyKind.Run, Value = id };
+
+    private static DashboardTraceKey _MessageKey(string id) =>
+        new() { Kind = DashboardTraceKeyKind.Message, Value = id };
+
+    private DashboardTraceItem _TraceRun(string id, int at) =>
+        new()
+        {
+            Target = new ObjectRef
+            {
+                Module = "diag-a",
+                Kind = "run",
+                Id = id,
+            },
+            Store = "primary",
+            StorageId = id,
+            Title = $"Run {id}",
+            At = _time.GetUtcNow().AddSeconds(at),
+            CorrelationId = "ord-7",
+            Key = _RunKey(id),
+        };
+
+    private DashboardTraceItem _TracePublished(string id, int at, string? causedByRun) =>
+        new()
+        {
+            Target = new ObjectRef
+            {
+                Module = "diag-b",
+                Kind = "published",
+                Id = id,
+            },
+            Store = "primary",
+            StorageId = id,
+            Title = $"Message {id}",
+            At = _time.GetUtcNow().AddSeconds(at),
+            TimestampKind = DashboardTraceTimestampKind.Added,
+            CorrelationId = "ord-7",
+            Key = _MessageKey(id),
+            Causation = causedByRun is null ? null : _RunKey(causedByRun),
+        };
+
+    private static Task<HttpResponseMessage> _PostAsync(HttpClient client, string path, object body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
+        request.Headers.Add("X-Requested-With", "XMLHttpRequest");
+
+        return _SendAndDisposeAsync(client, request);
+    }
+
+    private static async Task<HttpResponseMessage> _SendAndDisposeAsync(HttpClient client, HttpRequestMessage request)
+    {
+        using (request)
+        {
+            return await client.SendAsync(request, AbortToken);
+        }
+    }
+
     private static Task<IReadOnlyDictionary<string, DashboardCount>> _Counts(
         params (string Key, DashboardCount Count)[] counts
     )
@@ -874,7 +1206,12 @@ public sealed class AggregationEndpointTests : TestBase
     }
 
     // Signs the host user in for a session, as the browser does, then sends the request with the session cookie alone.
-    private static async Task<HttpResponseMessage> _GetSignedInAsync(HttpClient client, string url, string roles)
+    private static async Task<HttpResponseMessage> _GetSignedInAsync(
+        HttpClient client,
+        string url,
+        string roles,
+        object? postBody = null
+    )
     {
         using var exchange = new HttpRequestMessage(HttpMethod.Post, "/dash/api/auth/session");
         exchange.Headers.Add("X-Test-User", "operator");
@@ -886,8 +1223,14 @@ public sealed class AggregationEndpointTests : TestBase
             .ParseList([.. signedIn.Headers.GetValues("Set-Cookie")])
             .Single(c => c.Name.Value!.StartsWith("__Host-headless-dashboard-", StringComparison.Ordinal));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = new HttpRequestMessage(postBody is null ? HttpMethod.Get : HttpMethod.Post, url);
         request.Headers.Add("Cookie", $"{cookie.Name}={cookie.Value}");
+
+        if (postBody is not null)
+        {
+            request.Content = JsonContent.Create(postBody);
+            request.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        }
 
         return await client.SendAsync(request, AbortToken);
     }
@@ -931,4 +1274,55 @@ public sealed class AggregationEndpointTests : TestBase
             Status = "Failed",
         };
     }
+
+    /// <summary>A logger provider that keeps every entry with its category, level, and rendered message.</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly Lock _lock = new();
+        private readonly List<LogRecord> _records = [];
+
+        public IReadOnlyList<LogRecord> Records
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _records];
+                }
+            }
+        }
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(this, categoryName);
+
+        public void Dispose() { }
+
+        private void _Add(LogRecord record)
+        {
+            lock (_lock)
+            {
+                _records.Add(record);
+            }
+        }
+
+        private sealed class CapturingLogger(CapturingLoggerProvider provider, string category) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                provider._Add(new LogRecord(category, logLevel, formatter(state, exception)));
+            }
+        }
+    }
+
+    private sealed record LogRecord(string Category, LogLevel Level, string Message);
 }

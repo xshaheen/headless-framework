@@ -245,10 +245,26 @@ public sealed class ForwardingCommandTests : TestBase
             viewer,
             AbortToken
         );
+        using var peerTrace = await MessagingCommandHost.PostAsync(
+            clientB,
+            "/headless/api/messaging/peer/trace",
+            new { correlationId = "order-1", limit = 10 },
+            viewer,
+            AbortToken
+        );
+        using var peerResolve = await MessagingCommandHost.PostAsync(
+            clientB,
+            "/headless/api/messaging/peer/resolve",
+            new { query = "order-1" },
+            viewer,
+            AbortToken
+        );
 
         // then
         write.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         peerSurface.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        peerTrace.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        peerResolve.StatusCode.Should().Be(HttpStatusCode.NotFound);
         _logB.Entries.Should().BeEmpty();
         (await _ReceivedCountAsync(storageB)).Should().Be(1);
     }
@@ -324,6 +340,18 @@ public sealed class ForwardingCommandTests : TestBase
 
     [Theory]
     [InlineData("GET", "/peer/changes", null, "cursor", "required")]
+    [InlineData("POST", "/peer/trace", null, "correlationId", "required")]
+    [InlineData("POST", "/peer/trace", """{"limit":10}""", "correlationId", "required")]
+    [InlineData(
+        "POST",
+        "/peer/trace",
+        "{\"correlationId\":\"" + _TooLongId + "\",\"limit\":10}",
+        "correlationId",
+        "maxLength"
+    )]
+    [InlineData("POST", "/peer/trace", """{"correlationId":"order-1"}""", "limit", "invalid")]
+    [InlineData("POST", "/peer/trace", """{"correlationId":"order-1","limit":0}""", "limit", "invalid")]
+    [InlineData("POST", "/peer/trace", """{"correlationId":"order-1","limit":10001}""", "limit", "invalid")]
     [InlineData("GET", "/peer/payload?kind=received", null, "id", "required")]
     [InlineData("GET", "/peer/allowed?id=node-b~primary~x", null, "kind", "required")]
     [InlineData("POST", "/peer/operations/messaging.re-execute/scope", "not json", "body", "json")]
@@ -372,6 +400,11 @@ public sealed class ForwardingCommandTests : TestBase
         problem.GetProperty("detail").GetString().Should().NotBeNullOrWhiteSpace();
         _logB.Entries.Should().BeEmpty();
     }
+
+    private const string _FiftyChars = "01234567890123456789012345678901234567890123456789";
+
+    // One character past the longest correlation id a store holds.
+    private const string _TooLongId = _FiftyChars + _FiftyChars + _FiftyChars + _FiftyChars + "x";
 
     private static void _Operate(MessagingDashboardOptions options) =>
         options.ForwardedAccess = MessagingForwardedAccess.Operate;

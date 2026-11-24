@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Messaging.Dashboard;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
+using Tests.Module;
 
 namespace Tests.Forwarding;
 
@@ -17,6 +18,8 @@ internal sealed class PeerNetwork
         StringComparer.OrdinalIgnoreCase
     );
 
+    private readonly ConcurrentDictionary<string, bool> _hanging = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly ConcurrentQueue<(Func<SentCall, bool> Match, TaskCompletionSource<SentCall> Signal)> _waiters =
         new();
 
@@ -27,6 +30,9 @@ internal sealed class PeerNetwork
 
     /// <summary>Makes calls to <paramref name="host"/> fail as a connection failure would.</summary>
     public void Remove(string host) => _nodes.TryRemove(host, out _);
+
+    /// <summary>Makes calls to <paramref name="host"/> never answer: each ends only when the caller cancels it.</summary>
+    public void Hang(string host) => _hanging[host] = true;
 
     /// <summary>
     /// Answers calls to <paramref name="host"/> with what <paramref name="answer"/> returns before the node sees them;
@@ -90,6 +96,13 @@ internal sealed class PeerNetwork
                 {
                     signal.TrySetResult(call);
                 }
+            }
+
+            if (network._hanging.ContainsKey(request.RequestUri!.Host))
+            {
+                return await HangingReads
+                    .NeverAnswerAsync<HttpResponseMessage>(cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (

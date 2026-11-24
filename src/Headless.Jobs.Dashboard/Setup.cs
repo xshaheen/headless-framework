@@ -62,7 +62,7 @@ public static class SetupJobsDashboard
 
         /// <summary>
         /// Adds the Jobs module bound from <paramref name="configuration"/>, with the keys <c>ViewPolicy</c>,
-        /// <c>OperatePolicy</c>, <c>ChangeOverlapWindow</c>, and <c>ChangePageSize</c>.
+        /// <c>OperatePolicy</c>, <c>ChangeOverlapWindow</c>, <c>ChangePageSize</c>, and <c>TraceLimit</c>.
         /// </summary>
         /// <param name="configuration">The configuration section to bind.</param>
         /// <returns>The same builder for chaining.</returns>

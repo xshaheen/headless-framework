@@ -118,6 +118,58 @@ internal sealed class MessagingSources(
         return [.. found.DistinctBy(static found => (found.Target.Kind, found.Target.Id))];
     }
 
+    /// <summary>
+    /// Reads the published and received rows of <paramref name="correlationId"/> from every store, the oldest
+    /// <paramref name="limit"/> plus one of each table, and names the stores that failed, ran out of time, or cannot
+    /// look up a correlation id.
+    /// </summary>
+    public async Task<MessagingTracePart> GetTraceAsync(
+        string correlationId,
+        int limit,
+        CancellationToken cancellationToken
+    )
+    {
+        var query = new MessageTraceQuery { CorrelationId = correlationId, Limit = limit };
+        var answers = await _stores
+            .ReadEachAsync(
+                _stores.All,
+                async (store, token) =>
+                {
+                    try
+                    {
+                        var result = await store
+                            .Monitoring.GetCorrelatedMessagesAsync(query, token)
+                            .ConfigureAwait(false);
+
+                        return (IReadOnlyList<MessagingTraceRow>?)
+                            [.. MessagingTrace.Rows(_stores.NodeName, store, result)];
+                    }
+                    catch (NotSupportedException)
+                    {
+                        // A custom store that predates the lookup: named apart, not logged as a failing store.
+                        return null;
+                    }
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new MessagingTracePart
+        {
+            Rows = [.. answers.Answered.SelectMany(static answer => answer.Value ?? [])],
+            UnavailableSources =
+            [
+                .. answers.Unavailable,
+                .. answers
+                    .Answered.Where(static answer => answer.Value is null)
+                    .Select(static answer => NotSupportedSource(answer.Store.Name)),
+            ],
+        };
+    }
+
+    /// <summary>How a trace names a store that cannot look up a correlation id.</summary>
+    internal static string NotSupportedSource(string store) => $"{store} (correlation lookup not supported)";
+
     /// <summary>Returns a row's stored envelope as JSON, or <see langword="null"/> when the row is not found.</summary>
     public async Task<DashboardPayload?> GetPayloadAsync(ObjectRef target, CancellationToken cancellationToken)
     {

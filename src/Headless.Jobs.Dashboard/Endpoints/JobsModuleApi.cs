@@ -30,6 +30,7 @@ internal sealed class JobsModuleApi(
     internal const int MaxSeriesDays = 92;
 
     private static readonly JobsRunListQueryValidator _RunListValidator = new();
+    private static readonly JobsRunSearchBodyValidator _RunSearchValidator = new();
     private static readonly DateOnly _FirstSeriesDay = DateOnly.MinValue.AddDays(1);
     private static readonly DateOnly _LastSeriesDay = DateOnly.MaxValue.AddDays(-1);
 
@@ -45,6 +46,8 @@ internal sealed class JobsModuleApi(
         var routes = endpoints.Routes;
 
         routes.MapGet("/runs", _ListRunsAsync);
+        // A search reads and changes nothing; it is a POST so the correlation id stays out of URLs and request logs.
+        routes.MapPost("/runs/search", _SearchRunsAsync);
         routes.MapGet("/runs/{runId}", _GetRunAsync);
         routes.MapGet("/runs/{runId}/attempts", _GetAttemptsAsync);
         routes.MapGet("/cron-jobs", _ListCronJobsAsync);
@@ -55,8 +58,60 @@ internal sealed class JobsModuleApi(
         routes.MapGet("/series/daily", _DailySeriesAsync);
     }
 
-    private async Task<Results<JsonHttpResult<JobsRunList>, ValidationProblem>> _ListRunsAsync(
+    private Task<Results<JsonHttpResult<JobsRunList>, ValidationProblem>> _ListRunsAsync(
         [AsParameters] JobsRunListQuery request,
+        CancellationToken cancellationToken
+    )
+    {
+        return _ReadRunsAsync(request, correlationId: null, cancellationToken);
+    }
+
+    private async Task<Results<JsonHttpResult<JobsRunList>, ValidationProblem>> _SearchRunsAsync(
+        HttpContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        JobsRunSearchBody? body;
+
+        try
+        {
+            body = await JsonSerializer
+                .DeserializeAsync(
+                    context.Request.Body,
+                    JobsDashboardJsonContext.Default.JobsRunSearchBody,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            body = null;
+        }
+
+        // The problems name the fields, never the id searched for: a problem is served, and a host may log it.
+        if (body is null)
+        {
+            return DashboardValidation.Problem(
+                DashboardValidation.BodyField,
+                DashboardValidation.JsonRule,
+                "The body must be a search: { correlationId, and the list's filters }."
+            );
+        }
+
+        if (
+            await _RunSearchValidator.ValidateAsync(body, cancellationToken).ConfigureAwait(false) is
+            { IsValid: false } invalid
+        )
+        {
+            return DashboardValidation.Problem(invalid);
+        }
+
+        return await _ReadRunsAsync(body.ToListQuery(), body.CorrelationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<Results<JsonHttpResult<JobsRunList>, ValidationProblem>> _ReadRunsAsync(
+        JobsRunListQuery request,
+        string? correlationId,
         CancellationToken cancellationToken
     )
     {
@@ -74,7 +129,7 @@ internal sealed class JobsModuleApi(
             Functions = request.Function,
             Statuses = request.ReadStatuses(),
             CronJobId = request.CronJobId,
-            CorrelationId = request.CorrelationId,
+            CorrelationId = correlationId,
             Fingerprint = request.Fingerprint,
             From = request.From,
             Before = request.Before,

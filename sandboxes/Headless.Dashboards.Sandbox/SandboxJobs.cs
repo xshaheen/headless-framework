@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
+using Headless.Messaging;
 
 namespace Headless.Dashboards.Sandbox;
 
@@ -159,6 +160,38 @@ public sealed class StubbornJob : IJob
     }
 }
 
+/// <summary>The order a <see cref="TraceCheckoutJob"/> run checks out, carried into the message it publishes.</summary>
+/// <param name="OrderId">The order the run checks out.</param>
+public sealed record TraceCheckoutArgs(int OrderId);
+
+/// <summary>
+/// Publishes <see cref="SandboxCheckoutCompleted"/> and passes no correlation id: the message takes the run's
+/// correlation id and the run as its cause, so the trace page shows the run with its message under it.
+/// </summary>
+[Job(SandboxJobIds.TraceCheckout)]
+public sealed class TraceCheckoutJob(IBus bus) : IJob<TraceCheckoutArgs>
+{
+    public async ValueTask ExecuteAsync(JobContext<TraceCheckoutArgs> context, CancellationToken cancellationToken)
+    {
+        await bus.PublishAsync(new SandboxCheckoutCompleted(context.Request.OrderId), cancellationToken);
+    }
+}
+
+/// <summary>The order a <see cref="TraceFollowUpJob"/> run follows up.</summary>
+/// <param name="OrderId">The order the run follows up.</param>
+public sealed record TraceFollowUpArgs(int OrderId);
+
+/// <summary>
+/// The job <see cref="SandboxFulfilmentConsumer"/> schedules while it consumes a checkout, the last row of the same
+/// trace. It does nothing.
+/// </summary>
+[Job(SandboxJobIds.TraceFollowUp)]
+public sealed class TraceFollowUpJob : IJob<TraceFollowUpArgs>
+{
+    public ValueTask ExecuteAsync(JobContext<TraceFollowUpArgs> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+}
+
 /// <summary>The stable job identities the scenarios and the feature map name.</summary>
 public static class SandboxJobIds
 {
@@ -171,4 +204,6 @@ public static class SandboxJobIds
     public const string OverlapFails = "sandbox.overlap-fails";
     public const string NightlyReport = "sandbox.nightly-report";
     public const string Stubborn = "sandbox.stubborn";
+    public const string TraceCheckout = "sandbox.trace-checkout";
+    public const string TraceFollowUp = "sandbox.trace-follow-up";
 }

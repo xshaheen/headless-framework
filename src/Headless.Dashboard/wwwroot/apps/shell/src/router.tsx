@@ -38,9 +38,9 @@ function moduleRoutes(module: BootstrapModule, loader: ModuleLoader): RouteObjec
 }
 
 /**
- * The shell's routes, built from the inlined manifest alone: `/` opens the first product's home, then every module's
- * routes, each loading its view and its module's entry only when visited. A refused module keeps its paths, which
- * show why it did not load.
+ * The shell's routes, built from the inlined manifest alone: `/` opens the first product's home, `/trace` the trace of
+ * the id in the fragment, then every module's routes, each loading its view and its module's entry only when visited.
+ * A refused module keeps its paths, which show why it did not load.
  */
 export function buildRoutes(state: BootstrapState, loader: ModuleLoader): RouteObject[] {
   const home = state.products[0] ? productHome(state.products[0]) : undefined
@@ -52,6 +52,12 @@ export function buildRoutes(state: BootstrapState, loader: ModuleLoader): RouteO
       errorElement: <RouteError />,
       children: [
         { index: true, element: home ? <Navigate to={home} replace /> : <NotFound /> },
+        // `trace` is a reserved module id, so no module route can take this path.
+        {
+          path: 'trace',
+          errorElement: <RouteError />,
+          lazy: async () => ({ Component: (await import('./trace/trace-page.tsx')).default }),
+        },
         ...state.modules.flatMap((module) => moduleRoutes(module, loader)),
         { path: '*', element: <NotFound /> },
       ],

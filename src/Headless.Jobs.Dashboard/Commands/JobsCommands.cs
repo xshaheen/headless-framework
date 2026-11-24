@@ -37,6 +37,9 @@ internal sealed class JobsCommands(
     /// <summary>The most retries an edit or a create call sets.</summary>
     public const int MaxRetries = 100;
 
+    /// <summary>What the operator log records in place of an Operation's correlation id.</summary>
+    public const string RedactedCorrelationId = "(redacted)";
+
     private const string _MarkSeparator = ":";
 
     private readonly string _moduleId = Argument.IsNotNullOrWhiteSpace(moduleId);
@@ -288,11 +291,12 @@ internal sealed class JobsCommands(
     )
     {
         var kind = _OperationKind(request.CommandId);
+        var filter = _ParseFilter(request.Filter);
         var highWater = await _reader.GetLatestChangeMarkerAsync(cancellationToken).ConfigureAwait(false);
         var scope = new JobOperationScope
         {
             Kind = kind,
-            Query = _ParseFilter(request.Filter).ToQuery(),
+            Query = filter.ToQuery(),
             HighWaterMark = DateTime.SpecifyKind(highWater ?? DateTime.MinValue, DateTimeKind.Utc),
             ConfirmedAt = _timeProvider.GetUtcNow(),
         };
@@ -318,6 +322,7 @@ internal sealed class JobsCommands(
             Count = count.Capped ? (long)request.CountLimit + 1 : count.Count,
             Sample = sample,
             HighWaterMark = _FormatMark(scope),
+            LoggedFilter = _LoggedFilter(filter),
         };
     }
 
@@ -1121,6 +1126,24 @@ internal sealed class JobsCommands(
             [CancelId] = JobOperationKind.Cancel,
             [DeleteId] = JobOperationKind.Delete,
         };
+
+    /// <summary>
+    /// The filter the operator log records: the parsed filter with its correlation id replaced by a marker, because the
+    /// log keeps the scope as long as the host keeps logs and an id can name a customer's order or request.
+    /// <see langword="null"/> when the filter has no correlation id, so the log records the filter as sent.
+    /// </summary>
+    private static JsonElement? _LoggedFilter(JobsRunScope filter)
+    {
+        return string.IsNullOrEmpty(filter.CorrelationId)
+            ? null
+            : JsonSerializer.SerializeToElement(
+                filter with
+                {
+                    CorrelationId = RedactedCorrelationId,
+                },
+                JobsDashboardJsonContext.Default.JobsRunScope
+            );
+    }
 
     private static JobsRunScope _ParseFilter(JsonElement filter)
     {

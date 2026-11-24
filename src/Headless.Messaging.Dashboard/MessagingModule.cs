@@ -9,7 +9,7 @@ namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// The Messaging module of the unified dashboard: published and received messages of every Messaging store, with
-/// Needs you, Overview figures, sidebar counts, id lookup, payloads, live changes from every node, and the operator
+/// Needs you, Overview figures, sidebar counts, id lookup, correlation traces, payloads, live changes from every node, and the operator
 /// commands and Operations over them.
 /// </summary>
 /// <remarks>
@@ -25,8 +25,8 @@ namespace Headless.Messaging.Dashboard;
 /// </para>
 /// <para>
 /// With forwarding on, a request for another node's objects goes to that node: commands, Operations, payloads, and
-/// reads of the module's API that name the node, by <c>?node=</c> or by the id. Needs you and id lookup cover every
-/// node discovery lists, each item labelled with its node, and a node's live changes are relayed while a stream
+/// reads of the module's API that name the node, by <c>?node=</c> or by the id. Needs you, id lookup, and traces cover
+/// every node discovery lists, each item labelled with its node, and a node's live changes are relayed while a stream
 /// watches its topics. A node that does not answer is named by its state; this node's own data never stands in for
 /// it. A call another node forwarded is always served here, at the lower of the serving node's decision and
 /// <see cref="MessagingDashboardOptions.ForwardedAccess"/>.
@@ -38,6 +38,7 @@ internal sealed class MessagingModule
         IDashboardOverviewSource,
         IDashboardCountSource,
         IDashboardObjectResolver,
+        IDashboardTraceSource,
         IDashboardPayloadSource,
         IDashboardChangeSource,
         IDashboardCommandSource,
@@ -334,6 +335,32 @@ internal sealed class MessagingModule
             : await _forwarding
                 .ResolveAsync(local, request.Query, request.User, cancellationToken)
                 .ConfigureAwait(false);
+    }
+
+    public async Task<DashboardTraceAnswer> GetTraceAsync(
+        DashboardTraceRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        var limit = _options.TraceLimit;
+
+        // This node's stores and every peer are read at once, so a slow store and a slow peer cost one wait, not two.
+        var local = IsStandalone
+            ? Task.FromResult(MessagingTracePart.Empty)
+            : LocalSources.GetTraceAsync(request.CorrelationId, limit, cancellationToken);
+        var peers = _forwarding is null
+            ? Task.FromResult<IReadOnlyList<MessagingTracePart>>([])
+            : _forwarding.GetTraceAsync(request.CorrelationId, limit, request.User, cancellationToken);
+
+        await Task.WhenAll(local, peers).ConfigureAwait(false);
+
+        return MessagingTrace.Answer(
+            request.CorrelationId,
+            limit,
+            [await local.ConfigureAwait(false), .. await peers.ConfigureAwait(false)]
+        );
     }
 
     public async Task<DashboardPayload?> GetPayloadAsync(

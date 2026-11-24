@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.ComponentModel;
 using Headless.Checks;
 using Headless.Dashboard;
@@ -7,7 +8,7 @@ using Headless.Dashboard;
 namespace Headless.Jobs;
 
 /// <summary>
-/// The Jobs module's read capabilities: Needs you, Overview, id lookups, related runs, and payloads.
+/// The Jobs module's read capabilities: Needs you, Overview, id lookups, related runs, payloads, and traces.
 /// </summary>
 internal sealed class JobsSources(string moduleId, IJobsDashboardReader reader, TimeProvider timeProvider)
 {
@@ -365,6 +366,107 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardReader reader, 
         }
 
         return groups;
+    }
+
+    /// <summary>
+    /// Returns at most <paramref name="limit"/> runs, time jobs and cron occurrences, that carry
+    /// <paramref name="correlationId"/>, oldest first, as trace items, and whether more existed.
+    /// </summary>
+    public async Task<DashboardTraceAnswer> GetTraceAsync(
+        string correlationId,
+        int limit,
+        CancellationToken cancellationToken
+    )
+    {
+        // One extra row tells a correlation of exactly the limit apart from a longer one.
+        var runs = await _reader
+            .ReadRunsByCorrelationAsync(correlationId, limit + 1, cancellationToken)
+            .ConfigureAwait(false);
+        var runIds = runs.Select(static run => run.Id).ToHashSet();
+
+        return new DashboardTraceAnswer
+        {
+            Items = [.. runs.Take(limit).Select(run => _ToTraceItem(run, correlationId, runIds))],
+            Limited = runs.Count > limit,
+            ListLink = new DashboardTraceListLink { Path = "runs", State = _CorrelationFilter(correlationId) },
+        };
+    }
+
+    private DashboardTraceItem _ToTraceItem(JobCorrelatedRun run, string correlationId, HashSet<Guid> runIds)
+    {
+        // A run is stamped by when its execution window opened, not by ExecutedAt, which the store writes when the run
+        // ends: the messages and jobs it started come before its end, and would otherwise all read as clock skew.
+        var (at, kind) = run.ExecutedAt is { } executedAt
+            ? (
+                run.ExecutionTime is { } executionTime ? new DateTimeOffset(executionTime, TimeSpan.Zero) : executedAt,
+                DashboardTraceTimestampKind.Ran
+            )
+            // A chain member waiting on its parent has no due time yet. It carries none rather than the store's sort
+            // sentinel, which would show as a date in the year 9999; the tree lists it after its timed siblings.
+            : (
+                run.ExecutionTime is { } dueTime ? new DateTimeOffset(dueTime, TimeSpan.Zero) : (DateTimeOffset?)null,
+                DashboardTraceTimestampKind.Due
+            );
+        var id = run.Id.ToString();
+
+        return new DashboardTraceItem
+        {
+            Target = JobsViews.Ref(_moduleId, JobsViews.RunKind, id),
+            Store = _moduleId,
+            StorageId = id,
+            Title = run.Function,
+            Status = run.Status.ToString(),
+            StatusRole = JobsViews.StatusTone(run.Status),
+            At = at,
+            TimestampKind = kind,
+            CorrelationId = correlationId,
+            Key = new DashboardTraceKey { Kind = DashboardTraceKeyKind.Run, Value = id },
+            Causation = _CausationOf(run.CausationId, runIds),
+        };
+    }
+
+    /// <summary>
+    /// Types the causation id a run stored. The store keeps the bare id of a parent run, of the received message row
+    /// whose consumer scheduled the run, or of a message delivered without one, and run, row, and message ids are all
+    /// GUIDs. So an id that names a run of this correlation is a run, and any other id is taken as a received row,
+    /// the cause a consumer records. A guess that is wrong leaves the run a root marked as not finding its parent;
+    /// it never places the run under the wrong object.
+    /// </summary>
+    private static DashboardTraceKey? _CausationOf(string? causationId, HashSet<Guid> runIds)
+    {
+        if (string.IsNullOrEmpty(causationId))
+        {
+            return null;
+        }
+
+        if (Guid.TryParse(causationId, out var guid))
+        {
+            // The tree matches keys ordinally against each run's own key, so the id takes the run id's own format.
+            return new DashboardTraceKey
+            {
+                Kind = runIds.Contains(guid) ? DashboardTraceKeyKind.Run : DashboardTraceKeyKind.Delivery,
+                Value = guid.ToString(),
+            };
+        }
+
+        return new DashboardTraceKey { Kind = DashboardTraceKeyKind.Delivery, Value = causationId };
+    }
+
+    /// <summary>The runs list's filter, as history state, so the correlation id stays out of the URL.</summary>
+    private static JsonElement _CorrelationFilter(string correlationId)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("correlationId", correlationId);
+            writer.WriteEndObject();
+        }
+
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+
+        return document.RootElement.Clone();
     }
 
     /// <summary>Returns a run's stored request as JSON, or the reason the host cannot read its contract.</summary>

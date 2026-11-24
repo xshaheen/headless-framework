@@ -13,6 +13,7 @@ import {
   LoadError,
   Mono,
   NodeChip,
+  OpenTrace,
   PayloadView,
   FilterSelect,
   Skeleton,
@@ -22,6 +23,7 @@ import {
   Text,
   type HistoryItem,
   Timestamp,
+  useTraceKey,
 } from '@headless/dashboard-sdk/components'
 import {
   DashboardApiError,
@@ -528,9 +530,10 @@ function Optional({ label, value, span }: { label: string; value: ReactNode; spa
   )
 }
 
-/** The headers that tie a message to the work around it, in the order the Correlation group shows them. */
+const correlationIdHeader = 'headless-corr-id'
+
+/** The headers besides the correlation id that tie a message to the work around it, in the order the group shows them. */
 const correlationHeaders: readonly { header: string; label: string }[] = [
-  { header: 'headless-corr-id', label: 'Correlation id' },
   { header: 'headless-corr-seq', label: 'Sequence' },
   { header: 'headless-causation-id', label: 'Causation id' },
   { header: 'traceparent', label: 'Trace parent' },
@@ -553,6 +556,7 @@ export function MessageFields({
   headers?: Readonly<Record<string, string | null>>
 }) {
   const format = useFormat()
+  const correlationId = headers?.[correlationIdHeader]
   const correlation = correlationHeaders.flatMap(({ header, label }) => {
     const value = headers?.[header]
 
@@ -604,8 +608,15 @@ export function MessageFields({
           value={row.expiresAt ? <Timestamp value={row.expiresAt} scheduled /> : undefined}
         />
       </FieldGrid>
-      {correlation.length > 0 ? (
+      {/* Once the headers are read the group always shows, so a message with no correlation id says why it has no
+          trace. The id comes from the header, not the indexed column, which holds nothing for a foreign id over the
+          traceable length. */}
+      {headers ? (
         <FieldGrid label="Correlation">
+          <GridField label="Correlation id" span={2}>
+            {correlationId ? <Mono>{correlationId}</Mono> : 'Not recorded'}
+            <OpenTrace correlationId={correlationId} />
+          </GridField>
           {correlation.map(({ label, value }) => (
             <GridField key={label} label={label} span={2}>
               <Mono>{value}</Mono>
@@ -835,6 +846,8 @@ export function MessagePanel({
   const data = detail.data
   const gone = detail.isError && detail.error instanceof DashboardApiError && detail.error.status === 404
   const info = data?.exceptionInfo
+  // Until the detail is read the id is unknown, and `T` waits rather than falling through to another view.
+  useTraceKey(data?.headers[correlationIdHeader])
 
   return (
     <DetailPanel

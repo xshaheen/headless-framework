@@ -7,7 +7,7 @@ namespace Headless.Jobs;
 
 /// <summary>
 /// Settings of the Jobs dashboard module: the view and operate policies every dashboard module carries, and how the
-/// module reads changes from the Jobs store.
+/// module reads changes and traces from the Jobs store.
 /// </summary>
 [PublicAPI]
 public sealed class JobsDashboardOptions : DashboardModuleOptions
@@ -26,6 +26,12 @@ public sealed class JobsDashboardOptions : DashboardModuleOptions
     /// polls.
     /// </summary>
     public int ChangePageSize { get; set; } = 200;
+
+    /// <summary>
+    /// Gets or sets the most runs the trace page lists for one correlation id, oldest first. Defaults to 500; when more
+    /// runs carry the id, the page shows the count as <c>500+</c> and links to the runs list filtered by it.
+    /// </summary>
+    public int TraceLimit { get; set; } = 500;
 }
 
 internal sealed class JobsDashboardOptionsValidator : AbstractValidator<JobsDashboardOptions>
@@ -49,5 +55,7 @@ internal sealed class JobsDashboardOptionsValidator : AbstractValidator<JobsDash
         RuleFor(x => x.ChangePageSize)
             .InclusiveBetween(1, 1000)
             .WithMessage("ChangePageSize must be between 1 and 1000.");
+
+        RuleFor(x => x.TraceLimit).InclusiveBetween(1, 10_000).WithMessage("TraceLimit must be between 1 and 10000.");
     }
 }

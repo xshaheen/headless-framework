@@ -479,4 +479,5 @@ internal sealed record JobsCreated(Guid Id);
 [JsonSerializable(typeof(JobsTimeJobBody))]
 [JsonSerializable(typeof(JobsCronJobBody))]
 [JsonSerializable(typeof(JobsRunScope))]
+[JsonSerializable(typeof(JobsRunSearchBody))]
 internal sealed partial class JobsDashboardJsonContext : JsonSerializerContext;
