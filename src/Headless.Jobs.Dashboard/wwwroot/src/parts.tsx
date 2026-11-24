@@ -15,6 +15,7 @@ import {
   HistoryList,
   LoadError,
   Mono,
+  OpenTrace,
   PayloadView,
   Skeleton,
   StaleNotice as SdkStaleNotice,
@@ -22,7 +23,7 @@ import {
   StatStrip,
   Text,
   Timeline,
-  useViewKeys,
+  useTraceKey,
   type HistoryItem,
   type TimelineEvent,
   Timestamp,
@@ -60,7 +61,6 @@ import {
   runStatusMark,
   runsTopic,
   statusLabel,
-  tracePath,
   useJobsCommands,
   useModuleNavigate,
   type Attempt,
@@ -342,7 +342,7 @@ function TraceLink({ traceId }: { traceId: string }) {
 
   return traceLinkTemplate ? (
     <a href={traceLinkTemplate.replace('{traceId}', encodeURIComponent(traceId))} target="_blank" rel="noreferrer">
-      Open trace
+      Open in tracing tool
     </a>
   ) : null
 }
@@ -353,14 +353,6 @@ function Optional({ label, value, span }: { label: string; value: ReactNode; spa
       {value}
     </GridField>
   )
-}
-
-/** `T` opens the runs that share the run's correlation id, while the run is open. */
-export function useTraceKey(run: Pick<Run, 'correlationId'> | undefined) {
-  const open = useModuleNavigate()
-  const id = run?.correlationId
-
-  useViewKeys({ trace: () => (id ? open(tracePath(id)) : undefined) }, id !== undefined)
 }
 
 export function RunFields({ run }: { run: Run }) {
@@ -444,19 +436,12 @@ export function RunFields({ run }: { run: Run }) {
           value={run.contractVersion ? <Mono>{run.contractVersion}</Mono> : undefined}
         />
         <Optional label="Tenant" value={run.tenantId ? <Mono>{run.tenantId}</Mono> : undefined} />
-        <Optional
-          label="Correlation"
-          span={2}
-          value={
-            correlationId ? (
-              <>
-                <Mono>{correlationId}</Mono>
-                <Link to={`/jobs/${tracePath(correlationId)}`}>Open trace</Link>
-                {run.traceId ? <TraceLink traceId={run.traceId} /> : null}
-              </>
-            ) : undefined
-          }
-        />
+        {/* Shown with no id too, so the operator sees why there is no trace to open. */}
+        <GridField label="Correlation" span={2}>
+          {correlationId ? <Mono>{correlationId}</Mono> : 'Not recorded'}
+          <OpenTrace correlationId={correlationId} />
+          {run.traceId ? <TraceLink traceId={run.traceId} /> : null}
+        </GridField>
         <Optional label="Trace id" span={2} value={run.traceId ? <Mono>{run.traceId}</Mono> : undefined} />
         <Optional label="Causation" span={2} value={run.causationId ? <Mono>{run.causationId}</Mono> : undefined} />
         <Optional label="Business key" span={2} value={run.businessKey ? <Mono>{run.businessKey}</Mono> : undefined} />
@@ -773,7 +758,7 @@ function RunExceptionTab({ run }: { run: Run }) {
 
 export function RunPanel({ run, pending, page }: { run: Run; pending: Pending; page?: boolean }) {
   const { api } = useDashboard()
-  useTraceKey(run)
+  useTraceKey(run.correlationId)
   // The row carries no chain children and no arguments: both are read once the panel opens, and their tabs show
   // only when the run has them. A step always has its parent, so its Chain tab needs no wait.
   const detail = useDashboardObject({ topic: runsTopic, id: run.id, fetch: () => fetchRun(api, run.id) })

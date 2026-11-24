@@ -93,7 +93,10 @@ export interface Attempt {
   failureFingerprint?: string
 }
 
-/** The runs list's filter, as the URL and an Operation's scope carry it. */
+/**
+ * The runs list's filter, as an Operation's scope carries it. The URL carries every field but `correlationId`, which
+ * rides in history state (`{ correlationId }`) so the id never reaches a URL.
+ */
 export interface RunFilter {
   kind: string
   function: string
@@ -116,18 +119,33 @@ const emptyFilter: RunFilter = {
 
 export const filterNames = Object.keys(emptyFilter) as (keyof RunFilter)[]
 
-export function readFilter(params: URLSearchParams): RunFilter {
+/**
+ * The list's filter from its URL and its history state. A `correlationId` in the URL is ignored, so an old link that
+ * put the id there opens the list unfiltered.
+ */
+export function readFilter(params: URLSearchParams, state?: unknown): RunFilter {
   const filter = { ...emptyFilter }
 
   for (const name of filterNames) {
-    if (name !== 'status') {
+    if (name !== 'status' && name !== 'correlationId') {
       filter[name] = params.get(name) ?? ''
     }
   }
 
   filter.status = readStatus(params.get('status') ?? '')
+  filter.correlationId = readCorrelationState(state)
 
   return filter
+}
+
+/** The correlation id a link handed the runs list in its history state, or `''` for none. */
+export function readCorrelationState(state: unknown) {
+  return typeof state === 'object' &&
+    state !== null &&
+    'correlationId' in state &&
+    typeof state.correlationId === 'string'
+    ? state.correlationId
+    : ''
 }
 
 /**
@@ -430,6 +448,19 @@ export interface RunReadFilter extends Partial<RunFilter> {
   from?: string
 }
 
+/** The list's query as the search route's JSON body: the repeatable filters as arrays, and the limit as a number. */
+function searchBody(query: Readonly<Record<string, string>>, correlationId: string) {
+  const { limit, function: fn, status, ...rest } = query
+
+  return {
+    ...rest,
+    correlationId,
+    limit: Number(limit),
+    ...(fn ? { function: [fn] } : {}),
+    ...(status ? { status: [status] } : {}),
+  }
+}
+
 /**
  * One page of runs, newest first unless `request` names a sort: the first page, or the page after the run `cursor`
  * names. The server refuses a cursor read under another sort, search, or range, so the keyset list never sends one.
@@ -446,7 +477,7 @@ export async function fetchRuns(
   for (const name of filterNames) {
     const value = filter[name]
 
-    if (value) {
+    if (value && name !== 'correlationId') {
       query[name] = value
     }
   }
@@ -473,7 +504,14 @@ export async function fetchRuns(
     query.after = cursor
   }
 
-  const answer = await api.request<RunListAnswer>({ method: 'GET', path: 'jobs/runs', query })
+  // A correlation id goes in the body of the search route, every page of it, so the id never enters a URL.
+  const answer = filter.correlationId
+    ? await api.request<RunListAnswer>({
+        method: 'POST',
+        path: 'jobs/runs/search',
+        body: searchBody(query, filter.correlationId),
+      })
+    : await api.request<RunListAnswer>({ method: 'GET', path: 'jobs/runs', query })
 
   return {
     items: answer.items,
@@ -590,15 +628,10 @@ export function markDone(
     )
 }
 
-/** Opens a path of this module, such as the runs list filtered by a correlation id. */
+/** Opens a path of this module, such as a run's own page. */
 export function useModuleNavigate() {
   const navigate = useNavigate()
   const module = useModule()
 
   return (path: string) => void navigate(`/${module.id}/${path}`)
-}
-
-/** The runs list filtered by one correlation id: the trace until the cross-module trace page exists. */
-export function tracePath(correlationId: string) {
-  return `runs?correlationId=${encodeURIComponent(correlationId)}`
 }

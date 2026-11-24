@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Net.Http.Json;
 using Headless.Dashboard;
 using Headless.Jobs;
 using Headless.Messaging;
@@ -95,6 +96,25 @@ internal static class MessagingModuleTestHost
     )
     {
         using var response = await client.GetAsync(new Uri(path, UriKind.Relative), cancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+
+        return document.RootElement.Clone();
+    }
+
+    public static async Task<JsonElement> PostJsonAsync(
+        HttpClient client,
+        string path,
+        object body,
+        CancellationToken cancellationToken
+    )
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(path, UriKind.Relative))
+        {
+            Content = JsonContent.Create(body),
+        };
+        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
 

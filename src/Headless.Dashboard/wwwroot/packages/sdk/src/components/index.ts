@@ -87,4 +87,5 @@ export { formatJson, payloadDisplayLimit, PayloadView, type PayloadViewProps } f
 export { ScheduleStrip, type ScheduleStripProps, type ScheduleTick, type ScheduleTrack } from './schedule/schedule-strip.tsx'
 export { Timeline, type TimelineEvent, type TimelineProps } from './timeline/timeline.tsx'
 export { Tooltip, type TooltipProps } from './tooltip.tsx'
+export { maxCorrelationIdLength, OpenTrace, traceAddress, traceRefusal, useTraceKey } from './trace.tsx'
 export { useDelayed } from './use-delayed.ts'

@@ -271,6 +271,13 @@ export interface MessageSearch {
 
 export const noSearch: MessageSearch = { content: '', correlationId: '' }
 
+/** The search a navigation carried in history state, such as `{ correlationId }` from the trace page. */
+export function searchFromState(state: unknown): MessageSearch {
+  const correlationId =
+    typeof state === 'object' && state !== null && 'correlationId' in state ? state.correlationId : undefined
+  return typeof correlationId === 'string' && correlationId !== '' ? { ...noSearch, correlationId } : noSearch
+}
+
 /**
  * The search as the keyset list's `search`, which keys its cache and comes back in each page request: empty when
  * nothing is searched, so the list reads the plain route.

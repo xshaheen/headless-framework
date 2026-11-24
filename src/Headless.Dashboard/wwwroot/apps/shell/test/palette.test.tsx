@@ -134,7 +134,7 @@ describe('command palette', () => {
                 displayName: 'Diagnostics',
                 stale: false,
                 items:
-                  request.query?.q === 'r-8f31c2'
+                  (request.body as { query?: string } | undefined)?.query === 'r-8f31c2'
                     ? [{ target: { module: 'diag', kind: 'run', id: 'r-8f31c2' }, title: 'billing.charge' }]
                     : [],
               },
@@ -157,6 +157,48 @@ describe('command palette', () => {
 
     expect(await screen.findByRole('heading', { name: 'Diagnostics runs view' })).toBeTruthy()
     expect(shell.router.state.location.search).toBe('?selected=r-8f31c2')
+  })
+
+  it('looks a pasted id up by POST with the text in the body, and offers its trace after the run it names', async () => {
+    const user = userEvent.setup()
+    const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
+    const shell = renderShell(shellState(modules), {
+      path: '/missing',
+      files: moduleFiles(modules),
+      api: (request) =>
+        request.path === 'resolve'
+          ? {
+              modules: [
+                {
+                  id: 'diag',
+                  displayName: 'Diagnostics',
+                  stale: false,
+                  items: [{ target: { module: 'diag', kind: 'run', id: 'r-8f31c2' }, title: 'billing.charge' }],
+                },
+              ],
+            }
+          : emptyAggregates(request),
+    })
+
+    await screen.findByRole('heading', { name: 'Nothing lives at this address' })
+    await user.keyboard('{Meta>}k{/Meta}')
+    await user.paste('r-8f31c2')
+
+    const palette = await screen.findByRole('dialog', { name: 'Command palette' })
+    await within(palette).findByRole('menuitem', { name: /Open trace for r-8f31c2/ })
+    expect(
+      within(palette)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual([expect.stringContaining('billing.charge'), expect.stringContaining('Open trace for r-8f31c2')])
+    const resolves = shell.requests.filter((request) => request.path === 'resolve')
+    expect(resolves.every((request) => request.method === 'POST' && request.query === undefined)).toBe(true)
+    expect(resolves.at(-1)?.body).toEqual({ query: 'r-8f31c2' })
+
+    await user.click(within(palette).getByRole('menuitem', { name: /Open trace for r-8f31c2/ }))
+
+    await waitFor(() => expect(shell.router.state.location.pathname).toBe('/trace'))
+    expect(shell.router.state.location.hash).toBe('#r-8f31c2')
   })
 
   it('shows a found id bidi-isolated and left-to-right beside a right-to-left title', async () => {

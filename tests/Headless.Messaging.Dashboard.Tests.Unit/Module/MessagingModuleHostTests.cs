@@ -107,14 +107,16 @@ public sealed class MessagingModuleHostTests : TestBase
         var expected = $"node-a~primary~{row.StorageId:D}";
 
         // when
-        var byStorageId = await MessagingModuleTestHost.GetJsonAsync(
+        var byStorageId = await MessagingModuleTestHost.PostJsonAsync(
             client,
-            $"/headless/api/resolve?q={row.StorageId}",
+            "/headless/api/resolve",
+            new { query = row.StorageId.ToString("D") },
             AbortToken
         );
-        var byMessageId = await MessagingModuleTestHost.GetJsonAsync(
+        var byMessageId = await MessagingModuleTestHost.PostJsonAsync(
             client,
-            "/headless/api/resolve?q=order-7",
+            "/headless/api/resolve",
+            new { query = "order-7" },
             AbortToken
         );
 

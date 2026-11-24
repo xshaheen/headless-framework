@@ -195,6 +195,30 @@ public sealed class ForwardingResolveTests : TestBase
     }
 
     [Fact]
+    public async Task should_send_the_looked_up_text_to_each_node_in_the_body_and_never_in_a_url()
+    {
+        // given
+        await using var nodeB = await _StartPeerAsync("node-b", operate: false);
+        await using var nodeC = await _StartPeerAsync("node-c", operate: false);
+        await using var nodeA = await _StartAAsync();
+        var row = await _FailureOnAsync(nodeB);
+        var storageId = row.StorageId.ToString("D");
+        using var client = MessagingCommandHost.Client(nodeA);
+        var cookie = await MessagingCommandHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        var found = await _ResolveAsync(client, cookie, storageId);
+
+        // then: each node still finds its rows, and no node-to-node URL carries the pasted id
+        found.Should().Equal($"node-b~primary~{storageId}");
+        _ResolveCalls("node-b").Should().Be(1);
+        _ResolveCalls("node-c").Should().Be(1);
+        _network
+            .Calls.Should()
+            .NotContain(call => call.Uri.OriginalString.Contains(storageId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task should_ask_no_node_when_the_lookup_is_a_full_id_naming_a_node_discovery_does_not_list()
     {
         // given
@@ -243,9 +267,10 @@ public sealed class ForwardingResolveTests : TestBase
 
     private async Task<List<string>> _ResolveAsync(HttpClient client, string cookie, string query)
     {
-        using var response = await MessagingCommandHost.GetAsync(
+        using var response = await MessagingCommandHost.PostAsync(
             client,
-            "/headless/api/resolve?q=" + Uri.EscapeDataString(query),
+            "/headless/api/resolve",
+            new { query },
             cookie,
             AbortToken
         );
