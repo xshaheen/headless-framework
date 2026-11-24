@@ -54,6 +54,28 @@ public sealed class ActivityCorrelationIdProviderTests
         _provider.CorrelationId.Should().BeNull();
     }
 
+    [Fact]
+    public void should_return_the_causal_scope_correlation_id_over_the_trace_id()
+    {
+        // given
+        using var activity = _Start("job", ActivityIdFormat.W3C);
+        using var scope = CausalScope.Begin("order-7", "run-1");
+
+        // then
+        _provider.CorrelationId.Should().Be("order-7");
+    }
+
+    [Fact]
+    public void should_return_the_trace_id_again_once_the_causal_scope_closes()
+    {
+        // given
+        using var activity = _Start("job", ActivityIdFormat.W3C);
+        CausalScope.Begin("order-7", "run-1").Dispose();
+
+        // then
+        _provider.CorrelationId.Should().Be(activity.TraceId.ToHexString());
+    }
+
     private static Activity _Start(string name, ActivityIdFormat format)
     {
         var activity = new Activity(name);

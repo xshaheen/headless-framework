@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
+using Headless.Context;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
@@ -112,6 +113,10 @@ public sealed class SubscribeInvokerTests : TestBase
         consumed.TransportAddress.Should().Be("headless.bus.test.messageName");
         consumed.MessageName.Should().Be("test.messageName");
         consumed.Headers.Should().NotBeNull();
+        InvokerTestConsumer
+            .LastCausalScope.Should()
+            .Be(new CausalContext(correlationId.ToString(), mediumMessage.StorageId.ToString("D")));
+        CausalScope.Current.Should().BeNull();
     }
 
     [Fact]
@@ -351,6 +356,38 @@ public sealed class SubscribeInvokerTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_the_message_as_the_cause_when_the_delivery_stores_no_received_row()
+    {
+        // given an every-instance delivery, which carries no storage id
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.AddConsumer<InvokerTestConsumer>();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+        var messageId = Guid.NewGuid().ToString();
+        var correlationId = Guid.NewGuid();
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("broadcast"),
+            "test.messageName",
+            messageId,
+            correlationId
+        );
+        mediumMessage.StorageId = Guid.Empty;
+        var context = new ConsumerContext(_SelectDescriptor(provider), mediumMessage);
+
+        // when
+        await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        InvokerTestConsumer.LastCausalScope.Should().Be(new CausalContext(correlationId.ToString(), messageId));
+    }
+
+    [Fact]
     public async Task should_handle_nullable_correlation_id()
     {
         // given
@@ -377,6 +414,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var consumed = InvokerTestConsumer.LastConsumed;
         consumed.Should().NotBeNull();
         consumed.CorrelationId.Should().BeNull();
+        InvokerTestConsumer.LastCausalScope.Should().BeNull();
     }
 
     [Fact]
@@ -899,9 +937,12 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
 {
     public static ConsumeContext<InvokerTestMessage>? LastConsumed { get; private set; }
 
+    public static CausalContext? LastCausalScope { get; private set; }
+
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         LastConsumed = context;
+        LastCausalScope = CausalScope.Current;
         return ValueTask.CompletedTask;
     }
 }

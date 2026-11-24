@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Headless.Context;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
@@ -860,10 +861,20 @@ internal sealed class JobsExecutionTaskHandler
                             // The scope is part of the attempt: a scoped service can still fail its work when the
                             // scope disposes (a unit of work that flushes on dispose), so the attempt succeeds only once
                             // the scope has disposed. A failed dispose fails the attempt like any other failure.
+                            // The causal scopes wrap the service scope, so work a scoped service does when it
+                            // disposes (a unit of work that flushes an aggregate or an audit row) still joins the job.
+                            // The shared scope lets Messaging, domain events, and audit rows written by the job join
+                            // its correlation. A run with no stored correlation is its own root, as it is for the jobs
+                            // it schedules.
+                            using var causalScope = JobCausalContext.Enter(jobFunctionContext);
+                            var runId = jobFunctionContext.Id.ToString("D");
+                            using var sharedCausalScope = CausalScope.Begin(
+                                jobFunctionContext.CorrelationId ?? runId,
+                                runId
+                            );
                             await using (var scope = _serviceProvider.CreateAsyncScope())
                             {
                                 jobFunctionContext.SetServiceScope(scope);
-                                using var causalScope = JobCausalContext.Enter(jobFunctionContext);
                                 if (_functionRegistry.Descriptors.TryGetValue(context.FunctionName, out var descriptor))
                                 {
                                     Task terminal(CancellationToken token) =>

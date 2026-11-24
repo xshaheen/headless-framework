@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Headless.Context;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -79,6 +80,14 @@ internal sealed class ConsumeMiddlewarePipeline(
         consumeContext.UnitOfWork = context.UnitOfWork;
         consumeContext.IsResponder = descriptor.IsResponder;
         var previousConsumeContext = consumeContextAccessor?.Current;
+        // Work the handler starts outside Messaging, such as a scheduled job, a domain event, or an audit row, joins
+        // the consumed message's correlation, caused by this subscriber's received row. An every-instance delivery
+        // stores no received row, so its cause is the message itself.
+        var storageId = context.MediumMessage.StorageId;
+        var causalScope = CausalScope.Begin(
+            consumeContext.CorrelationId,
+            storageId == Guid.Empty ? consumeContext.MessageId : storageId.ToString("D")
+        );
 
         try
         {
@@ -120,6 +129,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         finally
         {
             consumeContextAccessor?.Current = previousConsumeContext;
+            causalScope.Dispose();
         }
 
         string? callbackName = null;

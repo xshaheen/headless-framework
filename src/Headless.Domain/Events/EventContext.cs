@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Context;
 
 namespace Headless.Domain;
 
@@ -41,7 +42,10 @@ public sealed record EventContext<TPayload>(
 [PublicAPI]
 public static class EventContext
 {
-    /// <summary>Captures a new event context, inheriting the active emission scope or initializing a correlation root.</summary>
+    /// <summary>
+    /// Captures a new event context, inheriting the active emission scope, else the open <see cref="CausalScope"/> of a
+    /// running job or consumed message, else initializing a correlation root.
+    /// </summary>
     /// <typeparam name="TPayload">The business payload type.</typeparam>
     /// <param name="payload">The event payload to capture.</param>
     /// <returns>The captured <see cref="EventContext{TPayload}"/> instance.</returns>
@@ -49,7 +53,14 @@ public static class EventContext
         where TPayload : class
     {
         var eventId = Guid.CreateVersion7().ToString();
-        var parent = EventEmissionScope.Current;
-        return new(payload, eventId, parent?.CorrelationId ?? eventId, parent?.CausationId, parent?.TenantId);
+        if (EventEmissionScope.Current is { } parent)
+        {
+            return new(payload, eventId, parent.CorrelationId, parent.CausationId, parent.TenantId);
+        }
+
+        // Without this fallback, an aggregate saved by a job or consumer would raise events that start a new
+        // correlation, splitting one business operation in two.
+        var causal = CausalScope.Current;
+        return new(payload, eventId, causal?.CorrelationId ?? eventId, causal?.CausationId);
     }
 }

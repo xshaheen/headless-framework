@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Context;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.MultiTenancy;
@@ -295,6 +296,131 @@ public sealed class CorrelationPrecedenceTests : TestBase
             .Throw<InvalidOperationException>()
             .WithMessage("*CorrelationFrom selector failed*TestMessage*")
             .WithInnerException<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_take_correlation_and_causation_from_the_causal_scope_of_a_running_job()
+    {
+        // given a publish inside a job run and outside any consumer
+        var factory = _CreateFactory();
+        using var scope = CausalScope.Begin("order-7", "run-1");
+
+        // when
+        var prepared = factory.Create(new TestMessage(null));
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("order-7");
+        prepared.Message.Headers[Headers.CausationId].Should().Be("run-1");
+    }
+
+    [Fact]
+    public void should_keep_the_selector_correlation_and_take_the_causal_scope_causation()
+    {
+        // given
+        var factory = _CreateFactory(selector: static message => message.Correlation);
+        using var scope = CausalScope.Begin("order-7", "run-1");
+
+        // when
+        var prepared = factory.Create(new TestMessage("selector-correlation"));
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("selector-correlation");
+        prepared.Message.Headers[Headers.CausationId].Should().Be("run-1");
+    }
+
+    [Fact]
+    public void should_ignore_the_causal_scope_when_ambient_business_context_is_suppressed()
+    {
+        // given
+        var factory = _CreateFactory();
+        using var scope = CausalScope.Begin("order-7", "run-1");
+
+        // when
+        var prepared = factory.Create(
+            new TestMessage(null),
+            new PublishOptions { SuppressAmbientBusinessContext = true }
+        );
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be(prepared.Message.Headers[Headers.MessageId]);
+        prepared.Message.Headers.Should().NotContainKey(Headers.CausationId);
+    }
+
+    [Fact]
+    public void should_prefer_explicit_ids_over_the_causal_scope()
+    {
+        // given
+        var factory = _CreateFactory();
+        using var scope = CausalScope.Begin("order-7", "run-1");
+
+        // when
+        var prepared = factory.Create(
+            new TestMessage(null),
+            new PublishOptions { CorrelationId = "explicit-correlation", CausationId = "explicit-cause" }
+        );
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("explicit-correlation");
+        prepared.Message.Headers[Headers.CausationId].Should().Be("explicit-cause");
+    }
+
+    [Fact]
+    public void should_prefer_the_consumed_message_over_the_causal_scope_inside_a_consumer()
+    {
+        // given the consume pipeline opens both the consume context and a scope keyed by the received row
+        var accessor = new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext("root-correlation") };
+        var factory = _CreateFactory(accessor: accessor);
+        using var scope = CausalScope.Begin("root-correlation", "received-row");
+
+        // when
+        var prepared = factory.Create(new TestMessage(null));
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("root-correlation");
+        prepared.Message.Headers[Headers.CausationId].Should().Be("source-message");
+    }
+
+    [Fact]
+    public void should_start_its_own_correlation_when_the_consumed_correlation_is_longer_than_the_limit()
+    {
+        // given a received foreign correlation id this host cannot index
+        var accessor = new AsyncLocalConsumeContextAccessor
+        {
+            Current = _ConsumeContext(new string('c', CausalScope.IdMaxLength + 50)),
+        };
+        var factory = _CreateFactory(accessor: accessor);
+
+        // when
+        var prepared = factory.Create(new TestMessage(null));
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be(prepared.Message.Headers[Headers.MessageId]);
+        prepared.Message.Headers[Headers.CausationId].Should().Be("source-message");
+    }
+
+    [Theory]
+    [InlineData("explicit-correlation")]
+    [InlineData("selector")]
+    [InlineData("explicit-causation")]
+    public void should_refuse_a_lineage_id_longer_than_the_limit(string source)
+    {
+        // given
+        var tooLong = new string('c', CausalScope.IdMaxLength + 1);
+        var factory = string.Equals(source, "selector", StringComparison.Ordinal)
+            ? _CreateFactory(selector: _ => tooLong)
+            : _CreateFactory();
+        var options = source switch
+        {
+            "explicit-correlation" => new PublishOptions { CorrelationId = tooLong },
+            "explicit-causation" => new PublishOptions { CausationId = tooLong },
+            _ => null,
+        };
+
+        // when
+        var act = () => factory.Create(new TestMessage(null), options);
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*200 characters or fewer*");
     }
 
     private static MessagePublishRequestFactory _CreateFactory(

@@ -149,9 +149,11 @@ builder.Services.AddHeadlessJobs(options =>
 
 - A root time job uses its own row id as its correlation id unless you supply one.
 - A job scheduled from inside an executing job inherits that job's correlation id and uses the parent run's row id as its causation id. A chain step uses its direct parent's row id.
+- A job scheduled from inside a message consumer inherits the message's correlation id and uses that subscriber's received-message storage id as its causation id.
+- While a job runs, a message it publishes, a domain event it raises, and an audit row it writes take the run's correlation id, and the run id as their cause. A run with no correlation id uses its own run id.
 - A root cron occurrence takes its occurrence id as its correlation id unless the definition carries one.
 - Retries keep lineage, independent of `Activity` traces. Ordinary edits of a time job or cron definition keep the stored correlation and causation.
-- A correlation id holds at most `JobContract.CorrelationIdMaxLength` (200) characters. The dashboard lists every run of one correlation id.
+- A correlation or causation id holds at most `CausalScope.IdMaxLength` (200) characters. A longer explicit id throws `ArgumentOutOfRangeException` at schedule time. The dashboard lists every run of one correlation id.
 
 ### Deduplicate an enqueue
 

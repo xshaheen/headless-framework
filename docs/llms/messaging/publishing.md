@@ -180,12 +180,15 @@ Every message carries framework headers: message id, message name, contract vers
 
 1. `PublishOptions.CorrelationId` wins.
 2. Otherwise the contract's `CorrelateBy(...)` selector runs on the payload.
-3. Otherwise a publish inside a consumer keeps the ambient `ConsumeContext.CorrelationId`.
-4. Otherwise the message id becomes the root correlation id.
+3. Otherwise a publish inside a consumer keeps the ambient `ConsumeContext.CorrelationId`. A consumed correlation id longer than 200 characters is skipped, so the publish starts its own correlation instead of failing.
+4. Otherwise a publish inside a running job keeps the job's correlation id (`CausalScope`).
+5. Otherwise the message id becomes the root correlation id.
 
-`PublishOptions.CausationId` sets the immediate parent; otherwise a publish inside a consumer uses that consumer's message id. Consumers read it from `ConsumeContext.CausationId`.
+`PublishOptions.CausationId` sets the immediate parent. Otherwise a publish inside a consumer uses that consumer's message id, and a publish inside a running job uses the job's run id. Consumers read it from `ConsumeContext.CausationId`.
 
-`MessageOptions.SuppressAmbientBusinessContext = true` turns off the ambient correlation, causation, and tenant defaults, so a forwarder can replay a captured snapshot. Explicit options and the contract's selector still apply, and trace propagation is unchanged.
+An explicit or selector correlation id, or an explicit causation id, longer than 200 characters (`CausalScope.IdMaxLength`) throws `ArgumentOutOfRangeException` at publish.
+
+`MessageOptions.SuppressAmbientBusinessContext = true` turns off the ambient correlation, causation, and tenant defaults, the running job's included, so a forwarder can replay a captured snapshot. Explicit options and the contract's selector still apply, and trace propagation is unchanged.
 
 ### Transport address
 

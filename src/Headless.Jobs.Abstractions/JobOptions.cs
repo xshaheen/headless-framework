@@ -13,10 +13,16 @@ namespace Headless.Jobs;
 [PublicAPI]
 public sealed record JobOptions
 {
-    /// <summary>Root business correlation; defaults to the executing parent's correlation or the new row ID.</summary>
+    /// <summary>
+    /// Root business correlation; defaults to the executing parent's correlation, else the consumed message's
+    /// correlation, else the new row ID. At most <c>CausalScope.IdMaxLength</c> (200) characters.
+    /// </summary>
     public string? CorrelationId { get; init; }
 
-    /// <summary>Immediate business cause; defaults to the currently executing parent row ID.</summary>
+    /// <summary>
+    /// Immediate business cause; defaults to the executing parent row ID, else the consumed message's received-row
+    /// storage ID. At most <c>CausalScope.IdMaxLength</c> (200) characters.
+    /// </summary>
     public string? CausationId { get; init; }
 
     /// <summary>Optional human-readable description displayed by operational tooling.</summary>

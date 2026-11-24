@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Context;
 using Headless.Domain;
 using Headless.Testing.Tests;
 
@@ -80,6 +81,30 @@ public sealed class EventEmissionScopeTests : TestBase
         occurrence.CausationId.Should().BeNull();
         occurrence.TenantId.Should().BeNull();
         occurrence.CorrelationId.Should().NotBe(activity.Id);
+    }
+
+    [Fact]
+    public void should_join_the_causal_scope_of_a_running_job_when_no_emission_scope_is_open()
+    {
+        using var scope = CausalScope.Begin("order-7", "run-1");
+
+        var occurrence = EventContext.Capture<object>(new Fact("saved by a job"));
+
+        occurrence.CorrelationId.Should().Be("order-7");
+        occurrence.CausationId.Should().Be("run-1");
+        occurrence.TenantId.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_prefer_the_emission_scope_over_the_causal_scope()
+    {
+        using var causal = CausalScope.Begin("order-7", "run-1");
+        using var emission = EventEmissionScope.Begin(new EventEmissionContext("event-root", "parent-event"));
+
+        var occurrence = EventContext.Capture<object>(new Fact("raised by a handler"));
+
+        occurrence.CorrelationId.Should().Be("event-root");
+        occurrence.CausationId.Should().Be("parent-event");
     }
 
     [Fact]

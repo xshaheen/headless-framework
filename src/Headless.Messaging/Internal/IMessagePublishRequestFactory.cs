@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Headless.Checks;
+using Headless.Context;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
@@ -83,6 +84,16 @@ internal sealed class MessagePublishRequestFactory(
     private static readonly string _MessageIdTooLongMessage = string.Create(
         CultureInfo.InvariantCulture,
         $"Options.MessageId must be {MessageOptions.MessageIdMaxLength} characters or fewer before durable storage."
+    );
+
+    private static readonly string _CorrelationIdTooLongMessage = string.Create(
+        CultureInfo.InvariantCulture,
+        $"A correlation id must be {CausalScope.IdMaxLength} characters or fewer before durable storage."
+    );
+
+    private static readonly string _CausationIdTooLongMessage = string.Create(
+        CultureInfo.InvariantCulture,
+        $"Options.CausationId must be {CausalScope.IdMaxLength} characters or fewer before durable storage."
     );
 
     private static readonly string _TenantIdTooLongMessage = string.Create(
@@ -225,8 +236,7 @@ internal sealed class MessagePublishRequestFactory(
             delayTime,
             options?.ContractVersion ?? metadata?.ContractVersion ?? MessageOptions.InitialContractVersion,
             _ResolveCorrelationFromSelector(metadata, contentObj, declaredMessageType),
-            options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.CorrelationId,
-            options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.MessageId,
+            options?.SuppressAmbientBusinessContext == true ? default : _ResolveAmbientLineage(),
             request
         );
         if (deliverBy is { } deadline)
@@ -281,8 +291,7 @@ internal sealed class MessagePublishRequestFactory(
         TimeSpan? delayTime,
         string contractVersion,
         string? selectorCorrelationId,
-        string? ambientCorrelationId,
-        string? ambientMessageId,
+        (string? CorrelationId, string? CausationId) ambient,
         RequestStamp? request
     )
     {
@@ -314,12 +323,14 @@ internal sealed class MessagePublishRequestFactory(
         var correlationId = _ResolveCorrelationId(
             options?.CorrelationId,
             selectorCorrelationId,
-            ambientCorrelationId,
+            ambient.CorrelationId,
             messageId
         );
 
         headers[Headers.CorrelationId] = correlationId;
-        var causationId = !string.IsNullOrWhiteSpace(options?.CausationId) ? options.CausationId : ambientMessageId;
+        var causationId = !string.IsNullOrWhiteSpace(options?.CausationId)
+            ? _ValidateLineageId(options.CausationId, _CausationIdTooLongMessage)
+            : ambient.CausationId;
         if (!string.IsNullOrWhiteSpace(causationId))
         {
             headers[Headers.CausationId] = causationId;
@@ -377,12 +388,12 @@ internal sealed class MessagePublishRequestFactory(
     {
         if (!string.IsNullOrWhiteSpace(explicitCorrelationId))
         {
-            return explicitCorrelationId;
+            return _ValidateLineageId(explicitCorrelationId, _CorrelationIdTooLongMessage);
         }
 
         if (!string.IsNullOrWhiteSpace(selectorCorrelationId))
         {
-            return selectorCorrelationId;
+            return _ValidateLineageId(selectorCorrelationId, _CorrelationIdTooLongMessage);
         }
 
         if (!string.IsNullOrWhiteSpace(ambientCorrelationId))
@@ -391,6 +402,29 @@ internal sealed class MessagePublishRequestFactory(
         }
 
         return messageId;
+    }
+
+    // A publish inside a consumer continues the consumed message: same correlation, the message as its cause. Outside
+    // a consumer it continues the work of the open causal scope, such as a running job. A consumed correlation id past
+    // the limit is a foreign id this host cannot index, so the publish starts its own correlation instead of failing.
+    private (string? CorrelationId, string? CausationId) _ResolveAmbientLineage()
+    {
+        if (consumeContextAccessor?.Current is { } consume)
+        {
+            var correlationId = consume.CorrelationId is { Length: <= CausalScope.IdMaxLength } inherited
+                ? inherited
+                : null;
+
+            return (correlationId, consume.MessageId);
+        }
+
+        return CausalScope.Current is { } scope ? (scope.CorrelationId, scope.CausationId) : default;
+    }
+
+    private static string _ValidateLineageId(string value, string message)
+    {
+        Argument.IsLessThanOrEqualTo(value.Length, CausalScope.IdMaxLength, message, paramName: nameof(value));
+        return value;
     }
 
     private static string? _ResolveCorrelationFromSelector<T>(
