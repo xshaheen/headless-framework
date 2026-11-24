@@ -668,7 +668,7 @@ internal static class AggregationEndpoints
         string Title,
         string? Status,
         string? StatusRole,
-        DateTimeOffset At,
+        DateTimeOffset? At,
         string TimestampKind,
         string? Node,
         int Depth,

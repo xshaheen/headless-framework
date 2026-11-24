@@ -169,4 +169,7 @@ internal sealed record MessagingTracePart
 /// <summary>The body of a forwarded trace read: the id travels here, never in the URL.</summary>
 internal sealed record PeerTraceBody(string? CorrelationId, int? Limit);
 
+/// <summary>The body of a forwarded id lookup: the looked-up text travels here, never in the URL.</summary>
+internal sealed record PeerResolveBody(string? Query);
+
 #pragma warning restore MA0048

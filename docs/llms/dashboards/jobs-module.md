@@ -73,7 +73,7 @@ A run relates to the other runs with its correlation id (`jobs.same-correlation`
 The shell's trace page (`POST {base}/api/trace`) lists the module's runs that carry one correlation id, time jobs and cron occurrences, oldest first, at most `TraceLimit` of them, and sets `limited` when more existed.
 
 - **Placement.** A run is keyed by its run id. A run's causation names its parent run when that run is on the trace, and otherwise the received message whose consumer scheduled it, so a job a consumer scheduled sits under that subscriber's generation.
-- **Times.** A run that has started shows when it ran. Any other run shows when it is due, and a chain step still waiting on its parent sorts last.
+- **Times.** A run that has started shows when it ran. Any other run shows when it is due. A chain step still waiting on its parent has no time yet: its `at` is `null`, it sorts last, and the page shows `Waiting on its parent`.
 - **List link.** The answer links the `runs` list with `{ "correlationId": "<id>" }` as history state, so the id never sits in a URL.
 
 **Verify:** `POST {base}/api/trace` with `{ "correlationId": "<run id>" }` for a root time job answers a `jobs` section with `stale: false` and that run's row.

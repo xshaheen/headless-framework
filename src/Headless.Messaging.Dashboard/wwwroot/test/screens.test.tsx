@@ -178,6 +178,31 @@ describe('messaging list search', () => {
     await waitFor(() => expect(searches(view.requests)[0]?.body).toMatchObject({ correlationId: 'c-42' }))
     expect(view.location().search).not.toContain('c-42')
   })
+
+  it.each([
+    ['its chip', 'Clear correlation filter'],
+    ['Clear filters', 'Clear filters'],
+  ])(
+    'drops the history state’s correlation id when %s clears it, so a remount does not search again',
+    async (_, name) => {
+      const actor = user()
+      const view = open(
+        {
+          published: [message('published', 'Succeeded')],
+          extra: (request) =>
+            request.method === 'POST' && request.path === 'messaging/published/search'
+              ? { items: [], count: 0, countCapped: false, nextCursor: null, unavailable: [], incomplete: false }
+              : undefined,
+        },
+        { path: 'published', state: { correlationId: 'c-42' } },
+      )
+
+      await waitFor(() => expect(searches(view.requests)).toHaveLength(1))
+      await actor.click(await screen.findByRole('button', { name }))
+
+      await waitFor(() => expect(view.location().state).toBeNull())
+    },
+  )
 })
 
 describe('messaging list filters and columns', () => {

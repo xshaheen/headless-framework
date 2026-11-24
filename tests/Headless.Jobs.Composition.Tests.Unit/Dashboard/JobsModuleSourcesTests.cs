@@ -411,6 +411,9 @@ public sealed class JobsModuleSourcesTests : TestBase
             .Items[1]
             .Causation.Should()
             .Be(new DashboardTraceKey { Kind = DashboardTraceKeyKind.Run, Value = parentId });
+        // The waiting child has no due time yet, so it carries none instead of the store's year-9999 sort sentinel.
+        answer.Items[1].At.Should().BeNull();
+        answer.Items[1].TimestampKind.Should().Be(DashboardTraceTimestampKind.Due);
         answer.Limited.Should().BeFalse();
     }
 

@@ -162,6 +162,31 @@ public sealed class TraceTreeBuilderTests : TestBase
         _Shape(rows).Should().Equal(("run-p", 0), ("run-c1", 1), ("run-c2", 1), ("run-early", 0), ("run-late", 0));
     }
 
+    [Fact]
+    public void should_list_an_item_with_no_time_yet_after_its_timed_siblings_and_roots_without_clock_skew()
+    {
+        var parent = _Run("run-p", at: 10);
+        // A chain child waiting on its parent has no due time; answered first, it still lists after timed siblings.
+        var waiting = _Run("run-wait", at: 0, causation: _Key(DashboardTraceKeyKind.Run, "run-p")) with
+        {
+            At = null,
+        };
+        var timedChild = _Run("run-c", at: 20, causation: _Key(DashboardTraceKeyKind.Run, "run-p"));
+        var waitingRoot = _Run("run-root-wait", at: 0) with { At = null };
+        var laterRoot = _Run("run-late", at: 30);
+
+        var rows = TraceTreeBuilder.Build([
+            _Jobs(waitingRoot),
+            _Jobs(waiting),
+            _Jobs(laterRoot),
+            _Jobs(timedChild),
+            _Jobs(parent),
+        ]);
+
+        _Shape(rows).Should().Equal(("run-p", 0), ("run-c", 1), ("run-wait", 1), ("run-late", 0), ("run-root-wait", 0));
+        rows.Should().AllSatisfy(row => row.Tags.Should().BeEmpty());
+    }
+
     private static IEnumerable<(string Id, int Depth)> _Shape(IReadOnlyList<TraceRow> rows) =>
         rows.Select(static row => (row.Item.Target.Id, row.Depth));
 

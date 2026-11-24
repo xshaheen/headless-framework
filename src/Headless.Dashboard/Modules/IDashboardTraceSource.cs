@@ -127,8 +127,12 @@ public sealed record DashboardTraceItem
     /// </summary>
     public string? StatusRole { get; init; }
 
-    /// <summary>Gets the instant the tree orders the object by; <see cref="TimestampKind"/> says what it marks.</summary>
-    public required DateTimeOffset At { get; init; }
+    /// <summary>
+    /// Gets the instant the tree orders the object by, and <see cref="TimestampKind"/> says what it marks; or
+    /// <see langword="null"/> for an object with no time yet, such as a chain run waiting on its parent. The tree lists
+    /// such an object after its timed siblings, and the page shows it as waiting on its parent.
+    /// </summary>
+    public required DateTimeOffset? At { get; init; }
 
     /// <summary>Gets what <see cref="At"/> marks: when the object ran, when it is due, or when it was added.</summary>
     public DashboardTraceTimestampKind TimestampKind { get; init; }

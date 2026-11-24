@@ -401,10 +401,10 @@ internal sealed class JobsSources(string moduleId, IJobsDashboardReader reader, 
                 run.ExecutionTime is { } executionTime ? new DateTimeOffset(executionTime, TimeSpan.Zero) : executedAt,
                 DashboardTraceTimestampKind.Ran
             )
-            // A chain member waiting on its parent has no due time yet; it sorts after every scheduled run, as the
-            // store's own read orders it.
+            // A chain member waiting on its parent has no due time yet. It carries none rather than the store's sort
+            // sentinel, which would show as a date in the year 9999; the tree lists it after its timed siblings.
             : (
-                new DateTimeOffset(run.ExecutionTime ?? JobRunPosition.Unscheduled, TimeSpan.Zero),
+                run.ExecutionTime is { } dueTime ? new DateTimeOffset(dueTime, TimeSpan.Zero) : (DateTimeOffset?)null,
                 DashboardTraceTimestampKind.Due
             );
         var id = run.Id.ToString();

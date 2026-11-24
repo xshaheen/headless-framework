@@ -111,12 +111,12 @@ Each `DashboardTraceItem` carries its own causal `Key` and the `Causation` key i
 - A `Message` causation sits under that message's received generation when exactly one is on the page. Otherwise it sits under the published message, tagged `consumer-not-recorded`.
 - An item whose cause is not on the page is a root tagged `parent-not-on-page`. The tag never names a hidden module.
 - A cycle breaks at the first repeated item, which becomes a root tagged `cycle`.
-- Roots and siblings sort by `At`. A child stamped before its parent stays under it, tagged `clock-skew`.
+- Roots and siblings sort by `At`. An item whose `At` is `null`, because it has no time yet, such as a chain run waiting on its parent, sorts after every timed item. A child stamped before its parent stays under it, tagged `clock-skew`.
 
 The answer is `{ modules, rows, hidden }`:
 
 - `modules` holds one section per module: `id`, `displayName`, `stale`, `unavailable` (from `DashboardTraceAnswer.UnavailableSources`, left out when every source answered), `limited`, `count`, and `list` (`{ path, state }` from `ListLink`: the module's own list, opened with `state` as history state so the id stays out of the URL).
-- `rows` holds the tree depth first: `module`, `target`, `title`, `status`, `statusRole`, `at`, `timestampKind` (`ran`, `due`, or `added`), `node`, `depth`, and `tags`.
+- `rows` holds the tree depth first: `module`, `target`, `title`, `status`, `statusRole`, `at` (`null` for an item with no time yet, which the page shows as `Waiting on its parent`), `timestampKind` (`ran`, `due`, or `added`), `node`, `depth`, and `tags`.
 - `hidden` counts the trace-capable modules the user may not view.
 
 The page's address is `{base}/trace#<id>`: the id rides in the fragment, which the browser never sends to the server. In a module view, link to it with `OpenTrace` (`@headless/dashboard-sdk/components`), which renders `Open trace`, or disabled with `No correlation id` or `Id longer than 200 characters`, and bind `T` with `useTraceKey(correlationId)`. Build any other link with `traceAddress(id)`, never by hand. A signed-out visit to a trace signs in and lands on the same trace, and the sign-in's `returnUrl` carries no fragment. Go to id and the palette offer `Open trace for <id>` after the objects a pasted text resolves to, for text of one token and at most 200 characters, and Go to id's Enter opens it when no object matches.

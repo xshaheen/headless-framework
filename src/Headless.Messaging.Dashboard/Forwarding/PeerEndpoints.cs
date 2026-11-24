@@ -44,16 +44,10 @@ internal static class PeerEndpoints
                     async token => await module.LocalSources.GetAttentionAsync(token).ConfigureAwait(false)
                 )
         );
-        peer.MapGet(
-            "/resolve",
-            (HttpContext context, string? q) =>
-                _AnswerAsync(
-                    context,
-                    async token =>
-                        await module.LocalSources.ResolveAsync(q ?? string.Empty, token).ConfigureAwait(false)
-                )
-        );
-        // A POST only so the correlation id stays out of the URL; it reads, so a view-only node admits it.
+        // A POST only so the looked-up text and the correlation id stay out of the URL; both read, so a view-only node
+        // admits them.
+        peer.MapPost("/resolve", Task<IResult> (HttpContext context) => _ResolveAsync(context, module))
+            .WithMetadata(MessagingReadEndpoint.Instance);
         peer.MapPost("/trace", Task<IResult> (HttpContext context) => _TraceAsync(context, module))
             .WithMetadata(MessagingReadEndpoint.Instance);
         peer.MapGet(
@@ -157,6 +151,21 @@ internal static class PeerEndpoints
         return payload is null ? Results.NotFound() : Results.Json(payload, MessagingForwarding.JsonOptions);
     }
 
+    private static async Task<IResult> _ResolveAsync(HttpContext context, MessagingModule module)
+    {
+        if (!_IsPeerCall(context))
+        {
+            return Results.NotFound();
+        }
+
+        var body = await _ReadBodyAsync<PeerResolveBody>(context).ConfigureAwait(false);
+        var matches = await module
+            .LocalSources.ResolveAsync(body?.Query ?? string.Empty, context.RequestAborted)
+            .ConfigureAwait(false);
+
+        return Results.Json(matches, MessagingForwarding.JsonOptions);
+    }
+
     private static async Task<IResult> _TraceAsync(HttpContext context, MessagingModule module)
     {
         if (!_IsPeerCall(context))
@@ -164,22 +173,7 @@ internal static class PeerEndpoints
             return Results.NotFound();
         }
 
-        PeerTraceBody? body;
-
-        try
-        {
-            body = await JsonSerializer
-                .DeserializeAsync<PeerTraceBody>(
-                    context.Request.Body,
-                    MessagingForwarding.JsonOptions,
-                    context.RequestAborted
-                )
-                .ConfigureAwait(false);
-        }
-        catch (JsonException)
-        {
-            body = null;
-        }
+        var body = await _ReadBodyAsync<PeerTraceBody>(context).ConfigureAwait(false);
 
         // The messages name the fields, never the id: a validation problem is served and may be logged.
         if (
@@ -192,7 +186,7 @@ internal static class PeerEndpoints
                 string.IsNullOrEmpty(body?.CorrelationId)
                     ? DashboardValidation.RequiredRule
                     : DashboardValidation.MaxLengthRule,
-                "Send a correlation id of at most 200 characters."
+                $"Send a correlation id of at most {MessagingSearchRequestValidator.MaxCorrelationIdLength} characters."
             );
         }
 
@@ -201,7 +195,7 @@ internal static class PeerEndpoints
             return DashboardValidation.Problem(
                 "limit",
                 DashboardValidation.InvalidRule,
-                "Send a limit between 1 and 10000."
+                $"Send a limit between 1 and {MessagingDashboardOptionsValidator.MaxTraceLimit}."
             );
         }
 
@@ -210,6 +204,22 @@ internal static class PeerEndpoints
             .ConfigureAwait(false);
 
         return Results.Json(part, MessagingForwarding.JsonOptions);
+    }
+
+    // A malformed body reads as no body, so the caller gets the field-named problem instead of a 500.
+    private static async Task<T?> _ReadBodyAsync<T>(HttpContext context)
+        where T : class
+    {
+        try
+        {
+            return await JsonSerializer
+                .DeserializeAsync<T>(context.Request.Body, MessagingForwarding.JsonOptions, context.RequestAborted)
+                .ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static Task<IResult> _IntakeHoldAsync(

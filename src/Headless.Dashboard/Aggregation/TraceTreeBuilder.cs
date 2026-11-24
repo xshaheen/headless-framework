@@ -178,7 +178,7 @@ internal static class TraceTreeBuilder
                 continue;
             }
 
-            if (node.Item.At < node.Parent.Item.At)
+            if (node.Item.At is { } at && node.Parent.Item.At is { } parentAt && at < parentAt)
             {
                 node.Tags.Add(ClockSkewTag);
             }
@@ -230,14 +230,21 @@ internal static class TraceTreeBuilder
         public List<string> Tags { get; } = [];
     }
 
-    // Time first; two items at the same instant keep the order the modules answered in.
+    // Time first, and an item with no time yet after every timed one, as a store orders an unscheduled run; two items
+    // at the same instant, or both without one, keep the order the modules answered in.
     private sealed class NodeOrder : IComparer<Node>
     {
         public static readonly NodeOrder Instance = new();
 
         public int Compare(Node? x, Node? y)
         {
-            var byTime = x!.Item.At.CompareTo(y!.Item.At);
+            var byTime = (x!.Item.At, y!.Item.At) switch
+            {
+                ({ } a, { } b) => a.CompareTo(b),
+                (null, null) => 0,
+                (null, _) => 1,
+                (_, null) => -1,
+            };
 
             return byTime != 0 ? byTime : x.Index.CompareTo(y.Index);
         }

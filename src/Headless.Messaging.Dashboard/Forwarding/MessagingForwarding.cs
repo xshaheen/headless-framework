@@ -40,6 +40,9 @@ internal sealed class MessagingForwarding(
     // Lookup text is the caller's, so the reused answers are bounded: past this many, expired ones are dropped.
     private const int _MaxResolveEntries = 1_024;
 
+    // The node round trip a peer trace call allows beyond the peer's own per-store bound.
+    private static readonly TimeSpan _PeerTraceMargin = TimeSpan.FromSeconds(1);
+
     private readonly ConcurrentDictionary<string, (DashboardAttentionAnswer Answer, DateTimeOffset At)> _attention =
         new(StringComparer.Ordinal);
 
@@ -596,10 +599,11 @@ internal sealed class MessagingForwarding(
         CancellationToken cancellationToken
     )
     {
-        // A POST waits as long as a write by default; a trace read waits only as long as a store read does, so one slow
-        // peer is named unavailable before the shell marks the whole module stale.
+        // A POST waits as long as a write by default; a trace read waits only a second past a store read. The peer
+        // bounds each of its own stores by the same StoreTimeout and then answers with what it read, so the margin lets
+        // that partial answer arrive instead of dropping the peer's healthy rows.
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(options.StoreTimeout);
+        deadline.CancelAfter(options.StoreTimeout + _PeerTraceMargin);
         ForwardResponse response;
 
         try
@@ -642,20 +646,26 @@ internal sealed class MessagingForwarding(
         );
     }
 
-    // Sent without the operator: the peer's matches do not depend on who asks, so every lookup can share them.
+    // Sent without the operator: the peer's matches do not depend on who asks, so every lookup can share them. The text
+    // travels in a POST body so it never sits in a URL or a request log on the peer or a proxy between the nodes.
     private async Task<IReadOnlyList<DashboardObject>?> _AskResolveAsync(MessagingPeer peer, string query)
     {
-        var response = await client
-            .SendAsync(
-                peer,
-                HttpMethod.Get,
-                "/peer/resolve?q=" + Uri.EscapeDataString(query),
-                user: null,
-                operate: false,
-                json: null,
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
+        var body = JsonSerializer.SerializeToUtf8Bytes(new PeerResolveBody(query), JsonOptions);
+
+        // A POST waits as long as a write by default; a lookup waits only as long as a read does.
+        using var deadline = new CancellationTokenSource(ForwardingClient.ReadTimeout);
+        ForwardResponse response;
+
+        try
+        {
+            response = await client
+                .SendAsync(peer, HttpMethod.Post, "/peer/resolve", user: null, operate: false, body, deadline.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
 
         return response.IsSuccess
             ? JsonSerializer.Deserialize<List<DashboardObject>>(response.Body, JsonOptions) ?? []

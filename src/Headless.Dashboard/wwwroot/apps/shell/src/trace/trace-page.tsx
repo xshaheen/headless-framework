@@ -103,7 +103,8 @@ function TraceBody({ id, trace, onRetry }: { id: string; trace: Trace; onRetry: 
     id: String(index),
     label: row.status ?? row.title,
     tone: row.status ? (row.statusRole ?? 'off') : undefined,
-    at: row.at,
+    at: row.at ?? undefined,
+    missing: 'Waiting on its parent',
     scheduled: row.timestampKind === 'due',
     depth: row.depth,
     tags: row.tags.map((tag) => tagWords[tag] ?? tag),
@@ -199,7 +200,10 @@ export default function TracePage() {
         </EmptyState>
       ) : (
         <QueryState query={trace} label="Loading the trace" rows={6}>
-          {(data) => <TraceBody id={id} trace={data} onRetry={refresh} />}
+          {(data) => (
+            // Keyed by the id, so switching to a cached trace starts at its top, with no row focused from the last one.
+            <TraceBody key={id} id={id} trace={data} onRetry={refresh} />
+          )}
         </QueryState>
       )}
     </div>

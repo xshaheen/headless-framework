@@ -178,7 +178,8 @@ export interface TraceRow {
   title: string
   status?: string | null
   statusRole?: DashboardStateRole | null
-  at: string
+  /** When the row ran, is due, or was added; `null` for one with no time yet, such as a run waiting on its parent. */
+  at: string | null
   timestampKind: 'ran' | 'due' | 'added'
   node?: string | null
   depth: number
@@ -204,6 +205,7 @@ function readTrace(answer: Trace): Trace {
     rows: (answer.rows ?? []).map((row) => ({
       ...row,
       statusRole: isStateRole(row.statusRole) ? row.statusRole : null,
+      at: typeof row.at === 'string' ? row.at : null,
       depth: typeof row.depth === 'number' && row.depth >= 0 ? row.depth : 0,
       tags: Array.isArray(row.tags) ? row.tags : [],
     })),

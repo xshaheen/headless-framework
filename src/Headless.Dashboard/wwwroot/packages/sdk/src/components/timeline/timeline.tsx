@@ -14,8 +14,10 @@ export interface TimelineEvent {
   id: string
   /** What happened: `Failed`, `Requeued`. */
   label: string
-  /** The ISO time the server stored. */
-  at: string
+  /** The ISO time the server stored, or left out for an event with no time yet, which shows `missing` instead. */
+  at?: string
+  /** What an event with no time shows in its place, such as `Waiting on its parent`; `Not yet` when left out. */
+  missing?: string
   /** A time the work is due at rather than one it ran at: once passed it reads `due 42 sec. ago`. */
   scheduled?: boolean
   /** The operator or node that caused it. */
@@ -69,7 +71,7 @@ function EventLine({ item }: { item: TimelineEvent }) {
   return (
     <>
       {item.tone ? <StatusMark tone={item.tone} label={item.label} /> : <strong>{item.label}</strong>}{' '}
-      <Timestamp value={item.at} scheduled={item.scheduled} excludeFromTabOrder />
+      <Timestamp value={item.at} missing={item.missing} scheduled={item.scheduled} excludeFromTabOrder />
       {item.actor ? <Text tone="hint">{` by ${item.actor}`}</Text> : null}
     </>
   )
@@ -149,8 +151,11 @@ function TreeTimeline({ label, events, selectedId, onSelect }: TimelineProps) {
     shown.push(index)
   }
 
-  // The focused row stays in the page while scrolled away, so focus is never dropped to the body.
-  if (current >= 0 && (current < first || current > end)) {
+  // The focused row stays in the page while scrolled away, so focus is never dropped to the body. It keeps its place
+  // in index order: a keyed row React has to move is detached and re-inserted, and the browser drops its focus.
+  if (current >= 0 && current < first) {
+    shown.unshift(current)
+  } else if (current > end) {
     shown.push(current)
   }
 

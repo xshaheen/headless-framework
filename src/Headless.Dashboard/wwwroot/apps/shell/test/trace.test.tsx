@@ -231,6 +231,46 @@ describe('trace page', () => {
     ])
   })
 
+  it('opens a trace already read at its first row, not at the row focused on the trace before it', async () => {
+    const user = userEvent.setup()
+    const shell = renderTrace((request) => {
+      const id = (request.body as { correlationId: string }).correlationId
+
+      return { ...jobAndMessage, rows: [row('jobs', 'run', `${id}-a`, 0), row('jobs', 'run', `${id}-b`, 0)] }
+    })
+
+    await screen.findByRole('treegrid', { name: 'Trace of ord-7' })
+    await shell.router.navigate('/trace#ord-8')
+    const second = await screen.findByRole('treegrid', { name: 'Trace of ord-8' })
+    within(second).getAllByRole('row')[0]!.focus()
+    await user.keyboard('{ArrowDown}')
+    expect(document.activeElement?.getAttribute('aria-rowindex')).toBe('2')
+
+    // Back to the first trace, which is cached, so it draws at once with no load in between.
+    await shell.router.navigate('/trace#ord-7')
+    const first = await screen.findByRole('treegrid', { name: 'Trace of ord-7' })
+
+    const tabStop = within(first)
+      .getAllByRole('row')
+      .find((candidate) => candidate.tabIndex === 0)
+    expect(tabStop?.getAttribute('aria-rowindex')).toBe('1')
+    expect(traceRequests(shell.requests)).toHaveLength(2)
+  })
+
+  it('shows a run with no time yet as waiting on its parent, never as a date', async () => {
+    renderTrace({
+      ...jobAndMessage,
+      rows: [
+        row('jobs', 'run', 'r1', 0),
+        row('jobs', 'run', 'r2', 1, { status: 'Idle', statusRole: 'sched', at: null, timestampKind: 'due' }),
+      ],
+    })
+
+    const rows = within(await screen.findByRole('treegrid')).getAllByRole('row')
+    expect(rows[1]!.textContent).toContain('Waiting on its parent')
+    expect(rows[1]!.querySelector('time')).toBeNull()
+  })
+
   it('takes the fragment exactly as it is, decoded but never trimmed', async () => {
     const shell = renderTrace(jobAndMessage, '/trace#ord%207%20')
 

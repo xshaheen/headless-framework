@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -134,6 +134,30 @@ describe('Timeline with depth', () => {
     expect(document.activeElement?.getAttribute('aria-rowindex')).toBe('1000')
     expect(document.activeElement?.textContent).toContain('Row 999')
     expect(screen.getAllByRole('row').length).toBeLessThan(40)
+  })
+
+  it('keeps the focused row in place and focused, in row order, once a scroll leaves it far above the view', async () => {
+    const user = userEvent.setup()
+    renderTree(treeEvents(200))
+
+    await user.tab()
+    const tree = screen.getByRole('treegrid')
+    tree.scrollTop = 100 * 56
+    fireEvent.scroll(tree)
+
+    const order = screen.getAllByRole('row').map((row) => Number(row.getAttribute('aria-rowindex')))
+    expect(order[0]).toBe(1)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(document.activeElement?.getAttribute('aria-rowindex')).toBe('1')
+  })
+
+  it('shows an event with no time by its missing text', () => {
+    renderTree([
+      { id: 'parent', label: 'Succeeded', at: '2026-11-05T09:50:00Z', depth: 0 },
+      { id: 'child', label: 'Idle', depth: 1, missing: 'Waiting on its parent' },
+    ])
+
+    expect(screen.getAllByRole('row')[1]!.textContent).toContain('Waiting on its parent')
   })
 
   it('moves with the arrow keys and opens the focused row with Enter', async () => {

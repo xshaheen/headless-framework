@@ -206,7 +206,8 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
 
   useNodeReset()
 
-  function update(change: (next: URLSearchParams) => void) {
+  /** Writes the URL; `state`, when given, replaces the history state that carries the correlation id. */
+  function update(change: (next: URLSearchParams) => void, state?: null) {
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
@@ -214,7 +215,7 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
 
         return next
       },
-      { replace: true },
+      state === undefined ? { replace: true } : { replace: true, state },
     )
   }
 
@@ -234,15 +235,23 @@ export function MessagesView({ kind }: { kind: MessageKind }) {
   function clearFilters() {
     setSearch(noSearch)
     setSearchReset((count) => count + 1)
-    update((next) =>
-      (['store', 'consumer', 'name', 'fingerprint', 'lane', 'messageId', 'range', 'from', 'to'] as const).forEach(
-        (name) => next.delete(name),
-      ),
+    update(
+      (next) =>
+        (['store', 'consumer', 'name', 'fingerprint', 'lane', 'messageId', 'range', 'from', 'to'] as const).forEach(
+          (name) => next.delete(name),
+        ),
+      null,
     )
   }
 
   function searchFor(values: Partial<MessageSearch>) {
     setSearch((current) => ({ ...current, ...values }))
+
+    // The history state still holds the id the view opened with; once the operator changes or clears it, a reload or a
+    // Back to this list must not bring that id back.
+    if ('correlationId' in values && locationState != null) {
+      update(() => undefined, null)
+    }
   }
 
   function clearSearch(name: keyof MessageSearch) {
