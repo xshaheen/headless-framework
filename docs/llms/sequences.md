@@ -141,7 +141,7 @@ setup.Policy("ticket", new SequencePolicy { BlockSize = 50 });
 
 ### Overflow
 
-A counter whose stored value would pass `long.MaxValue` fails with the provider's arithmetic error (PostgreSQL `22003`, SQL Server 8115). No typed exhaustion error exists.
+When an allocation would advance a stored counter past `long.MaxValue`, SQLite throws `OverflowException` and preserves the stored value. PostgreSQL and SQL Server report their native arithmetic errors (`22003` and 8115).
 
 ## Choosing a Provider
 
