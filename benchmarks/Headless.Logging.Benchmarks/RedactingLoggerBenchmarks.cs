@@ -63,8 +63,26 @@ public partial class RedactingLoggerBenchmarks
     public void ClassifiedObjectRedacting() => _redacting.LogInformation("Saw {@Customer}", _customer);
 #pragma warning restore CA1848, CA1873
 
+    [Benchmark]
+    public void SafePropertiesPlain() => LogOrder(_plain, _order);
+
+    [Benchmark]
+    public void SafePropertiesRedacting() => LogOrder(_redacting, _order);
+
+    [Benchmark]
+    public void ClassifiedPropertiesPlain() => LogCustomer(_plain, _customer);
+
+    [Benchmark]
+    public void ClassifiedPropertiesRedacting() => LogCustomer(_redacting, _customer);
+
     [LoggerMessage(1, LogLevel.Information, "Placed {Id} as {State}")]
     private static partial void LogPlaced(ILogger logger, int id, string state);
+
+    [LoggerMessage(2, LogLevel.Information, "Placed order")]
+    private static partial void LogOrder(ILogger logger, [LogProperties] Order order);
+
+    [LoggerMessage(3, LogLevel.Information, "Saw customer")]
+    private static partial void LogCustomer(ILogger logger, [LogProperties] Customer customer);
 
     private static ServiceProvider _Build(bool redact)
     {
