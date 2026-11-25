@@ -649,7 +649,7 @@ Bootstrap scopes, collections, and indexes with `ICouchbaseManager` from a deplo
 ### Cancellation (Couchbase)
 
 - `ICouchbaseClusterOptionsProvider.GetAsync`, `ICouchbaseTransactionConfigProvider.GetAsync`, `ICouchbaseClustersProvider.GetClusterAsync`, `IBucketContextProvider.GetAsync`, and `CouchbaseBucketContext.ExecuteTransactionAsync` accept an optional trailing `CancellationToken`.
-- `DocumentSetExtensions.GetAllReplicasAsync` returns one task per replica. Pass the token through `GetAllReplicasOptions.CancellationToken(...)`.
+- `DocumentSetExtensions.GetAllReplicasAsync` returns an `IAsyncEnumerable<IGetReplicaResult>` that yields each replica's result as it answers, the active node included. Read it with `await foreach`, not by collecting tasks. Pass the token through `GetAllReplicasOptions.CancellationToken(...)`.
 - The token passed to `GetClusterAsync` governs only the attempt that first connects a cluster. A caller that gets a cached cluster completes without observing it.
 - `IBucketContextProvider.GetAsync` observes the token before it opens the bucket, not during, because `ICluster.BucketAsync` has no cancellation overload.
 - `ExecuteTransactionAsync` observes the token only before the transaction begins, because the SDK's `Transactions.RunAsync` has no cancellation hook. Bound the transaction's duration with `PerTransactionConfig` (timeout and durability) instead.

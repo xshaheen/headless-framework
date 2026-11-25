@@ -181,8 +181,8 @@ public static class DocumentSetExtensions
         return set.Collection.GetAnyReplicaAsync(id?.ToString()!, options);
     }
 
-    /// <summary>Returns tasks that each resolve to the document content from a distinct replica node.</summary>
-    public static IEnumerable<Task<IGetReplicaResult>> GetAllReplicas<T, TId>(
+    /// <summary>Streams the document content from every replica node, the active node included, as each one answers.</summary>
+    public static IAsyncEnumerable<IGetReplicaResult> GetAllReplicasAsync<T, TId>(
         this IDocumentSet<T> set,
         TId id,
         GetAllReplicasOptions? options = null
@@ -190,7 +190,7 @@ public static class DocumentSetExtensions
         where T : class, IEntity
         where TId : notnull
     {
-        return set.Collection.GetAllReplicasAsync(id?.ToString()!, options);
+        return set.Collection.GetAllReplicasStreamAsync(id?.ToString()!, options);
     }
 
     /// <summary>Performs a sub-document read on the document identified by <paramref name="id"/> using the supplied <paramref name="specs"/>.</summary>
