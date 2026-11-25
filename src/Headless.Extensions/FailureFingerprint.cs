@@ -25,8 +25,10 @@ namespace Headless;
 /// <see cref="Compute"/> hashes the innermost exception type, after unwrapping <see cref="AggregateException"/> and
 /// <see cref="TargetInvocationException"/>, plus the top three stack frames outside <c>System.*</c> and
 /// <c>Microsoft.*</c>, each as a method full name with no line number and with compiler-generated lambda and async
-/// state-machine names reduced to the declaring method. The result is the SHA-256 of those lines, truncated to 16 hex
-/// characters. The message never takes part, because it carries the ids that would split one cause into many groups.
+/// state-machine names reduced to the declaring method. A method that is not async but returns the task of a callee the
+/// runtime runs as async is skipped: under runtime async it shows only when that callee failed before it suspended, and
+/// a state-machine trace never shows it. The result is the SHA-256 of those lines, truncated to 16 hex characters. The
+/// message never takes part, because it carries the ids that would split one cause into many groups.
 /// </para>
 /// <para>
 /// Compute the fingerprint where the exception is live, at the point that records the failure. Stored exception text
