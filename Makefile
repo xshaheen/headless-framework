@@ -270,6 +270,7 @@ AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
 	elif [ -s "$$run/$$units.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
 		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+	elif [ -s "$$run/$$units.reused.txt" ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "reused: every selected module matched an earlier pass; see the reused modules below"; \
 	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
 # The integration suites start their containers through Docker, so an unreachable daemon fails every fixture only after
 # the build and the unit suites ran. The gate checks the daemon before it builds anything, and checks again when the
@@ -288,20 +289,29 @@ AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
 		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+	elif [ -s "$$run/integration.reused.txt" ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "reused: every selected module matched an earlier pass; see the reused modules below"; \
 	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
 # One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it. MTP
 # writes each module's report at the results root and the TRX reporter copies it under _<machine>_<time>/In/, so the
 # merge reads the root copies only. After a successful merge the per-module reports go: the summary reads the merged
 # report, and the per-module copies were ~85% of an integration bundle (650 of 766 MB). A failed merge keeps them.
 AFFECTED_COVERAGE_MERGE_STAGE = reports=(); \
-	for suite in unit-tests integration-tests; do \
+	$(PROOF) keep-coverage --dir "$$run" || true; \
+	for suite in unit-tests integration-tests coverage-reused; do \
 		if [ -n "$$(find "$$run/$$suite" -maxdepth 1 -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then reports+=("$$run/$$suite/*.cobertura.xml"); fi; \
 	done; \
 	if [ $${\#reports[@]} -gt 0 ]; then \
 		if $(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$${reports[@]}"; then \
-			find "$$run/unit-tests" "$$run/integration-tests" -name '*.cobertura.xml' -delete 2>/dev/null || true; \
+			find "$$run/unit-tests" "$$run/integration-tests" "$$run/coverage-reused" -name '*.cobertura.xml' -delete 2>/dev/null || true; \
 		else status=1; fi; \
 	fi;
+# Per-module reuse (test-affected-integration only). The whole-bundle reuse above needs every input to match, the
+# branch's patch included, so any review fix used to rerun every selected module. Each integration and integration-unit
+# module also gets a key over its own ProjectReference closure; a module whose key matches a module that passed in an
+# earlier integration bundle does not run again, and its TRX and coverage are carried into this bundle. The keys are
+# always written so this run's results can be reused later; PROOF_REUSE=false runs every module.
+AFFECTED_MODULE_REUSE_STAGE = $(GRAPH) module-keys --dir "$$run" --salt "$${run\#\#*-} $(PROOF_KEY_SETTINGS)" || true; \
+	if [ "$(PROOF_REUSE)" = true ]; then $(PROOF) reuse-modules --dir "$$run" --root "$${run%/*}" --coverage "$$coverage" || true; fi;
 # The pre-commit hook rewrites staged C# with CSharpier, so a proof that skipped formatting proved bytes the commit
 # then changed. The format stage checks the same changed files format-check-changed does, and fails the bundle
 # without blocking the build or the tests. bash -c gets the function through `declare -f` because proof.py runs a
@@ -1239,8 +1249,9 @@ test-affected-integration: ## Build the affected set, run its integration tests,
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-integration"; \
 	run="$(PROOF_RUN)-integration"; status=0; units=integration-unit; coverage="$(INTEGRATION_COVERAGE)"; \
 	$(PROOF_REUSE_STAGE) \
-	$(AFFECTED_DOCKER_PREFLIGHT) \
 	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
+	$(AFFECTED_MODULE_REUSE_STAGE) \
+	$(AFFECTED_DOCKER_PREFLIGHT) \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_FAIL_FAST_ANALYZER_STAGE) \
 	$(AFFECTED_UNIT_STAGE) \
