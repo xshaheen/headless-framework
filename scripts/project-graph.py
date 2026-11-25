@@ -681,9 +681,47 @@ def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
     return digest.hexdigest()
 
 
+TESTCONTAINERS_PROJECT = "Headless.Testing.Testcontainers"
+TESTCONTAINERS_USE = re.compile(r"^\s*using\s+(?:DotNet\.)?Testcontainers\b", re.MULTILINE)
+
+
+def docker_projects(out_dir: Path, projects: dict[str, Project]) -> list[str]:
+    """The selected integration-test projects that start a container, so need a reachable Docker daemon.
+
+    A project needs Docker when its ProjectReference closure includes the shared Testcontainers fixtures, or when a
+    project in that closure uses a Testcontainers type itself (the SSH and Service Bus emulator fixtures do). SQLite,
+    in-memory, file-system and remote-service suites need none, and a change that selects only them runs without
+    Docker.
+    """
+    selected = [line for line in (out_dir / "integration.txt").read_text(encoding="utf-8").split() if line in projects]
+    needing: list[str] = []
+    for project in selected:
+        closure = {project}
+        pending = [project]
+        while pending:
+            for reference in projects[pending.pop()].references:
+                if reference not in closure:
+                    closure.add(reference)
+                    pending.append(reference)
+        if any(projects[key].name == TESTCONTAINERS_PROJECT for key in closure) or any(
+            TESTCONTAINERS_USE.search(source.read_text(encoding="utf-8", errors="replace"))
+            for key in closure
+            if projects[key].kind != "src"
+            for source in (REPO_ROOT / projects[key].directory).rglob("*.cs")
+            if not {"bin", "obj"} & set(source.relative_to(REPO_ROOT / projects[key].directory).parts)
+        ):
+            needing.append(project)
+    return needing
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
+
+    docker_parser = commands.add_parser(
+        "docker-projects", help="print the selected integration-test projects in DIR that start a container"
+    )
+    docker_parser.add_argument("--dir", required=True, type=Path, help="a directory `affected --out-dir` wrote")
 
     key_parser = commands.add_parser(
         "input-key", help="print a hash of every input a proof of the selection in DIR depends on"
@@ -753,6 +791,11 @@ def main() -> int:
         return 0
 
     projects = load_graph()
+
+    if args.command == "docker-projects":
+        for project in docker_projects(args.dir, projects):
+            print(project)
+        return 0
 
     if args.command == "input-key":
         print(input_key(args.dir, projects, args.salt))

@@ -271,6 +271,19 @@ AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
 		$(COVERAGE_ARGS_FN) \
 		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
 	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
+# The integration suites start their containers through Docker, so an unreachable daemon fails every fixture only after
+# the build and the unit suites ran. The gate checks the daemon before it builds anything, and checks again when the
+# gate failed, so a daemon that stopped mid-run is named as the cause instead of reading as test failures.
+DOCKER_REACHABLE = perl -e 'alarm 10; exec @ARGV' docker info >/dev/null 2>&1
+AFFECTED_DOCKER_PREFLIGHT = if [ -s "$$run/integration.txt" ]; then \
+		docker_count=$$($(GRAPH) docker-projects --dir "$$run" | wc -l | tr -d ' '); \
+		if [ "$$docker_count" -gt 0 ] && ! $(DOCKER_REACHABLE); then \
+			printf '\033[31m[affected]\033[0m the Docker daemon is not reachable, and %s integration-test project(s) start a container. Start Docker, then rerun; nothing was built.\n' "$$docker_count" >&2; exit 4; \
+		fi; \
+	fi;
+AFFECTED_DOCKER_POSTCHECK = if [ $$status -ne 0 ] && [ "$${docker_count:-0}" -gt 0 ] && ! $(DOCKER_REACHABLE); then \
+		printf '\033[31m[affected]\033[0m the Docker daemon stopped answering during the run, so the failures of the %s container suite(s) may be environmental. Start Docker, then rerun.\n' "$$docker_count" >&2; \
+	fi;
 AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
@@ -1226,11 +1239,13 @@ test-affected-integration: ## Build the affected set, run its integration tests,
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-integration"; \
 	run="$(PROOF_RUN)-integration"; status=0; units=integration-unit; coverage="$(INTEGRATION_COVERAGE)"; \
 	$(PROOF_REUSE_STAGE) \
+	$(AFFECTED_DOCKER_PREFLIGHT) \
 	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_FAIL_FAST_ANALYZER_STAGE) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_INTEGRATION_STAGE) \
+	$(AFFECTED_DOCKER_POSTCHECK) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
 	$(PROOF) summarize --dir "$$run" --input-key "$$key" $(if $(filter true,$(INTEGRATION_COVERAGE)),--coverage-gate integration $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
