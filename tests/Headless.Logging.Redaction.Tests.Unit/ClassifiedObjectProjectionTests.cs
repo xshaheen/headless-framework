@@ -562,6 +562,65 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     [Fact]
+    public void should_print_the_members_of_a_captured_class_without_classified_members()
+    {
+        // given: a class whose ToString prints only its name, holding another such class
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var shipment = new Shipment
+        {
+            Id = 7,
+            Carrier = new Carrier { Name = "acme" },
+        };
+
+        // when
+        _Logger(provider).LogInformation("Sent {@Shipment}", shipment);
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Sent Shipment { Id = 7, Carrier = Carrier { Name = acme } }");
+        entry.Properties["@Shipment"].Should().Be("Shipment { Id = 7, Carrier = Carrier { Name = acme } }");
+    }
+
+    [Fact]
+    public void should_pass_a_class_without_classified_members_through_when_not_captured()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var shipment = new Shipment
+        {
+            Id = 7,
+            Carrier = new Carrier { Name = "acme" },
+        };
+
+        // when
+        _Logger(provider).LogInformation("Sent {Shipment}", shipment);
+
+        // then: without the capture prefix the provider prints the object as it would without redaction
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Properties["Shipment"].Should().BeSameAs(shipment);
+        entry.Text.Should().Be("Sent " + typeof(Shipment));
+    }
+
+    [Fact]
+    public void should_keep_a_captured_type_that_writes_its_own_text()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var money = new Money(10, "USD");
+
+        // when
+        _Logger(provider).LogInformation("Paid {@Amount}", money);
+
+        // then: a type's own ToString is its chosen text, so it is not replaced by its members
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Properties["@Amount"].Should().BeSameAs(money);
+        entry.Text.Should().Be("Paid 10 USD");
+    }
+
+    [Fact]
     public void should_redact_each_element_of_a_classified_collection_member()
     {
         // given
@@ -642,6 +701,27 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     public record Envelope(string Id, Customer Payload);
 
     public sealed record Box(object Value);
+
+    public sealed class Shipment
+    {
+        public int Id { get; init; }
+
+        public Carrier? Carrier { get; init; }
+    }
+
+    public sealed class Carrier
+    {
+        public string Name { get; init; } = "";
+    }
+
+    public sealed class Money(decimal amount, string currency)
+    {
+        public decimal Amount => amount;
+
+        public string Currency => currency;
+
+        public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"{amount} {currency}");
+    }
 
     public sealed record Mailing([property: PrivateData] List<string?> Recipients, string Cadence);
 
