@@ -275,11 +275,14 @@ AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
 # the build and the unit suites ran. The gate checks the daemon before it builds anything, and checks again when the
 # gate failed, so a daemon that stopped mid-run is named as the cause instead of reading as test failures.
 DOCKER_REACHABLE = perl -e 'alarm 10; exec @ARGV' docker info >/dev/null 2>&1
-AFFECTED_DOCKER_PREFLIGHT = if [ -s "$$run/integration.txt" ] && ! $(DOCKER_REACHABLE); then \
-		printf '\033[31m[affected]\033[0m the Docker daemon is not reachable, and %s integration-test project(s) need it. Start Docker, then rerun; nothing was built.\n' "$$(wc -l < "$$run/integration.txt" | tr -d ' ')" >&2; exit 4; \
+AFFECTED_DOCKER_PREFLIGHT = if [ -s "$$run/integration.txt" ]; then \
+		docker_count=$$($(GRAPH) docker-projects --dir "$$run" | wc -l | tr -d ' '); \
+		if [ "$$docker_count" -gt 0 ] && ! $(DOCKER_REACHABLE); then \
+			printf '\033[31m[affected]\033[0m the Docker daemon is not reachable, and %s integration-test project(s) start a container. Start Docker, then rerun; nothing was built.\n' "$$docker_count" >&2; exit 4; \
+		fi; \
 	fi;
-AFFECTED_DOCKER_POSTCHECK = if [ $$status -ne 0 ] && [ -s "$$run/integration.txt" ] && ! $(DOCKER_REACHABLE); then \
-		printf '\033[31m[affected]\033[0m the Docker daemon stopped answering during the run, so the integration failures may be environmental. Start Docker, then rerun.\n' >&2; \
+AFFECTED_DOCKER_POSTCHECK = if [ $$status -ne 0 ] && [ "$${docker_count:-0}" -gt 0 ] && ! $(DOCKER_REACHABLE); then \
+		printf '\033[31m[affected]\033[0m the Docker daemon stopped answering during the run, so the failures of the %s container suite(s) may be environmental. Start Docker, then rerun.\n' "$$docker_count" >&2; \
 	fi;
 AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/integration.txt" ]; then \
