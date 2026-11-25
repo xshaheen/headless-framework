@@ -79,7 +79,10 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         // A safe type is decided before any walk state is allocated, so the common case stays allocation-free.
         var shape = _GetShape(value.GetType());
 
-        if (shape.Kind == ShapeKind.Safe)
+        // `{@Name}` asks for the members, which a type whose ToString prints only its name would otherwise lose.
+        var expand = captured && shape.ExpandsWhenCaptured;
+
+        if (shape.Kind == ShapeKind.Safe && !expand)
         {
             return false;
         }
@@ -95,7 +98,8 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             // run a lazy query twice, and a one-shot sequence would give it nothing or throw. Print the elements
             // already read.
             if (
-                !_Needs(value, 0, walk.Seen, projecting: null, walk.Reads)
+                !expand
+                && !_Needs(value, 0, walk.Seen, projecting: null, walk.Reads)
                 && (shape.Kind != ShapeKind.Sequence || value is ICollection)
             )
             {
@@ -317,10 +321,11 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return;
         }
 
-        var kind = _GetShape(value.GetType()).Kind;
+        var shape = _GetShape(value.GetType());
+        var kind = shape.Kind;
 
         // The check runs between appends, never inside another check, so it reuses the walk's one set of visits.
-        if (kind == ShapeKind.Safe || !_NeedsFresh(value, depth, walk))
+        if (!(captured && shape.ExpandsWhenCaptured) && (kind == ShapeKind.Safe || !_NeedsFresh(value, depth, walk)))
         {
             _AppendPlain(builder, value);
 
@@ -506,19 +511,17 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             members.Add(new MemberShape(member, classifications, memberSafe));
         }
 
-        if (allSafe)
-        {
-            return TypeShape.Safe;
-        }
-
         // Base members first, as a record prints them. Reflection keeps no order between a type's fields and its
         // properties, so a type that interleaves them prints its properties first.
         return new TypeShape(
-            ShapeKind.Members,
+            allSafe ? ShapeKind.Safe : ShapeKind.Members,
             TypeClassifications: null,
             [.. members.OrderBy(m => _InheritanceDepth(m.Member.DeclaringType))],
             _IsRecord(type)
-        );
+        )
+        {
+            ExpandsWhenCaptured = members.Count > 0 && _PrintsOnlyItsName(type),
+        };
     }
 
     private static bool _IsDataMember(MemberInfo member)
@@ -634,6 +637,11 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         && type.GetMethod(nameof(ToString), Type.EmptyTypes) is { } toString
         && toString.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false);
 
+    // The ToString of object and ValueType prints the type name; any override is the type's own chosen text.
+    private static bool _PrintsOnlyItsName(Type type) =>
+        type.GetMethod(nameof(ToString), Type.EmptyTypes)?.DeclaringType is { } declaring
+        && (declaring == typeof(object) || declaring == typeof(ValueType));
+
     private static DataClassificationSet? _ReadClassifications(MemberInfo member)
     {
         List<DataClassification>? classifications = null;
@@ -732,6 +740,12 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     )
     {
         public static readonly TypeShape Safe = new(ShapeKind.Safe, TypeClassifications: null, [], IsRecord: false);
+
+        /// <summary>
+        /// A value captured as <c>{@Name}</c> prints its members: the type has some, and its ToString would print
+        /// only its name.
+        /// </summary>
+        public bool ExpandsWhenCaptured { get; init; }
     }
 
     // A public property or a public instance field.
