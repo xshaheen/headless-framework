@@ -642,16 +642,18 @@ internal sealed class RedactingLoggerFactory(
         }
     }
 
-    /// <summary>A copy of a classified log state's values, already redacted, with its rendered text.</summary>
     // Most templates have a few holes, so their values are passed to the formatter without an array.
     [InlineArray(Length)]
     private struct HoleValues
     {
         public const int Length = 8;
 
+#pragma warning disable RCS1213 // False positive: the runtime repeats this field to lay out the inline array.
         private object? _first;
+#pragma warning restore RCS1213
     }
 
+    /// <summary>A copy of a classified log state's values, already redacted, with its rendered text.</summary>
     private sealed class RedactedState(KeyValuePair<string, object?>[] values, string text)
         : IReadOnlyList<KeyValuePair<string, object?>>
     {
