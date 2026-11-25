@@ -7,7 +7,8 @@
     <Authors>Mahmoud Shaheen</Authors>
     <Company>Mahmoud Shaheen</Company>
     <Copyright>Copyright (c) Mahmoud Shaheen. All rights reserved.</Copyright>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- A project without its own README packs the repository's: the SDK looks up the tree for one. -->
+    <SearchReadmeFileAbove>true</SearchReadmeFileAbove>
     <HeadlessPackageIconPath>$(MSBuildThisFileDirectory)..\assets\logo.png</HeadlessPackageIconPath>
   </PropertyGroup>
   <PropertyGroup Label="Repository">
@@ -38,8 +39,5 @@
     <!-- Test containers are never reused: Ryuk does not remove a reused container, so reuse leaks one per configuration
          and checkout, and carries one run's schema and rows into the next. -->
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\eng\BannedSymbols.Testcontainers.txt" />
-  </ItemGroup>
-  <ItemGroup Label="README Files">
-    <None Condition="!Exists('README.md')" Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>
