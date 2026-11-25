@@ -222,15 +222,15 @@
       },
       "Verify.XunitV3": {
         "type": "Direct",
-        "requested": "[33.5.0, )",
-        "resolved": "33.5.0",
-        "contentHash": "MrG0ldFpBTP7umMti9h49iAYfEABCq8stNnDbGrjK2uT2QDjz+NM11N1T8qxh46MeR/+O3Dk3VkOXDK7R3VAKw==",
+        "requested": "[33.6.0, )",
+        "resolved": "33.6.0",
+        "contentHash": "19JGJmCuhQCyvWMyZin5vhotsK8dyoYGXDYm+U3BLxXKJc4dZOsRBPWg49gPcP5Ehm1f4EXWo/TnAuVyrzPmSQ==",
         "dependencies": {
           "Argon": "0.38.2",
-          "DiffEngine": "21.0.0",
+          "DiffEngine": "21.1.0",
           "Microsoft.Bcl.AsyncInterfaces": "11.0.0",
           "SimpleInfoName": "3.2.1",
-          "Verify": "33.5.0",
+          "Verify": "33.6.0",
           "xunit.v3.extensibility.core": "4.0.3"
         }
       },
@@ -260,8 +260,8 @@
       },
       "DiffEngine": {
         "type": "Transitive",
-        "resolved": "21.0.0",
-        "contentHash": "o8/Omy4eMi0nr+FrWrhZzkU/sF725CVCPj3VledNvWpTIpZEOllTtfbyxexFzzCOn1A/RMXL8rvNncMlN7VlSw==",
+        "resolved": "21.1.0",
+        "contentHash": "pOtwyMib2TqKw2NtGtsttEw92YPiiOWj2/mkm3jEdjfmd5U3ms+KNH4Qgrc5aoQeFjLS40lBGSMeRPhH2ksbTQ==",
         "dependencies": {
           "EmptyFiles": "8.20.1"
         }
@@ -443,6 +443,11 @@
         "resolved": "3.2.1",
         "contentHash": "s6wdkw1k6PlFVLU3tNI1z1N7pljbUSQ6bB8RY4WYzdkVSx3w32uFhuRdbxuEcbqgSjf3FZwAlhy/zdfH5NWKrg=="
       },
+      "System.Diagnostics.DiagnosticSource": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
+      },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
         "resolved": "6.0.0",
@@ -455,11 +460,11 @@
       },
       "Verify": {
         "type": "Transitive",
-        "resolved": "33.5.0",
-        "contentHash": "9op1PkB0ptXTCzXz47kVKShBcP9OEk/lDHUhOxCEiaDy1ffCsDcfexjntdeP6WqsNMe5i77iGl+hROsiCqRAMQ==",
+        "resolved": "33.6.0",
+        "contentHash": "Irzw2Q+7bAkK6uUdRgFf2mL0BiSqqoScuSkuvg3y8CHD3vv3TJBsCCQ3p1CfbXxDbGovTLbvcQ/VrqTftskX2Q==",
         "dependencies": {
           "Argon": "0.38.2",
-          "DiffEngine": "21.0.0",
+          "DiffEngine": "21.1.0",
           "SimpleInfoName": "3.2.1"
         }
       },
@@ -631,7 +636,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.15, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.15, )",
-          "OpenTelemetry.Api": "[1.20.1, )"
+          "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
       "headless.messaging": {
@@ -652,7 +657,7 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Diagnostics": "[10.0.15, )",
           "Microsoft.Extensions.Options": "[10.0.15, )",
-          "OpenTelemetry.Api": "[1.20.1, )",
+          "OpenTelemetry.Api": "[1.21.0, )",
           "Polly.Core": "[8.9.1, )",
           "System.Threading.RateLimiting": "[10.0.15, )"
         }
@@ -732,7 +737,7 @@
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.20.1, )"
+          "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
       "headless.sql.abstractions": {
@@ -935,9 +940,12 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.20.1, )",
-        "resolved": "1.20.1",
-        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
+        "requested": "[1.21.0, )",
+        "resolved": "1.21.0",
+        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
+        "dependencies": {
+          "System.Diagnostics.DiagnosticSource": "11.0.0"
+        }
       },
       "Polly.Core": {
         "type": "CentralTransitive",

@@ -69,23 +69,23 @@
       },
       "NATS.Client.Core": {
         "type": "Direct",
-        "requested": "[3.3.2, )",
-        "resolved": "3.3.2",
-        "contentHash": "qs79vr6A2Le6sQxY5FFpQayRVSLOXJZkSvSx1lb8A8FK9bmvNcJRW1FE5pdoEEW+WV92TDFoc38MRqe4w0Lnjg==",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "qMzfPEW0b8TvGdz+hpft7MIPvXMqm0CFHsaL7toE61mDhskzbrD1SU8VBsvwiMoOQADQiS8cOTdRAtYfi5pl/w==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "6.0.1",
           "Microsoft.Extensions.Primitives": "6.0.0",
-          "NATS.Client.Abstractions": "3.3.2",
+          "NATS.Client.Abstractions": "3.4.0",
           "NATS.NKeys": "1.0.1"
         }
       },
       "NATS.Client.JetStream": {
         "type": "Direct",
-        "requested": "[3.3.2, )",
-        "resolved": "3.3.2",
-        "contentHash": "JF2xH52Fjj/KTpiCqLgOvFGoJl92eKlgT62X02oEkff/TphWjoXG1s26I7ySIwiScHgToW/fAuM0HW/76k7J4Q==",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "n+vuJ/6aEDC7hFUIgRv69kDUYNET6GiTHIyjcfH1bH33ijIe1N3n5JD9F5XCL3Gz6XiEkgCQqOhvDYerhueLoA==",
         "dependencies": {
-          "NATS.Client.Core": "3.3.2"
+          "NATS.Client.Core": "3.4.0"
         }
       },
       "ReflectionAnalyzers": {
@@ -172,8 +172,8 @@
       },
       "NATS.Client.Abstractions": {
         "type": "Transitive",
-        "resolved": "3.3.2",
-        "contentHash": "6VAmrvgN9116SAfRXK/gfR7Fxu02lOUtN2ZejwI/C2iMw9dsofLRZBSrutWH+iH+06FjAidKtpGiLt5ui6/xlQ==",
+        "resolved": "3.4.0",
+        "contentHash": "DaF3Urfs9DOdzk/6VTiNCGoYPyX35R6flOcy4Ff7O0yoMgxxcUB2Y6K6/A3Fp6+1Lm9Klu3MQhCO2eC4Mm9LiA==",
         "dependencies": {
           "Microsoft.Extensions.Primitives": "6.0.0"
         }
@@ -236,6 +236,11 @@
         "type": "Transitive",
         "resolved": "1.1.1",
         "contentHash": "CU0/Iuv5VDynK8I8pDLwkgF0rZhbQoZahtodfL0M3x2gFkpBRApKs8RyMyNlAi1mwExE4gsmqQXk4aFVvW9a4Q=="
+      },
+      "System.Diagnostics.DiagnosticSource": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
       },
       "System.IO.Hashing": {
         "type": "Transitive",
@@ -359,7 +364,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.15, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.15, )",
-          "OpenTelemetry.Api": "[1.20.1, )"
+          "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
       "headless.messaging": {
@@ -380,7 +385,7 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Diagnostics": "[10.0.15, )",
           "Microsoft.Extensions.Options": "[10.0.15, )",
-          "OpenTelemetry.Api": "[1.20.1, )",
+          "OpenTelemetry.Api": "[1.21.0, )",
           "Polly.Core": "[8.9.1, )",
           "System.Threading.RateLimiting": "[10.0.15, )"
         }
@@ -446,7 +451,7 @@
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.20.1, )"
+          "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
       "headless.sql.abstractions": {
@@ -591,9 +596,12 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.20.1, )",
-        "resolved": "1.20.1",
-        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
+        "requested": "[1.21.0, )",
+        "resolved": "1.21.0",
+        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
+        "dependencies": {
+          "System.Diagnostics.DiagnosticSource": "11.0.0"
+        }
       },
       "Polly.Core": {
         "type": "CentralTransitive",
