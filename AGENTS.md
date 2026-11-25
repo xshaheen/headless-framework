@@ -2,7 +2,7 @@
 
 ## What this repository is
 
-**headless-framework** is a modular .NET 10 framework for APIs and backend services. It ships 150+ NuGet packages grouped by domain (API, Blobs, Caching, Messaging, ORM, and more). It is unopinionated and has no lock-in.
+**headless-framework** is a modular .NET 11 framework for APIs and backend services. It ships 150+ NuGet packages grouped by domain (API, Blobs, Caching, Messaging, ORM, and more). It is unopinionated and has no lock-in.
 
 Two facts decide most judgment calls:
 

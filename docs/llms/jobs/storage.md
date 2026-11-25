@@ -15,7 +15,7 @@ Without a store package, `AddHeadlessJobs` keeps jobs in memory: one process, lo
 | --- | --- | --- | --- |
 | In-memory (default) | Tests, local development, one process that may lose jobs | Jobs must survive a restart or run on several nodes | No setup, nothing durable |
 | `UsePostgreSql<TContext>` | The application database is PostgreSQL 14 or later | The database is not PostgreSQL | `FOR UPDATE SKIP LOCKED` claims let nodes take disjoint due rows in one round trip |
-| `UseSqlServer<TContext>` | The application database is SQL Server 2019 or later, or Azure SQL | Page-lock contention or escalation dominates and you cannot address it operationally | `READPAST` skips row locks, but page locks can still block |
+| `UseSqlServer<TContext>` | The application database is SQL Server 2022 or later, or Azure SQL | Page-lock contention or escalation dominates and you cannot address it operationally | `READPAST` skips row locks, but page locks can still block |
 | EF optimistic CAS (`UseEntityFramework` with no claim package) | PostgreSQL, SQL Server, or SQLite with low contention, or claim SQL must stay portable | Many workers race for the same due rows, or any job sets `ClusterMaxConcurrency` | No extra package, but losing claimers waste a compare-and-swap round trip |
 
 The PostgreSQL and SQL Server packages extend the EF store. They replace how rows are claimed and fix the row-id ordering for their database. They do not change the scheduler, leases, retries, or the persistence contract.

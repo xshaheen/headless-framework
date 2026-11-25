@@ -584,7 +584,7 @@ dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
       "environment": "Production",
       "applicationVersion": "2.4.0+9f2c1e7",
       "headlessVersion": "0.9.0+c56441b",
-      "runtime": ".NET 10.0.13"
+      "runtime": ".NET 11.0.0"
     },
     "jobs": { "functions": [] },
     "messaging": { "consumers": [], "messages": [], "outboxes": [], "transports": {} }

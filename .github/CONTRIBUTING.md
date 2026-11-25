@@ -2,7 +2,7 @@
 
 Thanks for contributing to `headless-framework`.
 
-This repository is a modular .NET 10 framework, not a single application. Changes can affect multiple NuGet packages, package READMEs, XML docs, and provider-specific tests. Keep PRs focused and explicit.
+This repository is a modular .NET 11 framework, not a single application. Changes can affect multiple NuGet packages, package READMEs, XML docs, and provider-specific tests. Keep PRs focused and explicit.
 
 ## Before You Start
 

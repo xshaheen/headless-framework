@@ -721,7 +721,7 @@ PostgreSQL advisory-lock provider for mutex and reader-writer locks.
 - `IsLockedAsync(resource)` and `GetLockInfoAsync(resource)` see holders in other processes. `ListActiveLocksAsync()` and `GetActiveLocksCountAsync()` see only this provider's handles. Reader counts are exact across processes.
 - PostgreSQL has no semaphore here. Use Redis semaphores, or a slot table, for N-holder concurrency.
 - **Which pool the locks use.** The parameterless `UsePostgreSql()` takes the container's `NpgsqlDataSource` when the application registered one (for example with `AddNpgsqlDataSource`), otherwise the `AddPostgreSqlSql` connection string on Npgsql's shared pool for that string. Neither opens a second pool, and neither changes `KeepAlive`, so set `Keepalive` on that data source or connection string yourself. An explicit `UsePostgreSql(connectionString)` (or `options.ConnectionString`) builds a provider-owned data source with its own `Max Pool Size` and the `KeepAlive` default; choose it to isolate lock-pinned connections from application queries. On a shared pool, lock holders count against its `Max Pool Size`, and a failed release clears it.
-- **No Npgsql multiplexing.** A session advisory lock needs one physical connection. The parameterless `UsePostgreSql()` skips a multiplexing application `NpgsqlDataSource` and uses the `AddPostgreSqlSql` connection string. When the source the lock ends up with multiplexes, options validation fails at startup naming the setting.
+- **No Npgsql multiplexing.** Npgsql 11 removed multiplexing. A connection string that still carries the `Multiplexing` keyword throws `ArgumentException` ("Couldn't set multiplexing") when Npgsql parses it, before any lock runs. Remove the keyword.
 
 ### Install
 
