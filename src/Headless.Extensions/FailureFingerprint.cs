@@ -73,12 +73,7 @@ public static class FailureFingerprint
                 break;
             }
 
-            if (frame.GetMethod() is not { } method)
-            {
-                continue;
-            }
-
-            if (_IsAwaitPlumbing(method))
+            if (frame.GetMethod() is not { } method || _IsAwaitPlumbing(method))
             {
                 continue;
             }
@@ -239,21 +234,7 @@ public static class FailureFingerprint
             return false;
         }
 
-        var returnType = info.ReturnType;
-
-        if (returnType == typeof(Task) || returnType == typeof(ValueTask))
-        {
-            return true;
-        }
-
-        if (!returnType.IsGenericType)
-        {
-            return false;
-        }
-
-        var definition = returnType.GetGenericTypeDefinition();
-
-        return definition == typeof(Task<>) || definition == typeof(ValueTask<>);
+        return info.ReturnType.IsTaskOrTaskOfT() || info.ReturnType.IsValueTaskOrValueTaskOfT();
     }
 
     private static bool _IsCompilerGenerated(Type type) =>
