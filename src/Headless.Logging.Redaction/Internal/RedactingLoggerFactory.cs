@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.Logging;
@@ -154,16 +155,14 @@ internal sealed class RedactingLoggerFactory(
             }
 
             if (
-                (
-                    propertyRedactors.Count > 0
-                    || (projection is not null && LogStateShape<TState>.MayCarryObjects && _MayHoldObject(state))
-                )
+                (propertyRedactors.Count > 0 || (projection is not null && LogStateShape<TState>.MayCarryObjects))
                 && state is IReadOnlyList<KeyValuePair<string, object?>> values
+                && _MayNeedNamedPass(values)
                 && inner.IsEnabled(logLevel)
-                && _TryRedactNames(values, out var named, out var rewrites)
+                && _TryRedactNames(values, out var named)
             )
             {
-                var message = _RenderNamed(state, exception, formatter, named, rewrites);
+                var message = _RenderNamed(state, exception, formatter, values, named);
                 _LogNamed(logLevel, eventId, named, message, exception);
 
                 return;
@@ -184,20 +183,28 @@ internal sealed class RedactingLoggerFactory(
             inner.Log(logLevel, eventId, state, exception, formatter);
         }
 
-        // A generated message's values sit in an array, so an entry built from strings, numbers, and dates is ruled out
-        // without going through the list interface value by value; any other state is looked at in full.
-        private static bool _MayHoldObject<TState>(TState state)
+        // Whether any value carries a classified name or is an object, looked at before anything is copied. A
+        // generated message's values sit in an array, so they are read without going through the list interface.
+        private bool _MayNeedNamedPass(IReadOnlyList<KeyValuePair<string, object?>> values)
         {
-            if (state is not LoggerMessageState generated)
+            if (values is LoggerMessageState generated)
             {
-                return true;
+                var tags = generated.TagArray;
+
+                for (var i = 0; i < generated.TagsCount; i++)
+                {
+                    if (_MayNeed(tags[i]))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
-            var tags = generated.TagArray;
-
-            for (var i = 0; i < generated.TagsCount; i++)
+            for (var i = 0; i < values.Count; i++)
             {
-                if (tags[i].Value is { } value && Type.GetTypeCode(value.GetType()) == TypeCode.Object)
+                if (_MayNeed(values[i]))
                 {
                     return true;
                 }
@@ -205,6 +212,13 @@ internal sealed class RedactingLoggerFactory(
 
             return false;
         }
+
+        private bool _MayNeed(KeyValuePair<string, object?> pair) =>
+            pair.Value is { } value
+            && (
+                (propertyRedactors.Count > 0 && _TryGetPropertyRedactor(pair.Key, out _))
+                || (projection is not null && Type.GetTypeCode(value.GetType()) == TypeCode.Object)
+            );
 
         // The generator's state is a thread-local instance it clears once Log returns, so everything a provider might
         // keep is copied out here, and the raw classified values never leave this method.
@@ -225,7 +239,7 @@ internal sealed class RedactingLoggerFactory(
             // the text is rendered from it rather than patched afterwards.
             for (var i = 0; i < state.TagsCount && (propertyRedactors.Count > 0 || projection is not null); i++)
             {
-                if (_TryRedactNamed(values[i], out var namedValue, out _))
+                if (_TryRedactNamed(values[i], out var namedValue))
                 {
                     values[i] = namedValue;
                     state.TagArray[i] = namedValue;
@@ -297,7 +311,7 @@ internal sealed class RedactingLoggerFactory(
                 _ => null,
             };
 
-            if (values is null || !_TryRedactNames(values, out var named, out var rewrites))
+            if (values is null || !_TryRedactNames(values, out var named))
             {
                 return false;
             }
@@ -306,7 +320,7 @@ internal sealed class RedactingLoggerFactory(
                 named,
                 _TryRenderTemplate(named, out var rendered)
                     ? rendered
-                    : _Rewrite(state?.ToString() ?? string.Empty, rewrites)
+                    : _Rewrite(state?.ToString() ?? string.Empty, values, named)
             );
 
             return true;
@@ -315,34 +329,27 @@ internal sealed class RedactingLoggerFactory(
         // Copies the values only once a name matches; returns false, and no copy, when none did.
         private bool _TryRedactNames(
             IReadOnlyList<KeyValuePair<string, object?>> values,
-            [NotNullWhen(true)] out KeyValuePair<string, object?>[]? named,
-            out List<(object Raw, string Redacted)>? rewrites
+            [NotNullWhen(true)] out KeyValuePair<string, object?>[]? named
         )
         {
             named = null;
-            rewrites = null;
 
             for (var i = 0; i < values.Count; i++)
             {
-                if (_TryRedactNamed(values[i], out var namedValue, out var rewrite))
+                if (_TryRedactNamed(values[i], out var namedValue))
                 {
                     named ??= [.. values];
                     named[i] = namedValue;
-                    _AddRewrite(ref rewrites, rewrite);
                 }
             }
 
             return named is not null;
         }
 
-        private bool _TryRedactNamed(
-            KeyValuePair<string, object?> pair,
-            out KeyValuePair<string, object?> named,
-            out (object Raw, string Redacted) rewrite
-        )
+        // A replaced value is always a string or a string array, which is what the fallback rewrite looks for.
+        private bool _TryRedactNamed(KeyValuePair<string, object?> pair, out KeyValuePair<string, object?> named)
         {
             named = pair;
-            rewrite = default;
 
             if (pair.Value is null)
             {
@@ -359,9 +366,6 @@ internal sealed class RedactingLoggerFactory(
                 )
                 {
                     named = new(pair.Key, projected);
-                    // The raw text is rendered only if the fallback rewrite needs it: a projected sequence was already
-                    // read once, and a one-shot or lazy source must not be read again.
-                    rewrite = (pair.Value, projected);
 
                     return true;
                 }
@@ -371,12 +375,7 @@ internal sealed class RedactingLoggerFactory(
 
             // The same redaction the enrichers and span tags use, so every channel yields one pseudonym per value. The
             // raw text is what logging rendered, which takes even a buffer element by element.
-            var redactedValue = LogPropertyRedactors.Redact(redactor, pair.Value);
-            named = new(pair.Key, redactedValue);
-            rewrite = (
-                pair.Value,
-                redactedValue is string[] redactedItems ? string.Join(", ", redactedItems) : (string)redactedValue
-            );
+            named = new(pair.Key, LogPropertyRedactors.Redact(redactor, pair.Value));
 
             return true;
         }
@@ -400,8 +399,8 @@ internal sealed class RedactingLoggerFactory(
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter,
-            KeyValuePair<string, object?>[] named,
-            List<(object Raw, string Redacted)>? rewrites
+            IReadOnlyList<KeyValuePair<string, object?>> values,
+            KeyValuePair<string, object?>[] named
         )
         {
             // The generated formatter reads each value back from TagArray, whose slots the state's list exposes one for
@@ -415,7 +414,7 @@ internal sealed class RedactingLoggerFactory(
 
             return _TryRenderTemplate(named, out var rendered)
                 ? rendered
-                : _Rewrite(formatter(state, exception), rewrites);
+                : _Rewrite(formatter(state, exception), values, named);
         }
 
         // Logging's formatted states list the hole values in template order, then the template under
@@ -434,73 +433,25 @@ internal sealed class RedactingLoggerFactory(
                 holeCount < 0
                 || values[holeCount].Value is not string template
                 || !string.Equals(values[holeCount].Key, _OriginalFormatKey, StringComparison.Ordinal)
+                || LogTemplate.Get(template) is not { } parsed
+                || parsed.Holes.Length != holeCount
             )
             {
                 return false;
             }
 
-            var composite = new StringBuilder(template.Length + (holeCount * 2));
-            var hole = 0;
-
-            for (var i = 0; i < template.Length; i++)
+            // The parse is shared, but the names are checked on every call: a state whose values do not match its own
+            // template falls back rather than put a value in another hole.
+            for (var h = 0; h < holeCount; h++)
             {
-                var c = template[i];
-
-                if (c is '{' or '}' && i + 1 < template.Length && template[i + 1] == c)
-                {
-                    // An escaped brace keeps its escape, which composite formatting reads the same way.
-                    composite.Append(c).Append(c);
-                    i++;
-
-                    continue;
-                }
-
-                if (c == '}')
+                if (!string.Equals(parsed.Holes[h], values[h].Key, StringComparison.Ordinal))
                 {
                     return false;
                 }
-
-                if (c != '{')
-                {
-                    composite.Append(c);
-
-                    continue;
-                }
-
-                var close = template.IndexOf('}', i + 1);
-
-                if (close < 0 || hole >= holeCount)
-                {
-                    return false;
-                }
-
-                var body = template.AsSpan(i + 1, close - i - 1);
-                var delimiter = body.IndexOfAny(',', ':');
-                var name = delimiter < 0 ? body : body[..delimiter];
-
-                if (!name.SequenceEqual(values[hole].Key))
-                {
-                    return false;
-                }
-
-                composite.Append('{').Append(hole.ToString(CultureInfo.InvariantCulture));
-
-                if (delimiter >= 0)
-                {
-                    composite.Append(body[delimiter..]);
-                }
-
-                composite.Append('}');
-                hole++;
-                i = close;
             }
 
-            if (hole != holeCount)
-            {
-                return false;
-            }
-
-            var args = new object?[holeCount];
+            var inline = default(HoleValues);
+            Span<object?> args = holeCount <= HoleValues.Length ? inline[..holeCount] : new object?[holeCount];
 
             for (var h = 0; h < holeCount; h++)
             {
@@ -516,7 +467,7 @@ internal sealed class RedactingLoggerFactory(
 
             try
             {
-                rendered = string.Format(CultureInfo.InvariantCulture, composite.ToString(), args);
+                rendered = string.Format(CultureInfo.InvariantCulture, parsed.Format, (ReadOnlySpan<object?>)args);
 
                 return true;
             }
@@ -549,34 +500,35 @@ internal sealed class RedactingLoggerFactory(
             return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
         }
 
-        private static void _AddRewrite(
-            ref List<(object Raw, string Redacted)>? rewrites,
-            (object Raw, string Redacted) rewrite
+        // The message is rendered once from the raw values, then each raw value whose redacted copy differs is
+        // replaced, the way a credential path is: logging renders a hole with the invariant culture, which is the text
+        // replaced here. Only a redacted value is a string or a string array that differs from the raw text.
+        private static string _Rewrite(
+            string message,
+            IReadOnlyList<KeyValuePair<string, object?>> values,
+            KeyValuePair<string, object?>[] named
         )
         {
-            // An empty raw text has nothing to find in the message, and string.Replace rejects it.
-            if (rewrite.Raw is not string { Length: 0 })
+            for (var i = 0; i < named.Length; i++)
             {
-                (rewrites ??= []).Add(rewrite);
-            }
-        }
+                var replacement = named[i].Value switch
+                {
+                    string redacted => redacted,
+                    string[] items => string.Join(", ", items),
+                    _ => null,
+                };
 
-        // The message is rendered once from the raw values, then each raw value is replaced, the way a credential path
-        // is: logging renders a hole with the invariant culture, which is the text replaced here.
-        private static string _Rewrite(string message, List<(object Raw, string Redacted)>? rewrites)
-        {
-            if (rewrites is null)
-            {
-                return message;
-            }
+                if (replacement is null || values[i].Value is not { } raw)
+                {
+                    continue;
+                }
 
-            foreach (var (raw, redacted) in rewrites)
-            {
                 var text = raw as string ?? _RenderLikeLogging(raw);
 
-                if (text.Length > 0)
+                // An empty raw text has nothing to find in the message, and string.Replace rejects it.
+                if (text.Length > 0 && !string.Equals(text, replacement, StringComparison.Ordinal))
                 {
-                    message = message.Replace(text, redacted, StringComparison.Ordinal);
+                    message = message.Replace(text, replacement, StringComparison.Ordinal);
                 }
             }
 
@@ -691,6 +643,15 @@ internal sealed class RedactingLoggerFactory(
     }
 
     /// <summary>A copy of a classified log state's values, already redacted, with its rendered text.</summary>
+    // Most templates have a few holes, so their values are passed to the formatter without an array.
+    [InlineArray(Length)]
+    private struct HoleValues
+    {
+        public const int Length = 8;
+
+        private object? _first;
+    }
+
     private sealed class RedactedState(KeyValuePair<string, object?>[] values, string text)
         : IReadOnlyList<KeyValuePair<string, object?>>
     {

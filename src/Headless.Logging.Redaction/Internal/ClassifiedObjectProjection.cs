@@ -84,25 +84,40 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return false;
         }
 
-        var reads = new SequenceReads();
+        // The thread's walk is taken out of its slot while in use: a getter or redactor that logs projects with a
+        // walk of its own instead of clearing this one halfway through.
+        var walk = _cachedWalk ?? new Walk();
+        _cachedWalk = null;
 
-        // A sequence that is not a collection was enumerated by the check: the provider printing it again would run a
-        // lazy query twice, and a one-shot sequence would give it nothing or throw. Print the elements already read.
-        if (
-            !_Needs(value, 0, _NewInstanceSet(), projecting: null, reads)
-            && (shape.Kind != ShapeKind.Sequence || value is ICollection)
-        )
+        try
         {
-            return false;
+            // A sequence that is not a collection was enumerated by the check: the provider printing it again would
+            // run a lazy query twice, and a one-shot sequence would give it nothing or throw. Print the elements
+            // already read.
+            if (
+                !_Needs(value, 0, walk.Seen, projecting: null, walk.Reads)
+                && (shape.Kind != ShapeKind.Sequence || value is ICollection)
+            )
+            {
+                return false;
+            }
+
+            _Project(value, captured, 0, walk);
+            projection = walk.Builder.ToString();
+
+            return true;
         }
-
-        projection = _Project(value, captured, 0, _NewInstanceSet(), reads);
-
-        return true;
+        finally
+        {
+            if (walk.TryReset())
+            {
+                _cachedWalk = walk;
+            }
+        }
     }
 
-    // Reference equality: a record's own Equals and GetHashCode walk its members, and on a cyclic graph never return.
-    private static HashSet<object> _NewInstanceSet() => new(ReferenceEqualityComparer.Instance);
+    [ThreadStatic]
+    private static Walk? _cachedWalk;
 
     /// <summary>Whether <paramref name="value"/> reaches a classified member.</summary>
     /// <param name="value">The value to look at.</param>
@@ -191,52 +206,69 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         return false;
     }
 
-    private string _Project(object value, bool captured, int depth, HashSet<object> projecting, SequenceReads reads)
+    // Each level appends to the walk's one builder, so a nested object costs no string of its own.
+    private void _Project(object value, bool captured, int depth, Walk walk)
     {
         var shape = _GetShape(value.GetType());
 
         if (shape.Kind == ShapeKind.TypeClassified)
         {
-            return _RedactScalar(redactorProvider.GetRedactor(shape.TypeClassifications!), value);
+            walk.Builder.Append(_RedactScalar(redactorProvider.GetRedactor(shape.TypeClassifications!), value));
+
+            return;
         }
 
-        projecting.Add(value);
+        walk.Projecting.Add(value);
 
         try
         {
-            return _ProjectComposite(value, shape, captured, depth, projecting, reads);
+            _ProjectComposite(value, shape, captured, depth, walk);
         }
         finally
         {
-            projecting.Remove(value);
+            walk.Projecting.Remove(value);
         }
     }
 
-    private string _ProjectComposite(
-        object value,
-        TypeShape shape,
-        bool captured,
-        int depth,
-        HashSet<object> projecting,
-        SequenceReads reads
-    )
+    private void _ProjectComposite(object value, TypeShape shape, bool captured, int depth, Walk walk)
     {
+        var builder = walk.Builder;
+
         if (shape.Kind == ShapeKind.Sequence)
         {
-            var items = _Render(
-                reads.Read((IEnumerable)value),
-                item => _Format(item, captured, depth + 1, projecting, reads)
-            );
+            var items = walk.Reads.Read((IEnumerable)value);
+            var count = Math.Min(items.Count, _MaxElements);
 
-            return string.Join(", ", items);
+            for (var i = 0; i < count; i++)
+            {
+                if (i > 0)
+                {
+                    builder.Append(", ");
+                }
+
+                if (items[i] is { } item)
+                {
+                    _Format(item, captured, depth + 1, walk);
+                }
+                else
+                {
+                    builder.Append(LogPropertyRedactors.NullText);
+                }
+            }
+
+            _AppendTruncation(builder, items.Count);
+
+            return;
         }
 
         if (!captured && !shape.IsRecord)
         {
-            return value.GetType().ToString();
+            builder.Append(value.GetType().ToString());
+
+            return;
         }
 
-        var builder = new StringBuilder(value.GetType().Name).Append(" { ");
+        builder.Append(value.GetType().Name).Append(" { ");
         var first = true;
 
         foreach (var member in shape.Members)
@@ -260,65 +292,110 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 continue;
             }
 
-            builder.Append(
-                member.Classifications is { } classifications
-                    ? _RedactMember(memberValue, classifications, reads)
-                    : _Format(memberValue, captured, depth + 1, projecting, reads)
-            );
+            if (member.Classifications is { } classifications)
+            {
+                _AppendRedactedMember(memberValue, classifications, walk);
+            }
+            else
+            {
+                _Format(memberValue, captured, depth + 1, walk);
+            }
         }
 
-        return builder.Append(" }").ToString();
+        builder.Append(" }");
     }
 
-    private string _Format(object value, bool captured, int depth, HashSet<object> projecting, SequenceReads reads)
+    private void _Format(object value, bool captured, int depth, Walk walk)
     {
+        var builder = walk.Builder;
+
         // An instance met again inside its own projection is a cycle; its type name ends it.
-        if (projecting.Contains(value))
+        if (walk.Projecting.Contains(value))
         {
-            return value.GetType().ToString();
+            builder.Append(value.GetType().ToString());
+
+            return;
         }
 
-        if (!_Needs(value, depth, _NewInstanceSet(), projecting, reads))
+        var kind = _GetShape(value.GetType()).Kind;
+
+        // The check runs between appends, never inside another check, so it reuses the walk's one set of visits.
+        if (kind == ShapeKind.Safe || !_NeedsFresh(value, depth, walk))
         {
-            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+            _AppendPlain(builder, value);
+
+            return;
         }
 
         // Below the depth cap a value is not walked: a classified type is still redacted whole, and anything else
         // prints as its type name, never through a ToString that could print a classified member.
-        return depth > _MaxDepth && _GetShape(value.GetType()).Kind != ShapeKind.TypeClassified
-            ? value.GetType().ToString()
-            : _Project(value, captured, depth, projecting, reads);
-    }
-
-    private string _RedactMember(object value, DataClassificationSet classifications, SequenceReads reads)
-    {
-        var redactor = redactorProvider.GetRedactor(classifications);
-
-        if (value is IEnumerable sequence && !_IsSingleValue(value))
+        if (depth > _MaxDepth && kind != ShapeKind.TypeClassified)
         {
-            return "[" + string.Join(", ", _Render(reads.Read(sequence), item => _RedactScalar(redactor, item))) + "]";
+            builder.Append(value.GetType().ToString());
+
+            return;
         }
 
-        return _RedactScalar(redactor, value);
+        _Project(value, captured, depth, walk);
     }
 
-    // At most the element cap, then a marker when the sequence held more.
-    private static List<string> _Render(List<object?> items, Func<object, string> format)
+    private static bool _NeedsFresh(object value, int depth, Walk walk)
     {
+        walk.Seen.Clear();
+
+        return _Needs(value, depth, walk.Seen, walk.Projecting, walk.Reads);
+    }
+
+    // Logging renders a hole with the invariant culture; a span-formattable value is written straight into the builder.
+    private static void _AppendPlain(StringBuilder builder, object value)
+    {
+        if (value is string text)
+        {
+            builder.Append(text);
+
+            return;
+        }
+
+        builder.Append(CultureInfo.InvariantCulture, $"{value}");
+    }
+
+    private void _AppendRedactedMember(object value, DataClassificationSet classifications, Walk walk)
+    {
+        var redactor = redactorProvider.GetRedactor(classifications);
+        var builder = walk.Builder;
+
+        if (value is not IEnumerable sequence || _IsSingleValue(value))
+        {
+            builder.Append(_RedactScalar(redactor, value));
+
+            return;
+        }
+
+        var items = walk.Reads.Read(sequence);
         var count = Math.Min(items.Count, _MaxElements);
-        var rendered = new List<string>(count + 1);
+        builder.Append('[');
 
         for (var i = 0; i < count; i++)
         {
-            rendered.Add(items[i] is { } item ? format(item) : "(null)");
+            if (i > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append(items[i] is { } item ? _RedactScalar(redactor, item) : LogPropertyRedactors.NullText);
         }
 
-        if (items.Count > _MaxElements)
+        _AppendTruncation(builder, items.Count);
+        builder.Append(']');
+    }
+
+    // At most the element cap is printed, then a marker when the sequence held more.
+    private static void _AppendTruncation(StringBuilder builder, int read)
+    {
+        if (read > _MaxElements)
         {
-            rendered.Add(_Truncated);
+            builder.Append(", ").Append(_Truncated);
         }
-
-        return rendered;
     }
 
     // A string or buffer is one value; redacting it element by element would give each character its own token.
@@ -692,6 +769,45 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             _reads[sequence] = items;
 
             return items;
+        }
+
+        public int Capacity => _reads?.EnsureCapacity(0) ?? 0;
+
+        public void Clear() => _reads?.Clear();
+    }
+
+    /// <summary>
+    /// The state one projection works in, kept per thread and cleared after each log call, so a steady stream of
+    /// classified objects allocates only the text it prints.
+    /// </summary>
+    private sealed class Walk
+    {
+        // A walk that grew past these after one large object is dropped rather than kept for the thread's lifetime.
+        private const int _MaxKeptInstances = 256;
+        private const int _MaxKeptChars = 4096;
+
+        // Reference equality: a record's own Equals and GetHashCode walk its members, and on a cyclic graph never
+        // return.
+        public HashSet<object> Seen { get; } = new(ReferenceEqualityComparer.Instance);
+
+        public HashSet<object> Projecting { get; } = new(ReferenceEqualityComparer.Instance);
+
+        public SequenceReads Reads { get; } = new();
+
+        public StringBuilder Builder { get; } = new();
+
+        /// <summary>Clears every reference the walk held; returns whether it is small enough to keep.</summary>
+        public bool TryReset()
+        {
+            Seen.Clear();
+            Projecting.Clear();
+            Reads.Clear();
+            Builder.Clear();
+
+            return Seen.EnsureCapacity(0) <= _MaxKeptInstances
+                && Projecting.EnsureCapacity(0) <= _MaxKeptInstances
+                && Reads.Capacity <= _MaxKeptInstances
+                && Builder.Capacity <= _MaxKeptChars;
         }
     }
 }

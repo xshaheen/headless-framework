@@ -600,6 +600,52 @@ public sealed partial class LogRedactionTests : TestBase
     }
 
     [Fact]
+    public void should_fall_back_when_the_values_do_not_match_a_template_already_rendered()
+    {
+        // given: the template has been rendered once from matching values
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivate("Age")));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        logger.LogInformation("Member since 2017, age {Age}", "17");
+
+        // when: a custom state carries the same template, but names its classified value differently from the hole
+        logger.Log(
+            LogLevel.Information,
+            default,
+            new LogValues(("@Age", "17"), ("{OriginalFormat}", "Member since 2017, age {Age}")),
+            exception: null,
+            (_, _) => "Member since 2017, age 17"
+        );
+
+        // then: the second entry is rewritten rather than rendered from a template its values do not match
+        sink.Entries.Select(e => e.Text)
+            .Should()
+            .Equal("Member since 2017, age *****", "Member since 20*****, age *****");
+    }
+
+    [Fact]
+    public void should_render_from_the_template_when_more_templates_were_logged_than_are_kept()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivate("Age")));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when: an app that builds its templates by interpolation makes a new one per call
+        for (var i = 0; i < 1100; i++)
+        {
+#pragma warning disable CA2254 // The varying template is the case under test.
+            logger.LogInformation($"Batch {i} since 2017, age {{Age}}", "17");
+#pragma warning restore CA2254
+        }
+
+        // then: every entry, the last ones included, keeps its literal text and masks only the hole
+        sink.Entries.Should().HaveCount(1100);
+        sink.Entries[^1].Text.Should().Be("Batch 1099 since 2017, age *****");
+        sink.Entries.Should().OnlyContain(e => e.Text.EndsWith(" since 2017, age *****", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void should_mask_every_occurrence_of_a_short_classified_value_when_the_state_has_no_template()
     {
         // given: a custom state carries no {OriginalFormat}, so the hole's position in the text is unknown

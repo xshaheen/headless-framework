@@ -561,6 +561,23 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         entry.Properties["Value"].Should().Be(value, kind);
     }
 
+    [Fact]
+    public void should_project_both_objects_when_a_member_getter_logs_while_its_owner_is_projected()
+    {
+        // given: reading Note logs another classified object through the same logger
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = _Logger(provider);
+
+        // when
+        logger.LogInformation("Saw {@Value}", new Chatty(logger));
+
+        // then: the inner entry has its own walk and leaves the outer text intact
+        sink.Entries.Select(e => e.Text)
+            .Should()
+            .Equal("Inner Customer { Email = *****, Tier = silver }", "Saw Chatty { Email = *****, Note = noted }");
+    }
+
     // The generator rejects a parameter whose declared type has a classified member (LOGGEN035), so the case that
     // reaches run time is a derived value passed through an unclassified base type.
     [LoggerMessage(1, LogLevel.Information, "Signup {Email} as {Party}")]
@@ -589,6 +606,22 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     public record Envelope(string Id, Customer Payload);
 
     public sealed record Box(object Value);
+
+    public sealed class Chatty(ILogger logger)
+    {
+        [PrivateData]
+        public string Email => _Email;
+
+        public string Note
+        {
+            get
+            {
+                logger.LogInformation("Inner {@Customer}", new Customer(_Email, "silver"));
+
+                return "noted";
+            }
+        }
+    }
 
     public abstract record Party(string Name);
 
