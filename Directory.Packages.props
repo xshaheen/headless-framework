@@ -135,8 +135,8 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.21.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.21.0" />
     <PackageVersion Include="PdfPig" Version="0.1.16" />
-    <!-- Legacy Polly pinned only for the Infobip SDK (referenced with an alias); everything else uses Polly.Core -->
-    <PackageVersion Include="Polly" Version="7.2.4" />
+    <!-- Transitive-only pin: Infobip.Api.Client depends on Polly >= 7.2.4. Polly 8 still ships the v7 API, so the SDK shares the Polly 8 line with Polly.Core. -->
+    <PackageVersion Include="Polly" Version="8.9.1" />
     <PackageVersion Include="Polly.Core" Version="8.9.1" />
     <!-- Transitive-only pin: never referenced directly; keeps Microsoft.Extensions.Resilience on the same Polly 8 line as Polly.Core. -->
     <PackageVersion Include="Polly.Extensions" Version="8.9.1" />

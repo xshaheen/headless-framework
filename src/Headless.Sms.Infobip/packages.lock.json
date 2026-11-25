@@ -91,12 +91,6 @@
         "resolved": "8.0.0",
         "contentHash": "AJy/KVjXgUbgjf6HiI8wAk4DSSq0SCmvXQF8aU6IB+pnIQq+YJvofvMczug2hqO8yEvnQY557ryew66KPpyCsA=="
       },
-      "Polly": {
-        "type": "Direct",
-        "requested": "[7.2.4, )",
-        "resolved": "7.2.4",
-        "contentHash": "bw00Ck5sh6ekduDE3mnCo1ohzuad946uslCDEENu3091+6UKnBuKLo4e+yaNcCzXxOZCXWY2gV4a35+K1d4LDA=="
-      },
       "ReflectionAnalyzers": {
         "type": "Direct",
         "requested": "[0.3.1, )",
@@ -602,6 +596,15 @@
         "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
         "dependencies": {
           "System.Diagnostics.DiagnosticSource": "11.0.0"
+        }
+      },
+      "Polly": {
+        "type": "CentralTransitive",
+        "requested": "[8.9.1, )",
+        "resolved": "8.9.1",
+        "contentHash": "2a+6qssytViSYiLuvUb7KeFXRcJQyTf0dWLpvtZLNBohF28oXKVExeKdU2aXXVZlVO0swuEtkhhuCK3gFaJmrw==",
+        "dependencies": {
+          "Polly.Core": "8.9.1"
         }
       },
       "Polly.Core": {
