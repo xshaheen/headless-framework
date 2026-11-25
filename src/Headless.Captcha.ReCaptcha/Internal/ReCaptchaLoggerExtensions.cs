@@ -11,7 +11,7 @@ internal static partial class ReCaptchaLoggerExtensions
         EventId = 1,
         EventName = "ReCaptchaV2Failure",
         Level = LogLevel.Information,
-        Message = "[reCAPTCHA] V2 validation failed {Response}"
+        Message = "[reCAPTCHA] V2 validation failed"
     )]
     internal static partial void LogReCaptchaFailure(
         this ILogger logger,
@@ -22,7 +22,7 @@ internal static partial class ReCaptchaLoggerExtensions
         EventId = 2,
         EventName = "ReCaptchaV3Failure",
         Level = LogLevel.Information,
-        Message = "[reCAPTCHA] V3 validation failed {Response}"
+        Message = "[reCAPTCHA] V3 validation failed"
     )]
     internal static partial void LogReCaptchaFailure(
         this ILogger logger,
