@@ -101,10 +101,71 @@ public static class SitemapUrls
     /// <param name="output">The output stream receiving the XML content.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the sitemap has been written to the stream.</returns>
+    /// <exception cref="ArgumentException">
+    /// The file would hold more than <see cref="SitemapConstants.MaxSitemapUrls"/> <c>&lt;url&gt;</c> elements or
+    /// more than <see cref="SitemapConstants.MaxSitemapBytes"/> bytes. Nothing is written to
+    /// <paramref name="output"/>. Call <see cref="WriteAsync(IEnumerable{SitemapUrl}, Func{SitemapShard, CancellationToken, ValueTask}, CancellationToken)"/>
+    /// to split the URLs across several files.
+    /// </exception>
     public static async Task WriteToAsync(
         this IReadOnlyCollection<SitemapUrl> sitemapUrls,
         Stream output,
         CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(sitemapUrls);
+        Argument.IsNotNull(output);
+
+        var hasAlternateUrls = sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null);
+        var hasImages = sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.Images is not null);
+
+        // Validate before writing, so a rejected file leaves no partial output behind.
+        var urlNodes = sitemapUrls.Sum(sitemapUrl => (long)_CountUrlNodes(sitemapUrl));
+
+        Argument.IsTrue(
+            urlNodes <= SitemapConstants.MaxSitemapUrls,
+            $"A sitemap file holds at most {SitemapConstants.MaxSitemapUrls} <url> elements, but these URLs write {urlNodes}; call WriteAsync to split them across several files.",
+            nameof(sitemapUrls)
+        );
+
+        var size = await _MeasureAsync(sitemapUrls, hasAlternateUrls, hasImages, cancellationToken)
+            .ConfigureAwait(false);
+
+        Argument.IsTrue(
+            size <= SitemapConstants.MaxSitemapBytes,
+            $"A sitemap file holds at most {SitemapConstants.MaxSitemapBytes} bytes, but these URLs write {size}; call WriteAsync to split them across several files.",
+            nameof(sitemapUrls)
+        );
+
+        await _WriteUrlSetAsync(sitemapUrls, output, hasAlternateUrls, hasImages, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    // Writes without the limit checks. A shard from WriteAsync comes here: the sharder already sized it, and an
+    // entry whose own XML passes a limit gets a shard of its own by design.
+    internal static Task WriteShardToAsync(
+        IReadOnlyCollection<SitemapUrl> sitemapUrls,
+        Stream output,
+        CancellationToken cancellationToken
+    )
+    {
+        return _WriteUrlSetAsync(
+            sitemapUrls,
+            output,
+            hasAlternateUrls: sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null),
+            hasImages: sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.Images is not null),
+            cancellationToken
+        );
+    }
+
+    #region Helpers
+
+    private static async Task _WriteUrlSetAsync(
+        IReadOnlyCollection<SitemapUrl> sitemapUrls,
+        Stream output,
+        bool hasAlternateUrls,
+        bool hasImages,
+        CancellationToken cancellationToken
     )
     {
         /*
@@ -120,14 +181,8 @@ public static class SitemapUrls
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
 
         // Declare xmlns:xhtml and xmlns:image only when a URL uses them.
-        await _WriteUrlSetStartAsync(
-                writer,
-                hasAlternateUrls: sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null),
-                hasImages: sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.Images is not null)
-            )
-            .ConfigureAwait(false);
+        await _WriteUrlSetStartAsync(writer, hasAlternateUrls, hasImages).ConfigureAwait(false);
 
-        // write URLs to the sitemap
         foreach (var sitemapUrl in sitemapUrls)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -137,7 +192,38 @@ public static class SitemapUrls
         await writer.WriteEndElementAsync().ConfigureAwait(false);
     }
 
-    #region Helpers
+    // The file's UTF-8 size as written, with the same namespace declarations, measured without buffering the XML.
+    private static async Task<long> _MeasureAsync(
+        IReadOnlyCollection<SitemapUrl> sitemapUrls,
+        bool hasAlternateUrls,
+        bool hasImages,
+        CancellationToken cancellationToken
+    )
+    {
+        if (sitemapUrls.Count == 0)
+        {
+            return 0;
+        }
+
+        await using var sizer = await SitemapEntrySizer<SitemapUrl>
+            .CreateAsync(
+                writer => _WriteUrlSetStartAsync(writer, hasAlternateUrls, hasImages),
+                _WriteUrlNodeAsync,
+                sitemapUrls.First(),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var size = sizer.DocumentOverhead;
+
+        foreach (var sitemapUrl in sitemapUrls)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            size += await sizer.MeasureAsync(sitemapUrl, cancellationToken).ConfigureAwait(false);
+        }
+
+        return size;
+    }
 
     // Holds the sharding state both WriteAsync overloads share, so the sync and async sources differ only in
     // how they enumerate. One List is reused across shards: that is what bounds memory to one shard.
