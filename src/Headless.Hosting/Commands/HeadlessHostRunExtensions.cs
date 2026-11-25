@@ -186,7 +186,16 @@ public static class HeadlessHostRunExtensions
 
                 await using (stopping.ConfigureAwait(false))
                 {
-                    await host.RunAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await host.RunAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    // The host rethrows a background service's fault when it stops. The count above already decided
+                    // whether that fault fails the run, so only a fault from elsewhere escapes.
+                    catch (Exception exception) when (_IsBackgroundServiceFault(exception, backgroundServices))
+                    {
+                        // Reported through the exit code and the line written below.
+                    }
                 }
             }
             finally
@@ -196,16 +205,30 @@ public static class HeadlessHostRunExtensions
 
             foreach (var service in faulted)
             {
+                // The host has already stopped, and the token that stopped it may be the caller's: the report must
+                // still reach the log, so it does not take that token.
                 await Console
                     .Error.WriteLineAsync(
                         $"Host stopped: {service.GetType().Name} failed: "
-                            + service.ExecuteTask!.Exception!.GetBaseException().Message
+                            + service.ExecuteTask!.Exception!.GetBaseException().Message,
+                        CancellationToken.None
                     )
                     .ConfigureAwait(false);
             }
 
             return faulted.Count == 0 ? 0 : 1;
         }
+    }
+
+    private static bool _IsBackgroundServiceFault(Exception exception, List<BackgroundService> backgroundServices)
+    {
+        IEnumerable<Exception> thrown = exception is AggregateException aggregate
+            ? aggregate.Flatten().InnerExceptions
+            : [exception];
+
+        return thrown.All(ex =>
+            backgroundServices.Exists(s => s.ExecuteTask?.Exception?.InnerExceptions.Contains(ex) == true)
+        );
     }
 
     // Runs one command with standard output reserved for its result, then disposes the host.
@@ -232,7 +255,8 @@ public static class HeadlessHostRunExtensions
                         "Warning: this host's console logger cannot be moved off standard output (a Host.CreateDefaultBuilder "
                             + "host), so log lines may precede the command's output. Build the host with "
                             + "Host.CreateApplicationBuilder or WebApplication.CreateBuilder, or turn console logging off "
-                            + "for the command."
+                            + "for the command.",
+                        cancellationToken
                     )
                     .ConfigureAwait(false);
             }
@@ -260,7 +284,7 @@ public static class HeadlessHostRunExtensions
         if (args.Count > 0)
         {
             var help = args.Count == 1 && args[0] is "-h" or "--help";
-            await (help ? stdout : stderr).WriteLineAsync(usage).ConfigureAwait(false);
+            await (help ? stdout : stderr).WriteLineAsync(usage, cancellationToken).ConfigureAwait(false);
 
             return help ? HostCommandLine.ExitSuccess : HostCommandLine.ExitUsage;
         }
@@ -302,14 +326,16 @@ public static class HeadlessHostRunExtensions
         catch (Exception exception)
         {
             // The message only: validators write it for the operator, and a stack trace adds noise to a CLI error.
-            await stderr.WriteLineAsync($"Host manifest failed: {exception.Message}").ConfigureAwait(false);
+            await stderr
+                .WriteLineAsync($"Host manifest failed: {exception.Message}", cancellationToken)
+                .ConfigureAwait(false);
             await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             return 1;
         }
 #pragma warning restore CA1031, EPC12
 
-        await stdout.WriteLineAsync(manifest).ConfigureAwait(false);
+        await stdout.WriteLineAsync(manifest, cancellationToken).ConfigureAwait(false);
         await stdout.FlushAsync(cancellationToken).ConfigureAwait(false);
 
         return 0;
@@ -352,7 +378,9 @@ public static class HeadlessHostRunExtensions
 #pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
         catch (Exception exception)
         {
-            await stderr.WriteLineAsync($"Host check failed: {exception.Message}").ConfigureAwait(false);
+            await stderr
+                .WriteLineAsync($"Host check failed: {exception.Message}", cancellationToken)
+                .ConfigureAwait(false);
             await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             return 1;
@@ -376,10 +404,10 @@ public static class HeadlessHostRunExtensions
 
         if (lines.Count == 0)
         {
-            await stderr.WriteLineAsync("No health checks are registered.").ConfigureAwait(false);
+            await stderr.WriteLineAsync("No health checks are registered.", cancellationToken).ConfigureAwait(false);
         }
 
-        await stdout.WriteAsync(HostCheckLine.Format(lines)).ConfigureAwait(false);
+        await stdout.WriteAsync(HostCheckLine.Format(lines), cancellationToken).ConfigureAwait(false);
         await stdout.FlushAsync(cancellationToken).ConfigureAwait(false);
 
         return report?.Entries.Values.Any(static x => x.Status == HealthStatus.Unhealthy) == true ? 1 : 0;
@@ -421,7 +449,10 @@ public static class HeadlessHostRunExtensions
     private static async Task _ValidateStartupAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
         // The same order as a real start: the host validates ValidateOnStart options before any lifecycle service.
-        services.GetService<IStartupValidator>()?.Validate();
+        foreach (var validator in services.GetServices<IAsyncStartupValidator>())
+        {
+            await validator.ValidateAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         // Without the resource check: these commands run before, or instead of, the deployment that creates the
         // resources, so a missing table must not stop 'resources provision' from creating it.

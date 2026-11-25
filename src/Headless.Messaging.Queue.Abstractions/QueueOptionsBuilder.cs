@@ -29,7 +29,7 @@ public sealed class QueueOptionsBuilder
     public QueueOptionsBuilder WithHeader(string name, string? value)
     {
         Argument.IsNotNull(name);
-        (_headers ??= new(StringComparer.Ordinal))[name] = value;
+        (_headers ??= [with(StringComparer.Ordinal)])[name] = value;
         return this;
     }
 
@@ -39,7 +39,7 @@ public sealed class QueueOptionsBuilder
     public QueueOptionsBuilder WithHeaders(IEnumerable<KeyValuePair<string, string?>> headers)
     {
         Argument.IsNotNull(headers);
-        _headers ??= new(StringComparer.Ordinal);
+        _headers ??= [with(StringComparer.Ordinal)];
         foreach (var header in headers)
         {
             WithHeader(header.Key, header.Value);

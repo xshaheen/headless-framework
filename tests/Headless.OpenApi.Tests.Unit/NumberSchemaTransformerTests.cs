@@ -22,12 +22,12 @@ public sealed class NumberSchemaTransformerTests : TestBase
     [Fact]
     public async Task should_keep_the_string_alternative_when_the_declaring_type_writes_numbers_as_strings()
     {
-        var property = _LenientOptions.GetTypeInfo(typeof(StringNumbersView)).Properties.Single();
+        var property = _LenientOptions.GetTypeInfo<StringNumbersView>().Properties.Single();
         var schema = _UnionSchema();
 
         await new NumberSchemaTransformer().TransformAsync(
             schema,
-            TransformerContexts.Schema(_LenientOptions.GetTypeInfo(typeof(int)), property),
+            TransformerContexts.Schema(_LenientOptions.GetTypeInfo<int>(), property),
             AbortToken
         );
 
@@ -60,7 +60,7 @@ public sealed class NumberSchemaTransformerTests : TestBase
 
         await new NumberSchemaTransformer().TransformAsync(
             schema,
-            TransformerContexts.Schema(options.GetTypeInfo(typeof(long))),
+            TransformerContexts.Schema(options.GetTypeInfo<long>()),
             AbortToken
         );
 
@@ -75,7 +75,7 @@ public sealed class NumberSchemaTransformerTests : TestBase
 
         await new NumberSchemaTransformer().TransformAsync(
             schema,
-            TransformerContexts.Schema(_LenientOptions.GetTypeInfo(typeof(long))),
+            TransformerContexts.Schema(_LenientOptions.GetTypeInfo<long>()),
             AbortToken
         );
 

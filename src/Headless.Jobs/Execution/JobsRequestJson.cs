@@ -35,8 +35,7 @@ internal static class JobsRequestJson
         return options;
     }
 
-    public static JsonTypeInfo<T> TypeInfo<T>(JsonSerializerOptions options) =>
-        (JsonTypeInfo<T>)options.GetTypeInfo(typeof(T));
+    public static JsonTypeInfo<T> TypeInfo<T>(JsonSerializerOptions options) => options.GetTypeInfo<T>();
 
     private static JsonSerializerOptions _CreateDefaultOptions()
     {

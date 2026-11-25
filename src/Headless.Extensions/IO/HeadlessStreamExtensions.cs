@@ -27,7 +27,7 @@ public static class HeadlessStreamExtensions
         object? disposeActionArg = null
     )
     {
-        return new ReadOnlySequenceStream(readOnlySequence, disposeAction, disposeActionArg);
+        return new DisposableReadOnlySequenceStream(readOnlySequence, disposeAction, disposeActionArg);
     }
 
     #endregion

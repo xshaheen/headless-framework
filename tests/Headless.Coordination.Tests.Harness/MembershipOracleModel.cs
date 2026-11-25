@@ -18,7 +18,7 @@ public sealed class MembershipOracleScope(MembershipOracleHistory history)
     /// <summary>Registration content: a descriptor is write-once, so registering again with another variant shows it.</summary>
     internal static readonly (string? Role, Dictionary<string, string> Metadata)[] Descriptors =
     [
-        (null, new Dictionary<string, string>(StringComparer.Ordinal)),
+        (null, [with(StringComparer.Ordinal)]),
         ("worker", new Dictionary<string, string>(StringComparer.Ordinal) { ["zone"] = "a" }),
         ("Worker", new Dictionary<string, string>(StringComparer.Ordinal) { ["zone"] = "b", ["rack"] = "7" }),
     ];
@@ -87,7 +87,11 @@ public sealed class MembershipOracleModel(MembershipOracleScope scope) : IMember
     private static readonly TimeSpan _Retention =
         MembershipOracleGenerator.DeadThreshold + MembershipOracleGenerator.DeadRetentionWindow;
 
-    private readonly Dictionary<string, (long Current, TimeSpan UpdatedAt)> _generations = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (long Current, TimeSpan UpdatedAt)> _generations =
+    [
+        with(StringComparer.Ordinal),
+    ];
+
     private readonly Dictionary<(string, long), Descriptor> _descriptors = [];
     private readonly Dictionary<(string, long), Liveness> _liveness = [];
 
@@ -205,7 +209,7 @@ public sealed class MembershipOracleModel(MembershipOracleScope scope) : IMember
                         _Identity(entry.Key),
                         _State(entry.Value),
                         descriptor?.Role,
-                        descriptor?.Metadata ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                        descriptor?.Metadata ?? [with(StringComparer.Ordinal)],
                         // The model's clock is virtual and the real stores' is the server's, so the beat instant is
                         // never compared across them: Describe leaves it out.
                         DateTimeOffset.UnixEpoch

@@ -66,10 +66,10 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     internal HashSet<object>? ProcessedEntities { get; set; }
 
     internal Dictionary<IDomainEventEmitter, HashSet<string>> CapturedDomainIdsByEmitter =>
-        field ??= new(ReferenceEqualityComparer.Instance);
+        field ??= [with(ReferenceEqualityComparer.Instance)];
 
     internal Dictionary<IIntegrationEventEmitter, HashSet<string>> CapturedIntegrationIdsByEmitter =>
-        field ??= new(ReferenceEqualityComparer.Instance);
+        field ??= [with(ReferenceEqualityComparer.Instance)];
 
     internal IReadOnlyList<EventContext<object>> PendingDomainEvents =>
         _pendingDomainEvents ?? (IReadOnlyList<EventContext<object>>)[];
@@ -82,7 +82,7 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     /// <summary>Queues an occurrence for dispatch unless another emitter already queued the same one.</summary>
     internal void QueueDomainEvent(EventContext<object> occurrence)
     {
-        if ((_queuedDomainIds ??= new(StringComparer.Ordinal)).Add(occurrence.EventId))
+        if ((_queuedDomainIds ??= [with(StringComparer.Ordinal)]).Add(occurrence.EventId))
         {
             (_pendingDomainEvents ??= []).Add(occurrence);
         }

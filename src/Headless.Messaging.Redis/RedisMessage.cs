@@ -96,7 +96,7 @@ internal static class RedisMessage
 
         if (headersRaw.IsNullOrEmpty)
         {
-            headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+            headers = [with(StringComparer.Ordinal)];
         }
         else
         {

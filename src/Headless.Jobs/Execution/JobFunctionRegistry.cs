@@ -200,7 +200,7 @@ internal static class JobFunctionRegistryBuilder
 
     private static bool _IsConfigurationToken(string cronExpression)
     {
-        return cronExpression.StartsWith('%');
+        return cronExpression.StartsWith('%', StringComparison.Ordinal);
     }
 
     /// <summary>How a registration conflict names a type.</summary>
@@ -234,8 +234,7 @@ internal sealed record JobFunctionRegistry(
     public JobsClusterConcurrency ClusterConcurrency { get; init; } = JobsClusterConcurrency.None;
 
     /// <summary>Node-death overrides tuned per job identity.</summary>
-    public FrozenDictionary<string, JobOptions> OptionsByFunction { get; init; } =
-        FrozenDictionary<string, JobOptions>.Empty;
+    public FrozenDictionary<string, JobOptions> OptionsByFunction { get; init; } = [];
 
     /// <summary>
     /// The resolved failure policy of every registered job: the tuned policy, else the declared one, else
@@ -255,7 +254,7 @@ internal sealed record JobFunctionRegistry(
                 value.Comparer
             );
         }
-    } = FrozenDictionary<string, FailurePolicyDefinition>.Empty;
+    } = [];
 
     /// <summary>The host's default failure policy; without one a failed run does not retry.</summary>
     public FailurePolicyDefinition DefaultFailurePolicy
@@ -268,10 +267,7 @@ internal sealed record JobFunctionRegistry(
         }
     } = FailurePolicyDefinition.None;
 
-    private FrozenDictionary<string, (int Retries, int[]? RetryIntervals)> _flattenedFailurePolicies = FrozenDictionary<
-        string,
-        (int Retries, int[]? RetryIntervals)
-    >.Empty;
+    private FrozenDictionary<string, (int Retries, int[]? RetryIntervals)> _flattenedFailurePolicies = [];
 
     private (int Retries, int[]? RetryIntervals) _flattenedDefaultFailurePolicy = JobSchedulingPolicies.Flatten(
         FailurePolicyDefinition.None

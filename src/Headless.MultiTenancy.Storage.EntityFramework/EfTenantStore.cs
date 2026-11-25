@@ -76,7 +76,7 @@ internal sealed class EfTenantStore<TContext>(IDbContextFactory<TContext> dbFact
         // without re-normalizing.
         return new TenantInfo(record.Id, record.NormalizedIdentifier, record.Name, record.IsEnabled)
         {
-            ExtraProperties = new ExtraProperties(record.ExtraProperties),
+            ExtraProperties = [with(record.ExtraProperties)],
         };
     }
 }

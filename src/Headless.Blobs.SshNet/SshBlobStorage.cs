@@ -712,7 +712,7 @@ internal sealed partial class SshBlobStorage(
 
     private async Task _EnsureParentDirectoryAsync(SftpClient client, string path, CancellationToken cancellationToken)
     {
-        var lastSlash = path.LastIndexOf('/');
+        var lastSlash = path.LastIndexOf('/', StringComparison.Ordinal);
 
         if (lastSlash <= 0)
         {

@@ -12,7 +12,7 @@ namespace Tests.Oracle;
 public sealed class FencedResourceStore(FencingLedger ledger)
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, long> _highest = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _highest = [with(StringComparer.Ordinal)];
 
     /// <summary>The highest token accepted on <paramref name="resource"/>, or 0 before the first write.</summary>
     public long HighWaterMark(string resource)

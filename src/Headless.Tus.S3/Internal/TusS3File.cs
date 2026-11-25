@@ -63,7 +63,7 @@ internal sealed class TusS3File(
     {
         if (string.IsNullOrEmpty(metadata))
         {
-            return new Dictionary<string, Metadata>(StringComparer.Ordinal);
+            return [with(StringComparer.Ordinal)];
         }
 
         var parseResult = MetadataParser.ParseAndValidate(MetadataParsingStrategy.AllowEmptyValues, metadata);

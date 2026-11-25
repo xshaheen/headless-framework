@@ -63,7 +63,7 @@ internal sealed class PeerChangeFeed(MessagingChangeSource stores, MessagingCirc
             return false;
         }
 
-        var separator = cursor.IndexOf(_Separator, _Prefix.Length);
+        var separator = cursor.IndexOf(_Separator, _Prefix.Length, StringComparison.Ordinal);
 
         if (
             separator < 0

@@ -34,7 +34,7 @@ internal sealed class IdempotencyResponseSnapshot
     /// Allowlisted response headers captured at completion. Replay filters them through the allowlist, whose lookups
     /// are case-insensitive, so this dictionary's own comparer does not matter.
     /// </summary>
-    public Dictionary<string, string[]> Headers { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string[]> Headers { get; init; } = [with(StringComparer.OrdinalIgnoreCase)];
 
     public ReadOnlyMemory<byte> Body { get; init; }
 
@@ -115,7 +115,7 @@ internal sealed class IdempotencyResponseSnapshotHeader
 {
     public int StatusCode { get; set; }
 
-    public Dictionary<string, string[]> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string[]> Headers { get; set; } = [with(StringComparer.OrdinalIgnoreCase)];
 }
 
 [JsonSerializable(typeof(IdempotencyResponseSnapshotHeader))]

@@ -103,7 +103,7 @@ internal sealed class JobsSeedDeclarationStartupValidator(IServiceProvider servi
 
         var expression = JobFunctionRegistryBuilder.ResolveCronExpression(declaration.CronExpression, configuration);
 
-        if (expression.StartsWith('%'))
+        if (expression.StartsWith('%', StringComparison.Ordinal))
         {
             return $"Recurring job declaration '{declaration.Key}' reads its cron from configuration key '{expression.Trim('%')}', which is not set.";
         }

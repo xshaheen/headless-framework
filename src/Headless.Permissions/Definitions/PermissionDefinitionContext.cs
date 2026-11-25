@@ -12,7 +12,7 @@ namespace Headless.Permissions;
 public sealed class PermissionDefinitionContext : IPermissionDefinitionContext
 {
     /// <summary>All permission groups registered in this context, keyed by group name (ordinal).</summary>
-    public Dictionary<string, PermissionGroupDefinition> Groups { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, PermissionGroupDefinition> Groups { get; } = [with(StringComparer.Ordinal)];
 
     public PermissionGroupDefinition AddGroup(string name, string? displayName = null)
     {

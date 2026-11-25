@@ -17,7 +17,7 @@ namespace Headless.Messaging.Redis;
 internal sealed class RedisConsumerNames(string machineName)
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, HashSet<int>> _taken = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<int>> _taken = [with(StringComparer.Ordinal)];
 
     public RedisConsumerNames()
         : this(Environment.MachineName) { }

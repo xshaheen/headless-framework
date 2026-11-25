@@ -43,7 +43,7 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
             {
                 if (!context.CapturedIntegrationIdsByEmitter.TryGetValue(integrationEmitter, out var captured))
                 {
-                    captured = new(StringComparer.Ordinal);
+                    captured = [with(StringComparer.Ordinal)];
                     context.CapturedIntegrationIdsByEmitter.Add(integrationEmitter, captured);
                 }
 
@@ -64,7 +64,7 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
             {
                 if (!context.CapturedDomainIdsByEmitter.TryGetValue(domainEmitter, out var captured))
                 {
-                    captured = new(StringComparer.Ordinal);
+                    captured = [with(StringComparer.Ordinal)];
                     context.CapturedDomainIdsByEmitter.Add(domainEmitter, captured);
                 }
 

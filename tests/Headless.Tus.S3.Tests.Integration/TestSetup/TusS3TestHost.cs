@@ -172,7 +172,7 @@ internal sealed class TusS3TestHost : IDisposable
 
     public static string FileIdOf(string location)
     {
-        return location[(location.LastIndexOf('/') + 1)..];
+        return location[(location.LastIndexOf('/', StringComparison.Ordinal) + 1)..];
     }
 
     public void Dispose()

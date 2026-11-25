@@ -340,7 +340,7 @@ internal sealed class ConsumerKeySequencers
         public int Concurrency { get; } = Math.Max(1, (int)concurrency);
 
         /// <summary>The keys that have work running or queued.</summary>
-        public Dictionary<string, KeyQueue> Keys { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, KeyQueue> Keys { get; } = [with(StringComparer.Ordinal)];
 
         /// <summary>The queues waiting for a concurrency slot, oldest first.</summary>
         public Queue<KeyQueue> Ready { get; } = new();

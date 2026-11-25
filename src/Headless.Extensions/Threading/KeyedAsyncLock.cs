@@ -482,7 +482,7 @@ public sealed class KeyedAsyncLock : IDisposable
         private bool _torn;
 
         // Private; the test suite reflects on this field for the live count. Never used as a lock target.
-        private readonly Dictionary<string, RefCountedSemaphore> _map = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, RefCountedSemaphore> _map = [with(StringComparer.Ordinal)];
 
         public RefCountedSemaphore GetOrCreate(string key)
         {

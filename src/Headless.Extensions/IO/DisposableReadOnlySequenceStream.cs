@@ -5,11 +5,14 @@ using Headless.Checks;
 
 namespace Headless.IO;
 
-/// <summary>Exposes <see cref="ReadOnlySequence{T}"/> as a <see cref="Stream"/></summary>
+/// <summary>
+/// Exposes <see cref="ReadOnlySequence{T}"/> as a <see cref="Stream"/> that runs a callback when disposed, which
+/// <c>System.Buffers.ReadOnlySequenceStream</c> cannot, so a pooled buffer goes back when the reader is done.
+/// </summary>
 /// <remarks>
 /// Copy of <a href="https://github.com/dotnet/Nerdbank.Streams/blob/main/src/Nerdbank.Streams/ReadOnlySequenceStream.cs"></a>
 /// </remarks>
-internal sealed class ReadOnlySequenceStream : Stream
+internal sealed class DisposableReadOnlySequenceStream : Stream
 {
     private static readonly Task<int> _TaskOfZero = Task.FromResult(0);
     private readonly Action<object?>? _disposeAction;
@@ -20,7 +23,7 @@ internal sealed class ReadOnlySequenceStream : Stream
     /// <summary>A reusable task if two consecutive reads return the same number of bytes.</summary>
     private Task<int>? _lastReadTask;
 
-    internal ReadOnlySequenceStream(
+    internal DisposableReadOnlySequenceStream(
         ReadOnlySequence<byte> readOnlySequence,
         Action<object?>? disposeAction,
         object? disposeActionArg

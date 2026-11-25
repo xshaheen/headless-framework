@@ -421,7 +421,7 @@ public sealed class MessagingCommandTests : TestBase
 
     private static string _ReceivedId(MediumMessage row) => $"node-a~primary~{row.StorageId:D}";
 
-    private static string _StorageIdOf(string id) => id[(id.LastIndexOf('~') + 1)..];
+    private static string _StorageIdOf(string id) => id[(id.LastIndexOf('~', StringComparison.Ordinal) + 1)..];
 
     private static JsonElement _Command(JsonElement allowed, string commandId) =>
         allowed

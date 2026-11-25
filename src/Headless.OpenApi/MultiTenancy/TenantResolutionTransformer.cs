@@ -236,7 +236,9 @@ internal sealed class TenantResolutionTransformer : IOpenApiOperationTransformer
 
         if (
             documented?.Content is not { } content
-            || !content.TryGetValue(ContentTypes.Applications.ProblemJson, out var mediaType)
+            || !content.TryGetValue(ContentTypes.Applications.ProblemJson, out var declared)
+            // A media type that is a component reference is shared, so only an inline one is edited here.
+            || declared is not OpenApiMediaType mediaType
             || _BaseExample(mediaType) is not { } template
             // A 400 the endpoint declared as a validation problem has no error member, so its schema cannot carry the
             // tenant example; the response still documents the status.

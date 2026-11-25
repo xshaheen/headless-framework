@@ -57,7 +57,7 @@ internal static class SqsHeaderCodec
         if (attributes is null || !attributes.TryGetValue(AttributeName, out var bag))
         {
             return allowMissingBag
-                ? new Dictionary<string, string?>(StringComparer.Ordinal)
+                ? [with(StringComparer.Ordinal)]
                 : throw new JsonException("The SQS envelope is missing its header bag.");
         }
 

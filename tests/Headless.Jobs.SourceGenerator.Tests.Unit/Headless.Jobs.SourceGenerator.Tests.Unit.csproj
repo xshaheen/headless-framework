@@ -6,7 +6,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Verify.SourceGenerators" />
     <PackageReference Include="Verify.XunitV3" />
     <PackageReference Include="xunit.v3.mtp-v2" />

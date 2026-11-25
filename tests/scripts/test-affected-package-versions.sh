@@ -28,7 +28,7 @@ add_project() {
   if [ "$#" -gt 0 ]; then
     python3 - "$dir/packages.lock.json" "$@" <<'PY'
 import json, sys
-print(json.dumps({"version": 2, "dependencies": {"net10.0": {name: {"type": "Transitive"} for name in sys.argv[2:]}}}), file=open(sys.argv[1], "w"))
+print(json.dumps({"version": 2, "dependencies": {"net11.0": {name: {"type": "Transitive"} for name in sys.argv[2:]}}}), file=open(sys.argv[1], "w"))
 PY
   fi
 }

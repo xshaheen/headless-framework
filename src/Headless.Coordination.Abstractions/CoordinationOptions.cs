@@ -51,7 +51,7 @@ public sealed class CoordinationOptions
     /// Gets arbitrary key and value metadata pairs written to the node descriptor during <see cref="INodeMembership.RegisterAsync"/>,
     /// such as datacenter or version information.
     /// </summary>
-    public Dictionary<string, string> Metadata { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, string> Metadata { get; } = [with(StringComparer.Ordinal)];
 
     /// <summary>
     /// Gets or sets how often the heartbeat background service calls <see cref="INodeMembership.HeartbeatAsync"/>.

@@ -14,7 +14,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
 
     private static List<SettingDefinition> _CreateDefinitions()
     {
-        var context = new SettingDefinitionContext(new Dictionary<string, SettingDefinition>(StringComparer.Ordinal));
+        var context = new SettingDefinitionContext([with(StringComparer.Ordinal)]);
 
         context.Add(
             new()

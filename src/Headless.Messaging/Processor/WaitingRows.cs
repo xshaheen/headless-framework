@@ -25,7 +25,7 @@ internal sealed class WaitingRows
 {
     private const int _PassesPerDeferral = 2;
 
-    private readonly HashSet<WaitingRow> _waiting = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<WaitingRow> _waiting = [with(ReferenceEqualityComparer.Instance)];
     private readonly Func<MediumMessage, TimeSpan, CancellationToken, ValueTask<bool>> _defer;
     private readonly Func<MediumMessage, TimeSpan, CancellationToken, ValueTask<bool>> _renew;
     private readonly TimeSpan _grace;

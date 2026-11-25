@@ -51,7 +51,7 @@ internal sealed class RedisConsumerClient(
     // Maps each subscribed stream key to the message name it was derived from, so an entry a foreign producer wrote
     // without headers is routed by the stream it arrived on. Keys are escaped names, so a name is never parsed back
     // out of one.
-    private FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
+    private FrozenDictionary<string, string> _arrivalNames = [];
 
     // Tracks the read loops and the handler tasks of the concurrent path so shutdown can drain them before disposing
     // the semaphore.

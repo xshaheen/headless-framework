@@ -669,7 +669,7 @@ public sealed class SettingValueStore(
         var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
-        Dictionary<string, SettingValueCacheItem> cacheItems = new(StringComparer.Ordinal);
+        Dictionary<string, SettingValueCacheItem> cacheItems = [with(StringComparer.Ordinal)];
         string? settingValueToFind = null;
 
         foreach (var settingDefinition in definitions)

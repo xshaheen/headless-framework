@@ -62,6 +62,7 @@ public static class FailureFingerprint
         var innermost = _Unwrap(exception);
         var input = new StringBuilder(innermost.GetType().FullName ?? innermost.GetType().Name);
         var taken = 0;
+        MethodBase? callee = null;
 
         foreach (var frame in new StackTrace(innermost, fNeedFileInfo: false).GetFrames())
         {
@@ -70,7 +71,27 @@ public static class FailureFingerprint
                 break;
             }
 
-            if (frame.GetMethod() is not { } method || _MethodFullName(method) is not { } name)
+            if (frame.GetMethod() is not { } method)
+            {
+                continue;
+            }
+
+            if (_IsAwaitPlumbing(method))
+            {
+                continue;
+            }
+
+            // A plain method that hands back the task of a runtime-async callee stays on the stack only when that
+            // callee failed before it first suspended; after a suspension it is gone. Dropping it keeps one failure on
+            // one fingerprint however the awaits completed, and matches the state-machine trace, where it never shows.
+            if (callee is not null && _IsAsyncByRuntime(callee) && _ForwardsTask(method))
+            {
+                continue;
+            }
+
+            callee = method;
+
+            if (_MethodFullName(method) is not { } name)
             {
                 continue;
             }
@@ -168,7 +189,10 @@ public static class FailureFingerprint
         {
             // An async or iterator state machine is named after the method it runs; a closure class (<>c,
             // <>c__DisplayClass0_0) is not, and its method's own name carries the declaring method.
-            if (type.Name.StartsWith('<') && !type.Name.StartsWith("<>", StringComparison.Ordinal))
+            if (
+                type.Name.StartsWith('<', StringComparison.Ordinal)
+                && !type.Name.StartsWith("<>", StringComparison.Ordinal)
+            )
             {
                 name = type.Name;
             }
@@ -192,8 +216,47 @@ public static class FailureFingerprint
         return typeName + "." + _Reduce(name);
     }
 
+    // The frames the runtime adds between an awaiting method and the one it awaits: rethrowing the stored exception
+    // and resuming the continuation.
+    private static bool _IsAwaitPlumbing(MethodBase method) =>
+        method.DeclaringType?.Namespace is "System.Runtime.CompilerServices" or "System.Runtime.ExceptionServices";
+
+    private static bool _IsAsyncByRuntime(MethodBase method) =>
+        method.MethodImplementationFlags.HasFlag(MethodImplAttributes.Async);
+
+    // A method that returns a task without being async itself: the compiler emitted no state machine for it and the
+    // runtime does not suspend it.
+    private static bool _ForwardsTask(MethodBase method)
+    {
+        if (
+            method is not MethodInfo info
+            || _IsAsyncByRuntime(method)
+            || method.IsDefined(typeof(AsyncStateMachineAttribute), inherit: false)
+        )
+        {
+            return false;
+        }
+
+        var returnType = info.ReturnType;
+
+        if (returnType == typeof(Task) || returnType == typeof(ValueTask))
+        {
+            return true;
+        }
+
+        if (!returnType.IsGenericType)
+        {
+            return false;
+        }
+
+        var definition = returnType.GetGenericTypeDefinition();
+
+        return definition == typeof(Task<>) || definition == typeof(ValueTask<>);
+    }
+
     private static bool _IsCompilerGenerated(Type type) =>
-        type.Name.StartsWith('<') || type.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false);
+        type.Name.StartsWith('<', StringComparison.Ordinal)
+        || type.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false);
 
     private static bool _IsFrameworkNamespace(string? ns) =>
         ns is not null
@@ -207,7 +270,7 @@ public static class FailureFingerprint
     // <<Run>b__0_0>d -> <Run>b__0_0 -> Run: the text inside the outermost angle brackets, until none remain.
     private static string _Reduce(string name)
     {
-        while (name.StartsWith('<'))
+        while (name.StartsWith('<', StringComparison.Ordinal))
         {
             var depth = 0;
             var close = -1;

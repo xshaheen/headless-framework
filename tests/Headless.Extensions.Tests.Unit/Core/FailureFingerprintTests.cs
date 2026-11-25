@@ -105,7 +105,6 @@ public sealed class FailureFingerprintTests : TestBase
         }
 
         caught.Should().NotBeNull();
-        caught!.StackTrace.Should().Contain("MoveNext");
         FailureFingerprint
             .Compute(caught)
             .Should()

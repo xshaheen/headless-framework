@@ -45,7 +45,12 @@ public sealed class AmazonSqsTransportConnectivityTests : TransportConnectivityT
         // as a real SQS outage would leave them.
         using var sqs = _CreateSqsClient();
         var queues = await sqs.ListQueuesAsync(new ListQueuesRequest(), cancellationToken);
-        _queueNames = [.. (queues.QueueUrls ?? []).Select(static url => url[(url.LastIndexOf('/') + 1)..])];
+        _queueNames =
+        [
+            .. (queues.QueueUrls ?? []).Select(static url =>
+                url[(url.LastIndexOf('/', StringComparison.Ordinal) + 1)..]
+            ),
+        ];
         _queueNames.Should().NotBeEmpty("the host created its queue before the outage");
 
         await _broker.Container.StopAsync(cancellationToken);

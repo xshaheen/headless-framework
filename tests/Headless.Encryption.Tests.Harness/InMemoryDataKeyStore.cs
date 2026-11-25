@@ -10,7 +10,7 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
 {
     private readonly Lock _gate = new();
     private readonly List<StoredDataKey> _keys = [];
-    private readonly HashSet<string> _shredded = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _shredded = [with(StringComparer.Ordinal)];
 
     public int InsertAttempts { get; private set; }
 

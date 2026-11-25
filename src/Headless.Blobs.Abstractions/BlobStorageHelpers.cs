@@ -120,7 +120,7 @@ public static class BlobStorageHelpers
     )
     {
         var effective = metadata is null
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            ? [with(StringComparer.Ordinal)]
             : new Dictionary<string, string>(metadata, StringComparer.Ordinal);
 
         effective[UploadDateMetadataKey] = uploadDate.ToString("O");
@@ -252,7 +252,7 @@ public static class BlobStorageHelpers
             return "";
         }
 
-        var lastSlash = prefix.LastIndexOf('/');
+        var lastSlash = prefix.LastIndexOf('/', StringComparison.Ordinal);
 
         // A leading slash ("/x") names no directory below the container root.
         return lastSlash <= 0 ? "" : prefix[..(lastSlash + 1)];

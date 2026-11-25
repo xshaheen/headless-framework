@@ -170,7 +170,7 @@ public sealed class TusProtocolTests(TusAzureFixture fixture) : TusProtocolConfo
 
     private async Task<int> _GetCommittedBlockCountAsync(string location)
     {
-        var fileId = location[(location.LastIndexOf('/') + 1)..];
+        var fileId = location[(location.LastIndexOf('/', StringComparison.Ordinal) + 1)..];
 
         var blockBlobClient = new BlobServiceClient(
             fixture.Container.GetConnectionString(),

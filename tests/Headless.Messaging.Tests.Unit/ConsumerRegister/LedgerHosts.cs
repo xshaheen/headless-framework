@@ -128,7 +128,7 @@ internal static class LedgerHosts
 internal sealed class ControlledClientFactory(SimulatedBroker broker) : IConsumerClientFactory
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, int> _created = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _created = [with(StringComparer.Ordinal)];
     private readonly List<(string Subscription, int Ordinal, Func<CancellationToken, Task> Action)> _scripted = [];
     private Func<IConsumerClient, IConsumerClient>? _wrap;
 

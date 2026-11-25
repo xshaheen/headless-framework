@@ -35,7 +35,10 @@ internal sealed class Bootstrapper(
 
     public bool IsStarted => Volatile.Read(ref _isStarted);
 
-    public async Task BootstrapAsync(CancellationToken cancellationToken = default)
+    public Task BootstrapAsync(CancellationToken cancellationToken = default) =>
+        _BootstrapAsync(skipWhenStopping: false, cancellationToken);
+
+    private async Task _BootstrapAsync(bool skipWhenStopping, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -48,6 +51,11 @@ internal sealed class Bootstrapper(
 
             if (_isStopping)
             {
+                if (skipWhenStopping)
+                {
+                    return;
+                }
+
                 throw new InvalidOperationException("Cannot bootstrap after shutdown has begun.");
             }
 
@@ -253,7 +261,9 @@ internal sealed class Bootstrapper(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await BootstrapAsync(stoppingToken).ConfigureAwait(false);
+        // The host runs this on a thread of its own, so a stop can begin before it gets here. That stop already owns
+        // shutdown, and a refusal here would fault the service, which the host rethrows from StopAsync.
+        await _BootstrapAsync(skipWhenStopping: true, stoppingToken).ConfigureAwait(false);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
@@ -585,8 +595,8 @@ internal sealed class Bootstrapper(
         var consumers = registry.GetAll();
         var namesByLane = new Dictionary<MessageLane, Dictionary<string, HashSet<Type>>>
         {
-            [MessageLane.Bus] = new(StringComparer.OrdinalIgnoreCase),
-            [MessageLane.Queue] = new(StringComparer.OrdinalIgnoreCase),
+            [MessageLane.Bus] = [with(StringComparer.OrdinalIgnoreCase)],
+            [MessageLane.Queue] = [with(StringComparer.OrdinalIgnoreCase)],
         };
 
         foreach (var consumer in consumers)

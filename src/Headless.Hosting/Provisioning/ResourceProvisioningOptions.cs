@@ -25,7 +25,8 @@ public sealed class ResourceProvisioningOptions
     /// case-insensitively: <c>options.StartupChecks["RabbitMQ"] = ResourceStartupCheck.None</c> stops a host from
     /// checking its broker topology when it starts. A kind with no entry keeps the provisioner's own choice.
     /// </summary>
-    public Dictionary<string, ResourceStartupCheck> StartupChecks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, ResourceStartupCheck> StartupChecks { get; set; } =
+    [with(StringComparer.OrdinalIgnoreCase)];
 
     internal ResourceStartupCheck StartupCheckOf(IResourceProvisioner provisioner) =>
         StartupChecks.TryGetValue(provisioner.Kind, out var check) ? check : provisioner.StartupCheck;

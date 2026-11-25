@@ -23,7 +23,7 @@ public sealed class HeadlessTusSetupBuilder
 
     internal List<Action<IServiceCollection>> CrossCuttingExtensions { get; } = [];
 
-    internal Dictionary<string, TusEndpointRegistration> Endpoints { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, TusEndpointRegistration> Endpoints { get; } = [with(StringComparer.Ordinal)];
 
     /// <summary>
     /// Queues a store provider's contribution. Store packages call this from their <c>Use*</c> members; an

@@ -247,7 +247,7 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
 
         // when
         var stored = await repository.GetListAsync(
-            new HashSet<string>(StringComparer.Ordinal) { "Checkout.Enabled", "Export.Enabled" },
+            [with(StringComparer.Ordinal), "Checkout.Enabled", "Export.Enabled"],
             "Tenant",
             "t1",
             AbortToken
@@ -441,7 +441,7 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         var found = await repository.FindAsync(name + "x", "Tenant", providerKey, AbortToken);
         var all = await repository.FindAllAsync(name + "x", providerName: null, providerKey: null, AbortToken);
         var byNames = await repository.GetListAsync(
-            new HashSet<string>(StringComparer.Ordinal) { name + "x" },
+            [with(StringComparer.Ordinal), name + "x"],
             "Tenant",
             providerKey,
             AbortToken

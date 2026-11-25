@@ -675,7 +675,7 @@ public sealed class FeatureManagerTests : TestBase
 
     private sealed class PerValueFeatureProvider : IFeatureValueProvider
     {
-        public Dictionary<string, string> Values { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> Values { get; } = [with(StringComparer.Ordinal)];
 
         public string Name => "PerValue";
 

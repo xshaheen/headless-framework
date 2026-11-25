@@ -10,7 +10,7 @@ namespace Headless.Permissions;
 /// </summary>
 public sealed class MultiplePermissionGrantResult
 {
-    private readonly Dictionary<string, bool> _grants = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool> _grants = [with(StringComparer.Ordinal)];
 
     /// <summary>Creates an empty result. Population is internal to the framework.</summary>
     internal MultiplePermissionGrantResult() { }

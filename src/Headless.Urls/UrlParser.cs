@@ -12,7 +12,7 @@ internal static class UrlParser
     /// <param name="query">The URL query to parse.</param>
     internal static QueryParamCollection ParseQueryParams(string? query)
     {
-        return new(query);
+        return [with(query)];
     }
 
     /// <summary>

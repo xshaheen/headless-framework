@@ -316,7 +316,7 @@ internal sealed class MessagingModule
         return await _forwarding!
                 .ReadFromDefaultAsync<Dictionary<string, DashboardCount>>("/peer/counts", cancellationToken)
                 .ConfigureAwait(false)
-            ?? new Dictionary<string, DashboardCount>(StringComparer.Ordinal);
+            ?? [with(StringComparer.Ordinal)];
     }
 
     public async Task<IReadOnlyList<DashboardObject>> ResolveAsync(

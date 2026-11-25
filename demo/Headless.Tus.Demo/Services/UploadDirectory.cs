@@ -32,7 +32,9 @@ public sealed class UploadDirectory(BlobServiceClient blobServiceClient, IOption
     {
         var storeOptions = options.Value;
         var container = blobServiceClient.GetBlobContainerClient(storeOptions.ContainerName);
-        var prefix = storeOptions.BlobPrefix.EndsWith('/') ? storeOptions.BlobPrefix : storeOptions.BlobPrefix + "/";
+        var prefix = storeOptions.BlobPrefix.EndsWith('/', StringComparison.Ordinal)
+            ? storeOptions.BlobPrefix
+            : storeOptions.BlobPrefix + "/";
         var uploads = new List<UploadSummary>();
 
         await foreach (

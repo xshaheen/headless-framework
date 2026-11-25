@@ -197,7 +197,7 @@ public static class HeadlessUrlValidators
                         return;
                     }
 
-                    if (maybeOrigin.EndsWith('/'))
+                    if (maybeOrigin.EndsWith('/', StringComparison.Ordinal))
                     {
                         _BuildOriginFailure(
                             context,

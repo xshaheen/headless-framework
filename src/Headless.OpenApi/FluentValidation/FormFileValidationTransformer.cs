@@ -49,7 +49,9 @@ internal sealed class FormFileValidationTransformer : IOpenApiOperationTransform
         // FormFileRequestBodyTransformer runs first and publishes every body with a file part as multipart only.
         if (
             operation.RequestBody?.Content is not { } content
-            || !content.TryGetValue(_MultipartFormData, out var mediaType)
+            || !content.TryGetValue(_MultipartFormData, out var declared)
+            // A media type that is a component reference is shared, so only an inline one is edited here.
+            || declared is not OpenApiMediaType mediaType
             || _Resolve(context.Document, mediaType.Schema) is not { Properties: { Count: > 0 } properties }
         )
         {

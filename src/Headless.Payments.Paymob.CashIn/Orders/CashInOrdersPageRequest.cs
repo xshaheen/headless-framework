@@ -9,7 +9,7 @@ public sealed class CashInOrdersPageRequest
 {
     private CashInOrdersPageRequest() { }
 
-    public Dictionary<string, string> Query { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, string> Query { get; } = [with(StringComparer.Ordinal)];
 
     public static CashInOrdersPageRequest Create => new();
 

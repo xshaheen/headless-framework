@@ -475,6 +475,7 @@ public sealed class MessagingOptions
         target.IncludeFields = source.IncludeFields;
         target.IndentCharacter = source.IndentCharacter;
         target.IndentSize = source.IndentSize;
+        target.InferClosedTypePolymorphism = source.InferClosedTypePolymorphism;
         target.MaxDepth = source.MaxDepth;
         target.NewLine = source.NewLine;
         target.NumberHandling = source.NumberHandling;

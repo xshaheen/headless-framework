@@ -413,7 +413,7 @@ internal static class OperationEndpoints
     {
         if (json is null)
         {
-            return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            return [with(StringComparer.Ordinal)];
         }
 
         var arguments = JsonSerializer.Deserialize(
@@ -422,7 +422,7 @@ internal static class OperationEndpoints
         );
 
         return arguments is null
-            ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            ? [with(StringComparer.Ordinal)]
             : new Dictionary<string, JsonElement>(arguments, StringComparer.Ordinal);
     }
 }

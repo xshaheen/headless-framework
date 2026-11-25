@@ -110,7 +110,7 @@ internal static class JobsClusterClaim
     {
         if (functions.Length == 0)
         {
-            return new(StringComparer.Ordinal);
+            return [with(StringComparer.Ordinal)];
         }
 
         await JobsKeyLock.AcquireClusterSlotsAsync(context, functions, cancellationToken).ConfigureAwait(false);

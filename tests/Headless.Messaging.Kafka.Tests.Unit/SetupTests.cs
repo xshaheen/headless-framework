@@ -46,7 +46,7 @@ public sealed class SetupTests : TestBase
         await using var provider = services.BuildServiceProvider();
 
         var model = provider.GetRequiredService<IMessagingCapabilityModel>();
-        model.Providers.Single().RoutingAffinityRoutes.Any().Should().Be(supported);
+        (model.Providers.Single().RoutingAffinityRoutes.Count != 0).Should().Be(supported);
         if (!supported)
         {
             var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);

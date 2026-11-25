@@ -175,7 +175,7 @@ internal sealed class ResponderReplies(
         request.Headers.TryGetValue(Headers.CorrelationId, out var correlationId);
 
         var headers = responseHeaders is null
-            ? new Dictionary<string, string?>(StringComparer.Ordinal)
+            ? [with(StringComparer.Ordinal)]
             : new Dictionary<string, string?>(responseHeaders, StringComparer.Ordinal);
 
         headers[Headers.MessageId] = Guid.CreateVersion7(timeProvider.GetUtcNow()).ToString("D");

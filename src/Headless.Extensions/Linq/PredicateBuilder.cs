@@ -104,7 +104,7 @@ public static class PredicateBuilder
     )
     {
         // build parameter map (from parameters of second to parameters of first)
-        Dictionary<ParameterExpression, ParameterExpression> map = new(second.Parameters.Count);
+        Dictionary<ParameterExpression, ParameterExpression> map = [with(second.Parameters.Count)];
         for (var i = 0; i < second.Parameters.Count; i++)
         {
             map.Add(second.Parameters[i], first.Parameters[i]);

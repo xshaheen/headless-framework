@@ -234,6 +234,7 @@ public sealed class MessagingOptionsCopyToTests : TestBase
             nameof(JsonSerializerOptions.IncludeFields),
             nameof(JsonSerializerOptions.IndentCharacter),
             nameof(JsonSerializerOptions.IndentSize),
+            nameof(JsonSerializerOptions.InferClosedTypePolymorphism),
             nameof(JsonSerializerOptions.MaxDepth),
             nameof(JsonSerializerOptions.NewLine),
             nameof(JsonSerializerOptions.NumberHandling),

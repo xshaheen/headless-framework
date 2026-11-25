@@ -351,7 +351,7 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     [Fact]
     public void is_disposed()
     {
-        var stream = (ReadOnlySequenceStream)_defaultStream;
+        var stream = (DisposableReadOnlySequenceStream)_defaultStream;
         stream.IsDisposed.Should().BeFalse();
         _defaultStream.Dispose();
         stream.IsDisposed.Should().BeTrue();

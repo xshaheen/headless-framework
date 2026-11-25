@@ -104,7 +104,7 @@ internal sealed class ConfigurationTenantStore : ITenantStore, ITenantDirectory
     {
         return new TenantInfo(tenant.Id, tenant.Identifier, tenant.Name, tenant.IsEnabled)
         {
-            ExtraProperties = new ExtraProperties(tenant.ExtraProperties),
+            ExtraProperties = [with(tenant.ExtraProperties)],
         };
     }
 }

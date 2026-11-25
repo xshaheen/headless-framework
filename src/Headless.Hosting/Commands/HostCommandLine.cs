@@ -32,7 +32,7 @@ internal static class HostCommandLine
         error = "";
         var index = 0;
 
-        if (args.Count > 0 && !args[0].StartsWith('-'))
+        if (args.Count > 0 && !args[0].StartsWith('-', StringComparison.Ordinal))
         {
             if (!subcommands.Contains(args[0], StringComparer.Ordinal))
             {
@@ -185,8 +185,8 @@ internal static class HostCommandLine
         CancellationToken cancellationToken
     )
     {
-        await stderr.WriteLineAsync(error).ConfigureAwait(false);
-        await stderr.WriteLineAsync(usage).ConfigureAwait(false);
+        await stderr.WriteLineAsync(error, cancellationToken).ConfigureAwait(false);
+        await stderr.WriteLineAsync(usage, cancellationToken).ConfigureAwait(false);
         await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
 
         return ExitUsage;
@@ -195,7 +195,7 @@ internal static class HostCommandLine
     /// <summary>Writes <paramref name="text"/> to <paramref name="writer"/> and flushes it.</summary>
     public static async Task WriteAsync(TextWriter writer, string text, CancellationToken cancellationToken)
     {
-        await writer.WriteAsync(text).ConfigureAwait(false);
+        await writer.WriteAsync(text, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 }
@@ -209,9 +209,9 @@ internal sealed class HostCommandArguments
 
     public TimeSpan? Timeout { get; set; }
 
-    public Dictionary<string, List<string>> Values { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, List<string>> Values { get; } = [with(StringComparer.Ordinal)];
 
-    public HashSet<string> Switches { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> Switches { get; } = [with(StringComparer.Ordinal)];
 
     public IReadOnlyList<string> ValuesOf(string name) => Values.TryGetValue(name, out var values) ? values : [];
 }

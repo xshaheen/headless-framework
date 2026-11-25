@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Headless;
 using Headless.Extensions.NetStandardFixture;
 using Headless.Testing.Tests;
@@ -26,6 +27,21 @@ public sealed class FailureFingerprintAsyncParityTests : TestBase
     // "Headless.Extensions.NetStandardFixture.NetStandardAsyncFrame.RunAsync" and
     // "Tests.Core.FailureFingerprintAsyncParityTests._CatchAsync".
     private const string _NetStandardBaseline = "v1:f21d4b51dd0a0412";
+
+    // Hashes "System.NotSupportedException", then "Tests.Core.FailureFingerprintAsyncParityTests._FailValueTaskAsync",
+    // "Tests.Core.FailureFingerprintAsyncParityTests._AwaitValueTaskForwarderAsync" and
+    // "Tests.Core.FailureFingerprintAsyncParityTests._CatchAsync".
+    private const string _ValueTaskForwarderBaseline = "v1:d9f89e134799c229";
+
+    // Hashes "System.FormatException", then "Tests.Core.FailureFingerprintAsyncParityTests._FailSynchronously",
+    // "Tests.Core.FailureFingerprintAsyncParityTests._ForwardToSynchronousFailure" and
+    // "Tests.Core.FailureFingerprintAsyncParityTests.should_keep_a_forwarder_frame_when_its_callee_is_not_async".
+    private const string _SynchronousForwarderBaseline = "v1:9851050bdadc81b5";
+
+    // Hashes "System.TimeoutException", then "Tests.Core.FailureFingerprintAsyncParityTests._ThrowAfterAsync",
+    // "Tests.Core.FailureFingerprintAsyncParityTests._BlockOn" and
+    // "Tests.Core.FailureFingerprintAsyncParityTests.should_keep_a_blocking_caller_frame_when_it_waits_on_an_async_failure".
+    private const string _BlockingCallerBaseline = "v1:bfb4bed139c81472";
 
     [Theory]
     [InlineData(true)]
@@ -55,6 +71,46 @@ public sealed class FailureFingerprintAsyncParityTests : TestBase
         FailureFingerprint.Compute(exception).Should().Be(_NetStandardBaseline, because: exception.ToString());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_skip_a_value_task_forwarder_when_its_callee_fails_before_it_suspends(bool suspend)
+    {
+        var exception = await _CatchAsync(() => _AwaitValueTaskForwarderAsync(suspend));
+
+        _WriteFrames(exception);
+        FailureFingerprint.Compute(exception).Should().Be(_ValueTaskForwarderBaseline, because: exception.ToString());
+    }
+
+    [Fact]
+    public async Task should_keep_a_forwarder_frame_when_its_callee_is_not_async()
+    {
+        var exception = await _CatchAsync(() => _ForwardToSynchronousFailure());
+
+        _WriteFrames(exception);
+        FailureFingerprint.Compute(exception).Should().Be(_SynchronousForwarderBaseline, because: exception.ToString());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_keep_a_blocking_caller_frame_when_it_waits_on_an_async_failure(bool suspend)
+    {
+        Exception? exception = null;
+        try
+        {
+            _BlockOn(suspend);
+        }
+        catch (TimeoutException ex)
+        {
+            exception = ex;
+        }
+
+        exception.Should().NotBeNull();
+        _WriteFrames(exception!);
+        FailureFingerprint.Compute(exception!).Should().Be(_BlockingCallerBaseline, because: exception!.ToString());
+    }
+
     #region Helpers
 
     // Type and method names as the runtime reports them, before any reduction: the test output shows whether a frame
@@ -64,7 +120,9 @@ public sealed class FailureFingerprintAsyncParityTests : TestBase
             .GetFrames()
             .Select(frame => frame.GetMethod())
             .Where(method => method is not null)
-            .Select(method => method!.DeclaringType?.Name + "::" + method.Name);
+            .Select(method =>
+                method!.DeclaringType?.Name + "::" + method.Name + " [" + method.MethodImplementationFlags + "]"
+            );
 
     private static void _WriteFrames(Exception exception)
     {
@@ -143,6 +201,39 @@ public sealed class FailureFingerprintAsyncParityTests : TestBase
 
         return lambda();
     }
+
+    private static async Task _AwaitValueTaskForwarderAsync(bool suspend)
+    {
+        if (suspend)
+        {
+            await Task.Yield();
+        }
+
+        await _ValueTaskForwarder(suspend);
+    }
+
+    // Not async: it hands back the task of an async callee.
+    private static ValueTask _ValueTaskForwarder(bool suspend) => _FailValueTaskAsync(suspend);
+
+    private static async ValueTask _FailValueTaskAsync(bool suspend)
+    {
+        if (suspend)
+        {
+            await Task.Yield();
+        }
+
+        throw new NotSupportedException("value task failed");
+    }
+
+    // Neither method is async, so both stay on the stack whatever the runtime does.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task _ForwardToSynchronousFailure() => _FailSynchronously();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task _FailSynchronously() => throw new FormatException("failed before any task existed");
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void _BlockOn(bool suspend) => _ThrowAfterAsync(suspend).GetAwaiter().GetResult();
 
     private static async Task _ThrowAfterAsync(bool suspend)
     {

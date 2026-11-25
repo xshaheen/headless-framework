@@ -194,9 +194,9 @@ internal static class ConformanceCoverageScanner
 
         public bool IsAbstract { get; private set; }
 
-        public HashSet<string> Cases { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> Cases { get; } = [with(StringComparer.Ordinal)];
 
-        public HashSet<string> RunnableOverrides { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> RunnableOverrides { get; } = [with(StringComparer.Ordinal)];
 
         public bool HasTestMethods { get; private set; }
 

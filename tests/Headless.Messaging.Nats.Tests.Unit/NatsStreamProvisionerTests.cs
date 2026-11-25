@@ -12,7 +12,7 @@ namespace Tests;
 
 public sealed class NatsStreamProvisionerTests : TestBase
 {
-    private static readonly HashSet<string> _NoShards = new(StringComparer.Ordinal);
+    private static readonly HashSet<string> _NoShards = [with(StringComparer.Ordinal)];
 
     [Fact]
     public void should_declare_the_whole_stream_key_when_build_stream_subjects_for_a_prefixed_name()

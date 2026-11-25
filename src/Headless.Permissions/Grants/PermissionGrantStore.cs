@@ -163,7 +163,7 @@ public sealed class PermissionGrantStore(
 
         var newCacheItems =
             missedByKey.Count == 0
-                ? new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal)
+                ? [with(StringComparer.Ordinal)]
                 : await _CacheSomeForKeysAsync(missedByKey, providerName, cancellationToken).ConfigureAwait(false);
 
         var result = new Dictionary<string, Dictionary<string, PermissionGrantStatus>>(
@@ -995,8 +995,8 @@ public sealed class PermissionGrantStore(
 
         logger.LogSettingCacheItemsForDefinitions(definitions.Count);
 
-        Dictionary<string, PermissionGrantCacheItem> cacheItems = new(StringComparer.Ordinal);
-        Dictionary<string, bool?> statuses = new(StringComparer.Ordinal);
+        Dictionary<string, PermissionGrantCacheItem> cacheItems = [with(StringComparer.Ordinal)];
+        Dictionary<string, bool?> statuses = [with(StringComparer.Ordinal)];
 
         foreach (var permission in definitions)
         {

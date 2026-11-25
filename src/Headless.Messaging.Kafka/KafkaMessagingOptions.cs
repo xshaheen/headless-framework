@@ -25,7 +25,7 @@ public sealed class KafkaMessagingOptions
     /// The transport owns offset commits, so <c>enable.auto.commit</c> and <c>enable.auto.offset.store</c> are
     /// always overridden; <c>auto.commit.interval.ms</c> still sets how often stored offsets reach the broker.
     /// </remarks>
-    public Dictionary<string, string> MainConfig { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, string> MainConfig { get; } = [with(StringComparer.Ordinal)];
 
     /// <summary>
     /// The host isolation prefix (<c>Headless:Prefix</c>) every topic and consumer group starts with, or empty for none.

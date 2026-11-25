@@ -1409,7 +1409,7 @@ internal sealed class AwsBlobStorage(
 
     private static bool _IsDirectory(BlobInfo file)
     {
-        return file.Size is 0 && file.BlobKey.EndsWith('/');
+        return file.Size is 0 && file.BlobKey.EndsWith('/', StringComparison.Ordinal);
     }
 
     #endregion

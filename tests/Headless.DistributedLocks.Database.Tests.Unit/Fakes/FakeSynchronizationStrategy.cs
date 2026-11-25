@@ -18,7 +18,7 @@ internal sealed class FakeSynchronizationStrategy : IDbSynchronizationStrategy<o
 
     // Maps a resource string to its resolved physical-lock identity. Two strings mapping to the same value model an
     // advisory-key collision (ASCII/int overlap or SHA hash collision).
-    private readonly Dictionary<string, object> _identityByResource = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, object> _identityByResource = [with(StringComparer.Ordinal)];
 
     public bool IsUpgradeable { get; init; }
 

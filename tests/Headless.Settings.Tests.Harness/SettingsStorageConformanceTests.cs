@@ -382,7 +382,7 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
         var found = await repository.FindAsync(name + "x", "Tenant", providerKey, AbortToken);
         var all = await repository.FindAllAsync(name + "x", providerName: null, providerKey: null, AbortToken);
         var byNames = await repository.GetListAsync(
-            new HashSet<string>(StringComparer.Ordinal) { name + "x" },
+            [with(StringComparer.Ordinal), name + "x"],
             "Tenant",
             providerKey,
             AbortToken

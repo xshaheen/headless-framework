@@ -228,7 +228,7 @@ public static class RelationalDatabaseIdentity
         var source = dataSource.Trim();
 
         // A Unix-socket path (Npgsql reports "/var/run/postgresql/.s.PGSQL.5432") is case-sensitive; a host is not.
-        if (source.StartsWith('/'))
+        if (source.StartsWith('/', StringComparison.Ordinal))
         {
             return source;
         }

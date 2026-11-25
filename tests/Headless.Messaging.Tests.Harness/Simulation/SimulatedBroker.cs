@@ -127,11 +127,11 @@ public sealed class SimulatedBroker
 
     private readonly Dictionary<(MessageLane Lane, string MessageName), List<string>> _routes = [];
     private readonly Dictionary<(MessageLane Lane, string GroupId), SimulatedGroup> _groups = [];
-    private readonly Dictionary<string, int> _nextQueueGroup = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _nextQueueGroup = [with(StringComparer.Ordinal)];
     private readonly List<BrokerEvent> _events = [];
     private readonly HashSet<SimulatedConsumerClient> _listening = [];
     private readonly List<SimulatedTimedWork> _timedWork = [];
-    private readonly Dictionary<string, SimulatedReplyListener> _replyListeners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SimulatedReplyListener> _replyListeners = [with(StringComparer.Ordinal)];
     private TaskCompletionSource _changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource _activity = new(TaskCreationOptions.RunContinuationsAsynchronously);
 #pragma warning disable IDE0032 // Read and written under the gate; an auto property would drop the lock.

@@ -101,8 +101,8 @@ public sealed class AmazonSqsConsumerFifoOrderTests : TestBase
 
         // then
         await _WaitUntilAsync(() => _committed.Count == 3, "every message of the receive is handled");
-        _committed.Where(id => id.StartsWith('A')).Should().Equal("A1", "A2");
-        _started.Where(id => id.StartsWith('A')).Should().Equal("A1", "A2");
+        _committed.Where(id => id.StartsWith('A', StringComparison.Ordinal)).Should().Equal("A1", "A2");
+        _started.Where(id => id.StartsWith('A', StringComparison.Ordinal)).Should().Equal("A1", "A2");
 
         await cts.CancelAsync();
         await _IgnoreCancellationAsync(listening);

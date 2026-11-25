@@ -6,8 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Caching.Bcl.Tests.Unit" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />

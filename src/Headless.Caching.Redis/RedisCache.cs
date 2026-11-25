@@ -2839,7 +2839,7 @@ public sealed class RedisCache(
             {
                 if (!_markerCache.TryGetValue(tag, out var cached) || !_MarkerIsFresh(cached.FetchedTicks))
                 {
-                    (staleTags ??= new HashSet<string>(StringComparer.Ordinal)).Add(tag);
+                    (staleTags ??= [with(StringComparer.Ordinal)]).Add(tag);
                 }
             }
         }

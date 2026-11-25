@@ -12,7 +12,7 @@ namespace Tests.Commands;
 internal sealed class FakeRunStore
 {
     private readonly Lock _lock = new();
-    private readonly SortedDictionary<string, FakeRun> _runs = new(StringComparer.Ordinal);
+    private readonly SortedDictionary<string, FakeRun> _runs = [with(StringComparer.Ordinal)];
     private long _clock;
 
     public static string RunId(int number) => $"run-{number:D6}";

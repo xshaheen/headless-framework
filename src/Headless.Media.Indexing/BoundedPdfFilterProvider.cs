@@ -127,10 +127,10 @@ internal sealed class BoundedPdfFilterProvider(long maxDecodedBytes) : IFilterPr
             }
         }
 
-        private static MemoryStream _ReadOnlyStream(Memory<byte> memory)
+        private static MemoryStream _ReadOnlyStream(ReadOnlyMemory<byte> memory)
         {
             // PdfPig hands filters array-backed memory; the copy covers any other backing without changing the result.
-            return MemoryMarshal.TryGetArray<byte>(memory, out var segment)
+            return MemoryMarshal.TryGetArray(memory, out var segment)
                 ? new MemoryStream(segment.Array!, segment.Offset, segment.Count, writable: false)
                 : new MemoryStream(memory.ToArray(), writable: false);
         }

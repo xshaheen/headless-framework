@@ -87,7 +87,7 @@ public sealed class AmazonSqsConsumerFifoReleaseTests : TestBase
         // then: after the beat's extension, the waiting group goes back at once, as nothing of it was in flight; the
         // message in flight goes back at once too, and its group's rest stays hidden as long as that message may still
         // be handled
-        var (heldGroup, waitingGroup) = inFlight.StartsWith('A') ? ("A", "B") : ("B", "A");
+        var (heldGroup, waitingGroup) = inFlight.StartsWith('A', StringComparison.Ordinal) ? ("A", "B") : ("B", "A");
         _ReleasedFor($"{waitingGroup}1").Should().Equal(30, 0);
         _ReleasedFor($"{waitingGroup}2").Should().Equal(30, 0);
         _ReleasedFor($"{heldGroup}1").Should().Equal(30, 0);

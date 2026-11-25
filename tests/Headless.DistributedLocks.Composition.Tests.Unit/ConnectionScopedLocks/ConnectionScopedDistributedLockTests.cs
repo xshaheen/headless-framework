@@ -617,7 +617,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
 
         public int ReleaseCount { get; private set; }
 
-        private Dictionary<string, string> LocalLeaseIds { get; } = new(StringComparer.Ordinal);
+        private Dictionary<string, string> LocalLeaseIds { get; } = [with(StringComparer.Ordinal)];
 
         public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
             string resource,

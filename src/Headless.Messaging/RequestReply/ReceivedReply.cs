@@ -30,7 +30,7 @@ internal sealed record ReceivedReply(
             // sees one on any of them.
             if (value is not null && !Messaging.Headers.IsReservedOnReply(name))
             {
-                (responderHeaders ??= new(StringComparer.Ordinal))[name] = value;
+                (responderHeaders ??= [with(StringComparer.Ordinal)])[name] = value;
             }
         }
 

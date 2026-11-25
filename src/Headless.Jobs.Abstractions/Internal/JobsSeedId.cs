@@ -82,7 +82,7 @@ internal static class JobsSeedId
     /// </summary>
     public static string RetiredMarker(string marker)
     {
-        var kindOffset = marker.IndexOf(':', _MarkerRoot.Length) + 1;
+        var kindOffset = marker.IndexOf(':', _MarkerRoot.Length, StringComparison.Ordinal) + 1;
         return marker.AsSpan(kindOffset).StartsWith("retired:", StringComparison.Ordinal)
             ? marker
             : marker.Insert(kindOffset, "retired:");
@@ -102,7 +102,7 @@ internal static class JobsSeedId
             return false;
         }
 
-        var kindOffset = storedMarker!.IndexOf(':', _MarkerRoot.Length) + 1;
+        var kindOffset = storedMarker!.IndexOf(':', _MarkerRoot.Length, StringComparison.Ordinal) + 1;
 
         return kindOffset > 0 && storedMarker.AsSpan(kindOffset).StartsWith("retired:", StringComparison.Ordinal);
     }

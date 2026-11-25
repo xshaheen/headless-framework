@@ -114,10 +114,7 @@ internal sealed class RuntimeConsumerRegistry(
 
     // Dispatch-side index over the same snapshot, rebuilt on every (rare) subscribe/unsubscribe so the
     // per-message lookup is a hash hit instead of a scan with a capturing predicate.
-    private FrozenDictionary<RuntimeInvokerKey, IRuntimeMessageHandlerInvoker> _invokers = FrozenDictionary<
-        RuntimeInvokerKey,
-        IRuntimeMessageHandlerInvoker
-    >.Empty;
+    private FrozenDictionary<RuntimeInvokerKey, IRuntimeMessageHandlerInvoker> _invokers = [];
 
     public IReadOnlyList<ConsumerExecutorDescriptor> GetDescriptors()
     {

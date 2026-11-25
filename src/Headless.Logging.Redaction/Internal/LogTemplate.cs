@@ -79,7 +79,7 @@ internal sealed class LogTemplate
                 continue;
             }
 
-            var close = template.IndexOf('}', i + 1);
+            var close = template.IndexOf('}', i + 1, StringComparison.Ordinal);
 
             if (close < 0)
             {

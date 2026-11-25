@@ -21,7 +21,7 @@ internal sealed record LogPropertyClassification(string Name, DataClassification
     {
         if (redactorProvider is null)
         {
-            return FrozenDictionary<string, Redactor>.Empty;
+            return [];
         }
 
         return provider

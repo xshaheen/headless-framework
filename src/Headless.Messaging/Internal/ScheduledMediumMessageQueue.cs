@@ -10,15 +10,18 @@ internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int
 {
     private readonly int _capacity = Argument.IsPositive(capacity);
 
-    private readonly SortedSet<(long, MediumMessage)> _queue = new(
-        Comparer<(long, MediumMessage)>.Create(
-            (a, b) =>
-            {
-                var result = a.Item1.CompareTo(b.Item1);
-                return result == 0 ? a.Item2.StorageId.CompareTo(b.Item2.StorageId) : result;
-            }
-        )
-    );
+    private readonly SortedSet<(long, MediumMessage)> _queue =
+    [
+        with(
+            Comparer<(long, MediumMessage)>.Create(
+                (a, b) =>
+                {
+                    var result = a.Item1.CompareTo(b.Item1);
+                    return result == 0 ? a.Item2.StorageId.CompareTo(b.Item2.StorageId) : result;
+                }
+            )
+        ),
+    ];
 
     private readonly SemaphoreSlim _changedSignal = new(0);
     private readonly Lock _lock = new();

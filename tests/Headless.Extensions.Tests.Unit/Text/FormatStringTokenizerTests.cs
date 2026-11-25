@@ -41,7 +41,10 @@ public sealed class FormatStringTokenizerTests
 
             actualToken.Text.Should().Be(expectedToken.Trim('{', '}'));
 
-            if (expectedToken.StartsWith('{') && expectedToken.EndsWith('}'))
+            if (
+                expectedToken.StartsWith('{', StringComparison.Ordinal)
+                && expectedToken.EndsWith('}', StringComparison.Ordinal)
+            )
             {
                 actualToken.Type.Should().Be(FormatStringTokenType.DynamicValue);
             }

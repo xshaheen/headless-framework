@@ -14,23 +14,23 @@ internal class RecordingProvisioner(string kind, string name, List<string> log) 
     public ResourceStartupCheck StartupCheck { get; init; } = ResourceStartupCheck.GateReadiness;
 
     /// <summary>Operations that throw <see cref="InvalidOperationException" /> with <see cref="FailureMessage" />.</summary>
-    public HashSet<string> Failing { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> Failing { get; } = [with(StringComparer.Ordinal)];
 
     /// <summary>Operations the provisioner reports it cannot run: <c>purge</c> or <c>delete</c>.</summary>
-    public HashSet<string> Unsupported { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> Unsupported { get; } = [with(StringComparer.Ordinal)];
 
     public bool CanPurge => !Unsupported.Contains("purge");
 
     public bool CanDelete => !Unsupported.Contains("delete");
 
     /// <summary>Operations that throw a plain <see cref="NotSupportedException" />, as a driver would.</summary>
-    public HashSet<string> DriverNotSupported { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> DriverNotSupported { get; } = [with(StringComparer.Ordinal)];
 
     /// <summary>Operations that wait until canceled.</summary>
-    public HashSet<string> Stalling { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> Stalling { get; } = [with(StringComparer.Ordinal)];
 
     /// <summary>Operations that wait until canceled, then fail with a driver's own exception instead of a cancellation.</summary>
-    public HashSet<string> StallingThenDriverError { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> StallingThenDriverError { get; } = [with(StringComparer.Ordinal)];
 
     public string FailureMessage { get; init; } = "The broker refused the declaration.";
 

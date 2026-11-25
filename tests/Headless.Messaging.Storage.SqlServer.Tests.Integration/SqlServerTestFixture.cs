@@ -22,7 +22,10 @@ public sealed class SqlServerTestFixture : HeadlessSqlServerFixture, ICollection
         get
         {
             var dataSource = new SqlConnectionStringBuilder(ConnectionString).DataSource;
-            return int.Parse(dataSource[(dataSource.LastIndexOf(',') + 1)..], CultureInfo.InvariantCulture);
+            return int.Parse(
+                dataSource[(dataSource.LastIndexOf(',', StringComparison.Ordinal) + 1)..],
+                CultureInfo.InvariantCulture
+            );
         }
     }
 }

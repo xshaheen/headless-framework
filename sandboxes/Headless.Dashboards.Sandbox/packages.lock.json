@@ -1,7 +1,7 @@
 {
   "version": 2,
   "dependencies": {
-    "net10.0": {
+    "net11.0": {
       "AsyncFixer": {
         "type": "Direct",
         "requested": "[2.1.0, )",
@@ -52,13 +52,13 @@
       },
       "Npgsql.EntityFrameworkCore.PostgreSQL": {
         "type": "Direct",
-        "requested": "[10.0.4, )",
-        "resolved": "10.0.4",
-        "contentHash": "KRFbmHOn260bgSSQTKZsKtvEFW1k1AaZUtb/IPmW31M47qMkzAOglP7FHQgMeqpZeMJ2rjRwczfEUP5lyWUAdA==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "qis2Q6aRq8AeHhDBqrXialkhpvCS3PgRk3pZFqE4bDFpXa0wFD51pGK95g/9wbZAS2vEJECYR0Txzt+KpfXf4w==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore": "[10.0.15, 11.0.0)",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.15, 11.0.0)",
-          "Npgsql": "10.0.4"
+          "Microsoft.EntityFrameworkCore": "[11.0.0, 12.0.0)",
+          "Microsoft.EntityFrameworkCore.Relational": "[11.0.0, 12.0.0)",
+          "Npgsql": "11.0.0"
         }
       },
       "ReflectionAnalyzers": {
@@ -110,21 +110,21 @@
       },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
-        "resolved": "10.0.15",
-        "contentHash": "mjDz/zleAF78J1KRN9FludN2bzbsMWoXYSLVcawADle7RBhZYpFZYivGRvbvlH/RtXT/gjO0yhG99tzdFiET+A==",
+        "resolved": "11.0.0",
+        "contentHash": "aWaF2LDjuFZwE9UsAGRYGNyS48xqaXoKPAjwpJI85fsaM/43s5NTRnl4xtqbTGKq8of2M/W8mo7DJk7v4zzHGQ==",
         "dependencies": {
-          "SQLitePCLRaw.core": "2.1.13"
+          "SQLitePCLRaw.core": "3.0.5"
         }
       },
       "Microsoft.EntityFrameworkCore.Abstractions": {
         "type": "Transitive",
-        "resolved": "10.0.15",
-        "contentHash": "aLHlTnngp1CcWF5gWbqNwcfROjINCaQVKoySCFpl8O/EQaCdvtW+miv9KoSpKDtWIN+W7lZ8yr4KnbK3hp9oYQ=="
+        "resolved": "11.0.0",
+        "contentHash": "iL0D3Dohk6bNYIHSM3VhvDXrJ+WXs7yMBVv+4L1ozxbsDmohG0T3ogd0mLgWBofu49BHGOgfFKgSGLsOirsjoQ=="
       },
       "Microsoft.EntityFrameworkCore.Analyzers": {
         "type": "Transitive",
-        "resolved": "10.0.15",
-        "contentHash": "13C007jEmO1JVsoJ+Vvn0AzOaR5bpGsDsaOB9nQt6denQR8hmv1eWmQ0qGarvz+1Zu5b511uF74A90BQigdYHA=="
+        "resolved": "11.0.0",
+        "contentHash": "R7QxcmtQLP5np732En6eyzv2DjKevbrRxUUY9jPRQwuLzOSbyDowE5l0KyqdEEySvdHbrdRILg99FlaJTwcPbQ=="
       },
       "Microsoft.Extensions.AmbientMetadata.Application": {
         "type": "Transitive",
@@ -257,11 +257,6 @@
           "System.Security.Cryptography.ProtectedData": "9.0.21"
         }
       },
-      "System.Diagnostics.DiagnosticSource": {
-        "type": "Transitive",
-        "resolved": "11.0.0",
-        "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
-      },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
         "resolved": "9.0.21",
@@ -353,7 +348,7 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
-          "Npgsql": "[10.0.4, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "headless.coordination.sql": {
@@ -433,8 +428,8 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore": "[10.0.15, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.15, )"
+          "Microsoft.EntityFrameworkCore": "[11.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[11.0.0, )"
         }
       },
       "headless.extensions": {
@@ -470,7 +465,7 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Fencing.Sql": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.15, )"
+          "Microsoft.EntityFrameworkCore.Relational": "[11.0.0, )"
         }
       },
       "headless.fencing.sql": {
@@ -610,7 +605,7 @@
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Headless.Sql.Sqlite": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.15, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[11.0.0, )",
           "Polly.Core": "[8.9.1, )"
         }
       },
@@ -681,7 +676,7 @@
         "dependencies": {
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
-          "Npgsql": "[10.0.4, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "headless.multitenancy.abstractions": {
@@ -798,7 +793,7 @@
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
-          "Npgsql": "[10.0.4, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "headless.sql.sqlite": {
@@ -809,7 +804,7 @@
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Data.Sqlite": "[10.0.15, )"
+          "Microsoft.Data.Sqlite": "[11.0.0, )"
         }
       },
       "headless.sql.sqlserver": {
@@ -857,38 +852,37 @@
           "Microsoft.IdentityModel.JsonWebTokens": "8.16.0",
           "Microsoft.IdentityModel.Protocols.OpenIdConnect": "8.16.0",
           "Microsoft.SqlServer.Server": "[1.0.0, 2.0.0)",
-          "System.Configuration.ConfigurationManager": "9.0.21",
-          "System.Security.Cryptography.Pkcs": "9.0.21"
+          "System.Configuration.ConfigurationManager": "9.0.21"
         }
       },
       "Microsoft.Data.Sqlite": {
         "type": "CentralTransitive",
-        "requested": "[10.0.15, )",
-        "resolved": "10.0.15",
-        "contentHash": "PtnNCUloQOLAXhB09id+0CL2c9yd+9/wi0QHCHPa+zrTKEJTdu07jlUgblFjorYhKnwcHN1VS0z75jN8vFruuQ==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "K3hceHG5pxWJ+mytesLiGxmJ988YFrKnMGml0xbq//UWsM79KD8nQ5sBwTSLKgWecT6Saict/jIB8O6lDL0M2g==",
         "dependencies": {
-          "Microsoft.Data.Sqlite.Core": "10.0.15",
-          "SQLitePCLRaw.bundle_e_sqlite3": "2.1.13",
-          "SQLitePCLRaw.core": "2.1.13"
+          "Microsoft.Data.Sqlite.Core": "[11.0.0, 12.0.0-a)",
+          "SQLitePCLRaw.bundle_e_sqlite3": "3.0.5",
+          "SQLitePCLRaw.core": "3.0.5"
         }
       },
       "Microsoft.EntityFrameworkCore": {
         "type": "CentralTransitive",
-        "requested": "[10.0.15, )",
-        "resolved": "10.0.15",
-        "contentHash": "cp0ocqFrk6SXPy5xAI4gf2RlTk7jO4LcybDGWKp5F5zjPKyn2fEulElXIrCWreQFe8/4u01xoVhscrabhOOnhw==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "1zGKYhZMHG9gIfC89cC2QKM6DpNotDglm+UzYEV9dAWyLwJI8kLx+yfjAQVpC83iUzvr9y+1HJ0HZ8cOaosBXA==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore.Abstractions": "10.0.15",
-          "Microsoft.EntityFrameworkCore.Analyzers": "10.0.15"
+          "Microsoft.EntityFrameworkCore.Abstractions": "[11.0.0, 12.0.0-a)",
+          "Microsoft.EntityFrameworkCore.Analyzers": "[11.0.0, 12.0.0-a)"
         }
       },
       "Microsoft.EntityFrameworkCore.Relational": {
         "type": "CentralTransitive",
-        "requested": "[10.0.15, )",
-        "resolved": "10.0.15",
-        "contentHash": "8rEj7IN4+cW1fXkENqCsHeqDrty3izIvWIw6YlXA3sYLPpie1S1MMAWrF3/QjPSI9AWL3sXT6tQqBeNeX6QWEw==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "yGS+J269mYUl8V17rHWaeFDySoUnGdiugIzszlNZr0F2+JirFatQyw2s2He92wyYIuy/Y3Yv3QLdq/HdTSj7cA==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore": "10.0.15"
+          "Microsoft.EntityFrameworkCore": "[11.0.0, 12.0.0-a)"
         }
       },
       "Microsoft.Extensions.Compliance.Abstractions": {
@@ -995,18 +989,15 @@
       },
       "Npgsql": {
         "type": "CentralTransitive",
-        "requested": "[10.0.4, )",
-        "resolved": "10.0.4",
-        "contentHash": "m2VCpcU9MKD8lLxTn+YaNIRWd+Gz3y/9wIaM+2ifDF24xZ2Kvvjx4CDB2BIgobr1Gj6a/gsdmfz1sQ+kmd7liw=="
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "ozQ8GJcEAiW6XSKz2RUpdJDvM4l380BdHx/MRB7QJHL2cTH/0js7f/cisCaYMrZvVUj4/HIW80UjXxI+ikQQzQ=="
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
         "requested": "[1.21.0, )",
         "resolved": "1.21.0",
-        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
-        "dependencies": {
-          "System.Diagnostics.DiagnosticSource": "11.0.0"
-        }
+        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
@@ -1066,12 +1057,6 @@
           "Microsoft.IdentityModel.JsonWebTokens": "8.23.0",
           "Microsoft.IdentityModel.Tokens": "8.23.0"
         }
-      },
-      "System.Security.Cryptography.Pkcs": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.15, )",
-        "resolved": "10.0.15",
-        "contentHash": "4jEv/lXDuQkh60lPU3hlwASErXdv1ZMKmsxVuBfZWiVKT5Q2QGo58kTa6rN519+PU+m4Hsj1m3yT8fN+Xw0XZw=="
       }
     }
   }

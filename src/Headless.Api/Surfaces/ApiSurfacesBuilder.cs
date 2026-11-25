@@ -9,7 +9,7 @@ namespace Headless.Api;
 [PublicAPI]
 public sealed class ApiSurfacesBuilder
 {
-    private readonly Dictionary<string, ApiSurfaceBuilder> _surfaces = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ApiSurfaceBuilder> _surfaces = [with(StringComparer.OrdinalIgnoreCase)];
 
     public ApiSurfacesBuilder Add(string surfaceName, Action<ApiSurfaceBuilder>? configure = null)
     {

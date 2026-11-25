@@ -286,7 +286,7 @@ internal sealed class SequenceNumberFormat
                 continue;
             }
 
-            var end = template.IndexOf('}', i + 1);
+            var end = template.IndexOf('}', i + 1, StringComparison.Ordinal);
 
             if (end < 0)
             {

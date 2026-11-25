@@ -43,7 +43,9 @@ internal sealed class TenantRequiredExampleTransformer : IOpenApiOperationTransf
             || operation.Responses is null
             || !operation.Responses.TryGetValue(OpenApiStatusCodes.Forbidden, out var forbidden)
             || forbidden.Content is not { } content
-            || !content.TryGetValue(ContentTypes.Applications.ProblemJson, out var mediaType)
+            || !content.TryGetValue(ContentTypes.Applications.ProblemJson, out var declared)
+            // A media type that is a component reference is shared, so only an inline one is edited here.
+            || declared is not OpenApiMediaType mediaType
             || mediaType.Example is not JsonObject permissionDenied
         )
         {

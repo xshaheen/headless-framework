@@ -125,7 +125,7 @@ public sealed class ErrorDescriptor
     /// <returns>This same <see cref="ErrorDescriptor"/> instance.</returns>
     public ErrorDescriptor WithParam(string key, object? value)
     {
-        _params ??= new(StringComparer.OrdinalIgnoreCase);
+        _params ??= [with(StringComparer.OrdinalIgnoreCase)];
         _params[_Key(key)] = value;
 
         return this;
@@ -136,7 +136,7 @@ public sealed class ErrorDescriptor
     /// <returns>This same <see cref="ErrorDescriptor"/> instance.</returns>
     public ErrorDescriptor WithParams(IReadOnlyDictionary<string, object?> values)
     {
-        _params ??= new(StringComparer.OrdinalIgnoreCase);
+        _params ??= [with(StringComparer.OrdinalIgnoreCase)];
 
         foreach (var (key, value) in values)
         {

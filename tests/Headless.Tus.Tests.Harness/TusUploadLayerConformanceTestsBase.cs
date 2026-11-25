@@ -663,7 +663,7 @@ public abstract class TusUploadLayerConformanceTestsBase(Func<ITusUploadLayerCon
     /// <summary>The file id is the last segment of the location a creating request answers with.</summary>
     private static string _FileIdOf(string location)
     {
-        return location[(location.LastIndexOf('/') + 1)..];
+        return location[(location.LastIndexOf('/', StringComparison.Ordinal) + 1)..];
     }
 
     /// <summary>The stored names that belong to the upload at <paramref name="location"/>.</summary>

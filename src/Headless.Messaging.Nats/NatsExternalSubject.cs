@@ -317,7 +317,7 @@ internal sealed class NatsExternalSubjects
 
         if (
             binding.TenantTokenIndex is { } index
-            && !binding.Filter.EndsWith('>')
+            && !binding.Filter.EndsWith('>', StringComparison.Ordinal)
             && index >= binding.Filter.Split('.').Length
         )
         {

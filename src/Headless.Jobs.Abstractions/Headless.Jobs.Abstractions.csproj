@@ -17,9 +17,6 @@
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Reliability.Abstractions\Headless.Reliability.Abstractions.csproj" />

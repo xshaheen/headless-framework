@@ -50,7 +50,7 @@ public static partial class Argument
 
         var seen = argument.TryGetNonEnumeratedCount(out var count)
             ? new HashSet<T>(count, comparer)
-            : new HashSet<T>(comparer);
+            : [with(comparer)];
 
         foreach (var item in argument)
         {

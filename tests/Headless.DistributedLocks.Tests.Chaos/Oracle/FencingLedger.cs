@@ -56,7 +56,7 @@ public sealed class FencingLedger(TimeProvider clock)
 {
     private readonly Lock _lock = new();
     private readonly List<FencingEvent> _events = [];
-    private readonly Dictionary<string, int> _holders = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _holders = [with(StringComparer.Ordinal)];
     private readonly long _start = clock.GetTimestamp();
     private int _maxConcurrentHolders;
     private int _overlappingHolds;

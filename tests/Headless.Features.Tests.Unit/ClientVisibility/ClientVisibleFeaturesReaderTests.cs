@@ -70,7 +70,7 @@ public sealed class ClientVisibleFeaturesReaderTests : TestBase
             {
                 principalDuringRead = _principalAccessor.Principal;
                 tenantDuringRead = _currentTenant.Id;
-                return new Dictionary<string, FeatureValue>(StringComparer.Ordinal);
+                return [with(StringComparer.Ordinal)];
             });
 
         // when

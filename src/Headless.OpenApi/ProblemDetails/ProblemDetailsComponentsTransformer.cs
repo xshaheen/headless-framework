@@ -51,7 +51,7 @@ internal sealed class ProblemDetailsComponentsTransformer : IOpenApiDocumentTran
 
     private sealed class SchemaReferenceCollector : OpenApiVisitorBase
     {
-        public HashSet<string> Ids { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> Ids { get; } = [with(StringComparer.Ordinal)];
 
         public override void Visit(IOpenApiReferenceHolder referenceHolder)
         {

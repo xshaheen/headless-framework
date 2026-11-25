@@ -377,7 +377,11 @@ internal sealed class RedactingLoggerFactory(
                 // in the key, which lets a record's members show as the capture asked.
                 if (
                     projection is not null
-                    && projection.TryProject(pair.Value, pair.Key.StartsWith('@'), out var projected)
+                    && projection.TryProject(
+                        pair.Value,
+                        pair.Key.StartsWith('@', StringComparison.Ordinal),
+                        out var projected
+                    )
                 )
                 {
                     named = new(pair.Key, projected);

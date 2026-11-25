@@ -13,9 +13,10 @@ internal sealed class EfAuditLogStore(IEnumerable<IAuditLogEntryEnricher> enrich
         IReadOnlyList<IAuditLogStoreEntry>
     >([]);
 
-    private readonly Dictionary<DbContext, HashSet<AuditLogEntry>> _entriesByContext = new(
-        ReferenceEqualityComparer.Instance
-    );
+    private readonly Dictionary<DbContext, HashSet<AuditLogEntry>> _entriesByContext =
+    [
+        with(ReferenceEqualityComparer.Instance),
+    ];
 
     // Guards mutations of _entriesByContext and the inner HashSet values. EF Core itself rejects
     // truly concurrent DbContext access — this lock is defensive depth against the misuse path
@@ -178,7 +179,7 @@ internal sealed class EfAuditLogStore(IEnumerable<IAuditLogEntryEnricher> enrich
         {
             if (!_entriesByContext.TryGetValue(context, out var entries))
             {
-                entries = new HashSet<AuditLogEntry>(ReferenceEqualityComparer.Instance);
+                entries = [with(ReferenceEqualityComparer.Instance)];
                 _entriesByContext.Add(context, entries);
             }
 

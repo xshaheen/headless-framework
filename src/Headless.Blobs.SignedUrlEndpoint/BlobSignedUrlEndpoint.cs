@@ -180,7 +180,7 @@ internal static class BlobSignedUrlEndpoint
 
     private static string _FileName(string path)
     {
-        return path[(path.LastIndexOf('/') + 1)..];
+        return path[(path.LastIndexOf('/', StringComparison.Ordinal) + 1)..];
     }
 
     private static IBlobStorage? _ResolveStorage(IServiceProvider services, string? store)

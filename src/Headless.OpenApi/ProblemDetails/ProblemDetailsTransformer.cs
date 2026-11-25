@@ -83,7 +83,7 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
             problem = _ValidationProblem;
         }
 
-        var content = response.Content ??= new Dictionary<string, OpenApiMediaType>(StringComparer.Ordinal);
+        var content = response.Content ??= new Dictionary<string, IOpenApiMediaType>(StringComparer.Ordinal);
 
         if (
             content.TryGetValue(ContentTypes.Applications.ProblemJson, out var declared)
@@ -107,9 +107,16 @@ internal sealed class ProblemDetailsTransformer : IOpenApiOperationTransformer
             schema = OpenApiSchemaComponents.Resolve(document, schema);
         }
 
-        content.TryAdd(ContentTypes.Applications.ProblemJson, new OpenApiMediaType());
+        // A declared media type that is a component reference is shared, so it is replaced by an inline one here.
+        if (
+            !content.TryGetValue(ContentTypes.Applications.ProblemJson, out var declaredMediaType)
+            || declaredMediaType is not OpenApiMediaType mediaType
+        )
+        {
+            mediaType = new OpenApiMediaType();
+            content[ContentTypes.Applications.ProblemJson] = mediaType;
+        }
 
-        var mediaType = content[ContentTypes.Applications.ProblemJson];
         mediaType.Schema = schema;
         // A JSON node belongs to one parent, so every response gets its own copy.
         mediaType.Example = problem.Example.DeepClone();

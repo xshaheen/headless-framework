@@ -326,7 +326,7 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
     /// <summary>The file id is the last segment of the location a creating request answers with.</summary>
     public static string FileIdOf(string location)
     {
-        return location[(location.LastIndexOf('/') + 1)..];
+        return location[(location.LastIndexOf('/', StringComparison.Ordinal) + 1)..];
     }
 
     /// <summary>

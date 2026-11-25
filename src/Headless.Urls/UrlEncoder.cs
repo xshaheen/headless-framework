@@ -92,11 +92,11 @@ internal static class UrlEncoder
                 _AppendEscapedRun(sb, s, runStart, i);
                 sb.Append(s, i, 3);
                 runStart = i + 3;
-                i = s.IndexOf('%', runStart);
+                i = s.IndexOf('%', runStart, StringComparison.Ordinal);
             }
             else
             {
-                i = s.IndexOf('%', i + 1);
+                i = s.IndexOf('%', i + 1, StringComparison.Ordinal);
             }
         }
 

@@ -16,7 +16,7 @@ namespace Headless.Jobs;
 internal sealed class JobsClusterConcurrency
 {
     /// <summary>No job has a cluster-wide limit.</summary>
-    public static readonly JobsClusterConcurrency None = new(FrozenDictionary<string, int>.Empty);
+    public static readonly JobsClusterConcurrency None = new([]);
 
     private readonly FrozenDictionary<string, int> _limits;
 

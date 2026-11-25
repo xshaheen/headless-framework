@@ -110,8 +110,17 @@ internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinali
                     continue;
                 }
 
+                // EF Core indexes can list complex-type paths; the tenant column is appended only to an index whose
+                // members are all scalar properties of this entity.
+                if (index.Properties.Any(static p => p is not IMutableProperty))
+                {
+                    throw new InvalidOperationException(
+                        $"Tenant-scoped index '{index.Name ?? index.GetDatabaseName()}' must list only scalar properties of '{entity.Name}'."
+                    );
+                }
+
                 _ValidateIndexAnnotations(index, tenant.Name);
-                IMutableProperty[] properties = [.. index.Properties, tenant];
+                IMutableProperty[] properties = [.. index.Properties.Cast<IMutableProperty>(), tenant];
                 if (index.Name is null && entity.FindIndex(properties) is not null)
                 {
                     throw new InvalidOperationException(

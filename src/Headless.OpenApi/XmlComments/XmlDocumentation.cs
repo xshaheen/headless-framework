@@ -168,7 +168,7 @@ internal static class XmlDocumentation
         var generic = name.IndexOf('`', StringComparison.Ordinal);
         name = generic < 0 ? name : name[..generic];
 
-        return name[(name.LastIndexOf('.') + 1)..];
+        return name[(name.LastIndexOf('.', StringComparison.Ordinal) + 1)..];
     }
 
     private static string _TypeId(Type type) => "T:" + _TypeName(_Definition(type));

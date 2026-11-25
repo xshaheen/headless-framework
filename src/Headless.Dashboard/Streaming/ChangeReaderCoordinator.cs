@@ -31,7 +31,7 @@ internal sealed class ChangeReaderCoordinator(
 ) : IDisposable
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, WatchedTopic> _nodeTopics = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, WatchedTopic> _nodeTopics = [with(StringComparer.Ordinal)];
     private ChangeReader[] _readers = [];
     private int _openStreams;
     private bool _disposed;
