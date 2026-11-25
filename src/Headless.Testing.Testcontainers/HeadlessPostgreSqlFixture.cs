@@ -28,6 +28,11 @@ namespace Headless.Testing.Testcontainers;
 /// Override <see cref="ConfigureContainer"/> only together with <see cref="ShareContainer"/> returning
 /// <see langword="false"/>: a shared server keeps one configuration for every run.
 /// </para>
+/// <para>
+/// Override <see cref="TemplateKey"/> and <see cref="ProvisionTemplateAsync"/> to start from a provisioned database
+/// instead of an empty one. The server builds one template database per key, once across fixtures, processes, and
+/// checkouts, and every fixture's database is a clone of it.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public class HeadlessPostgreSqlFixture : IAsyncLifetime
@@ -109,15 +114,49 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
         return Ownership.CreateDatabaseAsync(database, cancellationToken);
     }
 
+    /// <summary>
+    /// Gets the key of the template database this fixture's database is cloned from, or <see langword="null"/> (the
+    /// default) for an empty database. Change the key whenever what <see cref="ProvisionTemplateAsync"/> builds
+    /// changes, for example by deriving it from the migrations assembly's
+    /// <see cref="System.Reflection.Module.ModuleVersionId"/>; fixtures that return the same key share one template.
+    /// </summary>
+    /// <remarks>
+    /// The framework version is part of the template's identity, so a framework upgrade builds a new template without
+    /// a key change.
+    /// </remarks>
+    protected virtual string? TemplateKey => null;
+
+    /// <summary>
+    /// Builds the template database's schema and seed data, such as running the application's migrations and seeders.
+    /// Called only when <see cref="TemplateKey"/> is not <see langword="null"/> and no template exists yet for the key,
+    /// under a server-wide lock, so one fixture builds it while the others wait.
+    /// </summary>
+    /// <param name="connectionString">
+    /// The template database's connection string. Use it, not <see cref="ConnectionString"/>, which is not set yet.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the provisioning.</param>
+    /// <remarks>
+    /// The template is cloned byte for byte, so build nothing that depends on the database's name or must differ per
+    /// fixture. The fixture ends every session left in the template afterwards, so pooled connections need no cleanup.
+    /// </remarks>
+    protected virtual Task ProvisionTemplateAsync(string connectionString, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
     /// <summary>Adjusts a private container's builder, for a fixture whose <see cref="ShareContainer"/> is false.</summary>
     protected virtual PostgreSqlBuilder ConfigureContainer(PostgreSqlBuilder builder)
     {
         return builder;
     }
 
-    /// <summary>Starts or attaches to the PostgreSQL container, then creates the fixture's database.</summary>
+    /// <summary>
+    /// Starts or attaches to the PostgreSQL container, then creates the fixture's database, cloned from the
+    /// <see cref="TemplateKey"/> template when one is set.
+    /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// A fixture that shares its container also overrides <see cref="ConfigureContainer"/>.
+    /// A fixture that shares its container also overrides <see cref="ConfigureContainer"/>, or
+    /// <see cref="TemplateKey"/> is empty or whitespace.
     /// </exception>
     protected virtual async ValueTask InitializeAsync()
     {
@@ -131,11 +170,28 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
             );
         }
 
+        var templateKey = TemplateKey;
+
+        if (templateKey is not null && string.IsNullOrWhiteSpace(templateKey))
+        {
+            throw new InvalidOperationException(
+                $"{GetType().Name}.TemplateKey must be null or a non-empty key that changes with what ProvisionTemplateAsync builds."
+            );
+        }
+
         _container = await SharedTestContainers.StartAsync(_Build, cancellationToken).ConfigureAwait(false);
         await PortCheck.VerifyAsync(_container, allowRestart: !_shared, cancellationToken).ConfigureAwait(false);
-        _ownership = await PostgreSqlDatabaseOwnership
-            .CreateAsync(AdminConnectionString, cancellationToken)
-            .ConfigureAwait(false);
+
+        if (templateKey is null)
+        {
+            _ownership = await PostgreSqlDatabaseOwnership
+                .CreateAsync(AdminConnectionString, cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        _ownership = await _CreateFromTemplateAsync(templateKey, cancellationToken).ConfigureAwait(false);
     }
 
     ValueTask IAsyncLifetime.InitializeAsync()
@@ -162,6 +218,34 @@ public class HeadlessPostgreSqlFixture : IAsyncLifetime
         if (_container is not null && !_shared)
         {
             await _container.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task<PostgreSqlDatabaseOwnership> _CreateFromTemplateAsync(
+        string templateKey,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            var template = await PostgreSqlTemplateDatabase
+                .EnsureAsync(AdminConnectionString, templateKey, ProvisionTemplateAsync, cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                return await PostgreSqlDatabaseOwnership
+                    .CreateAsync(AdminConnectionString, template, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (PostgresException e)
+                when (string.Equals(e.SqlState, PostgresErrorCodes.InvalidCatalogName, StringComparison.Ordinal)
+                    && attempt < 3
+                )
+            {
+                // Another process's build evicted this template between the readiness check and the clone; the next
+                // attempt builds it again.
+            }
         }
     }
 
