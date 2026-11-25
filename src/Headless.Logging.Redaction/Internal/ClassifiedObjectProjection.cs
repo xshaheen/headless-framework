@@ -518,8 +518,17 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         || type == typeof(Version)
         || type == typeof(byte[])
         || type == typeof(char[])
-        || type == typeof(Type)
+        || _IsReflectionMetadata(type)
         || (Nullable.GetUnderlyingType(type) is { } underlying && _IsScalar(underlying));
+
+    // A logged Type, MethodInfo, or Assembly is a runtime subclass (RuntimeType, RuntimeMethodInfo, RuntimeAssembly), so
+    // an exact type test never matches it. Walked as a composite, its member graph reaches the depth cap and prints the
+    // runtime class name instead of the name the provider would print.
+    private static bool _IsReflectionMetadata(Type type) =>
+        typeof(MemberInfo).IsAssignableFrom(type)
+        || typeof(ParameterInfo).IsAssignableFrom(type)
+        || typeof(Assembly).IsAssignableFrom(type)
+        || typeof(Module).IsAssignableFrom(type);
 
     private static Type? _ElementType(Type type)
     {

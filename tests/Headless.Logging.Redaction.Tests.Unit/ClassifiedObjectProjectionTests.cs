@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using System.Reflection;
 using Headless.Logging;
 using Headless.Logging.Internal;
 using Headless.Testing.Tests;
@@ -14,6 +15,9 @@ namespace Tests;
 public sealed partial class ClassifiedObjectProjectionTests : TestBase
 {
     private const string _Email = "jane@example.test";
+
+    private const BindingFlags _DeclaredPublic =
+        BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 
     [Fact]
     public void should_redact_a_classified_member_of_a_captured_record_in_text_and_properties()
@@ -489,6 +493,38 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
 
         // then
         sink.Entries.Should().ContainSingle().Which.Properties["Orders"].Should().BeSameAs(orders);
+    }
+
+    [Theory]
+    [InlineData("type")]
+    [InlineData("method")]
+    [InlineData("property")]
+    [InlineData("parameter")]
+    [InlineData("assembly")]
+    [InlineData("module")]
+    public void should_print_a_logged_reflection_value_as_the_provider_would(string kind)
+    {
+        // given
+        object value = kind switch
+        {
+            "type" => typeof(Order),
+            "method" => typeof(Order).GetMethod(nameof(Order.ToString), _DeclaredPublic, Type.EmptyTypes)!,
+            "property" => typeof(Order).GetProperty(nameof(Order.Id), _DeclaredPublic)!,
+            "parameter" => typeof(Order).GetConstructors()[0].GetParameters()[0],
+            "assembly" => typeof(Order).Assembly,
+            _ => typeof(Order).Module,
+        };
+
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+
+        // when
+        _Logger(provider).LogInformation("Saw {Value}", value);
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Saw " + value, kind);
+        entry.Properties["Value"].Should().BeSameAs(value, kind);
     }
 
     // The generator rejects a parameter whose declared type has a classified member (LOGGEN035), so the case that
