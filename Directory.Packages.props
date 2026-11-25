@@ -103,7 +103,7 @@
     <PackageVersion Include="Microsoft.IdentityModel.Protocols" Version="8.23.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
     <!-- Transitive-only pin: never referenced directly; sets the version under Microsoft.AspNetCore.OpenApi and Swashbuckle.AspNetCore. -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.13.1" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.404" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="8.0.0" />
