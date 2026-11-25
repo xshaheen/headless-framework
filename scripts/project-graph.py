@@ -671,6 +671,23 @@ def digest_files(digest: "hashlib._Hash", blobs: dict[str, str]) -> None:
         digest.update(f"{file}\0{blobs[file]}\n".encode())
 
 
+def is_test_setting(name: str) -> bool:
+    """Whether an environment variable configures what the test fixtures run.
+
+    Fixtures read HEADLESS_* variables (the SQL Server image, container sharing, the Service Bus connection string and
+    emulator EULA, conformance drills) and *_SEED oracle seeds. A run with the Service Bus string unset skips those
+    tests and still passes, so a key without the setting would let it stand in for a run that executes them. Names
+    ending in _DIR or _REPORT only say where a run writes its output, and would defeat every reuse.
+    """
+    return (name.startswith("HEADLESS_") or name.endswith("_SEED")) and not name.endswith(("_DIR", "_REPORT"))
+
+
+def digest_test_settings(digest: "hashlib._Hash") -> None:
+    # Values are hashed here, never passed on a command line or printed: one of them is a connection string.
+    for name in sorted(filter(is_test_setting, os.environ)):
+        digest.update(f"env\0{name}\0{os.environ[name]}\n".encode())
+
+
 def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
     """Hash what a proof of the selection in OUT_DIR depends on, so an equal key proves the same thing.
 
@@ -691,6 +708,7 @@ def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
     selection = {key: value for key, value in affected.items() if key != "base"}
     digest.update(json.dumps(selection, sort_keys=True).encode())
     digest_files(digest, blobs)
+    digest_test_settings(digest)
     merge_base = git_lines("merge-base", affected["base"], "HEAD")[0]
     patch = subprocess.run(
         ["git", "diff", "--no-color", "--no-ext-diff", "-U0", merge_base],
@@ -756,6 +774,7 @@ def module_keys(out_dir: Path, projects: dict[str, Project], salt: str) -> dict[
         digest = hashlib.sha256()
         digest.update(f"{salt}\0{module}\n".encode())
         digest_files(digest, owned)
+        digest_test_settings(digest)
         keys[module] = digest.hexdigest()
     return keys
 
