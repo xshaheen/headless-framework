@@ -40,7 +40,7 @@ CAPTCHA verification is its own domain: see [captcha.md](captcha.md).
 - Register options with `Configure<TOptions, TValidator>(...)` or `AddOptions<TOptions, TValidator>()` from `Headless.Hosting`. Both validate with FluentValidation when the host starts.
 - Use `HeadlessRedisScriptsLoader` only for Lua scripts, not for general Redis calls. Reuse each script definition's single `Instance`.
 - Use `GeoConstants.GoogleMapsSrid` (4326) as the SRID for geography data. Call `SanitizeForSqlGeography()` before you save a polygon to a SQL Server `geography` column.
-- For a sitemap of more than 50,000 URLs or 50 MB, call `WriteAsync(onShard)` and write each shard inside the callback, not `WriteToAsync`, which writes one file past either limit. A shard is invalid after the callback returns.
+- For a sitemap of more than 50,000 URLs or 50 MB, call `WriteAsync(onShard)` and write each shard inside the callback, not `WriteToAsync`, which throws `ArgumentException` for input past either limit. A shard is invalid after the callback returns.
 
 ---
 
@@ -1083,7 +1083,8 @@ await references.WriteToAsync(index, cancellationToken);
 - **A blob upload needs its own buffer.** Write the shard into a `MemoryStream` inside the callback, rewind it, and upload it before the callback returns.
 - **Alternates count toward the limit.** A `SitemapUrl` with alternates writes one `<url>` per alternate it emits (those selected by `WriteAlternateLanguageCodes`, else all). Its entries never split across shards, so a shard closes early when the next entry would overflow it.
 - **Long URLs close a shard before 50,000.** The byte limit counts the UTF-8 XML as written, escaping, alternates, and images included, so a shard of long URLs holds fewer than 50,000. Do not assume a fixed URL count per shard. Read `shard.Count`.
-- **One oversized entry still gets a file.** A single `SitemapUrl` whose own XML passes a limit, such as one with more than 50,000 emitted alternates, is written alone in a shard that exceeds it.
+- **One oversized entry still gets a file.** A single `SitemapUrl` whose own XML passes a limit, such as one with more than 50,000 emitted alternates, is written alone in a shard that exceeds it. `shard.WriteToAsync` never rejects a shard for its size.
+- **`WriteToAsync` on a collection refuses oversized input.** It throws `ArgumentException` (`ParamName` is `sitemapUrls`) when the file would hold more than 50,000 `<url>` elements or 50 MB, and writes nothing to the stream. Use it only for a set you know fits, and `WriteAsync` for anything larger.
 - **Memory** holds one shard's URL references at a time, and no shard XML unless the callback buffers it.
 - **Each shard declares only the namespaces it uses.** `xmlns:xhtml` and `xmlns:image` appear only when one of its URLs has alternates or images. The bytes equal `WriteToAsync` on the same URLs.
 - **Failure and cancellation stop enumeration.** An exception from `onShard` propagates and no more URLs are read. Cancellation is checked before each URL. An empty input calls `onShard` zero times and returns `0`.

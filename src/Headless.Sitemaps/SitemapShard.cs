@@ -38,7 +38,11 @@ public sealed class SitemapShard
     /// </summary>
     public int Count { get; }
 
-    /// <summary>Writes this shard's sitemap XML straight into <paramref name="output"/>.</summary>
+    /// <summary>
+    /// Writes this shard's sitemap XML straight into <paramref name="output"/>. Unlike
+    /// <see cref="SitemapUrls.WriteToAsync"/>, it never rejects the shard for its size: <c>WriteAsync</c> already
+    /// cut it to the limits, and an entry that alone passes a limit is written in a shard of its own.
+    /// </summary>
     /// <param name="output">The output stream receiving the XML content.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task that completes when the sitemap has been written to the stream.</returns>
@@ -57,7 +61,7 @@ public sealed class SitemapShard
             )
         );
 
-        return urls.WriteToAsync(output, cancellationToken);
+        return SitemapUrls.WriteShardToAsync(urls, output, cancellationToken);
     }
 
     internal void Invalidate()
