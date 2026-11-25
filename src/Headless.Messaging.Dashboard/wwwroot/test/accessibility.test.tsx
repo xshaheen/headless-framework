@@ -1,6 +1,7 @@
 import { screen } from '@testing-library/react'
 import { axeViolations } from '@headless/dashboard-sdk/testing/axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
 import { circuit, message, now, open, twoNodes, user } from './fake-server.ts'
 
 beforeEach(() => {
@@ -8,8 +9,8 @@ beforeEach(() => {
   vi.setSystemTime(now)
 })
 
-afterEach(() => {
-  vi.useRealTimers()
+afterEach(async () => {
+  await restoreRealTimers()
   localStorage.clear()
 })
 

@@ -19,6 +19,7 @@
     "./query": "./src/query/index.ts",
     "./testing": "./src/testing/render-module.tsx",
     "./testing/axe": "./src/testing/axe.ts",
+    "./testing/timers": "./src/testing/timers.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {

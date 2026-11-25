@@ -58,6 +58,7 @@ The SDK's entries:
 - **`/query`**: TanStack Query, re-exported so every module reads the shell's one data client
 - **`/testing`**: `renderModule`
 - **`/testing/axe`**: `axeViolations`, axe-core's WCAG 2.2 A and AA checks over the rendered page for a test; the module's test workspace adds `axe-core`
+- **`/testing/timers`**: `restoreRealTimers`, which a test that faked timers awaits instead of `vi.useRealTimers()`, so jsdom keeps running animation frames for the rest of the file
 
 ## List views
 

@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '../../src/testing/timers.ts'
 import { Button } from '../../src/components/button.tsx'
 import { Dialog } from '../../src/components/dialog.tsx'
 import { LiveIndicator, ToastRegion } from '../../src/components/live.tsx'
@@ -71,8 +72,8 @@ describe('overlays', () => {
 })
 
 describe('live indicator', () => {
-  afterEach(() => {
-    vi.useRealTimers()
+  afterEach(async () => {
+    await restoreRealTimers()
   })
 
   it('announces Stale through a live region and offers Reconnect', () => {

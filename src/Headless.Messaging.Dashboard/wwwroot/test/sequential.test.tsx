@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import type { ApiRequest } from '@headless/dashboard-sdk/data'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
 import { consumer, now, open, user } from './fake-server.ts'
 
 beforeEach(() => {
@@ -8,8 +9,8 @@ beforeEach(() => {
   vi.setSystemTime(now)
 })
 
-afterEach(() => {
-  vi.useRealTimers()
+afterEach(async () => {
+  await restoreRealTimers()
   localStorage.clear()
 })
 

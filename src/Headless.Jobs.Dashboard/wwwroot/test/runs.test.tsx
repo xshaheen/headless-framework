@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import type { RenderModuleOptions } from '@headless/dashboard-sdk/testing'
 import jobs from '../src/module.ts'
@@ -10,8 +11,8 @@ beforeEach(() => {
   vi.setSystemTime(now)
 })
 
-afterEach(() => {
-  vi.useRealTimers()
+afterEach(async () => {
+  await restoreRealTimers()
   localStorage.clear()
 })
 

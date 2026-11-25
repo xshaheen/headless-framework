@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '../../src/testing/timers.ts'
 import { DateRangeField } from '../../src/components/table/date-range-field.tsx'
 import { timeRangePresets, type TimeRange } from '../../src/date-range/time-range.ts'
 import { useListRange, useTimeRangeSearch } from '../../src/date-range/use-time-range.ts'
@@ -61,8 +62,8 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
 })
 
-afterEach(() => {
-  vi.useRealTimers()
+afterEach(async () => {
+  await restoreRealTimers()
   localStorage.clear()
 })
 

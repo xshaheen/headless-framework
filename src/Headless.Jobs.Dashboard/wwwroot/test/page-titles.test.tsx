@@ -1,6 +1,7 @@
 import { useViewTitle } from '@headless/dashboard-sdk/components'
 import { screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
 import { cronJob, now, open, run } from './fake-server.ts'
 
 beforeEach(() => {
@@ -8,8 +9,8 @@ beforeEach(() => {
   vi.setSystemTime(now)
 })
 
-afterEach(() => {
-  vi.useRealTimers()
+afterEach(async () => {
+  await restoreRealTimers()
 })
 
 // renderModule has no shell to write the document title, so the name each page gives the shell is read where the

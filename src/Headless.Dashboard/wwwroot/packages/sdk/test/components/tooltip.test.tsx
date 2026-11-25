@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '../../src/testing/timers.ts'
 import { Button } from '../../src/components/button.tsx'
 import { KeyValueTable } from '../../src/components/display/key-value-table.tsx'
 import { DataTable } from '../../src/components/table/data-table.tsx'
@@ -42,8 +43,8 @@ describe('icon actions', () => {
 })
 
 describe('row-action tooltips', () => {
-  afterEach(() => {
-    vi.useRealTimers()
+  afterEach(async () => {
+    await restoreRealTimers()
   })
 
   function Circuits() {

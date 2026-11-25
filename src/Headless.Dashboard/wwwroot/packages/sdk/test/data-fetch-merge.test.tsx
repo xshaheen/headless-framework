@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { QueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '../src/testing/timers.ts'
 import { DashboardProvider } from '../src/context.tsx'
 import { createDashboardClient, listKey, objectKey } from '../src/data/client.tsx'
 import { useDashboardList, useDashboardObject, useNewRows } from '../src/data/hooks.ts'
@@ -56,8 +57,8 @@ describe('fetch results against newer stream changes', () => {
     stream = createFakeStream()
   })
 
-  afterEach(() => {
-    vi.useRealTimers()
+  afterEach(async () => {
+    await restoreRealTimers()
   })
 
   it('keeps the newer object when a refetch started before a stream change lands after it', async () => {

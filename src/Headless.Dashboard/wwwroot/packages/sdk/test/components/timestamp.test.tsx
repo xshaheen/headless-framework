@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '../../src/testing/timers.ts'
 import { Timestamp } from '../../src/components/display/timestamp.tsx'
 import { DataTable } from '../../src/components/table/data-table.tsx'
 import { DashboardProvider } from '../../src/context.tsx'
@@ -33,8 +34,8 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-11-10T12:00:00Z'))
 })
 
-afterEach(() => {
-  vi.useRealTimers()
+afterEach(async () => {
+  await restoreRealTimers()
   localStorage.clear()
 })
 

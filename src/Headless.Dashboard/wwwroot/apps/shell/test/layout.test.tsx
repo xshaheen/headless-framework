@@ -5,6 +5,7 @@ import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
 import type { BootstrapState } from '../src/bootstrap.ts'
 import { chunkUrl, moduleFiles, moduleManifest, shellState } from './fixtures/modules.tsx'
 import { emptyAggregates, renderShell, type ApiHandler } from './harness.tsx'
@@ -79,10 +80,10 @@ function twoProducts(): BootstrapState {
   }
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
-  vi.useRealTimers()
+  await restoreRealTimers()
   localStorage.clear()
 })
 

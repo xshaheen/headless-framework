@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '../src/testing/timers.ts'
 import { createStreamClient, type StreamClient } from '../src/stream/client.ts'
 import { FakeChannels, FakeLocks, FakeSources } from './fakes.ts'
 
@@ -42,9 +43,9 @@ describe('stream client', () => {
     jitter = 0.999
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     tabs.splice(0).forEach((tab) => tab.close())
-    vi.useRealTimers()
+    await restoreRealTimers()
   })
 
   it('opens one connection for two tabs, and the follower receives the relayed events', async () => {
