@@ -136,11 +136,11 @@ public sealed class DocumentSetExtensionsTests : TestBase
 
         await set.GetAndLockAsync(42, expiry, lockOptions);
         await set.GetAnyReplicaAsync(42, anyReplicaOptions);
-        _ = set.GetAllReplicas(42, allReplicaOptions).ToList();
+        _ = set.GetAllReplicasAsync(42, allReplicaOptions);
 
         await collection.Received(1).GetAndLockAsync("42", expiry, lockOptions);
         await collection.Received(1).GetAnyReplicaAsync("42", anyReplicaOptions);
-        collection.Received(1).GetAllReplicasAsync("42", allReplicaOptions);
+        collection.Received(1).GetAllReplicasStreamAsync("42", allReplicaOptions);
     }
 
     [Fact]

@@ -24,13 +24,13 @@
     <PackageVersion Include="Bogus" Version="35.6.5" />
     <PackageVersion Include="Confluent.Kafka" Version="2.16.0" />
     <PackageVersion Include="Consul" Version="1.8.0" />
-    <PackageVersion Include="CouchbaseNetClient" Version="3.10.0" />
+    <PackageVersion Include="CouchbaseNetClient" Version="3.10.1" />
     <PackageVersion Include="DeviceDetector.NET" Version="6.5.2" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageVersion Include="FileSignatures" Version="7.3.0" />
     <PackageVersion Include="FirebaseAdmin" Version="3.7.1" />
     <PackageVersion Include="FluentValidation" Version="12.2.0" />
-    <!-- Transitive-only pin: never referenced directly; WireMock.Net pulls the Humanizer meta-package through Handlebars.Net.Helpers.Humanizer, and this keeps it on the Humanizer.Core line Headless.Api.Identity uses. -->
+    <!-- Transitive-only pin: never referenced directly; WireMock.Net.Minimal pulls the Humanizer meta-package through Handlebars.Net.Helpers.Humanizer, and this keeps it on the Humanizer.Core line Headless.Api.Identity uses. -->
     <PackageVersion Include="Humanizer" Version="3.0.10" />
     <PackageVersion Include="Humanizer.Core" Version="3.0.10" />
     <!-- Arabic satellite resources for Humanizer.Core; keep on the same version. -->
@@ -116,7 +116,7 @@
     <!-- Transitive-only pin: never referenced directly (the SDK bans it in our code); Consul and test packages pull it. Pinned to clear GHSA-5crp-9r3c-p9vr (Newtonsoft.Json < 13.0.1). -->
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Nito.Disposables" Version="2.5.0" />
-    <!-- Transitive-only pin: never referenced directly; sets the version under WireMock.Net. -->
+    <!-- Transitive-only pin: never referenced directly; sets the version under WireMock.Net.Minimal. -->
     <PackageVersion Include="NJsonSchema" Version="11.6.2" />
     <PackageVersion Include="Npgsql" Version="10.0.4" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.4" />
@@ -144,7 +144,7 @@
     <PackageVersion Include="RabbitMQ.Client" Version="7.3.0" />
     <PackageVersion Include="Respawn" Version="7.0.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.21.0" />
-    <!-- Transitive via WireMock.Net; pinned to the patched release for GHSA-24c8-4792-22hx (NU1903) -->
+    <!-- Transitive via WireMock.Net.Minimal; pinned to the patched release for GHSA-24c8-4792-22hx (NU1903) -->
     <PackageVersion Include="Scriban.Signed" Version="7.6.1" />
     <PackageVersion Include="SSH.NET" Version="2026.0.1" />
     <PackageVersion Include="StackExchange.Redis" Version="3.4.35" />
@@ -212,8 +212,8 @@
     <PackageVersion Include="tusdotnet.Stores.S3" Version="2.2.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
     <PackageVersion Include="Verify.XunitV3" Version="33.7.3" />
-    <PackageVersion Include="WireMock.Net" Version="2.31.0" />
-    <PackageVersion Include="WireMock.Net.AwesomeAssertions" Version="2.31.0" />
+    <PackageVersion Include="WireMock.Net.Minimal" Version="2.34.0" />
+    <PackageVersion Include="WireMock.Net.AwesomeAssertions" Version="2.34.0" />
     <PackageVersion Include="xunit.v3.assert" Version="4.0.3" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.3" />
     <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.10.0" />
