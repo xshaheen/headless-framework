@@ -826,7 +826,9 @@ def write_module_results(directory: Path, modules: list[TestModule]) -> None:
         coverage_file = directory / MODULE_COVERAGE / f"{name}.cobertura.xml.gz"
         results[project] = {
             "key": key,
-            "outcome": "pass" if module.failed == 0 else "fail",
+            # A module whose every test skipped (the Service Bus suites without a connection string) proved nothing,
+            # so it is recorded as skipped and never reused: the next run may have the setting that makes it run.
+            "outcome": "fail" if module.failed else ("pass" if module.passed else "skipped"),
             "trx": trx.relative_to(directory).as_posix(),
             "coverage": coverage_file.relative_to(directory).as_posix() if coverage_file.is_file() else "",
             # A reuse of a reuse still points at the run that executed the module.
