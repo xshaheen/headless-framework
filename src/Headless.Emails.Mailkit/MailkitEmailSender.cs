@@ -75,19 +75,22 @@ internal sealed class MailkitEmailSender(
 
         var client = pool.Get();
         var reusable = false;
-        string serverResponse;
+        SendResult result;
         try
         {
             var connection = await _EnsureConnectedAsync(client, settings, cancellationToken).ConfigureAwait(false);
 
+            // A fresh request per attempt, so the retry filter reads only the failed attempt's MAIL FROM outcome.
+            var attempt = new SenderTrackingSendRequest(mimeMessage);
+
             try
             {
-                serverResponse = await _SendAsync(client, mimeMessage, cancellationToken).ConfigureAwait(false);
+                result = await client.SendAsync(attempt, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
                 when (connection == ConnectionReadiness.TrustedWithoutProbe
                     && !cancellationToken.IsCancellationRequested
-                    && client is PooledSmtpClient { SenderAccepted: false }
+                    && !attempt.SenderAccepted
                     && _IsDroppedSession(ex)
                 )
             {
@@ -100,7 +103,9 @@ internal sealed class MailkitEmailSender(
                 }
 
                 await _ConnectAsync(client, settings, cancellationToken).ConfigureAwait(false);
-                serverResponse = await _SendAsync(client, mimeMessage, cancellationToken).ConfigureAwait(false);
+                result = await client
+                    .SendAsync(new SenderTrackingSendRequest(mimeMessage), cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             (client as PooledSmtpClient)?.MarkSendCompleted();
@@ -149,23 +154,15 @@ internal sealed class MailkitEmailSender(
             }
             else
             {
-                client.Dispose();
+                await client.DisposeAsync().ConfigureAwait(false);
             }
         }
 
+        // The SMTP server's final free-form response, typically embedding the queue id. MailKit joins the lines
+        // of a multi-line response with CRLF.
+        var serverResponse = result.ResponseText;
+
         return SendSingleEmailResponse.Succeeded(string.IsNullOrWhiteSpace(serverResponse) ? null : serverResponse);
-    }
-
-    private static async Task<string> _SendAsync(
-        SmtpClient client,
-        MimeKit.MimeMessage message,
-        CancellationToken cancellationToken
-    )
-    {
-        (client as PooledSmtpClient)?.BeginSend();
-
-        // MailKit returns the SMTP server's final free-form response (typically embedding the queue id).
-        return await client.SendAsync(message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<ConnectionReadiness> _EnsureConnectedAsync(

@@ -343,6 +343,7 @@ public sealed class MailkitEmailSenderTests : TestBase
         client.SendCount.Should().Be(3);
         client.ConnectCount.Should().Be(2);
         client.DisconnectCount.Should().Be(1);
+        client.Requests[2].Should().NotBeSameAs(client.Requests[1], "each attempt tracks its own MAIL FROM outcome");
     }
 
     public static TheoryData<string> DroppedSessionFaults => ["io", "timeout", "protocol", "not-connected", "421"];
@@ -438,6 +439,73 @@ public sealed class MailkitEmailSenderTests : TestBase
         client.SendCount.Should().Be(2);
     }
 
+    [Fact]
+    public async Task should_report_the_full_multi_line_server_response_when_the_send_succeeds()
+    {
+        using var client = new ScriptedSmtpClient();
+        client.Behaviors.Enqueue(c =>
+        {
+            c.AcceptSender();
+            return "2.0.0 Ok: queued as 4F2A1\r\n2.0.0 delivered to relay";
+        });
+        var sender = _Sender(client);
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeTrue();
+        result.ProviderMessageId.Should().Be("2.0.0 Ok: queued as 4F2A1\r\n2.0.0 delivered to relay");
+    }
+
+    [Fact]
+    public async Task should_return_failed_and_discard_the_client_without_retry_when_the_server_requires_authentication()
+    {
+        // MailKit 5 reports a 530 reply as SmtpServiceNotAuthenticatedException. It is not a dropped session,
+        // so even an unprobed connection is not retried, and the client is not pooled.
+        using var client = new ScriptedSmtpClient();
+        var pool = Substitute.For<ObjectPool<SmtpClient>>();
+        pool.Get().Returns(client);
+        var sender = _Sender(pool, idleProbeThreshold: TimeSpan.FromMinutes(5));
+        (await sender.SendAsync(_Request(), AbortToken)).Success.Should().BeTrue();
+        client.Behaviors.Enqueue(_ =>
+            throw new SmtpServiceNotAuthenticatedException(
+                SmtpCommand.MailFrom,
+                new SmtpResponse(SmtpStatusCode.AuthenticationRequired, "5.7.0 Authentication required")
+            )
+        );
+
+        var result = await sender.SendAsync(_Request(), AbortToken);
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("5.7.0 Authentication required");
+        client.SendCount.Should().Be(2);
+        client.ConnectCount.Should().Be(1);
+        pool.Received(1).Return(client);
+    }
+
+    [Fact]
+    public async Task should_send_an_smtp_request_whose_envelope_comes_from_the_message_headers()
+    {
+        // MailKit builds the envelope from To, Cc, and Bcc when the request names no recipients, so a Bcc
+        // recipient is delivered while its header is hidden from the written message.
+        using var client = new ScriptedSmtpClient();
+        var sender = _Sender(client);
+        var request = _Request() with
+        {
+            Destination = new EmailRequestDestination
+            {
+                ToAddresses = [new EmailRequestAddress("to@example.com")],
+                BccAddresses = [new EmailRequestAddress("bcc@example.com")],
+            },
+        };
+
+        (await sender.SendAsync(request, AbortToken)).Success.Should().BeTrue();
+
+        var sent = client.Requests.Should().ContainSingle().Which.Should().BeAssignableTo<SmtpSendRequest>().Subject;
+        sent.Sender.Should().BeNull();
+        sent.Recipients.Should().BeNull();
+        sent.Message.Bcc.Mailboxes.Select(m => m.Address).Should().Equal("bcc@example.com");
+    }
+
     private static Exception _DroppedSessionFault(string fault)
     {
         return fault switch
@@ -491,13 +559,16 @@ public sealed class MailkitEmailSenderTests : TestBase
     }
 
     // A pooled client whose sends follow a script: each queued behavior handles one send, and a send with no
-    // behavior queued succeeds after the server accepts the sender, as a live session does.
+    // behavior queued succeeds after the server accepts the sender, as a live session does. The sender's
+    // acceptance is reported to the request the client was handed, as MailKit reports it.
     private sealed class ScriptedSmtpClient : PooledSmtpClient
     {
         private bool _connected;
-        private MimeKit.MimeMessage? _message;
+        private ISendRequest? _request;
 
         public Queue<Func<ScriptedSmtpClient, string>> Behaviors { get; } = new();
+
+        public List<ISendRequest> Requests { get; } = [];
 
         public int ConnectCount { get; private set; }
 
@@ -505,7 +576,7 @@ public sealed class MailkitEmailSenderTests : TestBase
 
         public int NoOpCount { get; private set; }
 
-        public int SendCount { get; private set; }
+        public int SendCount => Requests.Count;
 
         public override bool IsConnected => _connected;
 
@@ -534,36 +605,30 @@ public sealed class MailkitEmailSenderTests : TestBase
             return Task.CompletedTask;
         }
 
-        public override Task<string> SendAsync(
-            MimeKit.FormatOptions options,
-            MimeKit.MimeMessage message,
-            CancellationToken cancellationToken = default,
-            MailKit.ITransferProgress? progress = null
-        )
+        public override Task<SendResult> SendAsync(ISendRequest request, CancellationToken cancellationToken = default)
         {
-            SendCount++;
-            _message = message;
+            Requests.Add(request);
+            _request = request;
 
             try
             {
                 if (Behaviors.TryDequeue(out var behavior))
                 {
-                    return Task.FromResult(behavior(this));
+                    return Task.FromResult(_Result(behavior(this)));
                 }
 
                 AcceptSender();
-                return Task.FromResult("250 2.0.0 queued");
+                return Task.FromResult(_Result("250 2.0.0 queued"));
             }
             catch (Exception e)
             {
-                return Task.FromException<string>(e);
+                return Task.FromException<SendResult>(e);
             }
         }
 
         public void AcceptSender()
         {
-            OnSenderAccepted(
-                _message!,
+            ((ISmtpSendRequest)_request!).OnSenderAccepted(
                 new MimeKit.MailboxAddress("", "from@example.com"),
                 new SmtpResponse(SmtpStatusCode.Ok, "2.1.0 sender ok")
             );
@@ -606,14 +671,9 @@ public sealed class MailkitEmailSenderTests : TestBase
             return _socketAlive ? Task.CompletedTask : _Dropped<object?>();
         }
 
-        public override Task<string> SendAsync(
-            MimeKit.FormatOptions options,
-            MimeKit.MimeMessage message,
-            CancellationToken cancellationToken = default,
-            MailKit.ITransferProgress? progress = null
-        )
+        public override Task<SendResult> SendAsync(ISendRequest request, CancellationToken cancellationToken = default)
         {
-            return _socketAlive ? Task.FromResult("250 2.0.0 queued") : _Dropped<string>();
+            return _socketAlive ? Task.FromResult(_Result("250 2.0.0 queued")) : _Dropped<SendResult>();
         }
 
         private Task<T> _Dropped<T>()
@@ -621,6 +681,11 @@ public sealed class MailkitEmailSenderTests : TestBase
             _connected = false;
             return Task.FromException<T>(new SmtpProtocolException("The SMTP server has unexpectedly disconnected."));
         }
+    }
+
+    private static SendResult _Result(string responseText)
+    {
+        return new SmtpSendResult(SmtpStatusCode.Ok, responseText, [], []);
     }
 
     // A test double whose connect step is scripted; no network is touched. A fresh client reports
