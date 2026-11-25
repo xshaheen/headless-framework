@@ -128,4 +128,101 @@ if python3 scripts/proof.py reuse --dir "$root/20260109T000000Z-verify" --root "
   fail "an empty key was reused"
 fi
 
+# Repository-wide files count only for what reaches the selection. Each case lands on main and the branch rebases onto
+# it, which is how the change reaches an open branch; an uncommitted edit would also change the branch's patch.
+# The selection and proof directories live in the scratch repository, so keep them out of those commits.
+printf 'run/\nproof/\n' >> .git/info/exclude
+on_main() { # message, then the command that edits main
+  local message=$1; shift
+  git switch -q main
+  "$@"
+  git add -A && git commit -q -m "$message"
+  git switch -q feature
+  git rebase -q main
+}
+lock() { # project directory, then the package ids its lock file resolves
+  local dir=$1; shift
+  python3 - "$dir/packages.lock.json" "$@" <<'PY'
+import json, sys
+json.dump({"version": 1, "dependencies": {"net10.0": {name: {"type": "Direct"} for name in sys.argv[2:]}}}, open(sys.argv[1], "w"))
+PY
+}
+setup_shared() {
+  printf 'all:\n' > Makefile
+  printf '<Solution>\n  <Project Path="src\\Headless.Base\\Headless.Base.csproj" />\n  <Project Path="src\\Headless.Feature\\Headless.Feature.csproj" />\n</Solution>\n' > headless-framework.slnx
+  mkdir -p eng
+  printf '# rule count path\nreal-wait 1 src/Headless.Feature/Code.cs\nreal-wait 1 src/Headless.Other/Code.cs\n' > eng/test-discipline-baseline.txt
+  printf '<Project><ItemGroup>\n<PackageVersion Include="Pkg.Used" Version="1.0.0" />\n<PackageVersion Include="Pkg.Unused" Version="1.0.0" />\n</ItemGroup></Project>\n' > Directory.Packages.props
+  lock src/Headless.Base Pkg.Used
+  lock src/Headless.Feature Pkg.Used
+}
+on_main 'add the shared files' setup_shared
+shared_key=$(key)
+
+on_main 'gate tooling only' sh -c 'printf "all:\n\t@true\n" > Makefile; echo "# tooling" >> scripts/proof.py'
+[ "$(key)" = "$shared_key" ] || fail "a Makefile or scripts/ change kept no reuse without a gate version bump"
+[ "$(python3 scripts/project-graph.py input-key --dir "$scratch/run" --salt "verify gate-v2")" != "$shared_key" ] \
+  || fail "a gate version bump kept the key"
+
+on_main 'list an unrelated project' sed -i.bak 's#</Solution>#  <Project Path="src\\Headless.Other\\Headless.Other.csproj" /></Solution>#' headless-framework.slnx
+rm -f headless-framework.slnx.bak
+[ "$(key)" = "$shared_key" ] || fail "a solution entry outside the closure changed the key"
+
+on_main 'baseline of an unrelated file' sed -i.bak 's#real-wait 1 src/Headless.Other/Code.cs#real-wait 2 src/Headless.Other/Code.cs#' eng/test-discipline-baseline.txt
+rm -f eng/test-discipline-baseline.txt.bak
+[ "$(key)" = "$shared_key" ] || fail "a baseline entry outside the closure changed the key"
+
+on_main 'bump a package nothing here resolves' sed -i.bak 's#Pkg.Unused" Version="1.0.0"#Pkg.Unused" Version="2.0.0"#' Directory.Packages.props
+rm -f Directory.Packages.props.bak
+[ "$(key)" = "$shared_key" ] || fail "a version bump of an unresolved package changed the key"
+
+on_main 'bump a package the closure resolves' sed -i.bak 's#Pkg.Used" Version="1.0.0"#Pkg.Used" Version="2.0.0"#' Directory.Packages.props
+rm -f Directory.Packages.props.bak
+bumped_key=$(key)
+[ "$bumped_key" != "$shared_key" ] || fail "a version bump of a resolved package kept the key"
+
+on_main 'baseline of a closure file' sed -i.bak 's#real-wait 1 src/Headless.Feature/Code.cs#real-wait 0 src/Headless.Feature/Code.cs#' eng/test-discipline-baseline.txt
+rm -f eng/test-discipline-baseline.txt.bak
+baseline_key=$(key)
+[ "$baseline_key" != "$bumped_key" ] || fail "a baseline entry inside the closure kept the key"
+
+on_main 'drop a closure project from the solution' sed -i.bak '/Headless.Base.csproj/d' headless-framework.slnx
+rm -f headless-framework.slnx.bak
+unlisted_key=$(key)
+[ "$unlisted_key" != "$baseline_key" ] || fail "a solution entry inside the closure kept the key"
+
+on_main 'a central property' sed -i.bak 's#<Project>#<Project><PropertyGroup><X>1</X></PropertyGroup>#' Directory.Packages.props
+rm -f Directory.Packages.props.bak
+[ "$(key)" != "$unlisted_key" ] || fail "a non-version change to the central package file kept the key"
+
+rm src/Headless.Base/packages.lock.json
+no_lock_key=$(key)
+git checkout -q -- src/Headless.Base/packages.lock.json
+on_main 'bump the unused package again' sed -i.bak 's#Pkg.Unused" Version="2.0.0"#Pkg.Unused" Version="3.0.0"#' Directory.Packages.props
+rm -f Directory.Packages.props.bak
+[ "$no_lock_key" != "$(key)" ] || fail "deleting a lock file kept the key"
+
+# Unit-test modules get their own keys: a change one module does not compile leaves its key, so verify-affected
+# reuses its earlier pass and reruns only the module the change reaches.
+add_unit_tests() {
+  add_project tests/Headless.Base.Tests.Unit/Headless.Base.Tests.Unit.csproj ../../src/Headless.Base/Headless.Base.csproj
+  add_project tests/Headless.Feature.Tests.Unit/Headless.Feature.Tests.Unit.csproj ../../src/Headless.Feature/Headless.Feature.csproj
+}
+on_main 'add unit tests' add_unit_tests
+echo "// branch touches base" >> src/Headless.Base/Code.cs
+git commit -q -am 'branch touches base'
+module_key() { # module key of a unit-test project in the current selection
+  python3 scripts/project-graph.py module-keys --dir "$scratch/run" --salt verify
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$scratch/run/module-keys.json" "$1"
+}
+key > /dev/null
+base_tests=tests/Headless.Base.Tests.Unit/Headless.Base.Tests.Unit.csproj
+feature_tests=tests/Headless.Feature.Tests.Unit/Headless.Feature.Tests.Unit.csproj
+base_module=$(module_key "$base_tests")
+feature_module=$(module_key "$feature_tests")
+on_main 'main touches the feature' sh -c 'echo "// main" > src/Headless.Feature/More.cs'
+key > /dev/null
+[ "$(module_key "$base_tests")" = "$base_module" ] || fail "a change outside a unit module's closure changed its key"
+[ "$(module_key "$feature_tests")" != "$feature_module" ] || fail "a change inside a unit module's closure kept its key"
+
 echo "test-proof-reuse: all cases passed"
