@@ -600,6 +600,29 @@ public sealed partial class LogRedactionTests : TestBase
     }
 
     [Fact]
+    public void should_mask_every_occurrence_of_a_short_classified_value_when_the_state_has_no_template()
+    {
+        // given: a custom state carries no {OriginalFormat}, so the hole's position in the text is unknown
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink, static services => services.AddHeadlessRedaction(_StarPrivate("Age")));
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+
+        // when
+        logger.Log(
+            LogLevel.Information,
+            default,
+            new LogValues(("Age", "17")),
+            exception: null,
+            (_, _) => "Member since 2017, age 17"
+        );
+
+        // then: the text loses readability rather than risk the raw value surviving
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Member since 20*****, age *****");
+        entry.Properties.Should().Contain(new KeyValuePair<string, object?>("Age", "*****"));
+    }
+
+    [Fact]
     public void should_render_a_generated_message_from_the_name_classified_values()
     {
         // given: a generated message with no classified parameter, so only the names classify its values
