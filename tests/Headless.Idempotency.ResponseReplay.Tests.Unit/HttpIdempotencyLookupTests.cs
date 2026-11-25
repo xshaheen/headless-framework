@@ -42,7 +42,7 @@ public sealed class HttpIdempotencyLookupTests : IdempotencyMiddlewareTestBase
         {
             StatusCode = StatusCodes.Status201Created,
             Headers = { ["Location"] = ["/transactions/9"], ["X-Secret"] = ["not replayed"] },
-            Body = [1, 2, 3],
+            Body = new byte[] { 1, 2, 3 },
         };
         operations.GetResultAsync(_StoreKey, AbortToken).Returns(_Result(snapshot));
         var lookup = _CreateLookup(operations);

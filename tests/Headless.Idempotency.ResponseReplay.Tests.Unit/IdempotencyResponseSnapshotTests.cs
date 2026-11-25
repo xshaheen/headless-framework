@@ -43,25 +43,24 @@ public sealed class IdempotencyResponseSnapshotTests : TestBase
 
         decoded.StatusCode.Should().Be(snapshot.StatusCode);
         decoded.Headers.Should().BeEquivalentTo(snapshot.Headers);
-        decoded.Body.Should().Equal(snapshot.Body);
+        decoded.Body.ToArray().Should().Equal(snapshot.Body.ToArray());
     }
 
     [Fact]
-    public void should_round_trip_a_write_to_frame_with_a_large_body()
+    public void should_decode_a_large_body_as_a_slice_of_the_frame()
     {
-        // WriteTo is the middleware's path; a 256 KiB body proves the frame holds a large body without a copy
-        // inside the header serialization.
         var snapshot = _Snapshot(256 * 1024);
 
         using var writer = new Headless.Serializer.PooledByteBufferWriter(snapshot.Body.Length + 256);
-        IdempotencyResponseSnapshot.WriteTo(writer, snapshot.StatusCode, snapshot.Headers, snapshot.Body);
+        IdempotencyResponseSnapshot.WriteTo(writer, snapshot.StatusCode, snapshot.Headers, snapshot.Body.Span);
         var frame = writer.WrittenSpan.ToArray();
 
         var decoded = IdempotencyResponseSnapshot.Decode(frame);
 
         decoded.StatusCode.Should().Be(snapshot.StatusCode);
         decoded.Headers.Should().BeEquivalentTo(snapshot.Headers);
-        decoded.Body.Should().Equal(snapshot.Body);
+        decoded.Body.Equals(frame.AsMemory(0, snapshot.Body.Length)).Should().BeTrue();
+        decoded.Body.ToArray().Should().Equal(snapshot.Body.ToArray());
     }
 
     [Fact]
@@ -72,7 +71,7 @@ public sealed class IdempotencyResponseSnapshotTests : TestBase
 
         var frame = snapshot.Encode();
 
-        frame.AsSpan(0, snapshot.Body.Length).ToArray().Should().Equal(snapshot.Body);
+        frame.AsSpan(0, snapshot.Body.Length).ToArray().Should().Equal(snapshot.Body.ToArray());
     }
 
     [Fact]
@@ -122,7 +121,7 @@ public sealed class IdempotencyResponseSnapshotTests : TestBase
 
         var decoded = IdempotencyResponseSnapshot.Decode(snapshot.Encode());
 
-        decoded.Body.Should().BeEmpty();
+        decoded.Body.IsEmpty.Should().BeTrue();
         decoded.StatusCode.Should().Be(snapshot.StatusCode);
     }
 }
