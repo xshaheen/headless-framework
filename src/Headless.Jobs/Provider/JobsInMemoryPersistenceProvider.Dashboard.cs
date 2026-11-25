@@ -224,8 +224,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
         // Removes only the row the check read: a write since then swapped in another instance.
         if (
-            !_cronOccurrences.TryRemove(
-                new KeyValuePair<Guid, CronJobOccurrenceEntity<TCronJob>>(occurrenceId, occurrence)
+            !_TryRemoveSlotRow(
+                _cronOccurrences,
+                _cronOccurrenceSlotCandidates,
+                new KeyValuePair<Guid, CronJobOccurrenceEntity<TCronJob>>(occurrenceId, occurrence),
+                _IsSlotCandidate(occurrence)
             )
         )
         {

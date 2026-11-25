@@ -24,7 +24,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             var key = _CurrentTimeJobKey(job);
             _RejectDuplicateCurrentTimeJob(key, id);
             job.ChangedAt = _NextChangeMarker();
-            if (!_timeJobs.TryAdd(id, job))
+            if (!_TryAddSlotRow(_timeJobs, _timeJobSlotCandidates, id, job, _IsSlotCandidate(job)))
             {
                 return false;
             }
@@ -44,9 +44,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         var key = _CurrentTimeJobKey(job);
         if (previousKey == key)
         {
-            // Lifecycle writes retain the indexed ID. Keep claims concurrent and preserve the exact-instance CAS.
-            // ReSharper disable once InconsistentlySynchronizedField -- _timeJobs is a ConcurrentDictionary; lock (_keyedOperations) coordinates compound index updates, not dictionary thread-safety.
-            return _timeJobs.TryUpdate(id, job, expected);
+            // Claims retain the keyed identity and take this path while holding the slots lock.
+            return _TryReplaceTimeJobRow(id, job, expected);
         }
 
         lock (_keyedOperations)
@@ -57,7 +56,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             }
 
             _RejectDuplicateCurrentTimeJob(key, id);
-            if (!_timeJobs.TryUpdate(id, job, expected))
+            if (!_TryReplaceTimeJobRow(id, job, expected))
             {
                 return false;
             }
@@ -76,11 +75,22 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
     }
 
+    private bool _TryReplaceTimeJobRow(Guid id, TTimeJob job, TTimeJob expected) =>
+        _TryUpdateSlotRow(
+            _timeJobs,
+            _timeJobSlotCandidates,
+            id,
+            job,
+            expected,
+            _IsSlotCandidate(expected),
+            _IsSlotCandidate(job)
+        );
+
     private bool _TryRemoveTimeJob(Guid id, [NotNullWhen(true)] out TTimeJob? removed)
     {
         lock (_keyedOperations)
         {
-            if (!_timeJobs.TryRemove(id, out removed))
+            if (!_TryRemoveSlotRow(_timeJobs, _timeJobSlotCandidates, id, out removed))
             {
                 return false;
             }
@@ -100,7 +110,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         lock (_keyedOperations)
         {
-            if (!_timeJobs.TryRemove(expected))
+            if (!_TryRemoveSlotRow(_timeJobs, _timeJobSlotCandidates, expected, _IsSlotCandidate(expected.Value)))
             {
                 return false;
             }

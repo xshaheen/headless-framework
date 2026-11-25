@@ -66,7 +66,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 var updated = _CloneCronOccurrence(current);
                 updated.ChangedAt = _NextChangeMarker();
-                if (_cronOccurrences.TryUpdate(row.Key, updated, current))
+                if (_TryUpdateCronOccurrence(row.Key, updated, current))
                 {
                     _OpenAttempt(_occurrenceAttempts, row.Key, claimOwner, startedAt);
                     return Task.FromResult(true);
@@ -291,7 +291,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     private bool _TryRemoveOccurrence(Guid occurrenceId)
     {
-        if (!_cronOccurrences.TryRemove(occurrenceId, out _))
+        if (!_TryRemoveSlotRow(_cronOccurrences, _cronOccurrenceSlotCandidates, occurrenceId, out _))
         {
             return false;
         }
