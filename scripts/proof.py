@@ -21,6 +21,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import re
 import shutil
@@ -30,7 +31,7 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TRX_NS = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
@@ -477,7 +478,10 @@ def summarize(
     for stage in stages:
         if stage.name == "analyzers" and stage.exit_code in (0, 2):
             stage.exit_code = 2 if findings else 0
-    tests_skipped = any(stage.name in ("unit-tests", "integration-tests") and stage.exit_code < 0 for stage in stages)
+    # A suite skipped because every one of its modules reused an earlier pass still contributes their coverage.
+    tests_skipped = any(
+        stage.name in TEST_SUITES and stage.exit_code < 0 and not stage.note.startswith(REUSED_SKIP_PREFIX) for stage in stages
+    )
     gate_stage, gate = coverage_gate(
         report,
         gate_scope,
@@ -494,6 +498,8 @@ def summarize(
     if selection_stage is not None:
         stages.append(selection_stage)
     failed_stages = [stage.name for stage in stages if stage.exit_code > 0]
+    write_module_results(directory, modules)
+    reused_modules = read_json(directory / REUSED_MODULES)
 
     summary = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -515,7 +521,9 @@ def summarize(
         "coverage": coverage_rows,
         "coverage_gate": gate,
         "target": TARGET_BY_SUFFIX.get(directory.name.rsplit("-", 1)[-1], "make verify-affected"),
-        "integration_ran": any(stage.name == "integration-tests" and stage.exit_code >= 0 for stage in stages),
+        "integration_ran": any(stage.name == "integration-tests" and stage.exit_code >= 0 for stage in stages)
+        or any(project in reused_modules for project in affected.get("integration_tests", [])),
+        "reused_modules": reused_modules,
         "input_key": input_key,
     }
     (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
@@ -546,6 +554,7 @@ def render_markdown(summary: dict) -> str:
         f"Compiler diagnostics: {len(summary['compiler_diagnostics']):,} · "
         f"Analyzer findings: {len(summary['analyzer_findings']):,}{render_gate_summary(gate)}"
     )
+    reused_modules = summary.get("reused_modules") or {}
     lines = ["| Check | Result |", "| --- | --- |", f"| `{target}` | {verdict} |"]
     for stage in summary["stages"]:
         exit_code = stage["exit_code"]
@@ -569,6 +578,14 @@ def render_markdown(summary: dict) -> str:
         lines += [
             f"Reused: commit `{reused['commit'][:12]}` proved the same inputs on {reused['generated_at']} "
             f"(input key `{summary['input_key'][:12]}`), so no stage ran again for this commit.",
+            "",
+        ]
+    if reused_modules:
+        origins = sorted({str(origin['commit'])[:12] for origin in reused_modules.values()})
+        names = ", ".join(f"`{PurePosixPath(project).stem}`" for project in sorted(reused_modules))
+        lines += [
+            f"Reused {len(reused_modules)} test module(s) whose inputs match an earlier pass on commit "
+            f"{', '.join(f'`{c}`' for c in origins)}; their results count above and they did not run again: {names}.",
             "",
         ]
     affected = summary["affected"]
@@ -741,6 +758,138 @@ def reuse_bundle(directory: Path, root: Path, key: str) -> int:
         print(f"[proof] reused {origin['bundle']}: commit {origin['commit'][:12]} proved the same inputs", file=sys.stderr)
         return 0
     return 1
+
+
+# Per-module reuse. A bundle that ran `project-graph.py module-keys` records, per test module, the key of the inputs its
+# result depends on, whether it passed, its TRX, and its gzipped Cobertura report. A later run skips a module whose key
+# matches an earlier pass, so a review fix in one package reruns only the modules that compile that package.
+MODULE_KEYS = "module-keys.json"
+# The skip reason the Makefile records when every module of a suite reused an earlier pass.
+REUSED_SKIP_PREFIX = "reused:"
+MODULE_RESULTS = "module-results.json"
+REUSED_MODULES = "reused.json"
+REUSED_TESTS = "reused-tests"
+REUSED_COVERAGE = "coverage-reused"
+MODULE_COVERAGE = Path("coverage") / "modules"
+TEST_SUITES = ("unit-tests", "integration-tests")
+COVERAGE_FILE = re.compile(r"[0-9a-f-]{36}\.cobertura\.xml")
+
+
+def trx_module(trx: Path) -> str:
+    return re.sub(r"_net[\d.]+_\w+$", "", trx.stem)
+
+
+def read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def keep_module_coverage(directory: Path) -> int:
+    """Gzip each keyed module's root Cobertura report into coverage/modules/ before the merge stage deletes it.
+
+    MTP names a module's report by a GUID; the module's TRX names that file, which is how the report finds its module.
+    """
+    keys = read_json(directory / MODULE_KEYS)
+    if not keys:
+        return 0
+    wanted = {PurePosixPath(project).stem for project in keys}
+    target = directory / MODULE_COVERAGE
+    for suite in TEST_SUITES:
+        for trx in sorted((directory / suite).glob("*.trx")):
+            module = trx_module(trx)
+            match = COVERAGE_FILE.search(trx.read_text(encoding="utf-8", errors="replace"))
+            report = directory / suite / match.group(0) if match else None
+            if module not in wanted or report is None or not report.is_file():
+                continue
+            target.mkdir(parents=True, exist_ok=True)
+            with report.open("rb") as source, gzip.open(target / f"{module}.cobertura.xml.gz", "wb") as sink:
+                shutil.copyfileobj(source, sink)
+    return 0
+
+
+def write_module_results(directory: Path, modules: list[TestModule]) -> None:
+    """Record each keyed module's outcome, so a later run can reuse a pass. A module with no TRX crashed or never ran,
+    and a later run must run it again."""
+    keys = read_json(directory / MODULE_KEYS)
+    if not keys:
+        return
+    reused = read_json(directory / REUSED_MODULES)
+    by_name = {module.module: module for module in modules}
+    trx_by_name = {trx_module(trx): trx for trx in directory.rglob("*.trx")}
+    origin = {"bundle": relative(str(directory)), "commit": git("rev-parse", "HEAD"), "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    results: dict[str, dict[str, object]] = {}
+    for project, key in keys.items():
+        name = PurePosixPath(project).stem
+        module = by_name.get(name)
+        trx = trx_by_name.get(name)
+        if module is None or trx is None:
+            continue
+        coverage_file = directory / MODULE_COVERAGE / f"{name}.cobertura.xml.gz"
+        results[project] = {
+            "key": key,
+            # A module whose every test skipped (the Service Bus suites without a connection string) proved nothing,
+            # so it is recorded as skipped and never reused: the next run may have the setting that makes it run.
+            "outcome": "fail" if module.failed else ("pass" if module.passed else "skipped"),
+            "trx": trx.relative_to(directory).as_posix(),
+            "coverage": coverage_file.relative_to(directory).as_posix() if coverage_file.is_file() else "",
+            # A reuse of a reuse still points at the run that executed the module.
+            "origin": reused.get(project, origin),
+        }
+    (directory / MODULE_RESULTS).write_text(json.dumps(results, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def reuse_modules(directory: Path, root: Path, needs_coverage: bool) -> int:
+    """Skip each selected module whose key matches a module that passed in an earlier integration bundle.
+
+    Copies the earlier TRX and coverage into this bundle, records reused.json, and rewrites the integration and
+    integration-unit lists and filters to the modules left to run. Only a pass is reused, even from a bundle that failed
+    overall: a failure can be a flaky test, and running it again is how the author finds out.
+    """
+    keys = read_json(directory / MODULE_KEYS)
+    if not keys:
+        return 0
+    kind = directory.name.rsplit("-", 1)[-1]
+    earlier = [bundle for bundle in sorted(root.glob(f"*-{kind}"), reverse=True) if bundle.resolve() != directory.resolve()]
+    reused: dict[str, dict[str, object]] = {}
+    for project, key in sorted(keys.items()):
+        for bundle in earlier:
+            result = read_json(bundle / MODULE_RESULTS).get(project)
+            if not result or result.get("key") != key or result.get("outcome") != "pass":
+                continue
+            trx = bundle / str(result["trx"])
+            coverage_gz = bundle / str(result["coverage"]) if result.get("coverage") else None
+            if not trx.is_file() or (needs_coverage and (coverage_gz is None or not coverage_gz.is_file())):
+                continue
+            name = PurePosixPath(project).stem
+            (directory / REUSED_TESTS).mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(trx, directory / REUSED_TESTS / trx.name)
+            if needs_coverage and coverage_gz is not None:
+                (directory / MODULE_COVERAGE).mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(coverage_gz, directory / MODULE_COVERAGE / coverage_gz.name)
+                (directory / REUSED_COVERAGE).mkdir(parents=True, exist_ok=True)
+                with gzip.open(coverage_gz, "rb") as source, (directory / REUSED_COVERAGE / f"{name}.cobertura.xml").open("wb") as sink:
+                    shutil.copyfileobj(source, sink)
+            reused[project] = dict(result["origin"])  # type: ignore[arg-type]
+            break
+    if not reused:
+        return 0
+    (directory / REUSED_MODULES).write_text(json.dumps(reused, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    for listing in ("integration", "integration-unit"):
+        txt = directory / f"{listing}.txt"
+        if not txt.is_file():
+            continue
+        remaining = [line for line in txt.read_text(encoding="utf-8").split() if line not in reused]
+        skipped = [line for line in txt.read_text(encoding="utf-8").split() if line in reused]
+        # The suite stage reads this to tell "every module reused" from "nothing was selected".
+        (directory / f"{listing}.reused.txt").write_text("".join(f"{line}\n" for line in skipped), encoding="utf-8")
+        txt.write_text("".join(f"{line}\n" for line in remaining), encoding="utf-8")
+        slnf = directory / f"{listing}.slnf"
+        if slnf.is_file():
+            document = json.loads(slnf.read_text(encoding="utf-8"))
+            document["solution"]["projects"] = [p for p in document["solution"]["projects"] if p not in reused]
+            slnf.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    commits = sorted({str(origin["commit"])[:12] for origin in reused.values()})
+    print(f"[proof] reused {len(reused)} of {len(keys)} test module(s) whose inputs match an earlier pass (commit {', '.join(commits)})", file=sys.stderr)
+    return 0
 
 
 def latest_bundle(root: Path) -> Path | None:
@@ -944,6 +1093,12 @@ def main() -> int:
     reuse.add_argument("--dir", required=True, type=Path)
     reuse.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
     reuse.add_argument("--key", required=True)
+    reuse_mods = commands.add_parser("reuse-modules", help="skip each module whose module key matches an earlier pass; rewrite the integration lists to the rest")
+    reuse_mods.add_argument("--dir", required=True, type=Path)
+    reuse_mods.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
+    reuse_mods.add_argument("--coverage", choices=("true", "false"), default="false", help="true: reuse only modules whose earlier run kept coverage")
+    keep = commands.add_parser("keep-coverage", help="gzip each keyed module's Cobertura report into coverage/modules/ before the merge deletes it")
+    keep.add_argument("--dir", required=True, type=Path)
     clean = commands.add_parser("analyzers-clean", help="exit 1 when the bundle's analyzer stage reported a visible finding")
     clean.add_argument("--dir", required=True, type=Path)
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
@@ -979,6 +1134,10 @@ def main() -> int:
         return failed_projects(args.dir, args.root)
     if args.command == "analyzers-clean":
         return analyzers_clean(args.dir)
+    if args.command == "reuse-modules":
+        return reuse_modules(args.dir, args.root, args.coverage == "true")
+    if args.command == "keep-coverage":
+        return keep_module_coverage(args.dir)
     if args.command == "reuse":
         return reuse_bundle(args.dir, args.root, args.key)
     floors = {"unit": args.unit_floor, "line": args.line_floor, "branch": args.branch_floor}

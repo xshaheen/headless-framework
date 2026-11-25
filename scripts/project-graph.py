@@ -617,27 +617,21 @@ CATEGORIES = {
 INPUT_KEY_REPO_PATHS = ("Makefile", "scripts", "eng", "headless-framework.slnx", *sorted(GLOBAL_FILES))
 
 
-def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
-    """Hash what a proof of the selection in OUT_DIR depends on, so an equal key proves the same thing.
-
-    The key covers the content of every file in the build closure (each selected project, its ProjectReference
-    closure, and the files they link), the scoped build files above them, the repository-wide inputs, the branch's
-    patch against the merge base (the changed-line coverage gate reads it), and the selection itself. A rebase onto a
-    main that touched none of those, or an amend that changed only the message, yields the same key.
-    """
-    affected = json.loads((out_dir / "affected.json").read_text(encoding="utf-8"))
-    pending = [
-        item
-        for category in ("build_projects", "unit_tests", "integration_tests", "integration_unit_tests")
-        for item in affected.get(category, [])
-        if item in projects
-    ]
+def build_closure(starts: list[str], projects: dict[str, Project]) -> set[str]:
+    """Every project in STARTS plus its ProjectReference closure."""
+    pending = [item for item in starts if item in projects]
     closure: set[str] = set()
     while pending:
         key = pending.pop()
         if key not in closure:
             closure.add(key)
             pending.extend(projects[key].references)
+    return closure
+
+
+def closure_input_paths(closure: set[str], projects: dict[str, Project]) -> set[str]:
+    """The repository paths a build of CLOSURE reads: each project's directory, its linked inputs, the scoped build
+    files above it, and the repository-wide inputs."""
     paths = set(INPUT_KEY_REPO_PATHS)
     for key in closure:
         project = projects[key]
@@ -645,6 +639,12 @@ def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
         paths.update(project.linked_inputs)
         for parent in project.directory.parents:
             paths.update((parent / name).as_posix() for name in SCOPED_BUILD_FILES)
+    return paths
+
+
+def file_blobs(paths: set[str]) -> dict[str, str]:
+    """Map every tracked or untracked-but-not-ignored file under PATHS to its content hash, or to "deleted" for a
+    tracked file missing from the worktree: its absence is part of what a proof proved."""
     files = sorted(
         set(git_lines("ls-files", "--cached", "--others", "--exclude-standard", "--", *(f":(literal){p}" for p in paths)))
     )
@@ -661,15 +661,54 @@ def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
         if present
         else []
     )
+    result = dict.fromkeys(files, "deleted")
+    result.update(zip(present, blobs, strict=True))
+    return result
+
+
+def digest_files(digest: "hashlib._Hash", blobs: dict[str, str]) -> None:
+    for file in sorted(blobs):
+        digest.update(f"{file}\0{blobs[file]}\n".encode())
+
+
+def is_test_setting(name: str) -> bool:
+    """Whether an environment variable configures what the test fixtures run.
+
+    Fixtures read HEADLESS_* variables (the SQL Server image, container sharing, the Service Bus connection string and
+    emulator EULA, conformance drills) and *_SEED oracle seeds. A run with the Service Bus string unset skips those
+    tests and still passes, so a key without the setting would let it stand in for a run that executes them. Names
+    ending in _DIR or _REPORT only say where a run writes its output, and would defeat every reuse.
+    """
+    return (name.startswith("HEADLESS_") or name.endswith("_SEED")) and not name.endswith(("_DIR", "_REPORT"))
+
+
+def digest_test_settings(digest: "hashlib._Hash") -> None:
+    # Values are hashed here, never passed on a command line or printed: one of them is a connection string.
+    for name in sorted(filter(is_test_setting, os.environ)):
+        digest.update(f"env\0{name}\0{os.environ[name]}\n".encode())
+
+
+def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
+    """Hash what a proof of the selection in OUT_DIR depends on, so an equal key proves the same thing.
+
+    The key covers the content of every file in the build closure (each selected project, its ProjectReference
+    closure, and the files they link), the scoped build files above them, the repository-wide inputs, the branch's
+    patch against the merge base (the changed-line coverage gate reads it), and the selection itself. A rebase onto a
+    main that touched none of those, or an amend that changed only the message, yields the same key.
+    """
+    affected = json.loads((out_dir / "affected.json").read_text(encoding="utf-8"))
+    starts = [
+        item
+        for category in ("build_projects", "unit_tests", "integration_tests", "integration_unit_tests")
+        for item in affected.get(category, [])
+    ]
+    blobs = file_blobs(closure_input_paths(build_closure(starts, projects), projects))
     digest = hashlib.sha256()
     digest.update(salt.encode())
     selection = {key: value for key, value in affected.items() if key != "base"}
     digest.update(json.dumps(selection, sort_keys=True).encode())
-    for file, blob in zip(present, blobs, strict=True):
-        digest.update(f"{file}\0{blob}\n".encode())
-    # A tracked file deleted in the worktree has no blob, and its absence is part of what was proved.
-    for file in sorted(set(files) - set(present)):
-        digest.update(f"{file}\0deleted\n".encode())
+    digest_files(digest, blobs)
+    digest_test_settings(digest)
     merge_base = git_lines("merge-base", affected["base"], "HEAD")[0]
     patch = subprocess.run(
         ["git", "diff", "--no-color", "--no-ext-diff", "-U0", merge_base],
@@ -696,13 +735,7 @@ def docker_projects(out_dir: Path, projects: dict[str, Project]) -> list[str]:
     selected = [line for line in (out_dir / "integration.txt").read_text(encoding="utf-8").split() if line in projects]
     needing: list[str] = []
     for project in selected:
-        closure = {project}
-        pending = [project]
-        while pending:
-            for reference in projects[pending.pop()].references:
-                if reference not in closure:
-                    closure.add(reference)
-                    pending.append(reference)
+        closure = build_closure([project], projects)
         if any(projects[key].name == TESTCONTAINERS_PROJECT for key in closure) or any(
             TESTCONTAINERS_USE.search(source.read_text(encoding="utf-8", errors="replace"))
             for key in closure
@@ -712,6 +745,32 @@ def docker_projects(out_dir: Path, projects: dict[str, Project]) -> list[str]:
         ):
             needing.append(project)
     return needing
+
+
+def module_keys(out_dir: Path, projects: dict[str, Project], salt: str) -> dict[str, str]:
+    """Hash, per selected integration and integration-unit test module, the inputs its own pass or fail depends on.
+
+    Unlike input_key, a module key leaves out the branch's patch and the rest of the selection: a module compiles and
+    runs only its ProjectReference closure, so a review fix in another package leaves its key, and an earlier pass of
+    it, valid. The changed-line coverage gate, which does read the patch, is computed fresh on every run.
+    """
+    affected = json.loads((out_dir / "affected.json").read_text(encoding="utf-8"))
+    modules = sorted({m for c in ("integration_tests", "integration_unit_tests") for m in affected.get(c, []) if m in projects})
+    paths_by_module = {module: closure_input_paths(build_closure([module], projects), projects) for module in modules}
+    blobs = file_blobs(set().union(*paths_by_module.values())) if modules else {}
+    keys: dict[str, str] = {}
+    for module, paths in paths_by_module.items():
+        owned = {
+            file: blob
+            for file, blob in blobs.items()
+            if file in paths or any(parent.as_posix() in paths for parent in PurePosixPath(file).parents)
+        }
+        digest = hashlib.sha256()
+        digest.update(f"{salt}\0{module}\n".encode())
+        digest_files(digest, owned)
+        digest_test_settings(digest)
+        keys[module] = digest.hexdigest()
+    return keys
 
 
 def main() -> int:
@@ -728,6 +787,13 @@ def main() -> int:
     )
     key_parser.add_argument("--dir", required=True, type=Path, help="a directory `affected --out-dir` wrote")
     key_parser.add_argument("--salt", default="", help="settings that change what the proof checks, such as the gate and its options")
+
+    module_keys_parser = commands.add_parser(
+        "module-keys",
+        help="write DIR/module-keys.json: per integration and integration-unit test module, a hash of the inputs its own result depends on",
+    )
+    module_keys_parser.add_argument("--dir", required=True, type=Path, help="a directory `affected --out-dir` wrote")
+    module_keys_parser.add_argument("--salt", default="", help="settings that change what a module run checks")
 
     affected = commands.add_parser("affected", help="list projects affected by changes since BASE")
     affected.add_argument("--base", required=True, help="git ref to diff against (merge-base with HEAD)")
@@ -799,6 +865,11 @@ def main() -> int:
 
     if args.command == "input-key":
         print(input_key(args.dir, projects, args.salt))
+        return 0
+
+    if args.command == "module-keys":
+        keys = module_keys(args.dir, projects, args.salt)
+        (args.dir / "module-keys.json").write_text(json.dumps(keys, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return 0
 
     if args.command == "layering":
