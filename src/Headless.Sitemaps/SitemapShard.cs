@@ -5,7 +5,8 @@ using Headless.Checks;
 namespace Headless.Sitemaps;
 
 /// <summary>
-/// One sitemap file of at most <see cref="SitemapConstants.MaxSitemapUrls"/> URLs, handed to the
+/// One sitemap file of at most <see cref="SitemapConstants.MaxSitemapUrls"/> URLs and
+/// <see cref="SitemapConstants.MaxSitemapBytes"/> bytes, handed to the
 /// <c>onShard</c> callback of <see cref="SitemapUrls.WriteAsync(IEnumerable{SitemapUrl}, Func{SitemapShard, CancellationToken, ValueTask}, CancellationToken)"/>.
 /// </summary>
 /// <remarks>
@@ -33,7 +34,7 @@ public sealed class SitemapShard
     /// <summary>
     /// The number of <see cref="SitemapUrl"/> entries in this shard. An entry with alternates writes one
     /// <c>&lt;url&gt;</c> per alternate, so the file can hold more <c>&lt;url&gt;</c> elements than this count, but
-    /// never more than <see cref="SitemapConstants.MaxSitemapUrls"/>.
+    /// never more than <see cref="SitemapConstants.MaxSitemapUrls"/> unless one entry alone writes more.
     /// </summary>
     public int Count { get; }
 

@@ -13,9 +13,10 @@ namespace Headless.Sitemaps;
 public static class SitemapUrls
 {
     /// <summary>
-    /// Generates sitemap files of at most <see cref="SitemapConstants.MaxSitemapUrls"/> URLs each and hands
-    /// every one to <paramref name="onShard"/> as soon as it fills, so memory holds at most one shard's URL
-    /// references and no shard XML unless the callback buffers it.
+    /// Generates sitemap files of at most <see cref="SitemapConstants.MaxSitemapUrls"/> URLs and
+    /// <see cref="SitemapConstants.MaxSitemapBytes"/> bytes each and hands every one to <paramref name="onShard"/>
+    /// as soon as it fills, so memory holds at most one shard's URL references and no shard XML unless the
+    /// callback buffers it.
     /// </summary>
     /// <param name="sitemapUrls">The sitemap URLs to write, enumerated once.</param>
     /// <param name="onShard">
@@ -24,7 +25,12 @@ public static class SitemapUrls
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation; it is also passed to <paramref name="onShard"/>.</param>
     /// <returns>The number of shards written, for building the sitemap index. <c>0</c> for an empty input.</returns>
-    /// <remarks>An exception thrown by <paramref name="onShard"/> stops enumeration and propagates.</remarks>
+    /// <remarks>
+    /// An exception thrown by <paramref name="onShard"/> stops enumeration and propagates. The byte size is the
+    /// UTF-8 XML as <see cref="SitemapShard.WriteToAsync"/> writes it. One <see cref="SitemapUrl"/> whose own XML
+    /// passes a limit, such as one with more alternates than <see cref="SitemapConstants.MaxSitemapUrls"/>, gets a
+    /// shard of its own that exceeds it, because its entries cannot be split across files.
+    /// </remarks>
     public static async Task<int> WriteAsync(
         this IEnumerable<SitemapUrl> sitemapUrls,
         Func<SitemapShard, CancellationToken, ValueTask> onShard,
@@ -38,7 +44,7 @@ public static class SitemapUrls
             ? Math.Min(count, SitemapConstants.MaxSitemapUrls)
             : 0;
 
-        var sharder = new Sharder(onShard, capacity);
+        await using var sharder = new Sharder(onShard, capacity);
 
         foreach (var url in sitemapUrls)
         {
@@ -50,9 +56,10 @@ public static class SitemapUrls
     }
 
     /// <summary>
-    /// Generates sitemap files of at most <see cref="SitemapConstants.MaxSitemapUrls"/> URLs each from an
-    /// asynchronous source, such as a streamed database query, and hands every one to <paramref name="onShard"/>
-    /// as soon as it fills, so memory holds at most one shard's URL references.
+    /// Generates sitemap files of at most <see cref="SitemapConstants.MaxSitemapUrls"/> URLs and
+    /// <see cref="SitemapConstants.MaxSitemapBytes"/> bytes each from an asynchronous source, such as a streamed
+    /// database query, and hands every one to <paramref name="onShard"/> as soon as it fills, so memory holds at
+    /// most one shard's URL references.
     /// </summary>
     /// <param name="sitemapUrls">The sitemap URLs to write, enumerated once.</param>
     /// <param name="onShard">
@@ -63,7 +70,12 @@ public static class SitemapUrls
     /// A token to cancel the operation; it is passed to the source enumerator and to <paramref name="onShard"/>.
     /// </param>
     /// <returns>The number of shards written, for building the sitemap index. <c>0</c> for an empty input.</returns>
-    /// <remarks>An exception thrown by <paramref name="onShard"/> stops enumeration and propagates.</remarks>
+    /// <remarks>
+    /// An exception thrown by <paramref name="onShard"/> stops enumeration and propagates. The byte size is the
+    /// UTF-8 XML as <see cref="SitemapShard.WriteToAsync"/> writes it. One <see cref="SitemapUrl"/> whose own XML
+    /// passes a limit, such as one with more alternates than <see cref="SitemapConstants.MaxSitemapUrls"/>, gets a
+    /// shard of its own that exceeds it, because its entries cannot be split across files.
+    /// </remarks>
     public static async Task<int> WriteAsync(
         this IAsyncEnumerable<SitemapUrl> sitemapUrls,
         Func<SitemapShard, CancellationToken, ValueTask> onShard,
@@ -73,7 +85,7 @@ public static class SitemapUrls
         Argument.IsNotNull(sitemapUrls);
         Argument.IsNotNull(onShard);
 
-        var sharder = new Sharder(onShard, capacity: 0);
+        await using var sharder = new Sharder(onShard, capacity: 0);
 
         await foreach (var url in sitemapUrls.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
@@ -106,45 +118,14 @@ public static class SitemapUrls
          */
 
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
-        await writer.WriteStartDocumentAsync().ConfigureAwait(false);
 
-        await writer
-            .WriteStartElementAsync(
-                prefix: null,
-                localName: "urlset",
-                ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
+        // Declare xmlns:xhtml and xmlns:image only when a URL uses them.
+        await _WriteUrlSetStartAsync(
+                writer,
+                hasAlternateUrls: sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null),
+                hasImages: sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.Images is not null)
             )
             .ConfigureAwait(false);
-
-        // Add xmlns:xhtml attribute if there are alternate URLs
-        var hasAlternateUrls = sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null);
-
-        if (hasAlternateUrls)
-        {
-            await writer
-                .WriteAttributeStringAsync(
-                    prefix: "xmlns",
-                    localName: "xhtml",
-                    ns: null,
-                    value: "http://www.w3.org/1999/xhtml"
-                )
-                .ConfigureAwait(false);
-        }
-
-        // Add xmlns:image attribute if there are images
-        var hasImages = sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.Images is not null);
-
-        if (hasImages)
-        {
-            await writer
-                .WriteAttributeStringAsync(
-                    prefix: "xmlns",
-                    localName: "image",
-                    ns: null,
-                    value: "http://www.google.com/schemas/sitemap-image/1.1"
-                )
-                .ConfigureAwait(false);
-        }
 
         // write URLs to the sitemap
         foreach (var sitemapUrl in sitemapUrls)
@@ -161,27 +142,51 @@ public static class SitemapUrls
     // Holds the sharding state both WriteAsync overloads share, so the sync and async sources differ only in
     // how they enumerate. One List is reused across shards: that is what bounds memory to one shard.
     private sealed class Sharder(Func<SitemapShard, CancellationToken, ValueTask> onShard, int capacity)
+        : IAsyncDisposable
     {
         private readonly List<SitemapUrl> _buffer = new(capacity);
+        private SitemapEntrySizer<SitemapUrl>? _sizer;
         private int _shardCount;
 
         // The limit is on <url> elements, not SitemapUrl entries: an entry with alternates writes one <url> per
         // emitted alternate.
         private int _urlNodeCount;
 
+        // The bytes the buffered entries add to the file, measured as written. Long URLs, alternates, and images
+        // pass the byte limit well before the URL limit, so a count-only cut writes files crawlers reject.
+        private long _entryBytes;
+
         public async ValueTask AddAsync(SitemapUrl url, CancellationToken cancellationToken)
         {
             var urlNodes = _CountUrlNodes(url);
 
-            // Close the shard before an entry that would overflow it. An entry that alone exceeds the limit still
+            _sizer ??= await SitemapEntrySizer<SitemapUrl>
+                .CreateAsync(
+                    static writer => _WriteUrlSetStartAsync(writer, hasAlternateUrls: true, hasImages: true),
+                    _WriteUrlNodeAsync,
+                    url,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            var entryBytes = await _sizer.MeasureAsync(url, cancellationToken).ConfigureAwait(false);
+
+            // Close the shard before an entry that would overflow it. An entry that alone exceeds a limit still
             // gets a shard of its own, because one entry's alternates cannot be split across files.
-            if (_buffer.Count > 0 && _urlNodeCount + urlNodes > SitemapConstants.MaxSitemapUrls)
+            if (
+                _buffer.Count > 0
+                && (
+                    _urlNodeCount + urlNodes > SitemapConstants.MaxSitemapUrls
+                    || _sizer.DocumentOverhead + _entryBytes + entryBytes > SitemapConstants.MaxSitemapBytes
+                )
+            )
             {
                 await _FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
             _buffer.Add(url);
             _urlNodeCount += urlNodes;
+            _entryBytes += entryBytes;
 
             if (_urlNodeCount >= SitemapConstants.MaxSitemapUrls)
             {
@@ -197,6 +202,11 @@ public static class SitemapUrls
             }
 
             return _shardCount;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return _sizer?.DisposeAsync() ?? ValueTask.CompletedTask;
         }
 
         private async ValueTask _FlushAsync(CancellationToken cancellationToken)
@@ -215,6 +225,44 @@ public static class SitemapUrls
             _shardCount++;
             _buffer.Clear();
             _urlNodeCount = 0;
+            _entryBytes = 0;
+        }
+    }
+
+    private static async Task _WriteUrlSetStartAsync(XmlWriter writer, bool hasAlternateUrls, bool hasImages)
+    {
+        await writer.WriteStartDocumentAsync().ConfigureAwait(false);
+
+        await writer
+            .WriteStartElementAsync(
+                prefix: null,
+                localName: "urlset",
+                ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
+            )
+            .ConfigureAwait(false);
+
+        if (hasAlternateUrls)
+        {
+            await writer
+                .WriteAttributeStringAsync(
+                    prefix: "xmlns",
+                    localName: "xhtml",
+                    ns: null,
+                    value: "http://www.w3.org/1999/xhtml"
+                )
+                .ConfigureAwait(false);
+        }
+
+        if (hasImages)
+        {
+            await writer
+                .WriteAttributeStringAsync(
+                    prefix: "xmlns",
+                    localName: "image",
+                    ns: null,
+                    value: "http://www.google.com/schemas/sitemap-image/1.1"
+                )
+                .ConfigureAwait(false);
         }
     }
 
