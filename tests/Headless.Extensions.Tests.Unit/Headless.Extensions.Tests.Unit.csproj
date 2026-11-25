@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\..\test-assets\Headless.Extensions.NetStandardFixture\Headless.Extensions.NetStandardFixture.csproj" />
   </ItemGroup>
 </Project>

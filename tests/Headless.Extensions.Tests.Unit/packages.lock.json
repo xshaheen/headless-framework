@@ -429,6 +429,9 @@
           "Nito.Disposables": "[2.5.0, )"
         }
       },
+      "headless.extensions.netstandardfixture": {
+        "type": "Project"
+      },
       "headless.generator.primitives.abstractions": {
         "type": "Project"
       },
