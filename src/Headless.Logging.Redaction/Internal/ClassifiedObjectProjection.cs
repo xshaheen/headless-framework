@@ -519,6 +519,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         || type == typeof(byte[])
         || type == typeof(char[])
         || _IsReflectionMetadata(type)
+        // Its Directory, Parent, and Root chain reaches the depth cap, and reading its members stats the file on every
+        // log call; the provider prints the path it was created with.
+        || typeof(FileSystemInfo).IsAssignableFrom(type)
         || (Nullable.GetUnderlyingType(type) is { } underlying && _IsScalar(underlying));
 
     // A logged Type, MethodInfo, or Assembly is a runtime subclass (RuntimeType, RuntimeMethodInfo, RuntimeAssembly), so

@@ -1,7 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using System.Globalization;
+using System.Net;
+using System.Numerics;
 using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
 using Headless.Logging;
 using Headless.Logging.Internal;
 using Headless.Testing.Tests;
@@ -502,7 +507,21 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     [InlineData("parameter")]
     [InlineData("assembly")]
     [InlineData("module")]
-    public void should_print_a_logged_reflection_value_as_the_provider_would(string kind)
+    [InlineData("uri")]
+    [InlineData("version")]
+    [InlineData("culture")]
+    [InlineData("ip-address")]
+    [InlineData("ip-endpoint")]
+    [InlineData("time-zone")]
+    [InlineData("encoding")]
+    [InlineData("http-method")]
+    [InlineData("string-builder")]
+    [InlineData("cancellation-token")]
+    [InlineData("exception")]
+    [InlineData("file-info")]
+    [InlineData("regex")]
+    [InlineData("big-integer")]
+    public void should_print_a_logged_bcl_value_as_the_provider_would(string kind)
     {
         // given
         object value = kind switch
@@ -512,7 +531,22 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
             "property" => typeof(Order).GetProperty(nameof(Order.Id), _DeclaredPublic)!,
             "parameter" => typeof(Order).GetConstructors()[0].GetParameters()[0],
             "assembly" => typeof(Order).Assembly,
-            _ => typeof(Order).Module,
+            "module" => typeof(Order).Module,
+            "uri" => new Uri("https://example.test/orders"),
+            "version" => new Version(1, 2, 3),
+            "culture" => CultureInfo.InvariantCulture,
+            "ip-address" => IPAddress.Loopback,
+            "ip-endpoint" => new IPEndPoint(IPAddress.Loopback, 8080),
+            "time-zone" => TimeZoneInfo.Utc,
+            "encoding" => Encoding.UTF8,
+            "http-method" => HttpMethod.Get,
+            "string-builder" => new StringBuilder("built"),
+            "cancellation-token" => CancellationToken.None,
+            "exception" => new InvalidOperationException("boom"),
+            "file-info" => new FileInfo("orders.csv"),
+            "regex" => new Regex("^a+$", RegexOptions.None, TimeSpan.FromSeconds(1)),
+            "big-integer" => new BigInteger(42),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, message: null),
         };
 
         using var sink = new CapturingProvider();
@@ -524,7 +558,7 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         // then
         var entry = sink.Entries.Should().ContainSingle().Subject;
         entry.Text.Should().Be("Saw " + value, kind);
-        entry.Properties["Value"].Should().BeSameAs(value, kind);
+        entry.Properties["Value"].Should().Be(value, kind);
     }
 
     // The generator rejects a parameter whose declared type has a classified member (LOGGEN035), so the case that
