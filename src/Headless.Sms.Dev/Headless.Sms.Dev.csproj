@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Development integration for Headless SMS delivery.</Description>
     <PackageTags>headless;sms;dev;dotnet</PackageTags>
   </PropertyGroup>

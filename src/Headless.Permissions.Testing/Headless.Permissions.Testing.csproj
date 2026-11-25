@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Test doubles for Headless permissions: an always-allow permission manager and authorization service for integration tests.</Description>
     <PackageTags>headless;permissions;testing;dotnet</PackageTags>
     <RootNamespace>Headless.Permissions</RootNamespace>

@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Provider-agnostic setup, tenant key resolution, grant-duration bounds, and the expired-lease sweep for Headless fenced leases, with exactly-one-provider registration.</Description>
     <PackageTags>headless;fencing;lease;fencing-token;dotnet</PackageTags>
     <RootNamespace>Headless.Fencing</RootNamespace>

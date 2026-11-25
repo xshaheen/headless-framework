@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Headless enrichment for ASP.NET Core OpenAPI documents: schema, security, problem-details, and FluentValidation transformers.</Description>
     <PackageTags>headless;openapi;dotnet</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

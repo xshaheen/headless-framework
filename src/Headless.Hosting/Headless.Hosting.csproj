@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Hosting, options, and dependency-injection helpers for Headless Framework packages.</Description>
     <PackageTags>headless;hosting;dotnet</PackageTags>
     <IsAotCompatible>true</IsAotCompatible>

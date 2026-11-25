@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Messaging integration for Headless distributed locks: pushes lock-release wake-ups to every host over the bus.</Description>
     <PackageTags>headless;distributed-locks;messaging;dotnet</PackageTags>
     <RootNamespace>Headless.DistributedLocks</RootNamespace>

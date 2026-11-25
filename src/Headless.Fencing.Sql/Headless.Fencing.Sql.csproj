@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>The one relational lease store shared by the Headless PostgreSQL, SQL Server, and SQLite fencing providers, written against the Headless SQL dialect kit.</Description>
     <PackageTags>headless;fencing;lease;fencing-token;database;dotnet</PackageTags>
     <RootNamespace>Headless.Fencing</RootNamespace>

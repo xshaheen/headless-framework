@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Amazon S3, Cloudflare R2, and S3-compatible integration for Headless TUS uploads.</Description>
     <PackageTags>headless;tus;s3;r2;aws;dotnet</PackageTags>
     <RootNamespace>Headless.Tus</RootNamespace>

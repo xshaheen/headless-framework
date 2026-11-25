@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>SQLite provider for Headless fenced leases: database-clock grants with store-wide generations and fence reads under the database write lock.</Description>
     <PackageTags>headless;fencing;lease;fencing-token;sqlite;dotnet</PackageTags>
     <RootNamespace>Headless.Fencing.Sqlite</RootNamespace>

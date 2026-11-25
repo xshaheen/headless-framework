@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>MaxMind GeoIP2 and GeoLite2 provider for Headless IP geolocation, with automatic database updates.</Description>
     <PackageTags>headless;geolocation;geoip;geoip2;geolite2;maxmind;dotnet</PackageTags>
     <!-- The family root, not Headless.IpGeolocation.MaxMind: a namespace ending in MaxMind would shadow the MaxMind

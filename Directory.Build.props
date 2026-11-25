@@ -1,5 +1,9 @@
 <Project>
   <PropertyGroup>
+    <!-- Every project targets this unless it sets its own: project bodies evaluate after this file, so a project's own
+         TargetFramework wins. A project that switches to TargetFrameworks must also clear TargetFramework, because the SDK
+         cross-targets only when TargetFramework is empty. -->
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
     <LangVersion>14.0</LangVersion>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <EmitCompilerGeneratedFiles>false</EmitCompilerGeneratedFiles>

@@ -57,6 +57,7 @@ JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
 MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
 MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
 CONFIGURATION ?= Release
+TARGET_FRAMEWORK ?= net10.0
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
 PACK_LOG_DIR ?= $(ARTIFACTS_DIR)/pack-logs
@@ -102,7 +103,7 @@ MESSAGING_QUARANTINE_DIR ?= $(TEST_RESULTS_DIR)/messaging-quarantine
 MESSAGING_UNIT_PROJECT ?= tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
 MESSAGING_CONFORMANCE_PROVIDERS ?= Aws Kafka Nats RabbitMq Redis
 MESSAGING_CONFORMANCE_EVIDENCE_PROJECTS ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/Headless.Messaging.$(provider).Tests.Integration.csproj)
-MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.$(provider).Tests.Integration.dll)
+MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/$(TARGET_FRAMEWORK)/Headless.Messaging.$(provider).Tests.Integration.dll)
 # `build` type-checks (vue-tsc) and bundles; CI's solution build passes `build-only` because the separate
 # Dashboard jobs already type-check, lint, and unit-test the SPAs.
 DASHBOARD_BUILD_SCRIPT ?= build
@@ -938,7 +939,7 @@ dashboards-test-affected: ## Run dashboard-<name>-test for each SPA changed vs A
 # its state, the revision `up` started from (up.rev), and the generated messaging-dashboard password live in CLI_DIR,
 # which is untracked and per checkout, so one worktree's `down` never stops another worktree's sandbox.
 SANDBOX_PROJECT ?= sandboxes/Headless.Dashboards.Sandbox/Headless.Dashboards.Sandbox.csproj
-SANDBOX_DLL ?= sandboxes/Headless.Dashboards.Sandbox/bin/$(CONFIGURATION)/net10.0/Headless.Dashboards.Sandbox.dll
+SANDBOX_DLL ?= sandboxes/Headless.Dashboards.Sandbox/bin/$(CONFIGURATION)/$(TARGET_FRAMEWORK)/Headless.Dashboards.Sandbox.dll
 SANDBOX_PORT ?= 5300
 SANDBOX_URL ?= http://127.0.0.1:$(SANDBOX_PORT)
 SANDBOX_DIR ?= $(CLI_DIR)
