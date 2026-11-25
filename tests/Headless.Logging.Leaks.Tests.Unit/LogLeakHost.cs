@@ -35,20 +35,17 @@ public enum LogPipeline
     MelOtelMicrosoftRedaction,
 
     /// <summary>
-    /// An injected <see cref="Microsoft.Extensions.Logging.ILogger"/> under Serilog's factory, forwarding every event to
-    /// the OpenTelemetry provider. With redaction on this is <c>AddHeadlessSerilog</c>'s profile.
-    /// </summary>
-    MelSerilog,
-
-    /// <summary>The same host as <see cref="MelSerilog"/>, written through the injected <see cref="Serilog.ILogger"/>.</summary>
-    NativeSerilog,
-
-    /// <summary>
-    /// <see cref="MelOtel"/> with Serilog attached as one more <see cref="ILoggerProvider"/> (a sink), not as the
-    /// logger factory: Microsoft.Extensions.Logging's factory, and so the Headless redaction, stays in charge of every
-    /// provider. With redaction on, Serilog also gets the classification destructuring policy.
+    /// <see cref="MelOtel"/> with a consumer's own Serilog attached as one more <see cref="ILoggerProvider"/> (a sink),
+    /// built from Serilog's packages with a console, a template-rendered text console, and a file:
+    /// Microsoft.Extensions.Logging's factory, and so the Headless redaction, stays in charge of every provider.
     /// </summary>
     MelOtelSerilogSink,
+
+    /// <summary>
+    /// <c>AddHeadlessLogging</c>: Microsoft.Extensions.Logging with the Headless console profile and enrichment, and the
+    /// OpenTelemetry provider. With redaction on it adds the recommended classification and text pattern.
+    /// </summary>
+    HeadlessLogging,
 }
 
 /// <summary>Whether the pipeline runs the documented Headless redaction.</summary>
@@ -93,11 +90,6 @@ internal sealed class LogLeakHost : IDisposable
     public Microsoft.Extensions.Logging.ILogger Logger =>
         _host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Leak.Orders");
 
-    public Serilog.ILogger SerilogLogger =>
-        _host
-            .Services.GetRequiredService<Serilog.ILogger>()
-            .ForContext(Serilog.Core.Constants.SourceContextPropertyName, "Leak.Orders");
-
     public static LogLeakHost Start(LogPipeline pipeline, Redaction redaction)
     {
         var builder = Host.CreateApplicationBuilder(
@@ -127,6 +119,13 @@ internal sealed class LogLeakHost : IDisposable
             );
         });
 
+        if (pipeline is LogPipeline.HeadlessLogging)
+        {
+            builder.AddHeadlessLogging(new HeadlessLoggingOptions { ConsoleFormat = HeadlessConsoleFormat.Json });
+            builder.Services.AddLogEnricher<LeakEnricher>();
+            _CaptureJsonConsole(builder, console);
+        }
+
         if (pipeline is LogPipeline.MelOtel or LogPipeline.MelOtelMicrosoftRedaction)
         {
             _AddJsonConsoleCapture(builder, console);
@@ -151,18 +150,12 @@ internal sealed class LogLeakHost : IDisposable
             var directory = logDirectory;
 
             // The redaction registered below wraps the factory, so this provider receives entries already redacted.
-            builder.Services.AddSingleton<ILoggerProvider>(provider =>
+            builder.Services.AddSingleton<ILoggerProvider>(_ =>
             {
                 var configuration = new LoggerConfiguration().MinimumLevel.Information().Enrich.FromLogContext();
-
-                if (provider.GetService<IRedactorProvider>() is { } redactorProvider)
-                {
-                    configuration.Destructure.WithRedaction(redactorProvider);
-                }
-
                 _AddConsoleCaptures(configuration, console, consoleText);
                 configuration.WriteTo.File(
-                    new MessageTemplateTextFormatter(SerilogFactory.OutputTemplate, CultureInfo.InvariantCulture),
+                    new MessageTemplateTextFormatter(_SerilogTemplate, CultureInfo.InvariantCulture),
                     Path.Combine(directory, "warning-.log"),
                     rollingInterval: RollingInterval.Day
                 );
@@ -171,50 +164,12 @@ internal sealed class LogLeakHost : IDisposable
             });
         }
 
-        if (pipeline is LogPipeline.MelOtel or LogPipeline.MelOtelSerilogSink && redaction == Redaction.On)
+        if (
+            pipeline is LogPipeline.MelOtel or LogPipeline.MelOtelSerilogSink or LogPipeline.HeadlessLogging
+            && redaction == Redaction.On
+        )
         {
             _AddHeadlessRedaction(builder.Services);
-        }
-
-        if (pipeline is LogPipeline.MelSerilog or LogPipeline.NativeSerilog)
-        {
-            logDirectory = Path.Combine(Path.GetTempPath(), "headless-leak-" + Guid.NewGuid().ToString("N"));
-
-            if (redaction == Redaction.On)
-            {
-                _AddHeadlessRedaction(builder.Services);
-                builder.AddHeadlessSerilog(
-                    new SerilogOptions
-                    {
-                        ConsoleFormat = SerilogConsoleFormat.Json,
-                        LogDirectory = logDirectory,
-                        Buffered = false,
-                    },
-                    (_, configuration) => _AddConsoleCaptures(configuration, console, consoleText)
-                );
-            }
-            else
-            {
-                // Serilog as its own packages ship it, with the same sink shapes the Headless profile writes.
-                var directory = logDirectory;
-                builder.Services.AddSerilog(
-                    (_, configuration) =>
-                    {
-                        configuration.MinimumLevel.Information().Enrich.FromLogContext();
-                        _AddConsoleCaptures(configuration, console, consoleText);
-                        configuration.WriteTo.File(
-                            new MessageTemplateTextFormatter(
-                                SerilogFactory.OutputTemplate,
-                                CultureInfo.InvariantCulture
-                            ),
-                            Path.Combine(directory, "warning-.log"),
-                            rollingInterval: RollingInterval.Day
-                        );
-                    },
-                    preserveStaticLogger: true,
-                    writeToProviders: true
-                );
-            }
         }
 
         return new LogLeakHost(builder.Build(), console, consoleText, otlp, logDirectory);
@@ -260,6 +215,10 @@ internal sealed class LogLeakHost : IDisposable
         }
     }
 
+    // A common text template for a Serilog console or file: the timestamp, level, request path, category, and message.
+    private const string _SerilogTemplate =
+        "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {RequestPath} {SourceContext} {Message:lj}{NewLine}{Exception}";
+
     private static void _AddHeadlessRedaction(IServiceCollection services)
     {
         services.AddHeadlessRedaction(setup =>
@@ -269,20 +228,21 @@ internal sealed class LogLeakHost : IDisposable
 
     private static void _AddConsoleCaptures(LoggerConfiguration configuration, TextWriter json, TextWriter text)
     {
-        // The formatters the Headless console sink uses in production (compact JSON) and in Development (the template).
+        // A Serilog console in production (compact JSON) and in Development (the text template).
         configuration.WriteTo.Sink(new TextWriterSink(new CompactJsonFormatter(), json));
         configuration.WriteTo.Sink(
-            new TextWriterSink(
-                new MessageTemplateTextFormatter(SerilogFactory.OutputTemplate, CultureInfo.InvariantCulture),
-                text
-            )
+            new TextWriterSink(new MessageTemplateTextFormatter(_SerilogTemplate, CultureInfo.InvariantCulture), text)
         );
     }
 
     private static void _AddJsonConsoleCapture(HostApplicationBuilder builder, TextWriter writer)
     {
         builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
+        _CaptureJsonConsole(builder, writer);
+    }
 
+    private static void _CaptureJsonConsole(HostApplicationBuilder builder, TextWriter writer)
+    {
         // Keep the formatter, drop the provider that would print to the process-wide stdout.
         var console = builder.Services.Where(d => d.ImplementationType == typeof(ConsoleLoggerProvider)).ToList();
 

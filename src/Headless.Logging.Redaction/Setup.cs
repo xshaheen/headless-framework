@@ -31,12 +31,18 @@ public static class SetupLoggingRedaction
         /// </para>
         /// <para>
         /// The registered logger factory is wrapped, so a classified <c>[LoggerMessage]</c> parameter is redacted under
-        /// Serilog's factory too, credential paths an <see cref="ILogPathRedactor"/> recognizes are replaced in ASP.NET
-        /// Core's request scope and request lines, and text patterns from
+        /// any factory, a logged object's classified members are redacted, credential paths an
+        /// <see cref="ILogPathRedactor"/> recognizes and query values are replaced in ASP.NET Core's request scope and
+        /// request lines, and text patterns from
         /// <see cref="HeadlessRedactionSetupBuilder.MaskText(string, string, Action{LogTextRedactionScope})"/> are
-        /// masked, in a logged exception's messages too. A logger factory registered later replaces the wrapped one: <c>AddHeadlessSerilog</c> from
-        /// <c>Headless.Logging.Serilog</c> wraps its own, and after a plain <c>UseSerilog</c> call this method again.
-        /// The host logs a warning at startup when the factory in charge is not wrapped.
+        /// masked, in a logged exception's messages too. A logger factory registered later replaces the wrapped one:
+        /// call this method again after it. The host logs a warning at startup when the factory in charge is not
+        /// wrapped.
+        /// </para>
+        /// <para>
+        /// Every name classified with <see cref="HeadlessRedactionSetupBuilder.ClassifyProperty"/> is also dropped from
+        /// the baggage the runtime propagator injects into outgoing <c>HttpClient</c> calls, process-wide and from this
+        /// call on: a handler built earlier keeps the unfiltered propagator.
         /// </para>
         /// <para>
         /// Safe to call from an app and from libraries, in any order: each call adds only what its own
@@ -64,21 +70,26 @@ public static class SetupLoggingRedaction
                 }
             });
 
-            // Every ILoggerFactory registration is wrapped, so the last one, the one the container resolves, always is.
-            services.TryDecorateWith<ILoggerFactory>(
-                (inner, provider) =>
-                    inner is RedactingLoggerFactory
-                        ? inner
-                        : new RedactingLoggerFactory(
-                            inner,
-                            provider.GetService<IRedactorProvider>(),
-                            [.. provider.GetServices<ILogPathRedactor>()],
-                            LogTextRedactorRegistration.All(provider),
-                            LogPropertyClassification.Resolve(provider, provider.GetService<IRedactorProvider>())
-                        )
-            );
+            // One map of classified property names per container, shared by the logger factory, enrichers, span tags,
+            // and baggage, so a name is redacted the same way on every channel.
+            services.TryAddSingleton(static provider => new LogPropertyRedactors(
+                LogPropertyClassification.Resolve(provider, provider.GetService<IRedactorProvider>())
+            ));
+
+            RedactingLoggerFactoryRegistration.Register(services);
 
             services.AddStartupValidator<LogRedactionStartupValidator>();
+
+            // Baggage leaves the process through static propagators, and an HttpClient handler copies the runtime one
+            // when it is built, so the classified names join the process-wide filter now, before any host starts.
+            ClassifiedBaggageKeys.Add(
+                services
+                    .Where(static d => d.ServiceType == typeof(LogPropertyClassification) && !d.IsKeyedService)
+                    .Select(static d => d.ImplementationInstance)
+                    .OfType<LogPropertyClassification>()
+                    .Select(static c => c.Name)
+            );
+            services.AddStartupValidator<PropagatorStartupValidator>();
 
             // One masker for every channel outside the logger factory, built from the same redactors the logs use.
             services.TryAddSingleton(static provider => new LogTextMasker([

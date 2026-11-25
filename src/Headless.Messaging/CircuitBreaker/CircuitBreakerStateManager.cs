@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

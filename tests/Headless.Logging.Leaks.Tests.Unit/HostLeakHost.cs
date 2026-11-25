@@ -89,6 +89,18 @@ internal static class HostScenarios
             }
         ),
         new(
+            "h6",
+            "User-Agent header with an e-mail, added to every request-time entry as UserAgent (classified by name)",
+            Pii.Email("h6"),
+            RedactPath: false,
+            async (client, token) =>
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, "/marker-h6/orders");
+                request.Headers.TryAddWithoutValidation("User-Agent", Pii.Email("h6"));
+                using var response = await client.SendAsync(request, token);
+            }
+        ),
+        new(
             "h5",
             "unhandled endpoint exception with a known shape in the message",
             Pii.NationalId(305),
@@ -166,8 +178,12 @@ internal static class HostLeakHost
                 options.OpenTelemetry.ConfigureLogging = exportLogs;
                 options.OpenTelemetry.ConfigureTracing = exportSpans;
             });
+            // The request enricher adds the User-Agent as UserAgent, so the app classifies that name.
             builder.Services.AddHeadlessRedaction(setup =>
-                setup.MaskText(Pii.NationalIdPattern).ClassifyProperty("Email", HeadlessDataClassifications.Private)
+                setup
+                    .MaskText(Pii.NationalIdPattern)
+                    .ClassifyProperty("Email", HeadlessDataClassifications.Private)
+                    .ClassifyProperty("UserAgent", HeadlessDataClassifications.Private)
             );
             builder.Services.AddHeadlessHttpLoggingRedaction();
 

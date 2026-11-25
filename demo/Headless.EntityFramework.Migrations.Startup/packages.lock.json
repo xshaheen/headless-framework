@@ -186,16 +186,6 @@
         "resolved": "10.11.0",
         "contentHash": "QzST85xtGR86sXg9kI8f4/+ziBo/B1JC93IEoMmy2g03vaxZZuxmmPrrWX6QeL4Knb1IzouXLyXWppx77tUPYg=="
       },
-      "Microsoft.Extensions.Telemetry": {
-        "type": "Transitive",
-        "resolved": "10.11.0",
-        "contentHash": "2meCfABvkLPtEBBwGzItIGnhrex1AEn2N+dHvxB5UoozeX/xTtBuUz5BRdjNI5oNgd5T31kC69WWw3BHDc9iZA==",
-        "dependencies": {
-          "Microsoft.Extensions.AmbientMetadata.Application": "10.11.0",
-          "Microsoft.Extensions.DependencyInjection.AutoActivation": "10.11.0",
-          "Microsoft.Extensions.Telemetry.Abstractions": "10.11.0"
-        }
-      },
       "Microsoft.VisualStudio.SolutionPersistence": {
         "type": "Transitive",
         "resolved": "1.0.52",
@@ -366,6 +356,7 @@
           "Headless.Api": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Logging": "[1.0.0, )",
           "Headless.Logging.Redaction.AspNetCore": "[1.0.0, )",
           "Headless.OpenApi": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.15, )",
@@ -598,6 +589,15 @@
           "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
+      "headless.logging": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Logging.Redaction": "[1.0.0, )",
+          "Microsoft.Extensions.Telemetry": "[10.11.0, )"
+        }
+      },
       "headless.logging.redaction": {
         "type": "Project",
         "dependencies": {
@@ -606,7 +606,8 @@
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Compliance.Abstractions": "[10.11.0, )",
           "Microsoft.Extensions.Compliance.Redaction": "[10.11.0, )",
-          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )"
+          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )",
+          "OpenTelemetry.Api": "[1.20.1, )"
         }
       },
       "headless.logging.redaction.aspnetcore": {
@@ -986,6 +987,17 @@
         "contentHash": "l1jvoPCZYEZOE2JZzcnzHLo1BBN/s+Azj8+FX0WRbqHoJY7QVq7cvTHasDWi1pixr0dXxbyC4HKt68Xm2KKpqQ==",
         "dependencies": {
           "Microsoft.Extensions.ServiceDiscovery.Abstractions": "10.11.0"
+        }
+      },
+      "Microsoft.Extensions.Telemetry": {
+        "type": "CentralTransitive",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "2meCfABvkLPtEBBwGzItIGnhrex1AEn2N+dHvxB5UoozeX/xTtBuUz5BRdjNI5oNgd5T31kC69WWw3BHDc9iZA==",
+        "dependencies": {
+          "Microsoft.Extensions.AmbientMetadata.Application": "10.11.0",
+          "Microsoft.Extensions.DependencyInjection.AutoActivation": "10.11.0",
+          "Microsoft.Extensions.Telemetry.Abstractions": "10.11.0"
         }
       },
       "Microsoft.Extensions.Telemetry.Abstractions": {

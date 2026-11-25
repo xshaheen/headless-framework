@@ -8,7 +8,7 @@ namespace Headless.Hosting;
 /// <summary>
 /// A mutable dictionary of named properties that is pushed onto an <see cref="Microsoft.Extensions.Logging.ILogger" />'s
 /// ambient scope via <see cref="Microsoft.Extensions.Logging.ILogger.BeginScope{TState}" />. Each property becomes a
-/// structured key/value pair visible to sink implementations (e.g. Serilog, OpenTelemetry).
+/// structured key/value pair visible to providers that read scopes, such as OpenTelemetry and the JSON console.
 /// </summary>
 [PublicAPI]
 public sealed class LogState : IEnumerable<KeyValuePair<string, object?>>

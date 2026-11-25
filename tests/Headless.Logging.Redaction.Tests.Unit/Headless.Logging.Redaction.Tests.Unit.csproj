@@ -9,7 +9,8 @@
     <!-- Ships the [LoggerMessage] generator that emits classified parameters; package analyzers do not flow transitively. -->
     <PackageReference Include="Microsoft.Extensions.Telemetry.Abstractions" />
     <!-- Drives the scrubber under a template-rendering provider, which ignores the formatter output. -->
-    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>

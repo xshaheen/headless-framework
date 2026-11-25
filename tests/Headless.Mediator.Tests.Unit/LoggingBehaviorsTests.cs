@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Context;
+using Headless.Logging;
 using Headless.Mediator.Behaviors;
 using Mediator;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -222,6 +224,32 @@ public sealed class LoggingBehaviorsTests
         entry.Message.Contains("hunter2", StringComparison.Ordinal).Should().Be(logPayloads);
     }
 
+    [Fact]
+    public async Task should_erase_a_classified_member_of_a_logged_request_payload_under_redaction()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.ClearProviders().SetMinimumLevel(LogLevel.Debug).AddProvider(sink));
+        services.AddHeadlessRedaction();
+        await using var provider = services.BuildServiceProvider();
+        var behavior = new RequestLoggingBehavior<ClassifiedRequest, TestResponse>(
+            new NullCurrentUser(),
+            provider.GetRequiredService<ILogger<RequestLoggingBehavior<ClassifiedRequest, TestResponse>>>(),
+            _PayloadsOn
+        );
+
+        // when
+        await behavior.Handle(
+            new ClassifiedRequest("jane@example.test", "gold"),
+            _CreateNext<ClassifiedRequest>(),
+            CancellationToken.None
+        );
+
+        // then
+        sink.Messages.Should().ContainSingle().Which.Should().Contain("ClassifiedRequest { Email = , Tier = gold }");
+    }
+
     private static MessageHandlerDelegate<TRequest, TestResponse> _CreateNext<TRequest>()
         where TRequest : IRequest<TestResponse>
     {
@@ -243,6 +271,33 @@ public sealed class LoggingBehaviorsTests
     private sealed record TestResponse;
 
     private sealed record SensitiveRequest(string Password) : IRequest<TestResponse>;
+
+    private sealed record ClassifiedRequest([property: PrivateData] string Email, string Tier) : IRequest<TestResponse>;
+
+    private sealed class CapturingProvider : ILoggerProvider
+    {
+        public List<string> Messages { get; } = [];
+
+        public ILogger CreateLogger(string categoryName) => new Logger(this);
+
+        public void Dispose() { }
+
+        private sealed class Logger(CapturingProvider owner) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            ) => owner.Messages.Add(formatter(state, exception));
+        }
+    }
 
     private sealed class CapturingLogger<T> : ILogger<T>
     {

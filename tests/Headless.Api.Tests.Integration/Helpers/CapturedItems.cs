@@ -29,6 +29,15 @@ internal sealed class CapturedItems<T>
         }
     }
 
+    /// <summary>The number of captured items that match, now.</summary>
+    public int Count(Func<T, bool> matches)
+    {
+        lock (_sync)
+        {
+            return _items.Count(matches);
+        }
+    }
+
     /// <summary>Returns the first captured item that matches, waiting for one to arrive when none has yet.</summary>
     public Task<T> WaitForAsync(Func<T, bool> matches)
     {

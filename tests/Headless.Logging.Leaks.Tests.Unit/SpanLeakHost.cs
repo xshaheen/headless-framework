@@ -17,10 +17,25 @@ internal sealed record SpanScenario(
     string Id,
     string Path,
     string Sentinel,
-    Action<Activity, IDictionary<string, string>> Write
+    Action<Activity, IDictionary<string, string>, Propagation> Write
 )
 {
     public override string ToString() => Id;
+}
+
+/// <summary>
+/// The propagators a scenario injects through. With redaction on they are the process statics the host filters; with it
+/// off they are fresh defaults, because a filter an earlier host installed stays on the statics for the whole process.
+/// </summary>
+internal sealed record Propagation(TextMapPropagator TextMap, DistributedContextPropagator Runtime)
+{
+    public static Propagation For(Redaction redaction) =>
+        redaction == Redaction.On
+            ? new(Propagators.DefaultTextMapPropagator, DistributedContextPropagator.Current)
+            : new(
+                new CompositeTextMapPropagator([new TraceContextPropagator(), new BaggagePropagator()]),
+                DistributedContextPropagator.CreateDefaultPropagator()
+            );
 }
 
 internal static class SpanScenarios
@@ -31,19 +46,19 @@ internal static class SpanScenarios
             "s1",
             "span attribute: app tag with an e-mail",
             Pii.Email("s1"),
-            (activity, _) => activity.SetTag("enduser.email", Pii.Email("s1"))
+            (activity, _, _) => activity.SetTag("enduser.email", Pii.Email("s1"))
         ),
         new(
             "s2",
             "span attribute: app tag with a known shape (national ID)",
             Pii.NationalId(201),
-            (activity, _) => activity.SetTag("app.national_id", Pii.NationalId(201))
+            (activity, _, _) => activity.SetTag("app.national_id", Pii.NationalId(201))
         ),
         new(
             "s3",
             "span event: app event tag with an e-mail",
             Pii.Email("s3"),
-            (activity, _) =>
+            (activity, _, _) =>
                 activity.AddEvent(
                     new ActivityEvent("signup", tags: new ActivityTagsCollection { ["user.email"] = Pii.Email("s3") })
                 )
@@ -52,31 +67,32 @@ internal static class SpanScenarios
             "s4",
             "span event: Activity.AddException with a known shape in the message",
             Pii.NationalId(204),
-            (activity, _) => activity.AddException(new InvalidOperationException("failed for " + Pii.NationalId(204)))
+            (activity, _, _) =>
+                activity.AddException(new InvalidOperationException("failed for " + Pii.NationalId(204)))
         ),
         new(
             "s5",
             "span status: description with a known shape",
             Pii.NationalId(205),
-            (activity, _) => activity.SetStatus(ActivityStatusCode.Error, "failed for " + Pii.NationalId(205))
+            (activity, _, _) => activity.SetStatus(ActivityStatusCode.Error, "failed for " + Pii.NationalId(205))
         ),
         new(
             "s6",
             "span attribute: exception.message tag with a known shape",
             Pii.NationalId(206),
-            (activity, _) => activity.SetTag("exception.message", "failed for " + Pii.NationalId(206))
+            (activity, _, _) => activity.SetTag("exception.message", "failed for " + Pii.NationalId(206))
         ),
         new(
             "b1",
             "baggage: OpenTelemetry Baggage entry with an e-mail, injected for an outgoing call or message",
             Pii.Email("b1"),
-            (activity, carrier) =>
+            (activity, carrier, propagation) =>
             {
                 var baggage = Baggage
                     .Create()
                     .SetBaggage("leak.marker", Pii.Marker("b1"))
                     .SetBaggage("user.email", Pii.Email("b1"));
-                Propagators.DefaultTextMapPropagator.Inject(
+                propagation.TextMap.Inject(
                     new PropagationContext(activity.Context, baggage),
                     carrier,
                     static (headers, key, value) => headers[key] = value
@@ -87,11 +103,11 @@ internal static class SpanScenarios
             "b2",
             "baggage: Activity baggage with an e-mail, injected by the runtime propagator (HttpClient's)",
             Pii.Email("b2"),
-            (activity, carrier) =>
+            (activity, carrier, propagation) =>
             {
                 activity.AddBaggage("leak.marker", Pii.Marker("b2"));
                 activity.AddBaggage("user.email", Pii.Email("b2"));
-                DistributedContextPropagator.Current.Inject(
+                propagation.Runtime.Inject(
                     activity,
                     carrier,
                     static (headers, key, value) =>
@@ -123,7 +139,13 @@ internal static class SpanLeakHost
 
         if (redaction == Redaction.On)
         {
-            builder.Services.AddHeadlessRedaction(setup => setup.MaskText(Pii.NationalIdPattern));
+            // The app classifies the user tags it sets, the way it classifies a log property name.
+            builder.Services.AddHeadlessRedaction(setup =>
+                setup
+                    .MaskText(Pii.NationalIdPattern)
+                    .ClassifyProperty("enduser.email", HeadlessDataClassifications.Private)
+                    .ClassifyProperty("user.email", HeadlessDataClassifications.Private)
+            );
         }
 
         builder
@@ -151,18 +173,19 @@ internal static class SpanLeakHost
         {
             // Building the provider registers its listener; the hosted service is not needed for that.
             _ = host.Services.GetRequiredService<TracerProvider>();
+            var propagation = Propagation.For(redaction);
             using var source = new ActivitySource(sourceName);
             using var activity = source.StartActivity("operation-" + scenario.Id);
 
             activity.Should().NotBeNull("the tracer provider listens to the source");
             activity!.SetTag("leak.marker", Pii.Marker(scenario.Id));
-            scenario.Write(activity, carrier);
+            scenario.Write(activity, carrier, propagation);
 
             // A scenario that does not propagate anything still makes the outgoing call it would make, so its
             // propagation cell checks a carrier that holds the trace context and a harmless baggage entry.
             if (carrier.Count == 0)
             {
-                Propagators.DefaultTextMapPropagator.Inject(
+                propagation.TextMap.Inject(
                     new PropagationContext(
                         activity.Context,
                         Baggage.Create().SetBaggage("leak.marker", Pii.Marker(scenario.Id))
@@ -173,12 +196,12 @@ internal static class SpanLeakHost
             }
         }
 
-        var propagation = string.Join('\n', carrier.Select(pair => pair.Key + ": " + pair.Value));
+        var headers = string.Join('\n', carrier.Select(pair => pair.Key + ": " + pair.Value));
         var exported = new Exported(
             new Dictionary<Sink, byte[]>
             {
                 [Sink.OtlpSpans] = otlp.Bytes("traces"),
-                [Sink.Propagation] = Encoding.UTF8.GetBytes(propagation),
+                [Sink.Propagation] = Encoding.UTF8.GetBytes(headers),
             }
         );
         otlp.Dispose();

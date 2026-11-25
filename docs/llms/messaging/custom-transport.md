@@ -22,7 +22,7 @@ A custom storage provider has partial parity: `IDataStorage` and its optional ca
 
 ## Public building blocks
 
-A transport written outside the framework reaches parity with the shipped ones through public API only. The seams live in `Headless.Messaging.Transport`, except `MessageQueueMarkerService`, which is in `Headless.Messaging`:
+A transport written outside the framework reaches parity with the shipped ones through public API only. The seams live in `Headless.Messaging.Transport`, except `MessageQueueMarkerService`, which is in `Headless.Messaging`, and `LogSanitizer`, which is in `Headless`:
 
 | Type | Use it to |
 | --- | --- |
@@ -34,7 +34,8 @@ A transport written outside the framework reaches parity with the shipped ones t
 | `ConsumerPauseGate`, `InFlightHandlerTracker` | Back `PauseAsync`/`ResumeAsync`, and drain running handlers before a client disposes what settlement needs |
 | `BrokerConnectGuard`, `BrokerFailures`, `BrokerReachabilityReporter` | Classify connect and receive failures the way the core counts [broker reachability](operations.md#broker-reachability) |
 | `BusNameBuilder`, `BusNameRules`, `TransportNaming` | Derive broker-legal subscription, queue, and stream names every process agrees on |
-| `RedeliveryBackoff`, `DeliverByEnvelope`, `TransportBody`, `LogSanitizer` | Delay a redelivery, read the `DeliverWithin` deadline, hand a body to a client that takes only arrays, and sanitize broker text before it reaches a log |
+| `RedeliveryBackoff`, `DeliverByEnvelope`, `TransportBody` | Delay a redelivery, read the `DeliverWithin` deadline, and hand a body to a client that takes only arrays |
+| `LogSanitizer` (namespace `Headless`, package `Headless.Extensions`) | Sanitize every broker-supplied value before it reaches a log or an exception message (see [extensions.md](../extensions.md#design-and-runtime-behavior)) |
 | `ReplyListenerSupervisor`, `ReplyAddressGate`, `ReplyHandlerInvoker` | Keep a request/reply channel open across broker outages and hand replies to the core one at a time |
 | `TransportMetrics`, `MessagingDiagnostics.Meter` | Record settlement failures and transport-side every-instance drops on the core's instruments, and add broker instruments to the messaging meter |
 
@@ -44,6 +45,7 @@ A consumer client built on these pieces:
 
 ```csharp
 using System.Globalization;
+using Headless;
 using Headless.Messaging.Transport;
 using Headless.Threading;
 

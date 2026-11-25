@@ -53,8 +53,6 @@
     <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="10.0.15" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.15" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
-    <!-- Transitive-only pin: Serilog.Enrichers.ClientInfo 2.9.0 (via Microsoft.AspNetCore.Http 2.3.9) resolves WebUtilities 2.3.0, which carries GHSA-6527-9fp8-r4x6 (CVE-2026-118750, NU1902). 2.3.14 is the first patched release; no ClientInfo 2.x release moves off it. Drop this pin once ClientInfo no longer depends on the 2.3.x packages. -->
-    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="2.3.14" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.12.0" />
     <!--
       Pinned: must match SDK's Roslyn version. Source generators fail silently if higher, and an analyzer or code fix
@@ -91,7 +89,9 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Telemetry" Version="10.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Telemetry.Abstractions" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.ObjectPool" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.11.0" />
@@ -146,18 +146,6 @@
     <PackageVersion Include="Scalar.AspNetCore" Version="2.21.0" />
     <!-- Transitive via WireMock.Net; pinned to the patched release for GHSA-24c8-4792-22hx (NU1903) -->
     <PackageVersion Include="Scriban.Signed" Version="7.6.1" />
-    <PackageVersion Include="Serilog" Version="4.4.0" />
-    <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.9.0" />
-    <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
-    <PackageVersion Include="Serilog.Enrichers.Process" Version="3.0.0" />
-    <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
-    <PackageVersion Include="Serilog.Extensions.Hosting" Version="10.0.0" />
-    <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
-    <PackageVersion Include="Serilog.Settings.Configuration" Version="10.0.1" />
-    <PackageVersion Include="Serilog.Sinks.Async" Version="2.1.0" />
-    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageVersion Include="Serilog.Sinks.Debug" Version="3.0.0" />
-    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="SSH.NET" Version="2026.0.1" />
     <PackageVersion Include="StackExchange.Redis" Version="3.4.35" />
     <PackageVersion Include="System.Buffers" Version="4.6.1" />
@@ -206,7 +194,6 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Testing.Extensions.GitHubActionsReport" Version="2.5.3" />
     <PackageVersion Include="NameGenerator" Version="2.0.4" />
     <!-- Test-only: the bundled libvips binaries (LGPL-3.0-or-later). Headless.Imaging.NetVips references only the MIT
@@ -215,6 +202,11 @@
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
     <PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.20.1" />
+    <!-- Test-only: a consumer's own Serilog sink in the logging leak suite and the redaction tests. -->
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.3.1" />
     <!-- Benchmark-only: the community S3 tus store the Headless store is measured against. -->
     <PackageVersion Include="tusdotnet.Stores.S3" Version="2.2.0" />

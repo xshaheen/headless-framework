@@ -197,15 +197,20 @@ public sealed class BlobSignedUrlRedactionTests : TestBase
         // when
         await using var provider = services.BuildServiceProvider();
 
-        // then: one factory registration, wrapped once, so a hosting line is rewritten and not double-wrapped
-        services.Count(d => d.ServiceType == typeof(ILoggerFactory)).Should().Be(1);
+        // then: the app's factory registration stays, and one redacting registration follows it, so a hosting line is
+        // rewritten and not double-wrapped
+        services
+            .Where(d => d.ServiceType == typeof(ILoggerFactory))
+            .Select(d => d.ImplementationFactory?.Method.ReturnType.Name ?? d.ImplementationType?.Name)
+            .Should()
+            .Equal("LoggerFactory", "RedactingLoggerFactory");
         provider.GetRequiredService<ILoggerFactory>().GetType().Name.Should().Be("RedactingLoggerFactory");
     }
 
     [Fact]
     public async Task should_warn_at_startup_when_a_logger_factory_registered_later_replaces_the_redacting_one()
     {
-        // given - an app that registers its own logger factory after the endpoint, as UseSerilog does
+        // given - an app that registers its own logger factory after the endpoint, as a third-party logging library does
         var captured = new List<string>();
         var services = new ServiceCollection();
         services.AddLogging();

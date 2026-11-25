@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Logging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OpenApi;
 using OpenTelemetry.Instrumentation.AspNetCore;
@@ -18,6 +19,12 @@ public sealed class HeadlessServiceDefaultsOptions
 
     /// <summary>OpenTelemetry defaults.</summary>
     public HeadlessServiceDefaultsOpenTelemetryOptions OpenTelemetry { get; } = new();
+
+    /// <summary>
+    /// The logging profile <c>AddHeadless</c> registers with <c>AddHeadlessLogging</c>: the console format and the length
+    /// request headers are truncated to in log entries.
+    /// </summary>
+    public HeadlessLoggingOptions Logging { get; set; } = new();
 
     /// <summary>OpenAPI service-registration defaults.</summary>
     public HeadlessServiceDefaultsOpenApiOptions OpenApi { get; } = new();

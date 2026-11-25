@@ -2,7 +2,6 @@
 
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Transactions;
-using Headless.Messaging.Transport;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

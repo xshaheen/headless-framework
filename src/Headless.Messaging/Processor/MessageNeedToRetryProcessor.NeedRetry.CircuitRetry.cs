@@ -3,7 +3,6 @@
 using Headless.Fencing;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;

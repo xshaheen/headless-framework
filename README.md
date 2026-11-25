@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-221 packages &bull; One setup grammar &bull; Swap any provider in one line
+220 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across seven transports.
 
-**You install three packages, not 221.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 220.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -255,7 +255,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 221 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 220 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -268,7 +268,6 @@ Production ASP.NET Core APIs: request and response conventions, validation pipel
 | [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | API abstractions and contracts |
 | [Headless.DataProtection.Blobs](src/Headless.DataProtection.Blobs/README.md) | Data protection key storage |
 | [Headless.Api.FluentValidation](src/Headless.Api.FluentValidation/README.md) | FluentValidation integration for APIs |
-| [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Serilog logging integration |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | Minimal API utilities |
 | [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | MVC-specific utilities |
 | [Headless.Api.Identity](src/Headless.Api.Identity/README.md) | ASP.NET Core Identity helpers: token providers, localized identity errors, Basic and API-key schemes |
@@ -420,13 +419,13 @@ Resolve an IP address to its country, city, coordinates, time zone, and network 
 
 ### Logging
 
-Structured logging utilities and enrichers built on Serilog.
+Host logging on Microsoft.Extensions.Logging, and redaction of logs and telemetry.
 
 | Package | Description |
 |---------|-------------|
+| [Headless.Logging](src/Headless.Logging/README.md) | Logging profile: environment-aware console, enrichment on every entry, startup logger |
 | [Headless.Logging.Redaction](src/Headless.Logging.Redaction/README.md) | Data-classification taxonomy and redactors for logs |
 | [Headless.Logging.Redaction.AspNetCore](src/Headless.Logging.Redaction.AspNetCore/README.md) | Credential-path redaction for HTTP logging and OpenTelemetry spans |
-| [Headless.Logging.Serilog](src/Headless.Logging.Serilog/README.md) | Serilog logging utilities |
 
 ### Media
 

@@ -4,6 +4,8 @@ using System.Collections;
 using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Text;
 using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.Logging;
 
@@ -17,9 +19,10 @@ namespace Headless.Logging.Internal;
 /// <para>
 /// It does two things. A <c>[LoggerMessage]</c> parameter that carries a data classification is redacted through the
 /// <see cref="IRedactorProvider"/> and handed to providers as an ordinary value. Microsoft's <c>EnableRedaction</c> does
-/// that only when Microsoft's own factory is in charge; under Serilog's factory the parameter was dropped and the text
-/// kept a literal <c>{Name}</c> hole. And a path an <see cref="ILogPathRedactor"/> recognizes is replaced in ASP.NET
-/// Core's request scope and request lines, which the hosting layer writes before any middleware runs.
+/// that only when Microsoft's own factory is in charge; under another library's factory the parameter is dropped and
+/// the text keeps a literal <c>{Name}</c> hole. And a path an <see cref="ILogPathRedactor"/> recognizes is replaced in ASP.NET
+/// Core's request scope and request lines, which the hosting layer writes before any middleware runs; the request lines'
+/// query values are replaced too.
 /// </para>
 /// <para>
 /// A property whose name an app classified (<c>ClassifyProperty</c>) is redacted the same way, by name, in every entry
@@ -40,6 +43,11 @@ internal sealed class RedactingLoggerFactory(
     /// <summary>The category ASP.NET Core's hosting layer opens the request scope and writes the request lines under.</summary>
     internal const string HostingDiagnosticsCategory = "Microsoft.AspNetCore.Hosting.Diagnostics";
 
+    // Built once: the projection caches each type's shape for every logger the factory creates.
+    private readonly ClassifiedObjectProjection? _projection = redactorProvider is null
+        ? null
+        : new ClassifiedObjectProjection(redactorProvider);
+
     public ILogger CreateLogger(string categoryName)
     {
         var logger = inner.CreateLogger(categoryName);
@@ -53,14 +61,19 @@ internal sealed class RedactingLoggerFactory(
             logger = new TextScrubbingLogger(logger, applicable);
         }
 
-        var redactsPaths =
-            pathRedactors.Length > 0
-            && string.Equals(categoryName, HostingDiagnosticsCategory, StringComparison.Ordinal);
+        var hosting = string.Equals(categoryName, HostingDiagnosticsCategory, StringComparison.Ordinal);
 
         // A logger with nothing to redact is returned as is, so the wrapper costs nothing on those categories.
-        return redactorProvider is null && !redactsPaths
+        return redactorProvider is null && !hosting
             ? logger
-            : new RedactingLogger(logger, redactorProvider, redactsPaths ? pathRedactors : [], propertyRedactors);
+            : new RedactingLogger(
+                logger,
+                redactorProvider,
+                hosting ? pathRedactors : [],
+                hosting,
+                propertyRedactors,
+                _projection
+            );
     }
 
     public void AddProvider(ILoggerProvider provider) => inner.AddProvider(provider);
@@ -71,15 +84,24 @@ internal sealed class RedactingLoggerFactory(
         ILogger inner,
         IRedactorProvider? redactorProvider,
         ILogPathRedactor[] pathRedactors,
-        FrozenDictionary<string, Redactor> propertyRedactors
+        bool redactsQuery,
+        FrozenDictionary<string, Redactor> propertyRedactors,
+        ClassifiedObjectProjection? projection
     ) : ILogger
     {
-        // Logging renders a null value in a collection as this text.
-        private const string _NullText = "(null)";
-
         // The request scope names the path RequestPath; the request lines name it Path, beside a separate PathBase.
         private const string _ScopePathKey = "RequestPath";
         private const string _LinePathKey = "Path";
+        private const string _LineQueryKey = "QueryString";
+        private const string _RedactedQueryValue = "Redacted";
+
+        // Logging's own key for a message's template; its formatted states carry it after the hole values.
+        private const string _OriginalFormatKey = "{OriginalFormat}";
+
+        // `{@Name}` and `{$Name}` keep the sigil in the key, so a classified name is looked up without it; the span
+        // lookup avoids a substring per value. The table ignores case, which supports it; the empty table may not.
+        private readonly FrozenDictionary<string, Redactor>.AlternateLookup<ReadOnlySpan<char>> _sigilFreeLookup =
+            propertyRedactors.TryGetAlternateLookup<ReadOnlySpan<char>>(out var lookup) ? lookup : default;
 
         public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
 
@@ -88,12 +110,25 @@ internal sealed class RedactingLoggerFactory(
         {
             if (_TryRedactNamedScope(state, out var named))
             {
-                return _TryRedactPath(named, _ScopePathKey, out var namedPath)
+                return _TryRedactRequest(named, _ScopePathKey, query: false, out var namedPath)
                     ? inner.BeginScope(namedPath)
                     : inner.BeginScope(named);
             }
 
-            return _TryRedactPath(state, _ScopePathKey, out var redacted)
+            // An object passed as the scope itself is printed through ToString, so one with a classified member is
+            // replaced by its redacted form, the way a `{Value}` hole is.
+            if (
+                projection is not null
+                && LogStateShape<TState>.MayCarryObjects
+                && state
+                    is not (IEnumerable<KeyValuePair<string, object?>> or IEnumerable<KeyValuePair<string, string>>)
+                && projection.TryProject(state, captured: false, out var text)
+            )
+            {
+                return inner.BeginScope(text);
+            }
+
+            return _TryRedactRequest(state, _ScopePathKey, query: false, out var redacted)
                 ? inner.BeginScope(redacted)
                 : inner.BeginScope(state);
         }
@@ -109,9 +144,9 @@ internal sealed class RedactingLoggerFactory(
             // A level nobody listens to costs nothing: no copy, no redactor call.
             if (
                 redactorProvider is not null
-                && inner.IsEnabled(logLevel)
                 && state is LoggerMessageState { ClassifiedTagsCount: > 0 } classified
                 && classified.RedactedTagArray.Length >= classified.ClassifiedTagsCount
+                && inner.IsEnabled(logLevel)
             )
             {
                 _LogClassified(logLevel, eventId, classified, exception, formatter, redactorProvider);
@@ -120,21 +155,24 @@ internal sealed class RedactingLoggerFactory(
             }
 
             if (
-                propertyRedactors.Count > 0
+                (propertyRedactors.Count > 0 || (projection is not null && LogStateShape<TState>.MayCarryObjects))
                 && state is IReadOnlyList<KeyValuePair<string, object?>> values
+                && _MayNeedNamedPass(values)
                 && inner.IsEnabled(logLevel)
-                && _TryRedactNames(values, out var named, out var rewrites)
+                && _TryRedactNames(values, out var named)
             )
             {
-                _LogNamed(logLevel, eventId, named, _Rewrite(formatter(state, exception), rewrites), exception);
+                var message = _RenderNamed(state, exception, formatter, values, named);
+                _LogNamed(logLevel, eventId, named, message, exception);
 
                 return;
             }
 
-            if (_TryRedactPath(state, _LinePathKey, out var redacted))
+            if (_TryRedactRequest(state, _LinePathKey, redactsQuery, out var redacted))
             {
                 // The message is rendered from the original state once, then rewritten, so the line keeps whatever
-                // shape the hosting layer gives it; the state's own values carry the redacted path for structured sinks.
+                // shape the hosting layer gives it; the state's own values carry the redacted path and query for
+                // structured sinks.
                 var message = redacted.Rewrite(formatter(state, exception));
 
                 inner.Log(logLevel, eventId, redacted, exception, (_, _) => message);
@@ -144,6 +182,43 @@ internal sealed class RedactingLoggerFactory(
 
             inner.Log(logLevel, eventId, state, exception, formatter);
         }
+
+        // Whether any value carries a classified name or is an object, looked at before anything is copied. A
+        // generated message's values sit in an array, so they are read without going through the list interface.
+        private bool _MayNeedNamedPass(IReadOnlyList<KeyValuePair<string, object?>> values)
+        {
+            if (values is LoggerMessageState generated)
+            {
+                var tags = generated.TagArray;
+
+                for (var i = 0; i < generated.TagsCount; i++)
+                {
+                    if (_MayNeed(tags[i]))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            for (var i = 0; i < values.Count; i++)
+            {
+                if (_MayNeed(values[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool _MayNeed(KeyValuePair<string, object?> pair) =>
+            pair.Value is { } value
+            && (
+                (propertyRedactors.Count > 0 && _TryGetPropertyRedactor(pair.Key, out _))
+                || (projection is not null && Type.GetTypeCode(value.GetType()) == TypeCode.Object)
+            );
 
         // The generator's state is a thread-local instance it clears once Log returns, so everything a provider might
         // keep is copied out here, and the raw classified values never leave this method.
@@ -158,15 +233,16 @@ internal sealed class RedactingLoggerFactory(
         {
             var values = new KeyValuePair<string, object?>[state.TagsCount + state.ClassifiedTagsCount];
             Array.Copy(state.TagArray, values, state.TagsCount);
-            List<(string Raw, string Redacted)>? rewrites = null;
 
             // A plain parameter whose name the app classified is redacted here too, so one entry is never half done.
-            for (var i = 0; i < state.TagsCount && propertyRedactors.Count > 0; i++)
+            // The generated formatter reads each plain value from TagArray, so the redacted value goes back there and
+            // the text is rendered from it rather than patched afterwards.
+            for (var i = 0; i < state.TagsCount && (propertyRedactors.Count > 0 || projection is not null); i++)
             {
-                if (_TryRedactNamed(values[i], out var namedValue, out var rewrite))
+                if (_TryRedactNamed(values[i], out var namedValue))
                 {
                     values[i] = namedValue;
-                    _AddRewrite(ref rewrites, rewrite);
+                    state.TagArray[i] = namedValue;
                 }
             }
 
@@ -183,7 +259,7 @@ internal sealed class RedactingLoggerFactory(
                 values[state.TagsCount + i] = new(tag.Name, redactedValue);
             }
 
-            var message = _Rewrite(formatter((TState)(object)state, exception), rewrites);
+            var message = formatter((TState)(object)state, exception);
 
 #pragma warning disable CA1873 // False positive: Log checks inner.IsEnabled before calling this method.
             inner.Log(logLevel, eventId, new RedactedState(values, message), exception, static (s, _) => s.ToString());
@@ -200,8 +276,8 @@ internal sealed class RedactingLoggerFactory(
         {
             var named = new RedactedState(values, message);
 
-            // ASP.NET Core's request line can carry both a classified name and a credential path.
-            if (_TryRedactPath(named, _LinePathKey, out var pathRedacted))
+            // ASP.NET Core's request line can carry a classified name beside a credential path and a query.
+            if (_TryRedactRequest(named, _LinePathKey, redactsQuery, out var pathRedacted))
             {
                 var rewritten = pathRedacted.Rewrite(message);
                 inner.Log(logLevel, eventId, pathRedacted, exception, (_, _) => rewritten);
@@ -218,7 +294,7 @@ internal sealed class RedactingLoggerFactory(
         {
             redacted = null;
 
-            if (propertyRedactors.Count == 0)
+            if (propertyRedactors.Count == 0 && (projection is null || !LogStateShape<TState>.MayCarryObjects))
             {
                 return false;
             }
@@ -235,12 +311,17 @@ internal sealed class RedactingLoggerFactory(
                 _ => null,
             };
 
-            if (values is null || !_TryRedactNames(values, out var named, out var rewrites))
+            if (values is null || !_TryRedactNames(values, out var named))
             {
                 return false;
             }
 
-            redacted = new RedactedState(named, _Rewrite(state?.ToString() ?? string.Empty, rewrites));
+            redacted = new RedactedState(
+                named,
+                _TryRenderTemplate(named, out var rendered)
+                    ? rendered
+                    : _Rewrite(state?.ToString() ?? string.Empty, values, named)
+            );
 
             return true;
         }
@@ -248,135 +329,328 @@ internal sealed class RedactingLoggerFactory(
         // Copies the values only once a name matches; returns false, and no copy, when none did.
         private bool _TryRedactNames(
             IReadOnlyList<KeyValuePair<string, object?>> values,
-            [NotNullWhen(true)] out KeyValuePair<string, object?>[]? named,
-            out List<(string Raw, string Redacted)>? rewrites
+            [NotNullWhen(true)] out KeyValuePair<string, object?>[]? named
         )
         {
             named = null;
-            rewrites = null;
 
             for (var i = 0; i < values.Count; i++)
             {
-                if (_TryRedactNamed(values[i], out var namedValue, out var rewrite))
+                if (_TryRedactNamed(values[i], out var namedValue))
                 {
                     named ??= [.. values];
                     named[i] = namedValue;
-                    _AddRewrite(ref rewrites, rewrite);
                 }
             }
 
             return named is not null;
         }
 
-        private bool _TryRedactNamed(
-            KeyValuePair<string, object?> pair,
-            out KeyValuePair<string, object?> named,
-            out (string Raw, string Redacted) rewrite
-        )
+        // A replaced value is always a string or a string array, which is what the fallback rewrite looks for.
+        private bool _TryRedactNamed(KeyValuePair<string, object?> pair, out KeyValuePair<string, object?> named)
         {
             named = pair;
-            rewrite = default;
 
-            if (pair.Value is null || !propertyRedactors.TryGetValue(pair.Key, out var redactor))
+            if (pair.Value is null)
             {
                 return false;
             }
 
-            if (pair.Value is IEnumerable items and not string)
+            if (!_TryGetPropertyRedactor(pair.Key, out var redactor))
             {
-                // Rendered the way logging renders a collection, element by element, so the text and each element
-                // carry the same redacted values.
-                List<string> raw = [];
-                List<string> redactedItems = [];
-
-                foreach (var item in items)
+                // An object whose members are classified is replaced by its redacted form; `{@Name}` keeps the `@`
+                // in the key, which lets a record's members show as the capture asked.
+                if (
+                    projection is not null
+                    && projection.TryProject(pair.Value, pair.Key.StartsWith('@'), out var projected)
+                )
                 {
-                    raw.Add(
-                        item is null ? _NullText : Convert.ToString(item, CultureInfo.InvariantCulture) ?? string.Empty
-                    );
-                    redactedItems.Add(item is null ? _NullText : redactor.Redact(item));
+                    named = new(pair.Key, projected);
+
+                    return true;
                 }
 
-                named = new(pair.Key, redactedItems.ToArray());
-                rewrite = (string.Join(", ", raw), string.Join(", ", redactedItems));
-
-                return true;
+                return false;
             }
 
-            var redactedValue = redactor.Redact(pair.Value);
-            named = new(pair.Key, redactedValue);
-            rewrite = (Convert.ToString(pair.Value, CultureInfo.InvariantCulture) ?? string.Empty, redactedValue);
+            // The same redaction the enrichers and span tags use, so every channel yields one pseudonym per value. The
+            // raw text is what logging rendered, which takes even a buffer element by element.
+            named = new(pair.Key, LogPropertyRedactors.Redact(redactor, pair.Value));
 
             return true;
         }
 
-        private static void _AddRewrite(
-            ref List<(string Raw, string Redacted)>? rewrites,
-            (string Raw, string Redacted) rewrite
+        private bool _TryGetPropertyRedactor(string key, [NotNullWhen(true)] out Redactor? redactor)
+        {
+            if (key.Length > 1 && key[0] is '@' or '$')
+            {
+                return _sigilFreeLookup.Dictionary is not null
+                    ? _sigilFreeLookup.TryGetValue(key.AsSpan(1), out redactor)
+                    : propertyRedactors.TryGetValue(key[1..], out redactor);
+            }
+
+            return propertyRedactors.TryGetValue(key, out redactor);
+        }
+
+        // Renders the text from the redacted values, so a hole's alignment and format never decide whether the raw
+        // value survives in the text, and a short value never matches unrelated text. Rewriting the raw rendering is
+        // the fallback for a state that carries no template the holes can be matched to.
+        private static string _RenderNamed<TState>(
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter,
+            IReadOnlyList<KeyValuePair<string, object?>> values,
+            KeyValuePair<string, object?>[] named
         )
         {
-            // An empty raw text has nothing to find in the message, and string.Replace rejects it.
-            if (rewrite.Raw.Length > 0)
+            // The generated formatter reads each value back from TagArray, whose slots the state's list exposes one for
+            // one, so the redacted copy goes there; the generator clears the state once Log returns.
+            if (state is LoggerMessageState generated && generated.ClassifiedTagsCount == 0)
             {
-                (rewrites ??= []).Add(rewrite);
+                Array.Copy(named, generated.TagArray, generated.TagsCount);
+
+                return formatter(state, exception);
+            }
+
+            return _TryRenderTemplate(named, out var rendered)
+                ? rendered
+                : _Rewrite(formatter(state, exception), values, named);
+        }
+
+        // Logging's formatted states list the hole values in template order, then the template under
+        // "{OriginalFormat}". The template is rendered the way logging renders it: each hole becomes a composite-format
+        // item that keeps its alignment and format, formatted with the invariant culture. Returns false, and the
+        // caller falls back, when the holes do not line up with the values by position and name.
+        private static bool _TryRenderTemplate(
+            KeyValuePair<string, object?>[] values,
+            [NotNullWhen(true)] out string? rendered
+        )
+        {
+            rendered = null;
+            var holeCount = values.Length - 1;
+
+            if (
+                holeCount < 0
+                || values[holeCount].Value is not string template
+                || !string.Equals(values[holeCount].Key, _OriginalFormatKey, StringComparison.Ordinal)
+                || LogTemplate.Get(template) is not { } parsed
+                || parsed.Holes.Length != holeCount
+            )
+            {
+                return false;
+            }
+
+            // The parse is shared, but the names are checked on every call: a state whose values do not match its own
+            // template falls back rather than put a value in another hole.
+            for (var h = 0; h < holeCount; h++)
+            {
+                if (!string.Equals(parsed.Holes[h], values[h].Key, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            var inline = default(HoleValues);
+            Span<object?> args = holeCount <= HoleValues.Length ? inline[..holeCount] : new object?[holeCount];
+
+            for (var h = 0; h < holeCount; h++)
+            {
+                // Logging renders a null as "(null)" and a collection element by element; anything else goes to the
+                // format item, so a format such as `{Birthday:yyyy-MM-dd}` still applies to a value left as is.
+                args[h] = values[h].Value switch
+                {
+                    null => LogPropertyRedactors.NullText,
+                    IEnumerable items and not string => _RenderLikeLogging(items),
+                    var value => value,
+                };
+            }
+
+            try
+            {
+                rendered = string.Format(CultureInfo.InvariantCulture, parsed.Format, (ReadOnlySpan<object?>)args);
+
+                return true;
+            }
+            catch (FormatException)
+            {
+                // A format the value's own formatter rejects: the raw rendering, rewritten, is the best left.
+                return false;
             }
         }
 
-        // The message is rendered once from the raw values, then each raw value is replaced, the way a credential path
-        // is: logging renders a hole with the invariant culture, which is the text replaced here.
-        private static string _Rewrite(string message, List<(string Raw, string Redacted)>? rewrites)
+        // Logging renders a collection element by element and anything else through ToString, with the invariant culture.
+        private static string _RenderLikeLogging(object value)
         {
-            if (rewrites is null)
+            if (value is IEnumerable items and not string)
             {
-                return message;
+                List<string> rendered = [];
+
+                foreach (var item in items)
+                {
+                    rendered.Add(
+                        item is null
+                            ? LogPropertyRedactors.NullText
+                            : Convert.ToString(item, CultureInfo.InvariantCulture) ?? string.Empty
+                    );
+                }
+
+                return string.Join(", ", rendered);
             }
 
-            foreach (var (raw, redacted) in rewrites)
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+        }
+
+        // The message is rendered once from the raw values, then each raw value whose redacted copy differs is
+        // replaced, the way a credential path is: logging renders a hole with the invariant culture, which is the text
+        // replaced here. Only a redacted value is a string or a string array that differs from the raw text.
+        private static string _Rewrite(
+            string message,
+            IReadOnlyList<KeyValuePair<string, object?>> values,
+            KeyValuePair<string, object?>[] named
+        )
+        {
+            for (var i = 0; i < named.Length; i++)
             {
-                message = message.Replace(raw, redacted, StringComparison.Ordinal);
+                var replacement = named[i].Value switch
+                {
+                    string redacted => redacted,
+                    string[] items => string.Join(", ", items),
+                    _ => null,
+                };
+
+                if (replacement is null || values[i].Value is not { } raw)
+                {
+                    continue;
+                }
+
+                var text = raw as string ?? _RenderLikeLogging(raw);
+
+                // An empty raw text has nothing to find in the message, and string.Replace rejects it.
+                if (text.Length > 0 && !string.Equals(text, replacement, StringComparison.Ordinal))
+                {
+                    message = message.Replace(text, replacement, StringComparison.Ordinal);
+                }
             }
 
             return message;
         }
 
-        private bool _TryRedactPath<TState>(TState state, string pathKey, out PathRedactedState redacted)
+        // The request lines carry the path a path redactor recognizes and the raw query, whose values are as likely to
+        // hold a token or an e-mail as the path; the request scope carries the path only.
+        private bool _TryRedactRequest<TState>(
+            TState state,
+            string pathKey,
+            bool query,
+            out RequestRedactedState redacted
+        )
         {
             redacted = null!;
 
-            if (pathRedactors.Length == 0 || state is not IReadOnlyList<KeyValuePair<string, object?>> values)
+            if (
+                (pathRedactors.Length == 0 && !query)
+                || state is not IReadOnlyList<KeyValuePair<string, object?>> values
+            )
             {
                 return false;
             }
+
+            List<(int Index, string Raw, string Redacted)>? changes = null;
 
             for (var i = 0; i < values.Count; i++)
             {
                 var (key, value) = values[i];
 
-                if (
-                    !string.Equals(key, pathKey, StringComparison.Ordinal)
-                    || value is not string raw
-                    || raw.Length == 0
-                    || raw[0] != '/'
-                )
+                if (value is not string { Length: > 1 } raw)
                 {
                     continue;
                 }
 
-                foreach (var pathRedactor in pathRedactors)
+                if (raw[0] == '/' && string.Equals(key, pathKey, StringComparison.Ordinal))
                 {
-                    if (pathRedactor.TryRedact(raw, out var path))
+                    foreach (var pathRedactor in pathRedactors)
                     {
-                        redacted = new PathRedactedState(values, i, raw, path, state.ToString());
+                        if (pathRedactor.TryRedact(raw, out var path))
+                        {
+                            (changes ??= []).Add((i, raw, path));
 
-                        return true;
+                            break;
+                        }
                     }
                 }
+                else if (
+                    query
+                    && raw[0] == '?'
+                    && string.Equals(key, _LineQueryKey, StringComparison.Ordinal)
+                    && _RedactQuery(raw) is var redactedQuery
+                    && !ReferenceEquals(redactedQuery, raw)
+                )
+                {
+                    // The query goes first: its raw text can hold the path's text (`?next=/files/secret`), so
+                    // replacing the path first would change the query text and its own replacement would then miss.
+                    (changes ??= []).Insert(0, (i, raw, redactedQuery));
+                }
+            }
 
+            if (changes is null)
+            {
                 return false;
             }
 
-            return false;
+            redacted = new RequestRedactedState(values, changes, state.ToString());
+
+            return true;
         }
+
+        // Keeps each parameter's name, which says what the request did, and replaces its value: "?a=1&b=" becomes
+        // "?a=Redacted&b=". A parameter with no '=' is replaced whole, because a token can be passed bare
+        // ("?sk_live_abc"): "?a=1&flag" becomes "?a=Redacted&Redacted". Returns the same instance when nothing changed.
+        private static string _RedactQuery(string query)
+        {
+            var builder = new StringBuilder(query.Length).Append('?');
+            var first = true;
+            var changed = false;
+
+            foreach (var range in query.AsSpan(1).Split('&'))
+            {
+                var parameter = query.AsSpan(1)[range];
+
+                if (!first)
+                {
+                    builder.Append('&');
+                }
+
+                first = false;
+                var equals = parameter.IndexOf('=');
+
+                if (parameter.IsEmpty || equals == parameter.Length - 1)
+                {
+                    builder.Append(parameter);
+                }
+                else if (equals < 0)
+                {
+                    builder.Append(_RedactedQueryValue);
+                    changed = true;
+                }
+                else
+                {
+                    builder.Append(parameter[..(equals + 1)]).Append(_RedactedQueryValue);
+                    changed = true;
+                }
+            }
+
+            return changed ? builder.ToString() : query;
+        }
+    }
+
+    // Most templates have a few holes, so their values are passed to the formatter without an array.
+    [InlineArray(Length)]
+    private struct HoleValues
+    {
+        public const int Length = 8;
+
+#pragma warning disable RCS1213 // False positive: the runtime repeats this field to lay out the inline array.
+        private object? _first;
+#pragma warning restore RCS1213
     }
 
     /// <summary>A copy of a classified log state's values, already redacted, with its rendered text.</summary>
@@ -395,31 +669,30 @@ internal sealed class RedactingLoggerFactory(
         public override string ToString() => text;
     }
 
-    /// <summary>A copy of a log state with its path value redacted, rendering as the original text with the path replaced.</summary>
-    private sealed class PathRedactedState : IReadOnlyList<KeyValuePair<string, object?>>
+    /// <summary>
+    /// A copy of a log state with its path or query values redacted, rendering as the original text with each raw value
+    /// replaced.
+    /// </summary>
+    private sealed class RequestRedactedState : IReadOnlyList<KeyValuePair<string, object?>>
     {
         private readonly KeyValuePair<string, object?>[] _values;
-        private readonly string _raw;
-        private readonly string _redacted;
+        private readonly List<(int Index, string Raw, string Redacted)> _changes;
         private readonly string? _text;
 
-        public PathRedactedState(
+        public RequestRedactedState(
             IReadOnlyList<KeyValuePair<string, object?>> values,
-            int pathIndex,
-            string raw,
-            string redacted,
+            List<(int Index, string Raw, string Redacted)> changes,
             string? text
         )
         {
-            _values = new KeyValuePair<string, object?>[values.Count];
+            _values = [.. values];
 
-            for (var i = 0; i < values.Count; i++)
+            foreach (var (index, _, redacted) in changes)
             {
-                _values[i] = i == pathIndex ? new(values[i].Key, redacted) : values[i];
+                _values[index] = new(_values[index].Key, redacted);
             }
 
-            _raw = raw;
-            _redacted = redacted;
+            _changes = changes;
             _text = text is null ? null : Rewrite(text);
         }
 
@@ -427,7 +700,15 @@ internal sealed class RedactingLoggerFactory(
 
         public KeyValuePair<string, object?> this[int index] => _values[index];
 
-        public string Rewrite(string text) => text.Replace(_raw, _redacted, StringComparison.Ordinal);
+        public string Rewrite(string text)
+        {
+            foreach (var (_, raw, redacted) in _changes)
+            {
+                text = text.Replace(raw, redacted, StringComparison.Ordinal);
+            }
+
+            return text;
+        }
 
         public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() =>
             ((IEnumerable<KeyValuePair<string, object?>>)_values).GetEnumerator();
