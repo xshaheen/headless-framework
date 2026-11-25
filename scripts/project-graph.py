@@ -735,13 +735,7 @@ def docker_projects(out_dir: Path, projects: dict[str, Project]) -> list[str]:
     selected = [line for line in (out_dir / "integration.txt").read_text(encoding="utf-8").split() if line in projects]
     needing: list[str] = []
     for project in selected:
-        closure = {project}
-        pending = [project]
-        while pending:
-            for reference in projects[pending.pop()].references:
-                if reference not in closure:
-                    closure.add(reference)
-                    pending.append(reference)
+        closure = build_closure([project], projects)
         if any(projects[key].name == TESTCONTAINERS_PROJECT for key in closure) or any(
             TESTCONTAINERS_USE.search(source.read_text(encoding="utf-8", errors="replace"))
             for key in closure
