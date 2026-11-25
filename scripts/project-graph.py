@@ -628,9 +628,10 @@ CATEGORIES = {
 INPUT_KEY_REPO_PATHS = ("eng", *sorted(GLOBAL_FILES))
 SOLUTION_FILE = "headless-framework.slnx"
 TEST_DISCIPLINE_BASELINE = "eng/test-discipline-baseline.txt"
-# Read whole only by checks no proof runs (package verification, check-layering), or keyed per entry by
-# digest_shared_inputs, so another branch's entry in them leaves this proof valid.
-INPUT_KEY_EXCLUDED_FILES = {"eng/expected-packages.txt", "eng/namespace-baseline.txt", TEST_DISCIPLINE_BASELINE}
+# Read only by check-layering, which no proof runs, or keyed per entry by digest_shared_inputs, so another branch's
+# entry in them leaves this proof valid. eng/expected-packages.txt stays in the key: a unit test compares the messaging
+# rows of that manifest with a project file, so its pass depends on the manifest.
+INPUT_KEY_EXCLUDED_FILES = {"eng/namespace-baseline.txt", TEST_DISCIPLINE_BASELINE}
 
 
 def build_closure(starts: list[str], projects: dict[str, Project]) -> set[str]:

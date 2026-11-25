@@ -140,6 +140,17 @@ on_main() { # message, then the command that edits main
   git switch -q feature
   git rebase -q main
 }
+# replace <file> <old> <new>: an exact, single-occurrence edit. sed -i leaves a backup file that `git add -A` commits
+# on a machine whose global excludes do not ignore it, which then shows up in the branch's patch.
+replace() {
+  python3 - "$@" <<'PY'
+import pathlib, sys
+path, old, new = sys.argv[1:]
+text = pathlib.Path(path).read_text()
+assert text.count(old) == 1, (path, old)
+pathlib.Path(path).write_text(text.replace(old, new))
+PY
+}
 lock() { # project directory, then the package ids its lock file resolves
   local dir=$1; shift
   python3 - "$dir/packages.lock.json" "$@" <<'PY'
@@ -164,42 +175,41 @@ on_main 'gate tooling only' sh -c 'printf "all:\n\t@true\n" > Makefile; echo "# 
 [ "$(python3 scripts/project-graph.py input-key --dir "$scratch/run" --salt "verify gate-v2")" != "$shared_key" ] \
   || fail "a gate version bump kept the key"
 
-on_main 'list an unrelated project' sed -i.bak 's#</Solution>#  <Project Path="src\\Headless.Other\\Headless.Other.csproj" /></Solution>#' headless-framework.slnx
-rm -f headless-framework.slnx.bak
+on_main 'list an unrelated project' replace headless-framework.slnx '</Solution>' '  <Project Path="src\Headless.Other\Headless.Other.csproj" />
+</Solution>'
 [ "$(key)" = "$shared_key" ] || fail "a solution entry outside the closure changed the key"
 
-on_main 'baseline of an unrelated file' sed -i.bak 's#real-wait 1 src/Headless.Other/Code.cs#real-wait 2 src/Headless.Other/Code.cs#' eng/test-discipline-baseline.txt
-rm -f eng/test-discipline-baseline.txt.bak
+on_main 'baseline of an unrelated file' replace eng/test-discipline-baseline.txt 'real-wait 1 src/Headless.Other/Code.cs' 'real-wait 2 src/Headless.Other/Code.cs'
 [ "$(key)" = "$shared_key" ] || fail "a baseline entry outside the closure changed the key"
 
-on_main 'bump a package nothing here resolves' sed -i.bak 's#Pkg.Unused" Version="1.0.0"#Pkg.Unused" Version="2.0.0"#' Directory.Packages.props
-rm -f Directory.Packages.props.bak
+on_main 'bump a package nothing here resolves' replace Directory.Packages.props 'Pkg.Unused" Version="1.0.0"' 'Pkg.Unused" Version="2.0.0"'
 [ "$(key)" = "$shared_key" ] || fail "a version bump of an unresolved package changed the key"
 
-on_main 'bump a package the closure resolves' sed -i.bak 's#Pkg.Used" Version="1.0.0"#Pkg.Used" Version="2.0.0"#' Directory.Packages.props
-rm -f Directory.Packages.props.bak
+on_main 'bump a package the closure resolves' replace Directory.Packages.props 'Pkg.Used" Version="1.0.0"' 'Pkg.Used" Version="2.0.0"'
 bumped_key=$(key)
 [ "$bumped_key" != "$shared_key" ] || fail "a version bump of a resolved package kept the key"
 
-on_main 'baseline of a closure file' sed -i.bak 's#real-wait 1 src/Headless.Feature/Code.cs#real-wait 0 src/Headless.Feature/Code.cs#' eng/test-discipline-baseline.txt
-rm -f eng/test-discipline-baseline.txt.bak
+on_main 'baseline of a closure file' replace eng/test-discipline-baseline.txt 'real-wait 1 src/Headless.Feature/Code.cs' 'real-wait 0 src/Headless.Feature/Code.cs'
 baseline_key=$(key)
 [ "$baseline_key" != "$bumped_key" ] || fail "a baseline entry inside the closure kept the key"
 
-on_main 'drop a closure project from the solution' sed -i.bak '/Headless.Base.csproj/d' headless-framework.slnx
-rm -f headless-framework.slnx.bak
+on_main 'drop a closure project from the solution' replace headless-framework.slnx '  <Project Path="src\Headless.Base\Headless.Base.csproj" />
+' ''
 unlisted_key=$(key)
 [ "$unlisted_key" != "$baseline_key" ] || fail "a solution entry inside the closure kept the key"
 
-on_main 'a central property' sed -i.bak 's#<Project>#<Project><PropertyGroup><X>1</X></PropertyGroup>#' Directory.Packages.props
-rm -f Directory.Packages.props.bak
-[ "$(key)" != "$unlisted_key" ] || fail "a non-version change to the central package file kept the key"
+on_main 'a central property' replace Directory.Packages.props '<Project>' '<Project><PropertyGroup><X>1</X></PropertyGroup>'
+property_key=$(key)
+[ "$property_key" != "$unlisted_key" ] || fail "a non-version change to the central package file kept the key"
+
+# A unit test compares the package manifest with a project file, so the manifest stays in every key.
+on_main 'list a package in the manifest' sh -c 'echo "Headless.Messaging.Example" >> eng/expected-packages.txt'
+[ "$(key)" != "$property_key" ] || fail "a package manifest change kept the key"
 
 rm src/Headless.Base/packages.lock.json
 no_lock_key=$(key)
 git checkout -q -- src/Headless.Base/packages.lock.json
-on_main 'bump the unused package again' sed -i.bak 's#Pkg.Unused" Version="2.0.0"#Pkg.Unused" Version="3.0.0"#' Directory.Packages.props
-rm -f Directory.Packages.props.bak
+on_main 'bump the unused package again' replace Directory.Packages.props 'Pkg.Unused" Version="2.0.0"' 'Pkg.Unused" Version="3.0.0"'
 [ "$no_lock_key" != "$(key)" ] || fail "deleting a lock file kept the key"
 
 # Unit-test modules get their own keys: a change one module does not compile leaves its key, so verify-affected
