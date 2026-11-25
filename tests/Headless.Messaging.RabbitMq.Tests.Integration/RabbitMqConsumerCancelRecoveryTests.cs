@@ -166,8 +166,18 @@ public sealed class RabbitMqConsumerCancelRecoveryTests(RabbitMqFixture fixture)
             return new CancelHost(
                 provider,
                 log,
-                RabbitMqPhysicalAddress.Queue(MessageLane.Queue, CancelRecoveryModule.CancelledIdentity, cancelledName),
-                RabbitMqPhysicalAddress.Queue(MessageLane.Queue, CancelRecoveryModule.SurvivorIdentity, survivorName)
+                RabbitMqPhysicalAddress.Queue(
+                    "",
+                    MessageLane.Queue,
+                    CancelRecoveryModule.CancelledIdentity,
+                    cancelledName
+                ),
+                RabbitMqPhysicalAddress.Queue(
+                    "",
+                    MessageLane.Queue,
+                    CancelRecoveryModule.SurvivorIdentity,
+                    survivorName
+                )
             );
         }
         catch

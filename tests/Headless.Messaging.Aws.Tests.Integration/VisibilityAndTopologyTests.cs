@@ -80,9 +80,9 @@ public sealed class VisibilityAndTopologyTests(LocalStackTestFixture fixture) : 
         var options = _Options(o => o.AutoProvision = false);
         using var sqs = AwsClientFactory.CreateSqsClient(options.Value);
         using var sns = AwsClientFactory.CreateSnsClient(options.Value);
-        var topicArn = (await sns.CreateTopicAsync(AwsPhysicalAddress.BusTopic(messageName), AbortToken)).TopicArn;
+        var topicArn = (await sns.CreateTopicAsync(AwsPhysicalAddress.BusTopic("", messageName), AbortToken)).TopicArn;
         var queueUrl = (
-            await sqs.CreateQueueAsync(AwsPhysicalAddress.BusSubscriptionQueue(identity), AbortToken)
+            await sqs.CreateQueueAsync(AwsPhysicalAddress.BusSubscriptionQueue("", identity), AbortToken)
         ).QueueUrl;
         var queueArn = (await sqs.GetAttributesAsync(queueUrl))["QueueArn"];
         await sns.SubscribeAsync(

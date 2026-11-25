@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
@@ -157,6 +158,11 @@ public static class SetupMessagingAzureServiceBus
             );
 
             configureOptions(services);
+
+            // Environments that share one namespace keep their topics and queues apart.
+            services.ApplyHeadlessPrefix<AzureServiceBusMessagingOptions>(
+                static (options, prefix) => options.ApplyHostPrefix(prefix)
+            );
 
             services.AddSingleton<IConsumerClientFactory, AzureServiceBusConsumerClientFactory>();
             services.AddSingleton<IAzureServiceBusClientPool, AzureServiceBusClientPool>();

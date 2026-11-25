@@ -48,6 +48,8 @@ For the base exchange `ExchangeName` (default `messaging.default.router`):
 
 Bus and Queue have independent topology, so one contract name can carry both lanes without cross-delivery.
 
+With `Headless:Prefix` set to `wt1`, the base exchange becomes `wt1.{ExchangeName}` and each queue starts with `wt1.`, so environments that share one virtual host keep separate topology; routing keys do not change. A prefix that makes an exchange or a queue-lane queue longer than 255 characters fails startup. See [host prefix](transports.md#host-prefix).
+
 **What the topology resource does:**
 
 - `provision` declares both lane exchanges, one queue per competing consumer subscription and per registered Queue-lane message (consumed on this host or not), each queue's `.dlq` when dead-lettering is on, and the bindings. Every shared queue is durable, not exclusive, and not auto-deleted.

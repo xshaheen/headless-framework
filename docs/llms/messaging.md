@@ -377,6 +377,8 @@ Set these on `setup.Options` inside `AddHeadlessMessaging`. Topic files own the 
 
 **Set a distinct `Version` per service that shares a lock store.** The retry-pickup locks are named from `Version`, so two services that point at one lock store (one Redis, for example) with the same `Version` contend for the same lock resources and starve each other's retry pickup. The default `v1` is safe only for one service per lock store. See [Lock names and isolation](messaging/retries.md#lock-names-and-isolation).
 
+**Give each environment its own `Headless:Prefix` to share one broker.** Worktrees or preview stacks that point at one NATS, Redis, RabbitMQ, Kafka, AWS, or Azure Service Bus set different [isolation prefixes](utilities.md#isolation-prefix), and each transport puts the prefix in front of the broker names it derives, so the environments do not receive each other's messages. Message names, storage, and dashboards keep the unprefixed names. The prefix also isolates retry locks on a Redis or in-memory lock store, so environments need no distinct `Version` there; services inside one environment still do. See [Host prefix](messaging/transports.md#host-prefix).
+
 Tenant propagation and strict publishing are configured through `AddHeadlessTenancy(tenancy => tenancy.Messaging(...))`; `MessagingOptions.TenantContextRequired` reports the setting and has no public setter.
 
 ### Runtime behavior

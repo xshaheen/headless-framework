@@ -70,7 +70,7 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
         }
 
         await _PublishAsync(names[1], "updated-before");
-        await _DrainLegacyAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable(identity, names[1]), 1);
+        await _DrainLegacyAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable("", identity, names[1]), 1);
         await _PublishAsync(names[0], "pending-1");
         await _PublishAsync(names[1], "pending-2");
         await _PublishAsync(names[0], "pending-3");
@@ -85,13 +85,13 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
             await listener.ExpectNothingMoreAsync(() => _PublishAsync(names[1], "sentinel"), "sentinel");
         }
 
-        (await _ConsumerExistsAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable(identity, names[0])))
+        (await _ConsumerExistsAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable("", identity, names[0])))
             .Should()
             .BeFalse();
-        (await _ConsumerExistsAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable(identity, names[1])))
+        (await _ConsumerExistsAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable("", identity, names[1])))
             .Should()
             .BeFalse();
-        var durable = await js.GetConsumerAsync(stream, NatsPhysicalAddress.BusDurable(identity), AbortToken);
+        var durable = await js.GetConsumerAsync(stream, NatsPhysicalAddress.BusDurable("", identity), AbortToken);
         durable.Info.Config.FilterSubjects.Should().BeEquivalentTo(names.Select(_Subject));
 
         // and an old replica still running during a rolling deploy recreates its per-message durable
@@ -102,7 +102,7 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
         await using var restarted = await _ListenAsync(options, identity, names);
         await _PublishAsync(names[1], "after-restart");
         (await restarted.TakeAsync(1)).Should().Equal("after-restart");
-        (await _ConsumerExistsAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable(identity, names[0])))
+        (await _ConsumerExistsAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable("", identity, names[0])))
             .Should()
             .BeFalse();
     }
@@ -122,7 +122,10 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
             StreamProvisioning = NatsStreamProvisioning.Reconcile,
             StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
         };
-        natsOptions.Streams.Own(streamName, s => s.Subjects(NatsPhysicalAddress.Subject(MessageLane.Bus, $"{key}.>")));
+        natsOptions.Streams.Own(
+            streamName,
+            s => s.Subjects(NatsPhysicalAddress.Subject("", MessageLane.Bus, $"{key}.>"))
+        );
         var options = Options.Create(natsOptions);
         var stream = await _ProvisionAsync(options, names);
         stream.Should().Be(streamName);
@@ -133,13 +136,13 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
         }
 
         await _PublishAsync(names[0], "old-registered");
-        await _DrainLegacyAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable(identity, names[0]), 1);
+        await _DrainLegacyAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable("", identity, names[0]), 1);
         for (var i = 0; i < 10; i++)
         {
             await _PublishAsync(names[1], $"old-updated-{i}");
         }
 
-        await _DrainLegacyAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable(identity, names[1]), 10);
+        await _DrainLegacyAsync(js, stream, NatsPhysicalAddress.LegacyBusDurable("", identity, names[1]), 10);
 
         // when
         await using var listener = await _ListenAsync(options, identity, names);
@@ -175,7 +178,7 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
     {
         await js.CreateOrUpdateConsumerAsync(
             stream,
-            new ConsumerConfig(NatsPhysicalAddress.LegacyBusDurable(identity, name))
+            new ConsumerConfig(NatsPhysicalAddress.LegacyBusDurable("", identity, name))
             {
                 FilterSubject = _Subject(name),
                 DeliverPolicy = ConsumerConfigDeliverPolicy.New,
@@ -234,7 +237,7 @@ public sealed class NatsCrossTypeOrderingTests(NatsFixture fixture) : TestBase
         ack.EnsureSuccess();
     }
 
-    private static string _Subject(string name) => NatsPhysicalAddress.Subject(MessageLane.Bus, name);
+    private static string _Subject(string name) => NatsPhysicalAddress.Subject("", MessageLane.Bus, name);
 
     private async Task<Listener> _ListenAsync(IOptions<NatsMessagingOptions> options, string identity, string[] names)
     {

@@ -33,15 +33,37 @@ On the Bus lane a consumer identity is the broker subscription name. Every provi
 
 | Provider | Bus subscription | Limit and characters kept | Namespace isolation |
 | --- | --- | --- | --- |
-| AWS | SQS queue `bus-{identity}` (an identity ending `.fifo` gets a FIFO queue) | 80 characters including `bus-` and `.fifo`; letters, digits, `-`, `_` | Account and region |
-| Azure Service Bus | Subscription `{identity}` on the Bus topic | 50 characters; letters, digits, `.`, `-`, `_`; starts and ends with a letter or digit | Namespace and `TopicPath` |
+| AWS | SQS queue `bus-{identity}` (an identity ending `.fifo` gets a FIFO queue) | 80 characters including `bus-` and `.fifo`; letters, digits, `-`, `_` | Account and region; `Headless:Prefix` |
+| Azure Service Bus | Subscription `{identity}` on the Bus topic | 50 characters; letters, digits, `.`, `-`, `_`; starts and ends with a letter or digit | Namespace; `Headless:Prefix` on the topic |
 | InMemory | `{identity}`, unchanged | None | The process |
-| Kafka (Queue only) | Consumer group `{message-name}` | 249 characters; letters, digits, `.`, `-`, `_` (the topic rules) | Topic names, through `MessageNamePrefix` |
-| NATS | Durable `bus_{identity}` on each stream the identity reads, filtering on all its subjects there | 255 characters; printable ASCII except `.`, `*`, `>`, `/`, `\` | Account; streams follow the message names |
-| RabbitMQ | Queue `bus.{identity}` | 255 characters; letters, digits, `.`, `-`, `_` | Virtual host |
-| Redis | Consumer group `{identity}` on each stream | No limit; printable ASCII without spaces | Stream keys follow the message names; database or ACL |
+| Kafka (Queue only) | Consumer group `{message-name}` | 249 characters; letters, digits, `.`, `-`, `_` (the topic rules) | `Headless:Prefix`, then `MessageNamePrefix` |
+| NATS | Durable `bus_{identity}` on each stream the identity reads, filtering on all its subjects there | 255 characters; printable ASCII except `.`, `*`, `>`, `/`, `\` | Account; `Headless:Prefix` |
+| RabbitMQ | Queue `bus.{identity}` | 255 characters; letters, digits, `.`, `-`, `_` | Virtual host; `Headless:Prefix` |
+| Redis | Consumer group `{identity}` on each stream | No limit; printable ASCII without spaces | Database or ACL; `Headless:Prefix` on the stream keys |
 
-Broker-backed providers keep names ASCII and replace whitespace and control characters even where the broker allows them. No host prefix is added: the identity alone names the subscription, so a module keeps its subscriptions when it moves to another process. To keep separate systems or environments apart on one broker, use the broker namespace in the last column, or distinct identities.
+Broker-backed providers keep names ASCII and replace whitespace and control characters even where the broker allows them. The identity alone names the subscription inside one environment, so a module keeps its subscriptions when it moves to another process.
+
+### Host prefix
+
+Several environments, such as worktrees or preview stacks, can share one broker when each host sets its own [`Headless:Prefix`](../utilities.md#isolation-prefix). Every provider except InMemory then puts the prefix in front of each broker name it derives, before the name rules above, so limits and allowed characters still hold. Hosts with the same prefix share streams, queues, and subscriptions as before. Hosts with different prefixes, or one with a prefix and one without, do not receive each other's messages, even with the same message names and identities. With no prefix set, every name stays byte-for-byte what it was.
+
+| Provider | Prefixed names (prefix `wt1`) | Scoped by the prefixed name, so left as is |
+| --- | --- | --- |
+| NATS | Subjects `wt1.headless.{lane}.{name}`; streams `wt1_headless-{lane}-{key}`; durables `wt1_bus_{identity}` and `wt1_queue-{subject}`; streams declared with `Streams.Own` become `wt1_{stream}`, and declared `headless.*` subjects get the `wt1.` token | Reply inboxes (random per request), streams declared with `Streams.Bind` and external subjects, which a foreign system owns |
+| Redis | Stream keys `wt1:headless:messaging:{lane}:{name}` | Consumer groups and wake channels, which follow the stream key |
+| RabbitMQ | Base exchange `wt1.{ExchangeName}`, so the lane and dead-letter exchanges follow; queues `wt1.bus.{identity}` and `wt1.queue.{name}` | Routing keys, which an exchange scopes |
+| Kafka | Topics `wt1.{name}`; consumer groups `wt1.{name}`; topic patterns match only `wt1.` topics | A `group.id` set in `MainConfig`, which stays as written |
+| AWS | SNS topics `wt1_bus-{name}`; SQS queues `wt1_queue-{name}` and `wt1_bus-{identity}` | `.fifo` stays the last suffix |
+| Azure Service Bus | `TopicPath` and custom producer topics `wt1.{topic}`; queue-lane queues `wt1.{name}` | Subscriptions, which a topic scopes |
+
+- **Logical names do not change.** Message names, headers, storage rows, and dashboards keep the unprefixed names, so a prefixed host stores and shows the same records as an unprefixed one.
+- **Long names.** A name that the prefix pushes past the broker limit takes the hash fallback above. RabbitMQ exchanges and queue-lane queues, and Azure Service Bus topics and queue-lane queues, are names publishers and consumers must agree on, so they are never hashed. When the prefix pushes one past the limit, startup fails with an error naming `Headless:Prefix` instead of renaming it into a name another environment could share.
+- **Separators.** The prefix allows no `.`, `_`, or `:`, and each provider joins it with one of them, so a prefixed name cannot equal another environment's prefixed name. An unprefixed host could still reach a prefixed one only by naming its own destinations `{prefix}.` or `{prefix}_` on purpose, for example a RabbitMQ queue-lane message named `wt1.orders`.
+- **Externally owned names.** A stream declared with `Streams.Bind` keeps its name. It must capture the prefixed subjects of every environment that publishes to it, or each environment needs its own bound stream. NATS external subjects stay as declared. A [foreign producer](foreign-producers.md) on any other provider must write to the prefixed topic, queue, or stream key.
+- **Shared storage.** Hosts that share one messaging storage database are one environment and need the same prefix: the outbox dispatcher of either host publishes the other's rows under its own prefix.
+- **Upgrading.** A host that already sets `Headless:Prefix` gets new broker names on its first start after the upgrade. It no longer reads the unprefixed streams, queues, and subscriptions it used before, so drain them first or replay what they still hold.
+
+**Verify:** at start the host logs `Headless names in shared stores start with the prefix '{Prefix}'` once, and `dotnet MyApp.dll describe` shows it as `host.prefix`. Every transport registers that log, so a host that sets the prefix only for messaging reports it too.
 
 ## Routing affinity
 

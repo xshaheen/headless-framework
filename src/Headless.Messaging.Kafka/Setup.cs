@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
@@ -137,6 +138,11 @@ public static class SetupMessagingKafka
             );
 
             configureOptions(services);
+
+            // Environments that share one cluster keep their topics and consumer groups apart.
+            services.ApplyHeadlessPrefix<KafkaMessagingOptions>(
+                static (options, prefix) => options.HostPrefix = prefix
+            );
 
             services.AddSingleton<IQueueTransport, KafkaTransport>();
             services.AddSingleton<IConsumerClientFactory, KafkaConsumerClientFactory>();

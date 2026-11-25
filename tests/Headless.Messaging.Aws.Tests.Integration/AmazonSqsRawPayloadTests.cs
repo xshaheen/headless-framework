@@ -29,7 +29,10 @@ public sealed class AmazonSqsRawPayloadTests(LocalStackTestFixture fixture) : Te
         var name = $"raw-{Guid.NewGuid():N}";
         using var sqs = _CreateSqsClient();
         var queueUrl = (
-            await sqs.CreateQueueAsync(AwsPhysicalAddress.QueueDestination(name).ToSqsCreateQueueRequest(), AbortToken)
+            await sqs.CreateQueueAsync(
+                AwsPhysicalAddress.QueueDestination("", name).ToSqsCreateQueueRequest(),
+                AbortToken
+            )
         ).QueueUrl;
         var receives = new ConcurrentQueue<string>();
         await using var provider = await _StartHostAsync(
@@ -119,7 +122,7 @@ public sealed class AmazonSqsRawPayloadTests(LocalStackTestFixture fixture) : Te
         var recorder = provider.GetRequiredService<ProbeRecorder>();
         using var sns = AwsClientFactory.CreateSnsClient(_Options());
         var topicArn = (
-            await sns.CreateTopicAsync(AwsPhysicalAddress.BusTopic(name).ToSnsCreateTopicRequest(), AbortToken)
+            await sns.CreateTopicAsync(AwsPhysicalAddress.BusTopic("", name).ToSnsCreateTopicRequest(), AbortToken)
         ).TopicArn;
 
         // when: a foreign producer publishes to the topic with no message attributes

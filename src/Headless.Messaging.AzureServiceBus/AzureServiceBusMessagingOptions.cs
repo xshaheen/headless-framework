@@ -178,6 +178,42 @@ public sealed class AzureServiceBusMessagingOptions
     internal ICollection<IServiceBusProducerDescriptor> CustomProducers { get; set; } = [];
 
     /// <summary>
+    /// The host isolation prefix (<c>Headless:Prefix</c>) every topic and Queue-lane queue starts with, or empty for
+    /// none. Set after every configuration step, never by the application.
+    /// </summary>
+    internal string HostPrefix { get; private set; } = "";
+
+    /// <summary>
+    /// Moves <see cref="TopicPath"/> and every custom producer's topic under <paramref name="hostPrefix"/>, so every
+    /// reader of the options sees the topic this host uses.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A prefixed topic path is longer than Service Bus allows.</exception>
+    internal void ApplyHostPrefix(string hostPrefix)
+    {
+        HostPrefix = hostPrefix;
+        TopicPath = AzureServiceBusPhysicalAddress.Topic(hostPrefix, TopicPath);
+        CustomProducers =
+        [
+            .. CustomProducers.Select(producer => new PrefixedProducerDescriptor(
+                producer,
+                AzureServiceBusPhysicalAddress.Topic(hostPrefix, producer.TopicPath)
+            )),
+        ];
+    }
+
+    private sealed class PrefixedProducerDescriptor(IServiceBusProducerDescriptor inner, string topicPath)
+        : IServiceBusProducerDescriptor
+    {
+        public string TopicPath { get; } = topicPath;
+
+        public string MessageTypeName => inner.MessageTypeName;
+
+        public bool CreateSubscription => inner.CreateSubscription;
+
+        public bool EnableSessions => inner.EnableSessions;
+    }
+
+    /// <summary>
     /// Registers a custom producer for message type <typeparamref name="T"/>, directing its
     /// messages to a topic path different from the shared <see cref="TopicPath"/>. Use this when
     /// a message type must target a dedicated topic or integrate with an existing Service Bus topology.

@@ -143,7 +143,9 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             (await fixture.CountSubscriptionsAsync(subject, AbortToken))
                 .Should()
                 .Be(1);
-            (await _CountConsumersAsync(js, NatsPhysicalAddress.Stream(MessageLane.Bus, streamName))).Should().Be(0);
+            (await _CountConsumersAsync(js, NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName)))
+                .Should()
+                .Be(0);
         }
         finally
         {
@@ -155,7 +157,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         (await fixture.CountSubscriptionsAsync(subject, AbortToken))
             .Should()
             .Be(0);
-        (await _CountConsumersAsync(js, NatsPhysicalAddress.Stream(MessageLane.Bus, streamName))).Should().Be(0);
+        (await _CountConsumersAsync(js, NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName))).Should().Be(0);
     }
 
     [Fact]
@@ -217,7 +219,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             for (var i = 0; i < 50; i++)
             {
                 await connection.PublishAsync(
-                    NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
+                    NatsPhysicalAddress.Subject("", MessageLane.Bus, subject),
                     new ReadOnlyMemory<byte>([1]),
                     headers: _CreateHeaders(),
                     serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
@@ -286,7 +288,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
                 for (var i = 0; i < 3; i++)
                 {
                     await connection.PublishAsync(
-                        NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
+                        NatsPhysicalAddress.Subject("", MessageLane.Bus, subject),
                         new ReadOnlyMemory<byte>([1]),
                         headers: _CreateHeaders(),
                         serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
@@ -555,7 +557,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
         var stream = await js.GetStreamAsync(
-            NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
+            NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName),
             cancellationToken: AbortToken
         );
         stream.Should().NotBeNull();
@@ -587,7 +589,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
         var stream = await js.GetStreamAsync(
-            NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
+            NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName),
             cancellationToken: AbortToken
         );
         var info = stream.Info;
@@ -699,7 +701,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             var headers = _CreateHeaders();
             headers.Add("X-Custom", "custom-value");
             await js.PublishAsync(
-                NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
+                NatsPhysicalAddress.Subject("", MessageLane.Bus, subject),
                 "body"u8.ToArray(),
                 serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
                 headers: headers,
@@ -786,8 +788,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             // so nothing can be on its way to the client.
             var js = new NatsJSContext(await fixture.GetConnectionAsync());
             var durable = await js.GetConsumerAsync(
-                NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
-                NatsPhysicalAddress.BusDurable("test-group"),
+                NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName),
+                NatsPhysicalAddress.BusDurable("", "test-group"),
                 AbortToken
             );
             durable.Info.NumWaiting.Should().Be(0);
@@ -820,8 +822,11 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         // given — a stream provisioned out of band on Memory storage, while the provider wants File
         var logicalName = $"opprov-{Guid.NewGuid():N}"[..22];
         var subject = $"{logicalName}.orders";
-        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
-        await fixture.EnsureStreamAsync(streamName, NatsPhysicalAddress.Subject(MessageLane.Bus, $"{logicalName}.>"));
+        var streamName = NatsPhysicalAddress.Stream("", MessageLane.Bus, logicalName);
+        await fixture.EnsureStreamAsync(
+            streamName,
+            NatsPhysicalAddress.Subject("", MessageLane.Bus, $"{logicalName}.>")
+        );
 
         var options = _CreateOptions(NatsStreamProvisioning.Verify);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
@@ -880,14 +885,14 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         // given — same storage as the provider wants, but a different retention limit
         var logicalName = $"mutable-{Guid.NewGuid():N}"[..22];
         var subject = $"{logicalName}.orders";
-        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
+        var streamName = NatsPhysicalAddress.Stream("", MessageLane.Bus, logicalName);
 
         var js = new NatsJSContext(await fixture.GetConnectionAsync());
         await js.CreateStreamAsync(
             new StreamConfig
             {
                 Name = streamName,
-                Subjects = [NatsPhysicalAddress.Subject(MessageLane.Bus, $"{logicalName}.>")],
+                Subjects = [NatsPhysicalAddress.Subject("", MessageLane.Bus, $"{logicalName}.>")],
                 Storage = StreamConfigStorage.Memory,
                 Retention = NatsPhysicalAddress.Retention(MessageLane.Bus),
                 MaxMsgs = 100,
@@ -925,8 +930,11 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         // given — storage differs, which JetStream refuses to change on a live stream
         var logicalName = $"immut-{Guid.NewGuid():N}"[..22];
         var subject = $"{logicalName}.orders";
-        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
-        await fixture.EnsureStreamAsync(streamName, NatsPhysicalAddress.Subject(MessageLane.Bus, $"{logicalName}.>"));
+        var streamName = NatsPhysicalAddress.Stream("", MessageLane.Bus, logicalName);
+        await fixture.EnsureStreamAsync(
+            streamName,
+            NatsPhysicalAddress.Subject("", MessageLane.Bus, $"{logicalName}.>")
+        );
 
         var options = _CreateOptions(NatsStreamProvisioning.Reconcile);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
@@ -950,7 +958,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         // given
         var logicalName = $"nocreate-{Guid.NewGuid():N}"[..22];
         var subject = $"{logicalName}.orders";
-        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
+        var streamName = NatsPhysicalAddress.Stream("", MessageLane.Bus, logicalName);
 
         var options = _CreateOptions(NatsStreamProvisioning.Disabled);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
@@ -974,7 +982,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var logicalName = $"twogroup-{Guid.NewGuid():N}"[..22];
         var subjectA = $"{logicalName}.created";
         var subjectB = $"{logicalName}.shipped";
-        var streamName = NatsPhysicalAddress.Stream(MessageLane.Bus, logicalName);
+        var streamName = NatsPhysicalAddress.Stream("", MessageLane.Bus, logicalName);
 
         await using (
             var groupA = new NatsConsumerClient(
@@ -1003,7 +1011,9 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         await act.Should().NotThrowAsync();
         var js = new NatsJSContext(await fixture.GetConnectionAsync());
         var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
-        stream.Info.Config.Subjects.Should().Equal(NatsPhysicalAddress.Subject(MessageLane.Bus, $"{logicalName}.>"));
+        stream
+            .Info.Config.Subjects.Should()
+            .Equal(NatsPhysicalAddress.Subject("", MessageLane.Bus, $"{logicalName}.>"));
     }
 
     [Fact]
@@ -1023,7 +1033,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         message
             .Headers[MessagingHeaders.TransportAddress]
             .Should()
-            .Be(NatsPhysicalAddress.Subject(MessageLane.Queue, subject));
+            .Be(NatsPhysicalAddress.Subject("", MessageLane.Queue, subject));
     }
 
     [Fact]
@@ -1036,7 +1046,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var natsOptions = new NatsMessagingOptions { Servers = fixture.ConnectionString };
         natsOptions.Streams.Own(
             streamName,
-            stream => stream.Subjects(NatsPhysicalAddress.Subject(MessageLane.Queue, $"{logicalName}.>"))
+            stream => stream.Subjects(NatsPhysicalAddress.Subject("", MessageLane.Queue, $"{logicalName}.>"))
         );
         var options = Options.Create(natsOptions);
         var messageId = await _PublishThroughTransportAsync(options, MessageLane.Queue, subject);
@@ -1060,7 +1070,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var logicalName = $"bound-{Guid.NewGuid():N}"[..20];
         var subject = $"{logicalName}.placed";
         var streamName = $"BOUND_{logicalName[6..]}";
-        var streamSubject = NatsPhysicalAddress.Subject(MessageLane.Queue, $"{logicalName}.>");
+        var streamSubject = NatsPhysicalAddress.Subject("", MessageLane.Queue, $"{logicalName}.>");
         await fixture.EnsureStreamAsync(streamName, streamSubject, StreamConfigRetention.Workqueue);
         var natsOptions = new NatsMessagingOptions
         {
@@ -1081,7 +1091,9 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         stream.Info.Config.Subjects.Should().Equal(streamSubject);
         stream.Info.Config.MaxAge.Should().Be(TimeSpan.Zero);
         stream.Info.Config.Storage.Should().Be(StreamConfigStorage.Memory);
-        (await _StreamExistsAsync(js, NatsPhysicalAddress.Stream(MessageLane.Queue, logicalName))).Should().BeFalse();
+        (await _StreamExistsAsync(js, NatsPhysicalAddress.Stream("", MessageLane.Queue, logicalName)))
+            .Should()
+            .BeFalse();
     }
 
     [Fact]
@@ -1188,8 +1200,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             Volatile.Read(ref deliveries).Should().Be(1);
             var js = new NatsJSContext(await fixture.GetConnectionAsync());
             var consumer = await js.GetConsumerAsync(
-                NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
-                NatsPhysicalAddress.BusDurable("progress-group"),
+                NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName),
+                NatsPhysicalAddress.BusDurable("", "progress-group"),
                 AbortToken
             );
             consumer.Info.NumRedelivered.Should().Be(0);
@@ -1259,7 +1271,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         client.OnLogCallback = _ => { };
         var connection = await fixture.GetConnectionAsync();
         await using var advisories = await connection.SubscribeCoreAsync<string>(
-            $"$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.{NatsPhysicalAddress.Stream(MessageLane.Bus, streamName)}.>",
+            $"$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.{NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName)}.>",
             cancellationToken: AbortToken
         );
         await connection.PingAsync(AbortToken);
@@ -1297,7 +1309,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         client.OnLogCallback = _ => { };
         var connection = await fixture.GetConnectionAsync();
         await using var advisories = await connection.SubscribeCoreAsync<string>(
-            $"$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.{NatsPhysicalAddress.Stream(MessageLane.Bus, streamName)}.>",
+            $"$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.{NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName)}.>",
             cancellationToken: AbortToken
         );
         await connection.PingAsync(AbortToken);
@@ -1337,7 +1349,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             declaredStream,
             stream =>
                 stream
-                    .Subjects(NatsPhysicalAddress.Subject(MessageLane.Queue, $"{logicalName}.>"))
+                    .Subjects(NatsPhysicalAddress.Subject("", MessageLane.Queue, $"{logicalName}.>"))
                     .DuplicateWindow(TimeSpan.FromMinutes(10))
         );
         var options = Options.Create(natsOptions);
@@ -1359,7 +1371,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         declared.Info.Config.DuplicateWindow.Should().Be(TimeSpan.FromMinutes(10));
         declared.Info.State.Messages.Should().Be(1, "the stream dropped the repeated Nats-Msg-Id inside its window");
         var derived = await js.GetStreamAsync(
-            NatsPhysicalAddress.Stream(MessageLane.Queue, derivedName),
+            NatsPhysicalAddress.Stream("", MessageLane.Queue, derivedName),
             cancellationToken: AbortToken
         );
         derived.Info.Config.DuplicateWindow.Should().Be(TimeSpan.FromMinutes(2));
@@ -1480,8 +1492,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     private async Task _EnsureStreamAsync(string streamName, string subjectPattern)
     {
         await fixture.EnsureStreamAsync(
-            NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
-            NatsPhysicalAddress.Subject(MessageLane.Bus, subjectPattern),
+            NatsPhysicalAddress.Stream("", MessageLane.Bus, streamName),
+            NatsPhysicalAddress.Subject("", MessageLane.Bus, subjectPattern),
             StreamConfigRetention.Interest
         );
     }
@@ -1491,7 +1503,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var conn = await fixture.GetConnectionAsync();
         var js = new NatsJSContext(conn);
         await js.PublishAsync(
-            NatsPhysicalAddress.Subject(MessageLane.Bus, subject),
+            NatsPhysicalAddress.Subject("", MessageLane.Bus, subject),
             new ReadOnlyMemory<byte>(body),
             serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
             headers: _CreateHeaders(),

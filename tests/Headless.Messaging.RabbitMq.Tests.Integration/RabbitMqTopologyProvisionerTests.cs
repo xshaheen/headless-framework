@@ -25,7 +25,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         // given
         var (provider, name, exchange) = _Build();
         await using var _ = provider;
-        var queue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name);
+        var queue = RabbitMqPhysicalAddress.Queue("", MessageLane.Queue, name, name);
         var topology = (await _ResourcesAsync(provider)).Should().ContainSingle(r => r.Kind == "RabbitMQ").Which;
         topology.Name.Should().Be("topology");
 
@@ -87,7 +87,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         // given
         var (provider, name, exchange) = _Build();
         await using var _ = provider;
-        var queue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name);
+        var queue = RabbitMqPhysicalAddress.Queue("", MessageLane.Queue, name, name);
         var warmup = provider.GetServices<IWarmup>().Should().ContainSingle(w => w.Name == "Resources").Which;
 
         // The lane exchanges exist, as another service's setup leaves them, so the queue is what is missing.
@@ -149,7 +149,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         await using var __ = second;
         await first.ProvisionResourcesAsync(AbortToken);
         await second.ProvisionResourcesAsync(AbortToken);
-        var secondQueue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, secondName, secondName);
+        var secondQueue = RabbitMqPhysicalAddress.Queue("", MessageLane.Queue, secondName, secondName);
 
         // when
         await first.DeleteResourcesAsync(AbortToken);
@@ -158,7 +158,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         // binds here but every host requires, and the second service's binding stay
         (
             await fixture.QueueExistsAsync(
-                RabbitMqPhysicalAddress.Queue(MessageLane.Queue, firstName, firstName),
+                RabbitMqPhysicalAddress.Queue("", MessageLane.Queue, firstName, firstName),
                 AbortToken
             )
         )
@@ -201,7 +201,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         await using var _ = consumer;
         var (publisher, _, _) = _Build(name, exchange, consume: false);
         await using var __ = publisher;
-        var queue = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, name, name);
+        var queue = RabbitMqPhysicalAddress.Queue("", MessageLane.Queue, name, name);
         await consumer.ProvisionResourcesAsync(AbortToken);
         await publisher.ProvisionResourcesAsync(AbortToken);
         await _PublishAsync(exchange, name);

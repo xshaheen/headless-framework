@@ -270,7 +270,7 @@ public sealed class NatsExternalSubjectTests(NatsFixture fixture) : TestBase
 
             if (consume)
             {
-                var durable = NatsPhysicalAddress.QueueDurable(scope.MessageName);
+                var durable = NatsPhysicalAddress.QueueDurable("", scope.MessageName);
                 var js = new NatsJSContext(await fixture.GetConnectionAsync());
                 await _WaitUntilAsync(
                     async () =>

@@ -401,7 +401,8 @@ public sealed class AmazonSqsRawPayloadTests : TestBase
     }
 
     private static string _QueueUrl(string messageName) =>
-        "https://sqs.local/000000000000/" + AwsPhysicalAddress.QueueDestination(messageName).NormalizeForSqsQueueName();
+        "https://sqs.local/000000000000/"
+        + AwsPhysicalAddress.QueueDestination("", messageName).NormalizeForSqsQueueName();
 
     private static SqsMessage _Message(
         string messageId,

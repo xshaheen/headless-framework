@@ -42,6 +42,7 @@ public sealed class PlaceOrderWorker : IConsume<PlaceOrder>
 ### Names and topology
 
 - Bus publishes to the SNS topic `bus-{logical-name}`. Each Bus consumer identity owns the SQS queue `bus-{consumer-identity}`, subscribed to that topic. Queue sends go to `queue-{logical-name}`. In names, `.` becomes `-` and `:` becomes `_`.
+- With `Headless:Prefix` set to `wt1`, every topic and queue starts with `wt1_` (`wt1_bus-orders-created`), and the IAM resource patterns below become `wt1_bus-*` and `wt1_queue-*`. See [host prefix](transports.md#host-prefix).
 - Bus and Queue have independent topology, so one contract name can carry both lanes without cross-delivery.
 - `AutoProvision = true` (default) creates SNS topics, SQS queues, the queue access policy, and raw-delivery SNS-to-SQS subscriptions on first use.
 - `AutoProvision = false` looks topics and queues up and creates nothing, for topology managed by infrastructure as code. Every topic, queue, and subscription must then exist before the host starts, and each Bus subscription must enable raw message delivery. A missing queue fails consumer startup naming the queue lookup. A missing topic fails the send. After a miss, sends to that topic fail without a new `sns:ListTopics` lookup for 30 seconds, so a topic provisioned while the host runs is found within that window.

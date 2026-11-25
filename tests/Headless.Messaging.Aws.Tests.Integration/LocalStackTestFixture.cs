@@ -174,7 +174,7 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                     ? brokerDestinations.Single()
                     : (
                         await cleanupClient.GetQueueUrlAsync(
-                            AwsPhysicalAddress.BusSubscriptionQueue(group),
+                            AwsPhysicalAddress.BusSubscriptionQueue("", group),
                             cancellationToken
                         )
                     ).QueueUrl;

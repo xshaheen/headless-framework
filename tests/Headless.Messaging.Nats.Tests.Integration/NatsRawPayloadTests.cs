@@ -114,7 +114,7 @@ public sealed class NatsRawPayloadTests(NatsFixture fixture) : TestBase
     {
         var name = $"raw-{Guid.NewGuid():N}";
         var streamName = $"RAW_{Guid.NewGuid():N}";
-        var subject = NatsPhysicalAddress.Subject(MessageLane.Queue, name);
+        var subject = NatsPhysicalAddress.Subject("", MessageLane.Queue, name);
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<RawRunConsumer>();
@@ -141,7 +141,7 @@ public sealed class NatsRawPayloadTests(NatsFixture fixture) : TestBase
         try
         {
             await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
-            var host = new RawHost(provider, name, subject, streamName, NatsPhysicalAddress.QueueDurable(name));
+            var host = new RawHost(provider, name, subject, streamName, NatsPhysicalAddress.QueueDurable("", name));
 
             var js = new NatsJSContext(await fixture.GetConnectionAsync());
             await _WaitUntilAsync(

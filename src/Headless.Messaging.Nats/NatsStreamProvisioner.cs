@@ -52,6 +52,9 @@ internal sealed class NatsStreamProvisioner(
     private readonly ConcurrentDictionary<(MessageLane Lane, string Name, bool Sharded), ResolvedStream> _resolved =
         new();
 
+    /// <summary>The host isolation prefix every derived subject and stream carries, or empty for none.</summary>
+    public string HostPrefix => _options.HostPrefix;
+
     public bool IsEnabled => _options.StreamProvisioning is not NatsStreamProvisioning.Disabled;
 
     /// <summary>Whether the catalog declares a stream Headless owns, so the warm-up has something to create.</summary>
@@ -252,7 +255,7 @@ internal sealed class NatsStreamProvisioner(
                 );
         }
 
-        var subject = NatsPhysicalAddress.Subject(lane, messageName);
+        var subject = NatsPhysicalAddress.Subject(_options.HostPrefix, lane, messageName);
 
         // Declared subjects never overlap one another (the catalog refuses it), so at most one stream matches.
         return _options.Streams.Streams.FirstOrDefault(stream =>
@@ -297,12 +300,12 @@ internal sealed class NatsStreamProvisioner(
         return [.. specs.Values];
     }
 
-    private static NatsStreamSpec _Derived(MessageLane lane, string streamKey, IReadOnlyList<string> logicalSubjects)
+    private NatsStreamSpec _Derived(MessageLane lane, string streamKey, IReadOnlyList<string> logicalSubjects)
     {
         return new NatsStreamSpec(
-            NatsPhysicalAddress.Stream(lane, streamKey),
+            NatsPhysicalAddress.Stream(_options.HostPrefix, lane, streamKey),
             Owned: true,
-            [.. logicalSubjects.Select(subject => NatsPhysicalAddress.Subject(lane, subject))],
+            [.. logicalSubjects.Select(subject => NatsPhysicalAddress.Subject(_options.HostPrefix, lane, subject))],
             NatsPhysicalAddress.Retention(lane),
             MaxAge: null,
             MaxBytes: null,

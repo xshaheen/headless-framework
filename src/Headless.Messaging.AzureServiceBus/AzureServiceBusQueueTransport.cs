@@ -45,7 +45,7 @@ internal sealed class AzureServiceBusQueueTransport(
 
         try
         {
-            var queueName = transportMessage.Name;
+            var queueName = AzureServiceBusPhysicalAddress.Queue(busOptions.Value.HostPrefix, transportMessage.Name);
             var message = AzureServiceBusMessageBuilder.Build(
                 transportMessage,
                 busOptions.Value.EnableSessions,

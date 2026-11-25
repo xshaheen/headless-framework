@@ -109,7 +109,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         if (lane == MessageLane.Bus)
         {
-            _ = RabbitMqPhysicalAddress.Queue(lane, subscriptionName, subscriptionName);
+            _ = RabbitMqPhysicalAddress.Queue(
+                connectionChannelPool.HostPrefix,
+                lane,
+                subscriptionName,
+                subscriptionName
+            );
         }
     }
 
@@ -500,7 +505,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
                 // An every-instance client declares its queue only when it subscribes, so the topology-only client
                 // the core opens to provision message names leaves no queue behind.
-                var busQueue = RabbitMqPhysicalAddress.Queue(MessageLane.Bus, _subscriptionName, _subscriptionName);
+                var busQueue = RabbitMqPhysicalAddress.Queue(
+                    _connectionChannelPool.HostPrefix,
+                    MessageLane.Bus,
+                    _subscriptionName,
+                    _subscriptionName
+                );
                 if (
                     _lane == MessageLane.Bus
                     && _kind is ConsumerSubscriptionKind.Competing
@@ -792,12 +802,17 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     private string _GetQueueName(string messageName)
     {
-        return GetQueueName(_subscriptionName, messageName, _lane);
+        return GetQueueName(_subscriptionName, messageName, _lane, _connectionChannelPool.HostPrefix);
     }
 
-    internal static string GetQueueName(string subscriptionName, string messageName, MessageLane lane)
+    internal static string GetQueueName(
+        string subscriptionName,
+        string messageName,
+        MessageLane lane,
+        string hostPrefix = ""
+    )
     {
-        return RabbitMqPhysicalAddress.Queue(lane, subscriptionName, messageName);
+        return RabbitMqPhysicalAddress.Queue(hostPrefix, lane, subscriptionName, messageName);
     }
 
     // Bindings go with SubscribeAsync, which knows the routing keys; the declare here only creates the queue. A shared

@@ -42,7 +42,7 @@ internal sealed class RabbitMqTopologyProvisioner(
                         .ConfigureAwait(false);
                 }
 
-                foreach (var queue in Queues(topology))
+                foreach (var queue in Queues(topology, pool.HostPrefix))
                 {
                     var laneExchange = _Exchange(queue.Lane);
 
@@ -82,7 +82,7 @@ internal sealed class RabbitMqTopologyProvisioner(
                         .ConfigureAwait(false);
                 }
 
-                foreach (var name in Queues(topology).SelectMany(_WithDeadLetter))
+                foreach (var name in Queues(topology, pool.HostPrefix).SelectMany(_WithDeadLetter))
                 {
                     _ = await RabbitMqQueueTopology
                         .RequireQueueAsync(channel, name, cancellationToken)
@@ -136,7 +136,7 @@ internal sealed class RabbitMqTopologyProvisioner(
         await _RunAsync(
                 async channel =>
                 {
-                    foreach (var name in Queues(topology).SelectMany(_WithDeadLetter))
+                    foreach (var name in Queues(topology, pool.HostPrefix).SelectMany(_WithDeadLetter))
                     {
                         var declared = await RabbitMqQueueTopology
                             .RequireQueueAsync(channel, name, cancellationToken)
@@ -157,7 +157,7 @@ internal sealed class RabbitMqTopologyProvisioner(
     /// A queue is <see cref="RabbitMqTopologyQueue.Owned"/> only when this host consumes it; a queue it only publishes to
     /// belongs to the consuming service.
     /// </summary>
-    internal static List<RabbitMqTopologyQueue> Queues(MessagingTopology topology)
+    internal static List<RabbitMqTopologyQueue> Queues(MessagingTopology topology, string hostPrefix = "")
     {
         var queues = new SortedDictionary<string, RabbitMqTopologyQueue>(StringComparer.Ordinal);
 
@@ -172,7 +172,12 @@ internal sealed class RabbitMqTopologyProvisioner(
             {
                 var queue = _Add(
                     queues,
-                    RabbitMqPhysicalAddress.Queue(subscription.Lane, subscription.SubscriptionName, messageName),
+                    RabbitMqPhysicalAddress.Queue(
+                        hostPrefix,
+                        subscription.Lane,
+                        subscription.SubscriptionName,
+                        messageName
+                    ),
                     subscription.Lane,
                     messageName,
                     owned: true
@@ -187,7 +192,7 @@ internal sealed class RabbitMqTopologyProvisioner(
         {
             _Add(
                 queues,
-                RabbitMqPhysicalAddress.Queue(MessageLane.Queue, message.MessageName, message.MessageName),
+                RabbitMqPhysicalAddress.Queue(hostPrefix, MessageLane.Queue, message.MessageName, message.MessageName),
                 MessageLane.Queue,
                 message.MessageName,
                 owned: false
@@ -218,7 +223,7 @@ internal sealed class RabbitMqTopologyProvisioner(
     }
 
     private IEnumerable<string> _OwnedQueues(MessagingTopology topology) =>
-        Queues(topology).Where(static queue => queue.Owned).SelectMany(_WithDeadLetter);
+        Queues(topology, pool.HostPrefix).Where(static queue => queue.Owned).SelectMany(_WithDeadLetter);
 
     private IEnumerable<string> _WithDeadLetter(RabbitMqTopologyQueue queue)
     {

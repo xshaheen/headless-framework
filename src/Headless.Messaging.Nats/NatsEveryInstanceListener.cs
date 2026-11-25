@@ -66,7 +66,8 @@ internal sealed class NatsEveryInstanceListener
         var subjects = BuildEveryInstanceSubjects(
             messageNames,
             _owner.ResolveShardedMessageNames,
-            name => _owner.ExternalBinding(name)?.Filter
+            name => _owner.ExternalBinding(name)?.Filter,
+            _owner.HostPrefix
         );
         var subscriptions = new List<INatsSub<ReadOnlyMemory<byte>>>(subjects.Count);
 
@@ -225,7 +226,8 @@ internal sealed class NatsEveryInstanceListener
     internal static IReadOnlyList<string> BuildEveryInstanceSubjects(
         IEnumerable<string> messageNames,
         Func<IEnumerable<string>, ISet<string>> resolveShardedMessageNames,
-        Func<string, string?>? externalFilter = null
+        Func<string, string?>? externalFilter = null,
+        string hostPrefix = ""
     )
     {
         Argument.IsNotNull(messageNames);
@@ -256,7 +258,7 @@ internal sealed class NatsEveryInstanceListener
                 .PruneOverlappingSubjects(
                     NatsConsumerClient.BuildConsumerSubjects(derived, resolveShardedMessageNames(derived))
                 )
-                .Select(subject => NatsPhysicalAddress.Subject(MessageLane.Bus, subject)),
+                .Select(subject => NatsPhysicalAddress.Subject(hostPrefix, MessageLane.Bus, subject)),
             .. externalFilters,
         ];
     }

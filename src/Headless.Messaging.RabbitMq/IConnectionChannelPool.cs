@@ -23,9 +23,12 @@ internal interface IConnectionChannelPool
 
     /// <summary>
     /// Gets the effective exchange name, which includes the messaging version suffix when the
-    /// configured version is not <c>"v1"</c>.
+    /// configured version is not <c>"v1"</c>, and the host isolation prefix in front when one is set.
     /// </summary>
     string Exchange { get; }
+
+    /// <summary>Gets the host isolation prefix (<c>Headless:Prefix</c>) every queue starts with, or empty for none.</summary>
+    string HostPrefix { get; }
 
     /// <summary>
     /// Gets the largest message body, in bytes, that a consumer on this pool's connections can receive: the connection
@@ -191,9 +194,13 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         _options = options;
 
         HostAddress = string.Create(CultureInfo.InvariantCulture, $"{options.HostName}:{options.Port}");
-        Exchange = string.Equals("v1", messagingOptions.Version, StringComparison.Ordinal)
-            ? options.ExchangeName
-            : $"{options.ExchangeName}.{messagingOptions.Version}";
+        HostPrefix = options.HostPrefix;
+        Exchange = RabbitMqPhysicalAddress.BaseExchange(
+            options.HostPrefix,
+            string.Equals("v1", messagingOptions.Version, StringComparison.Ordinal)
+                ? options.ExchangeName
+                : $"{options.ExchangeName}.{messagingOptions.Version}"
+        );
 
         _logger.Configuration(
             options.HostName,
@@ -245,6 +252,8 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     public string HostAddress { get; }
 
     public string Exchange { get; }
+
+    public string HostPrefix { get; }
 
     public uint MaxMessageBodySize { get; }
 
@@ -318,7 +327,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var queueName = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, messageName, messageName);
+        var queueName = RabbitMqPhysicalAddress.Queue(HostPrefix, MessageLane.Queue, messageName, messageName);
         var entry = _publishQueues.GetOrAdd(
             queueName,
             static (queue, pool) => new Lazy<Task>(() => pool._RequirePublishQueueAsync(queue)),
@@ -332,7 +341,10 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
 
     public void ForgetQueueForPublish(string messageName)
     {
-        _publishQueues.TryRemove(RabbitMqPhysicalAddress.Queue(MessageLane.Queue, messageName, messageName), out _);
+        _publishQueues.TryRemove(
+            RabbitMqPhysicalAddress.Queue(HostPrefix, MessageLane.Queue, messageName, messageName),
+            out _
+        );
     }
 
     private async Task _AwaitPublishQueueAsync(string queueName, Lazy<Task> entry, CancellationToken cancellationToken)

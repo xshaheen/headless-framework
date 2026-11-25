@@ -5,6 +5,13 @@ using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.Redis;
 
+/// <summary>The names the Redis transport derives: stream keys, consumer groups, and wake channels.</summary>
+/// <remarks>
+/// Stream keys take the host's isolation prefix (<c>Headless:Prefix</c>) in front, joined with <c>:</c>, which a prefix
+/// never contains, so two prefixes never produce one key. Consumer groups and wake channels are not prefixed themselves:
+/// a group lives inside its stream key and a wake channel is named after it, so the prefixed key already keeps them
+/// apart. An empty prefix leaves every name exactly as it is without one.
+/// </remarks>
 internal static class RedisPhysicalAddress
 {
     // Redis consumer group names are binary-safe strings with no documented length limit, so a Bus identity keeps its
@@ -14,16 +21,17 @@ internal static class RedisPhysicalAddress
         isAllowed: static _ => true
     );
 
-    public static string BusStream(string logicalName) => _Qualify("bus", logicalName);
+    public static string BusStream(string hostPrefix, string logicalName) => _Qualify(hostPrefix, "bus", logicalName);
 
-    public static string QueueStream(string logicalName) => _Qualify("queue", logicalName);
+    public static string QueueStream(string hostPrefix, string logicalName) =>
+        _Qualify(hostPrefix, "queue", logicalName);
 
-    public static string ForLane(MessageLane lane, string logicalName)
+    public static string ForLane(string hostPrefix, MessageLane lane, string logicalName)
     {
         return lane switch
         {
-            MessageLane.Bus => BusStream(logicalName),
-            MessageLane.Queue => QueueStream(logicalName),
+            MessageLane.Bus => BusStream(hostPrefix, logicalName),
+            MessageLane.Queue => QueueStream(hostPrefix, logicalName),
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
         };
     }
@@ -48,9 +56,13 @@ internal static class RedisPhysicalAddress
     /// </summary>
     public static string WakeChannel(string stream) => $"{Argument.IsNotNullOrWhiteSpace(stream)}:wake";
 
-    private static string _Qualify(string lane, string logicalName)
+    private static string _Qualify(string hostPrefix, string lane, string logicalName)
     {
+        Argument.IsNotNull(hostPrefix);
         Argument.IsNotNullOrWhiteSpace(logicalName);
-        return $"headless:messaging:{lane}:{logicalName}";
+
+        return hostPrefix.Length == 0
+            ? $"headless:messaging:{lane}:{logicalName}"
+            : $"{hostPrefix}:headless:messaging:{lane}:{logicalName}";
     }
 }

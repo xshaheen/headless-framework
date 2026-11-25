@@ -21,6 +21,6 @@ public sealed class RabbitMqPhysicalAddressTests
         RabbitMqPhysicalAddress.Exchange("messaging", lane).Should().Be(exchange);
         RabbitMqPhysicalAddress.ExchangeType(lane).Should().Be(exchangeType);
         RabbitMqPhysicalAddress.RoutingKey(lane, "orders").Should().Be(routingKey);
-        RabbitMqPhysicalAddress.Queue(lane, "workers", "orders").Should().Be(queue);
+        RabbitMqPhysicalAddress.Queue("", lane, "workers", "orders").Should().Be(queue);
     }
 }

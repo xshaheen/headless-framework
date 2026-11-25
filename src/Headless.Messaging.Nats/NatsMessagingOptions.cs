@@ -71,6 +71,23 @@ public sealed class NatsMessagingOptions
     public NatsStreamCatalog Streams { get; } = new();
 
     /// <summary>
+    /// The host's isolation prefix (<c>Headless:Prefix</c>), empty when none is set. Applied after every other option,
+    /// so the names this transport derives and the streams it owns are kept apart from other environments' on one server.
+    /// </summary>
+    internal string HostPrefix { get; private set; } = "";
+
+    /// <summary>
+    /// Puts the host's isolation prefix in front of every name this transport derives, and of the streams declared with
+    /// <see cref="NatsStreamCatalog.Own"/> and the declared subjects under <c>headless.</c>, which name derived subjects.
+    /// Bound stream names and foreign subjects stay as declared: something outside this application owns them.
+    /// </summary>
+    internal void ApplyHostPrefix(string hostPrefix)
+    {
+        HostPrefix = hostPrefix;
+        Streams.ApplyHostPrefix(hostPrefix);
+    }
+
+    /// <summary>
     /// How long a stream Headless owns keeps a message when its declaration sets no <c>MaxAge</c>, so no stream grows
     /// without limit by default. <see cref="TimeSpan.Zero"/> keeps messages without an age limit. Defaults to
     /// <c>7 days</c>.

@@ -146,6 +146,12 @@ public sealed class RedisMessagingOptions
     public int ConnectionPoolSize { get; set; } = 1;
 
     /// <summary>
+    /// The host isolation prefix (<c>Headless:Prefix</c>) every stream key starts with, or empty for none. Set after
+    /// every configuration step, never by the application.
+    /// </summary>
+    internal string HostPrefix { get; set; } = "";
+
+    /// <summary>
     /// Optional callback that adds headers to an inbound message from its stream entry. Use this to surface the
     /// entry id or a field a foreign producer wrote as framework message headers, or to translate a foreign value.
     /// </summary>

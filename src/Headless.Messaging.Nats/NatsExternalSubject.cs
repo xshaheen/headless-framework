@@ -222,10 +222,22 @@ internal sealed class NatsExternalSubjects
 
     /// <summary>Collects and validates the external subject bindings of <paramref name="routes"/>.</summary>
     /// <exception cref="InvalidOperationException">A binding is invalid; the message names the contract, lane, and filter.</exception>
-    public static NatsExternalSubjects Create(IEnumerable<MessageMetadata> routes, NatsStreamCatalog streams)
+    public static NatsExternalSubjects Create(
+        IEnumerable<MessageMetadata> routes,
+        NatsStreamCatalog streams,
+        string hostPrefix = ""
+    )
     {
         Argument.IsNotNull(routes);
         Argument.IsNotNull(streams);
+        Argument.IsNotNull(hostPrefix);
+
+        // A prefixed host derives its subjects under '{prefix}.headless.>', so a filter there would collide with them
+        // just as one under 'headless.>' would for an unprefixed host.
+        string[] reserved =
+            hostPrefix.Length == 0
+                ? NatsExternalSubjectRules.ReservedSubjects
+                : [.. NatsExternalSubjectRules.ReservedSubjects, NatsPhysicalAddress.SubjectRoot(hostPrefix) + ".>"];
 
         var bindings = new Dictionary<(MessageLane Lane, string Name), NatsExternalBinding>();
 
@@ -251,7 +263,7 @@ internal sealed class NatsExternalSubjects
                 continue;
             }
 
-            _Validate(binding, config, streams);
+            _Validate(binding, config, streams, reserved);
             bindings.Add((lane, name), binding);
         }
 
@@ -275,7 +287,12 @@ internal sealed class NatsExternalSubjects
         return new NatsExternalSubjects(bindings);
     }
 
-    private static void _Validate(NatsExternalBinding binding, INatsMessageConfig config, NatsStreamCatalog streams)
+    private static void _Validate(
+        NatsExternalBinding binding,
+        INatsMessageConfig config,
+        NatsStreamCatalog streams,
+        string[] reservedSubjects
+    )
     {
         if (NatsExternalSubjectRules.FilterError(binding.Filter) is { } error)
         {
@@ -283,9 +300,7 @@ internal sealed class NatsExternalSubjects
         }
 
         if (
-            NatsExternalSubjectRules.ReservedSubjects.FirstOrDefault(reserved =>
-                NatsStreamReconciliation.Overlaps(reserved, binding.Filter)
-            ) is
+            reservedSubjects.FirstOrDefault(reserved => NatsStreamReconciliation.Overlaps(reserved, binding.Filter)) is
             { } reservedSubject
         )
         {

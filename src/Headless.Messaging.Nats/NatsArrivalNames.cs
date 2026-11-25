@@ -49,12 +49,14 @@ internal sealed class NatsArrivalNames
     /// <param name="shardedNames">The subscribed names the client also filters on the shard wildcard of.</param>
     /// <param name="laneNames">Every message name registered on <paramref name="lane"/>.</param>
     /// <param name="externals">The subscribed names bound to an external subject, which filter on it instead.</param>
+    /// <param name="hostPrefix">The host isolation prefix the client's subjects carry, or empty for none.</param>
     public static NatsArrivalNames Create(
         MessageLane lane,
         IEnumerable<string> subscribedNames,
         ISet<string> shardedNames,
         IEnumerable<string> laneNames,
-        IEnumerable<NatsExternalBinding>? externals = null
+        IEnumerable<NatsExternalBinding>? externals = null,
+        string hostPrefix = ""
     )
     {
         var exact = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -62,7 +64,7 @@ internal sealed class NatsArrivalNames
 
         foreach (var name in subscribedNames)
         {
-            var subject = NatsPhysicalAddress.Subject(lane, name);
+            var subject = NatsPhysicalAddress.Subject(hostPrefix, lane, name);
             exact.TryAdd(subject, name);
 
             if (shardedNames.Contains(name))
@@ -74,7 +76,7 @@ internal sealed class NatsArrivalNames
         var laneSubjects = new HashSet<string>(exact.Keys, StringComparer.Ordinal);
         foreach (var name in laneNames)
         {
-            laneSubjects.Add(NatsPhysicalAddress.Subject(lane, name));
+            laneSubjects.Add(NatsPhysicalAddress.Subject(hostPrefix, lane, name));
         }
 
         return new NatsArrivalNames(

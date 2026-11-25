@@ -16,13 +16,6 @@ namespace Headless.Messaging.Kafka;
 
 internal sealed class KafkaConsumerClient : IConsumerClient
 {
-    // Kafka does not restrict group.id, so the group takes the topic naming rules (up to 249 of [a-zA-Z0-9._-]): a Queue
-    // message name, which is already a legal topic, becomes its consumer group unchanged on every host.
-    private static readonly BusNameRules _GroupIdRules = new(
-        maxLength: 249,
-        isAllowed: static c => c is '.' or '_' or '-'
-    );
-
     // Bounded drain budget on shutdown, matching the other transports. A handler still running past it never stores
     // its offset, so Kafka redelivers that record to the next owner of the partition (at-least-once).
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
@@ -55,10 +48,10 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly TransportEnvelopeGate _envelopeGate;
     private readonly ILogger _logger;
 
-    // The concrete topics this client subscribed. A topic is its message name verbatim, so a record on one of them
-    // belongs to that message even when a foreign producer sent no Headless headers. Replaced, never mutated, so the
-    // handler threads read it without the lock.
-    private volatile FrozenSet<string> _arrivalNames = [];
+    // The concrete topics this client subscribed, each mapped to the message name it was derived from, so a record on
+    // one of them belongs to that message even when a foreign producer sent no Headless headers. Replaced, never
+    // mutated, so the handler threads read it without the lock.
+    private volatile FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
 
     // Every dispatched delivery, keyed by its handler task, so shutdown and a revoke can wait for the ones they affect.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
@@ -82,8 +75,8 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         Func<AdminClientConfig, IAdminClient>? adminClientFactory = null
     )
     {
-        _groupId = GroupId(subscriptionName);
         _kafkaOptions = Argument.IsNotNull(options.Value);
+        _groupId = GroupId(subscriptionName, _kafkaOptions.HostPrefix);
         if (groupConcurrent > 1)
         {
             _semaphore = new SemaphoreSlim(groupConcurrent, groupConcurrent);
@@ -107,7 +100,8 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     }
 
     /// <summary>Returns the consumer group of a Queue subscription, which is named after its message.</summary>
-    internal static string GroupId(string subscriptionName) => BusNameBuilder.Build(subscriptionName, _GroupIdRules);
+    internal static string GroupId(string subscriptionName, string hostPrefix = "") =>
+        KafkaPhysicalAddress.GroupId(hostPrefix, subscriptionName);
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -135,12 +129,19 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         {
             if (topicName.Contains('*', StringComparison.Ordinal) || topicName.Contains('#', StringComparison.Ordinal))
             {
-                normalizedTopics.Add(TransportNaming.WildcardToRegex(topicName));
+                normalizedTopics.Add(
+                    KafkaPhysicalAddress.TopicPattern(
+                        _kafkaOptions.HostPrefix,
+                        TransportNaming.WildcardToRegex(topicName)
+                    )
+                );
                 continue;
             }
 
+            // The core subscribes with the names returned here, so a concrete name stays the message name and
+            // SubscribeAsync maps it to its topic.
             normalizedTopics.Add(topicName);
-            concreteTopicsToCreate.Add(topicName);
+            concreteTopicsToCreate.Add(KafkaPhysicalAddress.Topic(_kafkaOptions.HostPrefix, topicName));
         }
 
         var allowAutoCreate = true;
@@ -195,15 +196,29 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         Argument.IsNotNull(topics);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var topicList = topics as IReadOnlyCollection<string> ?? [.. topics];
+        // librdkafka reads a subscription that starts with '^' as a pattern, already built for this host's prefix; only
+        // the others name one message, and they map to its topic.
+        var arrivalNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        var topicList = new List<string>();
+        foreach (var name in topics)
+        {
+            if (name.StartsWith('^'))
+            {
+                topicList.Add(name);
+                continue;
+            }
+
+            var topic = KafkaPhysicalAddress.Topic(_kafkaOptions.HostPrefix, name);
+            topicList.Add(topic);
+            arrivalNames.TryAdd(topic, name);
+        }
 
         Connect();
 
         // ReSharper disable once InconsistentlySynchronizedField -- volatile read after Connect guarantees the instance is published.
         _consumerClient!.Subscribe(topicList);
 
-        // librdkafka reads a subscription that starts with '^' as a pattern, so only the others name one message.
-        _arrivalNames = topicList.Where(static topic => !topic.StartsWith('^')).ToFrozenSet(StringComparer.Ordinal);
+        _arrivalNames = arrivalNames.ToFrozenDictionary(StringComparer.Ordinal);
 
         return ValueTask.CompletedTask;
     }
@@ -854,10 +869,10 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     }
 
     /// <summary>
-    /// Returns the message a record on <paramref name="topic"/> belongs to: the topic itself when this client subscribed
-    /// it by name, or <see langword="null"/> when only a wildcard pattern matched it.
+    /// Returns the message a record on <paramref name="topic"/> belongs to: the message name this client subscribed the
+    /// topic by, or <see langword="null"/> when only a wildcard pattern matched it.
     /// </summary>
-    internal string? ArrivalName(string topic) => _arrivalNames.Contains(topic) ? topic : null;
+    internal string? ArrivalName(string topic) => _arrivalNames.GetValueOrDefault(topic);
 
     /// <summary>
     /// Reads the broker metadata that identifies a record which carries no message id. Kafka has no producer

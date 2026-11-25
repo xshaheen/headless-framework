@@ -124,7 +124,7 @@ public sealed class RedisMessagingFixture : HeadlessRedisFixture, ICollectionFix
                 cancellationToken
             );
             await consumer.SubscribeAsync([destination], cancellationToken);
-            var physicalStream = RedisPhysicalAddress.ForLane(lane, destination);
+            var physicalStream = RedisPhysicalAddress.ForLane("", lane, destination);
 
             return new TransportConsumerConformanceSession(
                 destination,

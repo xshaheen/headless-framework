@@ -29,6 +29,6 @@ public sealed class RedisPhysicalAddressTests
     public void should_keep_queue_consumer_group_unchanged()
     {
         RedisPhysicalAddress.ConsumerGroup(MessageLane.Queue, "orders created").Should().Be("orders created");
-        RedisPhysicalAddress.QueueStream("orders.created").Should().Be("headless:messaging:queue:orders.created");
+        RedisPhysicalAddress.QueueStream("", "orders.created").Should().Be("headless:messaging:queue:orders.created");
     }
 }
