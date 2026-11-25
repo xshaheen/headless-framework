@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using Headless;
 using Headless.Jobs;
 using Headless.Testing.Tests;
@@ -273,8 +274,10 @@ public sealed class JobsTraceLinkTests : TestBase
 
     private static string _TraceParent(Activity activity)
     {
-        // The W3C header form, written out here rather than read from the code under test.
-        var flags = activity.ActivityTraceFlags.HasFlag(ActivityTraceFlags.Recorded) ? "01" : "00";
+        // The W3C header form, written out here rather than read from the code under test. The flags byte carries
+        // every trace flag, not only sampled: W3C Trace Context level 2 adds 0x02 for a random trace id, which
+        // OpenTelemetry sets, so a sampled span with a random id is "03".
+        var flags = ((byte)activity.ActivityTraceFlags).ToString("x2", CultureInfo.InvariantCulture);
         return $"00-{activity.TraceId.ToHexString()}-{activity.SpanId.ToHexString()}-{flags}";
     }
 

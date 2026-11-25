@@ -213,8 +213,8 @@
       },
       "MaxMind.Db": {
         "type": "Transitive",
-        "resolved": "5.1.0",
-        "contentHash": "u4fynkxX0bNLYaz90N9m9FiaOX22WmEFKlHnvlqw8sswngH54oYvgynhT4GXZvqTy8l7D96/+E9OVzuu34ex9w=="
+        "resolved": "5.3.0",
+        "contentHash": "+T6h+SliYmKaRSg/PZnbQkQpLgIkEakok1qpWZZcA7Muy/I7apjPVuw9wvEhydEzLzASR/ieigSi4Q6UlMQeYQ=="
       },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
@@ -383,6 +383,11 @@
         "resolved": "1.1.1",
         "contentHash": "CU0/Iuv5VDynK8I8pDLwkgF0rZhbQoZahtodfL0M3x2gFkpBRApKs8RyMyNlAi1mwExE4gsmqQXk4aFVvW9a4Q=="
       },
+      "System.Diagnostics.DiagnosticSource": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
+      },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
         "resolved": "6.0.0",
@@ -485,7 +490,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.15, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.15, )",
-          "OpenTelemetry.Api": "[1.20.1, )"
+          "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
       "headless.ipgeolocation": {
@@ -504,7 +509,7 @@
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
           "Headless.IpGeolocation": "[1.0.0, )",
-          "MaxMind.GeoIP2": "[6.1.0, )",
+          "MaxMind.GeoIP2": "[6.2.0, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Http": "[10.0.15, )"
         }
@@ -549,12 +554,12 @@
       },
       "MaxMind.GeoIP2": {
         "type": "CentralTransitive",
-        "requested": "[6.1.0, )",
-        "resolved": "6.1.0",
-        "contentHash": "IBy7B0mhzZfLvCZd2znr8+nquNUL8K973MVorQEQowvlX/BHFCVHK6BoMhdIT6ZpDIc8ETMl4ZyixS/6iBQ26A==",
+        "requested": "[6.2.0, )",
+        "resolved": "6.2.0",
+        "contentHash": "61+joGJPz6+K3X1HCCzFxkTDuOKgEtUj9oaSDj2UzDDZAxJ2vWlKnlDn1IjPhSlY3htFWlQOgaRwypDVg5wU9g==",
         "dependencies": {
-          "MaxMind.Db": "5.1.0",
-          "Microsoft.Extensions.Options": "10.0.9"
+          "MaxMind.Db": "5.3.0",
+          "Microsoft.Extensions.Options": "10.0.14"
         }
       },
       "Meziantou.Extensions.Logging.Xunit.v3": {
@@ -722,9 +727,12 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.20.1, )",
-        "resolved": "1.20.1",
-        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
+        "requested": "[1.21.0, )",
+        "resolved": "1.21.0",
+        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
+        "dependencies": {
+          "System.Diagnostics.DiagnosticSource": "11.0.0"
+        }
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",

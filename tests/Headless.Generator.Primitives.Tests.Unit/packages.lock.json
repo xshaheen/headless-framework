@@ -38,9 +38,9 @@
       },
       "Dapper": {
         "type": "Direct",
-        "requested": "[2.1.89, )",
-        "resolved": "2.1.89",
-        "contentHash": "1VjFE664wnxvuhlgP8kS4PeFFF4jqD3VkbIHW6Zlc52zuibgcz5ICnIHcQXlTp6pURpPNGLV0ZpNe5x9KePJnA=="
+        "requested": "[2.1.100, )",
+        "resolved": "2.1.100",
+        "contentHash": "zKwgGfxkDIVLGU2WIsl57DwTgj17+fa5v0u2eiVMxU92GXN2fRIn2M8QMGtyGFrPSbVOYKgGFxAxEFL6CB9tTw=="
       },
       "ErrorProne.NET.CoreAnalyzers": {
         "type": "Direct",
@@ -242,15 +242,14 @@
       },
       "Verify.XunitV3": {
         "type": "Direct",
-        "requested": "[33.5.0, )",
-        "resolved": "33.5.0",
-        "contentHash": "MrG0ldFpBTP7umMti9h49iAYfEABCq8stNnDbGrjK2uT2QDjz+NM11N1T8qxh46MeR/+O3Dk3VkOXDK7R3VAKw==",
+        "requested": "[33.7.3, )",
+        "resolved": "33.7.3",
+        "contentHash": "2Jghs/kO239H5M7l08BAytNnKHSDyZTMjjF101MfagPunBU9AtSsHMboD1Rte322vezZUN37tEbEjW15+o242g==",
         "dependencies": {
           "Argon": "0.38.2",
-          "DiffEngine": "21.0.0",
-          "Microsoft.Bcl.AsyncInterfaces": "11.0.0",
+          "DiffEngine": "21.2.1",
           "SimpleInfoName": "3.2.1",
-          "Verify": "33.5.0",
+          "Verify": "33.7.3",
           "xunit.v3.extensibility.core": "4.0.3"
         }
       },
@@ -280,8 +279,8 @@
       },
       "DiffEngine": {
         "type": "Transitive",
-        "resolved": "21.0.0",
-        "contentHash": "o8/Omy4eMi0nr+FrWrhZzkU/sF725CVCPj3VledNvWpTIpZEOllTtfbyxexFzzCOn1A/RMXL8rvNncMlN7VlSw==",
+        "resolved": "21.2.1",
+        "contentHash": "R8sDj+9AravZDOQA3CDxnSYcjT6622a66xnH+jdiu8XR96mDBHVRMGuN15EPffqmoekWFxU6VlJ76D8NxYv+vA==",
         "dependencies": {
           "EmptyFiles": "8.20.1"
         }
@@ -308,8 +307,8 @@
       },
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Transitive",
-        "resolved": "11.0.0",
-        "contentHash": "Uw3pD0oeX6kNS+pa8U9VaqUh3tcdQeY/cUILF89zDLeYgvfat0pzIi9kjK1nkA9u+3R7ZtAY9GsU1cgqVS+u4A=="
+        "resolved": "6.0.0",
+        "contentHash": "UcSjPsst+DfAdJGVDsu346FX0ci0ah+lw3WRtn18NUwEqRt70HaOQ7lI72vy3+1LxtqI3T5GWwV39rQSrCzAeg=="
       },
       "Microsoft.Diagnostics.NETCore.Client": {
         "type": "Transitive",
@@ -477,11 +476,11 @@
       },
       "Verify": {
         "type": "Transitive",
-        "resolved": "33.5.0",
-        "contentHash": "9op1PkB0ptXTCzXz47kVKShBcP9OEk/lDHUhOxCEiaDy1ffCsDcfexjntdeP6WqsNMe5i77iGl+hROsiCqRAMQ==",
+        "resolved": "33.7.3",
+        "contentHash": "DiFgr4zQmd/SpI9j6C5GLldGtm8b2FPhheD2xySt/Cxq4rCyr8weGDnnzAnd9kPOsdZKu8PADSuaqDiR4RzBxA==",
         "dependencies": {
           "Argon": "0.38.2",
-          "DiffEngine": "21.0.0",
+          "DiffEngine": "21.2.1",
           "SimpleInfoName": "3.2.1"
         }
       },

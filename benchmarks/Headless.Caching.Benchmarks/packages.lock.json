@@ -181,20 +181,20 @@
       },
       "ZiggyCreatures.FusionCache": {
         "type": "Direct",
-        "requested": "[2.9.0, )",
-        "resolved": "2.9.0",
-        "contentHash": "m2z6LlE4yckDkE95Vha2NH/gPD+iM9PnCUMfe1nfkC+xaiq48S80HI7olnSblVOAHx5OP+VN9vhQoTdZAPZp0g==",
+        "requested": "[2.10.0, )",
+        "resolved": "2.10.0",
+        "contentHash": "XOfQsMwv1ftga+m9PoF1tJ7/rzjaFWL1jV0t0iX30LGF+y2jhg7j4FA1Hz211x7CXC0KZpU6RfajxVjUYxqFbg==",
         "dependencies": {
-          "Microsoft.Extensions.Caching.Memory": "10.0.1"
+          "Microsoft.Extensions.Caching.Memory": "10.0.14"
         }
       },
       "ZiggyCreatures.FusionCache.Serialization.SystemTextJson": {
         "type": "Direct",
-        "requested": "[2.9.0, )",
-        "resolved": "2.9.0",
-        "contentHash": "4cJOqBFLmFGcm1SSu7HAcMOTyHCRAHAxZ7fmxrcxMXwZ+FYNiZBpdxqi67vbtw608piFtswOyJhxLZhO36fLCg==",
+        "requested": "[2.10.0, )",
+        "resolved": "2.10.0",
+        "contentHash": "2eKC1dCizQYYTS376skKi6eJ2VTSy7fZRRI8kPSnYKQ/sVQswXmAeXbD419gp7BI54tMlm3gcYGibEkI/cb2vw==",
         "dependencies": {
-          "ZiggyCreatures.FusionCache": "2.9.0"
+          "ZiggyCreatures.FusionCache": "2.10.0"
         }
       },
       "BenchmarkDotNet.Annotations": {
@@ -374,6 +374,11 @@
         "resolved": "9.0.5",
         "contentHash": "cuzLM2MWutf9ZBEMPYYfd0DXwYdvntp7VCT6a/wvbKCa2ZuvGmW74xi+YBa2mrfEieAXqM4TNKlMmSnfAfpUoQ=="
       },
+      "System.Diagnostics.DiagnosticSource": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
+      },
       "System.IO.Hashing": {
         "type": "Transitive",
         "resolved": "10.0.13",
@@ -400,7 +405,7 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.15, )",
-          "OpenTelemetry.Api": "[1.20.1, )"
+          "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
       "headless.caching.abstractions": {
@@ -471,7 +476,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.15, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.15, )",
-          "OpenTelemetry.Api": "[1.20.1, )"
+          "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
       "headless.primitives": {
@@ -632,9 +637,12 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.20.1, )",
-        "resolved": "1.20.1",
-        "contentHash": "QO9hlwadOdJGR4vDpJyDnl9B62v7epIBSTIHUA4C+bCtrRaB4TWmYSnu3QVOIe7caH8dt7NaHRei6zebESJJyw=="
+        "requested": "[1.21.0, )",
+        "resolved": "1.21.0",
+        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
+        "dependencies": {
+          "System.Diagnostics.DiagnosticSource": "11.0.0"
+        }
       }
     }
   }
