@@ -153,6 +153,117 @@ public sealed class JobsClusterConcurrencyTests : TestBase
     }
 
     [Fact]
+    public async Task should_lease_only_one_of_concurrent_time_and_cron_claims_for_the_last_slot()
+    {
+        var clock = _Clock();
+        await using var provider = _Provider(clock);
+        var store = _Store(provider);
+        var overdue = clock.GetUtcNow().UtcDateTime.AddMinutes(-2);
+        await store.AddTimeJobsAsync([_TimeJob(TestJobs.BillingCloseDay, overdue)], AbortToken);
+        (await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken)).Should().ContainSingle();
+        await store.AddTimeJobsAsync([_TimeJob(TestJobs.BillingCloseDay, overdue)], AbortToken);
+        var definition = _CronDefinition();
+        await store.InsertCronJobsAsync([definition], AbortToken);
+
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timeClaim = Task.Run(
+            async () =>
+            {
+                await start.Task.WaitAsync(AbortToken);
+                return await store.QueueTimedOutTimeJobsAsync(AbortToken).CountAsync(AbortToken);
+            },
+            AbortToken
+        );
+        var cronClaim = Task.Run(
+            async () =>
+            {
+                await start.Task.WaitAsync(AbortToken);
+                return await store
+                    .QueueCronJobOccurrencesAsync((clock.GetUtcNow().UtcDateTime, [_Dispatch(definition)]), AbortToken)
+                    .CountAsync(AbortToken);
+            },
+            AbortToken
+        );
+        start.SetResult();
+
+        (await Task.WhenAll(timeClaim, cronClaim)).Sum().Should().Be(1);
+        (await _LiveLeasesAsync(store, clock)).Should().Be(_Limit);
+    }
+
+    [Fact]
+    public async Task should_count_a_renewed_lease_past_its_original_deadline_and_free_the_slot_on_removal()
+    {
+        var clock = _Clock();
+        await using var provider = _Provider(clock);
+        var store = _Store(provider);
+        var overdue = clock.GetUtcNow().UtcDateTime.AddMinutes(-2);
+        await store.AddTimeJobsAsync(
+            [.. Enumerable.Range(0, 4).Select(_ => _TimeJob(TestJobs.BillingCloseDay, overdue))],
+            AbortToken
+        );
+        var leased = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+        leased.Should().HaveCount(_Limit);
+        var running = leased[0];
+        var start = new JobExecutionState
+        {
+            FunctionName = running.Function,
+            JobId = running.Id,
+            ClaimOwner = running.Lease.Holder!,
+            ClaimGeneration = running.Lease.Generation,
+        }.SetProperty(x => x.Status, JobStatus.InProgress);
+        (await store.UpdateTimeJobAsync(start, AbortToken)).Should().Be(1);
+
+        clock.Advance(TimeSpan.FromMinutes(4));
+        (await store.RenewTimeJobLeaseAsync(start.ClaimedRow!, start.ClaimOwner!, AbortToken)).Should().Be(1);
+        clock.Advance(TimeSpan.FromMinutes(2));
+        (await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken)).Should().ContainSingle();
+        (await _LiveLeasesAsync(store, clock)).Should().Be(_Limit);
+
+        (await store.RemoveTimeJobsAsync([running.Id], AbortToken)).Should().Be(1);
+        (await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken)).Should().ContainSingle();
+        (await _LiveLeasesAsync(store, clock)).Should().Be(_Limit);
+    }
+
+    [Fact]
+    public async Task should_count_a_chain_descendant_only_once_it_starts_running()
+    {
+        var clock = _Clock();
+        await using var provider = _Provider(clock);
+        var store = _Store(provider);
+        var now = clock.GetUtcNow().UtcDateTime;
+        var overdue = now.AddMinutes(-2);
+        var parent = _TimeJob(TestJobs.OrdersShip, now);
+        var child = new TimeJobEntity { Id = Guid.NewGuid(), Function = TestJobs.BillingCloseDay };
+        parent.Children.Add(child);
+        await store.AddTimeJobsAsync(
+            [parent, _TimeJob(TestJobs.BillingCloseDay, overdue), _TimeJob(TestJobs.BillingCloseDay, overdue)],
+            AbortToken
+        );
+        (await store.AcquireImmediateTimeJobsAsync([parent.Id], AbortToken)).Should().ContainSingle();
+        var leased = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+        leased.Should().HaveCount(_Limit);
+        var released = leased[0];
+        await store.ReleaseAcquiredTimeJobsAsync(
+            [JobsLeaseTables.TimeJob(released.Id, released.Lease.Generation)],
+            released.Lease.Holder!,
+            AbortToken
+        );
+
+        var storedChild = (await store.GetTimeJobByIdAsync(child.Id, AbortToken))!;
+        var start = new JobExecutionState
+        {
+            FunctionName = child.Function,
+            JobId = child.Id,
+            ClaimOwner = storedChild.Lease.Holder!,
+            ClaimGeneration = storedChild.Lease.Generation,
+        }.SetProperty(x => x.Status, JobStatus.InProgress);
+        (await store.UpdateTimeJobAsync(start, AbortToken)).Should().Be(1);
+
+        (await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken)).Should().BeEmpty();
+        (await store.GetTimeJobByIdAsync(released.Id, AbortToken))!.Status.Should().Be(JobStatus.Idle);
+    }
+
+    [Fact]
     public async Task should_leave_a_limited_job_to_the_scheduler_claim_instead_of_acquiring_it_immediately()
     {
         // given

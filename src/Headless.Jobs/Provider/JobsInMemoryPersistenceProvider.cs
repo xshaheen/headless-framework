@@ -60,11 +60,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     // an in-tree descendant, which runs with the root that claimed it.
     private readonly JobsRunFilter _runFilter;
 
-    // Cluster-wide limits. A limited function's claim counts its live leased rows and leases under _clusterSlotsLock,
-    // so two concurrent claims never both take the last slot. The lock is innermost: nothing is acquired under it.
-    private readonly JobsClusterConcurrency _clusterConcurrency;
-    private readonly Lock _clusterSlotsLock = new();
-
     public JobsInMemoryPersistenceProvider(IServiceProvider serviceProvider)
     {
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
@@ -76,48 +71,6 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         _runFilter = serviceProvider.GetService<JobsRunFilter>() ?? JobsRunFilter.All;
         _clusterConcurrency = serviceProvider.GetService<JobsClusterConcurrency>() ?? JobsClusterConcurrency.None;
     }
-
-    /// <summary>
-    /// Runs <paramref name="claim"/> for a row of <paramref name="function"/>, under the slots lock and only while a
-    /// slot is free when the function is cluster-limited.
-    /// </summary>
-    private bool _TryClaimWithinClusterLimit(string function, DateTimeOffset now, Func<bool> claim)
-    {
-        if (!_clusterConcurrency.IsLimited(function))
-        {
-            return claim();
-        }
-
-        lock (_clusterSlotsLock)
-        {
-            return _HasFreeClusterSlot(function, now) && claim();
-        }
-    }
-
-    // The limited functions with no free slot. The peek skips them: a due row the claim cannot lease would keep the
-    // scheduler's wake at now and spin it until the row ages into the fallback sweep's window.
-    private HashSet<string> _SaturatedClusterFunctions(DateTimeOffset now) =>
-        _clusterConcurrency.HasLimits
-            ? [.. _clusterConcurrency.LimitedFunctions.Where(function => !_HasFreeClusterSlot(function, now))]
-            : [];
-
-    private bool _HasFreeClusterSlot(string function, DateTimeOffset now)
-    {
-        var live =
-            _timeJobs.Values.Count(x =>
-                string.Equals(x.Function, function, StringComparison.Ordinal)
-                && _HoldsClusterSlot(x.Status, x.Lease, now)
-            )
-            + _cronOccurrences.Values.Count(x =>
-                string.Equals(x.Function, function, StringComparison.Ordinal)
-                && _HoldsClusterSlot(x.Status, x.Lease, now)
-            );
-
-        return live < _clusterConcurrency.LimitOf(function);
-    }
-
-    private static bool _HoldsClusterSlot(JobStatus status, RowLeaseSnapshot lease, DateTimeOffset now) =>
-        status is JobStatus.Queued or JobStatus.InProgress && _IsLeaseLive(lease, now);
 
     // An ended lease keeps its holder for diagnostics, so ownership is the holder of an ACTIVE lease, never the holder
     // field alone.
@@ -2291,7 +2244,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                             // accounting rule reads this column and never that string.
                             skipped.Disposition = CronOccurrenceDisposition.ReplacementOwed;
                             skipped.Lease = _Revoked(skipped.Lease);
-                            _cronOccurrences[pair.Key] = skipped;
+                            _SetCronOccurrence(pair.Key, skipped);
                         }
 
                         _SetCronJob(updated);
@@ -2598,7 +2551,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     };
 
                     created.SnapshotContract(current);
-                    _cronOccurrences[created.Id] = created;
+                    _SetCronOccurrence(created.Id, created);
                     coalescedRun = _CloneCronOccurrence(created);
                     preservedOccurrenceId = created.Id;
                     break;
@@ -2616,7 +2569,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 repurposed.UpdatedAt = request.OperationTimeUtc;
                 repurposed.ChangedAt = _NextChangeMarker();
                 repurposed.CronJob ??= current;
-                _cronOccurrences[repurposed.Id] = repurposed;
+                _SetCronOccurrence(repurposed.Id, repurposed);
                 coalescedRun = _CloneCronOccurrence(repurposed);
                 break;
             }
@@ -2654,7 +2607,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 // Recovery resolves the backlog: the single coalesced run (or, under Skip, deliberate nothing)
                 // stands in for these instants, so they are accounted for.
                 skipped.Disposition = CronOccurrenceDisposition.Accounted;
-                _cronOccurrences[skipped.Id] = skipped;
+                _SetCronOccurrence(skipped.Id, skipped);
                 skippedCount++;
             }
 
@@ -2679,7 +2632,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 skippedRun.ChangedAt = _NextChangeMarker();
                 skippedRun.SkippedReason = CronOverlapRule.SkippedReason;
                 skippedRun.Disposition = CronOccurrenceDisposition.Accounted;
-                _cronOccurrences[skippedRun.Id] = skippedRun;
+                _SetCronOccurrence(skippedRun.Id, skippedRun);
                 overlapSkippedRun = _CloneCronOccurrence(skippedRun);
                 coalescedRun = null;
             }
@@ -2934,7 +2887,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     }
 
                     created.SnapshotContract(current);
-                } while (!_cronOccurrences.TryAdd(created.Id, created));
+                } while (!_TryAddCronOccurrence(created.Id, created));
 
                 occurrenceId = created.Id;
                 occurrenceCreatedAt = created.CreatedAt;
@@ -2971,7 +2924,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     retired.ChangedAt = _NextChangeMarker();
                     retired.SkippedReason = CronOverlapRule.SkippedReason;
                     retired.Disposition = CronOccurrenceDisposition.Accounted;
-                    _cronOccurrences[existingId] = retired;
+                    _SetCronOccurrence(existingId, retired);
                     outcome = CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap;
                 }
             }
@@ -3040,7 +2993,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 // instant, so the retired row accounts for it.
                 skipped.Disposition = CronOccurrenceDisposition.Accounted;
                 skipped.Lease = _Revoked(skipped.Lease);
-                _cronOccurrences[pair.Key] = skipped;
+                _SetCronOccurrence(pair.Key, skipped);
             }
 
             _SetCronJob(updated);
@@ -3099,7 +3052,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 replacement.CronJob = updated;
                 replacement.SnapshotContract(updated);
                 replacement.ChangedAt = _NextChangeMarker();
-                _cronOccurrences[nextOccurrence.Id] = replacement;
+                _SetCronOccurrence(nextOccurrence.Id, replacement);
             }
 
             _SetCronJob(updated);
@@ -3251,7 +3204,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         // would double-run every expression edit.
                         skipped.Disposition = CronOccurrenceDisposition.Superseded;
                         skipped.Lease = _Revoked(skipped.Lease);
-                        _cronOccurrences[pair.Key] = skipped;
+                        _SetCronOccurrence(pair.Key, skipped);
                     }
 
                     // Judged after the idle and queued rows above are retired, as in the relational provider.
@@ -3261,7 +3214,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     )
                     {
                         replacement.ChangedAt = _NextChangeMarker();
-                        _cronOccurrences[replacement.Id] = replacement;
+                        _SetCronOccurrence(replacement.Id, replacement);
                     }
                 }
 
@@ -3567,7 +3520,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         _TryClaimWithinClusterLimit(
                             currentDefinition.Function,
                             now,
-                            () => _cronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, existingOccurrence)
+                            () => _TryUpdateCronOccurrence(occurrenceId, updatedOccurrence, existingOccurrence)
                         )
                     )
                     {
@@ -3606,7 +3559,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         _TryClaimWithinClusterLimit(
                             newOccurrence.Function,
                             now,
-                            () => _cronOccurrences.TryAdd(newOccurrence.Id, newOccurrence)
+                            () => _TryAddCronOccurrence(newOccurrence.Id, newOccurrence)
                         )
                     )
                     {
@@ -3618,7 +3571,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         // once a slot frees, as the relational providers do.
                         newOccurrence.Status = JobStatus.Idle;
                         newOccurrence.Lease = default;
-                        _cronOccurrences.TryAdd(newOccurrence.Id, newOccurrence);
+                        _TryAddCronOccurrence(newOccurrence.Id, newOccurrence);
                     }
                 }
             }
@@ -3668,7 +3621,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         _TryClaimWithinClusterLimit(
                             existingOccurrence.Function,
                             now,
-                            () => _cronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, existingOccurrence)
+                            () => _TryUpdateCronOccurrence(occurrence.Id, updatedOccurrence, existingOccurrence)
                         )
                     )
                     {
@@ -3720,7 +3673,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updatedOccurrence.Lease = lease;
 
             // Return 1 only when the completion was actually applied (mirror EF affected-row count).
-            if (_cronOccurrences.TryUpdate(row.Key, updatedOccurrence, occurrence))
+            if (_TryUpdateCronOccurrence(row.Key, updatedOccurrence, occurrence))
             {
                 _CloseExecutorAttempt(_occurrenceAttempts, functionContext);
                 return Task.FromResult(1);
@@ -3768,7 +3721,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updatedOccurrence.Lease = renewed.Next;
             updatedOccurrence.UpdatedAt = now;
 
-            if (_cronOccurrences.TryUpdate(row.Key, updatedOccurrence, occurrence))
+            if (_TryUpdateCronOccurrence(row.Key, updatedOccurrence, occurrence))
             {
                 return Task.FromResult(1);
             }
@@ -3836,7 +3789,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.UpdatedAt = now;
             updated.ChangedAt = _NextChangeMarker();
 
-            if (_cronOccurrences.TryUpdate(row.Key, updated, occurrence))
+            if (_TryUpdateCronOccurrence(row.Key, updated, occurrence))
             {
                 return Task.FromResult(true);
             }
@@ -3864,7 +3817,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             mutate(updated);
             updated.UpdatedAt = now;
             updated.ChangedAt = _NextChangeMarker();
-            if (!_cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn))
+            if (!_TryUpdateCronOccurrence(decidedOn.Id, updated, decidedOn))
             {
                 return false;
             }
@@ -3994,7 +3947,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedOccurrence.UpdatedAt = now;
                     updatedOccurrence.ChangedAt = _NextChangeMarker();
 
-                    _cronOccurrences.TryUpdate(id, updatedOccurrence, occurrence);
+                    _TryUpdateCronOccurrence(id, updatedOccurrence, occurrence);
                 }
             }
         }
@@ -4068,7 +4021,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     break;
             }
 
-            if (_cronOccurrences.TryUpdate(row.Key, updated, current))
+            if (_TryUpdateCronOccurrence(row.Key, updated, current))
             {
                 _CloseInterruptedAttempt(
                     _occurrenceAttempts,
@@ -4150,7 +4103,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                     updatedOccurrence.Lease = lease;
 
-                    if (_cronOccurrences.TryUpdate(row.Key, updatedOccurrence, occurrence))
+                    if (_TryUpdateCronOccurrence(row.Key, updatedOccurrence, occurrence))
                     {
                         updatedIds.Add(row.Key);
                     }
@@ -4182,7 +4135,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             mutate(updated);
             updated.UpdatedAt = now;
             updated.ChangedAt = _NextChangeMarker();
-            if (!_cronOccurrences.TryUpdate(decidedOn.Id, updated, decidedOn))
+            if (!_TryUpdateCronOccurrence(decidedOn.Id, updated, decidedOn))
             {
                 return false;
             }
@@ -4473,7 +4426,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 occurrence.SnapshotContract(definition);
                 occurrence.CronJob = definition;
                 occurrence.ChangedAt = _NextChangeMarker();
-                if (_cronOccurrences.TryAdd(occurrence.Id, _CloneCronOccurrence(occurrence)))
+                if (_TryAddCronOccurrence(occurrence.Id, _CloneCronOccurrence(occurrence)))
                 {
                     count++;
                 }
@@ -4554,7 +4507,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 updated.UpdatedAt = now;
                 updated.ChangedAt = _NextChangeMarker();
 
-                if (_cronOccurrences.TryUpdate(id, updated, occurrence))
+                if (_TryUpdateCronOccurrence(id, updated, occurrence))
                 {
                     acquired.Add(_CloneCronOccurrence(updated));
                 }

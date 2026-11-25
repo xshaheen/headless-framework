@@ -181,7 +181,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.ChangedAt = _NextChangeMarker();
 
             return Task.FromResult(
-                _cronOccurrences.TryUpdate(occurrenceId, updated, current)
+                _TryUpdateCronOccurrence(occurrenceId, updated, current)
                     ? JobRequeueOutcome.Requeued
                     : JobRequeueOutcome.Conflict
             );
