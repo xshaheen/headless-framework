@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Paymob cash-out integration for Headless payment workflows.</Description>
     <PackageTags>headless;payments;paymob;cash;out;dotnet</PackageTags>
   </PropertyGroup>

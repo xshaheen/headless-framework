@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Contracts and shared abstractions for Headless primitives support.</Description>
     <PackageTags>headless;generator;primitives;abstractions;dotnet</PackageTags>
     <RootNamespace>Headless.Generator.Primitives</RootNamespace>

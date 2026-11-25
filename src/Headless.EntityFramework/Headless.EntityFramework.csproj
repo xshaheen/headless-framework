@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Entity Framework Core integration with Headless conventions.</Description>
     <PackageTags>headless;entity-framework;ef-core;database;dotnet</PackageTags>
     <RootNamespace>Headless.EntityFramework</RootNamespace>

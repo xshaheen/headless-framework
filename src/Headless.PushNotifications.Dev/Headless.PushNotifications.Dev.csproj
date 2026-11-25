@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Development integration for Headless push notifications.</Description>
     <PackageTags>headless;push-notifications;dev;dotnet</PackageTags>
   </PropertyGroup>

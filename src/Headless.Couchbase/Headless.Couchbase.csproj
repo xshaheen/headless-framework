@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Couchbase integration for Headless applications.</Description>
     <PackageTags>headless;couchbase;database;document-database;dotnet</PackageTags>
     <RootNamespace>Headless.Couchbase</RootNamespace>

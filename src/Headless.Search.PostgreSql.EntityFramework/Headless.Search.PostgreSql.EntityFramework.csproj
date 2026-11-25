@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>EF Core helpers for Headless Arabic search on PostgreSQL: stored, trigram-indexed search keys, the query function mapping, and the version-upgrade migration step.</Description>
     <PackageTags>headless;search;arabic;postgresql;trigram;efcore;dotnet</PackageTags>
     <RootNamespace>Headless.Search.PostgreSql.EntityFramework</RootNamespace>

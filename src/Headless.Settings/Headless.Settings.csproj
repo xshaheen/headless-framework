@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Core services, options, and setup primitives for Headless settings packages.</Description>
     <PackageTags>headless;settings;dotnet</PackageTags>
     <RootNamespace>Headless.Settings</RootNamespace>

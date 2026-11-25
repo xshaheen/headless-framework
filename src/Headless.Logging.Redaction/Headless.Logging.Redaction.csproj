@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Data classification taxonomy and redactors that keep secrets and personal data out of Headless Framework logs.</Description>
     <PackageTags>headless;logging;redaction;compliance;pii;dotnet</PackageTags>
     <RootNamespace>Headless.Logging</RootNamespace>

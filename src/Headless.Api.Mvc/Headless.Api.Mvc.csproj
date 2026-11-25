@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>MVC integration for Headless API.</Description>
     <PackageTags>headless;api;mvc;dotnet</PackageTags>
     <RootNamespace>Headless.Api</RootNamespace>

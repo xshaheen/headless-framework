@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Value objects, result and paging models, error descriptors, and domain primitives for Headless Framework packages and consumers.</Description>
     <PackageTags>headless;primitives;value-objects;result;dotnet</PackageTags>
     <RootNamespace>Headless.Primitives</RootNamespace>

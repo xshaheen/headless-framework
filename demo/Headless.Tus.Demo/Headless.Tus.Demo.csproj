@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk.Web">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Demo</RootNamespace>
     <!-- The React SPA under frontend/ is built by Vite (npm run build -> wwwroot), not by MSBuild. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);frontend/**</DefaultItemExcludes>

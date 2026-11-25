@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Ambient-context services and DI setup for Headless Framework applications.</Description>
     <PackageTags>headless;context;dotnet</PackageTags>
   </PropertyGroup>

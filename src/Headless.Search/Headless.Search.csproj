@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Arabic search normalization for Headless: the versioned rule table, a C# normalizer, and provider-agnostic setup for the database function that builds search keys.</Description>
     <PackageTags>headless;search;arabic;normalization;dotnet</PackageTags>
     <RootNamespace>Headless.Search</RootNamespace>
