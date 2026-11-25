@@ -204,7 +204,7 @@ public sealed class IdempotencyMiddlewareTenantScopeTests : IdempotencyMiddlewar
         AdmitReturns(
             operations,
             InFlight,
-            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = [7] })
+            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = new byte[] { 7 } })
         );
         PeekReturns(operations, IdempotencyPeekStatus.Completed);
         var admitted = _RecordStoreTenants(operations);

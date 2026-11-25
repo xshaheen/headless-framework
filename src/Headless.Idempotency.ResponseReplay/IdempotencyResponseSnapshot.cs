@@ -36,14 +36,14 @@ internal sealed class IdempotencyResponseSnapshot
     /// </summary>
     public Dictionary<string, string[]> Headers { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public byte[] Body { get; init; } = [];
+    public ReadOnlyMemory<byte> Body { get; init; }
 
     /// <summary>Frames this snapshot into a fresh array. The middleware uses <see cref="WriteTo" /> instead, which
     /// keeps the frame in a pooled buffer and copies the body straight from the capture buffer.</summary>
     public byte[] Encode()
     {
         using var writer = new PooledByteBufferWriter(Body.Length + 256);
-        WriteTo(writer, StatusCode, Headers, Body);
+        WriteTo(writer, StatusCode, Headers, Body.Span);
 
         return writer.WrittenSpan.ToArray();
     }
@@ -76,6 +76,7 @@ internal sealed class IdempotencyResponseSnapshot
     }
 
     /// <summary>Reads a stored frame back: status, headers, and the body bytes.</summary>
+    /// <remarks>The decoded body borrows the input frame. Keep the frame valid until the response write completes.</remarks>
     /// <exception cref="JsonException">The payload is not a frame this version wrote.</exception>
     public static IdempotencyResponseSnapshot Decode(ReadOnlyMemory<byte> payload)
     {
@@ -104,7 +105,7 @@ internal sealed class IdempotencyResponseSnapshot
         {
             StatusCode = header.StatusCode,
             Headers = header.Headers,
-            Body = span[..bodyLength].ToArray(),
+            Body = payload[..bodyLength],
         };
     }
 }

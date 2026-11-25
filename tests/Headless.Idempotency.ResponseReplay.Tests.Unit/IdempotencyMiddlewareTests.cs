@@ -206,7 +206,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var snapshot = IdempotencyResponseSnapshot.Decode(stored);
         snapshot.StatusCode.Should().Be(201);
         snapshot.Headers.Should().ContainKey("Content-Type").And.NotContainKey("Set-Cookie");
-        Encoding.UTF8.GetString(snapshot.Body).Should().Be("{\"id\":1}");
+        Encoding.UTF8.GetString(snapshot.Body.Span).Should().Be("{\"id\":1}");
     }
 
     [Fact]
@@ -237,7 +237,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Which.GetArguments();
         var snapshot = IdempotencyResponseSnapshot.Decode((ReadOnlyMemory<byte>)complete[1]!);
         snapshot.StatusCode.Should().Be(201);
-        Encoding.UTF8.GetString(snapshot.Body).Should().Be("{\"id\":1}");
+        Encoding.UTF8.GetString(snapshot.Body.Span).Should().Be("{\"id\":1}");
         Encoding.UTF8.GetString(originalBody.ToArray()).Should().Be("{\"id\":1}");
     }
 
@@ -351,7 +351,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         CallCount(operations, nameof(IIdempotentOperations.CompleteAsync)).Should().Be(1);
         var snapshot = IdempotencyResponseSnapshot.Decode(stored);
         snapshot.StatusCode.Should().Be(409);
-        System.Text.Encoding.UTF8.GetString(snapshot.Body).Should().Contain(HttpIdempotencyErrorCodes.ResponseTooLarge);
+        Encoding.UTF8.GetString(snapshot.Body.Span).Should().Contain(HttpIdempotencyErrorCodes.ResponseTooLarge);
     }
 
     [Fact]
@@ -539,7 +539,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                             ["Content-Type"] = ["application/json"],
                             ["Set-Cookie"] = ["leaked=1"],
                         },
-                        Body = [10, 20, 30],
+                        Body = new byte[] { 10, 20, 30 },
                     }
                 )
         );
@@ -649,7 +649,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             operations,
             InFlight,
             InFlight,
-            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = [7] })
+            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = new byte[] { 7 } })
         );
         var middleware = CreateMiddleware(
             options: Monitor(_WaitAndReplay(TimeSpan.FromSeconds(10))),
@@ -742,7 +742,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         AdmitReturns(
             operations,
             InFlight,
-            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = [7] })
+            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = new byte[] { 7 } })
         );
         PeekReturns(
             operations,
@@ -811,7 +811,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         AdmitReturns(
             operations,
             _ => expiredHolder,
-            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = [9] })
+            key => Replay(key, new IdempotencyResponseSnapshot { StatusCode = 201, Body = "\t"u8.ToArray() })
         );
         var middleware = CreateMiddleware(
             options: Monitor(_WaitAndReplay(TimeSpan.FromSeconds(10))),
