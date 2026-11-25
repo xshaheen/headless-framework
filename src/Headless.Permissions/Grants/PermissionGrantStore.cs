@@ -1340,7 +1340,7 @@ internal static partial class PermissionGrantStoreLog
         EventId = 4,
         EventName = "GetCachedItems",
         Level = LogLevel.Debug,
-        Message = "PermissionStore._GetCachedItemsAsync: {@CacheKeys}"
+        Message = "PermissionStore._GetCachedItemsAsync: {CacheKeys}"
     )]
     internal static partial void LogGetCachedItems(this ILogger logger, IReadOnlyList<string> cacheKeys);
 
@@ -1348,7 +1348,7 @@ internal static partial class PermissionGrantStoreLog
         EventId = 5,
         EventName = "FoundInCache",
         Level = LogLevel.Debug,
-        Message = "Found in the cache: {@CacheKeys}"
+        Message = "Found in the cache: {CacheKeys}"
     )]
     internal static partial void LogFoundInCache(this ILogger logger, IReadOnlyList<string> cacheKeys);
 
@@ -1356,7 +1356,7 @@ internal static partial class PermissionGrantStoreLog
         EventId = 6,
         EventName = "NotFoundInCache",
         Level = LogLevel.Debug,
-        Message = "Not found in the cache: {@Names}"
+        Message = "Not found in the cache: {Names}"
     )]
     internal static partial void LogNotFoundInCache(this ILogger logger, string[] names);
 
