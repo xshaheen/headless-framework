@@ -146,6 +146,13 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
         NullValueHandling nullValueHandling = NullValueHandling.Remove
     )
     {
+        if (value is null && nullValueHandling == NullValueHandling.Ignore)
+        {
+            // Ignore promises to leave existing values alone. A scalar null is one value, so the slot-by-slot
+            // replacement below would keep the first slot and drop every repeat of the name.
+            return;
+        }
+
         if (!Contains(name))
         {
             // Simple append: no existing values to replace in place, so skip the ToArray/Clear/rebuild below
@@ -181,16 +188,21 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
             {
                 _values.Add(item);
             }
-            else if (val is not null || nullValueHandling != NullValueHandling.Remove)
+            else if (val is not null || nullValueHandling == NullValueHandling.NameOnly)
             {
-                Add(name, val, isEncoded, nullValueHandling);
+                _values.Add(name, new QueryParamValue(val, isEncoded));
             }
         }
 
-        // add the rest to the end
+        // Add the rest to the end. Each element is already split, so append it directly: routing a null element
+        // through Add with Remove would clear every value of this name, including the ones written above.
         while (values.Count > 0)
         {
-            Add(name, values.Dequeue(), isEncoded, nullValueHandling);
+            var val = values.Dequeue();
+            if (val is not null || nullValueHandling == NullValueHandling.NameOnly)
+            {
+                _values.Add(name, new QueryParamValue(val, isEncoded));
+            }
         }
     }
 
