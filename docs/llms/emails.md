@@ -172,6 +172,7 @@ var marketing = provider.GetRequiredService<IEmailSenderProvider>().GetSender("m
 - `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` registers `IEmailSenderProvider`, then the default sender when one is configured, then each named sender.
 - A setup that throws leaves the service collection unchanged.
 - `HeadlessEmailsSetupBuilder` carries no shared options. Each provider binds its own options in its `Use*` call.
+- The package references `MimeKit.Core`, not the `MimeKit` meta-package, so it brings no S/MIME, PGP, DKIM, or ARC support and no BouncyCastle. If your app signs or encrypts messages with MimeKit, reference `MimeKit.Cryptography` yourself and call `CryptographyModule.Initialize()` at startup.
 
 ---
 
@@ -441,6 +442,6 @@ builder.Services.AddHeadlessEmails(setup =>
 - **Pooling.** Connections are reused across sends. Each named Mailkit sender owns its own pool.
 - **Stale connections.** A connection idle longer than `IdleProbeThreshold` sends `NOOP` first, because a server can close an idle session without the client noticing. A failed probe reconnects instead of failing the send.
 - **One safe retry.** If a recently used connection turns out to be closed, the send reconnects and retries once, but only when the failure came before the server accepted `MAIL FROM`. The message cannot reach the server twice. A failure after `MAIL FROM` is accepted returns a failure and is not retried.
-- **Failures.** SMTP command and protocol errors, a rejected credential, and connect, TLS, or timeout faults all return a failed response. A rejected credential also logs at `Critical` level, because it is a configuration error. A connect timeout returns a failure; only cancellation of your own token throws.
+- **Failures.** SMTP command and protocol errors, a rejected credential, a `530` authentication-required reply, and connect, TLS, or timeout faults all return a failed response. A rejected credential also logs at `Critical` level, because it is a configuration error. A connect timeout returns a failure; only cancellation of your own token throws.
 - **After a failure.** The connection is closed instead of returned to the pool, and the next send connects and authenticates again.
-- **Success.** `ProviderMessageId` is the SMTP server's final response.
+- **Success.** `ProviderMessageId` is the SMTP server's final response. A multi-line response keeps every line, joined with `\r\n`.
