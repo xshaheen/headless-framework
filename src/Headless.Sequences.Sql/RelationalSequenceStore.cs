@@ -23,7 +23,8 @@ internal sealed class RelationalSequenceStore(
     RelationalSequencesOptions options,
     string packageName,
     TimeProvider timeProvider,
-    Func<string, string>? autocommitIncrement = null
+    Func<string, string>? autocommitIncrement = null,
+    bool guardIncrementOverflow = false
 ) : ISequenceStore
 {
     private const string _Operation = "gap-free sequence";
@@ -32,12 +33,12 @@ internal sealed class RelationalSequenceStore(
     private readonly RelationalSequencesOptions _options = Argument.IsNotNull(options);
     private readonly string _packageName = Argument.IsNotNullOrWhiteSpace(packageName);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
-    private readonly string _incrementSql = _BuildIncrementSql(dialect, options);
+    private readonly string _incrementSql = _BuildIncrementSql(dialect, options, guardIncrementOverflow);
 
     // Null when the provider cannot send the increment as one self-committing command; the fast path then wraps it in
     // an explicit transaction. Built from the same upsert, so the two paths cannot drift.
     private readonly string? _autocommitIncrementSql = autocommitIncrement?.Invoke(
-        _BuildIncrementSql(dialect, options)
+        _BuildIncrementSql(dialect, options, guardIncrementOverflow)
     );
 
     private readonly string _advanceInsertSql = _BuildAdvanceInsertSql(dialect, options);
@@ -212,10 +213,9 @@ internal sealed class RelationalSequenceStore(
             .ExecuteAsync(command, _ReadWrittenToEndAsync, cancellationToken)
             .ConfigureAwait(false);
 
-        // The upsert has no guard, so it always writes.
         return upserted.Match(
             static (value, _) => value,
-            static () => throw new InvalidOperationException("An unguarded counter upsert reported a refusal.")
+            static () => throw new OverflowException("The sequence increment would exceed Int64.MaxValue.")
         );
     }
 
@@ -290,7 +290,11 @@ internal sealed class RelationalSequenceStore(
             );
     }
 
-    private static string _BuildIncrementSql(ISqlDialect dialect, RelationalSequencesOptions options)
+    private static string _BuildIncrementSql(
+        ISqlDialect dialect,
+        RelationalSequencesOptions options,
+        bool guardIncrementOverflow
+    )
     {
         var tenantId = SequencesColumns.TenantId(dialect);
         var name = SequencesColumns.Name(dialect);
@@ -298,6 +302,11 @@ internal sealed class RelationalSequenceStore(
         var value = SequencesColumns.Value(dialect);
         var createdAt = SequencesColumns.CreatedAt(dialect);
         var updatedAt = SequencesColumns.UpdatedAt(dialect);
+        var storedValue = $"{SqlDialectTokens.Stored}.{value}";
+
+        // SQLite promotes overflowing integer sums to REAL. Subtract the positive delta from the limit so the
+        // guard can reject an exhausted counter before the update, under the same write lock.
+        var guard = guardIncrementOverflow ? $"{storedValue} <= 9223372036854775807 - @Delta" : null;
 
         // The database clock stamps the write itself: a gap-free unit can hold its transaction open for a while.
         return dialect.Render(
@@ -306,8 +315,8 @@ internal sealed class RelationalSequenceStore(
                 [new(tenantId, "TenantId"), new(name, "Name"), new(partition, "Partition")],
                 [value, createdAt, updatedAt],
                 ["@InsertValue", SqlDialectTokens.Now, SqlDialectTokens.Now],
-                $"{value} = {SqlDialectTokens.Stored}.{value} + @Delta, {updatedAt} = {SqlDialectTokens.Now}",
-                Guard: null,
+                $"{value} = {storedValue} + @Delta, {updatedAt} = {SqlDialectTokens.Now}",
+                guard,
                 [value]
             )
         );

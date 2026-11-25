@@ -155,7 +155,8 @@ public static class SetupSequencesSqlite
                 SqliteDialect.Instance,
                 sp.GetRequiredService<IOptions<SqliteSequencesOptions>>().Value,
                 "Headless.Sequences.Sqlite",
-                sp.GetRequiredService<TimeProvider>()
+                sp.GetRequiredService<TimeProvider>(),
+                guardIncrementOverflow: true
             ));
         }
     }
