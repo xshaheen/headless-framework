@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '../src/testing/timers.ts'
 import type { CommandsApi, OperationChunk, OperationChunkCall, OperationScope } from '../src/commands/api.ts'
 import { startOperation } from '../src/commands/operation-runner.ts'
 import { DashboardApiError } from '../src/data/api.ts'
@@ -36,8 +37,8 @@ describe('operation runner', () => {
     vi.useFakeTimers()
   })
 
-  afterEach(() => {
-    vi.useRealTimers()
+  afterEach(async () => {
+    await restoreRealTimers()
   })
 
   it('sends chunks until no cursor is left and reports done, skipped, and failed counts', async () => {

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '../../src/testing/timers.ts'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { useAllowedActions } from '../../src/commands/allowed.ts'
 import type { CommandDefinition } from '../../src/commands/api.ts'
@@ -382,10 +383,10 @@ describe('virtualized keyset table', () => {
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     localStorage.clear()
     vi.unstubAllGlobals()
-    vi.useRealTimers()
+    await restoreRealTimers()
   })
 
   function SelectableRuns({ rows: list }: { rows: Run[] }) {
@@ -870,7 +871,7 @@ describe('DateRangeField compact', () => {
     const set = await screen.findByRole('button', { name: /Due between/ })
     expect(set.hasAttribute('data-set')).toBe(true)
     expect(set.textContent).toBe('Due betweenNov 1 – Nov 4')
-    vi.useRealTimers()
+    await restoreRealTimers()
   })
 
   it('takes typed start and end days from the keyboard alone, with the calendar keeping the first focus', async () => {
@@ -902,7 +903,7 @@ describe('DateRangeField compact', () => {
 
     await user.keyboard('{Escape}')
     expect((await screen.findByRole('button', { name: /Due between/ })).textContent).toBe('Due betweenNov 2 – Nov 6')
-    vi.useRealTimers()
+    await restoreRealTimers()
   })
 })
 

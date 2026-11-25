@@ -174,15 +174,16 @@ describe('shell accessibility', () => {
     renderJobs()
 
     await screen.findByRole('heading', { name: 'Module jobs runs view' })
-    expect(document.title).toBe('Runs · Jobs · Dashboard')
+    // The shell sets the title in an effect, which can run after the view's heading is in the page.
+    await waitFor(() => expect(document.title).toBe('Runs · Jobs · Dashboard'))
     expect(announced('Runs · Jobs · Dashboard')).toBe(false)
 
     const settings = within(screen.getByRole('navigation', { name: 'Jobs' })).getByRole('link', { name: 'Settings' })
     await user.click(settings)
 
     await screen.findByRole('heading', { name: 'Module jobs settings view' })
-    expect(document.title).toBe('Settings · Jobs · Dashboard')
-    expect(announced('Settings · Jobs · Dashboard')).toBe(true)
+    await waitFor(() => expect(document.title).toBe('Settings · Jobs · Dashboard'))
+    await waitFor(() => expect(announced('Settings · Jobs · Dashboard')).toBe(true))
     // The link that went there is still on the page, so focus stays on it.
     expect(document.activeElement).toBe(settings)
   })
