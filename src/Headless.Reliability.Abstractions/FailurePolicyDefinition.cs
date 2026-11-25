@@ -124,6 +124,13 @@ public sealed class FailurePolicyDefinition
         var initialTicks = DelayedInitialDelay.Ticks;
         var maxTicks = DelayedMaxDelay.Ticks;
 
+        // Zero doubles to zero at any attempt. Without this, the exponent shortcut below would jump straight to the
+        // cap at attempt 64, which a policy without delayed retries may set above zero.
+        if (initialTicks == 0)
+        {
+            return TimeSpan.Zero;
+        }
+
         // Compare against the cap shifted right instead of shifting the initial delay left, so a large attempt number
         // reaches the cap without ever overflowing a long.
         if (exponent >= 63 || initialTicks > maxTicks >> exponent)

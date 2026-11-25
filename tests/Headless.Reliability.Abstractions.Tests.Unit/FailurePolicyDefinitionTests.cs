@@ -96,6 +96,25 @@ public sealed class FailurePolicyDefinitionTests : TestBase
     }
 
     [Theory]
+    [InlineData(1)]
+    [InlineData(63)]
+    [InlineData(64)]
+    [InlineData(int.MaxValue)]
+    public void should_return_zero_at_every_attempt_when_the_initial_delay_is_zero(int attempt)
+    {
+        // given
+        var definition = new FailurePolicyBuilder().Delayed(0, TimeSpan.Zero, TimeSpan.FromSeconds(2)).Build();
+
+        // when
+        var baseDelay = definition.GetDelayedRetryBaseDelay(attempt);
+        var jittered = definition.GetDelayedRetryDelay(attempt, new FixedRandom(0.999_999));
+
+        // then
+        baseDelay.Should().Be(TimeSpan.Zero);
+        jittered.Should().Be(TimeSpan.Zero);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     public void should_reject_a_delayed_attempt_below_one(int attempt)
