@@ -40,7 +40,7 @@ CAPTCHA verification is its own domain: see [captcha.md](captcha.md).
 - Register options with `Configure<TOptions, TValidator>(...)` or `AddOptions<TOptions, TValidator>()` from `Headless.Hosting`. Both validate with FluentValidation when the host starts.
 - Use `HeadlessRedisScriptsLoader` only for Lua scripts, not for general Redis calls. Reuse each script definition's single `Instance`.
 - Use `GeoConstants.GoogleMapsSrid` (4326) as the SRID for geography data. Call `SanitizeForSqlGeography()` before you save a polygon to a SQL Server `geography` column.
-- For a sitemap of more than 50,000 URLs, call `WriteAsync(onShard)` and write each shard inside the callback. A shard is invalid after the callback returns.
+- For a sitemap of more than 50,000 URLs or 50 MB, call `WriteAsync(onShard)` and write each shard inside the callback, not `WriteToAsync`, which writes one file past either limit. A shard is invalid after the callback returns.
 
 ---
 
@@ -1057,7 +1057,7 @@ await urls.WriteToAsync(stream);
 
 ### Large sitemaps
 
-A sitemap file holds at most `SitemapConstants.MaxSitemapUrls` (50,000) `<url>` elements. `WriteAsync` splits the input into shards of that size and calls `onShard` for each one, in order, as soon as it fills. It returns the shard count. Build the sitemap index from it.
+A sitemap file holds at most `SitemapConstants.MaxSitemapUrls` (50,000) `<url>` elements and `SitemapConstants.MaxSitemapBytes` (52,428,800 bytes, 50 MB uncompressed). `WriteAsync` closes a shard before the next entry would pass either limit and calls `onShard` for each one, in order, as soon as it fills. It returns the shard count. Build the sitemap index from it.
 
 ```csharp
 // sitemapUrls is an IEnumerable<SitemapUrl> or an IAsyncEnumerable<SitemapUrl>,
@@ -1082,6 +1082,8 @@ await references.WriteToAsync(index, cancellationToken);
 - **A shard is valid only during its callback.** Await `shard.WriteToAsync` inside `onShard`. A call after the callback returns throws `InvalidOperationException`.
 - **A blob upload needs its own buffer.** Write the shard into a `MemoryStream` inside the callback, rewind it, and upload it before the callback returns.
 - **Alternates count toward the limit.** A `SitemapUrl` with alternates writes one `<url>` per alternate it emits (those selected by `WriteAlternateLanguageCodes`, else all). Its entries never split across shards, so a shard closes early when the next entry would overflow it.
+- **Long URLs close a shard before 50,000.** The byte limit counts the UTF-8 XML as written, escaping, alternates, and images included, so a shard of long URLs holds fewer than 50,000. Do not assume a fixed URL count per shard. Read `shard.Count`.
+- **One oversized entry still gets a file.** A single `SitemapUrl` whose own XML passes a limit, such as one with more than 50,000 emitted alternates, is written alone in a shard that exceeds it.
 - **Memory** holds one shard's URL references at a time, and no shard XML unless the callback buffers it.
 - **Each shard declares only the namespaces it uses.** `xmlns:xhtml` and `xmlns:image` appear only when one of its URLs has alternates or images. The bytes equal `WriteToAsync` on the same URLs.
 - **Failure and cancellation stop enumeration.** An exception from `onShard` propagates and no more URLs are read. Cancellation is checked before each URL. An empty input calls `onShard` zero times and returns `0`.
@@ -1119,6 +1121,8 @@ var references = new List<SitemapReference>
 await using var stream = new MemoryStream();
 await references.WriteToAsync(stream);
 ```
+
+A sitemap index holds at most `SitemapConstants.MaxSitemapIndexEntries` (50,000) references and `SitemapConstants.MaxSitemapBytes` (50 MB). `WriteToAsync` throws `ArgumentException` (`ParamName` is `sitemapReferences`) for more, and writes nothing to the stream. An index cannot reference another index, so split the sitemaps across several index files and submit each one to the search engine.
 
 ### Design and runtime behavior
 
