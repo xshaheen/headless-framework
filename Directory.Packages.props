@@ -11,16 +11,16 @@
     <PackageVersion Include="Asp.Versioning.Http" Version="10.2.3" />
     <PackageVersion Include="Asp.Versioning.Mvc" Version="10.2.1" />
     <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
-    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.1.0.2" />
-    <PackageVersion Include="AWSSDK.S3" Version="4.1.1" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.1.0.2" />
+    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.1.0.3" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.1.2.1" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.1.1" />
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.1.0.2" />
     <PackageVersion Include="AWSSDK.SQS" Version="4.1.0.2" />
     <PackageVersion Include="Azure.Communication.Email" Version="1.1.0" />
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
     <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.10.2" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.1" />
-    <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.27.1" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.2" />
+    <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.27.2" />
     <PackageVersion Include="Bogus" Version="35.6.5" />
     <PackageVersion Include="Confluent.Kafka" Version="2.16.0" />
     <PackageVersion Include="Consul" Version="1.8.0" />
@@ -37,8 +37,8 @@
     <PackageVersion Include="Humanizer.Core.ar" Version="3.0.10" />
     <PackageVersion Include="Infobip.Api.Client" Version="5.0.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2026.2.0" />
-    <PackageVersion Include="KubernetesClient" Version="21.0.8" />
-    <PackageVersion Include="libphonenumber-csharp" Version="9.0.43" />
+    <PackageVersion Include="KubernetesClient" Version="21.0.41" />
+    <PackageVersion Include="libphonenumber-csharp" Version="9.0.44" />
     <PackageVersion Include="Linq2Couchbase" Version="2.2.0" />
     <PackageVersion Include="MailKit" Version="4.18.2" />
     <PackageVersion Include="MaxMind.GeoIP2" Version="6.2.0" />
@@ -107,8 +107,8 @@
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.404" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="8.0.0" />
-    <PackageVersion Include="NATS.Client.Core" Version="3.4.0" />
-    <PackageVersion Include="NATS.Client.JetStream" Version="3.4.0" />
+    <PackageVersion Include="NATS.Client.Core" Version="3.4.1" />
+    <PackageVersion Include="NATS.Client.JetStream" Version="3.4.1" />
     <PackageVersion Include="NCrontab.Signed" Version="3.4.0" />
     <PackageVersion Include="NetTopologySuite" Version="2.6.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
@@ -118,8 +118,8 @@
     <PackageVersion Include="Nito.Disposables" Version="2.5.0" />
     <!-- Transitive-only pin: never referenced directly; sets the version under WireMock.Net. -->
     <PackageVersion Include="NJsonSchema" Version="11.6.2" />
-    <PackageVersion Include="Npgsql" Version="10.0.3" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageVersion Include="Npgsql" Version="10.0.4" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.4" />
     <!-- Argon2id for Headless.Hashing.Argon2: libsodium's audited implementation (the BCL has no Argon2). NSec pins
          its native libsodium to a patch range, so that version follows this one. -->
     <PackageVersion Include="NSec.Cryptography" Version="26.4.0" />
@@ -141,7 +141,7 @@
     <!-- Transitive-only pin: never referenced directly; keeps Microsoft.Extensions.Resilience on the same Polly 8 line as Polly.Core. -->
     <PackageVersion Include="Polly.Extensions" Version="8.9.1" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.9.1" />
-    <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
+    <PackageVersion Include="RabbitMQ.Client" Version="7.3.0" />
     <PackageVersion Include="Respawn" Version="7.0.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.21.0" />
     <!-- Transitive via WireMock.Net; pinned to the patched release for GHSA-24c8-4792-22hx (NU1903) -->
@@ -184,7 +184,7 @@
     <PackageVersion Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
     <PackageVersion Include="AwesomeAssertions.Json" Version="9.0.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageVersion Include="Dapper" Version="2.1.89" />
+    <PackageVersion Include="Dapper" Version="2.1.100" />
     <PackageVersion Include="Foundatio" Version="13.0.5" />
     <PackageVersion Include="Foundatio.Redis" Version="13.0.5" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.15" />
@@ -211,13 +211,13 @@
     <!-- Benchmark-only: the community S3 tus store the Headless store is measured against. -->
     <PackageVersion Include="tusdotnet.Stores.S3" Version="2.2.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.XunitV3" Version="33.6.0" />
+    <PackageVersion Include="Verify.XunitV3" Version="33.7.3" />
     <PackageVersion Include="WireMock.Net" Version="2.31.0" />
     <PackageVersion Include="WireMock.Net.AwesomeAssertions" Version="2.31.0" />
     <PackageVersion Include="xunit.v3.assert" Version="4.0.3" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.3" />
-    <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.9.0" />
-    <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.9.0" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.10.0" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.10.0" />
   </ItemGroup>
   <!--
     `make quality-references` sets HeadlessReferenceTrimmer to report removable references. An ordinary restore never

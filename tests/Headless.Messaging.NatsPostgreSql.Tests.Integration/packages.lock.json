@@ -558,8 +558,8 @@
       },
       "NATS.Client.Abstractions": {
         "type": "Transitive",
-        "resolved": "3.4.0",
-        "contentHash": "DaF3Urfs9DOdzk/6VTiNCGoYPyX35R6flOcy4Ff7O0yoMgxxcUB2Y6K6/A3Fp6+1Lm9Klu3MQhCO2eC4Mm9LiA==",
+        "resolved": "3.4.1",
+        "contentHash": "G+8rJz42ova/EzzHoSa85Y8WR4BkYV2O8LLwRIgSzJynOX/Kr2ZAUsXcHr6NKtQUhVA4nye45dBgCLUBpsjMVA==",
         "dependencies": {
           "Microsoft.Extensions.Primitives": "6.0.0"
         }
@@ -951,8 +951,8 @@
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "NATS.Client.Core": "[3.4.0, )",
-          "NATS.Client.JetStream": "[3.4.0, )"
+          "NATS.Client.Core": "[3.4.1, )",
+          "NATS.Client.JetStream": "[3.4.1, )"
         }
       },
       "headless.messaging.queue.abstractions": {
@@ -972,7 +972,7 @@
         "dependencies": {
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[10.0.4, )"
         }
       },
       "headless.messaging.storage.postgresql.tests.harness": {
@@ -983,7 +983,7 @@
           "Bogus": "[35.6.5, )",
           "Headless.Testing.Testcontainers": "[1.0.0, )",
           "NSubstitute": "[6.2.0, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[10.0.4, )"
         }
       },
       "headless.messaging.tests.harness": {
@@ -1076,7 +1076,7 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.15, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[10.0.4, )"
         }
       },
       "headless.testing": {
@@ -1100,8 +1100,8 @@
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.1.2, )",
-          "Npgsql": "[10.0.3, )",
-          "RabbitMQ.Client": "[7.2.2, )",
+          "Npgsql": "[10.0.4, )",
+          "RabbitMQ.Client": "[7.3.0, )",
           "Testcontainers": "[4.17.0, )",
           "Testcontainers.Azurite": "[4.17.0, )",
           "Testcontainers.Kafka": "[4.17.0, )",
@@ -1431,23 +1431,23 @@
       },
       "NATS.Client.Core": {
         "type": "CentralTransitive",
-        "requested": "[3.4.0, )",
-        "resolved": "3.4.0",
-        "contentHash": "qMzfPEW0b8TvGdz+hpft7MIPvXMqm0CFHsaL7toE61mDhskzbrD1SU8VBsvwiMoOQADQiS8cOTdRAtYfi5pl/w==",
+        "requested": "[3.4.1, )",
+        "resolved": "3.4.1",
+        "contentHash": "zZWYC86Q6dFsFypcLq5LC9+JlZYcY15yZGySASXjcamS8YSH32DhYAWD5A6P1xcCPezxjEUTdNCmk1qKeQ8yQg==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "6.0.1",
           "Microsoft.Extensions.Primitives": "6.0.0",
-          "NATS.Client.Abstractions": "3.4.0",
+          "NATS.Client.Abstractions": "3.4.1",
           "NATS.NKeys": "1.0.1"
         }
       },
       "NATS.Client.JetStream": {
         "type": "CentralTransitive",
-        "requested": "[3.4.0, )",
-        "resolved": "3.4.0",
-        "contentHash": "n+vuJ/6aEDC7hFUIgRv69kDUYNET6GiTHIyjcfH1bH33ijIe1N3n5JD9F5XCL3Gz6XiEkgCQqOhvDYerhueLoA==",
+        "requested": "[3.4.1, )",
+        "resolved": "3.4.1",
+        "contentHash": "E7VyM76sdcrqEN8pjMmZhxfX1r02LMLnk5qcMVCbKeK+73NP6YEWQKAHGh7V5Ltwvzdc7grtZzINYKL+VekSsg==",
         "dependencies": {
-          "NATS.Client.Core": "3.4.0"
+          "NATS.Client.Core": "3.4.1"
         }
       },
       "Newtonsoft.Json": {
@@ -1478,9 +1478,9 @@
       },
       "Npgsql": {
         "type": "CentralTransitive",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "7nb5YzXuvWWJxB0J8DiyL3we+X4FOctZrt0fIBnucOIaIevFEEwGQVZKtiu9olXdlNAK1eNgqSral6r/jlhI4w==",
+        "requested": "[10.0.4, )",
+        "resolved": "10.0.4",
+        "contentHash": "m2VCpcU9MKD8lLxTn+YaNIRWd+Gz3y/9wIaM+2ifDF24xZ2Kvvjx4CDB2BIgobr1Gj6a/gsdmfz1sQ+kmd7liw==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
         }
@@ -1502,9 +1502,9 @@
       },
       "RabbitMQ.Client": {
         "type": "CentralTransitive",
-        "requested": "[7.2.2, )",
-        "resolved": "7.2.2",
-        "contentHash": "k4b6RnTXpLbsF96V93ooNYxgPMnoA2tEm24B6AXNJr1mG8wwNYdA1XJtgU66L5xqeGyveS7SJriRzlX3cbqQNA==",
+        "requested": "[7.3.0, )",
+        "resolved": "7.3.0",
+        "contentHash": "6bAg8jxUdOw6exxmaOIpE9QiNr8+rUAaJZrAezxf3RaRJ+YnHgOh7pqqsMaTNHPL7wj8FSNAOtzGoWxSHuqsqw==",
         "dependencies": {
           "System.Threading.RateLimiting": "8.0.0"
         }

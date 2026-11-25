@@ -10,9 +10,9 @@
       },
       "Dapper": {
         "type": "Direct",
-        "requested": "[2.1.89, )",
-        "resolved": "2.1.89",
-        "contentHash": "1VjFE664wnxvuhlgP8kS4PeFFF4jqD3VkbIHW6Zlc52zuibgcz5ICnIHcQXlTp6pURpPNGLV0ZpNe5x9KePJnA=="
+        "requested": "[2.1.100, )",
+        "resolved": "2.1.100",
+        "contentHash": "zKwgGfxkDIVLGU2WIsl57DwTgj17+fa5v0u2eiVMxU92GXN2fRIn2M8QMGtyGFrPSbVOYKgGFxAxEFL6CB9tTw=="
       },
       "ErrorProne.NET.CoreAnalyzers": {
         "type": "Direct",
@@ -391,7 +391,7 @@
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "RabbitMQ.Client": "[7.2.2, )"
+          "RabbitMQ.Client": "[7.3.0, )"
         }
       },
       "headless.messaging.storage.sqlserver": {
@@ -602,9 +602,9 @@
       },
       "RabbitMQ.Client": {
         "type": "CentralTransitive",
-        "requested": "[7.2.2, )",
-        "resolved": "7.2.2",
-        "contentHash": "k4b6RnTXpLbsF96V93ooNYxgPMnoA2tEm24B6AXNJr1mG8wwNYdA1XJtgU66L5xqeGyveS7SJriRzlX3cbqQNA=="
+        "requested": "[7.3.0, )",
+        "resolved": "7.3.0",
+        "contentHash": "6bAg8jxUdOw6exxmaOIpE9QiNr8+rUAaJZrAezxf3RaRJ+YnHgOh7pqqsMaTNHPL7wj8FSNAOtzGoWxSHuqsqw=="
       },
       "System.IdentityModel.Tokens.Jwt": {
         "type": "CentralTransitive",

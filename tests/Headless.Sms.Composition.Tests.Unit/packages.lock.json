@@ -1485,7 +1485,7 @@
         "dependencies": {
           "Headless.FluentValidation": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.43, )"
+          "libphonenumber-csharp": "[9.0.44, )"
         }
       },
       "headless.primitives": {
@@ -1515,7 +1515,7 @@
       "headless.sms.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.Extensions.NETCore.Setup": "[4.1.0.2, )",
+          "AWSSDK.Extensions.NETCore.Setup": "[4.1.0.3, )",
           "AWSSDK.SimpleNotificationService": "[4.1.0.2, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sms": "[1.0.0, )"
@@ -1617,9 +1617,9 @@
       },
       "AWSSDK.Extensions.NETCore.Setup": {
         "type": "CentralTransitive",
-        "requested": "[4.1.0.2, )",
-        "resolved": "4.1.0.2",
-        "contentHash": "v1VxVHXctbj4ZBQdz2ucKtvLDyJJ9lzqV7uJkp4kSvIIXbEaARqXE9sfTHfX6QpqPwjQQl9G761DlAsEGCuEkA==",
+        "requested": "[4.1.0.3, )",
+        "resolved": "4.1.0.3",
+        "contentHash": "SVJfEZPUE6/KodsEE/JwGsc2BbS0lfsPA7USW9e/Mv6Uf0p39XrUurpagYDJKUKjIGd/8Gn0hNA7VCL+nKCdOQ==",
         "dependencies": {
           "AWSSDK.Core": "4.1.1.1",
           "Microsoft.Extensions.Configuration.Abstractions": "2.0.0",
@@ -1731,9 +1731,9 @@
       },
       "libphonenumber-csharp": {
         "type": "CentralTransitive",
-        "requested": "[9.0.43, )",
-        "resolved": "9.0.43",
-        "contentHash": "lwk6mSQXueLrQx1BU3AM6GDkwvfbCY96AflkOAK9ts6zvMjziVjkc2zAlaLJMfyR0kme/1zqa9cPQIb9y1101A=="
+        "requested": "[9.0.44, )",
+        "resolved": "9.0.44",
+        "contentHash": "6qVWMfflr7qVRMydlxaJuTXzjPWtKBYQo/FOhIIbeKz7HZ0h12YBuBE1S2vdFq8WTOj2H8s1m7VSPjnqhQuRbw=="
       },
       "Meziantou.Extensions.Logging.Xunit.v3": {
         "type": "CentralTransitive",

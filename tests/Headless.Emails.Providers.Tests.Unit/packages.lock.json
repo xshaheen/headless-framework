@@ -485,8 +485,8 @@
       "headless.emails.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.Extensions.NETCore.Setup": "[4.1.0.2, )",
-          "AWSSDK.SimpleEmailV2": "[4.1.0.2, )",
+          "AWSSDK.Extensions.NETCore.Setup": "[4.1.0.3, )",
+          "AWSSDK.SimpleEmailV2": "[4.1.1, )",
           "Headless.Emails": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )"
         }
@@ -581,9 +581,9 @@
       },
       "AWSSDK.Extensions.NETCore.Setup": {
         "type": "CentralTransitive",
-        "requested": "[4.1.0.2, )",
-        "resolved": "4.1.0.2",
-        "contentHash": "v1VxVHXctbj4ZBQdz2ucKtvLDyJJ9lzqV7uJkp4kSvIIXbEaARqXE9sfTHfX6QpqPwjQQl9G761DlAsEGCuEkA==",
+        "requested": "[4.1.0.3, )",
+        "resolved": "4.1.0.3",
+        "contentHash": "SVJfEZPUE6/KodsEE/JwGsc2BbS0lfsPA7USW9e/Mv6Uf0p39XrUurpagYDJKUKjIGd/8Gn0hNA7VCL+nKCdOQ==",
         "dependencies": {
           "AWSSDK.Core": "4.1.1.1",
           "Microsoft.Extensions.Configuration.Abstractions": "2.0.0",
@@ -593,9 +593,9 @@
       },
       "AWSSDK.SimpleEmailV2": {
         "type": "CentralTransitive",
-        "requested": "[4.1.0.2, )",
-        "resolved": "4.1.0.2",
-        "contentHash": "pLqp8VE9cG+mrs7EZ6mq1xUwvl6MddMerpJSpJU72JqI2ECeB7mTl2QR27mv9PIRuzM8WcFBNM1/pJYHY8sB2w==",
+        "requested": "[4.1.1, )",
+        "resolved": "4.1.1",
+        "contentHash": "CMWkFh1cQ0//BBaIfpHTpWDGctbF1uS7J1tThWHMEDq5Whon0wyL/XIQONeEto3jJoV6LekPCkH0Wc1pFSz/Qw==",
         "dependencies": {
           "AWSSDK.Core": "[4.1.1.1, 5.0.0)"
         }

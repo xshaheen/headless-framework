@@ -10,9 +10,9 @@
       },
       "AWSSDK.S3": {
         "type": "Direct",
-        "requested": "[4.1.1, )",
-        "resolved": "4.1.1",
-        "contentHash": "iqT0dNuaUHkh4hHyG40/brQj0220YomPzAmhSrx82xul+LNTUTMzxcQSQrD+rvtHMlOwxmqaN+xhCnthgKNIFw==",
+        "requested": "[4.1.2.1, )",
+        "resolved": "4.1.2.1",
+        "contentHash": "5NYXkjBc8uQz5RFtpubw6NcjFahIiVTIq4rucZv6y8q9QSaO33PWsJHnkxrtmXRCXft0Fke1gnv6gvMP5wR1nw==",
         "dependencies": {
           "AWSSDK.Core": "[4.1.1.1, 5.0.0)"
         }
@@ -254,8 +254,8 @@
       "headless.blobs.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.Extensions.NETCore.Setup": "[4.1.0.2, )",
-          "AWSSDK.S3": "[4.1.1, )",
+          "AWSSDK.Extensions.NETCore.Setup": "[4.1.0.3, )",
+          "AWSSDK.S3": "[4.1.2.1, )",
           "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
@@ -317,9 +317,9 @@
       },
       "AWSSDK.Extensions.NETCore.Setup": {
         "type": "CentralTransitive",
-        "requested": "[4.1.0.2, )",
-        "resolved": "4.1.0.2",
-        "contentHash": "v1VxVHXctbj4ZBQdz2ucKtvLDyJJ9lzqV7uJkp4kSvIIXbEaARqXE9sfTHfX6QpqPwjQQl9G761DlAsEGCuEkA==",
+        "requested": "[4.1.0.3, )",
+        "resolved": "4.1.0.3",
+        "contentHash": "SVJfEZPUE6/KodsEE/JwGsc2BbS0lfsPA7USW9e/Mv6Uf0p39XrUurpagYDJKUKjIGd/8Gn0hNA7VCL+nKCdOQ==",
         "dependencies": {
           "AWSSDK.Core": "4.1.1.1",
           "Microsoft.Extensions.Configuration.Abstractions": "2.0.0",

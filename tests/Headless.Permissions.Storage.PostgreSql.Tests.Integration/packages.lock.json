@@ -149,13 +149,13 @@
       },
       "Npgsql.EntityFrameworkCore.PostgreSQL": {
         "type": "Direct",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "IPGrrZnRkuW7OlHDhUESZz4G5DLkW7Nej/O3Cx+0iTsgyU5XJxBgpsvTHLloo3WWuAKKbDHXBvWPVkX1deRh1Q==",
+        "requested": "[10.0.4, )",
+        "resolved": "10.0.4",
+        "contentHash": "KRFbmHOn260bgSSQTKZsKtvEFW1k1AaZUtb/IPmW31M47qMkzAOglP7FHQgMeqpZeMJ2rjRwczfEUP5lyWUAdA==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore": "[10.0.4, 11.0.0)",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.4, 11.0.0)",
-          "Npgsql": "10.0.3"
+          "Microsoft.EntityFrameworkCore": "[10.0.15, 11.0.0)",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.15, 11.0.0)",
+          "Npgsql": "10.0.4"
         }
       },
       "NSubstitute": {
@@ -982,7 +982,7 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.15, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[10.0.4, )"
         }
       },
       "headless.testing": {
@@ -1006,8 +1006,8 @@
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.1.2, )",
-          "Npgsql": "[10.0.3, )",
-          "RabbitMQ.Client": "[7.2.2, )",
+          "Npgsql": "[10.0.4, )",
+          "RabbitMQ.Client": "[7.3.0, )",
           "Testcontainers": "[4.17.0, )",
           "Testcontainers.Azurite": "[4.17.0, )",
           "Testcontainers.Kafka": "[4.17.0, )",
@@ -1375,9 +1375,9 @@
       },
       "Npgsql": {
         "type": "CentralTransitive",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "7nb5YzXuvWWJxB0J8DiyL3we+X4FOctZrt0fIBnucOIaIevFEEwGQVZKtiu9olXdlNAK1eNgqSral6r/jlhI4w==",
+        "requested": "[10.0.4, )",
+        "resolved": "10.0.4",
+        "contentHash": "m2VCpcU9MKD8lLxTn+YaNIRWd+Gz3y/9wIaM+2ifDF24xZ2Kvvjx4CDB2BIgobr1Gj6a/gsdmfz1sQ+kmd7liw==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
         }
@@ -1399,9 +1399,9 @@
       },
       "RabbitMQ.Client": {
         "type": "CentralTransitive",
-        "requested": "[7.2.2, )",
-        "resolved": "7.2.2",
-        "contentHash": "k4b6RnTXpLbsF96V93ooNYxgPMnoA2tEm24B6AXNJr1mG8wwNYdA1XJtgU66L5xqeGyveS7SJriRzlX3cbqQNA==",
+        "requested": "[7.3.0, )",
+        "resolved": "7.3.0",
+        "contentHash": "6bAg8jxUdOw6exxmaOIpE9QiNr8+rUAaJZrAezxf3RaRJ+YnHgOh7pqqsMaTNHPL7wj8FSNAOtzGoWxSHuqsqw==",
         "dependencies": {
           "System.Threading.RateLimiting": "8.0.0"
         }
