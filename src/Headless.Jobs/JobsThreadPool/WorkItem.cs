@@ -12,7 +12,8 @@ internal readonly struct WorkItem(
     CancellationToken userToken,
     SemaphoreSlim? gate = null,
     JobPriority priority = JobPriority.Normal,
-    bool holdsPermit = false
+    bool holdsPermit = false,
+    (JobType Type, Guid Id, long Generation)? claim = null
 ) : IEquatable<WorkItem>
 {
     public Func<CancellationToken, Task> Work { get; } = Argument.IsNotNull(work);
@@ -27,9 +28,11 @@ internal readonly struct WorkItem(
     /// <summary>Whether the permit of <see cref="Gate"/> was already acquired on this item's behalf.</summary>
     public bool HoldsPermit { get; } = holdsPermit;
 
+    public (JobType Type, Guid Id, long Generation)? Claim { get; } = claim;
+
     public WorkItem WithPermit()
     {
-        return new WorkItem(Work, UserToken, Gate, Priority, holdsPermit: true);
+        return new WorkItem(Work, UserToken, Gate, Priority, holdsPermit: true, claim: Claim);
     }
 
     public bool Equals(WorkItem other)

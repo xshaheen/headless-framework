@@ -61,7 +61,74 @@ public sealed class DynamicSettingDefinitionStoreTests : TestBase
             );
     }
 
-    private DynamicSettingDefinitionStore _CreateStore()
+    [Fact]
+    public async Task should_refresh_a_peer_when_a_seed_retry_repairs_the_stamp_after_the_rows_committed()
+    {
+        const string name = "App.Theme";
+        var clock = new FakeTimeProvider();
+        var record = new SettingDefinitionRecord(Guid.NewGuid(), name, name, null, "dark", null, false, true, false);
+        var lease = Substitute.For<IDistributedLease>();
+        _distributedLockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(lease);
+        _staticStore.GetAllAsync(Arg.Any<CancellationToken>()).Returns([]);
+        _serializer.Serialize(Arg.Any<IEnumerable<SettingDefinition>>()).Returns([record]);
+        _serializer.Deserialize(record).Returns(new SettingDefinition(name, defaultValue: "dark"));
+
+        var committed = false;
+        _repository.GetListAsync(Arg.Any<CancellationToken>()).Returns(_ => committed ? [record] : []);
+        _repository
+            .When(x =>
+                x.SaveAsync(
+                    Arg.Any<List<SettingDefinitionRecord>>(),
+                    Arg.Any<List<SettingDefinitionRecord>>(),
+                    Arg.Any<List<SettingDefinitionRecord>>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(_ => committed = true);
+
+        var stamp = "old-stamp";
+        _cache
+            .GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CacheValue<string>(null, false));
+        _cache
+            .GetAsync<string>(_options.CommonSettingsUpdatedStampCacheKey, Arg.Any<CancellationToken>())
+            .Returns(_ => new CacheValue<string>(stamp, true));
+        var fail = true;
+        _cache
+            .UpsertAsync(
+                _options.CommonSettingsUpdatedStampCacheKey,
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                AbortToken
+            )
+            .Returns(call =>
+            {
+                if (fail)
+                {
+                    fail = false;
+                    throw new IOException("stamp write interrupted");
+                }
+
+                stamp = call.ArgAt<string>(1);
+                return true;
+            });
+
+        using var seed = _CreateStore();
+        using var peer = _CreateStore(clock);
+        (await peer.GetOrDefaultAsync(name, AbortToken)).Should().BeNull();
+
+        Func<Task> save = () => seed.SaveAsync(AbortToken);
+        await save.Should().ThrowExactlyAsync<IOException>();
+        await seed.SaveAsync(AbortToken);
+        clock.Advance(_options.DynamicDefinitionsMemoryCacheExpiration + TimeSpan.FromTicks(1));
+
+        var refreshed = await peer.GetOrDefaultAsync(name, AbortToken);
+        (refreshed?.DefaultValue).Should().Be("dark");
+    }
+
+    private DynamicSettingDefinitionStore _CreateStore(FakeTimeProvider? clock = null)
     {
         var guidGenerator = Substitute.For<IGuidGenerator>();
         guidGenerator.Create().Returns(_ => Guid.NewGuid());
@@ -78,7 +145,7 @@ public sealed class DynamicSettingDefinitionStoreTests : TestBase
             application,
             Options.Create(_options),
             Options.Create(new SettingManagementProvidersOptions()),
-            new FakeTimeProvider()
+            clock ?? new FakeTimeProvider()
         );
     }
 }

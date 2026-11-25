@@ -13,7 +13,7 @@ packages:
 - **Priority.** Workers dequeue `High`, then `Normal`, then `Low`.
 - **Per-job limit.** A job's `MaxConcurrency` (or `Tune(...).Concurrency(n)`) caps that job on one node. A job at its cap waits in arrival order without holding a worker, so other jobs keep running. It stays `Queued` while it waits.
 - **Long-running jobs.** `JobPriority.LongRunning` work starts on a dedicated thread within a separate budget, `MaxLongRunningConcurrency` (default: the smaller of `MaxConcurrency` and 4). An `async` handler releases that thread at its first `await`, so the dedicated thread protects only the synchronous start of the handler, and the budget bounds how many such jobs run at once. A saturated budget never blocks other dispatch. An admission refused at the cap, or dropped by cancellation or shutdown, never runs: the row goes back for another claim with its retry count unchanged.
-- **Immediate dispatch.** `EnqueueAsync` of a due job (and a dashboard run-now) tries to start the job on the enqueuing node at once. When the pool does not admit it, the row is handed back to `Idle` and the next poll runs it. The enqueue still succeeds, because the row is written.
+- **Immediate dispatch.** On the built-in stores, `EnqueueAsync` of a due job (and a dashboard run-now) tries to run the job on the enqueuing node at once. The row stays `Queued` until the worker admits it. When the pool refuses it, the row is handed back to `Idle` for the next poll. Custom stores pick up due enqueues and dashboard run-now through the scheduler. The enqueue succeeds once the row is written.
 - **Polling.** The scheduler wakes on its own signals for near-zero latency, and a fallback sweep runs every `FallbackIntervalChecker` (default 30 seconds) to pick up anything missed.
 
 ## Cluster-wide concurrency
@@ -83,7 +83,7 @@ Every claimed time job and cron occurrence holds a lease: a holder, an expiry, a
 - **Membership loss cancels at once.** When the node loses coordination membership outside a host stop, every job running on it has its token cancelled immediately, without waiting for the next renewal.
 - **Start check.** Before user code starts, the job checks that the node's live identity is the one that claimed the row. With no live identity the node starts nothing and hands the row back to `Idle` with `RetryCount` unchanged.
 - **Stalled runs.** A job stuck `InProgress` whose lease lapses is reclaimed by its `OnNodeDeath` policy within about one `LeaseDuration`, whether or not its node died.
-- **Claimed but waiting.** A claimed row waits `Queued` for a worker. Keep `LeaseDuration` at least `FallbackIntervalChecker`, so rows waiting for admission are not re-claimed. A queued row whose lease expired is skipped at admission instead of running unowned.
+- **Claimed but waiting.** A claimed row waits `Queued` for a worker. Keep `LeaseDuration` at least `FallbackIntervalChecker` to give a waiting worker time to admit it. A claim with an expired lease cannot start. When this node reclaims a row already parked behind an ordinary function gate, the fresh claim takes the row's place in that queue.
 - **Database clock.** On the EF store, leases are judged and stamped with the database clock, so cross-node clock skew cannot reclaim a healthy job. The in-memory store uses the registered `TimeProvider`, so in EF tests a fake application clock does not control lease deadlines.
 - **Lease writes bypass EF interceptors.** Claims, renewals, settles, and progress run as raw SQL on the context's connection, so application EF interceptors do not see them.
 

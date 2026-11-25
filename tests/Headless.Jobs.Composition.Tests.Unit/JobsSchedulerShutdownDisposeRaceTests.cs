@@ -144,6 +144,9 @@ public sealed class JobsSchedulerShutdownDisposeRaceTests : TestBase
         manager
             .ReclaimStalledResources(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(default(JobReclaimCounts)));
+        manager
+            .SetTickersInProgress(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.Arg<JobExecutionState[]>()));
         manager.RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
         manager
             .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())

@@ -69,7 +69,7 @@ public sealed class ChaosRun : IAsyncDisposable
     public string WorkQueue => $"queue.{QualifiedName(ChaosModule.WorkName)}";
 
     /// <summary>Gets the queue the broker dead-letters work messages into.</summary>
-    public string WorkDeadLetterQueue => WorkQueue + ".dlq";
+    public string WorkDeadLetterQueue => $"headless_dlq.{WorkQueue}";
 
     public string QualifiedName(string messageName) => $"{Prefix}.{messageName}";
 

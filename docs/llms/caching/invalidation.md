@@ -44,6 +44,8 @@ await cache.ClearAsync(ct);
 - On a factory read, tags passed in the call replace the tags on the existing entry. `Tags = null` keeps the existing tags.
 - `RemoveByTagAsync` and `ClearAsync` work on Redis Cluster: one marker key per tag, one clear key, and no cross-slot enumeration.
 
+Until a standalone in-memory cache stores its first tagged entry, it keeps per-tag history only while a factory or tagged write is in flight. After a tagged entry has been stored, maintenance prunes markers once the longest observed tagged lifetime makes them safe to discard. A manual tagged write through `IFactoryCacheStore.SetEntryAsync` returns `false` if its birth timestamp predates discarded history. Hybrid keeps exact timestamped tag markers so L1 can check an older L2 value against its own tags.
+
 ## What a logical invalidation does
 
 Every entry records its birth time. A read treats the entry as invalidated when any marker that applies to it (the clear marker, or a marker of one of its tags) is newer than that birth time.
@@ -54,14 +56,15 @@ Every entry records its birth time. A read treats the entry as invalidated when 
 - **A factory value is born when the factory starts, not when it returns.** So a `RemoveByTagAsync` or `ClearAsync` issued while a factory is still reading its source invalidates the value that factory writes. The value's expiry still counts from the write.
 - **Entries stay physically present.** Counts, key listing, and prefix reads still see invalidated keys until they expire or are evicted. Each entry's physical TTL also bounds staleness if a marker is ever lost.
 - **Conditional writes agree with reads.** `TryInsertAsync` overwrites a logically dead entry (expired inside its reserve, or invalidated by a tag, clear, or flush). `TryReplaceAsync`, `TryReplaceIfEqualAsync`, and `RemoveIfEqualAsync` return `false` for it and leave it in place.
+- **Redis native counters and sets use the flush generation.** `FlushAsync` advances it even when the clock has not moved. Their data keys stay in place. A later read misses an old generation, and a later mutation starts from an empty counter or set.
 
 ## How fast other instances see it
 
 - **The instance that invalidates** sees it on its next read.
-- **Pure Redis, no hybrid.** Each instance caches the markers it read for `RedisCacheOptions.TagMarkerRefreshWindow` (default 2 seconds). Another instance sees a new marker only after its window elapses.
+- **Pure Redis, no hybrid.** Each instance caches the markers for framed entries for `RedisCacheOptions.TagMarkerRefreshWindow` (default 2 seconds). Native counter and set operations check the current flush generation on the primary.
 - **Hybrid with a backplane.** A receiving instance updates both its L1 and its L2 marker view at once from the notification's timestamp, so the window does not apply. It still bounds recovery after a missed backplane message.
 - **The marker timestamp travels with the message.** A receiver uses the sender's timestamp, not its own clock, so a receiver whose clock lags cannot record a marker older than an entry the invalidation should hit.
 
 ## Reserved key namespace
 
-On Redis the markers live at `{KeyPrefix}\0__tag:{tag}` and `{KeyPrefix}\0__clear`, behind a NUL byte (U+0000). Ordinary keys cannot collide with them. Do not put a NUL byte in your own cache keys.
+On Redis the invalidation markers live at `{KeyPrefix}\0__tag:{tag}`, `{KeyPrefix}\0__clear`, and `{KeyPrefix}\0__remove`. Native generation metadata uses keys starting with `\0__native:` and a hash tag for the data key's Redis Cluster slot. These reserved keys contain a NUL byte (U+0000), which is disallowed in cache keys.

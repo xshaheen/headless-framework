@@ -2,8 +2,10 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless;
 using Headless.Caching;
 using Headless.Hosting;
+using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -12,6 +14,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Grants;
 
@@ -37,6 +41,18 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
 
     public EfPermissionGrantRepositoryUnitOfWorkTests()
     {
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal));
+        _cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<PermissionGrantCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+
         var connectionString = $"Data Source={_databasePath};Pooling=False";
         _unitConnection = new SqliteConnection(connectionString);
 
@@ -120,6 +136,78 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
         (await Repository.GetListAsync("Role", "admin", AbortToken)).Should().BeEmpty();
         written.Should().Equal(true, null);
         await _cache.DidNotReceive().RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_refresh_the_replacement_grant_once_after_a_store_write_commits()
+    {
+        const string name = "Users.Create";
+        const string provider = PermissionGrantProviderNames.Role;
+        const string role = "admin";
+        await using var owner = await _CreateOwnerAsync();
+        await Repository.InsertAsync(_Grant(name), AbortToken);
+        _cache.ClearReceivedCalls();
+        var written = _RecordCacheWrites(PermissionGrantCacheItem.CalculateCacheKey(name, provider, role));
+        var guidGenerator = Substitute.For<IGuidGenerator>();
+        guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        var store = new PermissionGrantStore(
+            Substitute.For<IPermissionDefinitionManager>(),
+            Repository,
+            guidGenerator,
+            _cache,
+            _services.GetRequiredService<ICurrentTenant>(),
+            Options.Create(new PermissionManagementOptions()),
+            NullLogger<PermissionGrantStore>.Instance
+        );
+        await using var unit = await Factory.BeginAsync(owner, AbortToken);
+
+        await store.RevokeEnlistedAsync(unit, [name], provider, role, AbortToken);
+        written.Should().BeEmpty();
+        await unit.CompleteAsync(AbortToken);
+
+        written.Should().Equal(false);
+    }
+
+    [Fact]
+    public async Task should_keep_a_later_store_revoke_when_the_enlisted_repository_refreshes_after_it()
+    {
+        const string name = "Users.Create";
+        const string provider = PermissionGrantProviderNames.Role;
+        const string role = "admin";
+        var key = PermissionGrantCacheItem.CalculateCacheKey(name, provider, role);
+        var written = _RecordCacheWrites(key);
+        // Record unconditional writes too, so an older grant would appear after the committed denial.
+        _cache
+            .When(cache =>
+                cache.UpsertAllAsync(
+                    Arg.Any<IDictionary<string, PermissionGrantCacheItem>>(),
+                    Arg.Any<TimeSpan?>(),
+                    Arg.Any<CancellationToken>()
+                )
+            )
+            .Do(call => written.Add(call.Arg<IDictionary<string, PermissionGrantCacheItem>>()[key].IsGranted));
+        var guidGenerator = Substitute.For<IGuidGenerator>();
+        guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        var store = new PermissionGrantStore(
+            Substitute.For<IPermissionDefinitionManager>(),
+            Repository,
+            guidGenerator,
+            _cache,
+            _services.GetRequiredService<ICurrentTenant>(),
+            Options.Create(new PermissionManagementOptions()),
+            NullLogger<PermissionGrantStore>.Instance
+        );
+        await using var owner = await _CreateOwnerAsync();
+        await using var unit = await Factory.BeginAsync(owner, AbortToken);
+        // This callback runs after the insert committed and before the earlier write refreshes its cache.
+        using var revoke = unit.OnCompleted(() => new ValueTask(store.RevokeAsync(name, provider, role, AbortToken)));
+        await Repository.InsertManyEnlistedAsync(unit, [_Grant(name)], AbortToken);
+
+        await unit.CompleteAsync(AbortToken);
+
+        var rows = await Repository.GetListAsync([name], provider, role, AbortToken);
+        rows.Should().ContainSingle().Which.IsGranted.Should().BeFalse();
+        written.Should().NotBeEmpty().And.OnlyContain(status => status == false);
     }
 
     [Fact]
@@ -220,8 +308,9 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
         var stored = _Grant("Users.Create");
         _cache
             .When(x =>
-                x.UpsertAllAsync(
-                    Arg.Any<IDictionary<string, PermissionGrantCacheItem>>(),
+                x.TryInsertAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<PermissionGrantCacheItem>(),
                     Arg.Any<TimeSpan?>(),
                     Arg.Any<CancellationToken>()
                 )
@@ -465,13 +554,14 @@ public sealed class EfPermissionGrantRepositoryUnitOfWorkTests : TestBase
         var written = new List<bool?>();
         _cache
             .When(x =>
-                x.UpsertAllAsync(
-                    Arg.Is<IDictionary<string, PermissionGrantCacheItem>>(items => items.ContainsKey(key)),
+                x.TryInsertAsync(
+                    key,
+                    Arg.Any<PermissionGrantCacheItem>(),
                     Arg.Any<TimeSpan?>(),
                     Arg.Any<CancellationToken>()
                 )
             )
-            .Do(call => written.Add(call.Arg<IDictionary<string, PermissionGrantCacheItem>>()[key].IsGranted));
+            .Do(call => written.Add(call.Arg<PermissionGrantCacheItem>().IsGranted));
 
         return written;
     }

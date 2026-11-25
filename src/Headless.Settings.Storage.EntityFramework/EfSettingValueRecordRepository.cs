@@ -18,7 +18,7 @@ namespace Headless.Settings;
 /// <typeparam name="TContext">The <see cref="DbContext"/> type registered with the DI container.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
 /// <param name="cache">
-/// The setting-value cache shared with <c>SettingValueStore</c>. A write here stores the written value in the affected
+/// The setting-value cache shared with <c>SettingValueStore</c>. A write here syncs the current value into the affected
 /// cache entry (an empty item for a delete), so a direct repository write (bypassing <c>ISettingManager</c>) is
 /// reflected on the next read and a concurrent reader's older load cannot overwrite it.
 /// </param>
@@ -28,7 +28,7 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
     ICache<SettingValueCacheItem> cache,
     IOptions<SettingManagementOptions> options,
     ILogger<EfSettingValueRecordRepository<TContext>> logger
-) : ISettingValueRecordRepository
+) : ISettingValueRecordRepository, ISettingValueRepositoryForStore
     where TContext : DbContext
 {
     private const string _VersionConflictMessage = "The setting values changed after the version was read.";
@@ -37,6 +37,15 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
     private const string _Operation = "setting value";
 
     private readonly TimeSpan _cacheExpiration = options.Value.ValueCacheExpiration;
+    private readonly IOptions<SettingManagementOptions> _options = options;
+    private bool WritesCache { get; init; } = true;
+
+    ISettingValueRecordRepository ISettingValueRepositoryForStore.ForStore(ICache<SettingValueCacheItem> storeCache)
+    {
+        return ReferenceEquals(storeCache, cache)
+            ? new EfSettingValueRecordRepository<TContext>(dbFactory, cache, _options, logger) { WritesCache = false }
+            : this;
+    }
 
     /// <inheritdoc/>
     public async Task<SettingValueRecord?> FindAsync(
@@ -373,13 +382,29 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
             )
             .ConfigureAwait(false);
 
-        SettingValueCacheInvalidation.UpsertAfterCommit(
-            unitOfWork,
-            cache,
-            SettingValueCacheInvalidation.WrittenItems([.. inserted, .. updated], deleted),
-            _cacheExpiration,
-            logger
-        );
+        if (!WritesCache)
+        {
+            return;
+        }
+
+        foreach (
+            var scope in inserted
+                .Concat(updated)
+                .Concat(deleted)
+                .GroupBy(record => (record.ProviderName, record.ProviderKey))
+        )
+        {
+            SettingValueCacheInvalidation.SyncAfterCommit(
+                unitOfWork,
+                cache,
+                this,
+                scope.Select(record => record.Name).Distinct(StringComparer.Ordinal).ToArray(),
+                scope.Key.ProviderName,
+                scope.Key.ProviderKey,
+                _cacheExpiration,
+                logger
+            );
+        }
     }
 
     /// <summary>
@@ -391,12 +416,35 @@ internal sealed class EfSettingValueRecordRepository<TContext>(
         IReadOnlyCollection<SettingValueRecord> deleted
     )
     {
-        await cache
-            .UpsertAllAsync(
-                SettingValueCacheInvalidation.WrittenItems(written, deleted),
-                _cacheExpiration,
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
+        if (!WritesCache)
+        {
+            return;
+        }
+
+        foreach (var scope in written.Concat(deleted).GroupBy(record => (record.ProviderName, record.ProviderKey)))
+        {
+            var names = scope.Select(record => record.Name).Distinct(StringComparer.Ordinal).ToArray();
+
+            try
+            {
+                await SettingValueCacheInvalidation
+                    .SyncAsync(
+                        cache,
+                        this,
+                        names,
+                        scope.Key.ProviderName,
+                        scope.Key.ProviderKey,
+                        _cacheExpiration,
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Cache maintenance cannot reverse the repository's durable write.
+            catch (Exception exception)
+#pragma warning restore CA1031
+            {
+                logger.LogFailedToInvalidateSettingCache(exception, names.Length);
+            }
+        }
     }
 }

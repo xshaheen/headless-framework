@@ -22,6 +22,9 @@ public sealed class FeatureValueStore(
     ILogger<FeatureValueStore> logger
 ) : IFeatureValueStore
 {
+    private readonly IFeatureValueRecordRepository _repository =
+        (repository as IFeatureValueRepositoryForStore)?.ForStore(cache) ?? repository;
+
     // Concurrent misses for one provider key share one load: the first caller reads the repository and fills the
     // cache, and the others re-read the cache it filled. A waiter only ever uses what the cache holds for its own key,
     // so the lock decides ordering, never results. Static, so the store needs no disposal; distinct stores and keys
@@ -110,23 +113,23 @@ public sealed class FeatureValueStore(
     {
         _EnsureKey(providerName, providerKey, name);
 
-        var featureValue = await repository
+        var featureValue = await _repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
         if (featureValue is null)
         {
             featureValue = new FeatureValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await repository.InsertAsync(featureValue, cancellationToken).ConfigureAwait(false);
+            await _repository.InsertAsync(featureValue, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             featureValue.Value = value;
-            await repository.UpdateAsync(featureValue, cancellationToken).ConfigureAwait(false);
+            await _repository.UpdateAsync(featureValue, cancellationToken).ConfigureAwait(false);
         }
 
         await FeatureValueCacheInvalidation
-            .SyncAsync(cache, repository, [name], providerName, providerKey, CancellationToken.None)
+            .SyncAsync(cache, _repository, [name], providerName, providerKey, CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -156,7 +159,7 @@ public sealed class FeatureValueStore(
 
         for (var attempt = 1; ; attempt++)
         {
-            var existingRecords = await repository
+            var existingRecords = await _repository
                 .GetListAsync(names, providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -165,7 +168,7 @@ public sealed class FeatureValueStore(
 
             try
             {
-                await repository
+                await _repository
                     .SaveAsync(changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -174,7 +177,7 @@ public sealed class FeatureValueStore(
                 // A concurrent writer that inserted or deleted one of these rows between the read and the save fails
                 // the whole batch (a unique-key violation, or an update that found no row). Only that collision is
                 // worth planning again; a failure against an unchanged scope is the caller's to see.
-                var currentRecords = await repository
+                var currentRecords = await _repository
                     .GetListAsync(names, providerName, providerKey, cancellationToken)
                     .ConfigureAwait(false);
 
@@ -187,7 +190,7 @@ public sealed class FeatureValueStore(
             }
 
             await FeatureValueCacheInvalidation
-                .SyncAsync(cache, repository, names, providerName, providerKey, CancellationToken.None)
+                .SyncAsync(cache, _repository, names, providerName, providerKey, CancellationToken.None)
                 .ConfigureAwait(false);
 
             return;
@@ -254,7 +257,7 @@ public sealed class FeatureValueStore(
     {
         _EnsureKey(providerName, providerKey, name);
 
-        var features = await repository
+        var features = await _repository
             .FindAllAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -263,11 +266,38 @@ public sealed class FeatureValueStore(
             return;
         }
 
-        await repository.DeleteAsync(features, cancellationToken).ConfigureAwait(false);
+        await _repository.DeleteAsync(features, cancellationToken).ConfigureAwait(false);
 
-        await FeatureValueCacheInvalidation
-            .SyncAsync(cache, repository, [name], providerName, providerKey, CancellationToken.None)
-            .ConfigureAwait(false);
+        // A delete using a null provider key can remove rows from multiple cache scopes.
+        var requestedScope = (ProviderName: providerName, ProviderKey: providerKey);
+        var scopes = features
+            .Select(record => (record.ProviderName, record.ProviderKey))
+            .Where(scope => scope != requestedScope)
+            .Distinct()
+            .Append(requestedScope);
+
+        foreach (var scope in scopes)
+        {
+            try
+            {
+                await FeatureValueCacheInvalidation
+                    .SyncAsync(
+                        cache,
+                        _repository,
+                        [name],
+                        scope.ProviderName,
+                        scope.ProviderKey,
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // A fault in one additional scope must leave the other scopes a chance to refresh.
+            catch (Exception exception) when (scope != requestedScope)
+#pragma warning restore CA1031
+            {
+                logger.LogFailedToInvalidateFeatureCache(exception, 1);
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -284,7 +314,7 @@ public sealed class FeatureValueStore(
 
         // Not through the cache: the values and the version must come from one read, or a stale cached value could be
         // edited and saved under a current version.
-        var records = await repository
+        var records = await _repository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -320,7 +350,7 @@ public sealed class FeatureValueStore(
 
         var names = values.Keys.ToHashSet(StringComparer.Ordinal);
 
-        var existingRecords = await repository
+        var existingRecords = await _repository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -329,7 +359,7 @@ public sealed class FeatureValueStore(
 
         var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
 
-        var committedVersion = await repository
+        var committedVersion = await _repository
             .SaveIfVersionAsync(
                 names,
                 providerName,
@@ -345,7 +375,7 @@ public sealed class FeatureValueStore(
         try
         {
             await FeatureValueCacheInvalidation
-                .SyncAsync(cache, repository, names, providerName, providerKey, CancellationToken.None)
+                .SyncAsync(cache, _repository, names, providerName, providerKey, CancellationToken.None)
                 .ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // The write committed; cache maintenance must not report a rejected save.
@@ -380,7 +410,7 @@ public sealed class FeatureValueStore(
 
         // Not through the cache: the unit may already have written this value, and the cache only learns of it after
         // the commit.
-        var records = await repository
+        var records = await _repository
             .GetListEnlistedAsync(unitOfWork, [name], providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -409,7 +439,7 @@ public sealed class FeatureValueStore(
 
         // One attempt, unlike SetAllAsync: a failed statement aborts the unit's transaction, so only the unit's owner
         // can decide whether to run the whole unit again.
-        var existingRecords = await repository
+        var existingRecords = await _repository
             .GetListEnlistedAsync(
                 unitOfWork,
                 values.Keys.ToHashSet(StringComparer.Ordinal),
@@ -421,14 +451,14 @@ public sealed class FeatureValueStore(
 
         var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
 
-        await repository
+        await _repository
             .SaveEnlistedAsync(unitOfWork, changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
             .ConfigureAwait(false);
 
         FeatureValueCacheInvalidation.SyncAfterCommit(
             unitOfWork,
             cache,
-            repository,
+            _repository,
             [.. values.Keys],
             providerName,
             providerKey,
@@ -447,7 +477,7 @@ public sealed class FeatureValueStore(
         Argument.IsNotNull(unitOfWork);
         _EnsureKey(providerName, providerKey);
 
-        var records = await repository
+        var records = await _repository
             .GetListEnlistedAsync(unitOfWork, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -456,12 +486,12 @@ public sealed class FeatureValueStore(
             return [];
         }
 
-        await repository.SaveEnlistedAsync(unitOfWork, [], [], records, cancellationToken).ConfigureAwait(false);
+        await _repository.SaveEnlistedAsync(unitOfWork, [], [], records, cancellationToken).ConfigureAwait(false);
 
         FeatureValueCacheInvalidation.SyncAfterCommit(
             unitOfWork,
             cache,
-            repository,
+            _repository,
             records.ConvertAll(x => x.Name),
             providerName,
             providerKey,
@@ -634,7 +664,7 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken
     )
     {
-        var dbValues = await repository
+        var dbValues = await _repository
             .GetListAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
@@ -664,7 +694,7 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken
     )
     {
-        var dbValues = await repository
+        var dbValues = await _repository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);

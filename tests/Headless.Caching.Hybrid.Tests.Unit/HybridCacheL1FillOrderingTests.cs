@@ -54,6 +54,39 @@ public sealed class HybridCacheL1FillOrderingTests : TestBase
         (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_invalidate_an_in_flight_first_l1_fill_only_when_the_tag_matches(bool matches)
+    {
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2 = new GatedRemoteCache(_timeProvider);
+        await using var cache = _CreateCache(l1, l2);
+        const string key = "entry";
+        const string tag = "entry-tag";
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] };
+        await l2.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        l2.ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var read = cache.GetAsync<string>(key, AbortToken).AsTask();
+        await l2.ReadStarted.Task.Bounded();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        try
+        {
+            await cache.HandleInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = "peer", Tag = matches ? tag : "unrelated" },
+                AbortToken
+            );
+        }
+        finally
+        {
+            l2.ReadGate.SetResult();
+        }
+
+        (await read).Value.Should().Be("value");
+        (await l1.GetAsync<string>(key, AbortToken)).HasValue.Should().Be(!matches);
+    }
+
     [Fact]
     public async Task should_drop_the_local_counter_after_an_increment_instead_of_writing_its_result()
     {

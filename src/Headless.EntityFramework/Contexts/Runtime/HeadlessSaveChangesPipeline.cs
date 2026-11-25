@@ -275,6 +275,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     private async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
     {
         var retryPrevented = false;
+        int? saved = null;
 
         try
         {
@@ -286,8 +287,6 @@ internal sealed class HeadlessSaveChangesPipeline(
             // invoked inside the save — the outbox dispatcher receives it, handlers read it from the context —
             // and drains their after-commit registrations once the commit is durable.
             await using var unitOfWork = unitOfWorkFactory.Enlist(state.Context, transaction);
-            int saved;
-
             try
             {
                 saved = await _SaveWithinTransactionAsync(state, transaction, unitOfWork, commitTransaction: true)
@@ -309,19 +308,24 @@ internal sealed class HeadlessSaveChangesPipeline(
             }
             catch (Exception drainFault) when (unitOfWork.State == UnitOfWorkState.Completed)
             {
-                // The commit is durable and the tracker already accepted it; only an after-commit callback faulted.
+                // The commit is durable; only an after-commit callback faulted.
                 // Throwing would report a failed save for committed rows and invite a retry that applies them twice,
                 // so the fault is logged, as RunAsync does for the same drain fault.
                 _logger.LogPostCommitDrainFaulted(drainFault);
             }
 
-            return saved;
+            return saved.Value;
+        }
+        catch (Exception exception) when (saved.HasValue)
+        {
+            _logger.LogPostCommitCleanupFaulted(exception);
+            return saved.GetValueOrDefault();
         }
         catch (Exception exception) when (state.SaveContext.CommitStarted || retryPrevented)
         {
             // Commit outcomes may be unknown, and writes enlisted in the unit are absent from the retained tracker.
             // Rethrow outside the execution strategy so it cannot replay an incomplete unit of work.
-            state.SaveContext.NonRetryableFailure = ExceptionDispatchInfo.Capture(exception);
+            state.SaveContext.NonRetryableFailure ??= ExceptionDispatchInfo.Capture(exception);
             return 0;
         }
     }
@@ -329,6 +333,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     private int _ExecuteWithNewTransaction(SaveState state)
     {
         var retryPrevented = false;
+        int? saved = null;
 
         try
         {
@@ -336,8 +341,6 @@ internal sealed class HeadlessSaveChangesPipeline(
             // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-enlist-then-complete shape.
             using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
             using var unitOfWork = unitOfWorkFactory.Enlist(state.Context, transaction);
-            int saved;
-
             try
             {
                 saved = _SaveWithinTransaction(state, transaction, unitOfWork, commitTransaction: true);
@@ -345,14 +348,14 @@ internal sealed class HeadlessSaveChangesPipeline(
             catch (Exception) when (!state.SaveContext.CommitStarted)
             {
                 retryPrevented = unitOfWork.IsRetryPrevented;
-                _RunBlocking(_RollBackQuietlyAsync(unitOfWork));
+                _RunBlocking(() => _RollBackQuietlyAsync(unitOfWork));
 
                 throw;
             }
 
             try
             {
-                _RunBlocking(unitOfWork.CompleteAsync(CancellationToken.None));
+                _RunBlocking(() => unitOfWork.CompleteAsync(CancellationToken.None));
             }
             catch (Exception drainFault) when (unitOfWork.State == UnitOfWorkState.Completed)
             {
@@ -360,14 +363,19 @@ internal sealed class HeadlessSaveChangesPipeline(
                 _logger.LogPostCommitDrainFaulted(drainFault);
             }
 
-            return saved;
+            return saved.Value;
 #pragma warning restore AsyncFixer04
+        }
+        catch (Exception exception) when (saved.HasValue)
+        {
+            _logger.LogPostCommitCleanupFaulted(exception);
+            return saved.GetValueOrDefault();
         }
         catch (Exception exception) when (state.SaveContext.CommitStarted || retryPrevented)
         {
             // Commit outcomes may be unknown, and writes enlisted in the unit are absent from the retained tracker.
             // Rethrow outside the execution strategy so it cannot replay an incomplete unit of work.
-            state.SaveContext.NonRetryableFailure = ExceptionDispatchInfo.Capture(exception);
+            state.SaveContext.NonRetryableFailure ??= ExceptionDispatchInfo.Capture(exception);
             return 0;
         }
     }
@@ -466,6 +474,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
             if (commitTransaction)
             {
+                var providerTransaction = transaction.GetDbTransaction();
                 state.SaveContext.CommitStarted = true;
                 var cancelledBeforeCommit = state.CancellationToken.IsCancellationRequested;
 
@@ -478,9 +487,15 @@ internal sealed class HeadlessSaveChangesPipeline(
                     // The pipeline commits its observed unit's transaction itself, so it reports the outcome the way
                     // an owned unit's CompleteAsync does: the unit fails as in-doubt or faulted, not abandoned, and a
                     // commit that may have landed surfaces as UnitOfWorkInDoubtException.
+                    var classified = EfUnitOfWorkResource.ClassifyCommitFault(
+                        providerTransaction,
+                        commitFault,
+                        cancelledBeforeCommit
+                    );
                     var reported = await ObservedCommits
-                        .FailAsync(unitOfWork!, commitFault, cancelledBeforeCommit)
+                        .FailAsync(unitOfWork!, classified, cancelledBeforeCommit)
                         .ConfigureAwait(false);
+                    state.SaveContext.NonRetryableFailure = ExceptionDispatchInfo.Capture(reported);
 
                     if (ReferenceEquals(reported, commitFault))
                     {
@@ -490,15 +505,11 @@ internal sealed class HeadlessSaveChangesPipeline(
                     throw reported;
                 }
 
-                if (state.AcceptAllChangesOnSuccess)
-                {
-                    // Detach the audit rows first: accepting them would snapshot their JSON columns for a row that
-                    // is about to leave the tracker.
-                    auditPersistence.ReleaseEntries(auditSave);
-                    state.Context.ChangeTracker.AcceptAllChanges();
-                }
+                _CompleteCommittedSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
+                return result;
             }
-            else if (_DispatchedOccurrences(state.SaveContext))
+
+            if (_DispatchedOccurrences(state.SaveContext))
             {
                 // A caller-owned save is replayed by the caller's block, not by this pipeline, and the clear below
                 // leaves that replay nothing to dispatch: the handlers' and the integration bridge's enlisted rows
@@ -514,13 +525,7 @@ internal sealed class HeadlessSaveChangesPipeline(
                 unitOfWork!.PreventRetry();
             }
 
-            _CompleteSuccessfulSave(
-                state.Context,
-                state.SaveContext,
-                auditSave,
-                // The commit branch above already accepted; accepting again would walk the tracker twice.
-                state.AcceptAllChangesOnSuccess && !commitTransaction
-            );
+            _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
 
             return result;
         }
@@ -568,7 +573,7 @@ internal sealed class HeadlessSaveChangesPipeline(
                         ?? throw new InvalidOperationException(_MissingDomainEventDispatcherMessage);
                     if (_MarkHandledOccurrence(state.SaveContext, occurrence))
                     {
-                        _DispatchDomainEventBlocking(dispatcher, occurrence);
+                        _RunBlocking(() => dispatcher.DispatchAsync(occurrence));
                         _EndReplayAfterHandler(unitOfWork, commitTransaction);
                     }
 
@@ -612,6 +617,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
             if (commitTransaction)
             {
+                var providerTransaction = transaction.GetDbTransaction();
                 state.SaveContext.CommitStarted = true;
 
                 try
@@ -621,9 +627,15 @@ internal sealed class HeadlessSaveChangesPipeline(
                 catch (Exception commitFault)
                 {
                     // Same report as the async twin; a synchronous commit takes no token, so none was cancelled.
-                    var reported = _RunBlocking(
-                        ObservedCommits.FailAsync(unitOfWork!, commitFault, cancelledBeforeCommit: false)
+                    var classified = EfUnitOfWorkResource.ClassifyCommitFault(
+                        providerTransaction,
+                        commitFault,
+                        cancelledBeforeCommit: false
                     );
+                    var reported = _RunBlocking(() =>
+                        ObservedCommits.FailAsync(unitOfWork!, classified, cancelledBeforeCommit: false)
+                    );
+                    state.SaveContext.NonRetryableFailure = ExceptionDispatchInfo.Capture(reported);
 
                     if (ReferenceEquals(reported, commitFault))
                     {
@@ -633,15 +645,11 @@ internal sealed class HeadlessSaveChangesPipeline(
                     throw reported;
                 }
 
-                if (state.AcceptAllChangesOnSuccess)
-                {
-                    // Detach the audit rows first: accepting them would snapshot their JSON columns for a row that
-                    // is about to leave the tracker.
-                    auditPersistence.ReleaseEntries(auditSave);
-                    state.Context.ChangeTracker.AcceptAllChanges();
-                }
+                _CompleteCommittedSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
+                return result;
             }
-            else if (_DispatchedOccurrences(state.SaveContext))
+
+            if (_DispatchedOccurrences(state.SaveContext))
             {
                 // Same rule as the async twin: the caller's block replays this save, and the clear below leaves
                 // it nothing to dispatch, so end replay while the enlisted rows are still atomic with the save.
@@ -654,13 +662,7 @@ internal sealed class HeadlessSaveChangesPipeline(
                 unitOfWork!.PreventRetry();
             }
 
-            _CompleteSuccessfulSave(
-                state.Context,
-                state.SaveContext,
-                auditSave,
-                // The commit branch above already accepted; accepting again would walk the tracker twice.
-                state.AcceptAllChangesOnSuccess && !commitTransaction
-            );
+            _CompleteSuccessfulSave(state.Context, state.SaveContext, auditSave, state.AcceptAllChangesOnSuccess);
 
             return result;
         }
@@ -715,7 +717,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     }
 
     /// <summary>
-    /// Refreshes the audit entries captured before the drain when the drain could have changed what they describe.
+    /// Validates and recaptures tracked entries when the domain-event drain may have changed them.
     /// </summary>
     /// <remarks>
     /// With only the built-in processors, every framework write goes through the change tracker, so the entries
@@ -729,20 +731,31 @@ internal sealed class HeadlessSaveChangesPipeline(
         StrongBox<IReadOnlyList<AuditLogEntryData>?> auditEntries
     )
     {
-        if (!_hasOnlyBuiltInProcessors)
+        if (_hasOnlyBuiltInProcessors && !saveContext.HandlerMayHaveChangedGraph)
         {
-            auditEntries.Value = auditPersistence.CaptureEntries(_SnapshotEntries(context), saveContext);
-
             return;
         }
 
+        var entries =
+            _hasOnlyBuiltInProcessors && saveContext.TrackedEntries is { } tracked
+                ? tracked
+                : _SnapshotEntries(context);
+        saveContext.TrackedEntries = entries;
+
         if (saveContext.HandlerMayHaveChangedGraph)
         {
-            auditEntries.Value = auditPersistence.CaptureEntries(
-                saveContext.TrackedEntries ?? _SnapshotEntries(context),
-                saveContext
-            );
+            // Handlers can update entries the first pass already validated. Recheck ownership without
+            // rerunning lifecycle processors that may emit events or overwrite stamps.
+            foreach (var processor in _entryProcessors)
+            {
+                if (processor is HeadlessEntitySaveEntryProcessor tenantGuard)
+                {
+                    tenantGuard.ValidateFinalWrites(saveContext, entries);
+                }
+            }
         }
+
+        auditEntries.Value = auditPersistence.CaptureEntries(entries, saveContext);
     }
 
     private static HashSet<object> _CollectEntities(IReadOnlyList<EntityEntry>? entries)
@@ -810,39 +823,28 @@ internal sealed class HeadlessSaveChangesPipeline(
         return saveContext.PendingDomainEvents[saveContext.DomainEventCursor];
     }
 
-    // IDomainEventDispatcher is async-only by contract: a public synchronous dispatch method would invite sync-over-async
-    // dispatch (and its synchronization-context deadlocks) in application code. The synchronous
-    // SaveChanges path still has to dispatch domain events inline, so the bridge lives HERE, contained
-    // in infrastructure. Blocking is acceptable in this frame: EF's own sync SaveChanges is already
-    // blocking database I/O on a thread without a synchronization context to deadlock against.
-    private static void _DispatchDomainEventBlocking(
-        IDomainEventDispatcher dispatcher,
-        EventContext<object> domainEvent
-    )
+    // An async continuation must not target the context or scheduler the synchronous save is blocking.
+    // The default scheduler can run continuations on any thread, so keep that common path inline.
+    private static T _RunBlocking<T>(Func<ValueTask<T>> operation)
     {
-        var pending = dispatcher.DispatchAsync(domainEvent);
-
-        if (pending.IsCompletedSuccessfully)
+        if (SynchronizationContext.Current is not null || TaskScheduler.Current != TaskScheduler.Default)
         {
-            // Observe the completed ValueTask (required for IValueTaskSource-backed implementations).
-            pending.GetAwaiter().GetResult();
-            return;
+            return Task.Run(() => operation().AsTask()).GetAwaiter().GetResult();
         }
 
-        // GetResult() rethrows the original exception (no AggregateException wrapping by Task.Wait),
-        // preserving the dispatcher's single-exception / AggregateException contract for the catch below.
-        pending.AsTask().GetAwaiter().GetResult();
-    }
-
-    // The unit-of-work verbs are async-only by contract; the synchronous SaveChanges path blocks on them here,
-    // in infrastructure, for the same reason as the domain-event bridge above.
-    private static T _RunBlocking<T>(ValueTask<T> pending)
-    {
+        var pending = operation();
         return pending.IsCompletedSuccessfully ? pending.Result : pending.AsTask().GetAwaiter().GetResult();
     }
 
-    private static void _RunBlocking(ValueTask pending)
+    private static void _RunBlocking(Func<ValueTask> operation)
     {
+        if (SynchronizationContext.Current is not null || TaskScheduler.Current != TaskScheduler.Default)
+        {
+            Task.Run(() => operation().AsTask()).GetAwaiter().GetResult();
+            return;
+        }
+
+        var pending = operation();
         if (pending.IsCompletedSuccessfully)
         {
             pending.GetAwaiter().GetResult();
@@ -938,6 +940,37 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         auditPersistence.CompleteSuccessfulSave(context, auditSave, acceptAllChangesOnSuccess);
         saveContext.ClearEmitterMessages();
+    }
+
+    private void _CompleteCommittedSave(
+        DbContext context,
+        HeadlessSaveEntryContext saveContext,
+        HeadlessAuditSaveResult auditSave,
+        bool acceptAllChangesOnSuccess
+    )
+    {
+        try
+        {
+            if (acceptAllChangesOnSuccess)
+            {
+                // Detach audit rows before AcceptAllChanges so EF avoids snapshotting JSON it is about to discard.
+                auditPersistence.ReleaseEntries(auditSave);
+                context.ChangeTracker.AcceptAllChanges();
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogPostCommitCleanupFaulted(exception);
+        }
+
+        try
+        {
+            _CompleteSuccessfulSave(context, saveContext, auditSave, acceptAllChangesOnSuccess: false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogPostCommitCleanupFaulted(exception);
+        }
     }
 
     private readonly record struct AsyncSaveState(
@@ -1040,4 +1073,12 @@ internal static partial class HeadlessSaveChangesPipelineLog
         Message = "An after-commit callback faulted after the save committed; the save's result is returned and the relay recovers any enlisted work."
     )]
     internal static partial void LogPostCommitDrainFaulted(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "HeadlessPostCommitCleanupFaulted",
+        Level = LogLevel.Error,
+        Message = "Cleanup faulted after the save committed. The save's result is returned. Discard the affected DbContext before saving again."
+    )]
+    internal static partial void LogPostCommitCleanupFaulted(this ILogger logger, Exception exception);
 }

@@ -65,10 +65,19 @@ public sealed partial class HybridCache
             return;
         }
 
-        await _SetLocalEntryAsync(l1Store, key, entry, expectedConcurrencyStamp: null, cancellationToken)
+        var (committed, _) = await _SetLocalEntryAsync(
+                l1Store,
+                key,
+                entry,
+                expectedConcurrencyStamp: null,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        await _DropFillIfMutatedAsync(key, captured).ConfigureAwait(false);
+        if (committed)
+        {
+            await _DropFillIfMutatedAsync(key, captured).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Removes a fill of <paramref name="key"/> that a concurrent mutation overtook.</summary>

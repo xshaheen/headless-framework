@@ -48,16 +48,22 @@ For the base exchange `ExchangeName` (default `messaging.default.router`):
 
 Bus and Queue have independent topology, so one contract name can carry both lanes without cross-delivery.
 
-With `Headless:Prefix` set to `wt1`, the base exchange becomes `wt1.{ExchangeName}` and each queue starts with `wt1.`, so environments that share one virtual host keep separate topology; routing keys do not change. A prefix that makes an exchange or a queue-lane queue longer than 255 characters fails startup. See [host prefix](transports.md#host-prefix).
+With `Headless:Prefix` set to `wt1`, the base exchange becomes `wt1.{ExchangeName}` and each live queue starts with `wt1.`, so environments that share one virtual host keep separate topology. Routing keys stay the same. A prefix that makes an exchange or a queue-lane queue longer than 255 characters fails startup. See [host prefix](transports.md#host-prefix).
+
+Dead-letter queues start with `headless_dlq.` followed by the live queue's physical name, including any isolation prefix. If that combination exceeds 255 characters, the suffix is the SHA-256 of the physical name. The reserved first segment lets a valid live queue name end in `.dlq`.
 
 **What the topology resource does:**
 
-- `provision` declares both lane exchanges, one queue per competing consumer subscription and per registered Queue-lane message (consumed on this host or not), each queue's `.dlq` when dead-lettering is on, and the bindings. Every shared queue is durable, not exclusive, and not auto-deleted.
-- `verify` passively declares each exchange and queue. AMQP cannot check a binding, so no host start binds a shared queue. A release that adds a subscription, or a message to an existing one, must run `resources provision`, or its new messages never reach the queue.
-- `purge` purges each queue this host consumes, and its `.dlq`.
+- `provision` declares both lane exchanges, one queue per competing consumer subscription and per registered Queue-lane message (consumed on this host or not), the dead-letter queues when dead-lettering is on, and the bindings. Every shared queue is durable, not exclusive, and not auto-deleted.
+- `verify` passively declares the lane exchanges, live queues, and any configured dead-letter queues. AMQP cannot check a binding, so no host start binds a shared queue. A release that adds a subscription, or a message to an existing one, must run `resources provision`, or its new messages never reach the queue.
+- `purge` purges each queue this host consumes and its dead-letter queue.
 - `delete` deletes those queues and keeps the exchanges.
 - `status` reports each queue's message and consumer counts.
 - Purge and delete never touch a queue the host only publishes to, because it belongs to the service that consumes it. The lane exchanges and their `.dlx` are never deleted, because every service on the broker shares `ExchangeName` by default. Delete them by hand, or drop the vhost, once no service uses the exchange name.
+
+When upgrading from `{queue}.dlq` names, run `resources provision` for the existing routes to bind the new dead-letter queues. Remove each old binding from its lane's `.dlx` exchange to stop duplicate delivery. The binding's routing key is the physical live queue name. See the [RabbitMQ HTTP API](https://www.rabbitmq.com/docs/http-api-reference).
+
+Verify that the old queue serves only as a dead-letter queue before draining it. To transfer its backlog, use a dynamic Shovel from the old queue to the new dead-letter queue with `ack-mode` set to `on-confirm`. If a new live route needs the old queue name, delete the old queue after draining it and before provisioning that route. See [RabbitMQ dynamic Shovels](https://www.rabbitmq.com/docs/shovel-dynamic).
 
 **What the running host does:**
 
@@ -74,7 +80,7 @@ Configure host, credentials, exchange, queue arguments, QoS, and custom headers 
 | `PublishConfirms` | `true` | A publish waits for the broker acknowledgement. A negative acknowledgement or an unroutable Queue-lane return fails it. `false` trades those guarantees for lower latency: a publish succeeds once written to the socket, and a `basic.return` is discarded |
 | `ChannelPoolSize` | `15` | The most AMQP channels the publish pool holds and hands out at once. A publish holds a channel for its duration, so this caps publishes in flight on one connection. Raise it for a high-volume publisher waiting on confirms. Must be greater than 0 |
 | `ExchangeName` | `messaging.default.router` | Base name of the lane exchanges |
-| `QueueArguments.EnableDeadLettering` | `false` | Each shared queue dead-letters to the direct exchange `{lane exchange}.dlx` with the queue name as routing key, into a durable `{queue}.dlq`. Malformed envelopes, messages the core poisons on arrival, messages whose `MessageTTL` expires, and messages past `DeliveryLimit` land there instead of being dropped. AMQP's reject carries no reason, so the dead-lettered copy's `x-death` header records `rejected`; the core's reason code stays in its poison row. Nothing in the framework consumes a dead-letter queue: inspect, shovel, or purge it with broker tooling |
+| `QueueArguments.EnableDeadLettering` | `false` | Each shared queue dead-letters to the direct exchange `{lane exchange}.dlx` with the live queue name as routing key. Its durable `headless_dlq.` queue receives malformed envelopes, messages the core poisons on arrival, messages whose `MessageTTL` expires, and messages past `DeliveryLimit`. AMQP's reject carries no reason, so the dead-lettered copy's `x-death` header records `rejected`. The core's reason code stays in its poison row. Use broker tooling to inspect, shovel, or purge the dead-letter queue |
 | `QueueArguments.DeliveryLimit` | `null` | Sets `x-delivery-limit`: how many times a quorum queue redelivers a returned message before dropping or dead-lettering it. Requires `QueueType = "quorum"`. Must be greater than 0. RabbitMQ 4.x quorum queues apply a broker default of 20 when unset |
 | `QueueArguments.MessageTTL` | 864000000 ms (10 days) | Queue message TTL |
 | `BasicQosOptions` | unset | Host-wide QoS; see prefetch below |
@@ -112,7 +118,7 @@ The queue of a competing consumer tuned [`Sequential()`](ordering.md#sequential-
 - **Connection recovery.** RabbitMQ.Client's automatic recovery owns a lost connection. During recovery a publish fails and the outbox retries it, without cancelling the recovery. The pool replaces a connection the client will not recover: one this process closed, one refused with `ACCESS_REFUSED`, or one still not back two minutes after it was lost.
 - **Shutdown** stops dispatching, waits for running handlers within the remaining `MessagingOptions.ShutdownTimeout` (30 seconds when disposed directly), then closes the channel, so a handler that finishes in time gets its ack. A handler past the budget loses its ack and the message is redelivered.
 - **Ordering.** A queue delivers to one consumer in publish order. Competing consumers each get a share, except on a sequential consumer's queue. See [Transport-Specific Ordering](ordering.md#transport-specific-ordering).
-- **Delivery deadline.** A message with `DeliverWithin` gets `BasicProperties.Expiration` set to the remaining time. RabbitMQ expires a per-message TTL only at the head of its queue, so behind a backlog the consumer's deadline check drops it instead. With dead-lettering on, an expired message goes to the `.dlq`.
+- **Delivery deadline.** A message with `DeliverWithin` gets `BasicProperties.Expiration` set to the remaining time. RabbitMQ expires a per-message TTL only at the head of its queue, so behind a backlog the consumer's deadline check drops it instead. With dead-lettering on, an expired message goes to the dead-letter queue.
 - **Every-instance consumers** get a server-named exclusive, non-durable queue on a connection of their own, with a fixed 60-second message TTL; see [Every-instance Bus delivery](consumers.md#every-instance-bus-delivery).
 - **Request/reply** uses an exclusive `headless.reply.{32 hex}` queue per calling process, with a new address after a connection loss; see [Provider support](request-reply.md#provider-support).
 - **Raw producers** must set the AMQP `message-id` property or the `headless-msg-id` header. A raw delivery without either is rejected terminally; see [Message identity](foreign-producers.md#message-identity).

@@ -102,6 +102,9 @@ public sealed partial class FactoryCacheCoordinator(
     [EditorBrowsable(EditorBrowsableState.Never)]
     internal Action? BackgroundOperationFinished { get; set; }
 
+    // The in-process store can discard idle tag history only while no coordinator lock owner can publish.
+    internal Action<bool>? TrackFactoryPublication { get; init; }
+
     /// <summary>Gets or creates a cache value by using the provider store primitive.</summary>
     /// <remarks>
     /// This overload adapts the simple value factory onto the conditional-factory engine
@@ -356,6 +359,7 @@ public sealed partial class FactoryCacheCoordinator(
             return (_ToCacheValue(staleCandidate, isStale: true), reachedFactory);
         }
 
+        TrackFactoryPublication?.Invoke(true);
         var ownsReleaser = true;
         IAsyncDisposable? distributedLease = null;
 
@@ -633,6 +637,7 @@ public sealed partial class FactoryCacheCoordinator(
     // written since its last read. The count moves before the release so the next holder always observes it.
     private void _ReleaseKeyLock(string key, KeyedAsyncLock.Releaser releaser)
     {
+        TrackFactoryPublication?.Invoke(false);
         Interlocked.Increment(ref _keyLockReleases[_KeyLockReleaseStripe(key)]);
         releaser.Dispose();
     }
@@ -761,6 +766,7 @@ public sealed partial class FactoryCacheCoordinator(
             // A NotModified extension re-stamps the existing value: peers' cached bytes stay valid, so
             // multi-tier stores must not broadcast an invalidation for it.
             IsRestamp = result.IsNotModified,
+            IsFactoryWrite = true,
             // Per-call tier-write control, taken from the (possibly adaptively-replaced) context options the same
             // way Tags are, so a conditional factory mutating its options also governs which tiers are written.
             SkipMemoryCacheWrite = options.SkipMemoryCacheWrite,

@@ -394,9 +394,10 @@ public sealed class DynamicPermissionDefinitionStore(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-
-            await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        // An earlier attempt may have committed the rows before failing to publish the stamp.
+        await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
 
         // Messaging is optional for Permissions, as it is for PermissionManager: without a bus, the common stamp changed
         // above is how other instances learn of the change, at their next refresh.

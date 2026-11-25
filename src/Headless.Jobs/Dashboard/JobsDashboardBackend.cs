@@ -523,9 +523,17 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
         // limit, say), the fallback sweep must find the occurrence due on the database clock, not a skew later.
         await Store.InsertRunNowCronJobOccurrenceAsync(occurrence, cancellationToken).ConfigureAwait(false);
 
-        var acquired = await Store
-            .AcquireImmediateCronOccurrencesAsync([occurrence.Id], cancellationToken)
-            .ConfigureAwait(false);
+        var dispatcher = _services.GetRequiredService<IJobsDispatcher>();
+        if (!dispatcher.IsEnabled)
+        {
+            return occurrence.Id;
+        }
+
+        var acquired = Store is IJobImmediateAdmission<TCronJob> admission
+            ? await admission
+                .QueueImmediateCronOccurrencesAsync([occurrence.Id], cancellationToken)
+                .ConfigureAwait(false)
+            : [];
 
         if (acquired.Length > 0)
         {
@@ -552,10 +560,11 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
             // per-function concurrency gate as scheduler pickups instead of silently bypassing the limit.
             JobsExecutionContext.CacheFunctionReferences(context, Registry);
 
-            await _services
-                .GetRequiredService<IJobsDispatcher>()
-                .DispatchAsync([context], cancellationToken)
-                .ConfigureAwait(false);
+            await dispatcher.DispatchAsync([context], cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            HostScheduler.Restart();
         }
 
         return occurrence.Id;

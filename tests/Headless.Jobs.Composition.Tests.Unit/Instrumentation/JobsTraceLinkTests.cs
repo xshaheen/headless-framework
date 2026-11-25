@@ -234,6 +234,7 @@ public sealed class JobsTraceLinkTests : TestBase
             await dashboard.RunCronJobNowAsync(definitionId, AbortToken);
         }
 
+        (await harness.OccurrencesAsync()).Should().ContainSingle().Subject.Status.Should().Be(JobStatus.Queued);
         await harness.ExecuteAsync(dispatched);
 
         // then
@@ -379,6 +380,12 @@ public sealed class JobsTraceLinkTests : TestBase
             _time.Advance(advance);
             var (_, claimed) = await _provider.GetRequiredService<IInternalJobManager>().GetNextJobs(AbortToken);
             claimed.Should().NotBeEmpty("a run is due");
+            await ExecuteAsync(claimed);
+        }
+
+        /// <summary>Admits and runs leased states, as the dispatcher's worker does.</summary>
+        public async Task ExecuteAsync(IReadOnlyCollection<JobExecutionState> claimed)
+        {
             var registry = _provider.GetRequiredService<JobFunctionRegistry>();
             var manager = _provider.GetRequiredService<IInternalJobManager>();
             var admitted = new List<JobExecutionState>();
@@ -390,12 +397,6 @@ public sealed class JobsTraceLinkTests : TestBase
             }
 
             admitted.Should().HaveSameCount(claimed);
-            await ExecuteAsync(admitted);
-        }
-
-        /// <summary>Runs already admitted states, as the dispatcher's worker does.</summary>
-        public async Task ExecuteAsync(IReadOnlyCollection<JobExecutionState> admitted)
-        {
             var handler = ActivatorUtilities.CreateInstance<JobsExecutionTaskHandler>(
                 _provider,
                 new JobsExecutionCancellationRegistry(),
@@ -422,6 +423,7 @@ public sealed class JobsTraceLinkTests : TestBase
         public JobsDashboardBackend<TimeJobEntity, CronJobEntity> DashboardBackend(List<JobExecutionState> dispatched)
         {
             var dispatcher = Substitute.For<IJobsDispatcher>();
+            dispatcher.IsEnabled.Returns(true);
             dispatcher
                 .DispatchAsync(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask)

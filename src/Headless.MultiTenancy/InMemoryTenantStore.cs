@@ -40,7 +40,7 @@ internal sealed class InMemoryTenantStore : ITenantStore, ITenantDirectory
             // still round-trip normalized.
             var normalized = new TenantInfo(seed.Id, normalizedIdentifier, seed.Name, seed.IsEnabled)
             {
-                ExtraProperties = new ExtraProperties(seed.ExtraProperties),
+                ExtraProperties = TenantMetadataSnapshot.Copy(seed.ExtraProperties),
             };
 
             entries.Add((seed.Identifier, normalized));
@@ -95,6 +95,7 @@ internal sealed class InMemoryTenantStore : ITenantStore, ITenantDirectory
     {
         return new TenantInfo(tenant.Id, tenant.Identifier, tenant.Name, tenant.IsEnabled)
         {
+            // Construction converted nested seed values to immutable snapshots.
             ExtraProperties = new ExtraProperties(tenant.ExtraProperties),
         };
     }

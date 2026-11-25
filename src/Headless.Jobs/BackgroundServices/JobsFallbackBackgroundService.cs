@@ -152,7 +152,8 @@ internal sealed class JobsFallbackBackgroundService(
                                         function.CachedPriority,
                                         capacityCancellationToken: loopToken,
                                         executionCancellationToken: jobsTaskScheduler.ExecutionCancellationToken,
-                                        concurrencyGate: semaphore
+                                        concurrencyGate: semaphore,
+                                        claim: function
                                     )
                                     .ConfigureAwait(false);
                             }

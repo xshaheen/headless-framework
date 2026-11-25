@@ -76,10 +76,10 @@ internal interface ISettingsSnapshotEntry
 /// </para>
 /// <para>
 /// A snapshot runs at most one settle chain, so a burst of announcements costs at most <see cref="SettleDelays"/> re-reads.
-/// A trigger that settles while a chain runs joins it with its own names and baseline. Each re-read releases every trigger
-/// whose names changed, and the chain stops once none is left or its last delay passed. One merged baseline would release
-/// a trigger on another trigger's change and lose its value. Joining does not restart the delays, because a steady stream
-/// of announcements would otherwise postpone the re-reads indefinitely.
+/// A trigger that settles while a chain runs joins it with its own names and baseline. Each re-read releases names
+/// whose values changed, and the chain stops once no names remain or its last delay passed. A shared baseline could
+/// release names that a later announcement is still waiting for. Joining preserves the existing delay schedule so a
+/// steady stream of announcements cannot postpone re-reads indefinitely.
 /// </para>
 /// <para>
 /// Only <see cref="SettingsSnapshotReloadReason.Initial"/> loads an unloaded snapshot. A message, establishment, or settle
@@ -323,9 +323,14 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
 
         // Compare what was read, not the state after binding: a value bind rejected was still seen, and re-reading it
         // would only fail and log again. With no earlier state there is nothing the trigger could be waiting to replace.
-        if (watched is { Count: > 0 } && before is not null && _SameValues(before, after, watched))
+        if (watched is { Count: > 0 } && before is not null)
         {
-            _JoinSettle(before, watched);
+            var remaining = watched.Where(name => _SameValue(before, after, name)).ToList();
+
+            if (remaining.Count != 0)
+            {
+                _JoinSettle(before, remaining);
+            }
         }
 
         return after;
@@ -374,7 +379,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         }
     }
 
-    private void _JoinSettle(FrozenDictionary<string, string?> baseline, IReadOnlyCollection<string> watched)
+    private void _JoinSettle(FrozenDictionary<string, string?> baseline, List<string> watched)
     {
         SettleChain? started = null;
 
@@ -438,9 +443,9 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     }
 
     /// <summary>
-    /// Releases the first <paramref name="judged"/> triggers whose watched names changed in <paramref name="read"/>, and
-    /// ends the chain when no trigger is left or this was its last re-read. Triggers that joined during the last re-read
-    /// move to a new chain, since nothing re-read after them.
+    /// Removes each changed name in <paramref name="read"/> from the first <paramref name="judged"/> triggers and
+    /// ends the chain when no trigger is left or this was its last re-read. Triggers that joined during the last
+    /// re-read move to a new chain, since nothing re-read after them.
     /// </summary>
     private bool _TryEndSettle(SettleChain chain, FrozenDictionary<string, string?>? read, int judged, bool isLast)
     {
@@ -455,7 +460,9 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
                 {
                     var (baseline, watched) = chain.Waiting[i];
 
-                    if (!_SameValues(baseline, read, watched))
+                    watched.RemoveAll(name => !_SameValue(baseline, read, name));
+
+                    if (watched.Count == 0)
                     {
                         chain.Waiting.RemoveAt(i);
                         judged--;
@@ -518,7 +525,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     {
         foreach (var name in names)
         {
-            if (!string.Equals(left.GetValueOrDefault(name), right.GetValueOrDefault(name), StringComparison.Ordinal))
+            if (!_SameValue(left, right, name))
             {
                 return false;
             }
@@ -526,6 +533,12 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
 
         return true;
     }
+
+    private static bool _SameValue(
+        FrozenDictionary<string, string?> left,
+        FrozenDictionary<string, string?> right,
+        string name
+    ) => string.Equals(left.GetValueOrDefault(name), right.GetValueOrDefault(name), StringComparison.Ordinal);
 
     private IEnumerable<string> _Changed(
         FrozenDictionary<string, string?>? before,
@@ -595,10 +608,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     private sealed class SettleChain
     {
         /// <summary>Guarded by <c>_settleLock</c>.</summary>
-        public List<(
-            FrozenDictionary<string, string?> Baseline,
-            IReadOnlyCollection<string> Watched
-        )> Waiting { get; } = [];
+        public List<(FrozenDictionary<string, string?> Baseline, List<string> Watched)> Waiting { get; } = [];
     }
 
     private sealed class Subscription(SettingsSnapshot<T> owner, Action<T, long> listener) : IDisposable

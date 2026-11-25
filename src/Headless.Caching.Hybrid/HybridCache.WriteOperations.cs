@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Checks;
 
 namespace Headless.Caching;
@@ -1149,6 +1150,10 @@ public sealed partial class HybridCache
     private const string _ClearMarkerRecoveryKey = "\0hybrid-marker:clear";
     private const string _RemoveMarkerRecoveryKey = "\0hybrid-marker:remove";
 
+    // A new cache instance can reuse its configured backplane ID, so Redis needs a separate flush origin.
+    private readonly string _flushOrigin = Guid.NewGuid().ToString("N");
+    private long _flushSequence;
+
     private static string _TagMarkerRecoveryKey(string tag)
     {
         return $"\0hybrid-marker:tag:{tag}";
@@ -1282,6 +1287,8 @@ public sealed partial class HybridCache
         // FlushAsync is a logical remove marker (cluster-safe, no physical wipe); receivers physically wipe their
         // own L1 on the FlushAll broadcast and seed their L2 remove marker from the origin timestamp.
         var invalidatedAt = _timeProvider.GetUtcNow();
+        var sequencedFlush = l2Cache as ISequencedCacheFlush;
+        var sequence = sequencedFlush is null ? 0 : Interlocked.Increment(ref _flushSequence);
 
         await _L1ForAll().FlushAsync(cancellationToken).ConfigureAwait(false);
 
@@ -1299,10 +1306,18 @@ public sealed partial class HybridCache
         );
         _coordinator.EventsHub.OnInvalidation(CacheInvalidationKind.Flush, CacheInvalidationDirection.Publish);
 
+        // Timestamp-only recovery coalesces writes to the same marker. A sequenced flush keeps its own queue
+        // slot so an older live flush at that same timestamp cannot drop it before it reaches the remote tier.
+        var recoveryKey = sequencedFlush is null
+            ? _RemoveMarkerRecoveryKey
+            : string.Create(CultureInfo.InvariantCulture, $"{_RemoveMarkerRecoveryKey}:{sequence}");
         await _BumpL2MarkerBestEffortAsync(
-                (writer, ct) => writer.WriteRemoveMarkerAsync(invalidatedAt, ct),
+                (writer, ct) =>
+                    sequencedFlush is null
+                        ? writer.WriteRemoveMarkerAsync(invalidatedAt, ct)
+                        : sequencedFlush.WriteSequencedRemoveMarkerAsync(invalidatedAt, _flushOrigin, sequence, ct),
                 ct => l2Cache.FlushAsync(ct),
-                _RemoveMarkerRecoveryKey,
+                recoveryKey,
                 message,
                 "__remove",
                 cancellationToken

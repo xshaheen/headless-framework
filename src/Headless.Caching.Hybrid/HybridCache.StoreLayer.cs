@@ -567,8 +567,34 @@ public sealed partial class HybridCache
         }
     }
 
-    async ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
+    ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
         string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    ) => _RearmSlidingAsync(key, l2Stamp: null, slidingExpiration, physicalExpiresAt, now, cancellationToken);
+
+    ValueTask ISnapshotSlidingCacheStore.TryRearmSlidingIfCurrentAsync(
+        string key,
+        string concurrencyStamp,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    ) =>
+        _RearmSlidingAsync(
+            key,
+            _SplitStamp(concurrencyStamp).L2,
+            slidingExpiration,
+            physicalExpiresAt,
+            now,
+            cancellationToken
+        );
+
+    private async ValueTask _RearmSlidingAsync(
+        string key,
+        string? l2Stamp,
         TimeSpan slidingExpiration,
         DateTime physicalExpiresAt,
         DateTime now,
@@ -586,9 +612,25 @@ public sealed partial class HybridCache
         {
             try
             {
-                await l2Store
-                    .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken)
-                    .ConfigureAwait(false);
+                if (l2Stamp is not null && l2Store is ISnapshotSlidingCacheStore snapshotStore)
+                {
+                    await snapshotStore
+                        .TryRearmSlidingIfCurrentAsync(
+                            key,
+                            l2Stamp,
+                            slidingExpiration,
+                            physicalExpiresAt,
+                            now,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await l2Store
+                        .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
@@ -605,6 +647,16 @@ public sealed partial class HybridCache
                 .ConfigureAwait(false);
         }
     }
+
+    private ValueTask _RearmDirectSlidingHitAsync<T>(
+        string key,
+        CacheStoreEntry<T> entry,
+        DateTime now,
+        CancellationToken cancellationToken
+    ) =>
+        entry.SlidingExpiration is { } window && entry.PhysicalExpiresAt is { } cap
+            ? _RearmSlidingAsync(key, entry.ConcurrencyStamp, window, cap, now, cancellationToken)
+            : ValueTask.CompletedTask;
 
     /// <summary>
     /// Dispatches the L2 write for a framed entry: evaluates the circuit, routes to
@@ -707,6 +759,13 @@ public sealed partial class HybridCache
             return (false, null);
         }
 
+        // Redis can confirm that a sliding entry is live without exposing its current idle deadline.
+        // A local copy would need that deadline as well as the absolute cap to expire correctly.
+        if (entry.SlidingExpiration.HasValue && (!entry.LogicalExpiresAt.HasValue || !entry.PhysicalExpiresAt.HasValue))
+        {
+            return (false, null);
+        }
+
         var now = _GetUtcNow();
         var localCeiling = cacheOptions.DefaultLocalExpiration.HasValue
             ? now.Add(cacheOptions.DefaultLocalExpiration.Value)
@@ -722,12 +781,15 @@ public sealed partial class HybridCache
                 return (false, null);
             }
 
+            var ceiling = entry.PhysicalExpiresAt is { } physical
+                ? _Min(localCeiling.Value, physical)
+                : localCeiling.Value;
             var ceilingWrite = new CacheStoreEntryWrite<T>
             {
                 Value = entry.Value,
                 IsNull = entry.IsNull,
-                LogicalExpiresAt = localCeiling.Value,
-                PhysicalExpiresAt = localCeiling.Value,
+                LogicalExpiresAt = ceiling,
+                PhysicalExpiresAt = ceiling,
                 SlidingExpiration = null,
                 EagerRefreshAt = entry.EagerRefreshAt,
                 ETag = entry.ETag,
@@ -936,7 +998,8 @@ public sealed partial class HybridCache
         // (or otherwise logically-expired) reserve as Found-but-stale for the factory coordinator; for a direct read
         // that is a miss, matching the L1 buffer hot path (InMemoryCache.TryGetToAsync) and the GetWithExpirationAsync
         // fallback, which both surface a tag-invalidated entry as no value. Null-sentinel also reads as a miss.
-        if (!l2Entry.IsFresh(_GetUtcNow()) || l2Entry.IsNull || l2Entry.Value is not { } l2Bytes)
+        var now = _GetUtcNow();
+        if (!l2Entry.IsFresh(now) || l2Entry.IsNull || l2Entry.Value is not { } l2Bytes)
         {
             return false;
         }
@@ -945,6 +1008,7 @@ public sealed partial class HybridCache
         // _SetLocalEntryAsync preserves Tags + CreatedAt and applies the local-expiration ceiling, so the seeded L1
         // entry stays version-pinned for Family-2 tag/clear invalidation.
         await _PromoteReadToLocalAsync(l1Store, key, l2Entry, l1Generation, cancellationToken).ConfigureAwait(false);
+        await _RearmDirectSlidingHitAsync(key, l2Entry, now, cancellationToken).ConfigureAwait(false);
 
         destination.Write(l2Bytes);
         return true;

@@ -130,7 +130,8 @@ public sealed partial class HybridCache
 
             // A direct read serves only a logically-fresh entry; a stale/tag-invalidated reserve reads as a miss
             // here (serving a stale reserve is the factory coordinator's job, not a plain GetAsync).
-            if (!l2Entry.IsFresh(_GetUtcNow()))
+            var now = _GetUtcNow();
+            if (!l2Entry.IsFresh(now))
             {
                 return CacheValue<T>.NoValue;
             }
@@ -139,6 +140,7 @@ public sealed partial class HybridCache
             // the generic TryGetEntryAsync promotion gate), so the local copy is version-pinned for invalidation.
             await _PromoteReadToLocalAsync(l1Store, key, l2Entry, l1Generation, cancellationToken)
                 .ConfigureAwait(false);
+            await _RearmDirectSlidingHitAsync(key, l2Entry, now, cancellationToken).ConfigureAwait(false);
 
             return l2Entry.IsNull ? CacheValue<T>.Null : new CacheValue<T>(l2Entry.Value, hasValue: true);
         }

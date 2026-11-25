@@ -1426,9 +1426,15 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
 
     #endregion
 
-    public async Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
+    public Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
         Guid[]? ids,
         CancellationToken cancellationToken = default
+    ) => AcquireImmediateTimeJobsAsync(ids, JobStatus.InProgress, cancellationToken);
+
+    protected async Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
+        Guid[]? ids,
+        JobStatus status,
+        CancellationToken cancellationToken
     )
     {
         if (ids == null || ids.Length == 0)
@@ -1485,7 +1491,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                     $"({idColumn} = {set.Parameter(nameof(TimeJobEntity.Id), c.Id)} AND {updatedColumn} = {set.Parameter(nameof(TimeJobEntity.UpdatedAt), c.UpdatedAt)})"
                 )
             );
-            set.Value(nameof(TimeJobEntity.Status), JobStatus.InProgress).DatabaseNow(nameof(TimeJobEntity.UpdatedAt));
+            set.Value(nameof(TimeJobEntity.Status), status).DatabaseNow(nameof(TimeJobEntity.UpdatedAt));
 
             granted.AddRange(
                 await JobsLeaseGrant

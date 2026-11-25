@@ -231,7 +231,7 @@ internal sealed class RabbitMqTopologyProvisioner(
 
         if (_options.QueueArguments.EnableDeadLettering)
         {
-            yield return RabbitMqQueueTopology.DeadLetterQueue(queue.Name);
+            yield return RabbitMqPhysicalAddress.DeadLetterQueue(queue.Name);
         }
     }
 

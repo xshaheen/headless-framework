@@ -7,7 +7,7 @@ namespace Headless.Jobs.BackgroundServices;
 
 internal static class JobsAdmissionWorkItem
 {
-    /// <summary>Builds the claim-then-execute delegate both scheduler services queue: the admission-time
+    /// <summary>Builds the claim-then-execute delegate: the admission-time
     /// Queued -> InProgress claim happens inside the worker (single-winner fence), with claim failures and
     /// lost races logged because the worker pool swallows delegate exceptions. The function's concurrency permit is
     /// held by the scheduler around this delegate, so a full gate never occupies a worker slot.</summary>
@@ -17,7 +17,8 @@ internal static class JobsAdmissionWorkItem
         JobsExecutionTaskHandler taskHandler,
         ILogger logger,
         JobExecutionState function,
-        bool isDue
+        bool isDue,
+        bool runNow = false
     )
     {
         return async ct =>
@@ -55,7 +56,10 @@ internal static class JobsAdmissionWorkItem
                 return;
             }
 
-            await taskHandler.ExecuteTaskAsync(claimed[0], isDue: isDue, cancellationToken: ct).ConfigureAwait(false);
+            var execution = runNow
+                ? taskHandler.ExecuteImmediateTaskAsync(claimed[0], ct)
+                : taskHandler.ExecuteTaskAsync(claimed[0], isDue: isDue, cancellationToken: ct);
+            await execution.ConfigureAwait(false);
         };
     }
 }

@@ -79,7 +79,9 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     // Items whose function gate was full when a worker dequeued them. They stay counted in _totalQueuedTasks so drains
     // and shutdown treat them exactly like queued work, but no worker slot is held while they wait for a permit.
     private readonly Lock _parkLock = new();
-    private readonly Dictionary<SemaphoreSlim, Queue<WorkItem>> _parked = [];
+    private readonly Dictionary<SemaphoreSlim, LinkedList<WorkItem>> _parked = [];
+    private readonly Dictionary<(SemaphoreSlim Gate, JobType Type, Guid Id), LinkedListNode<WorkItem>> _parkedClaims =
+    [];
     private volatile int _parkedCount;
 
     internal CancellationToken ExecutionCancellationToken => _shutdownCts.Token;
@@ -143,7 +145,8 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         CancellationToken capacityCancellationToken,
         CancellationToken executionCancellationToken,
         SemaphoreSlim? concurrencyGate = null,
-        Func<Task>? notAdmitted = null
+        Func<Task>? notAdmitted = null,
+        JobExecutionState? claim = null
     )
     {
         // notAdmitted runs when this call returns normally but the work will never run: a long-running admission
@@ -210,7 +213,13 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         // Publish counters before the item. A worker may briefly observe a positive count before the queue item is
         // visible, but it can never dequeue an item and decrement counters that have not been incremented yet.
-        var workItem = new WorkItem(work, executionCancellationToken, concurrencyGate, priority);
+        var workItem = new WorkItem(
+            work,
+            executionCancellationToken,
+            concurrencyGate,
+            priority,
+            claim: claim is { ClaimGeneration: { } generation } ? (claim.Type, claim.JobId, generation) : null
+        );
         _IncrementQueuedPriority(priority);
         var newTotal = Interlocked.Increment(ref _totalQueuedTasks);
         targetQueue.Enqueue(workItem, priority);
@@ -289,11 +298,33 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
             if (!_parked.TryGetValue(gate, out var queue))
             {
-                queue = new Queue<WorkItem>();
+                queue = new LinkedList<WorkItem>();
                 _parked[gate] = queue;
             }
 
-            queue.Enqueue(workItem);
+            if (workItem.Claim is { } claim)
+            {
+                var key = (gate, claim.Type, claim.Id);
+                if (_parkedClaims.TryGetValue(key, out var parked))
+                {
+                    // A fallback claim can supersede a parked generation. Retain that row's FIFO position while
+                    // dropping the extra wrapper and its otherwise doomed admission write.
+                    if (parked.Value.Claim is { } previous && claim.Generation > previous.Generation)
+                    {
+                        parked.Value = workItem;
+                    }
+
+                    Interlocked.Decrement(ref _totalQueuedTasks);
+                    return false;
+                }
+
+                _parkedClaims.Add(key, queue.AddLast(workItem));
+            }
+            else
+            {
+                queue.AddLast(workItem);
+            }
+
             _parkedCount++;
         }
 
@@ -306,10 +337,17 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
 
         lock (_parkLock)
         {
-            if (!_parked.TryGetValue(gate, out var queue) || !queue.TryDequeue(out next))
+            if (!_parked.TryGetValue(gate, out var queue) || queue.First is not { } first)
             {
                 gate.Release();
                 return;
+            }
+
+            next = first.Value;
+            queue.RemoveFirst();
+            if (next.Claim is { } claim)
+            {
+                _parkedClaims.Remove((gate, claim.Type, claim.Id));
             }
 
             if (queue.Count == 0)

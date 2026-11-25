@@ -463,6 +463,12 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     }
 
     [Fact]
+    public override Task should_drop_counters_and_sets_with_flush_async()
+    {
+        return base.should_drop_counters_and_sets_with_flush_async();
+    }
+
+    [Fact]
     public override Task should_round_trip_raw_payload_via_buffer_path()
     {
         return base.should_round_trip_raw_payload_via_buffer_path();

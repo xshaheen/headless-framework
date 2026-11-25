@@ -121,9 +121,7 @@ internal sealed partial class UnitOfWorkFactory(
             {
                 // A commit that may have reached the database is reported as in-doubt, with its own exception type,
                 // because a caller that treats it as a certain rollback and retries can apply the operation twice.
-                var inDoubt = InDoubtCommitFaults.IsInDoubt(ex, cancelledBeforeCommit)
-                    ? new UnitOfWorkInDoubtException(ex)
-                    : null;
+                var inDoubt = InDoubtCommitFaults.Classify(ex, cancelledBeforeCommit);
                 var failure = inDoubt is null
                     ? new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, ex)
                     : new UnitOfWorkFailure(UnitOfWorkFailureReason.InDoubt, inDoubt);
@@ -144,12 +142,24 @@ internal sealed partial class UnitOfWorkFactory(
                 await _RollbackAfterCommitFaultAsync(resource).ConfigureAwait(false);
                 await _DrainFailedQuietlyAsync(claim, failure).ConfigureAwait(false);
 
-                if (inDoubt is not null)
+                if (inDoubt is not null && !ReferenceEquals(inDoubt, ex))
                 {
                     throw inDoubt;
                 }
 
                 ExceptionDispatchInfo.Capture(ex).Throw();
+            }
+
+            if (resource is IUnitOfWorkCommitCleanup cleanup)
+            {
+                try
+                {
+                    await cleanup.ReleaseAfterCommitAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    LogCommitCleanupFaulted(Logger, ex);
+                }
             }
         }
 
@@ -181,9 +191,7 @@ internal sealed partial class UnitOfWorkFactory(
         bool cancelledBeforeCommit
     )
     {
-        var inDoubt = InDoubtCommitFaults.IsInDoubt(commitFault, cancelledBeforeCommit)
-            ? new UnitOfWorkInDoubtException(commitFault)
-            : null;
+        var inDoubt = InDoubtCommitFaults.Classify(commitFault, cancelledBeforeCommit);
         var failure = inDoubt is null
             ? new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, commitFault)
             : new UnitOfWorkFailure(UnitOfWorkFailureReason.InDoubt, inDoubt);
@@ -358,7 +366,7 @@ internal sealed partial class UnitOfWorkFactory(
     [LoggerMessage(
         EventId = 7,
         Level = LogLevel.Warning,
-        Message = "A unit of work's commit may have reached the database before its connection failed, so the transaction may or may not have committed; its OnCompleted work did not run. Before retrying the business operation, check its durable idempotency key (IIdempotentOperations.PeekAsync) instead of retrying blind. Enlisted outbox and job rows are delivered by the relay if the commit landed."
+        Message = "A unit of work's commit faulted without a confirmed outcome. Its OnCompleted work did not run. Check the operation's durable idempotency key before retrying. The relay and poller recover any enlisted rows that committed."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogCommitInDoubt(ILogger logger, Exception exception);
@@ -378,4 +386,12 @@ internal sealed partial class UnitOfWorkFactory(
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogAbandonRollbackFaulted(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 8,
+        Level = LogLevel.Error,
+        Message = "Releasing a unit of work's resource after its commit failed. The commit is durable and completion callbacks still run."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogCommitCleanupFaulted(ILogger logger, Exception exception);
 }

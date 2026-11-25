@@ -472,6 +472,24 @@ public sealed class SettingsSnapshotTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_settling_after_only_one_name_in_the_announcement_changes()
+    {
+        using var sut = _CreateSut();
+        await sut.EnsureLoadedAsync(AbortToken);
+        _stored[_PublicLimit] = "20";
+
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit, _UserLimit], AbortToken);
+
+        _CurrentOf(sut).Should().Be(new Policy(20, 100));
+        _timeProvider.TimersCreated.Should().Be(1);
+        _stored[_UserLimit] = "200";
+        await _AdvanceSettleAsync(0);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 3, AbortToken);
+
+        _CurrentOf(sut).Should().Be(new Policy(20, 200));
+    }
+
+    [Fact]
     public async Task should_re_read_at_most_once_per_settle_delay_for_a_burst_of_missed_announcements()
     {
         // given

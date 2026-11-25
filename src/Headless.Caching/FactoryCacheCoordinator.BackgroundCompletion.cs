@@ -264,6 +264,7 @@ public sealed partial class FactoryCacheCoordinator
             // the failing factory again; this stamp tells factory reads to hold it back until the window ends.
             ThrottledUntil = logicalExpiresAt,
             IsRestamp = true,
+            IsFactoryWrite = true,
         };
 
         try

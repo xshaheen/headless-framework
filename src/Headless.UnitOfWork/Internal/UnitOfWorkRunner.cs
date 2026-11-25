@@ -143,8 +143,7 @@ internal static partial class UnitOfWorkRunner
                 {
                     var connection = await openConnection(ct).ConfigureAwait(false);
 
-                    // Disposed only after the attempt returns, which is after its unit was rolled back or completed.
-                    await using (connection.ConfigureAwait(false))
+                    try
                     {
                         return await _RunAttemptAsync(
                                 attemptCt => begin(connection, attemptCt),
@@ -153,6 +152,18 @@ internal static partial class UnitOfWorkRunner
                                 ct
                             )
                             .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            await connection.DisposeAsync().ConfigureAwait(false);
+                        }
+                        catch (Exception exception)
+                        {
+                            // Cleanup cannot replace the attempt's outcome or reach the policy after commit.
+                            LogAttemptConnectionDisposalFaulted(logger, exception);
+                        }
                     }
                 },
                 cancellationToken
@@ -290,4 +301,12 @@ internal static partial class UnitOfWorkRunner
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogBlockCompletedOwnUnit(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 13,
+        Level = LogLevel.Error,
+        Message = "Disposing a unit-of-work attempt's connection faulted. The attempt's original outcome is preserved."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogAttemptConnectionDisposalFaulted(ILogger logger, Exception exception);
 }

@@ -257,8 +257,10 @@ public sealed class DynamicSettingDefinitionStore(
             await definitionRepository
                 .SaveAsync(newRecords, changedRecords, deletedRecords, cancellationToken)
                 .ConfigureAwait(false);
-            await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        // An earlier attempt may have committed the rows before failing to publish the stamp.
+        await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
 
         await distributedCache
             .UpsertAsync(

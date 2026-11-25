@@ -441,7 +441,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
 
         while (
             await channel.BasicGetAsync(
-                RabbitMqQueueTopology.DeadLetterQueue(queueName),
+                RabbitMqPhysicalAddress.DeadLetterQueue(queueName),
                 autoAck: true,
                 cancellationToken
             )

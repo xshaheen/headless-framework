@@ -174,6 +174,89 @@ public sealed class JobsTaskSchedulerWorkerPoolTests : TestBase
     }
 
     [Fact]
+    public async Task parked_claims_keep_only_the_newest_generation_in_the_original_fifo_position()
+    {
+        using var gate = new SemaphoreSlim(1, 1);
+        await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, TimeProvider.System);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var settled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var order = new ConcurrentQueue<int>();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+#pragma warning disable AsyncFixer04, CA2025 // Each caller awaits admission, and the scheduler drains before the gate is disposed.
+        Task queueClaim(Guid id, long generation, int marker) =>
+            scheduler.QueueAsync(
+                _ =>
+                {
+                    order.Enqueue(marker);
+                    return Task.CompletedTask;
+                },
+                JobPriority.Normal,
+                AbortToken,
+                AbortToken,
+                gate,
+                claim: new JobExecutionState
+                {
+                    FunctionName = "capped",
+                    Type = JobType.TimeJob,
+                    JobId = id,
+                    ClaimGeneration = generation,
+                }
+            );
+#pragma warning restore AsyncFixer04, CA2025
+
+        await scheduler.QueueAsync(
+            _ =>
+            {
+                started.SetResult();
+                return release.Task;
+            },
+            JobPriority.Normal,
+            AbortToken,
+            AbortToken,
+            gate
+        );
+        await started.Task.Bounded();
+
+        try
+        {
+            await queueClaim(first, generation: 1, marker: 1);
+            await _WaitUntilAsync(() => scheduler.ParkedTasks == 1);
+            await queueClaim(second, generation: 1, marker: 100);
+            await _WaitUntilAsync(() => scheduler.ParkedTasks == 2);
+
+            for (var generation = 2; generation <= 5; generation++)
+            {
+                await queueClaim(first, generation, marker: generation);
+            }
+
+            await queueClaim(first, generation: 1, marker: -1);
+            await scheduler.QueueAsync(
+                _ =>
+                {
+                    settled.SetResult();
+                    return Task.CompletedTask;
+                },
+                JobPriority.Low,
+                AbortToken
+            );
+            // The other worker checks every Normal lane before this Low marker, which observes the settled counts.
+            await settled.Task.Bounded();
+            scheduler.ParkedTasks.Should().Be(2);
+            scheduler.TotalQueuedTasks.Should().Be(2);
+        }
+        finally
+        {
+            release.SetResult();
+        }
+
+        (await scheduler.WaitForRunningTasksAsync(_Timeout)).Should().BeTrue();
+        order.Should().Equal(5, 100);
+    }
+
+    [Fact]
     public async Task parked_items_count_as_queued_work_for_drains()
     {
         await using var scheduler = new JobsTaskScheduler(maxConcurrency: 2, TimeProvider.System);

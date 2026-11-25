@@ -142,12 +142,15 @@ public sealed class InMemoryCacheTests : TestBase
     private static object _GetMemory(InMemoryCache cache)
     {
         var field = typeof(InMemoryCache).GetField(
-            "_memory",
+            "_state",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         field.Should().NotBeNull();
 
-        return field!.GetValue(cache)!;
+        var state = field!.GetValue(cache)!;
+#pragma warning disable REFL009 // The backing state type is private.
+        return state.GetType().GetProperty("Entries")!.GetValue(state)!;
+#pragma warning restore REFL009
     }
 
     private static async Task _StartMaintenanceAsync(InMemoryCache cache)
@@ -2791,6 +2794,42 @@ public sealed class InMemoryCacheTests : TestBase
         // then
         capacityEvictions.Should().Be(0);
         (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(maxItems);
+    }
+
+    [Fact]
+    public async Task should_keep_byte_accounting_consistent_when_flush_interrupts_a_bulk_write()
+    {
+        const long entrySize = 100;
+        var flush = ValueTask.CompletedTask;
+        Action? flushDuringWrite = null;
+        using var cache = _CreateCache(
+            new InMemoryCacheOptions
+            {
+                MaxMemorySize = 2 * entrySize,
+                SizeCalculator = value =>
+                {
+                    // The first entry has landed but the batch has yet to apply its combined size delta.
+                    if (value is 2)
+                    {
+                        flushDuringWrite!();
+                    }
+
+                    return entrySize;
+                },
+            }
+        );
+        flushDuringWrite = () => flush = cache.FlushAsync(AbortToken);
+
+        await cache.UpsertAllAsync(
+            new Dictionary<string, int> { ["first"] = 1, ["second"] = 2 },
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+        await flush;
+
+        (await cache.GetAsync<int>("first", AbortToken)).HasValue.Should().BeFalse();
+        var count = await cache.GetCountAsync(cancellationToken: AbortToken);
+        cache.CurrentMemorySize.Should().Be(count * entrySize);
     }
 
     [Fact]

@@ -308,6 +308,12 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
     }
 
     [Fact]
+    public override Task should_drop_counters_and_sets_with_flush_async()
+    {
+        return base.should_drop_counters_and_sets_with_flush_async();
+    }
+
+    [Fact]
     public override Task should_add_only_new_set_members_and_compare_strings_case_sensitively()
     {
         return base.should_add_only_new_set_members_and_compare_strings_case_sensitively();

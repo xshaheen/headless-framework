@@ -55,6 +55,19 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         }
     }
 
+    internal void ValidateFinalWrites(HeadlessSaveEntryContext context, IReadOnlyList<EntityEntry> entries)
+    {
+        if (!tenantGuardOptions.Value.GuardWrites || tenantWriteGuardBypass.IsActive)
+        {
+            return;
+        }
+
+        foreach (var entry in entries)
+        {
+            _EnsureTenantWriteAllowed(entry, context);
+        }
+    }
+
     private void _EnsureTenantWriteAllowed(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         // The state is checked first: it is a field read, while the tenant policy is a metadata lookup, and most

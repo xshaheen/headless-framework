@@ -77,6 +77,9 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// </summary>
     public bool IsRestamp { get; init; }
 
+    // The coordinator holds a publication window while this write can still land.
+    internal bool IsFactoryWrite { get; init; }
+
     /// <summary>
     /// Gets whether the L1 (memory) tier write must be skipped for this entry. Hybrid-relevant only: single-tier
     /// stores ignore it. The coordinator copies this from <see cref="CacheEntryOptions.SkipMemoryCacheWrite"/>.

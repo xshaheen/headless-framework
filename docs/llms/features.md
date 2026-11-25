@@ -104,7 +104,7 @@ Otherwise, and whenever no principal exists (a job or a message consumer restore
 builder.Services.AddSingleton<ITenantEditionResolver, MyEditionResolver>();
 ```
 
-`ITenantEditionResolver.GetEditionIdAsync(tenantId, cancellationToken)` maps a tenant id to its edition id. Without a resolver, those reads see no edition value. The framework calls the resolver on every such read, so cache its answer.
+`ITenantEditionResolver.GetEditionIdAsync(tenantId, cancellationToken)` maps a tenant id to its edition id. Without a resolver, those reads see no edition value. The framework calls the resolver when a requested feature still needs an edition value. Cache its answer if resolving the edition requires I/O.
 
 Writes follow the same rule. `SetForTenantAsync` clears a value that equals what the tenant inherits. When the manager cannot tell the edition of the tenant being written (no matching principal and no resolver), it stores the value as written instead of comparing it with the caller's edition. A host administrator's downgrade is therefore never dropped as a no-op. `GetForTenantAsync(name, tenantId)` and `GetAllForTenantAsync(tenantId)` with fallback read the edition of `tenantId`, not the caller's.
 
@@ -265,7 +265,7 @@ await factory.RunAsync(db, async (unit, ct) =>
 
 - The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`). In development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
 - A failed save retries up to 10 times with jittered exponential back-off, capped at 30 seconds, on the system clock. A `FakeTimeProvider` does not speed the retries up. Cancellation, `ArgumentException`, and `NotSupportedException` fail at once. A failed seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup`.
-- Re-seeding unchanged definitions writes nothing.
+- Re-seeding unchanged definitions leaves the database untouched. When a previous attempt committed the rows before updating the common cache stamp, the next attempt updates that stamp.
 - A definition's `ExtraProperties` keep their key case. Values read back as `string`, `bool`, `long`, `decimal`, or `JsonElement`. Read them with `GetProperty<T>(name)`.
 - A definition value too long for its column throws `ArgumentOutOfRangeException` when definitions are saved. See [Column lengths](#column-lengths).
 

@@ -44,7 +44,11 @@ internal sealed class RedisCacheOptionsValidator : AbstractValidator<RedisCacheO
 {
     public RedisCacheOptionsValidator()
     {
-        RuleFor(x => x.KeyPrefix).NotNull();
+        RuleFor(x => x.KeyPrefix)
+            .Cascade(CascadeMode.Stop)
+            .NotNull()
+            .Must(prefix => !prefix.Contains('\0', StringComparison.Ordinal))
+            .WithMessage("Redis cache key prefixes must not contain NUL characters.");
         RuleFor(x => x.ConnectionMultiplexer)
             .NotNull()
             .WithMessage("Set ConnectionMultiplexer or register an IConnectionMultiplexer in the service collection.");

@@ -6,6 +6,8 @@ RabbitMQ transport provider for the messaging system.
 
 Enables Headless Bus and Queue delivery over RabbitMQ using lane-qualified exchanges, owned queues, routing keys, publisher confirms, consumer acknowledgements, and configurable queue arguments.
 
+When dead-lettering is enabled, dead-letter queues use the separate `headless_dlq.` namespace.
+
 ## Install
 
 ```bash

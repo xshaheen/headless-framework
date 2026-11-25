@@ -239,9 +239,19 @@ public sealed class JobsMetricsTests : TestBase
         const string function = "metrics.run-now";
         using var recorder = new MetricRecorder();
         var time = new FakeTimeProvider(_Now);
-        var handler = _Handler(_HealthyManager(), _Registry(function), time);
+        var manager = _HealthyManager();
+        manager
+            .SetTickersInProgress(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.Arg<JobExecutionState[]>()));
+        var handler = _Handler(manager, _Registry(function), time);
         await using var taskScheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
-        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+        var dispatcher = new JobsDispatcher(
+            taskScheduler,
+            handler,
+            new JobFunctionConcurrencyGate(),
+            manager,
+            NullLogger<JobsDispatcher>.Instance
+        );
         var job = _Job(function, static (_, _, _) => Task.CompletedTask);
         job.ExecutionTime = _Now.UtcDateTime;
 

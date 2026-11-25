@@ -20,6 +20,13 @@ internal static class SetGetLiveMembersScriptDefinition
         local key = KEYS[1]
         local skip = ARGV[1]
         local take = tonumber(ARGV[2])
+        local generation = tonumber(ARGV[3])
+        if generation then
+          local storedGeneration = tonumber(redis.call('get', KEYS[2]))
+          if not storedGeneration or storedGeneration < generation then
+            return {}
+          end
+        end
 
         -- Same clock and the same millisecond derivation as the set-add script, which prunes scores <= now.
         local serverTime = redis.call('TIME')
@@ -34,9 +41,18 @@ internal static class SetGetLiveMembersScriptDefinition
         """;
 
     /// <summary>Reads every live member, or one page of them when <paramref name="take"/> is not negative.</summary>
-    public static async Task<RedisValue[]> EvaluateAsync(IDatabaseAsync database, RedisKey key, long skip, long take)
+    public static async Task<RedisValue[]> EvaluateAsync(
+        IDatabaseAsync database,
+        RedisKey key,
+        RedisKey generationKey,
+        long skip,
+        long take,
+        RedisValue flushGeneration
+    )
     {
-        var result = await database.ScriptEvaluateAsync(_Source, [key], [skip, take]).ConfigureAwait(false);
+        var result = await database
+            .ScriptEvaluateAsync(_Source, [key, generationKey], [skip, take, flushGeneration])
+            .ConfigureAwait(false);
 
         return (RedisValue[]?)result ?? [];
     }

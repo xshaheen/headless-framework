@@ -130,6 +130,33 @@ public sealed class UnitOfWorkReplayTests : TestBase
         run.Attempts.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_preserve_the_commit_outcome_when_disposing_an_attempt_faults(bool inDoubt)
+    {
+        var commitFault = inDoubt ? new TimeoutException("Lost commit response.") : null;
+        var run = new Run(new UnitOfWorkFactory())
+        {
+            CommitFault = commitFault,
+            DisposeFault = new TransientFaultException(),
+        };
+        var act = () => run.ExecuteAsync(failFirstAttempts: 0, retry: _ReplayEverythingOnce(), AbortToken);
+
+        if (inDoubt)
+        {
+            var thrown = await act.Should().ThrowAsync<UnitOfWorkInDoubtException>();
+            thrown.Which.InnerException.Should().BeSameAs(commitFault);
+        }
+        else
+        {
+            (await act()).Should().Be(1);
+        }
+
+        run.Attempts.Should().Be(1);
+        run.Connections.Should().ContainSingle().Which.ResourceCommitCallsWhenDisposed.Should().Be(1);
+    }
+
     [Fact]
     public async Task should_reject_an_invalid_strategy_with_pollys_validation()
     {
@@ -218,6 +245,8 @@ public sealed class UnitOfWorkReplayTests : TestBase
 
         public Exception? CommitFault { get; init; }
 
+        public Exception? DisposeFault { get; init; }
+
         public Task<int> ExecuteAsync(
             int failFirstAttempts,
             RetryStrategyOptions? retry,
@@ -228,7 +257,10 @@ public sealed class UnitOfWorkReplayTests : TestBase
                 factory,
                 _ =>
                 {
-                    var connection = new FakeConnection(new FakeUnitOfWorkResource { CommitFault = CommitFault });
+                    var connection = new FakeConnection(
+                        new FakeUnitOfWorkResource { CommitFault = CommitFault },
+                        DisposeFault
+                    );
                     Connections.Add(connection);
 
                     return ValueTask.FromResult(connection);
@@ -249,7 +281,7 @@ public sealed class UnitOfWorkReplayTests : TestBase
         }
     }
 
-    private sealed class FakeConnection(FakeUnitOfWorkResource resource) : IAsyncDisposable
+    private sealed class FakeConnection(FakeUnitOfWorkResource resource, Exception? disposeFault) : IAsyncDisposable
     {
         public FakeUnitOfWorkResource Resource { get; } = resource;
 
@@ -265,7 +297,7 @@ public sealed class UnitOfWorkReplayTests : TestBase
             ResourceRollbackCallsWhenDisposed = Resource.RollbackCalls;
             ResourceCommitCallsWhenDisposed = Resource.CommitCalls;
 
-            return ValueTask.CompletedTask;
+            return disposeFault is null ? ValueTask.CompletedTask : ValueTask.FromException(disposeFault);
         }
     }
 

@@ -31,9 +31,7 @@ internal static class ObservedCommits
 
         // A unit from another factory cannot be failed from here; the caller still throws the classified exception.
         return ValueTask.FromResult<Exception>(
-            InDoubtCommitFaults.IsInDoubt(commitFault, cancelledBeforeCommit)
-                ? new UnitOfWorkInDoubtException(commitFault)
-                : commitFault
+            InDoubtCommitFaults.Classify(commitFault, cancelledBeforeCommit) ?? commitFault
         );
     }
 }
