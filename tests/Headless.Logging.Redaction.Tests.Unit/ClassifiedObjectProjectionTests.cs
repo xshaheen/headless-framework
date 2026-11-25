@@ -562,6 +562,42 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     [Fact]
+    public void should_redact_each_element_of_a_classified_collection_member()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+
+        // when
+        _Logger(provider)
+            .LogInformation("Saw {@Value}", new Mailing(["a@example.test", null, "b@example.test"], "weekly"));
+
+        // then: each element is one redacted value, and a null element stays visible as null
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be("Saw Mailing { Recipients = [*****, (null), *****], Cadence = weekly }");
+    }
+
+    [Fact]
+    public void should_print_a_null_element_beside_a_projected_one_in_a_logged_list()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        List<Customer?> customers = [new(_Email, "gold"), null];
+
+        // when
+        _Logger(provider).LogInformation("Batch {Customers}", customers);
+
+        // then
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be("Batch Customer { Email = *****, Tier = gold }, (null)");
+    }
+
+    [Fact]
     public void should_project_both_objects_when_a_member_getter_logs_while_its_owner_is_projected()
     {
         // given: reading Note logs another classified object through the same logger
@@ -606,6 +642,8 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     public record Envelope(string Id, Customer Payload);
 
     public sealed record Box(object Value);
+
+    public sealed record Mailing([property: PrivateData] List<string?> Recipients, string Cadence);
 
     public sealed class Chatty(ILogger logger)
     {
