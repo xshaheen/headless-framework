@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.AuditLog;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
@@ -11,27 +12,41 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Api;
 
 /// <summary>
-/// Records an audit entry for every authorization challenge and forbid, then hands the result to the wrapped
-/// handler so the response is exactly what it would have been without auditing.
+/// Records an audit entry for every authorization challenge and forbid the policy evaluator returns, then returns the
+/// result unchanged so the response is exactly what it would have been without auditing.
 /// </summary>
-internal sealed partial class AuditingAuthorizationMiddlewareResultHandler<TContext>(
-    IAuthorizationMiddlewareResultHandler inner,
-    ILogger<AuditingAuthorizationMiddlewareResultHandler<TContext>> logger
-) : IAuthorizationMiddlewareResultHandler
+/// <remarks>
+/// It decorates the policy evaluator rather than the <see cref="IAuthorizationMiddlewareResultHandler" />: the
+/// authorization middleware hands the evaluator's result straight to the result handler, so the entry still commits
+/// before the response is written, and a result handler the application registers in any order cannot drop it.
+/// </remarks>
+internal sealed partial class AuditingPolicyEvaluator<TContext>(
+    IPolicyEvaluator inner,
+    ILogger<AuditingPolicyEvaluator<TContext>> logger
+) : IPolicyEvaluator
 {
-    public async Task HandleAsync(
-        RequestDelegate next,
-        HttpContext context,
+    public Task<AuthenticateResult> AuthenticateAsync(AuthorizationPolicy policy, HttpContext context)
+    {
+        return inner.AuthenticateAsync(policy, context);
+    }
+
+    public async Task<PolicyAuthorizationResult> AuthorizeAsync(
         AuthorizationPolicy policy,
-        PolicyAuthorizationResult authorizeResult
+        AuthenticateResult authenticationResult,
+        HttpContext context,
+        object? resource
     )
     {
+        var authorizeResult = await inner
+            .AuthorizeAsync(policy, authenticationResult, context, resource)
+            .ConfigureAwait(false);
+
         if (authorizeResult.Challenged || authorizeResult.Forbidden)
         {
             await _AuditAsync(context, authorizeResult.Forbidden).ConfigureAwait(false);
         }
 
-        await inner.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+        return authorizeResult;
     }
 
     private async Task _AuditAsync(HttpContext context, bool forbidden)
