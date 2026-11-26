@@ -147,7 +147,7 @@ public sealed class SettingValueProviderChainTests : TestBase
         builder.Services.AddSingleton(Substitute.For<ICurrentUser>());
         builder.Services.AddSingleton<ICurrentTenant>(new CurrentTenant(AsyncLocalCurrentTenantAccessor.Instance));
 
-        using var serviceProvider = builder.Services.BuildServiceProvider();
+        await using var serviceProvider = builder.Services.BuildServiceProvider();
         serviceProvider.GetRequiredService<AccountSettingValueProvider>().SetValue("account-1", "light");
         var sut = _CreateManager(serviceProvider);
 
