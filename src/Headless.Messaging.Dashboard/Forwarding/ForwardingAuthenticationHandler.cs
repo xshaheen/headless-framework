@@ -291,8 +291,12 @@ internal sealed class ForwardingAuthenticationHandler(
                 return null;
             }
 
-            var authorization = await evaluator
-                .AuthorizeAsync(policy, authentication, Context, resource: Context)
+            // IAuthorizationService, not the evaluator's AuthorizeAsync: this check runs inside authentication on the
+            // node's behalf, and the host may decorate the evaluator to audit or explain the request's own denials. A
+            // node the host policy denies is not a denial of this request.
+            var authorization = await Context
+                .RequestServices.GetRequiredService<IAuthorizationService>()
+                .AuthorizeAsync(Context.User, Context, policy)
                 .ConfigureAwait(false);
 
             return authorization.Succeeded;

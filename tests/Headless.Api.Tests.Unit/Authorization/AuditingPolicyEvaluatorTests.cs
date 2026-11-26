@@ -3,6 +3,7 @@
 using Headless.Api;
 using Headless.AuditLog;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
@@ -11,7 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Authorization;
 
-public sealed class AuditingAuthorizationMiddlewareResultHandlerTests : TestBase
+public sealed class AuditingPolicyEvaluatorTests : TestBase
 {
     [Fact]
     public async Task should_write_denial_audit_with_uncancelled_token_when_client_has_already_disconnected()
@@ -20,10 +21,19 @@ public sealed class AuditingAuthorizationMiddlewareResultHandlerTests : TestBase
         // client that sends headers then resets the connection before the audit write can run.
         var writer = Substitute.For<IAuditLogWriter<object>>();
         writer.WriteAsync(Arg.Any<AuditLogWriteRequest>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
-        var inner = Substitute.For<IAuthorizationMiddlewareResultHandler>();
-        var handler = new AuditingAuthorizationMiddlewareResultHandler<object>(
+        var inner = Substitute.For<IPolicyEvaluator>();
+        var forbid = PolicyAuthorizationResult.Forbid();
+        inner
+            .AuthorizeAsync(
+                Arg.Any<AuthorizationPolicy>(),
+                Arg.Any<AuthenticateResult>(),
+                Arg.Any<HttpContext>(),
+                Arg.Any<object?>()
+            )
+            .Returns(forbid);
+        var evaluator = new AuditingPolicyEvaluator<object>(
             inner,
-            NullLogger<AuditingAuthorizationMiddlewareResultHandler<object>>.Instance
+            NullLogger<AuditingPolicyEvaluator<object>>.Instance
         );
 
         var services = new ServiceCollection();
@@ -32,19 +42,19 @@ public sealed class AuditingAuthorizationMiddlewareResultHandlerTests : TestBase
 
         var context = new DefaultHttpContext { RequestServices = provider, RequestAborted = new(canceled: true) };
         var policy = new AuthorizationPolicyBuilder().RequireAssertion(_ => true).Build();
-        var authorizeResult = PolicyAuthorizationResult.Forbid();
+        var authentication = AuthenticateResult.NoResult();
 
         // when
-        await handler.HandleAsync(_ => Task.CompletedTask, context, policy, authorizeResult);
+        var result = await evaluator.AuthorizeAsync(policy, authentication, context, resource: context);
 
         // then: the write is not tied to the client connection, so it still runs with an uncancelled token, and
-        // the wrapped handler still produces the response.
+        // the wrapped evaluator's result is returned unchanged.
         await writer
             .Received(1)
             .WriteAsync(
                 Arg.Any<AuditLogWriteRequest>(),
                 Arg.Is<CancellationToken>(token => token == CancellationToken.None)
             );
-        await inner.Received(1).HandleAsync(Arg.Any<RequestDelegate>(), context, policy, authorizeResult);
+        result.Should().BeSameAs(forbid);
     }
 }

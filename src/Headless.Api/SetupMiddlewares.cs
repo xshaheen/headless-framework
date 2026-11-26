@@ -39,11 +39,12 @@ public static class SetupMiddlewares
     /// Call <see cref="UseStatusCodesRewriter"/> after this to add it to the pipeline.
     /// </summary>
     /// <remarks>
-    /// Also wraps the registered <see cref="IAuthorizationMiddlewareResultHandler"/>: when authorization forbids a
-    /// request and its handlers called <c>Fail(new AuthorizationFailureReason(...))</c>, the 403 problem response
-    /// carries the reasons' messages as its <c>detail</c>. Those messages reach the caller, so keep internal detail out
-    /// of them. A handler that set its own rejection keeps it, and a challenge (401) is unchanged. A result handler
-    /// registered after this call replaces the wrapper.
+    /// Also decorates the registered <see cref="IPolicyEvaluator"/>: when authorization forbids a request and its
+    /// handlers called <c>Fail(new AuthorizationFailureReason(...))</c>, the 403 problem response carries the reasons'
+    /// messages as its <c>detail</c>. Those messages reach the caller, so keep internal detail out of them. A handler
+    /// that set its own rejection keeps it, and a challenge (401) is unchanged. A custom
+    /// <see cref="IAuthorizationMiddlewareResultHandler"/> keeps the detail whether it is registered before or after
+    /// this call. An <see cref="IPolicyEvaluator"/> registered after this call replaces the decorator.
     /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
@@ -51,15 +52,15 @@ public static class SetupMiddlewares
     {
         services.TryAddSingleton<StatusCodesRewriterMiddleware>();
 
-        // The rewriter writes the 403 with the authorization failure reasons as its detail; the result-handler
-        // decorator is what hands it that rejection. AddAuthorization registers the default result handler with
-        // TryAdd, so registering it first keeps one registration whichever call runs first and gives the decorator
-        // something to wrap. The marker keeps a repeated call from wrapping twice.
+        // The rewriter writes the 403 with the authorization failure reasons as its detail; the policy-evaluator
+        // decorator is what hands it that rejection. AddAuthorization registers the default evaluator with TryAdd, so
+        // registering it first keeps one registration whichever call runs first and gives the decorator something to
+        // wrap. The marker keeps a repeated call from wrapping twice.
         if (!services.IsAdded<AuthorizationFailureReasonMarker>())
         {
             services.AddSingleton(new AuthorizationFailureReasonMarker());
-            services.TryAddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
-            services.TryDecorateWith<IAuthorizationMiddlewareResultHandler, AuthorizationFailureReasonResultHandler>();
+            services.TryAddTransient<IPolicyEvaluator, PolicyEvaluator>();
+            services.TryDecorateWith<IPolicyEvaluator, AuthorizationFailureReasonPolicyEvaluator>();
         }
 
         return services;

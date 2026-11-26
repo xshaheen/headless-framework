@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
@@ -15,6 +16,12 @@ namespace Headless.Api;
 /// </summary>
 /// <remarks>
 /// <para>
+/// It decorates the policy evaluator rather than the <see cref="IAuthorizationMiddlewareResultHandler" />: the
+/// authorization middleware hands the evaluator's result straight to the result handler, and applications replace
+/// the result handler far more often than the evaluator, so a result handler registered in any order keeps the
+/// reasons.
+/// </para>
+/// <para>
 /// The reasons travel through the request's <see cref="IStatusCodeRejectionFeature" />, which the first failure owns.
 /// A handler that already set its own rejection (the tenant requirement, the tenant identifier mismatch) keeps its
 /// response, so the machine tokens those handlers pass as reasons never reach the caller.
@@ -24,18 +31,26 @@ namespace Headless.Api;
 /// that is not known yet.
 /// </para>
 /// </remarks>
-internal sealed class AuthorizationFailureReasonResultHandler(IAuthorizationMiddlewareResultHandler inner)
-    : IAuthorizationMiddlewareResultHandler
+internal sealed class AuthorizationFailureReasonPolicyEvaluator(IPolicyEvaluator inner) : IPolicyEvaluator
 {
-    private readonly IAuthorizationMiddlewareResultHandler _inner = Argument.IsNotNull(inner);
+    private readonly IPolicyEvaluator _inner = Argument.IsNotNull(inner);
 
-    public Task HandleAsync(
-        RequestDelegate next,
-        HttpContext context,
+    public Task<AuthenticateResult> AuthenticateAsync(AuthorizationPolicy policy, HttpContext context)
+    {
+        return _inner.AuthenticateAsync(policy, context);
+    }
+
+    public async Task<PolicyAuthorizationResult> AuthorizeAsync(
         AuthorizationPolicy policy,
-        PolicyAuthorizationResult authorizeResult
+        AuthenticateResult authenticationResult,
+        HttpContext context,
+        object? resource
     )
     {
+        var authorizeResult = await _inner
+            .AuthorizeAsync(policy, authenticationResult, context, resource)
+            .ConfigureAwait(false);
+
         if (authorizeResult is { Forbidden: true, AuthorizationFailure.FailureReasons: var reasons })
         {
             var messages = reasons
@@ -50,7 +65,7 @@ internal sealed class AuthorizationFailureReasonResultHandler(IAuthorizationMidd
             }
         }
 
-        return _inner.HandleAsync(next, context, policy, authorizeResult);
+        return authorizeResult;
     }
 }
 
