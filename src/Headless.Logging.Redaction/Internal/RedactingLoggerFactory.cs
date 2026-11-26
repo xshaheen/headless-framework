@@ -141,6 +141,19 @@ internal sealed class RedactingLoggerFactory(
             Func<TState, Exception?, string> formatter
         )
         {
+            // Enrichers run inside the inner call and see only a collector; this lets one skip a key the entry has.
+            using var entry = LoggedEntry.Enter(state);
+            _Log(logLevel, eventId, state, exception, formatter);
+        }
+
+        private void _Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
             // A level nobody listens to costs nothing: no copy, no redactor call.
             if (
                 redactorProvider is not null

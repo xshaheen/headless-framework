@@ -20,7 +20,12 @@ internal sealed class CapturingProvider : ILoggerProvider, ISupportExternalScope
 
     public void Dispose() { }
 
-    internal sealed record Entry(string Message, IReadOnlyDictionary<string, object?> Properties);
+    /// <param name="Keys">Every key the entry carries, in order and with repeats, which a provider would export.</param>
+    internal sealed record Entry(
+        string Message,
+        IReadOnlyDictionary<string, object?> Properties,
+        IReadOnlyList<string> Keys
+    );
 
     private sealed class Logger(CapturingProvider owner) : ILogger
     {
@@ -38,12 +43,14 @@ internal sealed class CapturingProvider : ILoggerProvider, ISupportExternalScope
         )
         {
             var properties = new Dictionary<string, object?>(StringComparer.Ordinal);
+            var keys = new List<string>();
 
             if (state is IEnumerable<KeyValuePair<string, object?>> values)
             {
                 foreach (var (key, value) in values)
                 {
                     properties[key] = value;
+                    keys.Add(key);
                 }
             }
 
@@ -60,7 +67,7 @@ internal sealed class CapturingProvider : ILoggerProvider, ISupportExternalScope
                     owner.Scopes
                 );
 
-                owner.Entries.Add(new Entry(formatter(state, exception), properties));
+                owner.Entries.Add(new Entry(formatter(state, exception), properties, keys));
             }
         }
     }

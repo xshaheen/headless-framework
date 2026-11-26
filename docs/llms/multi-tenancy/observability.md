@@ -9,9 +9,9 @@ packages:
 
 ## Observability
 
-With `AddHeadless()` (ServiceDefaults) and OpenTelemetry, logs and spans carry the tenant id with no registration:
+Logs carry the tenant id on every host that calls `AddHeadlessLogging()`, which `AddHeadless()` (ServiceDefaults) does for you. Spans carry it with `AddHeadless()` and OpenTelemetry. Neither needs a registration:
 
-- **Logs.** Every log record written while a tenant is ambient carries the attribute `TenantId`, read when the record is written. A nested `ICurrentTenant.Change(...)` relabels the records inside it, `Change(null)` removes the label, and a hand-written per-tenant loop, hosted service, or migration is labelled with no extra call. A record whose message template already has a `{TenantId}` placeholder keeps that value and gets no second attribute.
+- **Logs.** Every log entry written while a tenant is ambient carries the field `TenantId`, read when the entry is written. Every logging provider gets it: the console, OpenTelemetry, and any provider you add. So a message consumer's entries and a job attempt's entries carry their tenant on a console-only host too. A nested `ICurrentTenant.Change(...)` relabels the entries inside it, `Change(null)` removes the label, and a hand-written per-tenant loop, hosted service, or migration is labelled with no extra call. An entry whose message template already has a `{TenantId}` placeholder, as the framework's own tenant-switch messages do, keeps that value and gets no second field.
 - **Spans started under a tenant** get the tag `tenant.id`: database calls, outgoing HTTP, and your own spans.
 - **Spans that start before their tenant is known** are tagged where the tenant is resolved:
 
@@ -24,7 +24,9 @@ With `AddHeadless()` (ServiceDefaults) and OpenTelemetry, logs and spans carry t
 
 A request, message, or job with no tenant gets no attribute. `ICurrentTenant.Change` writes no telemetry itself.
 
-Only ServiceDefaults adds the log and child-span enrichment. A host that builds its own OpenTelemetry pipeline still gets the request, messaging, and job span tags, but no log attribute and no tags on other spans. A logging provider other than OpenTelemetry, such as the console, gets no tenant attribute: add an `ILogEnricher` (`services.AddLogEnricher<T>()`) that reads `ICurrentTenant.Id`.
+`AddHeadlessLogging()` adds the log field, and only ServiceDefaults adds the child-span enrichment. A host that builds its own OpenTelemetry pipeline still gets the request, messaging, and job span tags, but no tags on other spans. A host that builds its own logging without `AddHeadlessLogging()` gets no tenant field: add an `ILogEnricher` (`services.AddLogEnricher<T>()`) that reads `ICurrentTenant.Id`.
+
+Do not add a `TenantId` field of your own beside `AddHeadlessLogging()`. An `ILogEnricher` cannot see the other enrichers' fields, so the entry would carry the key twice, which an OTLP backend rejects. To write the tenant yourself, set `EnrichLogs = false` first.
 
 ### Names
 
@@ -57,11 +59,11 @@ builder.AddHeadlessTenancy(tenancy =>
 
 | Option | Default | Effect |
 |---|---|---|
-| `EnrichLogs` | `true` | Adds the tenant attribute to log records written while a tenant is ambient |
-| `LogAttributeName` | `TenantId` | The log record attribute name |
+| `EnrichLogs` | `true` | Adds the tenant field to log entries written while a tenant is ambient, on every provider, once `AddHeadlessLogging()` is called |
+| `LogAttributeName` | `TenantId` | The log entry field name |
 | `EnrichTraces` | `true` | Tags the request, messaging, and job spans, and every span started while a tenant is ambient |
 | `AttributeName` | `tenant.id` | The span attribute name, also the messaging inbox metric dimension |
 
 A blank `AttributeName`, or a blank `LogAttributeName` while `EnrichLogs` is on, fails options validation at startup. To tag a span that started before your code knew its tenant, call `TenantTelemetry.TagActivity(activity, options, tenantId)`.
 
-**Verify:** in a test with an in-memory OpenTelemetry exporter, write a log record inside `currentTenant.Change("acme")` and assert it carries the attribute `TenantId` (or your `LogAttributeName`) with value `acme`.
+**Verify:** in a test host that calls `AddHeadlessLogging()` and adds a capturing `ILoggerProvider`, write a log entry inside `currentTenant.Change("acme")` and assert it carries the field `TenantId` (or your `LogAttributeName`) once, with value `acme`.

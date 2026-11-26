@@ -133,6 +133,8 @@ Fields on every entry:
 | `MachineName`, `ProcessName`, `CommitHash` | The host, and the entry assembly's commit |
 | `TraceId`, `SpanId` | The current `Activity`, as a scope |
 
+Every entry written while a tenant is ambient gets `TenantId` once, on every provider, also when its template already has a `{TenantId}` hole. A message consumer and a job attempt run under their tenant, so their entries carry it on a console-only host. `TenantTelemetryOptions` renames it or turns it off. See [multi-tenancy observability](multi-tenancy/observability.md#observability).
+
 An API host under `AddHeadless()` also gets `UserId`, `AccountId`, `CorrelationId`, `ClientIp`, `UserAgent`, `XClientVersion`, and `ApiVersion` on every entry written during a request. See [api.md](api.md#headlessapiservicedefaults).
 
 Every entry written while a message consumer or a job runs gets `CausationTraceId`: the 32-hex trace id of the span that published the message or scheduled the job, read from the stored `traceparent` and carried on `CausalScope.CausationTraceId`. A worker loop of your own that opens `CausalScope.Begin(correlationId, causationId, causationTraceId)` gets the field the same way. To follow one request into the consumer and job lines it caused, query `TraceId = <id> OR CausationTraceId = <id>`. A message or job that stored no trace context gets no field. See [messaging observability](messaging/observability.md#log-correlation) and [jobs trace linking](jobs/operations.md#trace-linking).

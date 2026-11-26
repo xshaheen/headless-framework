@@ -5,6 +5,7 @@ using Headless.Context;
 using Headless.Logging;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,6 +24,7 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
 {
     private const string _CausationTraceId = "CausationTraceId";
     private const string _ConsumerLogMessage = "consumed the probe message";
+    private const string _TenantId = "TenantId";
 
     public override ValueTask InitializeAsync()
     {
@@ -107,6 +109,51 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
         busTraceId.Should().NotBe(queueTraceId);
         logs.Single($"{_ConsumerLogMessage} b2").Fields.Should().Contain(_CausationTraceId, busTraceId.ToHexString());
         logs.Single($"{_ConsumerLogMessage} q2").Fields.Should().Contain(_CausationTraceId, queueTraceId.ToHexString());
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_log_the_envelope_tenant_once_on_the_consumer_entries_of_a_console_only_host(
+        MessageLane lane
+    )
+    {
+        // given: the Headless logging profile with no OpenTelemetry, and tenant propagation on
+        using var logs = new EnrichedLogCapture();
+        using var host = await _StartInMemoryHostAsync(logs, propagateTenant: true);
+        var recorder = host.Services.GetRequiredService<ConsumeRecorder>();
+
+        // when: the message is published under a tenant
+        using (host.Services.GetRequiredService<ICurrentTenant>().Change("acme"))
+        {
+            await using var scope = host.Services.CreateAsyncScope();
+
+            if (lane == MessageLane.Bus)
+            {
+                await scope.ServiceProvider.GetRequiredService<IBus>().PublishAsync(new BusProbe("b1"), AbortToken);
+            }
+            else
+            {
+                await scope.ServiceProvider.GetRequiredService<IQueue>().EnqueueAsync(new QueueProbe("q1"), AbortToken);
+            }
+        }
+
+        await recorder.Consumed.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then: the consumer's own entry gets the tenant from the enrichment
+        var consumed = logs.Single(_ConsumerLogMessage);
+        consumed.Keys.Should().ContainSingle(k => k == _TenantId);
+        consumed.Fields[_TenantId].Should().Be("acme");
+
+        // and the framework's tenant-switch entry, whose template already has {TenantId}, carries the key once
+        var restored = logs
+            .Entries.Should()
+            .ContainSingle(x =>
+                x.Message.StartsWith("Restoring ICurrentTenant from envelope", StringComparison.Ordinal)
+            )
+            .Subject;
+        restored.Keys.Should().ContainSingle(k => k == _TenantId);
+        restored.Fields[_TenantId].Should().Be("acme");
     }
 
     [Fact]
@@ -199,11 +246,17 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
         return listener;
     }
 
-    private async Task<IHost> _StartInMemoryHostAsync(EnrichedLogCapture logs)
+    private async Task<IHost> _StartInMemoryHostAsync(EnrichedLogCapture logs, bool propagateTenant = false)
     {
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
         builder.AddHeadlessLogging();
-        builder.Logging.AddProvider(logs).AddProvider(LoggerProvider);
+        builder.Logging.AddProvider(logs).AddProvider(LoggerProvider).SetMinimumLevel(LogLevel.Debug);
+
+        if (propagateTenant)
+        {
+            builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+        }
+
         builder.Services.AddSingleton<ConsumeRecorder>();
         builder.Services.ConfigureMessaging(messaging =>
         {

@@ -698,7 +698,7 @@ For a custom pipeline that does not call `UseHeadless()`, `UseStatusCodesRewrite
 
 Telemetry:
 
-- With HTTP tenancy configured, the request span and every span started during the request carry `tenant.id`, and every log record written during the request carries `TenantId`. Every exporter sees both. Do not add them yourself. `TenantTelemetryOptions` holds the names and switches. See [Multi-tenancy observability](multi-tenancy/observability.md#observability).
+- With HTTP tenancy configured, the request span and every span started during the request carry `tenant.id`, and every log entry written during the request carries `TenantId`. Every exporter and logging provider sees the log field. Do not add them yourself. `TenantTelemetryOptions` holds the names and switches. See [Multi-tenancy observability](multi-tenancy/observability.md#observability).
 - With API surfaces registered, the default response enricher adds `headless.api.surface.name` to completed request spans. Replacing `EnrichWithHttpResponse` replaces this default too. To keep it, capture the existing delegate and call it from yours.
 
 OpenAPI documents per surface:

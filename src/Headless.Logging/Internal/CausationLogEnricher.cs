@@ -12,9 +12,8 @@ namespace Headless.Logging.Internal;
 /// <remarks>
 /// The entry's own <c>TraceId</c> is not enough: a job runs in a trace of its own that only links back to its
 /// scheduler, and an in-process delivery runs under the consumer loop's activity. Messaging and Jobs put the stored
-/// trace id on the <see cref="CausalScope"/> they open around that work. The tenant is not added here: Microsoft's
-/// enrichment keeps duplicate keys, so a <c>TenantId</c> tag would repeat the <c>{TenantId}</c> hole of the framework's
-/// own consume and job messages.
+/// trace id on the <see cref="CausalScope"/> they open around that work. The tenant comes from
+/// <see cref="TenantLogEnricher"/>, which reads the ambient tenant rather than the scope.
 /// </remarks>
 internal sealed class CausationLogEnricher : ILogEnricher
 {

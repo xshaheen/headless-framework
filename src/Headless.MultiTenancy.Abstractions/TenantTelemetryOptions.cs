@@ -7,10 +7,10 @@ namespace Headless.MultiTenancy;
 /// registration to get the defaults.
 /// </summary>
 /// <remarks>
-/// Log records and spans that start while a tenant is ambient are enriched by the ServiceDefaults OpenTelemetry
-/// pipeline, which reads <see cref="ICurrentTenant"/> at that moment. The request, consume, and job spans start before
-/// their tenant is ambient, so the framework tags those directly. A host outside ServiceDefaults, or one logging
-/// through a provider other than OpenTelemetry, gets only those direct span tags.
+/// Log entries written while a tenant is ambient are enriched by <c>AddHeadlessLogging()</c>, on every logging provider,
+/// and spans that start while a tenant is ambient by the ServiceDefaults OpenTelemetry pipeline; both read
+/// <see cref="ICurrentTenant"/> at that moment. The request, consume, and job spans start before their tenant is
+/// ambient, so the framework tags those directly.
 /// </remarks>
 [PublicAPI]
 public sealed class TenantTelemetryOptions
@@ -29,7 +29,8 @@ public sealed class TenantTelemetryOptions
     public const string DefaultAttributeName = "tenant.id";
 
     /// <summary>
-    /// Whether every log record written while a tenant is ambient carries the tenant id. Default:
+    /// Whether every log entry written while a tenant is ambient carries the tenant id, once: an entry that already has
+    /// a property of that name, such as a <c>{TenantId}</c> template hole, keeps its own value. Default:
     /// <see langword="true"/>.
     /// </summary>
     public bool EnrichLogs { get; set; } = true;

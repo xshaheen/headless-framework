@@ -14,5 +14,6 @@
     <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Logging.Redaction\Headless.Logging.Redaction.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
   </ItemGroup>
 </Project>
