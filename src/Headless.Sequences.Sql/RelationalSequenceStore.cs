@@ -51,6 +51,19 @@ internal sealed class RelationalSequenceStore(
         CancellationToken cancellationToken = default
     )
     {
+        return RelationalCancellation.ObserveAsync(
+            _IncrementAsync(key, insertValue, delta, cancellationToken),
+            cancellationToken
+        );
+    }
+
+    private ValueTask<long> _IncrementAsync(
+        SequenceKey key,
+        long insertValue,
+        long delta,
+        CancellationToken cancellationToken
+    )
+    {
         if (_autocommitIncrementSql is { } sql)
         {
             // The command commits on its own (one atomic statement, or a batch that opens and commits its own
@@ -124,7 +137,13 @@ internal sealed class RelationalSequenceStore(
         // settings stay as the caller set them.
         var (connection, transaction) = _RequireLive(unitOfWork);
 
-        return await _ExecuteAsync(connection, transaction, _incrementSql, key, insertValue, delta, cancellationToken)
+        return await RelationalCancellation
+            .ObserveAsync(
+                new ValueTask<long>(
+                    _ExecuteAsync(connection, transaction, _incrementSql, key, insertValue, delta, cancellationToken)
+                ),
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -138,6 +157,23 @@ internal sealed class RelationalSequenceStore(
     {
         var (connection, transaction) = _RequireLive(unitOfWork);
 
+        return await RelationalCancellation
+            .ObserveAsync(
+                _AdvanceAsync(connection, transaction, key, value, baseline, cancellationToken),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<long> _AdvanceAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        SequenceKey key,
+        long value,
+        long baseline,
+        CancellationToken cancellationToken
+    )
+    {
         // First make sure the counter exists, so the locked read below always finds a row to lock: two first reports
         // for one key then queue on that row instead of both reading "absent".
         await using (var insert = _Command(connection, transaction, _advanceInsertSql, key))
