@@ -35,18 +35,21 @@ export function productAttention(
   const failed = state.modules.some((module) => module.refusal && product.modules.includes(module.id))
   const own = sections?.filter((section) => product.modules.includes(section.id))
   const total = (own ?? []).reduce((sum, section) => section.items.reduce((count, item) => count + item.count, sum), 0)
+  // The tab's DEV badge is too small to be the only copy, so its words say it right after the label.
+  const name = product.developmentOnly ? `${product.label}, development only` : product.label
+  const subject = product.developmentOnly ? `${name},` : name
 
   return failed
-    ? { role: 'off' as const, text: `${product.label} did not load` }
+    ? { role: 'off' as const, text: `${subject} did not load` }
     : {
         role: attentionRole(own),
         text: !own
-          ? `${product.label}, attention not loaded`
+          ? `${name}, attention not loaded`
           : total > 0
-            ? `${product.label}, ${total} need attention`
+            ? `${name}, ${total} need attention`
             : own.some((section) => section.stale)
-              ? `${product.label} did not answer`
-              : `${product.label}, nothing needs attention`,
+              ? `${subject} did not answer`
+              : `${name}, nothing needs attention`,
       }
 }
 

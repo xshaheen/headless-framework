@@ -206,6 +206,36 @@ describe('shell layout', () => {
     expect(tabs[0]!.getAttribute('aria-current')).toBeNull()
   })
 
+  it('marks a development-only product’s tab with a DEV badge and says so in its name, and no other tab', async () => {
+    const state = twoProducts()
+    const inbox = moduleManifest('inbox', { displayName: 'Inbox' })
+    const withInbox: BootstrapState = {
+      ...state,
+      modules: [...state.modules, inbox],
+      products: [
+        ...state.products,
+        {
+          id: 'dev-inbox',
+          label: 'Dev inbox',
+          developmentOnly: true,
+          modules: ['inbox'],
+          sections: [{ module: 'inbox', entries: [] }],
+        },
+      ],
+    }
+    renderShell(withInbox, { path: '/jobs/runs', files: moduleFiles(withInbox.modules) })
+
+    const tab = await screen.findByRole('link', { name: 'Dev inbox, development only, nothing needs attention' })
+    expect(tab.getAttribute('title')).toBe('Development only')
+    const badge = within(tab).getByText('DEV')
+    expect(badge.closest('[aria-hidden="true"]')).toBeTruthy()
+    for (const name of ['Jobs, nothing needs attention', 'Platform, nothing needs attention']) {
+      const other = screen.getByRole('link', { name })
+      expect(within(other).queryByText('DEV')).toBeNull()
+      expect(other.getAttribute('title')).toBeNull()
+    }
+  })
+
   it('marks a product tab by its worst attention, in words as well as the dot', async () => {
     const api: ApiHandler = (request) =>
       request.path === 'needs-you'

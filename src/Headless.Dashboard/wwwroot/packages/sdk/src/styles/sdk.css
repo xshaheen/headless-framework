@@ -61,6 +61,7 @@
   --color-sched: var(--sched);
   --color-enq: var(--enq);
   --color-proc: var(--proc);
+  --color-on-proc: var(--on-proc);
   --color-ok: var(--ok);
   --color-off: var(--off);
   --color-avatar: var(--avatar);
@@ -178,6 +179,11 @@
 @utility type-label-mono {
   font: var(--text-label);
   font-family: var(--mono);
+}
+
+/* The DEV badge on a development-only product's tab. */
+@utility type-badge {
+  font: var(--text-badge);
 }
 
 @utility type-axis {

@@ -15,7 +15,7 @@ internal static class DashboardProducts
         new("messaging", "Messaging"),
         new("cluster", "Cluster"),
         new("platform", "Platform"),
-        new("dev-inbox", "Dev inbox"),
+        new("dev-inbox", "Dev inbox", IsDevelopmentOnly: true),
     ];
 
     /// <summary>Finds the product with the given id, or <see langword="null"/> when no product has it.</summary>
@@ -25,5 +25,8 @@ internal static class DashboardProducts
     }
 }
 
-/// <summary>One product: its id, as a module's manifest names it, and the label its tab shows.</summary>
-internal sealed record DashboardProduct(string Id, string Label);
+/// <summary>
+/// One product: its id, as a module's manifest names it, the label its tab shows, and whether it serves development
+/// only, which the tab marks with a <c>DEV</c> badge.
+/// </summary>
+internal sealed record DashboardProduct(string Id, string Label, bool IsDevelopmentOnly = false);

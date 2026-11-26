@@ -85,6 +85,7 @@
   --text-stat: 600 20px/26px var(--mono);
   --text-tag: 400 11px/16px var(--sans);
   --text-axis: 400 10.5px/14px var(--mono);
+  --text-badge: 600 10px/14px var(--mono);
   --text-hero: 600 22px/28px var(--sans);
   --text-mono-small: 400 12px/18px var(--mono);
   --text-nav: 400 13px/20px var(--sans);

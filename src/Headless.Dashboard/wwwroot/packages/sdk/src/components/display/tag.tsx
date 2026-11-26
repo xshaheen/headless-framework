@@ -5,8 +5,11 @@
 import type { ReactNode } from 'react'
 import type { DashboardStateRole } from '../../define-module.ts'
 
-/** `pill` for a standing state (`Paused`), `small` for a note on a row (`late 4 s`), `filled` for a kind, `square` for a name. */
-export type TagVariant = 'pill' | 'small' | 'filled' | 'square'
+/**
+ * `pill` for a standing state (`Paused`), `small` for a note on a row (`late 4 s`), `filled` for a kind, `square` for a
+ * name, and `dev` for the `DEV` badge of something that serves development only.
+ */
+export type TagVariant = 'pill' | 'small' | 'filled' | 'square' | 'dev'
 
 export interface TagProps {
   children: ReactNode
@@ -23,6 +26,8 @@ const variants: Record<TagVariant, string> = {
   pill: `${base} h-(--tag-pill-height) rounded-full border-edge`,
   filled: `${base} h-(--tag-pill-height) rounded-sm border-raised bg-muted`,
   square: `${base} h-(--tag-pill-height) rounded-sm border-border`,
+  // Its own face and colours rather than the base's: the badge is set in mono on the proc fill.
+  dev: 'inline-flex flex-none items-center rounded-xs bg-proc px-1 type-badge whitespace-nowrap text-on-proc',
 }
 
 /** A short fact on an object or a row, such as `Paused`, `cron`, or why a bulk action refused the row. */
