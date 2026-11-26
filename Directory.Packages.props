@@ -55,12 +55,14 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.12.0" />
     <!--
-      Pinned: must match SDK's Roslyn version. Source generators fail silently if higher, and an analyzer or code fix
-      built against a newer Roslyn does not load in an older host. Workspaces 5.0.0 also pins Common to 5.0.0 exactly.
+      Exact pin to Roslyn 5.12, the compiler the .NET 11 SDK ships. The source generators and analyzers load into the
+      consumer's compiler, and one built against a newer Roslyn does not load in an older one: a generator stops
+      generating with only a compiler warning. An unpinned Roslyn bump would therefore silently raise the compiler
+      consumers need. Consumers already need SDK 11 for net11.0, so 5.12 raises no floor beyond that.
     -->
-    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="[5.0.0]" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="[5.0.0]" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="[5.0.0]" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="[5.12.0]" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="[5.12.0]" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="[5.12.0]" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="11.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="11.0.0" />
@@ -168,16 +170,6 @@
     <PackageVersion Include="xunit.v3.extensibility.core" Version="4.0.3" />
   </ItemGroup>
   <!--
-    dotnet ef loads Microsoft.EntityFrameworkCore.Design, which needs Roslyn 5.9. A project that hosts it sets
-    HeadlessEntityFrameworkDesignHost to true and takes that Roslyn. The exact pin above still holds every generator and
-    analyzer and their tests, because those load into a consumer's compiler, and EF Core Design never does.
-  -->
-  <ItemGroup Condition="'$(HeadlessEntityFrameworkDesignHost)' == 'true'">
-    <PackageVersion Update="Microsoft.CodeAnalysis.Common" Version="5.9.0" />
-    <PackageVersion Update="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
-    <PackageVersion Update="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
-  </ItemGroup>
-  <!--
     Versions only tests, demos, and benchmarks reference. Transitive pinning writes every pin a project can see into
     its packed nuspec as a direct dependency, so a pin visible to a shipped package would raise the minimum version
     consumers must take whenever a test-only bump touches that package's graph. Hiding these from packable projects
@@ -192,6 +184,12 @@
     <PackageVersion Include="Foundatio.Redis" Version="13.0.5" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="11.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="11.0.0" />
+    <!--
+      Transitive-only pin: EF Core Design asks for Workspaces.MSBuild 5.9.0 or later, and 5.9.0 requires
+      Workspaces.Common exactly 5.9.0, which conflicts with the Roslyn 5.12 pin above (NU1608). This keeps the whole
+      Roslyn set under dotnet ef on 5.12.0.
+    -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="[5.12.0]" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.14.1" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="11.0.0" />

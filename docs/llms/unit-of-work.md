@@ -678,7 +678,7 @@ Roslyn analyzers that report a write made through an autonomous service while a 
 dotnet add package Headless.UnitOfWork.Analyzers
 ```
 
-The package is a development dependency: it adds analyzers to the project that references it and flows to no consumer. It needs Roslyn 5.0 or later, which the .NET 11 SDK that builds a `net11.0` application already ships.
+The package is a development dependency: it adds analyzers to the project that references it and flows to no consumer. It needs Roslyn 5.12 or later, the compiler in the .NET 11 SDK or Visual Studio 2026 18.12 or later, which a `net11.0` application already builds with.
 
 **Verify:** add `dotnet_diagnostic.HF2001.severity = warning` to `.editorconfig` and call `IBus.PublishAsync` inside a `RunAsync(db, (unit, ct) => …)` block. The build reports HF2001.
 

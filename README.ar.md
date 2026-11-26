@@ -254,7 +254,7 @@ Headless.<Feature>.Testing       -> test helpers, where the domain has them
 
 الـ packages منشورة على nuget.org عند `0.4.x`. الـ framework لسه قبل 1.0، والمشروع greenfield: الـ breaking changes بتنزل لما تحسّن الصحة أو الـ API بشكل جوهري، بدل ما نراكم طبقات توافق. ثبّت الـ versions بتاعتك واقرا الـ release notes قبل أي upgrade.
 
-- الـ packages بتستهدف `net11.0`، فالـ application اللي بتستخدمها لازم تستهدف `net11.0` وتتبني بالـ .NET 11 SDK. وpackages الـ source generators والـ analyzers بتستهدف `netstandard2.0`.
+- الـ packages بتستهدف `net11.0`، فالـ application اللي بتستخدمها لازم تستهدف `net11.0` وتتبني بالـ .NET 11 SDK أو Visual Studio 2026 18.12 أو أحدث. وpackages الـ source generators والـ analyzers بتستهدف `netstandard2.0` ومحتاجة الـ compiler اللي بييجي مع الأدوات دي.
 - الـ repo بيثبّت version الـ .NET SDK في [`global.json`](global.json).
 - الـ release notes بتتنشر عن طريق [GitHub releases](https://github.com/xshaheen/headless-framework/releases).
 

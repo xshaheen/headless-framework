@@ -31,6 +31,7 @@ internal static class TestHelpers
 
         var driver = CSharpGeneratorDriver
             .Create(generator)
+            .WithUpdatedParseOptions(GeneratorCompilation.ParseOptions)
             .WithUpdatedAnalyzerConfigOptions(
                 new PrimitiveConfigOptionsProvider(globalOptions ?? new PrimitiveGlobalOptions())
             );

@@ -221,7 +221,7 @@ Production readiness is a composition choice, not a global switch.
 
 The framework is published on nuget.org at `0.4.x`. It is pre-1.0 and this is a greenfield project: breaking changes land when they materially improve correctness or the API, rather than accumulating compatibility shims. Pin your versions and read the release notes before upgrading.
 
-- Packages target `net11.0`, so an application that references them targets `net11.0` and builds with the .NET 11 SDK. Source generator and analyzer packages target `netstandard2.0`.
+- Packages target `net11.0`, so an application that references them targets `net11.0` and builds with the .NET 11 SDK or Visual Studio 2026 18.12 or later. Source generator and analyzer packages target `netstandard2.0` and need the compiler those tools ship.
 - The repository pins the .NET SDK in [`global.json`](global.json).
 - Release notes are published from [GitHub releases](https://github.com/xshaheen/headless-framework/releases).
 

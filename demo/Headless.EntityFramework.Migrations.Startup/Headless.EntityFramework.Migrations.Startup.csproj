@@ -1,7 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk.Web">
   <PropertyGroup>
-    <!-- Hosts dotnet ef, so it takes the Roslyn version EF Core Design needs (see Directory.Packages.props). -->
-    <HeadlessEntityFrameworkDesignHost>true</HeadlessEntityFrameworkDesignHost>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

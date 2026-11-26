@@ -85,12 +85,12 @@
       },
       "Microsoft.CodeAnalysis.CSharp": {
         "type": "Direct",
-        "requested": "[5.0.0, 5.0.0]",
-        "resolved": "5.0.0",
-        "contentHash": "5DSyJ9bk+ATuDy7fp2Zt0mJStDVKbBoiz1DyfAwSa+k4H4IwykAUcV3URelw5b8/iVbfSaOwkwmPUZH6opZKCw==",
+        "requested": "[5.12.0, 5.12.0]",
+        "resolved": "5.12.0",
+        "contentHash": "6W6vBcpQFjlxog+KUGNM2fFy+XA2StC1PtnkEkechk68vFy3a28tGjEdnoA7NrxhMdr8a+zh/AmiUtBAmdkQPg==",
         "dependencies": {
-          "Microsoft.CodeAnalysis.Analyzers": "3.11.0",
-          "Microsoft.CodeAnalysis.Common": "[5.0.0]"
+          "Microsoft.CodeAnalysis.Analyzers": "5.9.0",
+          "Microsoft.CodeAnalysis.Common": "[5.12.0]"
         }
       },
       "Microsoft.CodeAnalysis.ResxSourceGenerator": {
@@ -556,7 +556,7 @@
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
           "Headless.Testing": "[1.0.0, )",
-          "Microsoft.CodeAnalysis.CSharp": "[5.0.0, 5.0.0]",
+          "Microsoft.CodeAnalysis.CSharp": "[5.12.0, 5.12.0]",
           "NSubstitute": "[6.2.0, )"
         }
       },
@@ -586,11 +586,11 @@
       },
       "Microsoft.CodeAnalysis.Common": {
         "type": "CentralTransitive",
-        "requested": "[5.0.0, 5.0.0]",
-        "resolved": "5.0.0",
-        "contentHash": "ZXRAdvH6GiDeHRyd3q/km8Z44RoM6FBWHd+gen/la81mVnAdHTEsEkO5J0TCNXBymAcx5UYKt5TvgKBhaLJEow==",
+        "requested": "[5.12.0, 5.12.0]",
+        "resolved": "5.12.0",
+        "contentHash": "0C7o9ys497xp0kZ64sL7C6nY/5WPQlxia28VlezdonBmjxbC6mIovAYs8mBoh/QooxBBZQCo/wMuZnV1kNk9GA==",
         "dependencies": {
-          "Microsoft.CodeAnalysis.Analyzers": "3.11.0"
+          "Microsoft.CodeAnalysis.Analyzers": "5.9.0"
         }
       },
       "Microsoft.Extensions.Caching.Memory": {

@@ -164,6 +164,7 @@ public sealed class DiagnosticReportingTests : TestBase
 
         CSharpGeneratorDriver
             .Create(new PrimitiveGenerator())
+            .WithUpdatedParseOptions(GeneratorCompilation.ParseOptions)
             .RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics, AbortToken);
 
         var generated = output.SyntaxTrees.Skip(1).Select(tree => tree.ToString()).ToArray();
