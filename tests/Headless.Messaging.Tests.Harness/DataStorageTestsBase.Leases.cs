@@ -363,6 +363,34 @@ public abstract partial class DataStorageTestsBase
             .Contain(m => m.StorageId == attempted.StorageId);
     }
 
+    /// <summary>
+    /// A deferral that reaches the store after the row's success write, carrying the counters the waiting node read
+    /// before the row ran, writes nothing: a finished row stays finished and never falls due for retry pickup again.
+    /// </summary>
+    [Fact]
+    public async Task should_not_put_off_the_pickup_of_a_received_row_that_finished_after_the_caller_read_it()
+    {
+        // given: a waiting node's copy of a row, and the row's success write landing before that node's deferral
+        var storage = GetStorage();
+        var finished = await _StoreRetryDueAsync(storage, published: false, "defer-dispatch-finished");
+        var waitingCopy = _CopyLease(finished);
+        (await storage.ChangeReceiveStateAsync(finished, StatusName.Succeeded, cancellationToken: AbortToken))
+            .Should()
+            .BeTrue();
+
+        // when
+        var deferred = await storage.DeferReceivedDispatchAsync(waitingCopy, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        deferred.Should().BeFalse("the row is terminal");
+        var stored = await storage.GetMonitoringApi().GetReceivedMessageAsync(finished.StorageId, AbortToken);
+        stored!.StatusName.Should().Be(StatusName.Succeeded);
+        stored.NextRetryAt.Should().BeNull();
+        (await _PickUpRetriesAsync(storage, published: false))
+            .Should()
+            .NotContain(m => m.StorageId == finished.StorageId);
+    }
+
     private async Task<MediumMessage> _StoreRetryDueAsync(IDataStorage storage, bool published, string name)
     {
         var message = published

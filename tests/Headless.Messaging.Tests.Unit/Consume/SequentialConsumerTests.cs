@@ -99,9 +99,11 @@ public sealed class SequentialConsumerTests : TestBase
         clients.Should().ContainSingle().Which.Request.Concurrency.Should().Be(1);
     }
 
-    [Fact]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Guarantee("MSG-LANE-05")]
-    public async Task should_hold_a_row_that_waits_behind_its_key_from_retry_pickup()
+    public async Task should_hold_a_row_that_waits_behind_its_key_from_retry_pickup(bool successWriteLandsLate)
     {
         // given
         var probe = new PipelineProbe { Behavior = _HoldUntilReleased };
@@ -135,10 +137,27 @@ public sealed class SequentialConsumerTests : TestBase
         claimable.Should().BeEmpty("the pickup of a row waiting behind its key keeps being put off");
         probe.Attempts("a-2").Should().Be(0);
 
-        // and: it runs once, in its turn
+        // and: it runs once, in its turn, even when its success write reaches the store minutes after the handler
         _Release("a-1");
+        await host.WithinBoundAsync(probe.WhenAttemptsAsync("a-2", 1), AbortToken);
+        var successWriteDelay = successWriteLandsLate ? TimeSpan.FromMinutes(3) : TimeSpan.Zero;
+        if (successWriteLandsLate)
+        {
+            host.Faults.DelayStoreCommit(StorageOperation.ChangeReceiveRetryState, successWriteDelay);
+        }
+
         _Release("a-2");
         await host.WithinBoundAsync(probe.WhenCompletedAsync("a-2", 1), AbortToken);
+
+        // The pipeline writes the outcome after the handler returns, on its own task, so wait for the stored row.
+        var finished = host.WaitForEveryRowAsync(static row => row.StatusName == StatusName.Succeeded, AbortToken);
+        var landBy = host.Clock.GetUtcNow() + successWriteDelay + PipelineHosts.PollInterval;
+        while (!finished.IsCompleted && host.Clock.GetUtcNow() < landBy)
+        {
+            await host.RunRetryPickupAsync(PipelineHosts.PollInterval, AbortToken);
+        }
+
+        await host.WithinBoundAsync(finished, AbortToken);
         await host.RunForAsync(TimeSpan.FromMinutes(2), AbortToken);
         probe.Attempts("a-2").Should().Be(1);
         (await host.ReceivedRowsAsync(AbortToken)).Should().OnlyContain(row => row.StatusName == StatusName.Succeeded);
