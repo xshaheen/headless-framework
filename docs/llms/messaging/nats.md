@@ -53,7 +53,7 @@ setup.UseNats(options => options.UseConnection(sp => sp.GetRequiredService<NATS.
 
 ### Subjects, streams, and durables
 
-- **Subjects.** Bus publishes to `headless.bus.{logical-name}`. Queue publishes to `headless.queue.{logical-name}`. Every name includes `MessagingOptions.MessageNamePrefix` when set.
+- **Subjects.** Bus publishes to `headless.bus.{logical-name}`. Queue publishes to `headless.queue.{logical-name}`. Every name includes `MessagingOptions.MessageNamePrefix` when set. To subscribe from code outside Headless, get the subject from `NatsSubjectResolver` ([subjects for code outside Headless](#subjects-for-code-outside-headless)).
 - **Host prefix.** With `Headless:Prefix` set to `wt1`, subjects start with `wt1.`, derived and `Own` streams with `wt1_`, and durables with `wt1_`; `Bind` streams and external subjects keep their names. See [host prefix](transports.md#host-prefix).
 - **Durables.** A Bus consumer identity has one `bus_{consumer-identity}` durable on each stream it reads, filtering on the subjects of every message it consumes there. Filtering on more than one subject needs NATS server 2.10 or later; an older server fails the consumer's start instead of delivering the whole stream. A Queue message has one shared `queue-{logical-name}` durable.
 - **Which stream holds a message.** The stream declared in `NatsMessagingOptions.Streams` whose subjects cover the message's subject. Otherwise a derived stream `headless-{lane}-{key}`, where the key is the message name's first dot-separated segment. A derived stream carries the wildcard `headless.{lane}.{key}.>`, plus the bare `headless.{lane}.{key}` only for a message named exactly the key, so every host asks for the same subjects. Consumer filters stay exact per message.
@@ -90,6 +90,39 @@ The comparison covers only fields the provider or your `StreamOptions` callback 
 - A `StreamCreateTimeout` (default 30 s) that expires during a publish-time ensure fails that publish with `PublisherSentFailedException`. Only your own cancellation propagates as `OperationCanceledException`.
 - On an interest-retained Bus stream with no consumer yet, a publish is discarded. The first ensure that finds no consumer logs one warning per stream (EventId 17, `NatsInterestStreamWithoutConsumer`). Start Bus consumers before publishers, or send a message that must wait for its consumer on the Queue lane.
 - To keep environments apart on one NATS server, give each its own `Headless:Prefix` (see [host prefix](transports.md#host-prefix)) or its own NATS account. Only an account separates credentials.
+
+### Subjects for code outside Headless
+
+When a worker in another language, a hand-declared stream, or a NATS CLI subscription must read what this host publishes, get the subject from `NatsSubjectResolver`. Do not hand-build `"headless.bus." + name`: that string drops the host prefix (`Headless:Prefix` moves every subject under `{prefix}.headless`), `MessagingOptions.MessageNamePrefix`, and shard tokens, so the subscriber silently receives nothing in a prefixed environment.
+
+`UseNats(...)` registers `NatsSubjectResolver` as a singleton. It returns:
+
+| Member | Returns |
+| --- | --- |
+| `Root` | `headless`, or `{prefix}.headless` under a host prefix |
+| `LaneRoot(lane)` | `{root}.bus` or `{root}.queue`. Append `.>` for every message the host publishes on the lane, or more tokens and `*` for a narrower filter |
+| `Subject<TMessage>(lane)` | The subject of a contract declared with `Message<TMessage>(name)`, `MessageNamePrefix` included. Throws `InvalidOperationException` when the contract is not declared on the lane |
+| `Subject(lane, messageName)` | The subject of an effective message name (with `MessageNamePrefix` already applied) |
+| `Subject(lane, messageName, shard)` | The subject one shard publishes to: `{subject}.{shard}`. Subscribe to `{subject}.>` for every shard |
+
+Every `Subject` overload throws `InvalidOperationException` for a message bound with `ExternalSubject(...)`, because it publishes to its external subject instead.
+
+```csharp
+using Headless.Messaging.Nats;
+
+var subjects = provider.GetRequiredService<NatsSubjectResolver>();
+
+// headless.bus.orders.placed, or wt1.headless.bus.orders.placed with Headless:Prefix = wt1
+var placed = subjects.Subject<OrderPlaced>(MessageLane.Bus);
+
+// A filter for every Bus message this host publishes, and a narrower wildcard filter.
+var everyBusMessage = $"{subjects.LaneRoot(MessageLane.Bus)}.>";
+var runLifecycle = $"{subjects.LaneRoot(MessageLane.Bus)}.app.*.runs.*.lifecycle";
+```
+
+Hand the strings to the other worker through its configuration. The other worker consumes from a stream that covers the subjects: declare it with `Streams.Own` or `Streams.Bind` here, or read the derived `headless-{lane}-{key}` stream.
+
+**Verify:** resolve the subjects in the host's own test with the same `Headless:Prefix` the environment uses, and assert the value the worker is configured with. At run time, `nats sub '<subject>'` on the resolved subject shows each message the host publishes.
 
 ### Shards
 

@@ -37,7 +37,7 @@ public interface ISettingManager
     );
 
     /// <summary>Returns the current values for a set of named settings.</summary>
-    /// <param name="settingNames">The set of setting names to resolve.</param>
+    /// <param name="settingNames">The setting names to resolve. Duplicate names resolve once.</param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns>
     /// A dictionary keyed by setting name. Settings that have no value still appear in the
@@ -46,7 +46,7 @@ public interface ISettingManager
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
     Task<Dictionary<string, SettingValue>> GetAllAsync(
-        HashSet<string> settingNames,
+        IReadOnlyCollection<string> settingNames,
         CancellationToken cancellationToken = default
     );
 
@@ -71,7 +71,7 @@ public interface ISettingManager
     );
 
     /// <summary>Returns the values of a set of named settings from a specific provider.</summary>
-    /// <param name="settingNames">The set of setting names to resolve.</param>
+    /// <param name="settingNames">The setting names to resolve. Duplicate names resolve once.</param>
     /// <param name="providerName">The name of the provider to query.</param>
     /// <param name="providerKey">
     /// A provider-specific discriminator (e.g. a tenant ID or user ID). When <see langword="null"/>,
@@ -84,7 +84,7 @@ public interface ISettingManager
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns>A read-only list of <see cref="SettingValue"/> instances for the requested settings that resolved.</returns>
     /// <remarks>
-    /// Prefer this over <see cref="GetAllAsync(HashSet{string}, CancellationToken)"/> when the values
+    /// Prefer this over <see cref="GetAllAsync(IReadOnlyCollection{string}, CancellationToken)"/> when the values
     /// belong to one scope rather than to the caller. The name-only overload walks the whole provider
     /// chain, so a per-user or per-tenant value can shadow an application-wide one, which is wrong for
     /// a value that is meant to be the same for everybody.
@@ -92,7 +92,7 @@ public interface ISettingManager
     /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
     Task<IReadOnlyList<SettingValue>> GetAllAsync(
-        HashSet<string> settingNames,
+        IReadOnlyCollection<string> settingNames,
         string providerName,
         string? providerKey = null,
         bool fallback = true,

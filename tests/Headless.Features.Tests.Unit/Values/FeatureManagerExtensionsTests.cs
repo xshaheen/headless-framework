@@ -24,10 +24,10 @@ public sealed class FeatureManagerExtensionsTests : TestBase
                 return new FeatureValue(name, value, Provider: null);
             });
         _featureManager
-            .GetAllAsync(Arg.Any<IReadOnlySet<string>>(), AbortToken)
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), AbortToken)
             .Returns(call =>
             {
-                var names = call.ArgAt<IReadOnlySet<string>>(0);
+                var names = call.ArgAt<IReadOnlyCollection<string>>(0);
 
                 return names.ToDictionary(
                     name => name,
@@ -54,7 +54,7 @@ public sealed class FeatureManagerExtensionsTests : TestBase
 
         // then — one GetAllAsync carries both names; no per-name GetAsync ran
         result.Should().BeTrue();
-        await _featureManager.Received(1).GetAllAsync(Arg.Any<IReadOnlySet<string>>(), AbortToken);
+        await _featureManager.Received(1).GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), AbortToken);
         await _featureManager
             .DidNotReceive()
             .GetAsync(
@@ -102,7 +102,7 @@ public sealed class FeatureManagerExtensionsTests : TestBase
         // given — the batch omits the name, which is what GetAllAsync does for an undefined feature, and the
         // manager's single-name read reports it as not defined
         _featureManager
-            .GetAllAsync(Arg.Any<IReadOnlySet<string>>(), Arg.Any<CancellationToken>())
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<string, FeatureValue>(StringComparer.Ordinal));
         _featureManager
             .GetAsync("Missing", Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
@@ -146,7 +146,7 @@ public sealed class FeatureManagerExtensionsTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
-        await _featureManager.Received(1).GetAllAsync(Arg.Any<IReadOnlySet<string>>(), AbortToken);
+        await _featureManager.Received(1).GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), AbortToken);
         await _featureManager
             .DidNotReceive()
             .GetAsync(
