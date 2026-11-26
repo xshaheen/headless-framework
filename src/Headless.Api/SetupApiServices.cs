@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.IO.Compression;
+using System.Text.Json;
 using Headless.Checks;
 using Headless.Http;
 using Headless.MultiTenancy;
 using Headless.Serializer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -107,6 +109,19 @@ public static class SetupApiServices
                     // localization has unwound, so the default detail needs the request culture re-applied.
                     using var cultureScope = RequestCultureScope.Enter(context.HttpContext);
                     var creator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+
+                    // Since ASP.NET Core 11 (dotnet/aspnetcore#66519) a Minimal API body that fails to parse is answered
+                    // here with a validation problem carrying the JsonException message under errors["$"]. It is the
+                    // same unbindable body that ThrowOnBadRequest answers with bad-request, and the parser message
+                    // names types and properties, so it gets the bad-request problem instead.
+                    if (
+                        context.Exception is JsonException
+                        && context.ProblemDetails.Status == StatusCodes.Status400BadRequest
+                    )
+                    {
+                        context.ProblemDetails = creator.BadRequest();
+                    }
+
                     creator.Normalize(context.ProblemDetails);
                 };
             });
