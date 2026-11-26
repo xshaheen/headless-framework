@@ -59,7 +59,7 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
         await _PublishNativeAsync(host, """{"value":"anonymous"}""", messageId: null, producedAt: null);
 
         // then
-        await _WaitForQueueDepthAsync(host.QueueName + ".dlq", 1);
+        await _WaitForQueueDepthAsync("headless_dlq." + host.QueueName, 1);
         await _WaitForQueueDepthAsync(host.QueueName, 0);
         host.Consumer.Received.Should().BeEmpty();
     }
@@ -75,7 +75,7 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
         await _PublishNativeAsync(host, "{not json", messageId, producedAt: null);
 
         // then
-        await _WaitForQueueDepthAsync(host.QueueName + ".dlq", 1);
+        await _WaitForQueueDepthAsync("headless_dlq." + host.QueueName, 1);
         await _WaitForQueueDepthAsync(host.QueueName, 0);
         var poisoned = await _WaitForReceivedRowAsync(host, messageId);
         poisoned.StatusName.Should().Be(StatusName.Failed);

@@ -5,10 +5,8 @@ using Headless.Redis;
 namespace Headless.Caching.Scripts;
 
 /// <summary>
-/// Compare-and-set write: verifies the live value matches the caller's expected concurrency stamp before writing
-/// the framed entry with its key TTL. Used only when a write carries an <c>ExpectedConcurrencyStamp</c> (a
-/// factory write derived from an existing physical entry); plain writes use a direct SET. Family-2 tag/clear
-/// invalidation reads timestamp markers, so this script no longer maintains any reverse tag index. A non-positive
+/// Writes a framed entry and clears any native generation metadata. A write carrying an
+/// <c>ExpectedConcurrencyStamp</c> first verifies the live value matches the stamp. A non-positive
 /// <c>@keyTtlMs</c> deletes the key instead of writing it, under the same compare, so a write that is already expired
 /// cannot delete a value a concurrent writer stored after the caller read the entry. An empty <c>@keyTtlMs</c> writes
 /// the key without a TTL, for an entry that never expires.
@@ -46,21 +44,29 @@ internal sealed class CacheTaggedSetScriptDefinition : RedisScriptDefinition
               end
             end
 
-            -- RedisValue.EmptyString is the no-expiry sentinel passed for @keyTtlMs.
-            if @keyTtlMs == '' then
-              redis.call('set', @key, @value)
-              return 1
-            end
-
             local keyTtlMs = tonumber(@keyTtlMs)
-
-            if keyTtlMs <= 0 then
-              redis.call('del', @key)
+            if keyTtlMs and keyTtlMs <= 0 then
+              redis.call('del', @key, @generationKey)
               return 1
             end
 
-            redis.call('set', @key, @value, 'PX', keyTtlMs)
+            local args = {}
+            if keyTtlMs then
+              args[1] = 'PX'
+              args[2] = keyTtlMs
+            elseif @keyTtlMs == 'KEEPTTL' then
+              args[1] = 'KEEPTTL'
+            end
 
+            if @condition ~= '' then
+              args[#args + 1] = @condition
+            end
+
+            if not redis.call('set', @key, @value, unpack(args)) then
+              return 0
+            end
+
+            redis.call('del', @generationKey)
             return 1
             """
         ) { }

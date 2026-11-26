@@ -179,16 +179,16 @@ public sealed class MessagingModuleSourcesTests : TestBase
     }
 
     [Fact]
-    public async Task should_stream_an_outbox_change_under_the_outbox_name()
+    public async Task should_stream_outbox_changes_under_the_outbox_name_with_one_projection_read()
     {
         // given
         await using var services = _MainStore(out var primary);
         var storageId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
         var markedAt = _time.GetUtcNow();
         var outbox = Substitute.For<IDataStorage>();
-        var monitoring = Substitute.For<IMonitoringApi>();
-        var row = MessagingRows.Medium("invoice-2");
-        row.StorageId = storageId;
+        var monitoring = Substitute.For<IMonitoringApi, IStorageIdMonitoringApi>();
+        var exact = (IStorageIdMonitoringApi)monitoring;
         outbox
             .GetMessageChangeStartCursorAsync(Arg.Any<CancellationToken>())
             .Returns(MessageChangeCursor.StartAt(null));
@@ -210,22 +210,44 @@ public sealed class MessagingModuleSourcesTests : TestBase
                         ChangedAt = markedAt,
                         Status = StatusName.Failed,
                     },
+                    new MessageChange
+                    {
+                        Kind = MessageChangeKind.Published,
+                        Id = otherId,
+                        ChangedAt = markedAt.AddTicks(1),
+                        Status = StatusName.Succeeded,
+                    },
                 ],
                 Cursor = call.Arg<MessageChangeCursor>(),
             });
-        monitoring
-            .GetPublishedMessagesAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns([row]);
-        monitoring
-            .ListMessagesAsync(
-                Arg.Any<MessageListQuery>(),
-                Arg.Any<MessageListPosition?>(),
-                Arg.Any<int>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(new MessageListPage { Items = [] });
+        exact
+            .GetMessageViewsAsync(MessageType.Publish, Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new StoredMessageView(
+                    new MessageView
+                    {
+                        StorageId = storageId,
+                        MessageId = "invoice-2",
+                        Version = "v1",
+                        Name = "invoice.sent",
+                        StatusName = StatusName.Failed,
+                    },
+                    "InvalidOperationException: broker refused"
+                ),
+                new StoredMessageView(
+                    new MessageView
+                    {
+                        StorageId = otherId,
+                        MessageId = "invoice-3",
+                        Version = "v1",
+                        Name = "invoice.sent",
+                        StatusName = StatusName.Succeeded,
+                    },
+                    null
+                ),
+            ]);
         outbox.GetMonitoringApi().Returns(monitoring);
-        var module = _Module(primary, outbox);
+        var module = _Module(primary, outbox, storeTimeout: Timeout.InfiniteTimeSpan);
         var cursor = await module.GetStartCursorAsync(AbortToken);
 
         // when
@@ -233,11 +255,85 @@ public sealed class MessagingModuleSourcesTests : TestBase
 
         // then
         batch.UnavailableSources.Should().BeEmpty();
-        var change = batch.Changes.Should().ContainSingle().Subject;
-        change.Target.Id.Should().Be($"node-a~billing~{storageId:D}");
+        batch
+            .Changes.Select(static item => item.Target.Id)
+            .Should()
+            .Equal($"node-a~billing~{storageId:D}", $"node-a~billing~{otherId:D}");
+        var change = batch.Changes[0];
         change.Target.Kind.Should().Be("published");
         change.Version.Should().Be(markedAt.UtcTicks.ToString("D19", CultureInfo.InvariantCulture));
-        change.Projection!.Value.GetProperty("store").GetString().Should().Be(_Outbox);
+        var projection = change.Projection!.Value;
+        projection.GetProperty("store").GetString().Should().Be(_Outbox);
+        projection.GetProperty("reason").GetString().Should().Be("InvalidOperationException: broker refused");
+        await exact
+            .Received(1)
+            .GetMessageViewsAsync(
+                MessageType.Publish,
+                Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 2 && ids[0] == storageId && ids[1] == otherId),
+                Arg.Any<CancellationToken>()
+            );
+        await monitoring
+            .DidNotReceive()
+            .GetPublishedMessagesAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>());
+        await monitoring
+            .DidNotReceive()
+            .ListMessagesAsync(
+                Arg.Any<MessageListQuery>(),
+                Arg.Any<MessageListPosition?>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task should_follow_every_custom_provider_page_until_it_finds_the_exact_storage_id(
+        bool exists,
+        bool hasMessageId
+    )
+    {
+        var storage = Substitute.For<IDataStorage>();
+        var monitoring = Substitute.For<IMonitoringApi>();
+        storage.GetMonitoringApi().Returns(monitoring);
+        var store = new MessagingStore("primary", storage, HoldsReceived: true);
+        var newer = new MessageView
+        {
+            StorageId = Guid.NewGuid(),
+            MessageId = "invoice-2",
+            Name = "invoice.sent",
+            Version = "v1",
+            StatusName = StatusName.Succeeded,
+        };
+        var older = new MessageView
+        {
+            StorageId = Guid.NewGuid(),
+            MessageId = newer.MessageId,
+            Name = newer.Name,
+            Version = newer.Version,
+            StatusName = StatusName.Failed,
+            IsHeld = true,
+        };
+        var continuation = MessageListPosition.Of(newer);
+        var messageId = hasMessageId ? older.MessageId : null;
+        var query = new MessageListQuery { MessageType = MessageType.Subscribe, MessageId = messageId };
+        monitoring
+            .ListMessagesAsync(query, after: null, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new MessageListPage { Items = [newer], Next = continuation });
+        monitoring
+            .ListMessagesAsync(query, continuation, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new MessageListPage { Items = exists ? [older] : [] });
+
+        var found = await MessagingViews.ReadViewAsync(
+            store,
+            MessageType.Subscribe,
+            older.StorageId,
+            messageId,
+            AbortToken
+        );
+
+        found.Should().BeSameAs(exists ? older : null);
     }
 
     [Fact]

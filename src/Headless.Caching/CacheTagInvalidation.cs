@@ -25,4 +25,7 @@ public static class CacheTagInvalidation
     {
         return newestMarker.HasValue && (createdAt is null || newestMarker.Value > createdAt.Value);
     }
+
+    internal static long FloorMarkerTicks(long ticks, long resolutionTicks) =>
+        resolutionTicks > 1 ? ticks - (ticks % resolutionTicks) : ticks;
 }

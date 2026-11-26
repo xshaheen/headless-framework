@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.UnitOfWork;
+using Headless.UnitOfWork.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -18,7 +19,9 @@ namespace Headless.UnitOfWork;
 /// transaction: both verbs are no-ops, and the unit only coordinates the commit edge.
 /// </remarks>
 internal sealed class EfUnitOfWorkResource(DbContext db, IDbContextTransaction transaction, bool owned)
-    : IRelationalUnitOfWorkResource
+    : IRelationalUnitOfWorkResource,
+        IUnitOfWorkCommitPreparation,
+        IUnitOfWorkCommitCleanup
 {
     public bool IsOwned { get; } = owned;
 
@@ -34,6 +37,9 @@ internal sealed class EfUnitOfWorkResource(DbContext db, IDbContextTransaction t
     public bool IsTransactionCompleted =>
         db.Database.CurrentTransaction is null || !ReferenceEquals(db.Database.CurrentTransaction, transaction);
 
+    public ValueTask PrepareCommitAsync(CancellationToken cancellationToken) =>
+        PostgreSqlCommitHealthCheck.VerifyAsync(Transaction, cancellationToken);
+
     public async ValueTask CommitAsync(CancellationToken cancellationToken)
     {
         if (!IsOwned)
@@ -41,8 +47,58 @@ internal sealed class EfUnitOfWorkResource(DbContext db, IDbContextTransaction t
             return;
         }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.DisposeAsync().ConfigureAwait(false);
+        var providerTransaction = Transaction;
+        var cancelledBeforeCommit = cancellationToken.IsCancellationRequested;
+
+        try
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            var reported = ClassifyCommitFault(providerTransaction, exception, cancelledBeforeCommit);
+            if (ReferenceEquals(reported, exception))
+            {
+                throw;
+            }
+
+            throw reported;
+        }
+    }
+
+    public ValueTask ReleaseAfterCommitAsync() => transaction.DisposeAsync();
+
+    internal static Exception ClassifyCommitFault(
+        DbTransaction providerTransaction,
+        Exception exception,
+        bool cancelledBeforeCommit
+    )
+    {
+        if (
+            exception is UnitOfWorkInDoubtException
+            || (cancelledBeforeCommit && exception is OperationCanceledException)
+        )
+        {
+            return exception;
+        }
+
+        // EF's commit call also runs transaction notifications and closes its connection. Even a database
+        // exception may come from that work, so its type cannot establish rollback once the transaction ends.
+        try
+        {
+            if (providerTransaction.Connection is not null)
+            {
+                // Npgsql keeps Connection populated after completion, but its IsolationLevel getter refuses a finished transaction.
+                _ = providerTransaction.IsolationLevel;
+                return exception;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // The provider no longer exposes a usable transaction, so the failure cannot prove rollback.
+        }
+
+        return new UnitOfWorkInDoubtException(exception);
     }
 
     public async ValueTask RollbackAsync(CancellationToken cancellationToken)

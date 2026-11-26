@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using System.Data.Common;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
+using Microsoft.Data.Sqlite;
 
 namespace Tests;
 
@@ -33,6 +35,66 @@ public sealed class UnitOfWorkBindingTests : TestBase
 
         (await binding.TryGetAsync(key)).Should().BeNull("a terminal unit is evicted");
         binding.TryGet(key, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_reserve_the_connection_and_refuse_new_work_until_commit_finishes()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        var commitGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resource = Substitute.For<IUnitOfWorkResource>();
+        resource.IsOwned.Returns(true);
+        resource.CommitAsync(AbortToken).Returns(new ValueTask(commitGate.Task));
+        var driver = new DbConnectionUnitOfWorkDriver<SqliteConnection>();
+        var factory = new UnitOfWorkFactory();
+        await using var unit = await factory.BeginAsync(_ => ValueTask.FromResult(resource), AbortToken);
+        DbConnectionUnitOfWorkBinding.Bind(connection, unit);
+        UnitOfWorkState? callbackState = null;
+        using var registration = unit.OnCompleted(() =>
+        {
+            callbackState = unit.State;
+
+            return ValueTask.CompletedTask;
+        });
+
+        var complete = unit.CompleteAsync(AbortToken).AsTask();
+
+        try
+        {
+            unit.State.Should().Be(UnitOfWorkState.Completing);
+            unit.Failure.Should().BeNull();
+            callbackState.Should().BeNull();
+
+            var read = () => connection.UnitOfWork();
+            var begin = () => driver.BeginAsync(factory, connection, IsolationLevel.Unspecified, AbortToken).AsTask();
+            var run = async () =>
+                await driver.RunAsync(
+                    factory,
+                    connection,
+                    (_, _) => Task.FromResult(true),
+                    IsolationLevel.Unspecified,
+                    AbortToken
+                );
+            var register = () => unit.OnCompleted(static () => ValueTask.CompletedTask);
+            var completeAgain = () => unit.CompleteAsync(AbortToken).AsTask();
+
+            read.Should().Throw<InvalidOperationException>().WithMessage("*completing*");
+            await begin.Should().ThrowAsync<InvalidOperationException>().WithMessage("*completing*");
+            await run.Should().ThrowAsync<InvalidOperationException>().WithMessage("*completing*");
+            register.Should().Throw<InvalidOperationException>().WithMessage("*Completing*");
+            await completeAgain.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already completing*");
+            await unit.RollbackAsync();
+            await resource.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            commitGate.SetResult();
+            await complete;
+        }
+
+        unit.State.Should().Be(UnitOfWorkState.Completed);
+        callbackState.Should().Be(UnitOfWorkState.Completed);
+        connection.UnitOfWork().Should().BeNull();
     }
 
     [Fact]

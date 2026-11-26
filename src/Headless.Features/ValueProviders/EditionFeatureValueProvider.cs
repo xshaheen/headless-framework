@@ -83,6 +83,33 @@ public sealed class EditionFeatureValueProvider(
     internal async ValueTask<EditionResolution> ResolveCurrentEditionAsync(CancellationToken cancellationToken)
     {
         var tenantId = currentTenant.Id;
+
+        if (_TryResolveCurrentEdition(tenantId, out var resolution))
+        {
+            return resolution;
+        }
+
+        var resolved = await editionResolver!.GetEditionIdAsync(tenantId!, cancellationToken).ConfigureAwait(false);
+
+        return new(resolved, IsKnown: true);
+    }
+
+    internal bool TryResolveLocalKey(string? providerKey, out string? resolvedKey)
+    {
+        if (providerKey is not null)
+        {
+            resolvedKey = providerKey;
+            return true;
+        }
+
+        var resolved = _TryResolveCurrentEdition(currentTenant.Id, out var resolution);
+        resolvedKey = resolution.EditionId;
+
+        return resolved;
+    }
+
+    private bool _TryResolveCurrentEdition(string? tenantId, out EditionResolution resolution)
+    {
         var principal = principalAccessor.Principal;
         var principalDescribesTenant =
             principal?.Identity is not null
@@ -96,18 +123,19 @@ public sealed class EditionFeatureValueProvider(
 
         if (claimEdition is not null)
         {
-            return new(claimEdition, IsKnown: true);
+            resolution = new(claimEdition, IsKnown: true);
+            return true;
         }
 
         if (tenantId is not null && editionResolver is not null)
         {
-            var resolved = await editionResolver.GetEditionIdAsync(tenantId, cancellationToken).ConfigureAwait(false);
-
-            return new(resolved, IsKnown: true);
+            resolution = default;
+            return false;
         }
 
         // No tenant: the host has no edition. A principal of this tenant without the claim: the tenant has none.
-        return new(EditionId: null, IsKnown: tenantId is null || principalDescribesTenant);
+        resolution = new(EditionId: null, IsKnown: tenantId is null || principalDescribesTenant);
+        return true;
     }
 }
 

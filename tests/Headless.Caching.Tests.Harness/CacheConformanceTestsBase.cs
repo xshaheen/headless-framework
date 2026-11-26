@@ -1357,6 +1357,32 @@ public abstract class CacheConformanceTestsBase : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    public virtual async Task should_drop_counters_and_sets_with_flush_async()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var counterKey = Faker.Random.AlphaNumeric(10);
+        var setKey = Faker.Random.AlphaNumeric(11);
+        var expiration = TimeSpan.FromMinutes(5);
+        await cache.IncrementAsync(counterKey, 5L, expiration, AbortToken);
+        await cache.SetAddAsync(setKey, new[] { "before" }, expiration, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+
+        await cache.FlushAsync(AbortToken);
+
+        (await cache.GetAsync<long>(counterKey, AbortToken)).HasValue.Should().BeFalse();
+        (await cache.ExistsAsync(counterKey, AbortToken)).Should().BeFalse();
+        (await cache.GetAllAsync<long>([counterKey], AbortToken))[counterKey].HasValue.Should().BeFalse();
+
+        var set = await cache.GetSetAsync<string>(setKey, cancellationToken: AbortToken);
+        var counter = await cache.IncrementAsync(counterKey, 1L, expiration, AbortToken);
+        set.HasValue.Should().BeFalse();
+        counter.Should().Be(1);
+        (await cache.GetAsync<long>(counterKey, AbortToken)).Value.Should().Be(1L);
+        (await cache.ExistsAsync(counterKey, AbortToken)).Should().BeTrue();
+        (await cache.GetAllAsync<long>([counterKey], AbortToken))[counterKey].Value.Should().Be(1L);
+    }
+
     public virtual async Task should_add_only_new_set_members_and_compare_strings_case_sensitively()
     {
         await ResetAsync();

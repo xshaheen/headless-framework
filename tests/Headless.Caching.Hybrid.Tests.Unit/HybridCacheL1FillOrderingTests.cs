@@ -54,6 +54,74 @@ public sealed class HybridCacheL1FillOrderingTests : TestBase
         (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_invalidate_an_in_flight_first_l1_fill_only_when_the_tag_matches(bool matches)
+    {
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2 = new GatedRemoteCache(_timeProvider);
+        await using var cache = _CreateCache(l1, l2);
+        const string key = "entry";
+        const string tag = "entry-tag";
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] };
+        await l2.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        l2.ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var read = cache.GetAsync<string>(key, AbortToken).AsTask();
+        await l2.ReadStarted.Task.Bounded();
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        try
+        {
+            await cache.HandleInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = "peer", Tag = matches ? tag : "unrelated" },
+                AbortToken
+            );
+        }
+        finally
+        {
+            l2.ReadGate.SetResult();
+        }
+
+        (await read).Value.Should().Be("value");
+        (await l1.GetAsync<string>(key, AbortToken)).HasValue.Should().Be(!matches);
+    }
+
+    [Fact]
+    public async Task should_refill_from_l2_after_successful_compare_and_set_responses_arrive_out_of_order()
+    {
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2 = new GatedRemoteCache(_timeProvider);
+        await using var cache = _CreateCache(l1, l2);
+        const string key = "value";
+        var lifetime = TimeSpan.FromMinutes(5);
+        await l2.UpsertAsync(key, 1, lifetime, AbortToken);
+
+        var readGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var responseGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        l2.ReadResponseGate = readGate;
+        var coldRead = cache.GetAsync<int>(key, AbortToken).AsTask();
+        await l2.ReadSnapshotCaptured.Task.Bounded();
+
+        l2.ReplaceIfEqualResponseGate = responseGate;
+        var earlier = cache.TryReplaceIfEqualAsync(key, 1, 2, lifetime, AbortToken).AsTask();
+        try
+        {
+            await l2.ReplaceIfEqualCommitted.Task.Bounded();
+            l2.ReplaceIfEqualResponseGate = null;
+            (await cache.TryReplaceIfEqualAsync(key, 2, 3, lifetime, AbortToken)).Should().BeTrue();
+        }
+        finally
+        {
+            responseGate.TrySetResult();
+            readGate.TrySetResult();
+        }
+
+        (await earlier).Should().BeTrue();
+        (await coldRead).Value.Should().Be(1);
+        (await cache.GetAsync<int>(key, AbortToken)).Value.Should().Be(3);
+    }
+
     [Fact]
     public async Task should_drop_the_local_counter_after_an_increment_instead_of_writing_its_result()
     {

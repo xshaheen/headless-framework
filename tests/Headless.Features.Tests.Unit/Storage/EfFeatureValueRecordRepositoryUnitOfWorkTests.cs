@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless;
 using Headless.Caching;
 using Headless.Features;
 using Headless.Hosting;
@@ -12,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Storage;
 
@@ -34,6 +36,18 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
 
     public EfFeatureValueRecordRepositoryUnitOfWorkTests()
     {
+        _cache
+            .GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, CacheValue<FeatureValueCacheItem>>(StringComparer.Ordinal));
+        _cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<FeatureValueCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+
         var connectionString = $"Data Source={_databasePath};Pooling=False";
         _unitConnection = new SqliteConnection(connectionString);
 
@@ -83,6 +97,43 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
     }
 
     [Fact]
+    public async Task should_refresh_each_affected_provider_key_once_on_a_store_delete()
+    {
+        const string name = "Reports";
+        await using var owner = await _CreateOwnerAsync();
+        await Repository.InsertAsync(_Value(name), AbortToken);
+        await Repository.InsertAsync(new FeatureValueRecord(Guid.NewGuid(), name, "light", "Tenant", null), AbortToken);
+        _cache.ClearReceivedCalls();
+        var store = new FeatureValueStore(
+            Substitute.For<IFeatureDefinitionManager>(),
+            Repository,
+            Substitute.For<IGuidGenerator>(),
+            _cache,
+            NullLogger<FeatureValueStore>.Instance
+        );
+
+        await store.DeleteAsync(name, "Tenant", providerKey: null, AbortToken);
+
+        (await Repository.FindAllAsync(name, "Tenant", null, AbortToken)).Should().BeEmpty();
+        await _cache
+            .Received(1)
+            .TryInsertAsync(
+                FeatureValueCacheItem.CalculateCacheKey(name, "Tenant", null),
+                Arg.Is<FeatureValueCacheItem>(item => item.Value == null),
+                Arg.Any<TimeSpan?>(),
+                CancellationToken.None
+            );
+        await _cache
+            .Received(1)
+            .TryInsertAsync(
+                FeatureValueCacheItem.CalculateCacheKey(name, "Tenant", "t1"),
+                Arg.Is<FeatureValueCacheItem>(item => item.Value == null),
+                Arg.Any<TimeSpan?>(),
+                CancellationToken.None
+            );
+    }
+
+    [Fact]
     public async Task should_commit_inserts_updates_and_deletes_and_clear_the_cache_after_each_commit()
     {
         // given
@@ -120,11 +171,7 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         var key = FeatureValueCacheItem.CalculateCacheKey("Reports", "Tenant", "t1");
         await _cache
             .Received(3)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items => items.Keys.Single() == key),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .TryInsertAsync(key, Arg.Any<FeatureValueCacheItem>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -182,8 +229,9 @@ public sealed class EfFeatureValueRecordRepositoryUnitOfWorkTests : TestBase
         var stored = _Value("App.Theme");
         _cache
             .When(x =>
-                x.UpsertAllAsync(
-                    Arg.Any<IDictionary<string, FeatureValueCacheItem>>(),
+                x.TryInsertAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<FeatureValueCacheItem>(),
                     Arg.Any<TimeSpan?>(),
                     Arg.Any<CancellationToken>()
                 )

@@ -37,6 +37,9 @@ public readonly record struct CacheStoreEntry<T>(
     /// </summary>
     public DateTime? CreatedAt { get; init; }
 
+    // A decoded store frame can only distinguish births at the precision that store persisted.
+    internal long TagTimestampResolutionTicks { get; init; }
+
     /// <summary>
     /// Gets the optional UTC timestamp until which a fail-safe throttle holds back the factory for this entry. Only
     /// the fail-safe throttle restamp sets it; every other write clears it. Stores return it as stored and keep

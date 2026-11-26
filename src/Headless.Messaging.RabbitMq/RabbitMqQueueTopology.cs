@@ -19,7 +19,6 @@ namespace Headless.Messaging.RabbitMq;
 internal static class RabbitMqQueueTopology
 {
     internal const string DeadLetterExchangeSuffix = ".dlx";
-    internal const string DeadLetterQueueSuffix = ".dlq";
 
     /// <summary>Returns the dead-letter exchange the queues behind <paramref name="laneExchange"/> dead-letter to.</summary>
     public static string DeadLetterExchange(string laneExchange)
@@ -27,14 +26,6 @@ internal static class RabbitMqQueueTopology
         var exchange = laneExchange + DeadLetterExchangeSuffix;
         RabbitMqValidation.ValidateExchangeName(exchange);
         return exchange;
-    }
-
-    /// <summary>Returns the queue that keeps what <paramref name="queueName"/> dead-letters.</summary>
-    public static string DeadLetterQueue(string queueName)
-    {
-        var queue = queueName + DeadLetterQueueSuffix;
-        RabbitMqValidation.ValidateQueueName(queue);
-        return queue;
     }
 
     /// <summary>The <c>x-arguments</c> of a shared queue.</summary>
@@ -235,7 +226,7 @@ internal static class RabbitMqQueueTopology
     )
     {
         var deadLetterExchange = DeadLetterExchange(laneExchange);
-        var deadLetterQueue = DeadLetterQueue(queueName);
+        var deadLetterQueue = RabbitMqPhysicalAddress.DeadLetterQueue(queueName);
 
         await channel
             .ExchangeDeclareAsync(

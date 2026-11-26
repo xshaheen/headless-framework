@@ -37,6 +37,7 @@ public sealed partial class FactoryCacheCoordinator
             return;
         }
 
+        TrackFactoryPublication?.Invoke(true);
         var refreshTask = _RunEagerRefreshAsync(store, key, factory, options, releaser);
         _ObserveFaultedTask(refreshTask, key);
     }
@@ -114,7 +115,9 @@ public sealed partial class FactoryCacheCoordinator
                 ExpectedConcurrencyStamp = entry.ConcurrencyStamp,
                 // Gate write is a restamp of the still-fresh entry — preserve its original birth time.
                 CreatedAt = entry.CreatedAt,
+                TagTimestampResolutionTicks = entry.TagTimestampResolutionTicks,
                 IsRestamp = true,
+                IsFactoryWrite = true,
             };
 
             try
@@ -356,9 +359,25 @@ public sealed partial class FactoryCacheCoordinator
             // after a metadata-only re-arm the coordinator's embedded logical is no longer authoritative, so the
             // decision cannot be made here. CancellationToken.None: a caller cancellation must not abort the
             // best-effort re-arm of a value read that already succeeded.
-            await store
-                .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, CancellationToken.None)
-                .ConfigureAwait(false);
+            if (entry.ConcurrencyStamp is { } stamp && store is ISnapshotSlidingCacheStore snapshotStore)
+            {
+                await snapshotStore
+                    .TryRearmSlidingIfCurrentAsync(
+                        key,
+                        stamp,
+                        slidingExpiration,
+                        physicalExpiresAt,
+                        now,
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await store
+                    .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception exception)
         {

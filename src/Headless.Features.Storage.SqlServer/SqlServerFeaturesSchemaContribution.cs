@@ -6,12 +6,12 @@ using Headless.Sql.SqlServer;
 namespace Headless.Features.SqlServer;
 
 /// <summary>
-/// The Features feature's schema contribution for SQL Server: the value, definition, and group tables and their
-/// indexes, as one idempotent step the Headless schema runner applies.
+/// The Features feature's schema contribution for SQL Server: value, definition, and group tables, indexes, and ordinal scope keys.
 /// </summary>
 internal static class SqlServerFeaturesSchemaContribution
 {
     public const string StepVersion = "1";
+    private const string _OrdinalScopeStepVersion = "2";
 
     private static readonly RelationalFeaturesTables _Defaults = new(
         SqlServerDialect.Instance,
@@ -94,6 +94,20 @@ internal static class SqlServerFeaturesSchemaContribution
             """
         );
 
+        // A tenant identifier is ordinal in the catalog and in cache keys, independent of the database collation.
+        var ordinalScopeSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            DROP INDEX IF EXISTS [IX_{valuesName}_ProviderName_ProviderKey] ON {valuesTable};
+            DROP INDEX IF EXISTS [IX_{valuesName}_Name_ProviderName_ProviderKey] ON {valuesTable};
+            DROP INDEX IF EXISTS [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable};
+            ALTER TABLE {valuesTable} ALTER COLUMN [ProviderKey] nvarchar({lengths.FeatureValuesProviderKeyMaxLength}) COLLATE Latin1_General_100_BIN2 NULL;
+            CREATE NONCLUSTERED INDEX [IX_{valuesName}_ProviderName_ProviderKey] ON {valuesTable} ([ProviderName] ASC, [ProviderKey] ASC);
+            CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [ProviderKey] IS NOT NULL;
+            CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
+            """
+        );
+
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Features",
@@ -107,6 +121,11 @@ internal static class SqlServerFeaturesSchemaContribution
             steps:
             [
                 new SchemaStep(StepVersion, "Create the value, definition, and group tables and their indexes.", sql),
+                new SchemaStep(
+                    _OrdinalScopeStepVersion,
+                    "Compare feature value scope keys ordinally.",
+                    ordinalScopeSql
+                ),
             ],
             hostStateTables: [definitionsName, groupsName],
             objects:

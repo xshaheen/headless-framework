@@ -405,23 +405,7 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
             : new EfConflictReplayExecutionStrategy(strategy, retry);
 
         return UnitOfWorkRunner.RunAsync(
-            async () =>
-            {
-                // A context (or the connection beneath it) that already carries a live unit joins it: the block
-                // runs inline inside the owner's unit, outside any strategy of its own, and a block that ends
-                // the unit is refused once it returns.
-                if (await DbContextUnitOfWorkBinding.TryGetAsync(db).ConfigureAwait(false) is { } joined)
-                {
-                    return joined;
-                }
-
-                // Refused here, before the strategy, so the caller sees the EF-specific remedy: the connection-owned
-                // unit came from a raw-ADO begin, which an EF block can neither own nor join (the context would
-                // begin a second transaction on the connection the ADO unit already owns).
-                await DbContextUnitOfWorkBinding.ThrowIfConnectionBoundAsync(db).ConfigureAwait(false);
-
-                return null;
-            },
+            () => DbContextUnitOfWorkBinding.TryGetForRunAsync(db),
             // Retries are legal here: this begin runs inside the strategy, so the retrying check is suppressed and
             // a transient failure replays with a fresh unit and transaction.
             ct =>

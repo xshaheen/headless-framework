@@ -4,6 +4,8 @@ using Headless.Caching;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -20,6 +22,122 @@ public sealed class RedisCacheClusterTests(RedisClusterCacheFixture fixture) : T
     private const int _MaxInFlightSlotCommands = 16;
     private const int _KeyCount = 200;
     private static readonly TimeSpan _Expiration = TimeSpan.FromMinutes(5);
+
+    [Fact]
+    public async Task should_flush_native_values_across_slots_without_changing_their_redis_keys()
+    {
+        await fixture.FlushAllAsync(AbortToken);
+        var clock = new FakeTimeProvider();
+        using var origin = _CreateCache(clock);
+        using var peer = _CreateCache(clock);
+        const string counterKey = "native:}counter";
+        const string setKey = "native:{set}:members";
+        var database = fixture.ConnectionMultiplexer.GetDatabase();
+        await origin.IncrementAsync(counterKey, 5L, expiration: null, AbortToken);
+        await origin.SetAddAsync(setKey, new[] { "old" }, expiration: null, AbortToken);
+
+        await origin.FlushAsync(AbortToken);
+
+        (await database.StringGetAsync(counterKey)).ToString().Should().Be("5");
+        (await database.SortedSetLengthAsync(setKey)).Should().Be(1);
+        (await peer.GetSetAsync<string>(setKey, cancellationToken: AbortToken)).HasValue.Should().BeFalse();
+        (await peer.SetRemoveAsync(setKey, new[] { "old" }, expiration: null, AbortToken)).Should().Be(0);
+        (await peer.SetIfHigherAsync(counterKey, 1L, expiration: null, AbortToken)).Should().Be(1);
+        (await peer.SetAddAsync(setKey, new[] { "new" }, expiration: null, AbortToken)).Should().Be(1);
+        (await origin.GetSetAsync<string>(setKey, cancellationToken: AbortToken)).Value.Should().Equal("new");
+
+        // A second flush has a distinct generation even when the clock reads the same timestamp.
+        await origin.FlushAsync(AbortToken);
+
+        (await peer.SetIfLowerAsync(counterKey, 2L, expiration: null, AbortToken)).Should().Be(2);
+        (await peer.GetSetAsync<string>(setKey, cancellationToken: AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_flush_native_counters_on_each_same_timestamp_hybrid_flush()
+    {
+        await fixture.FlushAllAsync(AbortToken);
+        // The native generation can advance past the last timestamp representable in a Redis frame.
+        var clock = new FakeTimeProvider(DateTimeOffset.MaxValue);
+        using var redis = _CreateCache(clock);
+        using var local = new InMemoryCache(clock, new InMemoryCacheOptions());
+        var backplane = Substitute.For<IHybridCacheBackplane>();
+        await using var hybrid = new HybridCache(
+            local,
+            redis,
+            backplane,
+            new HybridCacheOptions(),
+            timeProvider: clock
+        );
+        const string key = "hybrid:{native}:counter";
+
+        await hybrid.FlushAsync(AbortToken);
+        (await redis.IncrementAsync(key, 5L, expiration: null, AbortToken)).Should().Be(5);
+        await hybrid.FlushAsync(AbortToken);
+
+        (await redis.GetAsync<long>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await redis.IncrementAsync(key, 2L, expiration: null, AbortToken)).Should().Be(2);
+        (await redis.GetAsync<long>(key, AbortToken)).Value.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_apply_each_flush_sequence_once_and_skip_older_timestamps()
+    {
+        await fixture.FlushAllAsync(AbortToken);
+        var clock = new FakeTimeProvider();
+        var timestamp = clock.GetUtcNow();
+        using var redis = _CreateCache(clock);
+        const string key = "hybrid:{dedup}:counter";
+        await redis.WriteSequencedRemoveMarkerAsync(timestamp, "first", 1, AbortToken);
+        await redis.WriteSequencedRemoveMarkerAsync(timestamp, "first", 2, AbortToken);
+        await redis.IncrementAsync(key, 5L, expiration: null, AbortToken);
+
+        await redis.WriteSequencedRemoveMarkerAsync(timestamp, "first", 2, AbortToken);
+        await redis.WriteSequencedRemoveMarkerAsync(timestamp, "first", 1, AbortToken);
+        (await redis.GetAsync<long>(key, AbortToken)).Value.Should().Be(5);
+
+        await redis.WriteSequencedRemoveMarkerAsync(timestamp, "second", 1, AbortToken);
+        (await redis.GetAsync<long>(key, AbortToken)).HasValue.Should().BeFalse();
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await redis.WriteSequencedRemoveMarkerAsync(clock.GetUtcNow(), "first", 3, AbortToken);
+        await redis.IncrementAsync(key, 2L, expiration: null, AbortToken);
+        await redis.WriteSequencedRemoveMarkerAsync(timestamp, "first", 4, AbortToken);
+        (await redis.GetAsync<long>(key, AbortToken)).Value.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_remove_native_generation_when_replacing_counters_with_frames()
+    {
+        await fixture.FlushAllAsync(AbortToken);
+        using var cache = _CreateCache();
+        await cache.FlushAsync(AbortToken);
+        const string scalarKey = "overwrite:native:scalar";
+        const string batchKey = "overwrite:native:batch";
+        const string insertKey = "overwrite:native:insert";
+        await cache.IncrementAsync(scalarKey, 5L, expiration: null, AbortToken);
+        await cache.IncrementAsync(batchKey, 5L, expiration: null, AbortToken);
+        await cache.IncrementAsync(insertKey, 5L, expiration: null, AbortToken);
+
+        await cache.UpsertAsync(scalarKey, "framed", _Expiration, AbortToken);
+        await cache.UpsertAllAsync(
+            new Dictionary<string, string>(StringComparer.Ordinal) { [batchKey] = "framed" },
+            _Expiration,
+            AbortToken
+        );
+
+        var database = fixture.ConnectionMultiplexer.GetDatabase();
+        await database.KeyDeleteAsync(insertKey);
+        (await cache.TryInsertAsync(insertKey, "framed", _Expiration, AbortToken)).Should().BeTrue();
+
+        // A subsequent raw value that carries no generation must not inherit the overwritten counter's stamp.
+        await database.StringSetAsync(scalarKey, 7L);
+        await database.StringSetAsync(batchKey, 7L);
+        await database.StringSetAsync(insertKey, 7L);
+
+        var values = await cache.GetAllAsync<long>([scalarKey, batchKey, insertKey], AbortToken);
+        values.Values.Should().OnlyContain(value => !value.HasValue);
+    }
 
     [Fact]
     public async Task should_write_every_key_when_upserting_keys_that_span_many_slots()
@@ -256,11 +374,11 @@ public sealed class RedisCacheClusterTests(RedisClusterCacheFixture fixture) : T
         await _ShouldExistAsync(pinned.Keys, exist: true);
     }
 
-    private RedisCache _CreateCache()
+    private RedisCache _CreateCache(TimeProvider? timeProvider = null)
     {
         return new RedisCache(
             new SystemJsonSerializer(),
-            TimeProvider.System,
+            timeProvider ?? TimeProvider.System,
             new RedisCacheOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer },
             fixture.ScriptsLoader,
             LoggerFactory.CreateLogger<RedisCache>()

@@ -60,7 +60,9 @@ public interface IFactoryCacheStore
     /// <summary>Sets an entry with explicit expiration and per-entry metadata.</summary>
     /// <returns>
     /// <see langword="true"/> when the entry was committed; <see langword="false"/> when
-    /// <see cref="CacheStoreEntryWrite{T}.ExpectedConcurrencyStamp"/> did not match the live entry.
+    /// <see cref="CacheStoreEntryWrite{T}.ExpectedConcurrencyStamp"/> did not match the live entry or the store
+    /// declined the write. A standalone in-memory store declines a backdated tagged entry when earlier tag
+    /// invalidation history has been discarded.
     /// </returns>
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="key">The cache key.</param>

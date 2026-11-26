@@ -26,11 +26,15 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
     private int _state;
     private int _retryPrevented;
 
-    /// <summary>The current lifecycle state; the terminal claim is the only writer.</summary>
+    /// <summary>The lifecycle state published by the claim and, for completion, the outcome.</summary>
     internal UnitOfWorkState State => (UnitOfWorkState)Volatile.Read(ref _state);
 
     /// <summary>The failure that terminated the unit, or <see langword="null" /> until then.</summary>
-    internal UnitOfWorkFailure? Failure { get; private set; }
+    internal UnitOfWorkFailure? Failure
+    {
+        get => State == UnitOfWorkState.Failed ? field : null;
+        private set;
+    }
 
     /// <summary>The owned or observed resource, or <see langword="null" /> for a resource-less unit.</summary>
     internal IUnitOfWorkResource? Resource { get; } = resource;
@@ -114,13 +118,10 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
     }
 
     /// <summary>
-    /// Synchronously claims the completed terminal state and captures the drain work without running it. The
-    /// claim settles on the completer's thread before the asynchronous drain is scheduled, so a racing dispose
-    /// observes <see cref="UnitOfWorkState.Completed" /> and never rolls committed work back. The caller
-    /// drains via <see cref="DrainCompletedAsync" />.
+    /// Claims the unit for completion and captures the drain work. A racing dispose cannot claim rollback.
     /// </summary>
-    internal bool TryClaimCompleted(out UnitOfWorkTerminalClaim claim) =>
-        _TryClaim(UnitOfWorkState.Completed, failure: null, out claim);
+    internal bool TryClaimCompletion(out UnitOfWorkTerminalClaim claim) =>
+        _TryClaim(UnitOfWorkState.Completing, failure: null, out claim);
 
     /// <summary>
     /// Synchronously claims a failure terminal state and captures the drain work: rollback, abandon, scope
@@ -130,14 +131,13 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
         _TryClaim(UnitOfWorkState.Failed, failure, out claim);
 
     /// <summary>
-    /// Moves an already-completed claim to <see cref="UnitOfWorkState.Failed" /> after the resource commit
-    /// faulted, recording the failure. Only the completer calls this, on a claim it owns, so the transition
-    /// always applies.
+    /// Publishes the completion outcome after the provider releases its resource and before callbacks run.
+    /// Only the caller that claimed completion publishes the outcome.
     /// </summary>
-    internal void TransitionCompletedToFailed(UnitOfWorkFailure failure)
+    internal void PublishCompletionOutcome(UnitOfWorkFailure? failure)
     {
-        Interlocked.CompareExchange(ref _state, (int)UnitOfWorkState.Failed, (int)UnitOfWorkState.Completed);
         Failure = failure;
+        Volatile.Write(ref _state, (int)(failure is null ? UnitOfWorkState.Completed : UnitOfWorkState.Failed));
     }
 
     /// <summary>
@@ -193,21 +193,9 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
         _ThrowIfAny(exceptions);
     }
 
-    private bool _TryClaim(UnitOfWorkState terminalState, UnitOfWorkFailure? failure, out UnitOfWorkTerminalClaim claim)
+    private bool _TryClaim(UnitOfWorkState claimedState, UnitOfWorkFailure? failure, out UnitOfWorkTerminalClaim claim)
     {
         claim = default;
-
-        // The claim is the single state-transition authority: it moves Active -> terminal atomically so no
-        // other path (not even the drain) writes _state. A drain fault therefore can never strand the unit
-        // mid-transition, and a registration that acquires the gate after this point observes the terminal
-        // state and throws instead of being silently stranded.
-        if (
-            Interlocked.CompareExchange(ref _state, (int)terminalState, (int)UnitOfWorkState.Active)
-            != (int)UnitOfWorkState.Active
-        )
-        {
-            return false;
-        }
 
         List<CompletedRegistration> completedCallbacks;
         List<FailedRegistration> failedCallbacks;
@@ -215,6 +203,15 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
 
         lock (_gate)
         {
+            if (State != UnitOfWorkState.Active)
+            {
+                return false;
+            }
+
+            // Publish the reason before readers can observe Failed. The registration lock protects the claim and snapshot.
+            Failure = failure;
+            Volatile.Write(ref _state, (int)claimedState);
+
             // Deregistration is honored only up to the claim: the snapshot drops handles disposed while the
             // unit was active, and a handle disposed after this point is the documented no-op, so a callback
             // that won its place in the drain still runs.
@@ -228,7 +225,6 @@ internal sealed partial class UnitOfWork(IUnitOfWorkResource? resource, ILogger?
         }
 
         claim = new UnitOfWorkTerminalClaim(this, completedCallbacks, failedCallbacks, scopeState);
-        Failure = failure;
 
         return true;
     }

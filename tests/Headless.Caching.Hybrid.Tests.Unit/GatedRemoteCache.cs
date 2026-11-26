@@ -17,6 +17,10 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     /// <summary>When set, TryGetEntryAsync blocks on this gate (honoring the token) before reading.</summary>
     public TaskCompletionSource? ReadGate { get; set; }
 
+    public TaskCompletionSource? ReadResponseGate { get; set; }
+
+    public TaskCompletionSource ReadSnapshotCaptured { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>When set, SetEntryAsync blocks on this gate (honoring the token) before writing.</summary>
     public TaskCompletionSource? WriteGate { get; set; }
 
@@ -25,6 +29,11 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     /// writing, so tests can assert a caller returns before a backgrounded scalar/bulk L2 write completes.
     /// </summary>
     public TaskCompletionSource? UpsertGate { get; set; }
+
+    public TaskCompletionSource? ReplaceIfEqualResponseGate { get; set; }
+
+    public TaskCompletionSource ReplaceIfEqualCommitted { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>When set, every read (TryGetEntryAsync, GetWithExpirationAsync, …) throws this before the gate.</summary>
     public Exception? ReadFault { get; set; }
@@ -59,7 +68,14 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     {
         await _WaitReadGateAsync(cancellationToken);
 
-        return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, readOptions, cancellationToken);
+        var entry = await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, readOptions, cancellationToken);
+        if (ReadResponseGate is { } gate)
+        {
+            ReadSnapshotCaptured.TrySetResult();
+            await gate.Task.WaitAsync(cancellationToken);
+        }
+
+        return entry;
     }
 
     public async ValueTask<CacheStoreEntry<T>[]> TryGetAllEntriesAsync<T>(
@@ -240,7 +256,7 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         return _cache.TryReplaceAsync(key, value, expiration, cancellationToken);
     }
 
-    public ValueTask<bool> TryReplaceIfEqualAsync<T>(
+    public async ValueTask<bool> TryReplaceIfEqualAsync<T>(
         string key,
         T? expected,
         T? value,
@@ -248,7 +264,15 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         CancellationToken cancellationToken = default
     )
     {
-        return _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
+        var gate = ReplaceIfEqualResponseGate;
+        var replaced = await _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
+        if (gate is not null)
+        {
+            ReplaceIfEqualCommitted.TrySetResult();
+            await gate.Task.WaitAsync(cancellationToken);
+        }
+
+        return replaced;
     }
 
     public ValueTask<double> IncrementAsync(

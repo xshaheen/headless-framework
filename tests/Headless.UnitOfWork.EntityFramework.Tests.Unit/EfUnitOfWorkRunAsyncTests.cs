@@ -3,6 +3,7 @@
 using System.Data.Common;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -61,11 +62,17 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
         (await host.CountProbeRowsAsync()).Should().Be(1);
     }
 
-    [Fact]
-    public async Task should_not_replay_the_block_when_an_exception_is_reported_after_commit_started()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_report_in_doubt_when_a_commit_notification_throws(bool databaseFault)
     {
+        Exception commitFault = databaseFault
+            ? new SqliteException("Database error in a commit notification.", 19)
+            : new TransientMarkerException();
         await using var host = await EfUnitOfWorkHost.CreateAsync(
-            configureServices: services => services.AddSingleton<IInterceptor>(new CommitFailureInterceptor()),
+            configureServices: services =>
+                services.AddSingleton<IInterceptor>(new CommitFailureInterceptor(commitFault)),
             configureOptions: options =>
                 options.ReplaceService<IExecutionStrategyFactory, RetryExecutionStrategyFactory>()
         );
@@ -76,28 +83,28 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
             .Single();
         commitFailure.Arm();
         var operationCalls = 0;
-        var observed = false;
+        UnitOfWorkFailure? failure = null;
 
-        try
-        {
-            await session.Factory.RunAsync(
+        var act = () =>
+            session.Factory.RunAsync(
                 session.Db,
                 async (unitOfWork, ct) =>
                 {
                     operationCalls++;
+                    unitOfWork.OnFailed(outcome =>
+                    {
+                        failure = outcome;
+                        return ValueTask.CompletedTask;
+                    });
                     await session.Db.Probes.AddAsync(new ProbeRow { Name = "committed-once" }, ct);
                     await session.Db.SaveChangesAsync(ct);
                 },
                 cancellationToken: AbortToken
             );
-        }
-        catch (TransientMarkerException)
-        {
-            // The commit interceptor throws AFTER the SQLite commit finished; the outcome may be ambiguous.
-            observed = true;
-        }
 
-        observed.Should().BeTrue("the post-commit fault is surfaced to the caller");
+        var thrown = await act.Should().ThrowAsync<UnitOfWorkInDoubtException>();
+        thrown.Which.InnerException.Should().BeSameAs(commitFault);
+        (failure?.Reason).Should().Be(UnitOfWorkFailureReason.InDoubt);
         operationCalls.Should().Be(1, "the block must not be replayed after commit started");
         (await host.CountProbeRowsAsync()).Should().Be(1, "the row was committed before the fault");
     }
@@ -366,10 +373,9 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
     }
 
     /// <summary>
-    /// Throws a retryable marker after the provider's commit finished, simulating EF's
-    /// "commit outcome unknown" fault shape.
+    /// Throws after the provider's commit finished, so EF's commit call cannot establish the outcome.
     /// </summary>
-    private sealed class CommitFailureInterceptor : DbTransactionInterceptor
+    private sealed class CommitFailureInterceptor(Exception fault) : DbTransactionInterceptor
     {
         private int _armed;
         private int _thrown;
@@ -387,7 +393,7 @@ public sealed class EfUnitOfWorkRunAsyncTests : TestBase
         {
             if (Volatile.Read(ref _armed) != 0 && Interlocked.Exchange(ref _thrown, 1) == 0)
             {
-                throw new TransientMarkerException();
+                throw fault;
             }
 
             return Task.CompletedTask;

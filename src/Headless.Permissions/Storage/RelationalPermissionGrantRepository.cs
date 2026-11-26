@@ -73,6 +73,8 @@ internal sealed class RelationalPermissionGrantRepository(
         CancellationToken cancellationToken = default
     )
     {
+        var tenantId = _ValidateReadScope(providerName, providerKey);
+
         // The unique indexes allow one row per scope; the order picks the same one if a schema lacks them.
         var sql = $"{_select} WHERE {_name} = @Name AND {_byScope} AND {_byTenant} ORDER BY {_id};";
 
@@ -81,7 +83,7 @@ internal sealed class RelationalPermissionGrantRepository(
                 command =>
                 {
                     _AddFilter(command, "Name", _lengths.PermissionGrantsNameMaxLength, name);
-                    _AddScope(command, providerName, providerKey);
+                    _AddScope(command, providerName, providerKey, tenantId);
                 },
                 cancellationToken
             )
@@ -96,9 +98,11 @@ internal sealed class RelationalPermissionGrantRepository(
         CancellationToken cancellationToken = default
     )
     {
+        var tenantId = _ValidateReadScope(providerName, providerKey);
+
         return _ReadAsync(
             $"{_select} WHERE {_byScope} AND {_byTenant};",
-            command => _AddScope(command, providerName, providerKey),
+            command => _AddScope(command, providerName, providerKey, tenantId),
             cancellationToken
         );
     }
@@ -110,13 +114,14 @@ internal sealed class RelationalPermissionGrantRepository(
         CancellationToken cancellationToken
     )
     {
+        var tenantId = _ValidateReadScope(providerName, providerKey);
         var (connection, transaction) = _Enlist(unitOfWork);
 
         return _ReadAsync(
             connection,
             transaction,
             $"{_select} WHERE {_byScope} AND {_byTenant};",
-            command => _AddScope(command, providerName, providerKey),
+            command => _AddScope(command, providerName, providerKey, tenantId),
             cancellationToken
         );
     }
@@ -128,12 +133,14 @@ internal sealed class RelationalPermissionGrantRepository(
         CancellationToken cancellationToken = default
     )
     {
+        var tenantId = _ValidateReadScope(providerName, providerKey);
+
         if (names.Count == 0)
         {
             return Task.FromResult(new List<PermissionGrantRecord>());
         }
 
-        var (sql, bind) = _ByNames(names, providerName, providerKey);
+        var (sql, bind) = _ByNames(names, providerName, providerKey, tenantId);
 
         return _ReadAsync(sql, bind, cancellationToken);
     }
@@ -146,6 +153,7 @@ internal sealed class RelationalPermissionGrantRepository(
         CancellationToken cancellationToken
     )
     {
+        var tenantId = _ValidateReadScope(providerName, providerKey);
         var (connection, transaction) = _Enlist(unitOfWork);
 
         if (names.Count == 0)
@@ -153,7 +161,7 @@ internal sealed class RelationalPermissionGrantRepository(
             return Task.FromResult(new List<PermissionGrantRecord>());
         }
 
-        var (sql, bind) = _ByNames(names, providerName, providerKey);
+        var (sql, bind) = _ByNames(names, providerName, providerKey, tenantId);
 
         return _ReadAsync(connection, transaction, sql, bind, cancellationToken);
     }
@@ -165,6 +173,14 @@ internal sealed class RelationalPermissionGrantRepository(
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsPortableKey(providerName);
+        var tenantId = _GetTenantId();
+
+        foreach (var providerKey in providerKeys)
+        {
+            Argument.IsPortableKey(providerKey, paramName: nameof(providerKeys));
+        }
+
         if (names.Count == 0 || providerKeys.Count == 0)
         {
             return Task.FromResult(new List<PermissionGrantRecord>());
@@ -187,7 +203,7 @@ internal sealed class RelationalPermissionGrantRepository(
                 _dialect.AddListParameter(command, "Names", nameList, names);
                 _dialect.AddListParameter(command, "ProviderKeys", keyList, providerKeys);
                 _AddFilter(command, "ProviderName", _lengths.PermissionGrantsProviderNameMaxLength, providerName);
-                _AddTenant(command);
+                _AddTenant(command, tenantId);
             },
             cancellationToken
         );
@@ -223,8 +239,8 @@ internal sealed class RelationalPermissionGrantRepository(
         CancellationToken cancellationToken
     )
     {
-        var (connection, transaction) = _EnlistWrite(unitOfWork);
         var records = _Materialize(permissionGrants, cancellationToken);
+        var (connection, transaction) = _EnlistWrite(unitOfWork);
 
         if (records.Count == 0)
         {
@@ -275,9 +291,11 @@ internal sealed class RelationalPermissionGrantRepository(
             return;
         }
 
+        var tenantId = _GetTenantId();
         await using var connection = _dialect.CreateConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await _DeleteAsync(connection, transaction: null, permissionGrants, cancellationToken).ConfigureAwait(false);
+        await _DeleteAsync(connection, transaction: null, permissionGrants, tenantId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task DeleteManyEnlistedAsync(
@@ -286,6 +304,7 @@ internal sealed class RelationalPermissionGrantRepository(
         CancellationToken cancellationToken
     )
     {
+        var tenantId = permissionGrants.Count == 0 ? null : _GetTenantId();
         var (connection, transaction) = _EnlistWrite(unitOfWork);
 
         if (permissionGrants.Count == 0)
@@ -293,7 +312,8 @@ internal sealed class RelationalPermissionGrantRepository(
             return;
         }
 
-        await _DeleteAsync(connection, transaction, permissionGrants, cancellationToken).ConfigureAwait(false);
+        await _DeleteAsync(connection, transaction, permissionGrants, tenantId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task SaveAsync(
@@ -309,6 +329,7 @@ internal sealed class RelationalPermissionGrantRepository(
             return;
         }
 
+        var tenantId = deleted.Count == 0 ? null : _GetTenantId();
         await using var connection = _dialect.CreateConnection(options.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -316,7 +337,7 @@ internal sealed class RelationalPermissionGrantRepository(
         // The delete runs first because a replacement reuses the deleted row's unique key.
         if (deleted.Count > 0)
         {
-            await _DeleteAsync(connection, transaction, deleted, cancellationToken).ConfigureAwait(false);
+            await _DeleteAsync(connection, transaction, deleted, tenantId, cancellationToken).ConfigureAwait(false);
         }
 
         if (records.Count > 0)
@@ -340,7 +361,9 @@ internal sealed class RelationalPermissionGrantRepository(
     {
         Argument.IsNotNullOrEmpty(names);
         Argument.IsNotNull(expectedVersion);
+        var tenantId = _ValidateReadScope(providerName, providerKey);
         var records = _Materialize(inserted, cancellationToken);
+        var (sql, bind) = _ByNames(names, providerName, providerKey, tenantId);
 
         return await RelationalVersionedWrite
             .ExecuteAsync(
@@ -355,10 +378,8 @@ internal sealed class RelationalPermissionGrantRepository(
                         .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
                         .ConfigureAwait(false);
 
-                    var (sql, bind) = _ByNames(names, providerName, providerKey);
                     var current = await _ReadAsync(connection, transaction, sql, bind, cancellationToken)
                         .ConfigureAwait(false);
-                    var tenantId = services.GetService<ICurrentTenant>()?.Id;
 
                     if (
                         !string.Equals(
@@ -374,7 +395,8 @@ internal sealed class RelationalPermissionGrantRepository(
                     // The delete runs first because a replacement reuses the deleted row's unique key.
                     if (deleted.Count > 0)
                     {
-                        await _DeleteAsync(connection, transaction, deleted, cancellationToken).ConfigureAwait(false);
+                        await _DeleteAsync(connection, transaction, deleted, tenantId, cancellationToken)
+                            .ConfigureAwait(false);
                     }
 
                     if (records.Count > 0)
@@ -397,9 +419,9 @@ internal sealed class RelationalPermissionGrantRepository(
                     PermissionGrantVersion.Compute(
                         providerName,
                         providerKey,
-                        services.GetService<ICurrentTenant>()?.Id,
+                        tenantId,
                         names,
-                        await GetListAsync(names, providerName, providerKey, ct).ConfigureAwait(false)
+                        await _ReadAsync(sql, bind, ct).ConfigureAwait(false)
                     ),
                 expectedVersion,
                 _VersionConflictMessage,
@@ -412,6 +434,7 @@ internal sealed class RelationalPermissionGrantRepository(
         DbConnection connection,
         DbTransaction? transaction,
         IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
+        string? tenantId,
         CancellationToken cancellationToken
     )
     {
@@ -420,7 +443,7 @@ internal sealed class RelationalPermissionGrantRepository(
 
         await using var command = _CreateCommand(connection, transaction, sql);
         _dialect.AddListParameter(command, "Ids", SqlColumnType.Guid, permissionGrants.Select(x => x.Id).ToList());
-        _AddTenant(command);
+        _AddTenant(command, tenantId);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -463,21 +486,27 @@ internal sealed class RelationalPermissionGrantRepository(
         return enlisted;
     }
 
-    private void _AddScope(DbCommand command, string providerName, string providerKey)
+    private string? _ValidateReadScope(string providerName, string providerKey)
+    {
+        Argument.IsPortableKey(providerName);
+        Argument.IsPortableKey(providerKey);
+
+        return _GetTenantId();
+    }
+
+    private string? _GetTenantId() =>
+        Argument.IsPortableKey(services.GetService<ICurrentTenant>()?.Id, paramName: "tenantId");
+
+    private void _AddScope(DbCommand command, string providerName, string providerKey, string? tenantId)
     {
         _AddFilter(command, "ProviderName", _lengths.PermissionGrantsProviderNameMaxLength, providerName);
         _AddFilter(command, "ProviderKey", _lengths.PermissionGrantsProviderKeyMaxLength, providerKey);
-        _AddTenant(command);
+        _AddTenant(command, tenantId);
     }
 
-    private void _AddTenant(DbCommand command)
+    private void _AddTenant(DbCommand command, string? tenantId)
     {
-        _AddFilter(
-            command,
-            "TenantId",
-            _lengths.PermissionGrantsTenantIdMaxLength,
-            services.GetService<ICurrentTenant>()?.Id
-        );
+        _AddFilter(command, "TenantId", _lengths.PermissionGrantsTenantIdMaxLength, tenantId);
     }
 
     private void _AddInsertParameters(DbCommand command, PermissionGrantRecord permissionGrant, int rowIndex)
@@ -511,7 +540,8 @@ internal sealed class RelationalPermissionGrantRepository(
     private (string Sql, Action<DbCommand> Bind) _ByNames(
         IReadOnlyCollection<string> names,
         string providerName,
-        string providerKey
+        string providerKey,
+        string? tenantId
     )
     {
         var nameList = SqlColumnType.LookupText(_lengths.PermissionGrantsNameMaxLength, names);
@@ -523,7 +553,7 @@ internal sealed class RelationalPermissionGrantRepository(
             command =>
             {
                 _dialect.AddListParameter(command, "Names", nameList, names);
-                _AddScope(command, providerName, providerKey);
+                _AddScope(command, providerName, providerKey, tenantId);
             }
         );
     }
@@ -647,6 +677,9 @@ internal sealed class RelationalPermissionGrantRepository(
         foreach (var permissionGrant in permissionGrants)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Argument.IsPortableKey(permissionGrant.ProviderName);
+            Argument.IsPortableKey(permissionGrant.ProviderKey);
+            Argument.IsPortableKey(permissionGrant.TenantId);
             records.Add(permissionGrant);
         }
 

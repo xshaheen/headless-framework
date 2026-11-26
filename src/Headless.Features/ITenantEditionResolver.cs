@@ -14,8 +14,8 @@ namespace Headless.Features;
 /// tenant; the resolver is asked only when it does not, or when there is no principal.
 /// </para>
 /// <para>
-/// The framework calls it on every such feature read, so an implementation that reads a store should cache its
-/// answer.
+/// The framework calls it when a feature read needs an edition value. Implementations that read a store should
+/// cache the answer.
 /// </para>
 /// </remarks>
 [PublicAPI]

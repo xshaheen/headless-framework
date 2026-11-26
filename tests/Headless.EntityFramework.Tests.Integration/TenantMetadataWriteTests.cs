@@ -281,6 +281,33 @@ public sealed class TenantMetadataWriteTests(
         root.Owner.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_stamp_the_mapped_interface_owner_without_the_write_guard(bool bypass)
+    {
+        TenantWriteGuardDbContextTestFixtureBase fixture = bypass ? enabledFixture : disabledFixture;
+        fixture.CurrentTenant.Id = "tenant-a";
+        using var scope = fixture.ServiceProvider.CreateScope();
+        using var guard = bypass
+            ? scope.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>().BeginBypass()
+            : null;
+        await using var db = _CreateContext(scope.ServiceProvider);
+        var automatic = new MappedInterfaceRow();
+        var explicitOwner = new MappedInterfaceRow { Owner = "tenant-b" };
+        db.AddRange(automatic, explicitOwner);
+
+        await db.SaveChangesAsync(AbortToken);
+
+        db.ChangeTracker.Clear();
+        var stored = await db.Set<MappedInterfaceRow>().ToListAsync(AbortToken);
+        stored.Should().ContainSingle().Which.Owner.Should().Be("tenant-a");
+        var other = await db.Set<MappedInterfaceRow>()
+            .IgnoreQueryFilters()
+            .SingleAsync(row => row.Id == explicitOwner.Id, AbortToken);
+        other.Owner.Should().Be("tenant-b");
+    }
+
     [Fact]
     public async Task should_respect_explicit_interface_opt_out_for_stamping_and_guard()
     {
@@ -402,6 +429,8 @@ public sealed class TenantMetadataWriteTests(
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<MetadataRow>().IsTenantOwned(nameof(MetadataRow.Owner));
             modelBuilder.Entity<MetadataRow>().OwnsOne(x => x.Detail);
+            modelBuilder.Entity<MappedInterfaceRow>().IsTenantOwned(nameof(MappedInterfaceRow.Owner));
+            modelBuilder.Entity<MappedInterfaceRow>().Ignore(row => row.TenantId);
             modelBuilder.Entity<ShadowRow>().IsTenantOwned();
             modelBuilder.Entity<ShadowRow>().Property<string>("TenantId");
             modelBuilder.Entity<ShadowRow>().HasAlternateKey("Id", "TenantId");
@@ -465,6 +494,13 @@ public sealed class TenantMetadataWriteTests(
     private sealed class ExcludedRow : IMultiTenant
     {
         public Guid Id { get; set; } = Guid.NewGuid();
+        public string? TenantId { get; set; }
+    }
+
+    private sealed class MappedInterfaceRow : IMultiTenant
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string? Owner { get; set; }
         public string? TenantId { get; set; }
     }
 }

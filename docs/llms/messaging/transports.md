@@ -45,13 +45,13 @@ Broker-backed providers keep names ASCII and replace whitespace and control char
 
 ### Host prefix
 
-Several environments, such as worktrees or preview stacks, can share one broker when each host sets its own [`Headless:Prefix`](../utilities.md#isolation-prefix). Every provider except InMemory then puts the prefix in front of each broker name it derives, before the name rules above, so limits and allowed characters still hold. Hosts with the same prefix share streams, queues, and subscriptions as before. Hosts with different prefixes, or one with a prefix and one without, do not receive each other's messages, even with the same message names and identities. With no prefix set, every name stays byte-for-byte what it was.
+Several environments, such as worktrees or preview stacks, can share one broker when each host sets its own [`Headless:Prefix`](../utilities.md#isolation-prefix). Providers other than InMemory use the prefix in broker names according to the rules below. Hosts with the same prefix share streams, queues, and subscriptions as before. Hosts with different prefixes, or one with a prefix and one without, do not receive each other's messages, even with the same message names and identities.
 
 | Provider | Prefixed names (prefix `wt1`) | Scoped by the prefixed name, so left as is |
 | --- | --- | --- |
 | NATS | Subjects `wt1.headless.{lane}.{name}`; streams `wt1_headless-{lane}-{key}`; durables `wt1_bus_{identity}` and `wt1_queue-{subject}`; streams declared with `Streams.Own` become `wt1_{stream}`, and declared `headless.*` subjects get the `wt1.` token | Reply inboxes (random per request), streams declared with `Streams.Bind` and external subjects, which a foreign system owns |
 | Redis | Stream keys `wt1:headless:messaging:{lane}:{name}` | Consumer groups and wake channels, which follow the stream key |
-| RabbitMQ | Base exchange `wt1.{ExchangeName}`, so the lane and dead-letter exchanges follow; queues `wt1.bus.{identity}` and `wt1.queue.{name}` | Routing keys, which an exchange scopes |
+| RabbitMQ | Base exchange `wt1.{ExchangeName}`, inherited by lane and dead-letter exchanges. Live queues `wt1.bus.{identity}` and `wt1.queue.{name}`. Dead-letter queues start with `headless_dlq.` and derive from the physical live queue name | Routing keys, which an exchange scopes |
 | Kafka | Topics `wt1.{name}`; consumer groups `wt1.{name}`; topic patterns match only `wt1.` topics | A `group.id` set in `MainConfig`, which stays as written |
 | AWS | SNS topics `wt1_bus-{name}`; SQS queues `wt1_queue-{name}` and `wt1_bus-{identity}` | `.fifo` stays the last suffix |
 | Azure Service Bus | `TopicPath` and custom producer topics `wt1.{topic}`; queue-lane queues `wt1.{name}` | Subscriptions, which a topic scopes |
@@ -129,7 +129,7 @@ For a transport that offers its topology as a [provisioned resource](../utilitie
 
 | Provider | Created by `resources provision` | Still created by the running host |
 | --- | --- | --- |
-| RabbitMQ | The Bus and Queue lane exchanges; one durable queue per competing Bus consumer identity and per Queue-lane message the host consumes or registers, with its bindings; the `.dlx` exchanges and `.dlq` queues when dead-lettering is on | An every-instance consumer's exclusive queue and its binding; the request/reply `headless.reply.*` queue; the queue and bindings of an `IRuntimeSubscriber` subscription. The runtime user needs `configure` on `headless.reply.*`, on the server-named every-instance queues, and on the runtime subscriptions' queues, plus `write` on the Bus exchange to bind them |
+| RabbitMQ | The Bus and Queue lane exchanges; one durable queue per competing Bus consumer identity and per Queue-lane message the host consumes or registers, with its bindings; the `.dlx` exchanges and `headless_dlq.` queues when dead-lettering is on | An every-instance consumer's exclusive queue and its binding; the request/reply `headless.reply.*` queue; the queue and bindings of an `IRuntimeSubscriber` subscription. The runtime user needs `configure` on `headless.reply.*`, on the server-named every-instance queues, and on the runtime subscriptions' queues, plus `write` on the Bus exchange to bind them |
 | AWS, Azure Service Bus, Kafka, NATS, Redis | Not a provisioned resource | Everything, as described for the provider |
 
 ## Topology check

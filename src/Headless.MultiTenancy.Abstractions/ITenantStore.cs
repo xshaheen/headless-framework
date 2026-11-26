@@ -12,10 +12,9 @@ namespace Headless.MultiTenancy;
 /// a documented first-class path — the in-memory, configuration, and Entity Framework Core stores this
 /// framework ships are convenience defaults, not a canonical schema apps must adopt.
 /// <para>
-/// Both lookups must return an instance the caller may mutate freely: the catalog service hands a
-/// store result straight to application code on a cache miss, and <see cref="TenantInfo.ExtraProperties"/>
-/// is a mutable bag. An implementation backed by an in-process cache or a seeded dictionary must
-/// therefore materialize a fresh <see cref="TenantInfo"/> per call rather than alias its own state.
+/// Both lookups return a caller-owned <see cref="TenantInfo"/> and <see cref="TenantInfo.ExtraProperties"/> bag.
+/// The catalog returns the store result directly on a cache miss, so detach any mutable nested values from shared
+/// state. Supply JSON-serializable metadata so the catalog can cache the result.
 /// </para>
 /// </remarks>
 [PublicAPI]

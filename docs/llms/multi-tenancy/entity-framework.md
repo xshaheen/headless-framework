@@ -43,7 +43,7 @@ builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTena
 
 `GuardTenantWrites()` is the only way to turn it on. `TenantGuardOptions.GuardWrites` reports the state and has no public setter. When the seam asked for the guard but the options resolve to off, for example because a later registration replaced `IOptions<TenantGuardOptions>`, startup fails with `HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED`.
 
-With the guard on, `SaveChanges` checks tenant-owned entries before local domain-event handlers run and before anything is written:
+With the guard on, `SaveChanges` checks tenant-owned entries before local domain-event handlers run. If a handler runs, it checks the resulting entries again before anything is written:
 
 - A missing tenant is stamped from `ICurrentTenant.Id` when the entry becomes `Added`, including a state change to `Added`. A supplied tenant is kept. Adding under tenant A and saving under tenant B fails.
 - An `Added` entity whose explicit `TenantId` differs from the current tenant fails with `CrossTenantWriteException`.

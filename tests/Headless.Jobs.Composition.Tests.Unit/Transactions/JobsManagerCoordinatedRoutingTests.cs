@@ -85,8 +85,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             ExecutionTime = DateTime.UtcNow,
             Children = [acquiredChild],
         };
-        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
-            .Returns([acquired]);
+        sut.Admission.QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([acquired]);
         JobExecutionState[]? dispatched = null;
         sut.Dispatcher.DispatchAsync(
                 Arg.Do<JobExecutionState[]>(states => dispatched = states),
@@ -617,7 +616,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true, dispatcherEnabled: true);
         var job = _ImmediateTimeJob();
         // AddAsync re-stamps the entity id, so the acquired row is built from the id the manager actually asks for.
-        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+        sut.Admission.QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
             .Returns(call =>
                 [
                     new TimeJobEntity
@@ -658,8 +657,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         sut.Scheduler.Received(1).RestartIfNeeded(job.ExecutionTime!.Value);
         await sut
-            .Persistence.DidNotReceive()
-            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+            .Admission.DidNotReceive()
+            .QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -677,7 +676,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             timeProvider: nodeClock
         );
         var job = _RunNowTimeJob();
-        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        sut.Admission.QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
         var notified = _NotifiedTimeJob(sut);
 
         await sut.Manager.AddTimeJobAfterAsync(job, TimeSpan.FromSeconds(5), sut.Coordinator, AbortToken);
@@ -688,8 +687,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         job.ExecutionTime.Should().Be(_StoreAnchorUtc.AddSeconds(5));
         await sut
-            .Persistence.Received(1)
-            .AcquireImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
+            .Admission.Received(1)
+            .QueueImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
         // The unacquired due row is handed to the scheduler with an unconditional wake, never a timed one.
         sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
     }
@@ -715,8 +714,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         sut.Scheduler.Received(1).RestartIfNeeded(_StoreAnchorUtc.AddMinutes(10));
         await sut
-            .Persistence.DidNotReceive()
-            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+            .Admission.DidNotReceive()
+            .QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
     }
 
     // The node clock sits on either side of the store anchor: a run-now job must be stamped from the store and taken
@@ -731,15 +730,15 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     {
         var nodeClock = new FakeTimeProvider(new DateTimeOffset(_StoreAnchorUtc).AddDays(nodeOffsetDays));
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false, dispatcherEnabled: true, timeProvider: nodeClock);
-        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        sut.Admission.QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
         var job = _RunNowTimeJob();
 
         var result = await sut.Time.AddAsync(job, AbortToken);
 
         result.ExecutionTime.Should().Be(_StoreAnchorUtc);
         await sut
-            .Persistence.Received(1)
-            .AcquireImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
+            .Admission.Received(1)
+            .QueueImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
     }
 
@@ -748,7 +747,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     {
         var nodeClock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 13, 12, 0, 0, TimeSpan.Zero));
         var sut = _CreateSut(CoordinatorMode.None, withWriter: false, dispatcherEnabled: true, timeProvider: nodeClock);
-        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        sut.Admission.QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
         var absoluteTime = nodeClock.GetUtcNow().UtcDateTime.AddHours(1);
         var runNow = new List<TimeJobEntity> { _RunNowTimeJob(), _RunNowTimeJob(), _RunNowTimeJob() };
         var absolute = _RunNowTimeJob();
@@ -760,8 +759,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         result[3].ExecutionTime.Should().Be(absoluteTime);
         var runNowIds = runNow.Select(x => x.Id).ToHashSet();
         await sut
-            .Persistence.Received(1)
-            .AcquireImmediateTimeJobsAsync(
+            .Admission.Received(1)
+            .QueueImmediateTimeJobsAsync(
                 Arg.Is<Guid[]>(ids => ids.Length == 3 && ids.All(runNowIds.Contains)),
                 Arg.Any<CancellationToken>()
             );
@@ -778,7 +777,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
             dispatcherEnabled: true,
             timeProvider: nodeClock
         );
-        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        sut.Admission.QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
         var notified = _NotifiedTimeJob(sut);
         var job = _RunNowTimeJob();
 
@@ -790,8 +789,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         result.ExecutionTime.Should().Be(_StoreAnchorUtc);
         await sut
-            .Persistence.Received(1)
-            .AcquireImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
+            .Admission.Received(1)
+            .QueueImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == job.Id), Arg.Any<CancellationToken>());
         sut.Scheduler.DidNotReceiveWithAnyArgs().RestartIfNeeded(default);
     }
 
@@ -1018,7 +1017,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true, dispatcherEnabled: true);
         var due = _ImmediateTimeJob();
         var later = _FutureTimeJob();
-        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        sut.Admission.QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
         // The batch path notifies FIRST and arms the restart LAST, so the restart is the completion hook here.
         var restarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         sut.Scheduler.When(x => x.RestartIfNeeded(Arg.Any<DateTime?>())).Do(_ => restarted.TrySetResult());
@@ -1035,8 +1034,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         await sut.Notification.Received(1).AddTimeJobsBatchNotifyAsync();
 
         await sut
-            .Persistence.Received(1)
-            .AcquireImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == due.Id), Arg.Any<CancellationToken>());
+            .Admission.Received(1)
+            .QueueImmediateTimeJobsAsync(Arg.Is<Guid[]>(ids => ids.Single() == due.Id), Arg.Any<CancellationToken>());
         sut.Scheduler.Received(1).RestartIfNeeded(later.ExecutionTime!.Value);
     }
 
@@ -1056,8 +1055,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
 
         await sut
-            .Persistence.DidNotReceive()
-            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+            .Admission.DidNotReceive()
+            .QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
         await sut.Dispatcher.DidNotReceiveWithAnyArgs().DispatchAsync(default!, AbortToken);
         sut.SignalsLogger.Entries.Should().BeEmpty();
     }
@@ -1100,7 +1099,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
     public async Task time_job_live_coordinator_defers_immediate_dispatch_to_the_worker()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true, dispatcherEnabled: true);
-        sut.Persistence.AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
+        sut.Admission.QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>()).Returns([]);
         var notified = _NotifiedTimeJob(sut);
 
         await sut.Time.AddAsync(_ImmediateTimeJob(), AbortToken);
@@ -1108,19 +1107,17 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         // The immediate-acquire probe is part of the post-commit side effects, not the synchronous enqueue — and not
         // the commit callback either.
         await sut
-            .Persistence.DidNotReceive()
-            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+            .Admission.DidNotReceive()
+            .QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
         await sut.Coordinator!.CommitAsync();
         await sut
-            .Persistence.DidNotReceive()
-            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+            .Admission.DidNotReceive()
+            .QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
 
         await _StartWorkerAsync(sut);
         await notified.Task.WaitAsync(_WaitTimeout, AbortToken);
 
-        await sut
-            .Persistence.Received(1)
-            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+        await sut.Admission.Received(1).QueueImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1583,9 +1580,13 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         var persistence = withWriter
             ? Substitute.For<
                 IJobPersistenceProvider<TimeJobEntity, CronJobEntity>,
-                ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>
+                ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>,
+                IJobImmediateAdmission<CronJobEntity>
             >()
-            : Substitute.For<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            : Substitute.For<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>,
+                IJobImmediateAdmission<CronJobEntity>
+            >();
         var effectiveTimeProvider = timeProvider ?? TimeProvider.System;
 
         // Both cron creation paths are seeded writes: the provider supplies the STORE's anchor, the manager's seeder
@@ -1901,6 +1902,8 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 
         public ICoordinatedJobWriter<TimeJobEntity, CronJobEntity> Writer =>
             (ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)Persistence;
+
+        public IJobImmediateAdmission<CronJobEntity> Admission => (IJobImmediateAdmission<CronJobEntity>)Persistence;
     }
 
     private static DbTransaction _LiveTransaction()

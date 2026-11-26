@@ -49,7 +49,7 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         return unitOfWork;
     }
 
-    private sealed class RecordingOutbox : IUnitOfWorkOutbox
+    private sealed class RecordingOutbox(Func<Task>? beforePublish = null) : IUnitOfWorkOutbox
     {
         public List<(
             Type GenericType,
@@ -58,15 +58,20 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             IUnitOfWork UnitOfWork
         )> Published { get; } = [];
 
-        public Task<PublishReceipt> PublishAsync<T>(
+        public async Task<PublishReceipt> PublishAsync<T>(
             IUnitOfWork unitOfWork,
             T? contentObj,
             OutboxOptions? options,
             CancellationToken cancellationToken = default
         )
         {
+            if (beforePublish is not null)
+            {
+                await beforePublish().ConfigureAwait(false);
+            }
+
             Published.Add((typeof(T), contentObj, options, unitOfWork));
-            return Task.FromResult(new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), Guid.NewGuid()));
+            return new PublishReceipt(options?.MessageId ?? Guid.NewGuid().ToString(), Guid.NewGuid());
         }
 
         public Task<PublishReceipt> EnqueueAsync<T>(
@@ -79,6 +84,8 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
             throw new NotSupportedException("Integration events take the bus lane.");
         }
     }
+
+    private sealed class DispatchSynchronizationContext : SynchronizationContext;
 
     // An outbox that can open a store batch: publishes are recorded into the batch, and the log shows when the
     // batch flushed and when it was disposed.
@@ -392,19 +399,58 @@ public sealed class OutboxIntegrationEventDispatcherTests : TestBase
         outbox.Published.Should().BeEmpty();
     }
 
-    [Fact]
-    public void should_forward_to_dispatch_async_and_publish_all_events_when_dispatch_sync()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_publish_all_events_when_sync_dispatch_blocks_a_caller_context(
+        bool useSynchronizationContext
+    )
     {
-        // given
-        var outbox = new RecordingOutbox();
+        var outbox = new RecordingOutbox(async () =>
+        {
+            // Fail before yielding if the continuation would be queued to a scheduler the dispatch blocks.
+            SynchronizationContext.Current.Should().BeNull();
+            TaskScheduler.Current.Should().BeSameAs(TaskScheduler.Default);
+            await Task.Yield();
+        });
         var unitOfWork = _ResourceBearingUnitOfWork(outbox);
         var dispatcher = new OutboxIntegrationEventDispatcher(new IntegrationEventPublishInvokerCache());
         IReadOnlyList<EventContext<object>> events = [EventContext.Capture<object>(new OrderPlaced("order-1"))];
 
-        // when
-        dispatcher.Dispatch(unitOfWork, events);
+        if (useSynchronizationContext)
+        {
+            var previous = SynchronizationContext.Current;
+            var context = new DispatchSynchronizationContext();
+            try
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
+                dispatcher.Dispatch(unitOfWork, events);
+                SynchronizationContext.Current.Should().BeSameAs(context);
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previous);
+            }
+        }
+        else
+        {
+            var schedulers = new ConcurrentExclusiveSchedulerPair();
+            try
+            {
+                await Task.Factory.StartNew(
+                    () => dispatcher.Dispatch(unitOfWork, events),
+                    AbortToken,
+                    TaskCreationOptions.DenyChildAttach,
+                    schedulers.ExclusiveScheduler
+                );
+            }
+            finally
+            {
+                schedulers.Complete();
+                await schedulers.Completion;
+            }
+        }
 
-        // then
         outbox.Published.Should().ContainSingle();
         outbox.Published[0].GenericType.Should().Be<OrderPlaced>();
     }

@@ -27,6 +27,8 @@ Claims decide due-ness on the store's clock, so several members must read the st
 
 ## Claims and leases
 
+The scheduler picks up due enqueues and dashboard run-now on custom stores through the ordinary claim methods. The built-in stores can queue a specific due row on the enqueuing node before its next poll. The public `AcquireImmediateTimeJobsAsync` and `AcquireImmediateCronOccurrencesAsync` still start their rows in `InProgress` for callers that have already secured execution capacity.
+
 - **Leases.** Every claim makes the row's `Lease` (`RowLeaseSnapshot`: `Generation`, `State`, `ExpiresAt`, `Holder`, `TakeoverCount`) `Active`, sets `Holder` to the claim owner, `ExpiresAt` to now plus `LeaseDuration`, and draws the row's next `Generation`. Chain descendants take the root's deadline with their own generations. Use `RowLeaseRules` for the state rules.
 - **Fenced writes.** Start, progress, retry count, completion, failure, and release take the claim's `FencedRow<Guid>` and apply only while the row holds that generation with a live lease. Renewal and the admission to `InProgress` also require the node's live identity to equal `JobExecutionState.ClaimOwner`. Renewal returns `1` (renewed) or `0` (lost), nothing else. Members that take a `claimOwner` throw `ArgumentException` for a null or empty value.
 - **Ending a lease.** Completion, failure, or another terminal settle leaves `Settled`. A graceful release leaves `Released`. A stalled reclaim or dead-node sweep leaves `Abandoned`. Cancel of a claimed `Idle` row, the edit guard, a cron skip, a child run-condition release, and the stranded-child sweep leave `Revoked`.

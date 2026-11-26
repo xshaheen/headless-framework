@@ -247,6 +247,33 @@ public sealed class FeatureManagerEditionScopeTests : TestBase
         // then both resolve acme's edition, not the host's cached empty edition entry
         cold.Value.Should().Be("50");
         warm.Value.Should().Be("50");
+        await _resolver.Received(2).GetEditionIdAsync(_Tenant, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_read_warm_tenant_overrides_even_when_the_edition_resolver_is_down()
+    {
+        _principalAccessor.Principal.Returns(_Principal());
+        _resolver
+            .GetEditionIdAsync(_Tenant, AbortToken)
+            .Returns(ValueTask.FromException<string?>(new IOException("edition store unavailable")));
+        using var ambient = _currentTenant.Change(_Tenant);
+        using var cache = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        var key = FeatureValueCacheItem.CalculateCacheKey(_Feature, TenantFeatureValueProvider.ProviderName, _Tenant);
+        await cache.UpsertAsync(key, new FeatureValueCacheItem("25"), expiration: null, AbortToken);
+        var definitions = Substitute.For<IFeatureDefinitionManager>();
+        var store = new FeatureValueStore(
+            definitions,
+            Substitute.For<IFeatureValueRecordRepository>(),
+            Substitute.For<IGuidGenerator>(),
+            cache,
+            NullLogger<FeatureValueStore>.Instance
+        );
+        var sut = _CreateManager(_resolver, store, definitions);
+
+        (await sut.GetAsync(_Feature, cancellationToken: AbortToken)).Value.Should().Be("25");
+        var batch = await sut.GetAllAsync(new HashSet<string>(StringComparer.Ordinal) { _Feature }, AbortToken);
+        batch[_Feature].Value.Should().Be("25");
     }
 
     private FeatureManager _CreateManager(

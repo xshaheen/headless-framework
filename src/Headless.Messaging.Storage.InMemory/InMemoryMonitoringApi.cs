@@ -8,7 +8,9 @@ using Headless.Primitives;
 
 namespace Headless.Messaging.Storage.InMemory;
 
-internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimeProvider timeProvider) : IMonitoringApi
+internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimeProvider timeProvider)
+    : IMonitoringApi,
+        IStorageIdMonitoringApi
 {
     public ValueTask<MediumMessage?> GetPublishedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -66,6 +68,36 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         }
 
         return ValueTask.FromResult<IReadOnlyList<MediumMessage>>(result);
+    }
+
+    public ValueTask<IReadOnlyList<StoredMessageView>> GetMessageViewsAsync(
+        MessageType type,
+        IReadOnlyList<Guid> storageIds,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var received = type == MessageType.Subscribe;
+        var source = received ? storage.ReceivedMessages : storage.PublishedMessages;
+        var result = new List<StoredMessageView>(storageIds.Count);
+
+        foreach (var id in storageIds)
+        {
+            if (source.TryGetValue(id, out var message) && _IsRecognizedLane(message.Lane))
+            {
+                lock (message)
+                {
+                    result.Add(
+                        new StoredMessageView(
+                            _ToMessageView(message, received),
+                            message.StatusName == StatusName.Failed ? message.ExceptionInfo : null
+                        )
+                    );
+                }
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<StoredMessageView>>(result);
     }
 
     public ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
@@ -410,27 +442,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 : ordered.ThenBy(static message => message.StorageId)
         )
             .Take(pageSize + 1)
-            .Select(message => new MessageView
-            {
-                StorageId = message.StorageId,
-                MessageId = message.Origin.Id,
-                Version = message.Version,
-                Name = message.Name,
-                ConsumerIdentity = received ? message.ConsumerIdentity : null,
-                Lane = message.Lane,
-                Retries = message.Retries,
-                Added = message.Added,
-                ExpiresAt = message.ExpiresAt,
-                StatusName = message.StatusName,
-                NextRetryAt = message.NextRetryAt,
-                LockedUntil = message.Lease.State == RowLeaseState.Active ? message.Lease.ExpiresAt : null,
-                ChangedAt = message.ChangedAt,
-                FailureFingerprint = message.FailureFingerprint,
-                TransportName = received ? null : message.TransportName,
-                TenantId = received ? message.InboxKey?.TenantId : null,
-                IsHeld = received && message.IsHeld,
-                IncarnationId = message.InboxGeneration?.IncarnationId,
-            })
+            .Select(message => _ToMessageView(message, received))
             .ToList();
 
         var page = rows.Count > pageSize ? rows.GetRange(0, pageSize) : rows;
@@ -438,6 +450,29 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             new MessageListPage { Items = page, Next = rows.Count > pageSize ? MessageListPosition.Of(page[^1]) : null }
         );
     }
+
+    private static MessageView _ToMessageView(MemoryMessage message, bool received) =>
+        new()
+        {
+            StorageId = message.StorageId,
+            MessageId = message.Origin.Id,
+            Version = message.Version,
+            Name = message.Name,
+            ConsumerIdentity = received ? message.ConsumerIdentity : null,
+            Lane = message.Lane,
+            Retries = message.Retries,
+            Added = message.Added,
+            ExpiresAt = message.ExpiresAt,
+            StatusName = message.StatusName,
+            NextRetryAt = message.NextRetryAt,
+            LockedUntil = message.Lease.State == RowLeaseState.Active ? message.Lease.ExpiresAt : null,
+            ChangedAt = message.ChangedAt,
+            FailureFingerprint = message.FailureFingerprint,
+            TransportName = received ? null : message.TransportName,
+            TenantId = received ? message.InboxKey?.TenantId : null,
+            IsHeld = received && message.IsHeld,
+            IncarnationId = message.InboxGeneration?.IncarnationId,
+        };
 
     public ValueTask<MessageTraceResult> GetCorrelatedMessagesAsync(
         MessageTraceQuery query,

@@ -51,9 +51,8 @@ internal static partial class UnitOfWorkRunner
     }
 
     /// <summary>
-    /// Runs a joined block on the owner's handle and refuses, after it returns, a block that ended the unit: the
-    /// owner's own completion would otherwise surface as a swallowed "already completed" drain fault and report
-    /// success for writes that ran outside the transaction.
+    /// Runs a joined block on the owner's handle. Refuses an inactive unit or finished transaction before the
+    /// block runs, and checks afterward that the block left the unit active.
     /// </summary>
     public static async Task<TResult> RunJoinedAsync<TResult>(
         IUnitOfWork joined,
@@ -61,6 +60,20 @@ internal static partial class UnitOfWorkRunner
         CancellationToken cancellationToken
     )
     {
+        var state = joined.State;
+
+        if (state != UnitOfWorkState.Active)
+        {
+            throw new InvalidOperationException($"The unit of work is {state}. RunAsync needs an active unit to join.");
+        }
+
+        if (joined.Resource is IRelationalUnitOfWorkResource { IsTransactionCompleted: true })
+        {
+            throw new InvalidOperationException(
+                "The unit of work's transaction already completed. Finish the existing unit before starting new work."
+            );
+        }
+
         var result = await operation(joined, cancellationToken).ConfigureAwait(false);
 
         if (joined.State != UnitOfWorkState.Active)
@@ -143,8 +156,7 @@ internal static partial class UnitOfWorkRunner
                 {
                     var connection = await openConnection(ct).ConfigureAwait(false);
 
-                    // Disposed only after the attempt returns, which is after its unit was rolled back or completed.
-                    await using (connection.ConfigureAwait(false))
+                    try
                     {
                         return await _RunAttemptAsync(
                                 attemptCt => begin(connection, attemptCt),
@@ -153,6 +165,18 @@ internal static partial class UnitOfWorkRunner
                                 ct
                             )
                             .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            await connection.DisposeAsync().ConfigureAwait(false);
+                        }
+                        catch (Exception exception)
+                        {
+                            // Cleanup cannot replace the attempt's outcome or reach the policy after commit.
+                            LogAttemptConnectionDisposalFaulted(logger, exception);
+                        }
                     }
                 },
                 cancellationToken
@@ -290,4 +314,12 @@ internal static partial class UnitOfWorkRunner
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogBlockCompletedOwnUnit(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 13,
+        Level = LogLevel.Error,
+        Message = "Disposing a unit-of-work attempt's connection faulted. The attempt's original outcome is preserved."
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogAttemptConnectionDisposalFaulted(ILogger logger, Exception exception);
 }

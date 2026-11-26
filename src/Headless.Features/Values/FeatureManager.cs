@@ -115,9 +115,9 @@ public sealed class FeatureManager(
             }
 
             var values =
-                _TryAnswerFromCache(cached?[i], pendingForProvider)
+                _TryAnswerFromCache(cached?[i]?.Entries, pendingForProvider)
                 ?? await provider
-                    .GetAllAsync(pendingForProvider, providerKey: null, cancellationToken)
+                    .GetAllAsync(pendingForProvider, cached?[i]?.Key, cancellationToken)
                     .ConfigureAwait(false);
 
             foreach (var value in values)
@@ -924,9 +924,12 @@ public sealed class FeatureManager(
             var provider = chain[i];
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
             var value =
-                cached?[i] is { } entries && entries.TryGetValue(name, out var hit) && hit.HasValue ? hit.Value?.Value
+                cached?[i] is { } prefetched && prefetched.Entries.TryGetValue(name, out var hit) && hit.HasValue
+                    ? hit.Value?.Value
                 : unitOfWork is null
-                    ? await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false)
+                    ? await provider
+                        .GetOrDefaultAsync(definition, cached?[i]?.Key ?? pk, cancellationToken)
+                        .ConfigureAwait(false)
                 : await provider
                     .GetOrDefaultEnlistedAsync(unitOfWork, definition, pk, cancellationToken)
                     .ConfigureAwait(false);
@@ -951,7 +954,7 @@ public sealed class FeatureManager(
     /// because their reads are the store's reads unchanged; a hit is what that read returns, so the walk keeps its
     /// order and results and calls a provider only for a miss.
     /// </remarks>
-    private static async Task<Dictionary<string, CacheValue<FeatureValueCacheItem>>?[]?> _ReadCachedChainAsync(
+    private static async Task<PrefetchedProvider?[]?> _ReadCachedChainAsync(
         IFeatureValueReadProvider[] chain,
         List<FeatureDefinition> features,
         string? providerName,
@@ -984,11 +987,26 @@ public sealed class FeatureManager(
                 return null;
             }
 
-            sharedStore = store;
             var pk = string.Equals(storeProvider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+            string? resolvedKey;
+
+            if (storeProvider is EditionFeatureValueProvider edition)
+            {
+                // Resolving an unknown edition can fail or perform I/O even when the tenant value is cached.
+                if (!edition.TryResolveLocalKey(pk, out resolvedKey))
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                resolvedKey = await storeProvider.ResolveProviderKeyAsync(pk, cancellationToken).ConfigureAwait(false);
+            }
+
+            sharedStore = store;
             providerKeys ??= new string?[chain.Length];
             prefetched ??= new bool[chain.Length];
-            providerKeys[i] = await storeProvider.ResolveProviderKeyAsync(pk, cancellationToken).ConfigureAwait(false);
+            providerKeys[i] = resolvedKey;
             prefetched[i] = true;
             count++;
         }
@@ -1022,7 +1040,7 @@ public sealed class FeatureManager(
         }
 
         var entries = await sharedStore.GetCachedAsync(allKeys, cancellationToken).ConfigureAwait(false);
-        var result = new Dictionary<string, CacheValue<FeatureValueCacheItem>>?[chain.Length];
+        var result = new PrefetchedProvider?[chain.Length];
 
         for (var i = 0; i < chain.Length; i++)
         {
@@ -1044,11 +1062,16 @@ public sealed class FeatureManager(
                 }
             }
 
-            result[i] = byName;
+            result[i] = new(providerKeys[i], byName);
         }
 
         return result;
     }
+
+    private sealed record PrefetchedProvider(
+        string? Key,
+        Dictionary<string, CacheValue<FeatureValueCacheItem>> Entries
+    );
 
     /// <summary>
     /// Answers a provider's batch read from its prefetched entries when every name is a hit, else returns

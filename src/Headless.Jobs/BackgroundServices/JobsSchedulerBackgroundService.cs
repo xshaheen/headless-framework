@@ -317,7 +317,8 @@ internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsH
                                 function.CachedPriority,
                                 cancellationToken,
                                 stoppingToken,
-                                semaphore
+                                semaphore,
+                                claim: function
                             )
                             .ConfigureAwait(false);
                     }

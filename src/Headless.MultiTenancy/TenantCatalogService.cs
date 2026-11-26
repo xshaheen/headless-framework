@@ -2,7 +2,6 @@
 
 using Headless.Caching;
 using Headless.Checks;
-using Headless.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -279,9 +278,14 @@ internal sealed class TenantCatalogService(
 
         if (cached.HasValue)
         {
-            // Cache always holds the base shape only — always clone before handing it out so a
-            // caller mutating ExtraProperties cannot corrupt the shared cached instance.
-            return cached.Value is null ? null : _CloneToBaseShape(cached.Value.TenantInfo);
+            try
+            {
+                return cached.Value is null ? null : _CloneToBaseShape(cached.Value.TenantInfo);
+            }
+            catch (Exception fault) when (fault is not OperationCanceledException)
+            {
+                logger.LogTenantCatalogCacheReadFaultedDegradingToMiss(fault, nameof(TenantInfoCacheItem));
+            }
         }
 
         var tenant = await store.FindByIdAsync(id, cancellationToken).ConfigureAwait(false);
@@ -332,7 +336,18 @@ internal sealed class TenantCatalogService(
     private Task _CacheTenantInfoAsync(TenantInfo tenant, CancellationToken cancellationToken)
     {
         var idCacheKey = TenantInfoCacheItem.CalculateCacheKey(tenant.Id);
-        var baseShape = _CloneToBaseShape(tenant);
+        TenantInfo baseShape;
+
+        try
+        {
+            baseShape = _CloneToBaseShape(tenant);
+        }
+        catch (Exception fault) when (fault is not OperationCanceledException)
+        {
+            logger.LogTenantCatalogCacheWriteFaulted(fault, nameof(TenantInfoCacheItem));
+
+            return Task.CompletedTask;
+        }
 
         return _TryUpsertCacheAsync(
             infoCache,
@@ -347,7 +362,7 @@ internal sealed class TenantCatalogService(
     {
         return new TenantInfo(source.Id, source.Identifier, source.Name, source.IsEnabled)
         {
-            ExtraProperties = new ExtraProperties(source.ExtraProperties),
+            ExtraProperties = TenantMetadataSnapshot.Copy(source.ExtraProperties),
         };
     }
 

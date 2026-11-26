@@ -14,5 +14,7 @@ dotnet add package Headless.MultiTenancy.Abstractions
 
 ## Documentation
 
+A custom `ITenantStore` returns a caller-owned `TenantInfo` and metadata dictionary. Use JSON-serializable `ExtraProperties` values so the catalog can cache the result.
+
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
 - [Multi-Tenancy guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/multi-tenancy.md#headlessmultitenancyabstractions)

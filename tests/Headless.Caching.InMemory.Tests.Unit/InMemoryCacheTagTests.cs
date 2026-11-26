@@ -37,12 +37,20 @@ public sealed class InMemoryCacheTagTests : TestBase
     private static int _GetTagMarkerCount(InMemoryCache cache)
     {
         var field = typeof(InMemoryCache).GetField(
-            "_tagMarkers",
+            "_state",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
-        field.Should().NotBeNull();
+        if (field is null)
+        {
+            // The base revision stores markers directly on the cache.
+            var originalMarkers = typeof(InMemoryCache)
+                .GetField("_tagMarkers", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
+                .GetValue(cache)!;
+            return (int)originalMarkers.GetType().GetProperty("Count")!.GetValue(originalMarkers)!;
+        }
 
-        var markers = field!.GetValue(cache)!;
+        var state = field.GetValue(cache)!;
+        var markers = state.GetType().GetProperty("TagMarkers")!.GetValue(state)!;
         return (int)markers.GetType().GetProperty("Count")!.GetValue(markers)!;
     }
 
@@ -277,6 +285,83 @@ public sealed class InMemoryCacheTagTests : TestBase
     }
 
     [Fact]
+    public async Task should_discard_idle_tag_history_and_reject_backdated_manual_writes()
+    {
+        using var cache = _CreateCache();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var write = new CacheStoreEntryWrite<string>
+        {
+            Value = "old",
+            IsNull = false,
+            CreatedAt = now,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(5),
+            Tags = ["tag-0"],
+        };
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        for (var i = 0; i < 100; i++)
+        {
+            await cache.RemoveByTagAsync($"tag-{i}", AbortToken);
+        }
+
+        _GetTagMarkerCount(cache).Should().Be(0);
+        var store = (IFactoryCacheStore)cache;
+        (await store.SetEntryAsync("key", in write, AbortToken)).Should().BeFalse();
+        (await store.TryGetEntryAsync<string>("key", cancellationToken: AbortToken)).Found.Should().BeFalse();
+
+        await cache.UpsertEntryAsync(
+            "key",
+            "fresh",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(1), Tags = ["tag-0"] },
+            AbortToken
+        );
+        (await cache.GetAsync<string>("key", AbortToken)).Value.Should().Be("fresh");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_keep_exact_seeded_markers_for_backdated_peer_writes(bool matches)
+    {
+        using var cache = _CreateCache();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var write = new CacheStoreEntryWrite<string>
+        {
+            Value = "peer",
+            IsNull = false,
+            CreatedAt = now,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(5),
+            Tags = ["peer-tag"],
+        };
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        cache.SeedTagMarker(matches ? "peer-tag" : "unrelated", _timeProvider.GetUtcNow());
+        await _RunMaintenanceAsync(cache);
+
+        var store = (IFactoryCacheStore)cache;
+        (await store.SetEntryAsync("key", in write, AbortToken)).Should().BeTrue();
+        (await cache.GetAsync<string>("key", AbortToken)).HasValue.Should().Be(!matches);
+    }
+
+    [Fact]
+    public async Task should_prune_expired_local_markers_while_an_unconfirmed_seed_is_retained()
+    {
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaintenanceInterval = TimeSpan.MaxValue });
+        cache.SeedTagMarker("pending", _timeProvider.GetUtcNow());
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(1), Tags = ["local"] };
+        await cache.UpsertEntryAsync("key", "value", options, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync("local", AbortToken);
+        _GetTagMarkerCount(cache).Should().Be(2);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await _RunMaintenanceAsync(cache);
+
+        _GetTagMarkerCount(cache).Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_serve_tag_invalidated_reserve_as_stale_via_factory()
     {
         using var cache = _CreateCache();
@@ -307,8 +392,10 @@ public sealed class InMemoryCacheTagTests : TestBase
         result.IsStale.Should().BeTrue();
     }
 
-    [Fact]
-    public async Task should_miss_factory_value_when_remove_by_tag_lands_while_the_factory_runs()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_invalidate_an_in_flight_factory_only_when_the_removed_tag_matches(bool matches)
     {
         using var cache = _CreateCache();
         var tag = Faker.Random.AlphaNumeric(8);
@@ -326,11 +413,76 @@ public sealed class InMemoryCacheTagTests : TestBase
         var getOrAdd = cache.GetOrAddAsync("key", factory, options, AbortToken).AsTask();
         await factoryStarted.Task.Bounded();
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
-        await cache.RemoveByTagAsync(tag, AbortToken);
+        await cache.RemoveByTagAsync(matches ? tag : "unrelated", AbortToken);
+        await _RunMaintenanceAsync(cache);
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         factoryGate.SetResult("read-before-invalidation");
         (await getOrAdd).Value.Should().Be("read-before-invalidation");
 
-        (await cache.GetAsync<string>("key", AbortToken)).HasValue.Should().BeFalse();
+        (await cache.GetAsync<string>("key", AbortToken)).HasValue.Should().Be(!matches);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task should_keep_matching_tag_history_until_detached_refresh_publishes(bool eager, bool matches)
+    {
+        var clock = new TimerSignalingTimeProvider(_timeProvider);
+        using var cache = new InMemoryCache(clock, new InMemoryCacheOptions());
+        const string key = "key";
+        const string tag = "refresh-tag";
+        var initialOptions = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(eager ? 10 : 1),
+            EagerRefreshThreshold = eager ? 0.5f : null,
+            IsFailSafeEnabled = !eager,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(5),
+        };
+        await cache.UpsertEntryAsync(key, "original", initialOptions, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(6));
+
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refreshFinished = new TaskCompletionSource<CacheRefreshEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var refreshEvent = eager ? cache.Events.EagerRefresh : cache.Events.BackgroundRefresh;
+        using var subscription = refreshEvent.AddHandler(args => refreshFinished.TrySetResult(args));
+        var options = initialOptions with
+        {
+            Tags = [tag],
+            FactorySoftTimeout = eager ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(1),
+            BackgroundFactoryCeiling = TimeSpan.FromSeconds(10),
+        };
+        var timerArmed = eager ? Task.CompletedTask : clock.WatchForTimer(options.FactorySoftTimeout);
+
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var getOrAdd = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
+        await factoryStarted.Task.Bounded();
+        await timerArmed.Bounded();
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        (await getOrAdd.Bounded()).Value.Should().Be("original");
+
+        await cache.RemoveByTagAsync(matches ? tag : "unrelated", AbortToken);
+        await _RunMaintenanceAsync(cache);
+        factoryGate.SetResult("refreshed");
+        (await refreshFinished.Task.Bounded()).Outcome.Should().Be(CacheFactoryOutcome.Success);
+
+        var result = await cache.GetAsync<string>(key, AbortToken);
+        if (matches)
+        {
+            result.HasValue.Should().BeFalse();
+        }
+        else
+        {
+            result.Value.Should().Be("refreshed");
+        }
     }
 }

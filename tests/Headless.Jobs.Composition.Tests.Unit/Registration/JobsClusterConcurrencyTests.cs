@@ -112,6 +112,70 @@ public sealed class JobsClusterConcurrencyTests : TestBase
     }
 
     [Fact]
+    public async Task should_claim_overdue_time_jobs_behind_a_full_page_of_saturated_jobs()
+    {
+        var clock = _Clock();
+        await using var provider = _Provider(clock);
+        var store = _Store(provider);
+        var older = clock.GetUtcNow().UtcDateTime.AddMinutes(-3);
+        await store.AddTimeJobsAsync(
+            [.. Enumerable.Range(0, 100 + _Limit).Select(_ => _TimeJob(TestJobs.BillingCloseDay, older))],
+            AbortToken
+        );
+        (await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken)).Should().HaveCount(_Limit);
+        var unlimited = _TimeJob(TestJobs.OrdersShip, older.AddMinutes(1));
+        await store.AddTimeJobsAsync([unlimited], AbortToken);
+
+        var claimed = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+
+        claimed.Select(x => x.Id).Should().Equal(unlimited.Id);
+        (await _LiveLeasesAsync(store, clock)).Should().Be(_Limit);
+    }
+
+    [Fact]
+    public async Task should_claim_overdue_cron_occurrences_behind_a_full_page_of_saturated_occurrences()
+    {
+        var clock = _Clock();
+        await using var provider = _Provider(clock);
+        var store = _Store(provider);
+        var older = clock.GetUtcNow().UtcDateTime.AddMinutes(-3);
+        await store.AddTimeJobsAsync(
+            [.. Enumerable.Range(0, _Limit).Select(_ => _TimeJob(TestJobs.BillingCloseDay, older))],
+            AbortToken
+        );
+        (await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken)).Should().HaveCount(_Limit);
+        var limited = _CronDefinition();
+        var unlimited = _CronDefinition();
+        unlimited.Function = TestJobs.OrdersShip;
+        await store.InsertCronJobsAsync([limited, unlimited], AbortToken);
+        var expected = new CronJobOccurrenceEntity<CronJobEntity>
+        {
+            Id = Guid.NewGuid(),
+            CronJobId = unlimited.Id,
+            ExecutionTime = older.AddMinutes(1),
+        };
+        await store.InsertCronJobOccurrencesAsync(
+            [
+                .. Enumerable
+                    .Range(0, 100)
+                    .Select(index => new CronJobOccurrenceEntity<CronJobEntity>
+                    {
+                        Id = Guid.NewGuid(),
+                        CronJobId = limited.Id,
+                        ExecutionTime = older.AddTicks(index),
+                    }),
+                expected,
+            ],
+            AbortToken
+        );
+
+        var claimed = await store.QueueTimedOutCronJobOccurrencesAsync(AbortToken).ToArrayAsync(AbortToken);
+
+        claimed.Select(x => x.Id).Should().Equal(expected.Id);
+        (await _LiveLeasesAsync(store, clock)).Should().Be(_Limit);
+    }
+
+    [Fact]
     public async Task should_share_the_limit_between_time_jobs_and_cron_occurrences()
     {
         // given

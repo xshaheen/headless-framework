@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -52,6 +53,53 @@ public sealed class PostgreSqlUnitOfWorkTests(PostgreSqlUnitOfWorkFixture fixtur
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1);
         connection.State.Should().Be(System.Data.ConnectionState.Closed, "the provider closes a connection it opened");
         logs.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_report_a_failed_transaction_instead_of_completing_it(bool useEntityFramework)
+    {
+        await fixture.ResetAsync(AbortToken);
+        await using var provider = PostgreSqlUnitOfWorkFixture.BuildProvider();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        var options = new DbContextOptionsBuilder().UseNpgsql(connection).Options;
+        await using var db = new DbContext(options);
+        await using var unit = useEntityFramework
+            ? await factory.BeginAsync(db, AbortToken)
+            : await factory.BeginAsync(connection, AbortToken);
+        var completionCalls = 0;
+        UnitOfWorkFailure? failure = null;
+        unit.OnCompleted(() =>
+        {
+            completionCalls++;
+
+            return ValueTask.CompletedTask;
+        });
+        unit.OnFailed(result =>
+        {
+            failure = result;
+
+            return ValueTask.CompletedTask;
+        });
+
+        var transaction = _Transaction(unit);
+        await PostgreSqlUnitOfWorkFixture.InsertProbeRowAsync(connection, transaction, "rolled back", AbortToken);
+        await using var abort = new NpgsqlCommand("SELECT 1 / 0", connection, transaction);
+        var failStatement = () => abort.ExecuteNonQueryAsync(AbortToken);
+        (await failStatement.Should().ThrowAsync<PostgresException>())
+            .Which.SqlState.Should()
+            .Be(PostgresErrorCodes.DivisionByZero);
+
+        var complete = () => unit.CompleteAsync(AbortToken).AsTask();
+        var reported = (await complete.Should().ThrowAsync<PostgresException>()).Which;
+
+        reported.SqlState.Should().Be(PostgresErrorCodes.InFailedSqlTransaction);
+        unit.State.Should().Be(UnitOfWorkState.Failed);
+        failure.Should().Be(new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, reported));
+        completionCalls.Should().Be(0);
+        (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0);
     }
 
     [Fact]

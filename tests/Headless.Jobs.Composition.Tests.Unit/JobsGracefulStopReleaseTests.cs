@@ -7,6 +7,7 @@ using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -117,6 +118,56 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
             stored.Status.Should().Be(JobStatus.Idle);
             stored.RetryCount.Should().Be(0);
             stored.Lease.State.Should().NotBe(RowLeaseState.Active);
+        }
+    }
+
+    [Theory]
+    [InlineData(NodeDeathPolicy.MarkFailed)]
+    [InlineData(NodeDeathPolicy.Skip)]
+    public async Task should_reclaim_an_immediate_enqueue_that_lapsed_before_getting_its_function_permit(
+        NodeDeathPolicy policy
+    )
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var probe = new StopProbe(StopProbeMode.BlockIgnoringCancellation);
+        using var host = _BuildHost(probe, fallbackInterval: TimeSpan.FromHours(1), timeProvider: clock);
+        await host.StartAsync(AbortToken);
+        var store = _Store(host);
+        var scheduler = _Scheduler(host);
+
+        try
+        {
+            var running = await scheduler.EnqueueAsync<GatedLongRunningStopJob>(AbortToken);
+            await probe.Started.Bounded();
+            var waiting = await scheduler.EnqueueAsync<GatedLongRunningStopJob>(
+                o => o.WithNodeDeathPolicy(policy),
+                AbortToken
+            );
+            var queued = (await store.GetTimeJobByIdAsync(waiting, AbortToken))!;
+
+            // Keep the holder's lease live across the waiting claim's expiry, then run just the store's sweeps.
+            clock.Advance(TimeSpan.FromMinutes(2));
+            var live = (await store.GetTimeJobByIdAsync(running, AbortToken))!;
+            var renewed = await store.RenewTimeJobLeaseAsync(
+                JobsLeaseTables.TimeJob(running, live.Lease.Generation),
+                live.Lease.Holder!,
+                AbortToken
+            );
+            renewed.Should().Be(1);
+            clock.Advance(TimeSpan.FromMinutes(4));
+            await store.ReclaimStalledTimeJobsAsync(AbortToken);
+            var reclaimed = await store.QueueTimedOutTimeJobsAsync(AbortToken).ToArrayAsync(AbortToken);
+
+            queued.Status.Should().Be(JobStatus.Queued);
+            var freshClaim = reclaimed.Should().ContainSingle(x => x.Id == waiting).Subject;
+            freshClaim.Lease.Generation.Should().BeGreaterThan(queued.Lease.Generation);
+            freshClaim.RetryCount.Should().Be(0);
+            probe.Invocations.Should().Be(1);
+        }
+        finally
+        {
+            probe.Release();
+            await host.StopAsync(AbortToken);
         }
     }
 
@@ -268,7 +319,7 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
             waiting = waitsOnFunctionGate
                 ? await scheduler.EnqueueAsync<GatedLongRunningStopJob>(o => o.WithRetries(3), AbortToken)
                 : await scheduler.EnqueueAsync<LongRunningStopJob>(o => o.WithRetries(3), AbortToken);
-            (await store.GetTimeJobByIdAsync(waiting, AbortToken))!.Status.Should().Be(JobStatus.InProgress);
+            (await store.GetTimeJobByIdAsync(waiting, AbortToken))!.Status.Should().Be(JobStatus.Queued);
 
             // when
             await host.StopAsync(AbortToken);
@@ -331,7 +382,8 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
         int maxConcurrency = 4,
         TimeSpan? stopBudget = null,
         TimeSpan? hostShutdownTimeout = null,
-        TimeSpan? fallbackInterval = null
+        TimeSpan? fallbackInterval = null,
+        TimeProvider? timeProvider = null
     )
     {
         return new HostBuilder()
@@ -341,6 +393,11 @@ public sealed class JobsGracefulStopReleaseTests : TestBase
                     options.ShutdownTimeout = hostShutdownTimeout ?? _ShutdownTimeout
                 );
                 services.AddSingleton(probe);
+                if (timeProvider is not null)
+                {
+                    services.AddSingleton(timeProvider);
+                }
+
                 services.AddHeadlessJobs(options =>
                     options
                         .AddModule<StopJobsModule>()

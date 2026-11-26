@@ -11,7 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Jobs.Provider;
 
 internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
-    : IJobPersistenceProvider<TTimeJob, TCronJob>
+    : IJobPersistenceProvider<TTimeJob, TCronJob>,
+        IJobImmediateAdmission<TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
@@ -375,6 +376,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         var now = _timeProvider.GetUtcNow();
         var fallbackThreshold = now.UtcDateTime.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
+        var saturated = _SaturatedClusterFunctions(now);
 
         // First, get the time jobs that need to be updated (matching EF query)
         // NOTE: we project to the raw job here and only build the full
@@ -384,6 +386,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 x.ExecutionTime != null
                 && _CanFallbackClaim(x.Status, x.Lease, now)
                 && _runFilter.Allows(x.Function)
+                && !saturated.Contains(x.Function)
                 && x.ExecutionTime <= fallbackThreshold
                 && _ParentGateAllowsClaim(x) // The fallback claims timed rows directly, so it is gated too
             ) // Only tasks older than 1 second
@@ -1116,9 +1119,20 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(updatedIds.ToArray());
     }
 
+    Task<TimeJobEntity[]> IJobImmediateAdmission<TCronJob>.QueueImmediateTimeJobsAsync(
+        Guid[] ids,
+        CancellationToken cancellationToken
+    ) => _AcquireImmediateTimeJobsAsync(ids, JobStatus.Queued, cancellationToken);
+
     public Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
         Guid[]? ids,
         CancellationToken cancellationToken = default
+    ) => _AcquireImmediateTimeJobsAsync(ids, JobStatus.InProgress, cancellationToken);
+
+    private Task<TimeJobEntity[]> _AcquireImmediateTimeJobsAsync(
+        Guid[]? ids,
+        JobStatus status,
+        CancellationToken cancellationToken
     )
     {
         if (ids == null || ids.Length == 0)
@@ -1152,7 +1166,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
             var updatedTicker = _CloneTicker(job);
             updatedTicker.Lease = granted;
-            updatedTicker.Status = JobStatus.InProgress;
+            updatedTicker.Status = status;
             updatedTicker.UpdatedAt = now;
             updatedTicker.ChangedAt = _NextChangeMarker();
 
@@ -3584,11 +3598,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     {
         var now = _timeProvider.GetUtcNow();
         var fallbackThreshold = now.UtcDateTime.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
+        var saturated = _SaturatedClusterFunctions(now);
 
         var occurrencesToUpdate = _cronOccurrences
             .Values.Where(x =>
                 _CanFallbackClaim(x.Status, x.Lease, now)
                 && _runFilter.Allows(x.Function)
+                && !saturated.Contains(x.Function)
                 && x.ExecutionTime <= fallbackThreshold
                 // A paused definition's occurrence waits for resume, as on the relational providers.
                 && !(_cronJobs.TryGetValue(x.CronJobId, out var definition) && definition.IsPaused)
@@ -4464,9 +4480,20 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         return Task.FromResult(count);
     }
 
+    Task<CronJobOccurrenceEntity<TCronJob>[]> IJobImmediateAdmission<TCronJob>.QueueImmediateCronOccurrencesAsync(
+        Guid[] occurrenceIds,
+        CancellationToken cancellationToken
+    ) => _AcquireImmediateCronOccurrencesAsync(occurrenceIds, JobStatus.Queued, cancellationToken);
+
     public Task<CronJobOccurrenceEntity<TCronJob>[]> AcquireImmediateCronOccurrencesAsync(
         Guid[]? occurrenceIds,
         CancellationToken cancellationToken = default
+    ) => _AcquireImmediateCronOccurrencesAsync(occurrenceIds, JobStatus.InProgress, cancellationToken);
+
+    private Task<CronJobOccurrenceEntity<TCronJob>[]> _AcquireImmediateCronOccurrencesAsync(
+        Guid[]? occurrenceIds,
+        JobStatus status,
+        CancellationToken cancellationToken
     )
     {
         if (occurrenceIds == null || occurrenceIds.Length == 0)
@@ -4503,7 +4530,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
                 var updated = _CloneCronOccurrence(occurrence);
                 updated.Lease = granted;
-                updated.Status = JobStatus.InProgress;
+                updated.Status = status;
                 updated.UpdatedAt = now;
                 updated.ChangedAt = _NextChangeMarker();
 

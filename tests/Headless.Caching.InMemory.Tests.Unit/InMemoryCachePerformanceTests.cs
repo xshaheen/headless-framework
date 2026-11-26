@@ -161,11 +161,14 @@ public sealed class InMemoryCachePerformanceTests : TestBase
     private static int _GetResidentCount(InMemoryCache cache)
     {
         var field = typeof(InMemoryCache).GetField(
-            "_memory",
+            "_state",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         field.Should().NotBeNull();
 
-        return ((ICollection)field!.GetValue(cache)!).Count;
+        var state = field!.GetValue(cache)!;
+#pragma warning disable REFL009 // The backing state type is private.
+        return ((ICollection)state.GetType().GetProperty("Entries")!.GetValue(state)!).Count;
+#pragma warning restore REFL009
     }
 }

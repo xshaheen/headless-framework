@@ -277,7 +277,8 @@ internal sealed class TenantScopedPresignedBlobStorage(IBlobStorage inner, Tenan
 internal sealed partial class TenantBlobScope(
     TenantBlobScopingStrategy strategy,
     string containerPrefix,
-    ICurrentTenant currentTenant
+    ICurrentTenant currentTenant,
+    IBlobNamingNormalizer? namingNormalizer
 )
 {
     /// <summary>The longest container name S3, R2, and Azure accept; longer names are truncated by their normalizers.</summary>
@@ -358,7 +359,7 @@ internal sealed partial class TenantBlobScope(
         return name;
     }
 
-    private static string _ContainerSegment(string container)
+    private string _ContainerSegment(string container)
     {
         // The logical container becomes the first key segment, so a separator inside it would let "a/b" + "c" and
         // "a" + "b/c" address the same key.
@@ -366,6 +367,18 @@ internal sealed partial class TenantBlobScope(
         {
             throw new ArgumentException(
                 "A container cannot contain '/' or '\\' when blobs are scoped with a container per tenant.",
+                nameof(container)
+            );
+        }
+
+        // The prefix is also the boundary used to strip results. Normalizing it could merge logical containers.
+        if (
+            namingNormalizer is not null
+            && !string.Equals(namingNormalizer.NormalizeBlobName(container), container, StringComparison.Ordinal)
+        )
+        {
+            throw new ArgumentException(
+                "A logical container must keep its name after blob path normalization.",
                 nameof(container)
             );
         }

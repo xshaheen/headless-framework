@@ -271,12 +271,11 @@ internal static class MessagingViews
         message.Origin.Headers.TryGetValue(Headers.MessageId, out var id) ? id : null;
 
     /// <summary>
-    /// Reads the list row of one stored row, which carries what a by-id read lacks, such as a received row's consumer,
-    /// hold, and change marker; <see langword="null"/> when the row has no message id or is gone.
+    /// Reads one stored row's list projection, including its consumer, hold, and change marker.
     /// </summary>
     /// <remarks>
-    /// A list filters by message id, not storage id, so the rows of every consumer and generation of the message come
-    /// back and the one asked for is picked by its storage id.
+    /// Narrow a custom provider's list by logical message id when it is available. Follow the continuation
+    /// until the exact storage id is found or the list is exhausted.
     /// </remarks>
     public static async Task<MessageView?> ReadViewAsync(
         MessagingStore store,
@@ -286,24 +285,35 @@ internal static class MessagingViews
         CancellationToken cancellationToken
     )
     {
-        if (messageId is null)
+        var monitoring = store.Monitoring;
+        if (monitoring is IStorageIdMonitoringApi exact)
         {
-            return null;
+            var rows = await exact.GetMessageViewsAsync(type, [storageId], cancellationToken).ConfigureAwait(false);
+
+            return rows.Count > 0 ? rows[0].View : null;
         }
 
-        var page = await store
-            .Monitoring.ListMessagesAsync(
-                new MessageListQuery { MessageType = type, MessageId = messageId },
-                after: null,
-                _ViewPageSize,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var query = new MessageListQuery { MessageType = type, MessageId = messageId };
+        MessageListPosition? after = null;
 
-        return page.Items.FirstOrDefault(row => row.StorageId == storageId);
+        do
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var page = await monitoring
+                .ListMessagesAsync(query, after, _ViewPageSize, cancellationToken)
+                .ConfigureAwait(false);
+            var row = page.Items.FirstOrDefault(row => row.StorageId == storageId);
+            if (row is not null)
+            {
+                return row;
+            }
+
+            after = page.Next;
+        } while (after is not null);
+
+        return null;
     }
 
-    // A message id is shared by the rows of every consumer and generation; a page this size holds them all in practice.
     private const int _ViewPageSize = 100;
 
     private static string? _TraceIdOf(MediumMessage message)

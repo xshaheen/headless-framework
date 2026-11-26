@@ -16,6 +16,7 @@ namespace Headless.UnitOfWork.Internal;
 /// begun-and-forgotten handle takes once a pooled context is reset or its transaction disposed by hand — so a
 /// reused key falls back to a fresh begin instead of joining a transaction that no longer exists. Binding
 /// replaces any previous entry; the providers refuse a second begin on a live key before they get here.
+/// A completing unit keeps its binding until it has released the resource, so no new work can start on it.
 /// <para>
 /// The abandon rolls the stale transaction back and, when the unit opened the connection, closes it. A caller
 /// that is already asynchronous uses <see cref="TryGetAsync" /> so that close has finished before it begins on
@@ -50,10 +51,10 @@ internal sealed class UnitOfWorkBinding<TKey>
 
     /// <summary>
     /// Gets the unit bound to <paramref name="key" /> when it is still <see cref="UnitOfWorkState.Active" /> and,
-    /// for an owned unit, its transaction is still open; anything else is evicted, and an owned unit that
-    /// outlived its own transaction is abandoned before this returns, so a handle someone kept refuses further
-    /// registrations.
+    /// for an owned unit, its transaction is still open. A terminal unit is evicted, and an owned unit that
+    /// outlived its own transaction is abandoned before this returns.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The bound unit is still completing.</exception>
     public bool TryGet(TKey key, out IUnitOfWork unit)
     {
         var stale = _Lookup(key, out unit);
@@ -86,7 +87,7 @@ internal sealed class UnitOfWorkBinding<TKey>
 
     /// <summary>
     /// Resolves the live unit for <paramref name="key" /> into <paramref name="unit" /> (<see langword="null" />
-    /// when none), evicting anything else, and returns the owned unit whose transaction ended behind its back
+    /// when none), evicting terminal units, and returns the owned unit whose transaction ended behind its back
     /// so the caller can abandon it: nobody will complete it, and joining it would run the block outside any
     /// transaction and park enlisted rows on a unit that never drains.
     /// </summary>
@@ -99,7 +100,9 @@ internal sealed class UnitOfWorkBinding<TKey>
             return null;
         }
 
-        if (bound.State == UnitOfWorkState.Active)
+        var state = bound.State;
+
+        if (state == UnitOfWorkState.Active)
         {
             if (bound.Resource is not { IsOwned: true, IsTransactionCompleted: true })
             {
@@ -108,13 +111,19 @@ internal sealed class UnitOfWorkBinding<TKey>
                 return null;
             }
 
-            _bindings.Remove(key);
-
-            return bound;
+            // A concurrent CompleteAsync can end the provider transaction between reading State and probing it.
+            state = bound.State;
         }
 
-        _bindings.Remove(key);
+        if (state == UnitOfWorkState.Completing)
+        {
+            throw new InvalidOperationException(
+                "The bound unit of work is completing. Await CompleteAsync before starting new work on this resource."
+            );
+        }
 
-        return null;
+        Unbind(key, bound);
+
+        return state == UnitOfWorkState.Active ? bound : null;
     }
 }

@@ -166,38 +166,27 @@ public sealed class PostgreSqlUnitOfWorkFixture
     }
 
     /// <summary>
-    /// Ends the backend <paramref name="processId" /> from another connection and waits until it is gone, so the
-    /// next command its client sends meets a dropped session. <c>pg_terminate_backend</c> only signals the backend.
+    /// Schedules a disconnect inside COMMIT, after any ordinary pre-commit queries have run.
     /// </summary>
-    public static async Task TerminateSessionAsync(
-        string connectionString,
-        int processId,
-        CancellationToken cancellationToken
-    )
+    public static async Task ArmCommitDisconnectAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        await using var admin = new NpgsqlConnection(connectionString);
-        await admin.OpenAsync(cancellationToken);
-
-        await using (var terminate = new NpgsqlCommand("SELECT pg_terminate_backend(@pid)", admin))
-        {
-            terminate.Parameters.AddWithValue("pid", processId);
-            await terminate.ExecuteScalarAsync(cancellationToken);
-        }
-
-        await using var alive = new NpgsqlCommand("SELECT count(*) FROM pg_stat_activity WHERE pid = @pid", admin);
-        alive.Parameters.AddWithValue("pid", processId);
-
-        for (var attempt = 0; attempt < 200; attempt++)
-        {
-            if (Convert.ToInt32(await alive.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 0)
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
-        }
-
-        throw new TimeoutException($"Backend {processId} was still alive 5 seconds after pg_terminate_backend.");
+        await using var command = new NpgsqlCommand(
+            """
+            CREATE TEMP TABLE commit_disconnect (id integer) ON COMMIT DROP;
+            CREATE FUNCTION pg_temp.terminate_at_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                PERFORM pg_terminate_backend(pg_backend_pid());
+                PERFORM 1;
+                RETURN NEW;
+            END;
+            $$;
+            CREATE CONSTRAINT TRIGGER terminate_at_commit AFTER INSERT ON commit_disconnect
+                DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION pg_temp.terminate_at_commit();
+            INSERT INTO commit_disconnect VALUES (1);
+            """,
+            connection
+        );
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public static ServiceProvider BuildProvider(CapturingLoggerProvider? logs = null)

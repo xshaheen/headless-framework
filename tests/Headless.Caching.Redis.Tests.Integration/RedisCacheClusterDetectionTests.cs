@@ -26,12 +26,17 @@ public sealed class RedisCacheClusterDetectionTests : TestBase
         _multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(_database);
         _multiplexer.GetEndPoints(Arg.Any<bool>()).Returns([endpoint]);
         _multiplexer.GetServer(endpoint, Arg.Any<object?>()).Returns(_server);
-        // Each key lands in its own slot, so a cluster-aware removal issues one DEL per key.
+        // Each key lands in its own slot, so a cluster-aware removal sends one data/metadata pair per command.
         _multiplexer.HashSlot(Arg.Any<RedisKey>()).Returns(call => ((string)call.Arg<RedisKey>()!).Length);
         _server.ServerType.Returns(ServerType.Cluster);
         _database
-            .KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>())
-            .Returns(call => (long)call.Arg<RedisKey[]>().Length);
+            .ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]?>(),
+                Arg.Any<CommandFlags>()
+            )
+            .Returns(call => RedisResult.Create((RedisValue)(call.Arg<RedisKey[]>().LongLength / 2)));
     }
 
     [Fact]
@@ -57,10 +62,20 @@ public sealed class RedisCacheClusterDetectionTests : TestBase
         removed.Should().Be(2);
         await _database
             .Received(2)
-            .KeyDeleteAsync(Arg.Is<RedisKey[]>(keys => keys.Length == 1), Arg.Any<CommandFlags>());
+            .ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Is<RedisKey[]>(keys => keys.Length == 2),
+                Arg.Any<RedisValue[]?>(),
+                Arg.Any<CommandFlags>()
+            );
         await _database
             .DidNotReceive()
-            .KeyDeleteAsync(Arg.Is<RedisKey[]>(keys => keys.Length > 1), Arg.Any<CommandFlags>());
+            .ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Is<RedisKey[]>(keys => keys.Length > 2),
+                Arg.Any<RedisValue[]?>(),
+                Arg.Any<CommandFlags>()
+            );
     }
 
     [Fact]
@@ -81,6 +96,11 @@ public sealed class RedisCacheClusterDetectionTests : TestBase
         removed.Should().Be(2);
         await _database
             .Received(1)
-            .KeyDeleteAsync(Arg.Is<RedisKey[]>(keys => keys.Length == 2), Arg.Any<CommandFlags>());
+            .ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Is<RedisKey[]>(keys => keys.Length == 4),
+                Arg.Any<RedisValue[]?>(),
+                Arg.Any<CommandFlags>()
+            );
     }
 }

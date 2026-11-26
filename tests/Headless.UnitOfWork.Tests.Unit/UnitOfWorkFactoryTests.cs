@@ -240,9 +240,15 @@ public sealed class UnitOfWorkFactoryTests : TestBase
     [Fact]
     public void should_keep_unit_of_work_enum_numeric_contracts_stable()
     {
-        new[] { (int)UnitOfWorkState.Active, (int)UnitOfWorkState.Completed, (int)UnitOfWorkState.Failed }
+        new[]
+        {
+            (int)UnitOfWorkState.Active,
+            (int)UnitOfWorkState.Completed,
+            (int)UnitOfWorkState.Failed,
+            (int)UnitOfWorkState.Completing,
+        }
             .Should()
-            .Equal(0, 1, 2);
+            .Equal(0, 1, 2, 3);
 
         new[]
         {

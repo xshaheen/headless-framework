@@ -9,6 +9,7 @@ using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Primitives;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
@@ -276,8 +277,10 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
         enumerated.Should().BeFalse();
     }
 
-    [Fact]
-    public async Task should_scope_permission_grant_reads_to_current_tenant()
+    [Theory]
+    [InlineData("tenant-b")]
+    [InlineData("Tenant-A")]
+    public async Task should_scope_permission_grant_reads_to_current_tenant(string otherTenant)
     {
         // given
         await fixture.DropSchemaAsync(_Schema, AbortToken);
@@ -302,7 +305,7 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
             "Role",
             "admin",
             isGranted: false,
-            tenantId: "tenant-b"
+            tenantId: otherTenant
         );
 
         // when
@@ -315,6 +318,67 @@ public abstract class PermissionsStorageConformanceTests<TFixture>(TFixture fixt
         found!.TenantId.Should().Be("tenant-a");
         found.IsGranted.Should().BeTrue();
         list.Should().ContainSingle(x => x.TenantId == "tenant-a");
+    }
+
+    [Fact]
+    public async Task should_refuse_padded_raw_scope_keys_before_writing_any_enlisted_rows()
+    {
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        var tenant = new TestCurrentTenant("tenant-a");
+        using var host = fixture.CreateHost(
+            _Schema,
+            configureServices: services => services.AddSingleton<ICurrentTenant>(tenant)
+        );
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var stored = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Users.Create",
+            "Role",
+            "acme",
+            isGranted: true,
+            tenantId: "tenant-a"
+        );
+        await repository.InsertAsync(stored, AbortToken);
+        await using var connection = fixture.CreateConnection(fixture.ConnectionString);
+        await using var unit = await fixture.BeginUnitOfWorkAsync(
+            host.Services.GetRequiredService<IUnitOfWorkFactory>(),
+            connection,
+            AbortToken
+        );
+        var batchRow = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Users.Delete",
+            "Role",
+            "acme",
+            isGranted: true,
+            tenantId: "tenant-a"
+        );
+        var padded = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Users.Create",
+            "Role",
+            "acme",
+            isGranted: true,
+            tenantId: "tenant-a "
+        );
+
+        var readKeys = () => repository.GetListAsync(["Users.Create"], "Role", ["acme "], AbortToken);
+        var insert = async () => await repository.InsertManyEnlistedAsync(unit, [batchRow, padded], AbortToken);
+        await readKeys.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("providerKeys");
+        await insert.Should().ThrowExactlyAsync<ArgumentException>();
+
+        using (tenant.Change("tenant-a "))
+        {
+            var read = () => repository.FindAsync("Users.Create", "Role", "acme", AbortToken);
+            var delete = async () => await repository.DeleteManyEnlistedAsync(unit, [stored], AbortToken);
+            await read.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("tenantId");
+            await delete.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("tenantId");
+        }
+
+        await unit.CompleteAsync(AbortToken);
+        var grants = await repository.GetListAsync("Role", "acme", AbortToken);
+        grants.Should().ContainSingle().Which.Id.Should().Be(stored.Id);
     }
 
     [Fact]

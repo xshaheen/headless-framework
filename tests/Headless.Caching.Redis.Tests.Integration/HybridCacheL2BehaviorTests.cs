@@ -1,11 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Reflection;
 using Headless.Caching;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
+using StackExchange.Redis;
 
 namespace Tests;
 
@@ -30,10 +34,12 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     private HybridCache _CreateHybrid(
         string keyPrefix = "",
         HybridCacheOptions? hybridOptions = null,
-        CapturingBackplane? bus = null
+        CapturingBackplane? bus = null,
+        TimeProvider? timeProvider = null
     )
     {
-        var l1 = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        var clock = timeProvider ?? TimeProvider.System;
+        var l1 = new InMemoryCache(clock, new InMemoryCacheOptions());
         _tierCaches.Add(l1);
 
         var redisCacheOptions = new RedisCacheOptions
@@ -44,7 +50,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
 
         var l2 = new RedisCache(
             new SystemJsonSerializer(),
-            TimeProvider.System,
+            clock,
             redisCacheOptions,
             fixture.ScriptsLoader,
             LoggerFactory.CreateLogger<RedisCache>()
@@ -54,7 +60,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
         var publisher = (IHybridCacheBackplane?)bus ?? NoopBackplane.Instance;
         hybridOptions ??= new HybridCacheOptions();
 
-        return new HybridCache(l1, l2, publisher, hybridOptions, NullLogger<HybridCache>.Instance, TimeProvider.System);
+        return new HybridCache(l1, l2, publisher, hybridOptions, NullLogger<HybridCache>.Instance, clock);
     }
 
     // FlushAll seed-order: after FlushAsync, a new upsert + read must return the new value, proving
@@ -118,6 +124,97 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
                 TimeSpan.FromSeconds(31), // small grace for clock skew between write and read
                 "L1 TTL must be capped at DefaultLocalExpiration (30s), not the full L2 TTL (5min)"
             );
+    }
+
+    [Fact]
+    public async Task should_respect_sliding_absolute_cap_after_a_cold_read()
+    {
+        await _FlushAsync();
+        var clock = new FakeTimeProvider();
+        await using var writer = _CreateHybrid("hybrid-sliding:", timeProvider: clock);
+        await using var reader = _CreateHybrid("hybrid-sliding:", timeProvider: clock);
+        var key = Faker.Random.AlphaNumeric(12);
+        var duration = TimeSpan.FromSeconds(30);
+        var options = new CacheEntryOptions { Duration = duration, SlidingExpiration = TimeSpan.FromSeconds(15) };
+
+        await writer.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        var database = fixture.ConnectionMultiplexer.GetDatabase();
+        await database.KeyExpireAsync("hybrid-sliding:" + key, TimeSpan.FromSeconds(5));
+
+        (await reader.GetAsync<string>(key, AbortToken)).Value.Should().Be("value");
+        (await database.KeyTimeToLiveAsync("hybrid-sliding:" + key)).Should().BeGreaterThan(TimeSpan.FromSeconds(10));
+
+        clock.Advance(duration + TimeSpan.FromSeconds(1));
+
+        (await reader.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_not_rearm_a_replacement_entry_after_a_cold_read(bool bufferRead)
+    {
+        await _FlushAsync();
+        var clock = new FakeTimeProvider();
+        var options = new RedisCacheOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer };
+        using var redis = new RedisCache(new SystemJsonSerializer(), clock, options, fixture.ScriptsLoader);
+        var store = (IFactoryCacheStore)redis;
+        var key = Faker.Random.AlphaNumeric(12);
+        var now = clock.GetUtcNow().UtcDateTime;
+        var initial = new CacheStoreEntryWrite<byte[]>
+        {
+            Value = [1],
+            IsNull = false,
+            CreatedAt = now,
+            LogicalExpiresAt = now.AddMinutes(1),
+            PhysicalExpiresAt = now.AddMinutes(2),
+            SlidingExpiration = TimeSpan.FromMinutes(1),
+        };
+        (await store.SetEntryAsync(key, in initial, AbortToken)).Should().BeTrue();
+
+        var replacementWindow = TimeSpan.FromSeconds(10);
+        byte[] replacementValue = [2];
+        var replacement = RedisCacheEntryFrame.Encode(
+            (RedisValue)replacementValue,
+            isNull: false,
+            now.Add(replacementWindow),
+            initial.PhysicalExpiresAt,
+            replacementWindow,
+            createdAt: now
+        );
+        var database = fixture.ConnectionMultiplexer.GetDatabase();
+        var readerClock = Substitute.For<TimeProvider>();
+        // With the circuit disabled, the hybrid reads this clock to check freshness after receiving the L2 frame.
+        // Write the replacement at that point, before the hybrid re-arms the TTL from its snapshot.
+        readerClock
+            .GetUtcNow()
+            .Returns(_ =>
+            {
+                database.StringSet(key, replacement, replacementWindow).Should().BeTrue();
+                return clock.GetUtcNow();
+            });
+        using var local = new InMemoryCache(clock, new InMemoryCacheOptions());
+        await using var reader = new HybridCache(
+            local,
+            redis,
+            NoopBackplane.Instance,
+            new HybridCacheOptions(),
+            timeProvider: readerClock
+        );
+
+        if (bufferRead)
+        {
+            var destination = new ArrayBufferWriter<byte>();
+            (await reader.TryGetToAsync(key, destination, AbortToken)).Should().BeTrue();
+            destination.WrittenSpan.ToArray().Should().Equal((byte)1);
+        }
+        else
+        {
+            (await reader.GetAsync<byte[]>(key, AbortToken)).Value.Should().Equal((byte)1);
+        }
+
+        var ttl = await database.KeyTimeToLiveAsync(key);
+        ttl.Should().BePositive().And.BeLessThanOrEqualTo(replacementWindow);
     }
 
     // Backplane round-trip: an invalidation published by node A clears L1 on node B.

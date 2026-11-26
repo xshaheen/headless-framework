@@ -86,7 +86,7 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
                 AbortToken
             );
             _ = channel.QueueDeclareAsync(
-                "queue.orders.dlq",
+                "headless_dlq.queue.orders",
                 true,
                 false,
                 false,
@@ -95,7 +95,14 @@ public sealed class RabbitMqQueueTopologyTests : TestBase
                 false,
                 AbortToken
             );
-            _ = channel.QueueBindAsync("queue.orders.dlq", "test.exchange.queue.dlx", _Queue, null, false, AbortToken);
+            _ = channel.QueueBindAsync(
+                "headless_dlq.queue.orders",
+                "test.exchange.queue.dlx",
+                _Queue,
+                null,
+                false,
+                AbortToken
+            );
             _ = channel.QueueDeclareAsync(
                 _Queue,
                 true,

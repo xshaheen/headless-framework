@@ -25,12 +25,13 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
     private (HybridCache cache, InMemoryCache l1, GatedRemoteCache l2) _CreateGatedCache(
         HybridCacheOptions options,
-        ILogger<HybridCache>? logger = null
+        ILogger<HybridCache>? logger = null,
+        IHybridCacheBackplane? publisher = null
     )
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new GatedRemoteCache(_timeProvider);
-        var cache = new HybridCache(l1, l2, _CreateNoopPublisher(), options, logger, _timeProvider);
+        var cache = new HybridCache(l1, l2, publisher ?? _CreateNoopPublisher(), options, logger, _timeProvider);
         return (cache, l1, l2);
     }
 
@@ -225,6 +226,101 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         (await l2.GetAsync<string>(key, AbortToken))
             .HasValue.Should()
             .BeFalse("the clear was issued after the caller's write");
+    }
+
+    [Fact]
+    public async Task should_not_replay_an_older_background_failure_over_a_newer_same_time_write()
+    {
+        var publisher = _CreateNoopPublisher();
+        var published = 0;
+        var newerPublished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bothPublished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var count = Interlocked.Increment(ref published);
+                if (count == 1)
+                {
+                    newerPublished.TrySetResult();
+                }
+                else if (count == 2)
+                {
+                    bothPublished.TrySetResult();
+                }
+
+                return ValueTask.CompletedTask;
+            });
+        var (cache, _, l2) = _CreateGatedCache(
+            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true, EnableAutoRecovery = true },
+            publisher: publisher
+        );
+        await using var _ = cache;
+        const string key = "value";
+        var lifetime = TimeSpan.FromMinutes(5);
+
+        var earlierFailure = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var newerSuccess = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        l2.UpsertGate = earlierFailure;
+        await cache.UpsertAsync(key, "older", lifetime, AbortToken);
+        try
+        {
+            await l2.UpsertStarted.Task.Bounded();
+            // The clock stays frozen so the two writes have identical timestamps and expiration stamps.
+            l2.UpsertGate = newerSuccess;
+            await cache.UpsertAsync(key, "newer", lifetime, AbortToken);
+            newerSuccess.TrySetResult();
+            await newerPublished.Task.Bounded();
+        }
+        finally
+        {
+            newerSuccess.TrySetResult();
+            earlierFailure.TrySetException(new InvalidOperationException("Earlier L2 write failed"));
+        }
+
+        await bothPublished.Task.Bounded();
+        await cache.RecoveryQueue!.ProcessAsync(AbortToken);
+
+        (await l2.GetAsync<string>(key, AbortToken)).Value.Should().Be("newer");
+    }
+
+    [Fact]
+    public async Task should_keep_the_original_expiration_when_a_background_failure_is_delayed()
+    {
+        var logger = new SignalingLogger();
+        var (cache, _, l2) = _CreateGatedCache(
+            new HybridCacheOptions
+            {
+                AllowBackgroundDistributedCacheOperations = true,
+                EnableAutoRecovery = true,
+                AutoRecoveryDelay = TimeSpan.FromHours(1),
+            },
+            logger
+        );
+        await using var _ = cache;
+        const string key = "value";
+        var lifetime = TimeSpan.FromMinutes(5);
+        var deadline = _timeProvider.GetUtcNow().UtcDateTime.Add(lifetime);
+        var failure = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        l2.UpsertGate = failure;
+
+        await cache.UpsertAsync(key, "v", lifetime, AbortToken);
+        try
+        {
+            await l2.UpsertStarted.Task.Bounded();
+            _timeProvider.Advance(TimeSpan.FromMinutes(1));
+        }
+        finally
+        {
+            failure.TrySetException(new InvalidOperationException("L2 write failed"));
+        }
+
+        await logger.WhenLoggedAsync("AutoRecoveryItemQueued").Bounded();
+        await cache.RecoveryQueue!.ProcessAsync(AbortToken);
+
+        var entry = await l2.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
+        entry.Value.Should().Be("v");
+        entry.PhysicalExpiresAt.Should().Be(deadline);
     }
 
     [Fact]

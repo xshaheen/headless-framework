@@ -29,6 +29,7 @@ public sealed class RabbitMqHostPrefixTests : TestBase
         RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue).Should().Be("wt1.messaging.default.router.queue");
         RabbitMqPhysicalAddress.Queue("wt1", MessageLane.Bus, "workers", "orders").Should().Be("wt1.bus.workers");
         RabbitMqPhysicalAddress.Queue("wt1", MessageLane.Queue, "orders", "orders").Should().Be("wt1.queue.orders");
+        RabbitMqPhysicalAddress.DeadLetterQueue("wt1.queue.orders").Should().Be("headless_dlq.wt1.queue.orders");
     }
 
     [Fact]
@@ -51,8 +52,13 @@ public sealed class RabbitMqHostPrefixTests : TestBase
     [Fact]
     public void should_fail_when_the_prefix_pushes_a_queue_lane_queue_past_the_limit()
     {
-        // The queue is the name publishers and consumers agree on, so it is never renamed to fit.
-        var name = new string('o', 245);
+        // The live queue keeps its name at the limit, and only the dead-letter queue takes the hash fallback.
+        var maxLengthName = new string('o', 245);
+        var maxLengthQueue = RabbitMqPhysicalAddress.Queue("wt1", MessageLane.Queue, maxLengthName, maxLengthName);
+        maxLengthQueue.Should().Be("wt1.queue." + maxLengthName).And.HaveLength(255);
+        RabbitMqPhysicalAddress.DeadLetterQueue(maxLengthQueue).Should().MatchRegex("^headless_dlq\\.[0-9a-fA-F]{64}$");
+
+        var name = maxLengthName + "o";
 
         var act = () => RabbitMqPhysicalAddress.Queue("wt1", MessageLane.Queue, name, name);
 

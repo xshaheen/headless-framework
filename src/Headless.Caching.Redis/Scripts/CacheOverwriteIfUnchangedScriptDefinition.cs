@@ -20,12 +20,23 @@ internal sealed class CacheOverwriteIfUnchangedScriptDefinition : RedisScriptDef
               return 0
             end
 
-            -- RedisValue.EmptyString is the no-expiry sentinel passed for @expires.
-            if @expires ~= '' then
-              return redis.call('set', @key, @value, 'PX', @expires) and 1 or 0
+            local flushGeneration = tonumber(@flushGeneration)
+            if flushGeneration then
+              local storedGeneration = tonumber(redis.call('get', @generationKey))
+              if storedGeneration and storedGeneration >= flushGeneration then
+                return 0
+              end
             end
 
-            return redis.call('set', @key, @value) and 1 or 0
+            -- RedisValue.EmptyString is the no-expiry sentinel passed for @expires.
+            if @expires ~= '' then
+              redis.call('set', @key, @value, 'PX', @expires)
+            else
+              redis.call('set', @key, @value)
+            end
+
+            redis.call('del', @generationKey)
+            return 1
             """
         ) { }
 }

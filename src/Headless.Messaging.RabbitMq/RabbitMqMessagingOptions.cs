@@ -150,7 +150,8 @@ public sealed class RabbitMqMessagingOptions
 
         /// <summary>
         /// When <see langword="true"/>, every shared queue dead-letters to a direct exchange named
-        /// <c>{lane exchange}.dlx</c>, and the transport declares a <c>{queue}.dlq</c> queue that keeps what it receives.
+        /// <c>{lane exchange}.dlx</c>, and the transport declares a <c>headless_dlq.{queue}</c> queue that keeps what it
+        /// receives. For long names the suffix is a stable hash of the live queue name.
         /// A malformed envelope the consumer rejects without requeue, a message the messaging core poisons on arrival, a
         /// message whose <see cref="MessageTTL"/> expires, and a message past <see cref="DeliveryLimit"/> then land there
         /// instead of being dropped. Defaults to <see langword="false"/>. Nothing in the framework consumes a dead-letter queue.

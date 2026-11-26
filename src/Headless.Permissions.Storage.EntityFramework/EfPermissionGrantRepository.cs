@@ -33,7 +33,7 @@ namespace Headless.Permissions;
 /// <typeparam name="TContext">The consumer's <see cref="DbContext"/> that maps the permissions entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
 /// <param name="cache">
-/// The permission-grant cache shared with <c>PermissionGrantStore</c>. A write here stores the written status in the
+/// The permission-grant cache shared with <c>PermissionGrantStore</c>. A write here syncs the current status into the
 /// affected cache entry (undefined for a delete), so a direct repository write (bypassing <c>IPermissionManager</c>) is
 /// reflected on the next read. Storing rather than removing keeps out a reader that loaded the rows before the write:
 /// readers fill only an absent entry.
@@ -55,7 +55,7 @@ internal sealed class EfPermissionGrantRepository<TContext>(
     IOptions<PermissionManagementOptions> managementOptions,
     ILogger<EfPermissionGrantRepository<TContext>> logger,
     ITenantWriteGuardBypass? writeGuardBypass = null
-) : IPermissionGrantRepository
+) : IPermissionGrantRepository, IPermissionGrantRepositoryForStore
     where TContext : DbContext
 {
     private const string _VersionConflictMessage = "The permission grants changed after the version was read.";
@@ -64,6 +64,25 @@ internal sealed class EfPermissionGrantRepository<TContext>(
     private const string _Operation = "permission grant";
 
     private readonly TimeSpan _cacheExpiration = managementOptions.Value.GrantCacheExpiration;
+    private readonly IOptions<PermissionManagementOptions> _managementOptions = managementOptions;
+    private bool WritesCache { get; init; } = true;
+
+    IPermissionGrantRepository IPermissionGrantRepositoryForStore.ForStore(ICache<PermissionGrantCacheItem> storeCache)
+    {
+        return ReferenceEquals(storeCache, cache)
+            ? new EfPermissionGrantRepository<TContext>(
+                dbFactory,
+                cache,
+                currentTenant,
+                _managementOptions,
+                logger,
+                writeGuardBypass
+            )
+            {
+                WritesCache = false,
+            }
+            : this;
+    }
 
     /// <summary>
     /// Returns the first grant record matching <paramref name="name"/>, <paramref name="providerName"/>,
@@ -457,14 +476,30 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         IReadOnlyCollection<PermissionGrantRecord> deleted
     )
     {
-        PermissionGrantCacheInvalidation.UpsertAfterCommit(
-            unitOfWork,
-            cache,
-            currentTenant,
-            PermissionGrantCacheInvalidation.WrittenItems(written, deleted),
-            _cacheExpiration,
-            logger
-        );
+        if (!WritesCache)
+        {
+            return;
+        }
+
+        foreach (
+            var scope in written
+                .Concat(deleted)
+                .GroupBy(record => (record.TenantId, record.ProviderName, record.ProviderKey))
+        )
+        {
+            using var tenant = _EnterCacheTenant(scope.Key.TenantId);
+            PermissionGrantCacheInvalidation.SyncAfterCommit(
+                unitOfWork,
+                cache,
+                this,
+                currentTenant,
+                scope.Select(record => record.Name).Distinct(StringComparer.Ordinal).ToArray(),
+                scope.Key.ProviderName,
+                scope.Key.ProviderKey,
+                _cacheExpiration,
+                logger
+            );
+        }
     }
 
     /// <summary>
@@ -476,14 +511,46 @@ internal sealed class EfPermissionGrantRepository<TContext>(
         IReadOnlyCollection<PermissionGrantRecord> deleted
     )
     {
-        await cache
-            .UpsertAllAsync(
-                PermissionGrantCacheInvalidation.WrittenItems(written, deleted),
-                _cacheExpiration,
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
+        if (!WritesCache)
+        {
+            return;
+        }
+
+        foreach (
+            var scope in written
+                .Concat(deleted)
+                .GroupBy(record => (record.TenantId, record.ProviderName, record.ProviderKey))
+        )
+        {
+            var names = scope.Select(record => record.Name).Distinct(StringComparer.Ordinal).ToArray();
+
+            try
+            {
+                using var tenant = _EnterCacheTenant(scope.Key.TenantId);
+
+                await PermissionGrantCacheInvalidation
+                    .SyncAsync(
+                        cache,
+                        this,
+                        names,
+                        scope.Key.ProviderName,
+                        scope.Key.ProviderKey,
+                        _cacheExpiration,
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Cache maintenance cannot reverse the repository's durable write.
+            catch (Exception exception)
+#pragma warning restore CA1031
+            {
+                logger.LogFailedToInvalidateGrantCache(exception, names.Length);
+            }
+        }
     }
+
+    private IDisposable? _EnterCacheTenant(string? tenantId) =>
+        string.Equals(currentTenant.Id, tenantId, StringComparison.Ordinal) ? null : currentTenant.Change(tenantId);
 
     /// <summary>The grant rows of the current tenant only; a null tenant selects the host's rows.</summary>
     private IQueryable<PermissionGrantRecord> _Grants(TContext db)
