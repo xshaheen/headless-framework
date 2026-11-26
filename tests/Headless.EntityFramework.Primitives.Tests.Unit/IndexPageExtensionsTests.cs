@@ -64,6 +64,48 @@ public sealed class IndexPageExtensionsTests : TestBase
         await action.Should().ThrowAsync<ArgumentNullException>();
     }
 
+    [Fact]
+    public async Task should_return_only_the_requested_ordered_page_and_the_total_when_a_request_is_given()
+    {
+        // given
+        await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
+        var request = new TestIndexPageRequest { Index = 1, Size = 4 };
+
+        // when
+        var page = await fixture.Context.Rows.ToIndexPageAsync(
+            static row => row.Position,
+            ascending: false,
+            request,
+            AbortToken
+        );
+
+        // then
+        page.Index.Should().Be(1);
+        page.Size.Should().Be(4);
+        page.TotalItems.Should().Be(9);
+        page.Items.Select(static row => row.Position).Should().Equal(5, 4, 3, 2);
+    }
+
+    [Fact]
+    public async Task should_throw_instead_of_reading_every_ordered_row_when_the_request_is_null()
+    {
+        // given
+        await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
+        IIndexPageRequest request = null!;
+
+        // when
+        Func<Task> action = async () =>
+            await fixture.Context.Rows.ToIndexPageAsync(
+                static row => row.Position,
+                ascending: true,
+                request,
+                AbortToken
+            );
+
+        // then
+        await action.Should().ThrowAsync<ArgumentNullException>();
+    }
+
     [Theory]
     [InlineData(-4, 4, -1)]
     [InlineData(int.MaxValue, 2, int.MaxValue)]
