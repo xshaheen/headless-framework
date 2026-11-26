@@ -28,11 +28,11 @@ public sealed class AppDefinedExceptionMappingTests : TestBase
     public async Task should_map_an_app_defined_conflict_to_the_same_409_body_as_conflict_exception()
     {
         // given
-        var error = new ErrorDescriptor("account_refused", "The account cannot be funded.");
+        var error = new ErrorDescriptor("order_already_shipped", "The order has already shipped.");
 
         // when
         var (derivedStatus, derivedBody, derivedRaw) = await _SendAsync(() =>
-            throw new AccountFundingRefusedException(error)
+            throw new OrderAlreadyShippedException(error)
         );
         var (baseStatus, baseBody, _) = await _SendAsync(() => throw new ConflictException(error));
 
@@ -40,7 +40,7 @@ public sealed class AppDefinedExceptionMappingTests : TestBase
         derivedStatus.Should().Be(HttpStatusCode.Conflict);
         baseStatus.Should().Be(HttpStatusCode.Conflict);
         JsonNode.DeepEquals(derivedBody, baseBody).Should().BeTrue($"{derivedBody} should equal {baseBody}");
-        derivedBody["errors"]!.ToJsonString().Should().Contain("account_refused");
+        derivedBody["errors"]!.ToJsonString().Should().Contain("order_already_shipped");
         derivedRaw.Should().NotContain(_LogOnlyMessage);
     }
 
@@ -129,11 +129,11 @@ public sealed class AppDefinedExceptionMappingTests : TestBase
     }
 
     // An application's own conflict family, caught by type in its code and answered as a 409 by the framework.
-    private abstract class FundAccountRefusedException(ErrorDescriptor error, string message)
+    private abstract class OrderRefusedException(ErrorDescriptor error, string message)
         : ConflictException(message, [error]);
 
-    private sealed class AccountFundingRefusedException(ErrorDescriptor error)
-        : FundAccountRefusedException(error, _LogOnlyMessage);
+    private sealed class OrderAlreadyShippedException(ErrorDescriptor error)
+        : OrderRefusedException(error, _LogOnlyMessage);
 
     private sealed class AppForbiddenException(ErrorDescriptor error) : ForbiddenException(_LogOnlyMessage, error);
 
