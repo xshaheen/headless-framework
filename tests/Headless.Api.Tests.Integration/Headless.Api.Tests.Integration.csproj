@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\demo\Headless.Api.Demo\Headless.Api.Demo.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api.FluentValidation\Headless.Api.FluentValidation.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
     <!-- EF and relational audit-log storage register a NullCurrentUser fallback; these prove AddHeadless() replaces it in either order. -->

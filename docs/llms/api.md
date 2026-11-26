@@ -25,7 +25,7 @@ Choose an endpoint style:
 Other packages:
 
 - `Headless.Api.Abstractions`: the interfaces alone (`IRequestContext`, `IWebClientInfoProvider`, `IProblemDetailsCreator`), for libraries that must not pull the API stack.
-- `Headless.Api.FluentValidation`: file rules (size, content type, magic bytes) for `IFormFile` uploads, plus the request contracts `PhoneNumberRequest`, `GeoCoordinateRequest`, and `PageMetadataRequest`.
+- `Headless.Api.FluentValidation`: file rules (size, content type, magic bytes) for `IFormFile` uploads, plus rules for the request contracts `PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`, and `IndexPageRequest`.
 - `Headless.DataProtection.Blobs`: persists ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Identity`: ASP.NET Core Identity helpers: token providers, localized `auth:` and `user:` errors, `HeadlessLookupNormalizer`, and the `Basic` and `ApiKey` authentication schemes.
 - `Headless.Api.UserAgent`: the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
@@ -51,7 +51,7 @@ Other packages:
 - Prefer `Headless.Api.MinimalApi` for new projects. Call `.ValidateArguments()` on a route group. Use `.Validate<T>()` on one endpoint only when the group convention does not fit, and never both for one argument. Return `ApiResult` through `ToHttpResult()`, `sender.DispatchAsync(...)`, or a `Map*Request` helper, not a hand-written bridge.
 - Validate a mediator request in one place: either at the endpoint (`ValidateArguments()`, `AddHeadlessMvcArgumentValidation()`) or in the mediator (`AddMediatorValidationRequestBehavior()`), never both. With both, every validator runs twice.
 - For MVC, inherit from `ApiControllerBase` and call `ConfigureHeadlessMvc()`. Do not configure `MvcOptions` by hand for what it covers.
-- Use the `Headless.Api.FluentValidation` rules (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) instead of hand-written file or request-contract validation.
+- Use the `Headless.Api.FluentValidation` rules (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`, `IndexPage()`) instead of hand-written file or request-contract validation.
 - In a distributed or containerized deployment, persist Data Protection keys with `PersistKeysToBlobStorage()` and give the key container a name unique to the app and environment.
 - Do not add middleware that pushes the user, account, correlation ID, client IP, or request headers into a log scope. `AddHeadless()` adds them to every entry written during a request. Classify a field by name with `ClassifyProperty` to redact it.
 
@@ -854,6 +854,7 @@ FluentValidation rules for ASP.NET Core file uploads and the reusable Headless A
 - `PhoneNumber()`: validates `PhoneNumberRequest` country code and local subscriber number.
 - `GeoCoordinate()`: validates `GeoCoordinateRequest` latitude and longitude ranges.
 - `PageMetadata()`: validates `PageMetadataRequest` SEO field lengths and element counts.
+- `IndexPage()`: validates an `IndexPageRequest`: `Index` zero or greater (`g:greater_than_or_equal`), `Size` greater than zero (`g:greater_than`). It sets no upper bound; add `PageSize(max)` on `Size` for your own cap. A `null` page passes.
 - Error messages ship in English, formal Arabic, and Egyptian Arabic.
 
 Validate an upload at the endpoint, where the `IFormFile` is bound. A command handled after the endpoint stores the file carries a reference to the stored content, such as a blob location, not the live upload.
